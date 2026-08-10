@@ -55,6 +55,7 @@ on:
           - orphan-chat-audit
           - multiorg-orphans
           - stranded-guardians
+          - activation-pin-exposure
           - shadow-filter-rate
 
 permissions:
@@ -91,10 +92,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -103,7 +104,7 @@ jobs:
         run: npm ci
 
       - name: Authenticate via Azure OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -173,11 +174,13 @@ jobs:
               run_one orphan-chat-audit   pilot:check-orphan-chat-audit
               run_one multiorg-orphans    pilot:check-multiorg-orphans
               run_one stranded-guardians  pilot:check-stranded-guardians
+              run_one activation-pin-exposure pilot:check-activation-pin-exposure
               run_one shadow-filter-rate  pilot:check-shadow-filter-rate
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
             stranded-guardians) run_one stranded-guardians  pilot:check-stranded-guardians ;;
+            activation-pin-exposure) run_one activation-pin-exposure pilot:check-activation-pin-exposure ;;
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             *)
               echo "::error::Unknown check '$CHECK'."

@@ -67,10 +67,18 @@ export default function ChangePinPage() {
 
   if (done) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
-        <div className="max-w-md space-y-3 text-center">
-          <h1 className="font-display text-3xl font-black">PIN updated</h1>
-          <p className="text-sm leading-6 text-[var(--gray-dark)]">
+      /* Ink ground (Law 6): change-pin is part of the sign-in chassis, same
+         ground as /login's map row. Paper carries the message inside it. */
+      <main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+        <div className="mat-leather w-full max-w-md rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s6)] text-center">
+          {/* Law 3: the confirmation carries its glyph and uppercase label. */}
+          <span className="badge badge--cleared">
+            <i>✓</i>PIN updated
+          </span>
+          <h1 className="t-command mt-[var(--s4)]" style={{ fontSize: 'var(--t-xl)' }}>
+            PIN updated
+          </h1>
+          <p className="t-body mt-[var(--s4)]">
             Sign in again with your new PIN. Taking you to the sign-in page...
           </p>
         </div>
@@ -79,84 +87,106 @@ export default function ChangePinPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
-      <div className="w-full max-w-md space-y-5">
-        <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">First sign-in</p>
-          <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Choose your PIN</h1>
-          <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-            You are signed in with the starting PIN your gym gave you. Everyone gets the same one, so pick your own
-            before you go any further. Nobody at the gym can see what you choose.
-          </p>
-        </header>
+    <main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)]">
+      <div className="w-full max-w-md">
+        <div className="frame">
+          <span className="rivet rivet--tl" />
+          <span className="rivet rivet--tr" />
+          <span className="rivet rivet--bl" />
+          <span className="rivet rivet--br" />
+          {/* Leather rather than paper inside the frame: the ink-tuned .t-label,
+              .t-eyebrow and .input read correctly against it, while .mat-paper
+              only gets its type restated under .on-canvas — a ground this
+              staff-side page must not take (Law 6). */}
+          <div className="frame-in mat-leather" style={{ padding: 'var(--s6)' }}>
+            <header>
+              <p className="t-eyebrow tracking-[0.2em]">First sign-in</p>
+              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
+                Choose your PIN
+              </h1>
+              <p className="t-body mt-[var(--s3)]">
+                You are signed in with the starting PIN your gym gave you. Everyone gets the same one, so pick your own
+                before you go any further. Nobody at the gym can see what you choose.
+              </p>
+            </header>
 
-        <form onSubmit={submit} className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
-          {error && (
-            <p role="alert" className="rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--red-primary)]">
-              {error}
-            </p>
-          )}
+            <form onSubmit={submit} className="mt-[var(--s5)] space-y-[var(--s5)]">
+              {error && (
+                /* Law 3: glyph + uppercase label carry the refusal, so it
+                   survives greyscale; the red is the third channel. */
+                <div role="alert" className="alert alert--critical alert--tight">
+                  <span className="alert-icon" aria-hidden="true">✕</span>
+                  <div className="alert-body">
+                    <p className="alert-title">PIN refused</p>
+                    <p className="alert-msg">{error}</p>
+                  </div>
+                </div>
+              )}
 
-          <div>
-            <label htmlFor="current-pin" className="block text-sm font-semibold">
-              The PIN you were given
-            </label>
-            <input
-              id="current-pin"
-              type="password"
-              inputMode="numeric"
-              autoComplete="current-password"
-              required
-              value={currentPin}
-              maxLength={DEFAULT_PIN_LENGTH}
-              onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-            />
+              <div className="field">
+                <label htmlFor="current-pin" className="t-label">
+                  The PIN you were given
+                </label>
+                {/* Law 5: an athlete does this on a shared tablet with wrapped
+                    hands, so every PIN well clears --tap via the kiosk input. */}
+                <input
+                  id="current-pin"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="current-password"
+                  required
+                  value={currentPin}
+                  maxLength={DEFAULT_PIN_LENGTH}
+                  onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
+                  className="input input--kiosk font-[family-name:var(--font-mono)] tracking-[0.3em]"
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="new-pin" className="t-label">
+                  Your new PIN
+                </label>
+                <p className="t-muted mb-[var(--s3)]">Exactly 6 digits. Do not use 123456.</p>
+                <input
+                  id="new-pin"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  required
+                  value={newPin}
+                  maxLength={DEFAULT_PIN_LENGTH}
+                  onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
+                  className="input input--kiosk font-[family-name:var(--font-mono)] tracking-[0.3em]"
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="confirm-pin" className="t-label">
+                  Type your new PIN again
+                </label>
+                <input
+                  id="confirm-pin"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  required
+                  value={confirmPin}
+                  maxLength={DEFAULT_PIN_LENGTH}
+                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
+                  className="input input--kiosk font-[family-name:var(--font-mono)] tracking-[0.3em]"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={busy || !currentPin || !newPin || !confirmPin}
+                className="btn btn--kiosk disabled:cursor-not-allowed disabled:opacity-60 disabled:grayscale"
+              >
+                {busy ? 'Saving...' : 'Save My PIN'}
+              </button>
+            </form>
           </div>
-
-          <div>
-            <label htmlFor="new-pin" className="block text-sm font-semibold">
-              Your new PIN
-            </label>
-            <p className="mt-1 text-xs text-[var(--gray-dark)]">Exactly 6 digits. Do not use 123456.</p>
-            <input
-              id="new-pin"
-              type="password"
-              inputMode="numeric"
-              autoComplete="new-password"
-              required
-              value={newPin}
-              maxLength={DEFAULT_PIN_LENGTH}
-              onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="confirm-pin" className="block text-sm font-semibold">
-              Type your new PIN again
-            </label>
-            <input
-              id="confirm-pin"
-              type="password"
-              inputMode="numeric"
-              autoComplete="new-password"
-              required
-              value={confirmPin}
-              maxLength={DEFAULT_PIN_LENGTH}
-              onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={busy || !currentPin || !newPin || !confirmPin}
-            className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy ? 'Saving...' : 'Save My PIN'}
-          </button>
-        </form>
+        </div>
       </div>
     </main>
   );

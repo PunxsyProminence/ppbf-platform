@@ -32,10 +32,10 @@ const BOARD_SEATS = [
 ] as const;
 
 const LIFECYCLE_TONE: Record<AnnouncementLifecycle, string> = {
-  live: 'border-[var(--status-ready)] bg-[#dce7ca]',
-  scheduled: 'border-[var(--status-warning)] bg-[#efe3c4]',
-  expired: 'border-[var(--gray-medium)] bg-[var(--canvas-tan)]',
-  retired: 'border-[color:var(--brass-600)] bg-[#f1d6d1]',
+  live: 'border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,transparent)]',
+  scheduled: 'border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_14%,transparent)]',
+  expired: 'border-[color:rgba(107,78,18,.28)] mat-paper',
+  retired: 'border-[color:var(--brass-600)] bg-[color-mix(in_srgb,var(--brass-600)_12%,transparent)]',
 };
 
 const EMPTY_DRAFT = {
@@ -209,33 +209,42 @@ function NoticesAuthoringPage() {
   const canPublish = draft.message.trim().length > 0 && authorName.trim().length > 0 && !windowIsBackwards;
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+    <main className="on-canvas min-h-screen">
       <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
-        <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
+        <header className="space-y-3 border-b-[3px] border-[color:rgba(107,78,18,.28)] pb-6">
           <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Gym Communications</p>
           <h1 className="font-display text-4xl font-black">Notices and Motivation</h1>
-          <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+          <p className="max-w-4xl text-sm leading-6 text-[color:var(--hide-800)]">
             Coaches and admins write what the app says. Pick the surface it belongs on, give it a window if it should
             only run for a while, and retire it when it is done.
           </p>
-          {loadError ? <p className="text-sm text-[var(--red-primary)]">{loadError}</p> : null}
+          {loadError ? (
+            /* Law 3: the failed load carries a glyph and an uppercase label,
+               not the safety red alone. */
+            <div role="alert" className="flex flex-wrap items-center gap-[var(--s3)]">
+              <span className="badge badge--locked">
+                <i>✕</i>Load failed
+              </span>
+              <p className="text-sm text-[color:var(--hide-950)]">{loadError}</p>
+            </div>
+          ) : null}
         </header>
 
-        <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+        <section className="mt-[var(--s5)] space-y-[var(--s3)] mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s4)]">
           <h2 className="text-lg font-bold">Live Right Now</h2>
           <div className="grid gap-3 md:grid-cols-3">
             {liveByPlacement.map((group) => (
-              <article key={group.placement} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+              <article key={group.placement} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-3">
                 <p className="text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
                   {PLACEMENT_LABELS[group.placement]}
                 </p>
                 {group.items.length === 0 ? (
-                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Nothing live. This surface shows no banner.</p>
+                  <p className="mt-2 text-sm leading-6 text-[color:var(--hide-800)]">Nothing live. This surface shows no banner.</p>
                 ) : (
                   <ul className="mt-2 space-y-2">
                     {group.items.map((item) => (
-                      <li key={item.announcement_id} className="text-sm leading-6 text-[var(--gray-dark)]">
-                        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--black)]">
+                      <li key={item.announcement_id} className="text-sm leading-6 text-[color:var(--hide-800)]">
+                        <span className="font-mono text-[length:var(--t-xs)] uppercase tracking-[0.12em] text-[color:var(--hide-950)]">
                           {KIND_LABELS[item.kind]}
                         </span>{' '}
                         {item.message}
@@ -249,23 +258,23 @@ function NoticesAuthoringPage() {
         </section>
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <div className="space-y-[var(--s3)] mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s4)]">
             <h2 className="text-lg font-bold">Write</h2>
             <textarea
               value={draft.message}
               onChange={(event) => setDraft((current) => ({ ...current, message: event.target.value }))}
               placeholder="What should this surface say?"
-              className="h-28 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2"
+              className="textarea min-h-[89px]"
             />
             <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--hide-800)]">
                 Placement
                 <select
                   value={draft.placement}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, placement: event.target.value as AnnouncementPlacement }))
                   }
-                  className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-normal normal-case tracking-normal text-[var(--black)]"
+                  className="input"
                 >
                   {ANNOUNCEMENT_PLACEMENTS.map((placement) => (
                     <option key={placement} value={placement}>
@@ -274,12 +283,12 @@ function NoticesAuthoringPage() {
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--hide-800)]">
                 Kind
                 <select
                   value={draft.kind}
                   onChange={(event) => setDraft((current) => ({ ...current, kind: event.target.value as AnnouncementKind }))}
-                  className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-normal normal-case tracking-normal text-[var(--black)]"
+                  className="input"
                 >
                   {ANNOUNCEMENT_KINDS.map((kind) => (
                     <option key={kind} value={kind}>
@@ -290,22 +299,22 @@ function NoticesAuthoringPage() {
               </label>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--hide-800)]">
                 Starts (optional)
                 <input
                   type="datetime-local"
                   value={draft.starts_at}
                   onChange={(event) => setDraft((current) => ({ ...current, starts_at: event.target.value }))}
-                  className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-normal normal-case tracking-normal text-[var(--black)]"
+                  className="input"
                 />
               </label>
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--hide-800)]">
                 Ends (optional)
                 <input
                   type="datetime-local"
                   value={draft.ends_at}
                   onChange={(event) => setDraft((current) => ({ ...current, ends_at: event.target.value }))}
-                  className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-normal normal-case tracking-normal text-[var(--black)]"
+                  className="input"
                 />
               </label>
             </div>
@@ -313,15 +322,15 @@ function NoticesAuthoringPage() {
               value={authorName}
               onChange={(event) => setAuthorName(event.target.value)}
               placeholder="Your name, as members will see it"
-              className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+              className="input"
             />
             {session.role === 'board' ? (
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--hide-800)]">
                 Board seat
                 <select
                   value={boardSeat}
                   onChange={(event) => setBoardSeat(event.target.value)}
-                  className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-normal normal-case tracking-normal text-[var(--black)]"
+                  className="input"
                 >
                   {BOARD_SEATS.map((seat) => (
                     <option key={seat} value={seat}>
@@ -338,27 +347,30 @@ function NoticesAuthoringPage() {
               type="button"
               disabled={isPublishing || !canPublish}
               onClick={() => void publish().catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to publish.'))}
-              className="h-11 border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[color:var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isPublishing ? 'Publishing...' : 'Publish'}
             </button>
             {message ? <p className="text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
           </div>
 
-          <div className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <div className="space-y-[var(--s3)] mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s4)]">
             <h2 className="text-lg font-bold">Preview</h2>
-            <p className="text-sm leading-6 text-[var(--gray-dark)]">
+            <p className="text-sm leading-6 text-[color:var(--hide-800)]">
               How it will read on {PLACEMENT_LABELS[draft.placement]}, and when it will be there.
             </p>
-            <p className={`inline-block border-2 px-2 py-1 text-[10px] font-mono font-bold uppercase ${LIFECYCLE_TONE[draftLifecycle]}`}>
+            <p className={`inline-block border-2 px-2 py-1 text-[length:var(--t-xs)] font-mono font-bold uppercase ${LIFECYCLE_TONE[draftLifecycle]}`}>
               {LIFECYCLE_LABELS[draftLifecycle]} - {describeWindow(draftStartsAt, draftEndsAt)}
             </p>
-            <article className="rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]">
-              <p className="text-sm leading-6 text-[var(--black)]">
+            {/* The preview renders on paper, one of the five materials — the
+                bg-white card it used to be is not (Law 6) — and its radius
+                comes off the Fibonacci scale. */}
+            <article className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(0,0,0,0.12)] px-4 py-3">
+              <p className="text-sm leading-6 text-[color:var(--hide-950)]">
                 {draft.message.trim() || 'Nothing written yet, so this surface would render no banner at all.'}
               </p>
               {draft.kind === 'notice' && draft.message.trim() ? (
-                <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--gray-medium)]">
+                <p className="mt-2 text-[length:var(--t-xs)] font-mono uppercase tracking-[0.08em] text-[color:var(--hide-600)]">
                   By {authorName.trim() || 'your name'} - just now
                 </p>
               ) : null}
@@ -366,30 +378,30 @@ function NoticesAuthoringPage() {
           </div>
         </section>
 
-        <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+        <section className="mt-[var(--s5)] space-y-[var(--s3)] mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s4)]">
           <h2 className="text-lg font-bold">Everything Posted</h2>
           {items.length === 0 && !loadError ? (
-            <p className="text-sm leading-6 text-[var(--gray-dark)]">Nothing has been posted for this gym yet.</p>
+            <p className="text-sm leading-6 text-[color:var(--hide-800)]">Nothing has been posted for this gym yet.</p>
           ) : null}
           <div className="grid gap-3">
             {items.map((item) => {
               const lifecycle = announcementLifecycle(item);
               return (
-                <article key={item.announcement_id} className="grid gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4 md:grid-cols-[1fr_auto] md:items-start">
+                <article key={item.announcement_id} className="grid gap-3 border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-4 md:grid-cols-[1fr_auto] md:items-start">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`border-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${LIFECYCLE_TONE[lifecycle]}`}>
+                      <span className={`border-2 px-2 py-0.5 text-[length:var(--t-xs)] font-mono font-bold uppercase ${LIFECYCLE_TONE[lifecycle]}`}>
                         {LIFECYCLE_LABELS[lifecycle]}
                       </span>
                       <span className="text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
                         {PLACEMENT_LABELS[item.placement]}
                       </span>
-                      <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+                      <span className="text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--hide-800)]">
                         {KIND_LABELS[item.kind]}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-[var(--black)]">{item.message}</p>
-                    <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--gray-medium)]">
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--hide-950)]">{item.message}</p>
+                    <p className="mt-2 text-[length:var(--t-xs)] font-mono uppercase tracking-[0.08em] text-[color:var(--hide-600)]">
                       By {item.author_name} ({item.author_role}) - {formatAnnouncementTime(item.created_at)} -{' '}
                       {describeWindow(item.starts_at, item.ends_at)}
                     </p>
@@ -397,7 +409,7 @@ function NoticesAuthoringPage() {
                   <button
                     type="button"
                     onClick={() => void setActive(item.announcement_id, !item.active)}
-                    className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+                    className="btn btn--ghost"
                   >
                     {item.active ? 'Retire' : 'Restore'}
                   </button>
@@ -407,10 +419,18 @@ function NoticesAuthoringPage() {
           </div>
         </section>
 
-        <div className="mt-8">
+        <div className="mt-8 flex flex-wrap gap-3">
+          {/* The two-second version of this page: the boards as they hang on
+              the dashboards, one line each, writable in place. Same table, same
+              endpoints, same rows -- see app/chalkboard/page.tsx. The link is
+              here because a coach with something to say opens this page, and a
+              route nobody can reach is a dead feature. */}
+          <Link href="/chalkboard" className="btn btn--ghost">
+            The boards, as they hang
+          </Link>
           <Link
             href="/operations"
-            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+            className="btn btn--ghost"
           >
             Back to Mission Control
           </Link>

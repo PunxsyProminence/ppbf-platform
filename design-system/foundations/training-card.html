@@ -1,0 +1,315 @@
+<!-- @dsCard group="Foundations" name="Training Card" subtitle="One stamp per logged session, milestone seals on the Fibonacci series — a record, not a score, and deliberately not a streak" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Card — PPBF</title>
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { padding: var(--s6); max-width: 1100px; margin: 0 auto; }
+  h1 { font-family: var(--font-display); font-size: var(--t-2xl); color: var(--bone-100);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6); margin: 0 0 var(--s3); text-transform: uppercase; }
+  h2.sect { font-family: var(--font-display); font-size: var(--t-lg); color: var(--brass-300);
+            margin: var(--s7) 0 var(--s3); padding-bottom: var(--s3); text-transform: uppercase;
+            border-bottom: 1px solid rgba(212,175,74,.28); }
+  .note { color: var(--bone-300); font-size: var(--t-sm); line-height: 1.65; max-width: 76ch; margin: 0 0 var(--s5); }
+  .note b { color: var(--bone-100); }
+  code { font-family: var(--font-data); font-size: .92em; color: var(--brass-200); }
+  .cap { font: 650 10px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+         color: var(--brass-400); margin: 0 0 var(--s4); }
+  .stage { margin-bottom: var(--s6); }
+  .two { display: grid; gap: var(--s6); grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+</style>
+</head>
+<body class="ppbf room--floor light-at--tc light--caged">
+
+<h1>Training Card</h1>
+<p class="note">
+  The platform had no progression artefact at all: an athlete checked in, chose an effort rating,
+  submitted, and left. Nothing accumulated, so there was nothing to come back to. A gym's real
+  engagement mechanic is physical and visible &mdash; a card that fills up &mdash; and every primitive
+  needed for it already existed here (<code>.pap</code>, <code>.stamp</code>, the seal),
+  unused for this.
+</p>
+<p class="note">
+  <b>It is a record, not a score.</b> Every impression corresponds to one row from
+  <code>/api/pilot/sessions/list</code>, so the card cannot flatter anyone and cannot be gamed.
+  A booked-but-not-completed session shows as an empty box, because that is the truth.
+</p>
+
+<!-- ============================================================ NO STREAKS -->
+<h2 class="sect">Why there is no streak</h2>
+<div class="alert alert--critical" style="max-width:76ch">
+  <div class="alert-icon">⚠</div>
+  <div class="alert-body">
+    <div class="alert-title">A streak would be a safety hazard here</div>
+    <div class="alert-msg">
+      Streaks are the obvious mechanic and the wrong one for this platform. PPBF runs a
+      <b>Layer&nbsp;11 safety gate that locks athletes out for medical reasons</b> &mdash; concussion
+      protocol, injury, illness. A streak would mean an athlete watching their run die
+      <em>because a doctor protected them</em>. That is a direct incentive to under-report a head
+      injury, in a contact sport, to children.
+      <br><br>
+      Cumulative counts never reset and never pressure. &ldquo;142 sessions logged&rdquo; is just as
+      motivating and cannot be broken by being careful.
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ STATES -->
+<h2 class="sect">The card</h2>
+<div class="two">
+  <div class="stage">
+    <p class="cap">A card in progress &mdash; 9 logged, 1 booked and missed</p>
+    <section class="pap pap--card age-1 lift-1 tcard">
+      <header class="tcard-hd">
+        <div>
+          <h3 class="tcard-title">Training Card</h3>
+          <div class="tcard-sub">Marcus D. &middot; since Mar 4 2026</div>
+        </div>
+        <div class="tcard-count"><b>9</b><span>sessions logged</span></div>
+      </header>
+      <div class="tcard-grid" role="list">
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.3" role="listitem" title="Session Mar 4 2026, effort 3 of 10">3</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.5" role="listitem" title="effort 5">5</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.6" role="listitem" title="effort 6">6</div>
+        <div class="tcard-stamp tcard-stamp--open" role="listitem" title="booked, not completed">·</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.8" role="listitem" title="effort 8">8</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.7" role="listitem" title="effort 7">7</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:1"  role="listitem" title="effort 10">10</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.4" role="listitem" title="effort 4">4</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.9" role="listitem" title="effort 9">9</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.6" role="listitem" title="effort 6">6</div>
+      </div>
+      <div class="tcard-seals">
+        <div class="tcard-seal-slot">
+          <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="5 session milestone, earned">
+            <defs><path id="s5" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+            <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+            <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+              <textPath href="#s5" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+            <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">5</text>
+          </svg>
+          <span class="tcard-seal-lbl">5</span>
+        </div>
+        <div class="tcard-seal-slot tcard-seal-slot--unearned">
+          <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="13 session milestone, not yet earned">
+            <defs><path id="s13" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+            <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+            <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+              <textPath href="#s13" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+            <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">13</text>
+          </svg>
+          <span class="tcard-seal-lbl">13 &middot; to go</span>
+        </div>
+        <p class="tcard-sub" style="margin-left:auto;text-align:right">4 more to 13</p>
+      </div>
+      <div class="tcard-legend">
+        <span><i class="is-done"></i>Logged &mdash; the number is effort, 1&ndash;10</span>
+        <span><i class="is-open"></i>Booked, not completed</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="stage">
+    <p class="cap">An empty card &mdash; says what fills it, and that it never resets</p>
+    <div class="pap pap--card age-1 lift-1 tcard">
+      <div class="empty" style="padding:var(--s7) var(--s5)">
+        <div class="empty-glyph">🥊</div>
+        <div class="empty-title">No sessions on the card yet</div>
+        <div class="empty-msg">
+          Check in at the floor kiosk and the first stamp lands here. The card keeps every session
+          you log &mdash; it never resets.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= CEREMONY -->
+<h2 class="sect">Crossing a milestone</h2>
+<p class="note">
+  Crossing one used to produce <b>nothing</b>. The seal an athlete earns at 13 sessions was already
+  sitting in the DOM at 12, one opacity step away, so the card counted but never <em>marked</em>.
+  There was no moment.
+</p>
+<p class="note">
+  <b>A stamp coming down on paper, and nothing else.</b> The seal is driven onto the card under
+  <code>--e-stamp</code>, whose whole physics is arriving and stopping dead; the slot darkens where
+  the ink landed; a line of type says what was earned. No confetti, no bounce, no spin &mdash; this
+  is a boxing gym, and a card earned over months does not deserve a slot machine. If sound is on,
+  the round bell rings once.
+</p>
+<p class="note">
+  <b>The words are the channel that carries it.</b> The press is cancelled outright under
+  <code>prefers-reduced-motion</code> (the sheet's global rule), and the bell is off unless somebody
+  opted in. The <code>.tcard-earned</code> line below is announced through <code>role="status"</code>
+  and says the whole thing on its own, which is what makes the other two channels confirmation
+  rather than information.
+</p>
+<p class="note">
+  <b>It fires on the CROSSING, once.</b> A component sees a state (&ldquo;13 sessions&rdquo;), not an
+  event, and sees it again on every render and every reload &mdash; so what is written down is which
+  seals have already been pressed, and the first sighting of a card <em>seeds that record silently</em>
+  rather than congratulating an athlete for history.
+  See <code>apps/web/components/milestoneCeremony.ts</code>.
+</p>
+
+<div class="stage">
+  <p class="cap">The 13th session lands</p>
+  <section class="pap pap--card age-1 lift-1 tcard" style="max-width:520px">
+    <header class="tcard-hd">
+      <div>
+        <h3 class="tcard-title">Training Card</h3>
+        <div class="tcard-sub">Marcus D. &middot; since Mar 4 2026</div>
+      </div>
+      <div class="tcard-count"><b id="cerCount">12</b><span>sessions logged</span></div>
+    </header>
+    <div class="tcard-grid" role="list" id="cerGrid">
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.5" role="listitem">5</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.7" role="listitem">7</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.6" role="listitem">6</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.8" role="listitem">8</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.4" role="listitem">4</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.9" role="listitem">9</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.6" role="listitem">6</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:1"  role="listitem">10</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.3" role="listitem">3</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.7" role="listitem">7</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.5" role="listitem">5</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.8" role="listitem">8</div>
+    </div>
+
+    <p class="tcard-earned" role="status" id="cerNote" hidden>
+      <b>13 sessions</b><span>Sealed. It never comes off the card.</span>
+    </p>
+
+    <div class="tcard-seals">
+      <div class="tcard-seal-slot">
+        <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="5 session milestone, earned">
+          <defs><path id="c5" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+          <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+          <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+          <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+            <textPath href="#c5" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+          <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">5</text>
+        </svg>
+        <span class="tcard-seal-lbl">5</span>
+      </div>
+      <div class="tcard-seal-slot tcard-seal-slot--unearned" id="cerSlot">
+        <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="13 session milestone, not yet earned">
+          <defs><path id="c13" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+          <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+          <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+          <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+            <textPath href="#c13" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+          <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">13</text>
+        </svg>
+        <span class="tcard-seal-lbl" id="cerLbl">13 &middot; to go</span>
+      </div>
+      <p class="tcard-sub" style="margin-left:auto;text-align:right" id="cerToGo">1 more to 13</p>
+    </div>
+    <div class="tcard-legend">
+      <span><i class="is-done"></i>Logged &mdash; the number is effort, 1&ndash;10</span>
+      <span><i class="is-open"></i>Booked, not completed</span>
+    </div>
+  </section>
+
+  <p style="margin-top:var(--s5);display:flex;gap:var(--s4);flex-wrap:wrap;align-items:center">
+    <button class="btn" type="button" id="cerGo">Log the 13th session</button>
+    <button class="btn btn--ghost" type="button" id="cerSound" aria-pressed="false">
+      <span aria-hidden="true">○</span>&nbsp;Sound off
+    </button>
+    <span class="tcard-sub" style="color:var(--bone-400)">Sound is opt-in, and the card says it all without it.</span>
+  </p>
+</div>
+
+<!-- The engine as a classic script, which is why it is one: this file opens by
+     double-clicking it off disk, and a browser blocks `import` over file://. -->
+<script src="../ppbf-sound.js"></script>
+<script>
+(function () {
+  var snd = new PPBFSound();
+  var toggle = document.getElementById('cerSound');
+  var go = document.getElementById('cerGo');
+
+  toggle.addEventListener('click', async function () {
+    // Inside the click, because no browser starts audio outside a gesture.
+    var live = snd.enabled ? await snd.setEnabled(false) : await snd.enable();
+    toggle.setAttribute('aria-pressed', String(live));
+    toggle.innerHTML = live ? '<span aria-hidden="true">◉</span>&nbsp;Sound on'
+                            : '<span aria-hidden="true">○</span>&nbsp;Sound off';
+    if (live) snd.play('latch');
+  });
+
+  go.addEventListener('click', function () {
+    var slot = document.getElementById('cerSlot');
+    var note = document.getElementById('cerNote');
+
+    // The visible change comes first and carries the whole message: a new
+    // impression, the count, the seal earned, the line of type.
+    var stamp = document.createElement('div');
+    stamp.className = 'tcard-stamp tcard-stamp--done';
+    stamp.setAttribute('role', 'listitem');
+    stamp.style.setProperty('--ink', '.7');
+    stamp.textContent = '7';
+    document.getElementById('cerGrid').appendChild(stamp);
+
+    document.getElementById('cerCount').textContent = '13';
+    document.getElementById('cerLbl').textContent = '13';
+    document.getElementById('cerToGo').textContent = '21 more to 34';
+    slot.classList.remove('tcard-seal-slot--unearned');
+    note.hidden = false;
+
+    // Restart the animation on repeat presses, so the preview can be replayed.
+    slot.classList.remove('tcard-seal-slot--pressed');
+    void slot.offsetWidth;
+    slot.classList.add('tcard-seal-slot--pressed');
+
+    // Confirmation, never information. Silent unless somebody opted in above.
+    snd.play('bell');
+    go.textContent = 'Press again';
+  });
+})();
+</script>
+
+<!-- ================================================================= LAWS -->
+<h2 class="sect">What the laws forced</h2>
+<p class="note">
+  <b>Law 2 &mdash; effort is ink, never hue.</b> The obvious move is a red stamp for a hard session
+  and a green one for a light one. That would put saturated colour next to the safety ladder and
+  make &ldquo;trained hard&rdquo; read as &ldquo;restricted&rdquo;. Effort is carried by
+  <b>ink density</b> instead, driven by a <code>--ink</code> custom property, so a heavy session
+  looks pressed harder into the paper and no pixel lies about safety.
+</p>
+<p class="note">
+  <b>Law 3 &mdash; never colour alone.</b> Each impression prints its own effort number, and carries
+  its full date and effort as text in the accessibility tree. The card is not a wall of shades to a
+  screen reader, and it survives greyscale printing for a board packet.
+</p>
+<p class="note">
+  <b>Law 8 &mdash; milestones on the Fibonacci series</b>, like every other measure in the system:
+  <b>5 &middot; 13 &middot; 34 &middot; 89 &middot; 233</b>. Five is reachable in a fortnight so the
+  card rewards early; the gaps then widen the way real progress does, instead of handing out a badge
+  a week forever. An unearned seal is drawn in grey rather than hidden, so the next one is always
+  visible.
+</p>
+<p class="note">
+  <b>Naming.</b> The unearned-milestone class is <code>.tcard-seal-slot--unearned</code>, not
+  <code>--locked</code>. In this platform &ldquo;locked&rdquo; is the Layer 11 safety state; borrowing
+  that word for a gamification state is exactly the drift Law 2 exists to prevent. A milestone you
+  have not reached is unearned. An athlete under medical hold is locked. They are not the same thing
+  and must never share a word.
+</p>
+
+<p class="note" style="margin-top:var(--s7);padding-top:var(--s5);border-top:1px dashed rgba(212,175,74,.14);font-size:11px">
+  Component: <code>apps/web/components/TrainingCard.tsx</code>, mounted in
+  <code>AthleteWorkspace</code>. Data: <code>GET /api/pilot/sessions/list?athlete_id=…</code>,
+  which returns <code>session_id</code>, <code>date</code>, <code>rpe</code> and
+  <code>completed_flag</code> per row.
+</p>
+</body>
+</html>

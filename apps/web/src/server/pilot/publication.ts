@@ -85,6 +85,13 @@ export async function updatePublicationStatus(
   status: string,
   complianceStatus?: string,
   approvedByAccountId?: string,
+  // Optional compare-and-swap guard: when provided, the UPDATE only matches a
+  // row whose status is still exactly this value. A single UPDATE statement
+  // takes an implicit row lock and re-evaluates its WHERE clause against
+  // whatever the row holds once that lock is granted, so two admins racing a
+  // compliance decision on the same publication serialize correctly instead
+  // of the second silently overwriting the first's already-committed verdict.
+  expectedCurrentStatus?: string,
 ): Promise<boolean> {
   const now = new Date().toISOString();
 
@@ -96,8 +103,11 @@ export async function updatePublicationStatus(
          approved_by_account_id = coalesce($6, approved_by_account_id),
          published_at = case when $3 = 'published' then $4::timestamptz else published_at end
      where organization_id = $1 and publication_id = $2
+       ${expectedCurrentStatus ? 'and status = $7' : ''}
      returning publication_id`,
-    [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null],
+    expectedCurrentStatus
+      ? [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null, expectedCurrentStatus]
+      : [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null],
   );
 
   return result.length > 0;
@@ -106,6 +116,7 @@ export async function updatePublicationStatus(
 export interface PublicationGateRecord {
   publication_id: string;
   video_session_id: string;
+  athlete_id: string;
   submitted_by_account_id: string;
   title: string;
   description: string;
@@ -117,13 +128,15 @@ export interface PublicationGateRecord {
 // Read before publishing so the caller can name the exact reason a publish was
 // refused. The row -- not the request body -- is the authority for who
 // submitted the publication, which video session it covers, and what goes onto
-// the library shelf.
+// the library shelf. athlete_id is here (T-008) for the same reason: the
+// guardian-consent gate needs the row's own athlete_id, not a caller-supplied
+// one that could name a different athlete than the publication actually covers.
 export async function getPublicationForPublish(
   organizationId: string,
   publicationId: string,
 ): Promise<PublicationGateRecord | null> {
   return queryOne<PublicationGateRecord>(
-    `select publication_id, video_session_id, submitted_by_account_id, title, description, tags,
+    `select publication_id, video_session_id, athlete_id, submitted_by_account_id, title, description, tags,
             status, compliance_check_status
      from pilot.video_publications
      where organization_id = $1 and publication_id = $2`,
@@ -228,6 +241,118 @@ export async function publishToResearchLibrary(params: {
 
     return libraryId;
   });
+}
+
+/**
+ * The CAS-guarded status transition and its compliance-check record, in one
+ * transaction. T-006's admin console originally called
+ * updatePublicationStatus and recordComplianceCheck as two separate,
+ * non-transactional writes -- if the status flip committed and the check
+ * insert then failed, the row was left in a decided state with no record of
+ * who decided it or why, the admin's typed reason was lost, and a retry hit
+ * the CAS guard as "already decided by another reviewer" (factually wrong --
+ * it was the retry's own prior attempt) with no way back into the queue,
+ * since GET only lists status='pending_review' rows. This closes that gap:
+ * one transaction, one outcome.
+ *
+ * Returns false (and writes nothing) when the CAS predicate does not match
+ * -- another reviewer's decision already committed since the caller read the
+ * row.
+ */
+export async function decidePublicationCompliance(params: {
+  organizationId: string;
+  publicationId: string;
+  newStatus: string;
+  checkStatus: string;
+  checkType: string;
+  details: string;
+  decidedByAccountId: string;
+  approvedByAccountId?: string;
+  expectedCurrentStatus: string;
+  // T-008: an optional precondition checked on the SAME transaction client,
+  // immediately before the CAS UPDATE below. A caller that already checked
+  // something (e.g. guardian consent) BEFORE calling this function checked
+  // it outside any transaction -- the gap between that check returning and
+  // this UPDATE committing is a real window for the checked condition to
+  // change underneath it (a guardian withdrawing consent between an admin's
+  // click and the write landing). Running the same check again in here,
+  // against the same client, closes that window: if it throws, the
+  // transaction rolls back and nothing commits.
+  verifyBeforeCommit?: (client: { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> }) => Promise<void>;
+}): Promise<boolean> {
+  return withTransaction(async (client) => {
+    if (params.verifyBeforeCommit) {
+      await params.verifyBeforeCommit(client);
+    }
+
+    const now = new Date().toISOString();
+
+    const updated = await client.query<{ publication_id: string }>(
+      `update pilot.video_publications
+       set status = $3,
+           updated_at = $4,
+           compliance_check_status = $5,
+           approved_by_account_id = coalesce($6, approved_by_account_id),
+           published_at = case when $3 = 'published' then $4::timestamptz else published_at end
+       where organization_id = $1 and publication_id = $2 and status = $7
+       returning publication_id`,
+      [
+        params.organizationId,
+        params.publicationId,
+        params.newStatus,
+        now,
+        params.checkStatus,
+        params.approvedByAccountId ?? null,
+        params.expectedCurrentStatus,
+      ],
+    );
+
+    if (updated.rows.length === 0) {
+      return false;
+    }
+
+    const checkId = `check_${Date.now()}_${randomUUID().split('-')[0]}`;
+    await client.query(
+      `insert into pilot.publication_checks
+         (check_id, organization_id, publication_id, check_type, check_status, details, checked_by_account_id, checked_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        checkId,
+        params.organizationId,
+        params.publicationId,
+        params.checkType,
+        params.checkStatus,
+        params.details,
+        params.decidedByAccountId,
+        now,
+      ],
+    );
+
+    return true;
+  });
+}
+
+export interface PublicationCheckSummary {
+  check_status: string;
+  details: string;
+  checked_at: string | null;
+}
+
+// The most recent review verdict on a publication, if any -- surfaced back
+// to a reviewer so a re-queued item (e.g. after 'request_changes') does not
+// look identical to one nobody has ever looked at.
+export async function getLatestPublicationCheck(
+  organizationId: string,
+  publicationId: string,
+): Promise<PublicationCheckSummary | null> {
+  return queryOne<PublicationCheckSummary>(
+    `select check_status, details, checked_at
+     from pilot.publication_checks
+     where organization_id = $1 and publication_id = $2
+     order by created_at desc
+     limit 1`,
+    [organizationId, publicationId],
+  );
 }
 
 export async function getResearchLibrary(

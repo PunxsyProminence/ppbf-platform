@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 type ReviewState = 'new' | 'contacted' | 'archived';
 
@@ -20,10 +21,14 @@ interface Submission {
   created_at: string;
 }
 
-function reviewStateTone(state: ReviewState): string {
-  if (state === 'new') return 'border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[#f2c9c9]';
-  if (state === 'contacted') return 'border-[#4a6b2a] bg-[#1a2a14] text-[#c9e0b4]';
-  return 'border-[color:var(--hide-600)] bg-[var(--hide-900)] text-[color:var(--bone-400)]';
+// Law 3: review state is a queue outcome, so it rides the badge ladder with a
+// glyph and an uppercase label rather than colour alone. New submissions await
+// action (restricted), contacted ones are settled (cleared), archived ones are
+// merely tracked (monitor).
+function reviewStateBadge(state: ReviewState): { rung: string; glyph: string } {
+  if (state === 'new') return { rung: 'badge--restricted', glyph: '▲' };
+  if (state === 'contacted') return { rung: 'badge--cleared', glyph: '✓' };
+  return { rung: 'badge--monitor', glyph: '◉' };
 }
 
 export default function PublicInterestReviewPage() {
@@ -86,26 +91,27 @@ export default function PublicInterestReviewPage() {
       routeLabel="/admin/public-interest"
       allowedRoles={['admin', 'platform_owner']}
     >
-      <div className="space-y-6">
-        <header className="border-2 border-[color:var(--brass-700)] bg-[#111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Public Portal</p>
-          <h1 className="mt-2 text-3xl font-black text-[color:var(--bone-100)]">Public Interest Submissions</h1>
-          <p className="mt-2 text-sm text-[color:var(--bone-300)]">
+      <div className="space-y-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <p className="t-eyebrow">Public Portal</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Public Interest Submissions</h1>
+          <p className="t-body mt-[var(--s3)]">
             Real submissions from the public marketing site&apos;s interest-intake form. This is real contact
             information for prospective members, volunteers, and partners -- follow up, then mark each one
             Contacted or Archived.
           </p>
         </header>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Filter submissions by review state">
           {(['new', 'contacted', 'archived', 'ALL'] as const).map((state) => (
             <button
               key={state}
               type="button"
               onClick={() => setFilter(state)}
-              className={`border-2 px-3 py-1 text-xs font-mono font-bold uppercase tracking-[0.08em] transition ${
+              aria-pressed={filter === state}
+              className={`inline-flex min-h-[44px] items-center rounded-[var(--r-sm)] border px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] transition ${
                 filter === state
-                  ? 'border-[color:var(--brass-300)] bg-[#2a1a1a] text-[color:var(--brass-300)]'
+                  ? 'border-[color:var(--brass-300)] bg-[var(--hide-800)] text-[color:var(--brass-300)]'
                   : 'border-[color:var(--hide-600)] bg-[var(--hide-950)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
               }`}
             >
@@ -114,47 +120,53 @@ export default function PublicInterestReviewPage() {
           ))}
         </div>
 
-        {error ? <p className="border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-3 text-sm text-[#f0c4c4]">{error}</p> : null}
-        {loading ? <p className="text-sm text-[color:var(--bone-300)]">Loading submissions...</p> : null}
+        {error ? (
+          <p role="alert" className="alert alert--critical">
+            <span className="alert-icon">✕</span>
+            <span className="alert-msg">{error}</span>
+          </p>
+        ) : null}
+        {loading ? <p className="t-body">Loading submissions...</p> : null}
         {!loading && items.length === 0 && !error ? (
-          <p className="text-sm text-[color:var(--bone-300)]">No submissions match this filter.</p>
+          <p className="t-body">No submissions match this filter.</p>
         ) : null}
 
-        <section className="space-y-3">
-          {items.map((item) => (
-            <article key={item.submission_id} className="border border-[color:var(--hide-600)] bg-[#151515] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-[color:var(--bone-100)]">{item.full_name}</h3>
-                    <span className={`border px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${reviewStateTone(item.review_state)}`}>
-                      {item.review_state}
-                    </span>
+        <section className="space-y-[var(--s4)]">
+          {items.map((item) => {
+            const badge = reviewStateBadge(item.review_state);
+            return (
+              <article key={item.submission_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
+                  <div className="space-y-[var(--s2)]">
+                    <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                      <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{item.full_name}</h3>
+                      <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.review_state}</span>
+                    </div>
+                    <p className="t-data">
+                      {item.email}{item.phone ? ` · ${item.phone}` : ''} · Prefers: {item.preferred_contact_method}
+                    </p>
+                    <p className="t-muted">
+                      {item.visitor_type} · {item.program_interest} · {formatGymStamp(item.created_at)}
+                    </p>
+                    {item.message ? <p className="t-body mt-[var(--s2)] italic">&quot;{item.message}&quot;</p> : null}
                   </div>
-                  <p className="text-xs text-[color:var(--bone-300)]">
-                    {item.email}{item.phone ? ` · ${item.phone}` : ''} · Prefers: {item.preferred_contact_method}
-                  </p>
-                  <p className="text-xs text-[#a99a8b]">
-                    {item.visitor_type} · {item.program_interest} · {new Date(item.created_at).toLocaleString()}
-                  </p>
-                  {item.message ? <p className="mt-1 text-xs italic text-[color:var(--bone-300)]">&quot;{item.message}&quot;</p> : null}
+                  <div className="flex gap-[var(--s3)]">
+                    {(['contacted', 'archived'] as const).map((state) => (
+                      <button
+                        key={state}
+                        type="button"
+                        disabled={busyId === item.submission_id || item.review_state === state}
+                        onClick={() => void setReviewState(item.submission_id, state)}
+                        className="btn--lever min-h-[44px]"
+                      >
+                        Mark {state}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  {(['contacted', 'archived'] as const).map((state) => (
-                    <button
-                      key={state}
-                      type="button"
-                      disabled={busyId === item.submission_id || item.review_state === state}
-                      onClick={() => void setReviewState(item.submission_id, state)}
-                      className="border border-[color:var(--brass-700)] bg-[#211717] px-3 py-1 text-xs font-mono uppercase text-[color:var(--bone-200)] disabled:opacity-50"
-                    >
-                      Mark {state}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </section>
       </div>
     </RoleStandaloneView>

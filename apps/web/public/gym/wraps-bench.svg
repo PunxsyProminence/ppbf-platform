@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 754" role="img" aria-label="Illustration of the bench where hands get wrapped">
+  <!-- Placeholder illustration, not a photograph. The bench, the hook rail,
+       wraps hanging and rolled. Building only, no people. -->
+  <rect width="1220" height="754" fill="#14100D"/>
+  <!-- plank wall -->
+  <g stroke="#1E1712" stroke-width="3">
+    <line x1="0" y1="90" x2="1220" y2="90"/><line x1="0" y1="180" x2="1220" y2="180"/>
+    <line x1="0" y1="270" x2="1220" y2="270"/><line x1="0" y1="360" x2="1220" y2="360"/>
+  </g>
+  <!-- hook rail -->
+  <rect x="140" y="200" width="940" height="20" fill="#2A1F18" stroke="#3B2C21" stroke-width="3"/>
+  <g fill="#B8912F"><circle cx="180" cy="210" r="4.5"/><circle cx="1040" cy="210" r="4.5"/></g>
+  <!-- hooks with hanging wraps -->
+  <g stroke="#B8912F" stroke-width="5" fill="none">
+    <path d="M 260 220 l 0 26 q 0 14 14 14"/>
+    <path d="M 470 220 l 0 26 q 0 14 14 14"/>
+    <path d="M 680 220 l 0 26 q 0 14 14 14"/>
+    <path d="M 890 220 l 0 26 q 0 14 14 14"/>
+  </g>
+  <!-- wraps: long cloth strips, slight sway, bone and rust -->
+  <g stroke-linecap="round">
+    <path d="M 262 250 q -8 90 4 180 q 6 50 -2 96" stroke="#DCCFB2" stroke-width="13" fill="none"/>
+    <path d="M 282 250 q 10 80 0 170 q -6 56 4 100" stroke="#B5A688" stroke-width="13" fill="none"/>
+    <path d="M 472 250 q -6 100 6 200 q 4 40 -4 80" stroke="#5C2A1C" stroke-width="13" fill="none"/>
+    <path d="M 682 250 q 8 90 -2 190 q -4 46 4 86" stroke="#DCCFB2" stroke-width="13" fill="none"/>
+    <path d="M 702 250 q -10 84 2 176 q 6 52 -2 96" stroke="#7A4130" stroke-width="13" fill="none"/>
+    <path d="M 892 250 q -6 96 4 192 q 4 44 -2 84" stroke="#B5A688" stroke-width="13" fill="none"/>
+  </g>
+  <!-- the bench -->
+  <rect x="200" y="560" width="820" height="30" fill="#2A1F18" stroke="#3B2C21" stroke-width="4"/>
+  <g stroke="#3B2C21" stroke-width="10">
+    <line x1="250" y1="590" x2="250" y2="700"/>
+    <line x1="970" y1="590" x2="970" y2="700"/>
+  </g>
+  <line x1="250" y1="660" x2="970" y2="660" stroke="#2A1F18" stroke-width="6"/>
+  <!-- rolled wraps sitting on the bench -->
+  <g>
+    <circle cx="420" cy="542" r="20" fill="#DCCFB2"/><circle cx="420" cy="542" r="11" fill="#14100D"/>
+    <circle cx="470" cy="546" r="16" fill="#5C2A1C"/><circle cx="470" cy="546" r="8" fill="#14100D"/>
+    <circle cx="760" cy="544" r="18" fill="#B5A688"/><circle cx="760" cy="544" r="9" fill="#14100D"/>
+  </g>
+  <!-- honest label -->
+  <text x="1196" y="732" text-anchor="end" font-family="Menlo, Consolas, monospace" font-size="15" letter-spacing="3" fill="#B5A688">PLACEHOLDER ILLUSTRATION</text>
+</svg>

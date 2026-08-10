@@ -9,6 +9,7 @@ import {
   LibraryResearchError,
   type LibraryEvidenceItem,
 } from '@/client/libraryResearch';
+import { formatGymClock24 } from '@/src/lib/gymTime';
 
 interface QAMessage {
   id: string;
@@ -27,13 +28,16 @@ interface ShadowResearchSignal {
   review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
 }
 
+/* A paper-ground caption label; the sheet's .t-label is tuned for leather. */
+const PAPER_LABEL = 'font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.13em] text-[color:var(--hide-600)]';
+
 export default function ResearchQAChatPage() {
   const [messages, setMessages] = useState<QAMessage[]>([
     {
       id: '0',
       type: 'system',
       text: "The Library searches your organization's approved evidence. Answers come only from sources a reviewer approved -- nothing here is generated or guessed. No match means the question gets logged as a research need.",
-      timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      timestamp: formatGymClock24(new Date(), { seconds: true }) ?? '',
     },
   ]);
   const [userInput, setUserInput] = useState('');
@@ -76,7 +80,7 @@ export default function ResearchQAChatPage() {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type,
       text,
-      timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      timestamp: formatGymClock24(new Date(), { seconds: true }) ?? '',
       source,
       evidence,
     };
@@ -129,149 +133,159 @@ export default function ResearchQAChatPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
-      {/* ROUGH OLD-SCHOOL BOXING HEADER */}
-      <header className="border-b-4 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-4 py-4 md:px-8 md:py-6">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+    /* Room--file: the Library stands in the research room -- cork wall,
+       gooseneck light. The conversation itself is a leather desk blotter and
+       every answer from approved evidence arrives as a paper slip on it. */
+    <main className="room--file min-h-screen bg-[var(--hide-950)]">
+      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-300)]">Research Lab</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[color:var(--bone-200)] md:text-3xl">The Library</h1>
-            <p className="mt-1 text-xs text-[color:var(--bone-400)]">Ask. Learn. Document. No fancy talk.</p>
+            <p className="t-eyebrow">Research Lab</p>
+            <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
+              The Library
+            </h1>
+            <p className="t-muted mt-[var(--s2)]">Ask. Learn. Document. No fancy talk.</p>
           </div>
           <div className="text-right">
-            <p className="font-mono text-[10px] text-[color:var(--bone-400)]">PPBF Fight Card</p>
-            <p className="text-xs font-bold text-[color:var(--brass-700)]">LIVE</p>
+            <p className="t-label">PPBF Fight Card</p>
+            <p className="plaque mt-[var(--s2)]">● LIVE</p>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-6xl gap-6 p-4 lg:grid-cols-[1fr_300px] md:p-8">
-        {/* CHAT */}
-        <section className="border-4 border-[color:var(--brass-300)] bg-[var(--hide-950)] p-6 shadow-2xl shadow-black/60">
-          {/* Messages */}
-          <div className="mb-6 max-h-[500px] space-y-3 overflow-y-auto bg-[#050505] p-4 font-mono text-sm">
-            {messages.map((msg) => {
-              let messageTone = 'border-2 border-[color:var(--brass-300)] bg-[#3a3020] text-[color:var(--bone-200)]';
-              if (msg.type === 'user') {
-                messageTone = 'border-2 border-[color:var(--brass-700)] bg-[#3a2a2a] text-[color:var(--brass-700)]';
-              } else if (msg.type === 'system') {
-                messageTone = 'border-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] text-[color:var(--bone-400)]';
-              }
-
-              return (
-              <div key={msg.id} className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-md px-3 py-2 ${messageTone}`}>
-                  <p className="text-xs leading-5">{msg.text}</p>
-                  {msg.evidence?.length ? (
-                    <div className="mt-2 border-t border-[color:var(--hide-600)] pt-2">
-                      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Sources</p>
-                      <ul className="mt-1 space-y-1">
-                        {msg.evidence.map((item, index) => (
-                          <li key={`${msg.id}-ev-${index}`} className="text-[10px] leading-4 text-[color:var(--bone-300)]">
-                            <span className="font-semibold text-[color:var(--bone-200)]">
-                              {item.sourceTitle} (tier {item.authorityTier}) — {item.documentName}
-                            </span>
-                            <span className="mt-0.5 block opacity-80">“{item.snippet}”</span>
-                          </li>
-                        ))}
-                      </ul>
+      <div className="mx-auto grid w-full max-w-[1200px] gap-[var(--s5)] p-[var(--s5)] lg:grid-cols-[var(--split-major)_var(--split-minor)]">
+        {/* CHAT: the riveted frame holds the conversation. */}
+        <section aria-label="Library conversation" className="frame self-start">
+          <span className="rivet rivet--tl" />
+          <span className="rivet rivet--tr" />
+          <span className="rivet rivet--bl" />
+          <span className="rivet rivet--br" />
+          <div className="frame-in mat-leather p-[var(--s5)]">
+            {/* Messages */}
+            <div className="mb-[var(--s5)] max-h-[500px] space-y-[var(--s4)] overflow-y-auto pr-[var(--s2)]">
+              {messages.map((msg) => (
+                <div key={msg.id} className={`flex gap-[var(--s3)] ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {msg.type === 'research' ? (
+                    /* An answer from approved evidence is a printed record --
+                       a paper slip laid on the leather. */
+                    <div className="mat-paper max-w-[52ch] rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)]">
+                      <p className="t-typed text-[length:var(--t-sm)] leading-relaxed">{msg.text}</p>
+                      {msg.evidence?.length ? (
+                        <div className="mt-[var(--s3)] border-t border-[color:rgba(51,41,27,.26)] pt-[var(--s3)]">
+                          <p className={PAPER_LABEL}>Sources</p>
+                          <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
+                            {msg.evidence.map((item, index) => (
+                              <li key={`${msg.id}-ev-${index}`} className="text-[length:var(--t-xs)] leading-relaxed">
+                                <span className="font-semibold">
+                                  {item.sourceTitle} (tier {item.authorityTier}) — {item.documentName}
+                                </span>
+                                <span className="mt-[var(--s1)] block opacity-80">“{item.snippet}”</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      <div className="mt-[var(--s2)] flex items-center justify-between gap-[var(--s3)]">
+                        <p className="font-mono text-[length:var(--t-xs)] text-[color:var(--hide-600)]">{msg.timestamp}</p>
+                        {msg.source && <p className={PAPER_LABEL}>{msg.source}</p>}
+                      </div>
                     </div>
-                  ) : null}
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <p className="text-[9px] opacity-50">{msg.timestamp}</p>
-                    {msg.source && <p className="text-[9px] text-[color:var(--brass-300)]">{msg.source}</p>}
-                  </div>
+                  ) : (
+                    /* User questions and system notices stay on the leather:
+                       raised hide for the asker, recessed dark for the desk
+                       clerk's notes. */
+                    <div
+                      className={`max-w-[52ch] rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] ${
+                        msg.type === 'user'
+                          ? 'mat-leather--raised border border-[color:rgba(212,175,74,.28)]'
+                          : 'border border-[color:var(--hide-600)] bg-[rgba(0,0,0,.28)]'
+                      }`}
+                    >
+                      <p className={`text-[length:var(--t-sm)] leading-relaxed ${msg.type === 'user' ? 'text-[color:var(--bone-100)]' : 'text-[color:var(--bone-300)]'}`}>
+                        {msg.text}
+                      </p>
+                      <div className="mt-[var(--s2)] flex items-center justify-between gap-[var(--s3)]">
+                        <p className="font-mono text-[length:var(--t-xs)] text-[color:var(--bone-400)]">{msg.timestamp}</p>
+                        {msg.source && <p className="t-label">{msg.source}</p>}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-              );
-            })}
-            <div ref={messagesEndRef} />
-          </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
 
-          {/* Input */}
-          <form onSubmit={handleSendMessage} className="flex gap-3">
-            <input
-              type="text"
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Ask the Library -- answers come only from approved sources"
-              disabled={isSearching}
-              className="flex-1 border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-3 py-2 text-sm text-[color:var(--bone-200)] placeholder-[#666666] outline-none transition focus:border-[color:var(--brass-300)] focus:bg-[#3a3020]"
-            />
-            <button
-              type="submit"
-              disabled={isSearching}
-              className="border-2 border-[color:var(--brass-300)] bg-[#1f1f1f] px-4 py-2 text-xs font-mono font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[#3a3020] hover:text-[color:var(--bone-200)] disabled:opacity-50"
-            >
-              {isSearching ? 'Searching…' : 'Ask'}
-            </button>
-          </form>
+            {/* Input */}
+            <form onSubmit={handleSendMessage} className="flex flex-wrap gap-[var(--s3)]">
+              <input
+                type="text"
+                value={userInput}
+                onChange={(e) => setUserInput(e.target.value)}
+                placeholder="Ask the Library -- answers come only from approved sources"
+                disabled={isSearching}
+                className="input min-w-[220px] flex-1"
+              />
+              <button type="submit" disabled={isSearching} className="btn disabled:cursor-not-allowed disabled:opacity-60">
+                {isSearching ? 'Searching…' : 'Ask'}
+              </button>
+            </form>
+          </div>
         </section>
 
         {/* RIGHT PANEL: NOTES & LINKS */}
-        <aside className="space-y-4">
+        <aside className="space-y-[var(--s4)]">
           {/* Research Notes */}
-          <section className="border-4 border-[color:var(--brass-300)] bg-[#0d0a08] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Notes</p>
-            <p className="mt-2 text-[10px] leading-4 text-[color:var(--bone-400)]">Session scratchpad. Nothing typed here is stored.</p>
-            <form onSubmit={handleAddNote} className="mt-3 space-y-2">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Notes</h2>
+            <p className="t-muted mt-[var(--s2)]">Session scratchpad. Nothing typed here is stored.</p>
+            <form onSubmit={handleAddNote} className="mt-[var(--s3)] space-y-[var(--s3)]">
               <textarea
                 value={researchNotes}
                 onChange={(e) => setResearchNotes(e.target.value)}
                 placeholder="Write your findings..."
-                className="h-24 w-full border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-2 py-2 text-xs text-[color:var(--bone-200)] placeholder-[#666666] outline-none transition focus:border-[color:var(--brass-300)] focus:bg-[#3a3020] font-mono"
+                className="textarea h-[89px]"
               />
-              <button
-                type="submit"
-                className="w-full border-2 border-[color:var(--brass-300)] bg-[#1f1f1f] px-2 py-1 text-xs font-mono font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[#3a3020] hover:text-[color:var(--bone-200)]"
-              >
+              <button type="submit" className="btn btn--ghost w-full">
                 Add Note To Transcript
               </button>
             </form>
           </section>
 
           {/* Quick Links */}
-          <section className="border-4 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--bone-400)]">Navigate</p>
-            <div className="mt-3 space-y-2">
-              <Link
-                href="/research"
-                className="block border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[color:var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[color:var(--bone-200)]"
-              >
+          <nav aria-label="Research navigation" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+            <h2 className="t-label">Navigate</h2>
+            <div className="mt-[var(--s3)] grid gap-[var(--s3)]">
+              <Link href="/research" className="btn btn--ghost justify-start">
                 Research Intake
               </Link>
-              <Link
-                href="/evidence"
-                className="block border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[color:var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[color:var(--bone-200)]"
-              >
+              <Link href="/evidence" className="btn btn--ghost justify-start">
                 Evidence Review
               </Link>
-              <Link
-                href="/operations"
-                className="block border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[color:var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[color:var(--bone-200)]"
-              >
+              <Link href="/operations" className="btn btn--ghost justify-start">
                 Operations Hub
               </Link>
-              <Link
-                href="/admin/shadow"
-                className="block border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-2 py-1 text-xs font-mono text-[color:var(--brass-700)] transition hover:border-[color:var(--brass-700)] hover:bg-[#3a2a2a] hover:text-[color:var(--brass-300)]"
-              >
+              <Link href="/admin/shadow" className="btn btn--ghost justify-start">
                 SHADOW (Admin)
               </Link>
             </div>
-          </section>
+          </nav>
 
-          <section className="border-4 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--bone-400)]">SHADOW Research Stream</p>
-            {signalError ? <p className="mt-2 text-xs text-[#f0c4c4]">{signalError}</p> : null}
-            {!signalError && shadowSignals.length === 0 ? <p className="mt-2 text-xs text-[color:var(--bone-400)]">No SHADOW research signals available.</p> : null}
-            <div className="mt-2 space-y-2">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+            <h2 className="t-label">SHADOW Research Stream</h2>
+            {signalError ? <p className="t-body mt-[var(--s3)]">{signalError}</p> : null}
+            {!signalError && shadowSignals.length === 0 ? (
+              <p className="t-muted mt-[var(--s3)]">No SHADOW research signals available.</p>
+            ) : null}
+            <div className="mt-[var(--s3)] space-y-[var(--s3)]">
               {shadowSignals.slice(0, 6).map((signal) => (
-                <div key={signal.event_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-[11px] text-[color:var(--bone-300)]">
-                  <p className="font-semibold text-[color:var(--bone-200)]">{signal.source_event_name}</p>
-                  <p>Label: {signal.evidence_label || 'none'}</p>
-                  <p>Source: {signal.source_status}</p>
-                  <p>State: {signal.review_state}</p>
+                <div key={signal.event_id} className="mat-leather--raised rounded-[var(--r-sm)] px-[var(--s3)] py-[var(--s2)]">
+                  <p className="t-body font-semibold text-[color:var(--bone-100)]">{signal.source_event_name}</p>
+                  {/* Law 4: stream facts are records -- mono voice. */}
+                  <p className="t-data mt-[var(--s1)] text-[color:var(--bone-300)]">
+                    Label: {signal.evidence_label || 'none'}
+                    <span className="block">Source: {signal.source_status}</span>
+                    <span className="block">State: {signal.review_state}</span>
+                  </p>
                 </div>
               ))}
             </div>

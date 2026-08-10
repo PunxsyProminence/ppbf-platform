@@ -43,47 +43,44 @@ export default function SportsMedicinePage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-      <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
-        <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Coach Workspace</p>
-          <h1 className="font-display text-4xl font-black">Sports Medicine</h1>
-          <p className="text-sm font-mono uppercase tracking-[0.14em] text-[color:var(--brass-800)]">PLANNED | NOT YET IMPLEMENTED</p>
-          <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+    <main className="room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+        <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
+          <p className="t-eyebrow">Coach Workspace</p>
+          <h1 className="t-command text-[length:var(--t-2xl)]">Sports Medicine</h1>
+          <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+          <p className="t-body max-w-4xl text-[color:var(--bone-300)]">
             Front-end scaffold for future sports medicine workflows. No medical automation, diagnosis logic, or backend processing is implemented.
           </p>
         </header>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
           {errorMessage ? (
-            <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 md:col-span-2 xl:col-span-3">
-              <h2 className="text-sm font-bold uppercase tracking-[0.08em]">SHADOW Observation Stream</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{errorMessage}</p>
+            <article className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] md:col-span-2 xl:col-span-3">
+              <h2 className="t-eyebrow">SHADOW Observation Stream</h2>
+              <p className="t-body mt-[var(--s3)] text-[var(--locked-ink)]">{errorMessage}</p>
             </article>
           ) : null}
 
           {!errorMessage && items.length === 0 ? (
-            <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 md:col-span-2 xl:col-span-3">
-              <h2 className="text-sm font-bold uppercase tracking-[0.08em]">SHADOW Observation Stream</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">No SHADOW observation items are available yet.</p>
+            <article className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] md:col-span-2 xl:col-span-3">
+              <h2 className="t-eyebrow">SHADOW Observation Stream</h2>
+              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No SHADOW observation items are available yet.</p>
             </article>
           ) : null}
 
           {items.map((item) => (
-            <article key={item.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-              <h2 className="text-sm font-bold uppercase tracking-[0.08em]">{item.label}</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Source: {item.source}</p>
-              <p className="text-sm leading-6 text-[var(--gray-dark)]">Review State: {item.review_state}</p>
-              <p className="text-xs leading-6 text-[var(--gray-dark)]">Entity: {item.entity_type || 'n/a'} / {item.entity_id || 'n/a'}</p>
+            <article key={item.id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+              <h2 className="t-eyebrow">{item.label}</h2>
+              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Source: {item.source}</p>
+              <p className="t-body text-[color:var(--bone-300)]">Review State: {item.review_state}</p>
+              <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">Entity: {item.entity_type || 'n/a'} / {item.entity_id || 'n/a'}</p>
             </article>
           ))}
         </section>
 
-        <div className="mt-8">
-          <Link
-            href="/operations"
-            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
-          >
+        <div className="mt-[var(--s6)]">
+          <Link href="/operations" className="btn btn--ghost">
             Back to Mission Control
           </Link>
         </div>

@@ -234,10 +234,13 @@ function documentReviewState(metadata: Record<string, unknown> | null | undefine
   return 'unreviewed';
 }
 
-function reviewStateChip(state: DocumentReviewState): string {
-  if (state === 'clean') return 'border-[var(--cleared)] bg-[var(--hide-900)] text-[var(--cleared-ink)]';
-  if (state === 'quarantined') return 'border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[var(--locked-ink)]';
-  return 'border-[color:var(--brass-300)] bg-[var(--hide-800)] text-[color:var(--bone-200)]';
+// Law 3: document security verdicts ride the badge ladder — a glyph plus an
+// uppercase label, never colour alone. Clean is a cleared outcome,
+// quarantined is locked, unreviewed still awaits a human (restricted).
+function reviewStateBadge(state: DocumentReviewState): { rung: string; glyph: string } {
+  if (state === 'clean') return { rung: 'badge--cleared', glyph: '✓' };
+  if (state === 'quarantined') return { rung: 'badge--locked', glyph: '✕' };
+  return { rung: 'badge--restricted', glyph: '▲' };
 }
 
 // Per-case document security review: every uploaded file must be opened and
@@ -327,20 +330,20 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
   }
 
   return (
-    <div className="mt-3 border-t-2 border-[color:var(--brass-700)]/50 pt-3">
+    <div className="mt-[var(--s4)] border-t border-[color:rgba(212,175,74,.28)] pt-[var(--s4)]">
       <button
         type="button"
         onClick={() => void handleToggle()}
-        className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-xs)] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
+        className="btn--lever"
       >
         {expanded ? 'Hide Document Security Review' : 'Document Security Review'}
       </button>
       {expanded ? (
         <div className="mt-2 space-y-2">
-          {loading ? <p className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">Loading documents…</p> : null}
-          {error ? <p className="text-[length:var(--t-xs)] text-[var(--locked-ink)]">{error}</p> : null}
+          {loading ? <p className="t-muted">Loading documents…</p> : null}
+          {error ? <p role="alert" className="alert alert--critical"><span className="alert-icon">✕</span><span className="alert-msg">{error}</span></p> : null}
           {!loading && documents.length === 0 && !error ? (
-            <p className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">No documents on this case.</p>
+            <p className="t-muted">No documents on this case.</p>
           ) : null}
           {documents.map((doc) => {
             const state = documentReviewState(doc.metadata);
@@ -348,17 +351,17 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
             return (
               <div
                 key={doc.intake_document_id}
-                className="flex flex-wrap items-center gap-2 border border-[color:var(--brass-700)]/60 bg-[var(--hide-900)] p-2 text-[length:var(--t-xs)] text-[color:var(--bone-200)]"
+                className="flex flex-wrap items-center gap-[var(--s3)] border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-200)]"
               >
-                <span className="min-w-0 flex-1 truncate font-mono">{doc.file_name}</span>
-                <span className={`inline-flex border px-2 py-0.5 font-mono text-[length:var(--t-xs)] uppercase ${reviewStateChip(state)}`}>
-                  {state}
+                <span className="t-data min-w-0 flex-1 truncate">{doc.file_name}</span>
+                <span className={`badge ${reviewStateBadge(state).rung}`}>
+                  <i>{reviewStateBadge(state).glyph}</i>{state}
                 </span>
                 <button
                   type="button"
                   onClick={() => void handleOpenDocument(doc.intake_document_id)}
                   disabled={busy}
-                  className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="btn--lever"
                 >
                   Open
                 </button>
@@ -366,7 +369,7 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
                   type="button"
                   onClick={() => void handleReviewDocument(doc.intake_document_id, 'clean')}
                   disabled={busy}
-                  className="h-9 border-2 border-[var(--cleared)] bg-[var(--hide-900)] px-2 text-[length:var(--t-xs)] font-bold text-[var(--cleared-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="btn--lever"
                 >
                   Mark Clean
                 </button>
@@ -374,14 +377,14 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
                   type="button"
                   onClick={() => void handleReviewDocument(doc.intake_document_id, 'quarantined')}
                   disabled={busy}
-                  className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold text-[var(--locked-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="btn--lever"
                 >
                   Quarantine
                 </button>
               </div>
             );
           })}
-          <p className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]/70">
+          <p className="t-muted">
             Open each document before marking it clean. Case approval stays blocked until every document is reviewed clean; quarantining any document keeps the case unapprovable.
           </p>
         </div>
@@ -419,11 +422,14 @@ function parsePromotionPayloadFromNotes(notes: string): Record<string, unknown> 
   }
 }
 
-function statusChipClasses(status: IntakeStatus): string {
-  if (status === 'Pending') return 'border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[var(--locked-ink)]';
-  if (status === 'Approved') return 'border-[var(--cleared)] bg-[var(--hide-900)] text-[var(--cleared-ink)]';
-  if (status === 'Rejected') return 'border-[var(--locked)] bg-[var(--rust-900)] text-[var(--locked-ink)]';
-  return 'border-[var(--monitor)] bg-[var(--hide-900)] text-[var(--monitor-ink)]';
+// Law 3: intake status is a queue outcome on the badge ladder — pending
+// awaits review (restricted), approved is cleared, rejected is locked, and
+// imported is tracked downstream (monitor). Glyph + label, never colour alone.
+function statusBadge(status: IntakeStatus): { rung: string; glyph: string } {
+  if (status === 'Pending') return { rung: 'badge--restricted', glyph: '▲' };
+  if (status === 'Approved') return { rung: 'badge--cleared', glyph: '✓' };
+  if (status === 'Rejected') return { rung: 'badge--locked', glyph: '✕' };
+  return { rung: 'badge--monitor', glyph: '◉' };
 }
 
 function toDataType(value: string): DataType {
@@ -464,10 +470,10 @@ function renderMetricsPanel(
   metricsError: string,
 ) {
   return (
-    <section className="col-span-full border-2 border-[rgba(63,125,78,.40)] bg-[var(--hide-950)] p-4">
+    <section className="mat-leather col-span-full rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--bone-400)]">SHADOW Intelligence — Last 30 Days</p>
-        {metricsLoading && <span className="text-xs text-[color:var(--bone-400)]">Loading…</span>}
+        <p className="t-eyebrow">SHADOW Intelligence — Last 30 Days</p>
+        {metricsLoading && <span className="t-muted">Loading…</span>}
       </div>
       {growthMetrics ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
@@ -481,9 +487,9 @@ function renderMetricsPanel(
             ['Research Closed', growthMetrics.growth.researchRequirementsClosed],
             ['New Patterns', growthMetrics.growth.newLibraryPatterns],
           ] as [string, string | number][]).map(([label, value]) => (
-            <div key={label} className="border border-[rgba(63,125,78,.30)] bg-[var(--hide-900)] p-3 text-center">
-              <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.12em] text-[color:var(--bone-400)]">{label}</p>
-              <p className="mt-1 text-xl font-black text-[var(--cleared-ink)]">{value}</p>
+            <div key={label} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)] text-center">
+              <p className="t-eyebrow">{label}</p>
+              <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{value}</p>
             </div>
           ))}
         </div>
@@ -494,9 +500,9 @@ function renderMetricsPanel(
         // endpoint is admin-only, while five of the console's other panels
         // admit coaches. A coach saw an unexplained blank here and working
         // panels beside it.
-        <p role="status" className="text-xs text-[var(--locked-ink)]">{metricsError}</p>
+        <p role="status" className="alert alert--warning"><span className="alert-icon">▲</span><span className="alert-msg">{metricsError}</span></p>
       ) : (
-        <p className="text-xs text-[color:var(--bone-400)]">Metrics unavailable</p>
+        <p className="t-muted">Metrics unavailable</p>
       )}
     </section>
   );
@@ -599,39 +605,39 @@ function LibraryReviewFlagsPanel() {
   }
 
   return (
-    <section className="border-4 border-[color:var(--brass-300)] bg-[var(--hide-950)]/70 p-4">
+    <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Library Quality</p>
-          <h3 className="mt-1 text-xl font-black text-[color:var(--bone-200)]">Review Flags ({flags.length})</h3>
+          <p className="t-eyebrow">Library Quality</p>
+          <h3 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Review Flags ({flags.length})</h3>
         </div>
         <button
           type="button"
           onClick={() => void loadFlags()}
-          className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-xs)] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
+          className="btn--lever"
         >
           Refresh
         </button>
       </div>
-      <p className="mt-1 text-[length:var(--t-xs)] text-[color:var(--brass-300)]/70">
+      <p className="t-muted mt-[var(--s2)]">
         Topics flagged by negative feedback on cited answers. Resolve after checking the underlying Library evidence; reject if the flag is noise. New negative feedback reopens a settled topic.
       </p>
       <div className="mt-3 space-y-2">
-        {loading ? <p className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">Loading flags…</p> : null}
-        {error ? <p className="text-[length:var(--t-xs)] text-[var(--locked-ink)]">{error}</p> : null}
+        {loading ? <p className="t-muted">Loading flags…</p> : null}
+        {error ? <p role="alert" className="alert alert--critical"><span className="alert-icon">✕</span><span className="alert-msg">{error}</span></p> : null}
         {!loading && !error && flags.length === 0 ? (
-          <p className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">No pending flags. The Library has no unreviewed negative-outcome reports.</p>
+          <p className="t-muted">No pending flags. The Library has no unreviewed negative-outcome reports.</p>
         ) : null}
         {flags.map((flag) => {
           const busy = busyFlagId === flag.flag_id;
           return (
-            <div key={flag.flag_id} className="border border-[color:var(--brass-700)]/60 bg-[var(--hide-900)] p-3 text-[length:var(--t-xs)] text-[color:var(--bone-200)]">
+            <div key={flag.flag_id} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)] text-[length:var(--t-xs)] text-[color:var(--bone-200)]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold">{flag.topic}</span>
-                <span className="border border-[color:var(--brass-700)] px-2 py-0.5 font-mono text-[length:var(--t-xs)] uppercase text-[var(--locked-ink)]">
-                  {flag.latest_outcome_signal ?? flag.outcome_signal ?? 'negative outcome'}
+                <span className="badge badge--restricted">
+                  <i>▲</i>{flag.latest_outcome_signal ?? flag.outcome_signal ?? 'negative outcome'}
                 </span>
-                <span className="font-mono text-[length:var(--t-xs)] text-[color:var(--brass-300)]/70">
+                <span className="t-muted font-mono">
                   ×{flag.flag_count} · last {flag.last_flagged_at.slice(0, 10)}
                 </span>
                 <span className="ml-auto flex gap-2">
@@ -639,7 +645,7 @@ function LibraryReviewFlagsPanel() {
                     type="button"
                     onClick={() => void handleVerdict(flag.flag_id, 'resolved')}
                     disabled={busy}
-                    className="h-9 border-2 border-[var(--cleared)] bg-[var(--hide-900)] px-2 text-[length:var(--t-xs)] font-bold text-[var(--cleared-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="btn--lever"
                   >
                     Resolve
                   </button>
@@ -647,14 +653,14 @@ function LibraryReviewFlagsPanel() {
                     type="button"
                     onClick={() => void handleVerdict(flag.flag_id, 'rejected')}
                     disabled={busy}
-                    className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold text-[var(--locked-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="btn--lever"
                   >
                     Reject
                   </button>
                 </span>
               </div>
               {flag.user_note ? (
-                <p className="mt-2 text-[length:var(--t-xs)] text-[color:var(--bone-400)]">&ldquo;{flag.user_note}&rdquo;</p>
+                <p className="t-muted mt-[var(--s3)]">&ldquo;{flag.user_note}&rdquo;</p>
               ) : null}
             </div>
           );
@@ -753,26 +759,26 @@ function FeatureUnlockPanel() {
   }
 
   return (
-    <section className="border-4 border-[color:var(--brass-300)] bg-[var(--hide-950)]/70 p-4">
+    <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Capability Governance</p>
-          <h3 className="mt-1 text-xl font-black text-[color:var(--bone-200)]">Feature Unlock Thresholds</h3>
+          <p className="t-eyebrow">Capability Governance</p>
+          <h3 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Feature Unlock Thresholds</h3>
         </div>
         <button
           type="button"
           onClick={() => void loadThresholds()}
-          className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-xs)] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
+          className="btn--lever"
         >
           Refresh
         </button>
       </div>
-      <p className="mt-1 text-[length:var(--t-xs)] text-[color:var(--brass-300)]/70">
+      <p className="t-muted mt-[var(--s2)]">
         A feature unlocks only when its activation mode is <span className="font-mono">enabled</span> AND its counter has reached the threshold. In <span className="font-mono">observation</span> or <span className="font-mono">disabled</span>, the counter is tracked but the feature can never unlock — raising it changes nothing.
       </p>
       <div className="mt-3 space-y-2">
-        {loading ? <p className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">Loading thresholds…</p> : null}
-        {error ? <p className="text-[length:var(--t-xs)] text-[var(--locked-ink)]">{error}</p> : null}
+        {loading ? <p className="t-muted">Loading thresholds…</p> : null}
+        {error ? <p role="alert" className="alert alert--critical"><span className="alert-icon">✕</span><span className="alert-msg">{error}</span></p> : null}
         {rows.map((row) => {
           const busy = busyFeatureKey === row.featureKey;
           const draft = drafts[row.featureKey] ?? { minValue: String(row.minValue), activationMode: row.activationMode };
@@ -787,26 +793,22 @@ function FeatureUnlockPanel() {
               : 'Counter has not reached the threshold.';
 
           return (
-            <div key={row.featureKey} className="border border-[color:var(--brass-700)]/60 bg-[var(--hide-900)] p-3 text-[length:var(--t-xs)] text-[color:var(--bone-200)]">
+            <div key={row.featureKey} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)] text-[length:var(--t-xs)] text-[color:var(--bone-200)]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold">{row.featureKey}</span>
-                <span className={`border px-2 py-0.5 font-mono text-[length:var(--t-xs)] uppercase ${
-                  status?.unlocked
-                    ? 'border-[var(--cleared)] text-[var(--cleared-ink)]'
-                    : 'border-[color:var(--brass-700)] text-[var(--locked-ink)]'
-                }`}>
-                  {status?.unlocked ? 'unlocked' : 'locked'}
+                <span className={`badge ${status?.unlocked ? 'badge--cleared' : 'badge--restricted'}`}>
+                  <i>{status?.unlocked ? '✓' : '▲'}</i>{status?.unlocked ? 'unlocked' : 'locked'}
                 </span>
-                <span className="font-mono text-[length:var(--t-xs)] text-[color:var(--brass-300)]/70">
+                <span className="t-muted font-mono">
                   {row.metricKey}: {status?.currentValue ?? 0} / {row.minValue}
                 </span>
               </div>
-              <p className="mt-2 text-[length:var(--t-xs)] text-[color:var(--bone-400)]">{row.description}</p>
+              <p className="t-muted mt-[var(--s3)]">{row.description}</p>
               {lockReason ? (
-                <p className="mt-1 text-[length:var(--t-xs)] text-[var(--locked-ink)]">{lockReason}</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"><span aria-hidden>▲</span> {lockReason}</p>
               ) : null}
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <label className="flex items-center gap-1 text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">
+                <label className="t-label flex items-center gap-[var(--s2)]">
                   Mode
                   <select
                     value={draft.activationMode}
@@ -814,14 +816,14 @@ function FeatureUnlockPanel() {
                       ...previous,
                       [row.featureKey]: { ...draft, activationMode: event.target.value as ActivationModeValue },
                     }))}
-                    className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-2 text-[length:var(--t-xs)] text-[color:var(--bone-200)]"
+                    className="select w-auto"
                   >
                     <option value="disabled">disabled</option>
                     <option value="observation">observation</option>
                     <option value="enabled">enabled</option>
                   </select>
                 </label>
-                <label className="flex items-center gap-1 text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">
+                <label className="t-label flex items-center gap-[var(--s2)]">
                   Threshold
                   <input
                     type="number"
@@ -832,14 +834,14 @@ function FeatureUnlockPanel() {
                       ...previous,
                       [row.featureKey]: { ...draft, minValue: event.target.value },
                     }))}
-                    className="h-9 w-24 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-2 text-[length:var(--t-xs)] text-[color:var(--bone-200)]"
+                    className="input w-24"
                   />
                 </label>
                 <button
                   type="button"
                   onClick={() => void handleSave(row)}
                   disabled={busy || !dirty}
-                  className="h-9 border-2 border-[var(--cleared)] bg-[var(--hide-900)] px-3 text-[length:var(--t-xs)] font-bold text-[var(--cleared-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="btn--lever"
                 >
                   {busy ? 'Saving…' : 'Save'}
                 </button>
@@ -848,7 +850,7 @@ function FeatureUnlockPanel() {
           );
         })}
         {!loading && !error && rows.length === 0 ? (
-          <p className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">No feature thresholds returned.</p>
+          <p className="t-muted">No feature thresholds returned.</p>
         ) : null}
       </div>
     </section>
@@ -874,12 +876,12 @@ function renderFeedbackReviewPanel(props: {
     const reviewable = resolvable && !reviewRefusal;
 
     return (
-      <article key={`${mode}-${item.feedback_id}`} className="border border-[rgba(63,125,78,.30)] bg-[var(--hide-900)] p-3">
+      <article key={`${mode}-${item.feedback_id}`} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
         <div className="flex flex-wrap items-center gap-2 font-mono text-[length:var(--t-xs)] uppercase tracking-[0.12em] text-[color:var(--bone-400)]">
           <span>#{item.feedback_id}</span>
           <span>{item.role}</span>
-          <span className={item.helpful ? 'text-[var(--cleared-ink)]' : 'text-[var(--locked-ink)]'}>
-            {item.helpful ? 'Helpful' : 'Not helpful'}
+          <span className={`badge ${item.helpful ? 'badge--cleared' : 'badge--restricted'}`}>
+            <i>{item.helpful ? '✓' : '▲'}</i>{item.helpful ? 'Helpful' : 'Not helpful'}
           </span>
           {item.outcome_signal && <span>{item.outcome_signal}</span>}
           {item.rating != null && <span>Rating {item.rating}</span>}
@@ -887,20 +889,20 @@ function renderFeedbackReviewPanel(props: {
         </div>
 
         {item.comment ? (
-          <p className="mt-2 text-[length:var(--t-xs)] leading-6 text-[var(--cleared-ink)]/90">{item.comment}</p>
+          <p className="t-body mt-[var(--s3)]">{item.comment}</p>
         ) : (
-          <p className="mt-2 text-[length:var(--t-xs)] italic text-[color:var(--bone-400)]">No comment provided.</p>
+          <p className="t-muted mt-[var(--s3)] italic">No comment provided.</p>
         )}
 
         {mode === 'retry' && (
-          <p className="mt-2 text-[length:var(--t-xs)] leading-5 text-[var(--brass-300)]">
+          <p className="mt-[var(--s3)] text-[length:var(--t-xs)] leading-5 text-[color:var(--brass-300)]">
             Review was recorded, but durable learning promotion did not complete. Retry to finish promoting it.
           </p>
         )}
 
         {!resolvable && (
-          <p className="mt-2 text-[length:var(--t-xs)] leading-5 text-[var(--locked-ink)]">
-            Not reviewable: only feedback correlated to a durable SHADOW message can be promoted
+          <p className="t-muted mt-[var(--s3)]">
+            <span aria-hidden>▲</span> Not reviewable: only feedback correlated to a durable SHADOW message can be promoted
             {item.correlation_type ? ` (this item is “${item.correlation_type}”)` : ' (no correlation recorded)'}.
           </p>
         )}
@@ -910,7 +912,7 @@ function renderFeedbackReviewPanel(props: {
             type="button"
             disabled={busy || !reviewable}
             onClick={() => onReview(item, 'approve')}
-            className="border border-[var(--cleared)] px-3 py-1 font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[var(--cleared-ink)] transition hover:bg-[var(--cleared)]/25 disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn--lever"
           >
             {busy ? 'Working…' : mode === 'retry' ? 'Retry promotion' : 'Approve for learning'}
           </button>
@@ -919,7 +921,7 @@ function renderFeedbackReviewPanel(props: {
               type="button"
               disabled={busy || !reviewable}
               onClick={() => onReview(item, 'reject')}
-              className="border border-[color:var(--brass-700)] px-3 py-1 font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--bone-200)] transition hover:bg-[var(--brass-700)]/25 disabled:cursor-not-allowed disabled:opacity-40"
+              className="btn--lever"
             >
               Reject
             </button>
@@ -930,26 +932,26 @@ function renderFeedbackReviewPanel(props: {
   };
 
   return (
-    <section className="col-span-full border-2 border-[rgba(63,125,78,.40)] bg-[var(--hide-950)] p-4">
+    <section className="mat-leather col-span-full rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--bone-400)]">
+          <p className="t-eyebrow">
             SHADOW Learning Review — Human Approval Gate
           </p>
-          <p className="mt-1 text-[length:var(--t-xs)] leading-6 text-[color:var(--bone-400)]">
+          <p className="t-muted mt-[var(--s2)]">
             Nothing SHADOW learns from user feedback is applied until it is approved here.
           </p>
           {reviewRefusal && (
-            <p className="mt-1 text-[length:var(--t-xs)] leading-6 text-[var(--brass-300)]">{reviewRefusal}</p>
+            <p className="mt-[var(--s2)] text-[length:var(--t-xs)] leading-6 text-[color:var(--brass-300)]">{reviewRefusal}</p>
           )}
         </div>
         <div className="flex items-center gap-3">
-          {loading && <span className="text-xs text-[color:var(--bone-400)]">Loading…</span>}
+          {loading && <span className="t-muted">Loading…</span>}
           <button
             type="button"
             onClick={onRefresh}
             disabled={loading}
-            className="border border-[var(--cleared)]/60 px-3 py-1 font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[var(--cleared-ink)] transition hover:bg-[var(--cleared)]/25 disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn--lever"
           >
             Refresh
           </button>
@@ -964,32 +966,32 @@ function renderFeedbackReviewPanel(props: {
             ['Satisfaction', `${(summary.satisfaction_rate * 100).toFixed(1)}%`],
             ['Avg Rating', summary.avg_rating != null ? summary.avg_rating.toFixed(2) : '—'],
           ] as [string, string | number][]).map(([label, value]) => (
-            <div key={label} className="border border-[rgba(63,125,78,.30)] bg-[var(--hide-900)] p-3 text-center">
-              <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.12em] text-[color:var(--bone-400)]">{label}</p>
-              <p className="mt-1 text-xl font-black text-[var(--cleared-ink)]">{value}</p>
+            <div key={label} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)] text-center">
+              <p className="t-eyebrow">{label}</p>
+              <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{value}</p>
             </div>
           ))}
         </div>
       )}
 
       {error && (
-        <p className="mb-3 border border-[color:var(--brass-700)] bg-[var(--hide-950)] p-3 text-[length:var(--t-xs)] leading-6 text-[var(--locked-ink)]">{error}</p>
+        <p role="alert" className="alert alert--critical mb-[var(--s4)]"><span className="alert-icon">✕</span><span className="alert-msg">{error}</span></p>
       )}
 
       {retryQueue.length > 0 && (
         <div className="mb-4">
-          <p className="mb-2 text-[length:var(--t-xs)] font-mono uppercase tracking-[0.14em] text-[var(--brass-300)]">
+          <p className="t-eyebrow mb-[var(--s3)]">
             Promotion retry required ({retryQueue.length})
           </p>
           <div className="space-y-3">{retryQueue.map((item) => renderItem(item, 'retry'))}</div>
         </div>
       )}
 
-      <p className="mb-2 text-[length:var(--t-xs)] font-mono uppercase tracking-[0.14em] text-[color:var(--bone-400)]">
+      <p className="t-eyebrow mb-[var(--s3)]">
         Awaiting review ({reviewQueue.length})
       </p>
       {reviewQueue.length === 0 ? (
-        <p className="text-xs text-[color:var(--bone-400)]">
+        <p className="t-muted">
           {loading ? 'Loading feedback…' : 'No feedback is awaiting human review.'}
         </p>
       ) : (
@@ -1718,8 +1720,8 @@ export default function AdminShadowConsolePage() {
   const commandHints = ['merge', 'status', 'list', 'clear', 'summarize', 'approve', 'reject'];
 
   return (
-    <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin', 'platform_owner']} showShellHeader={false}>
-      <main className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
+    <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin', 'platform_owner']} showShellHeader={false} room="night">
+      <main className="grid gap-[var(--s5)] xl:grid-cols-[1.25fr_0.95fr]">
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
         {renderMetricsPanel(growthMetrics, metricsLoading, metricsError)}
         {/* ── SHADOW Learning Review (human approval gate) ──────────── */}
@@ -1746,23 +1748,25 @@ export default function AdminShadowConsolePage() {
         <LibraryReviewFlagsPanel />
 
         <FeatureUnlockPanel />
-        <section className="space-y-6 border-4 border-[color:var(--brass-700)] bg-[var(--hide-950)]/70 p-6">
-          <div className="mb-6 border-b border-[color:var(--brass-700)]/20 pb-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">AI/ML Telemetry Scout</p>
-            <h2 className="mt-2 text-3xl font-black text-[color:var(--bone-200)]">SHADOW Data Intake + Command Console</h2>
-            <p className="mt-2 text-[length:var(--t-sm)] leading-7 text-[color:var(--brass-300)]/85">
+        <section className="frame">
+          <i aria-hidden className="rivet rivet--tl" /><i aria-hidden className="rivet rivet--tr" /><i aria-hidden className="rivet rivet--bl" /><i aria-hidden className="rivet rivet--br" />
+          <div className="frame-in mat-leather space-y-[var(--s5)] p-[var(--s5)]">
+          <div className="mb-[var(--s5)] border-b border-[color:rgba(212,175,74,.2)] pb-[var(--s4)]">
+            <p className="t-eyebrow">AI/ML Telemetry Scout</p>
+            <h2 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>SHADOW Data Intake + Command Console</h2>
+            <p className="t-body mt-[var(--s3)]">
               Import, classify, stage, and review external data before it enters the PPBF system.
             </p>
           </div>
 
-          <section className="border-4 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-            <div className="mb-3 flex flex-wrap gap-2 text-xs font-mono uppercase tracking-[0.14em] text-[color:var(--brass-300)]/85">
+          <section className="mat-slate rounded-[var(--r-md)] p-[var(--s4)]">
+            <div className="mb-[var(--s4)] flex flex-wrap gap-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">
               <span>Pending: {queueCounts.pending}</span>
               <span>Approved: {queueCounts.approved}</span>
             </div>
             <div className="max-h-[500px] space-y-3 overflow-y-auto pr-1">
               {consoleLogs.map((log) => (
-                <article key={log.id} className="border-2 border-[color:var(--brass-700)]/70 bg-[var(--hide-900)] p-4 font-mono text-[length:var(--t-sm)] leading-6 text-[color:var(--bone-200)]">
+                <article key={log.id} className="t-data border border-[color:rgba(230,227,214,.16)] bg-[rgba(0,0,0,.25)] p-[var(--s4)] leading-6">
                   <p className="text-[color:var(--brass-300)]">[{log.timestamp}]</p>
                   <p>SOURCE: {log.source}</p>
                   <p>TYPE: {log.dataType}</p>
@@ -1775,21 +1779,21 @@ export default function AdminShadowConsolePage() {
             </div>
           </section>
 
-          <section className="border-4 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-            <p className="mb-3 text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-200)]">Command Bar</p>
+          <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+            <p className="t-command mb-[var(--s4)]">Command Bar</p>
             <div className="mb-3 flex flex-wrap gap-2">
               {commandHints.map((hint) => (
                 <button
                   key={hint}
                   type="button"
                   onClick={() => setCommandInput(hint)}
-                  className="h-11 border border-[color:var(--rust-700)] bg-[var(--hide-950)] px-3 font-mono text-[length:var(--t-xs)] text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:text-[var(--bone-200)]"
+                  className="btn--lever min-h-[44px]"
                 >
                   {hint}
                 </button>
               ))}
             </div>
-            <p className="mb-3 font-mono text-[length:var(--t-xs)] text-[color:var(--brass-300)]/80">
+            <p className="t-muted mb-[var(--s4)] font-mono">
               Shortcuts: V view, A approve, R reject, I import on selected item.
             </p>
             <form onSubmit={handleCommandSubmit} className="flex flex-wrap gap-3">
@@ -1807,30 +1811,30 @@ export default function AdminShadowConsolePage() {
                   }
                 }}
                 placeholder="merge | status | list | clear | summarize | approve | reject"
-                className="h-11 min-w-[280px] flex-1 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 font-mono text-[length:var(--t-sm)] text-[color:var(--bone-200)] placeholder-[var(--brass-300)] outline-none transition focus:border-[color:var(--brass-300)]"
+                className="input min-w-[280px] flex-1 font-mono"
               />
               <button
                 type="submit"
-                className="h-11 border-2 border-[color:var(--brass-700)] bg-[var(--rust-700)] px-6 font-mono text-[length:var(--t-sm)] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--rust-500)]"
+                className="btn"
               >
                 Submit Command
               </button>
             </form>
           </section>
 
-          <section className="border-4 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-[length:var(--t-md)] font-black text-[color:var(--bone-200)]">PENDING IMPORT QUEUE</h3>
-              <p className="font-mono text-[length:var(--t-xs)] uppercase tracking-[0.1em] text-[color:var(--brass-300)]">Backed by SHADOW review projection</p>
+          <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+            <div className="mb-[var(--s4)] flex items-center justify-between gap-[var(--s4)]">
+              <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>PENDING IMPORT QUEUE</h3>
+              <p className="t-eyebrow">Backed by SHADOW review projection</p>
             </div>
 
             <div className="mb-4 grid gap-2 md:grid-cols-2">
-              <label className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]">
-                <span className="mb-1 block font-mono uppercase">Filter Status</span>
+              <label className="field">
+                <span className="t-label mb-[var(--s2)] block">Filter Status</span>
                 <select
                   value={queueFilterStatus}
                   onChange={(event) => setQueueFilterStatus(event.target.value as 'ALL' | IntakeStatus)}
-                  className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-sm)] text-[color:var(--bone-200)]"
+                  className="select"
                 >
                   <option value="ALL">ALL</option>
                   <option value="Pending">Pending</option>
@@ -1839,12 +1843,12 @@ export default function AdminShadowConsolePage() {
                   <option value="Imported">Imported</option>
                 </select>
               </label>
-              <label className="text-[length:var(--t-xs)] text-[color:var(--brass-300)]">
-                <span className="mb-1 block font-mono uppercase">Sort</span>
+              <label className="field">
+                <span className="t-label mb-[var(--s2)] block">Sort</span>
                 <select
                   value={queueSort}
                   onChange={(event) => setQueueSort(event.target.value as QueueSort)}
-                  className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-sm)] text-[color:var(--bone-200)]"
+                  className="select"
                 >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
@@ -1854,13 +1858,13 @@ export default function AdminShadowConsolePage() {
             </div>
 
             {filteredSortedQueue.length === 0 ? (
-              <p className="text-[length:var(--t-sm)] text-[color:var(--brass-300)]/80">No pending intake items. Use Upload File or Quick Add to create staging entries.</p>
+              <p className="t-body">No pending intake items. Use Upload File or Quick Add to create staging entries.</p>
             ) : (
               <div className="space-y-3">
                 {filteredSortedQueue.map((item) => (
                   <article
                     key={item.id}
-                    className={`border-2 p-4 ${selectedItemId === item.id ? 'border-[color:var(--brass-300)] bg-[var(--hide-950)]' : 'border-[color:var(--brass-700)]/70 bg-[var(--hide-900)]'}`}
+                    className={`rounded-[var(--r-md)] border p-[var(--s4)] ${selectedItemId === item.id ? 'border-[color:var(--brass-300)] bg-[var(--hide-800)]' : 'border-[color:var(--hide-700)] bg-[var(--hide-900)]'}`}
                   >
                     <div className="grid gap-2 text-[length:var(--t-sm)] text-[color:var(--bone-200)] md:grid-cols-2">
                       <p><span className="font-semibold text-[color:var(--brass-300)]">Item Name:</span> {item.itemName}</p>
@@ -1869,7 +1873,7 @@ export default function AdminShadowConsolePage() {
                       <p><span className="font-semibold text-[color:var(--brass-300)]">Suggested Destination:</span> {item.suggestedDestination}</p>
                       <p>
                         <span className="font-semibold text-[color:var(--brass-300)]">Status:</span>{' '}
-                        <span className={`inline-flex border px-2 py-0.5 font-mono text-[length:var(--t-xs)] ${statusChipClasses(item.status)}`}>{item.status}</span>
+                        <span className={`badge ${statusBadge(item.status).rung}`}><i>{statusBadge(item.status).glyph}</i>{item.status}</span>
                       </p>
                       <p><span className="font-semibold text-[color:var(--brass-300)]">Review Needed:</span> {item.reviewNeeded ? 'Yes' : 'No'}</p>
                       <p className="md:col-span-2"><span className="font-semibold text-[color:var(--brass-300)]">Timestamp:</span> {item.timestamp}</p>
@@ -1885,14 +1889,14 @@ export default function AdminShadowConsolePage() {
                             (action !== 'VIEW' && Boolean(intakeWriteRefusal))
                             || (action === 'IMPORT' && item.status !== 'Approved')
                           }
-                          className="h-11 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[length:var(--t-xs)] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                          className="btn--lever min-h-[44px]"
                         >
                           {action}
                         </button>
                       ))}
                     </div>
                     {intakeWriteRefusal ? (
-                      <p className="mt-2 text-[length:var(--t-xs)] text-[var(--brass-300)]">{intakeWriteRefusal}</p>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--brass-300)]">{intakeWriteRefusal}</p>
                     ) : null}
                     {item.reviewNeeded && !intakeWriteRefusal ? <CaseDocumentsPanel intakeCaseId={item.intakeCaseId} /> : null}
                   </article>
@@ -1900,21 +1904,22 @@ export default function AdminShadowConsolePage() {
               </div>
             )}
           </section>
+          </div>
         </section>
 
-        <aside className="space-y-4">
-          <section className="border-4 border-[color:var(--brass-300)] bg-[var(--hide-950)]/70 p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Data Intake Sources</p>
-            <h3 className="mt-2 text-xl font-black text-[color:var(--bone-200)]">External Sources</h3>
+        <aside className="space-y-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
+            <p className="t-eyebrow">Data Intake Sources</p>
+            <h3 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-lg)' }}>External Sources</h3>
 
             {intakeWriteRefusal ? (
-              <p className="mt-4 border-2 border-dashed border-[var(--brass-800)] bg-[var(--hide-900)] p-3 text-[length:var(--t-xs)] leading-6 text-[var(--brass-300)]">
+              <p className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-dashed border-[color:rgba(212,175,74,.42)] bg-[var(--hide-900)] p-[var(--s4)] text-[length:var(--t-xs)] leading-6 text-[color:var(--brass-300)]">
                 {intakeWriteRefusal}
               </p>
             ) : (
               <div
-                className={`mt-4 space-y-2 rounded border-2 border-dashed p-3 transition ${
-                  isDragOver ? 'border-[color:var(--bone-200)] bg-[var(--hide-700)]' : 'border-[var(--brass-800)] bg-[var(--hide-900)]'
+                className={`mt-[var(--s4)] space-y-[var(--s3)] rounded-[var(--r-md)] border-2 border-dashed p-[var(--s4)] transition ${
+                  isDragOver ? 'border-[color:var(--brass-300)] bg-[var(--hide-700)]' : 'border-[color:rgba(212,175,74,.42)] bg-[var(--hide-900)]'
                 }`}
                 onDragOver={(event) => {
                   event.preventDefault();
@@ -1923,7 +1928,7 @@ export default function AdminShadowConsolePage() {
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleFileDrop}
               >
-                <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">
+                <p className="t-eyebrow">
                   Drop PDF here or use the upload button
                 </p>
                 <input
@@ -1937,14 +1942,14 @@ export default function AdminShadowConsolePage() {
                   type="button"
                   onClick={handleUploadButtonClick}
                   disabled={isUploading}
-                  className="h-11 w-full border-2 border-[color:var(--brass-300)] bg-[var(--hide-800)] px-3 text-[length:var(--t-sm)] font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--bone-200)] hover:bg-[var(--hide-700)] hover:text-[color:var(--bone-200)]"
+                  className="btn w-full"
                 >
                   {isUploading ? 'Processing PDF...' : 'Upload PDF'}
                 </button>
-                {uploadedFileName && <p className="text-[length:var(--t-sm)] text-[color:var(--brass-300)]/80">Last staged file: {uploadedFileName}</p>}
-                {uploadError && <p className="text-[length:var(--t-xs)] text-[var(--locked-ink)]">{uploadError}</p>}
+                {uploadedFileName && <p className="t-body">Last staged file: {uploadedFileName}</p>}
+                {uploadError && <p role="alert" className="alert alert--critical"><span className="alert-icon">✕</span><span className="alert-msg">{uploadError}</span></p>}
                 {lastIngestSummary && (
-                  <div className="border border-[var(--brass-800)] bg-[var(--hide-900)] p-2 text-[length:var(--t-xs)] text-[color:var(--bone-200)]">
+                  <div className="t-data border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s3)]">
                     <p>Intake Case: {lastIngestSummary.intake_case_id}</p>
                     <p>Intake Document: {lastIngestSummary.intake_document_id}</p>
                     <p>Classification: {lastIngestSummary.classification}</p>
@@ -1955,15 +1960,15 @@ export default function AdminShadowConsolePage() {
               </div>
             )}
 
-            <div className="mt-4 border-t border-[color:var(--brass-300)]/20 pt-3">
-              <p className="text-[length:var(--t-sm)] font-mono text-[color:var(--brass-300)]/80">Quick Add:</p>
+            <div className="mt-[var(--s4)] border-t border-[color:rgba(212,175,74,.2)] pt-[var(--s4)]">
+              <p className="t-label">Quick Add:</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {QUICK_ADD_OPTIONS.map((option) => (
                   <button
                     key={option.label}
                     type="button"
                     onClick={() => handleQuickAdd(option.label, option.source, option.destination, option.route)}
-                    className="h-11 border-2 border-[color:var(--brass-300)] bg-[var(--hide-800)] px-2 text-[length:var(--t-xs)] text-[color:var(--brass-300)] transition hover:border-[color:var(--bone-200)] hover:bg-[var(--hide-700)]"
+                    className="btn--lever min-h-[44px] justify-center"
                   >
                     {option.label}
                   </button>
@@ -1972,23 +1977,23 @@ export default function AdminShadowConsolePage() {
             </div>
           </section>
 
-          <section className="border-4 border-[color:var(--brass-700)] bg-[var(--hide-950)]/70 p-4">
-            <h3 className="text-xl font-black text-[color:var(--bone-200)]">Classification Panel</h3>
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+            <h3 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Classification Panel</h3>
             {!selectedItem ? (
-              <p className="mt-3 text-[length:var(--t-sm)] text-[color:var(--brass-300)]/80">Select an intake item via VIEW to classify and route it.</p>
+              <p className="t-body mt-[var(--s4)]">Select an intake item via VIEW to classify and route it.</p>
             ) : (
-              <div className="mt-3 space-y-3 text-[length:var(--t-sm)] text-[color:var(--bone-200)]">
+              <div className="mt-[var(--s4)] space-y-[var(--s4)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]">
                 <p className="font-semibold text-[color:var(--brass-300)]">Selected: {selectedItem.itemName}</p>
-                <p className={`inline-flex border px-2 py-1 font-mono text-[length:var(--t-xs)] ${selectedItem.requiresJasonReview ? 'border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[var(--locked-ink)]' : 'border-[color:var(--brass-300)] bg-[var(--patina-900)] text-[var(--bone-200)]'}`}>
-                  {selectedItem.requiresJasonReview ? 'PENDING JASON REVIEW' : 'APPROVED FOR IMPORT'}
+                <p className={`badge ${selectedItem.requiresJasonReview ? 'badge--restricted' : 'badge--cleared'}`}>
+                  <i>{selectedItem.requiresJasonReview ? '▲' : '✓'}</i>{selectedItem.requiresJasonReview ? 'PENDING JASON REVIEW' : 'APPROVED FOR IMPORT'}
                 </p>
 
-                <label className="block">
-                  <span className="mb-1 block text-[color:var(--brass-300)]">Detected Type</span>
+                <label className="field">
+                  <span className="t-label mb-[var(--s2)] block">Detected Type</span>
                   <select
                     value={selectedItem.detectedType}
                     onChange={(event) => updateSelectedItem({ detectedType: event.target.value as DataType })}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-sm)]"
+                    className="select"
                   >
                     {QUICK_ADD_OPTIONS.map((option) => (
                       <option key={option.label} value={option.label}>
@@ -2000,15 +2005,15 @@ export default function AdminShadowConsolePage() {
                   </select>
                 </label>
 
-                <label className="block">
-                  <span className="mb-1 block text-[color:var(--brass-300)]">Suggested Destination</span>
+                <label className="field">
+                  <span className="t-label mb-[var(--s2)] block">Suggested Destination</span>
                   <select
                     value={selectedItem.suggestedDestination}
                     onChange={(event) => {
                       const destination = event.target.value as IntakeDestination;
                       updateSelectedItem({ suggestedDestination: destination, destinationRoute: routeForDestination(destination) });
                     }}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-sm)]"
+                    className="select"
                   >
                     {DESTINATION_OPTIONS.map((destination) => (
                       <option key={destination} value={destination}>
@@ -2018,12 +2023,12 @@ export default function AdminShadowConsolePage() {
                   </select>
                 </label>
 
-                <label className="block">
-                  <span className="mb-1 block text-[color:var(--brass-300)]">Confidence</span>
+                <label className="field">
+                  <span className="t-label mb-[var(--s2)] block">Confidence</span>
                   <select
                     value={selectedItem.confidence}
                     onChange={(event) => updateSelectedItem({ confidence: event.target.value as ConfidenceLevel })}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-sm)]"
+                    className="select"
                   >
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
@@ -2031,71 +2036,71 @@ export default function AdminShadowConsolePage() {
                   </select>
                 </label>
 
-                <label className="block">
-                  <span className="mb-1 block text-[color:var(--brass-300)]">Requires Jason Review</span>
+                <label className="field">
+                  <span className="t-label mb-[var(--s2)] block">Requires Jason Review</span>
                   <select
                     value={selectedItem.requiresJasonReview ? 'Yes' : 'No'}
                     onChange={(event) => updateSelectedItem({ requiresJasonReview: event.target.value === 'Yes' })}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-sm)]"
+                    className="select"
                   >
                     <option value="Yes">Yes</option>
                     <option value="No">No</option>
                   </select>
                 </label>
 
-                <label className="block">
-                  <span className="mb-1 block text-[color:var(--brass-300)]">Notes</span>
+                <label className="field">
+                  <span className="t-label mb-[var(--s2)] block">Notes</span>
                   <textarea
                     value={selectedItem.notes}
                     onChange={(event) => updateSelectedItem({ notes: event.target.value })}
-                    className="min-h-[92px] w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 py-2 text-[length:var(--t-sm)]"
+                    className="textarea min-h-[89px]"
                   />
                 </label>
 
-                <label className="block">
-                  <span className="mb-1 block text-[color:var(--brass-300)]">Destination Route</span>
+                <label className="field">
+                  <span className="t-label mb-[var(--s2)] block">Destination Route</span>
                   <input
                     value={selectedItem.destinationRoute}
                     onChange={(event) => updateSelectedItem({ destinationRoute: event.target.value })}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[length:var(--t-sm)]"
+                    className="input"
                   />
                 </label>
               </div>
             )}
           </section>
 
-          <section className="border-4 border-[color:var(--brass-700)] bg-[var(--hide-950)]/70 p-4">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
             <button
               type="button"
               onClick={() => setShowTelemetry((current) => !current)}
-              className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[length:var(--t-sm)] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
+              className="btn--lever min-h-[44px] w-full justify-center"
             >
               {showTelemetry ? 'Hide' : 'Show'} telemetry and authority streams
             </button>
             {showTelemetry && (
-              <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto border border-[color:var(--brass-700)]/60 bg-[var(--hide-900)] p-2 font-mono text-[length:var(--t-xs)] text-[color:var(--brass-300)]">
-                {telemetryEvents.length === 0 && <p className="p-2 text-[color:var(--brass-300)]/75">No telemetry events yet.</p>}
+              <div className="mt-[var(--s4)] max-h-[220px] space-y-[var(--s3)] overflow-y-auto border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s3)] font-mono text-[length:var(--t-xs)] text-[color:var(--brass-300)]">
+                {telemetryEvents.length === 0 && <p className="t-muted p-[var(--s3)]">No telemetry events yet.</p>}
                 {telemetryEvents.map((event, index) => (
-                  <pre key={`${event.timestamp}-${index}`} className="whitespace-pre-wrap border border-[var(--rust-700)] bg-[var(--hide-900)] p-2 text-[color:var(--brass-300)]">
+                  <pre key={`${event.timestamp}-${index}`} className="t-data whitespace-pre-wrap border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-[var(--s3)]">
 {JSON.stringify(event, null, 2)}
                   </pre>
                 ))}
 
-                <div className="border-t border-[color:var(--brass-700)]/60 pt-2">
-                  <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[color:var(--bone-200)]">SHADOW telemetry read model</p>
-                  {shadowTelemetry.length === 0 && <p className="p-2 text-[color:var(--brass-300)]/75">No SHADOW telemetry events returned.</p>}
+                <div className="border-t border-[color:rgba(212,175,74,.28)] pt-[var(--s3)]">
+                  <p className="t-eyebrow mb-[var(--s3)]">SHADOW telemetry read model</p>
+                  {shadowTelemetry.length === 0 && <p className="t-muted p-[var(--s3)]">No SHADOW telemetry events returned.</p>}
                   {shadowTelemetry.map((event) => (
-                    <pre key={`shadow-telemetry-${event.shadow_telemetry_event_id}`} className="whitespace-pre-wrap border border-[var(--patina-700)] bg-[var(--hide-900)] p-2 text-[var(--cleared-ink)]">
+                    <pre key={`shadow-telemetry-${event.shadow_telemetry_event_id}`} className="t-data whitespace-pre-wrap border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-[var(--s3)]">
 {JSON.stringify(event, null, 2)}
                     </pre>
                   ))}
                 </div>
 
-                <div className="border-t border-[color:var(--brass-700)]/60 pt-2">
-                  <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[color:var(--bone-200)]">SHADOW authority read model</p>
-                  {shadowAuthorityChecks.length === 0 && <p className="p-2 text-[color:var(--brass-300)]/75">No SHADOW authority checks returned.</p>}
+                <div className="border-t border-[color:rgba(212,175,74,.28)] pt-[var(--s3)]">
+                  <p className="t-eyebrow mb-[var(--s3)]">SHADOW authority read model</p>
+                  {shadowAuthorityChecks.length === 0 && <p className="t-muted p-[var(--s3)]">No SHADOW authority checks returned.</p>}
                   {shadowAuthorityChecks.map((check) => (
-                    <pre key={`shadow-authority-${check.authority_check_id}`} className="whitespace-pre-wrap border border-[var(--hide-600)] bg-[var(--hide-900)] p-2 text-[var(--bone-300)]">
+                    <pre key={`shadow-authority-${check.authority_check_id}`} className="t-data whitespace-pre-wrap border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-[var(--s3)]">
 {JSON.stringify(check, null, 2)}
                     </pre>
                   ))}
@@ -2104,16 +2109,16 @@ export default function AdminShadowConsolePage() {
             )}
           </section>
 
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-[var(--s3)] pt-[var(--s3)]">
             <Link
               href="/admin"
-              className="flex-1 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 py-2 text-center text-[length:var(--t-xs)] font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:text-[color:var(--bone-200)]"
+              className="btn btn--ghost flex-1"
             >
               Admin Hub
             </Link>
             <Link
               href="/shadow"
-              className="flex-1 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-2 text-center text-[length:var(--t-xs)] font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--rust-900)]"
+              className="btn btn--ghost flex-1"
             >
               SHADOW
             </Link>

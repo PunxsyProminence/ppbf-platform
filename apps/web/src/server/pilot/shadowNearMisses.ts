@@ -1,4 +1,5 @@
 import { query, withTransaction } from './db';
+import { fileEscalation, shouldAutoEscalateNearMiss } from './escalationLadder';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 
 export type ShadowNearMissSeverity = 'low' | 'moderate' | 'high' | 'critical';
@@ -74,8 +75,60 @@ export async function flagNearMiss(input: {
       afterState: { severity: row.severity, decisionId: row.decision_id },
     });
 
+    // High/critical near misses escalate automatically -- see
+    // escalationLadder.ts's module doc for why this is the one chokepoint
+    // both contactClearanceGate.ts and painReportAlert.ts flow through, and
+    // why 'low'/'moderate' stay pull-only rather than escalating every near
+    // miss into noise. Same transaction as the near-miss insert above: one
+    // severe enough to escalate must never commit without its escalation.
+    if (shouldAutoEscalateNearMiss(row.severity)) {
+      await fileEscalation(
+        {
+          organizationId: input.organizationId,
+          sourceType: 'near_miss',
+          sourceId: row.near_miss_id,
+          athleteId: row.athlete_id,
+          severity: row.severity,
+          reason: row.description,
+          triggeredBy: 'system',
+          triggeredByAccountId: input.detectedByAccountId,
+          triggeredByRole: input.detectedByRole,
+          metadata: { near_miss_id: row.near_miss_id, trigger: (row.metadata as { trigger?: string } | null)?.trigger },
+        },
+        client,
+      );
+    }
+
     return row;
   });
+}
+
+/**
+ * The most recent near miss already filed for one (athlete, trigger, context)
+ * triple. The contact-clearance gate uses this to collapse the several
+ * contact observations one session submits (contact_level, contact_rounds,
+ * punch_absorbed each arrive as their own POST) into ONE near miss and one
+ * escalation, instead of three that say the same thing about the same
+ * session -- which buried the escalation surface it was supposed to feed.
+ */
+export async function findNearMissByTriggerContext(
+  organizationId: string,
+  athleteId: string,
+  trigger: string,
+  contextId: string,
+): Promise<ShadowNearMissRow | null> {
+  const rows = await query<ShadowNearMissRow>(
+    `select near_miss_id, organization_id, athlete_id, decision_id, description, severity, detected_by, detected_by_account_id, metadata, created_at
+     from pilot.shadow_near_misses
+     where organization_id = $1
+       and athlete_id = $2
+       and metadata->>'trigger' = $3
+       and metadata->>'context_id' = $4
+     order by created_at desc
+     limit 1`,
+    [organizationId, athleteId, trigger, contextId],
+  );
+  return rows[0] ?? null;
 }
 
 export async function listNearMisses(organizationId: string, athleteId: string): Promise<ShadowNearMissRow[]> {

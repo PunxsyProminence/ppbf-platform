@@ -1,5 +1,14 @@
 # PPBF Production Readiness Checklist
 
+> **Superseded — point-in-time, v21 architecture.** This checklist describes
+> the Supabase-backed build that preceded the move to Azure Container Apps and
+> PostgreSQL. Its checked boxes record what was true then, not what production
+> runs now: there is no Supabase client, no PIN 15715 demo auth, and the
+> "Batch N" numbering refers to a build sequence that ended. For current
+> readiness, see [MULTI_ORG_SMOKE_TEST_PLAN.md](MULTI_ORG_SMOKE_TEST_PLAN.md)
+> and the deploy workflows themselves. Kept because knowing what was claimed
+> complete, and when, is worth more than a deleted file.
+
 **Governance**: Layer 0 enforced at every step. Jason approval required for promotion.
 
 ## Completed
@@ -24,7 +33,7 @@
 
 
 ## Pending / Next Steps
-- [ ] Deploy Supabase schema (infra/supabase/schema.sql)
+- [ ] Deploy the Postgres schema (`cd apps/web; npm run pilot:apply-schema`)
 - [ ] Connect real participant data
 - [ ] Flip remaining capabilities to "active" only after Jason review
 - [ ] Implement real auth + RBAC (beyond PIN 15715 demo)

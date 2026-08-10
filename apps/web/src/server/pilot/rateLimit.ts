@@ -28,7 +28,6 @@ const BACKOFF_MULTIPLIER = 2; // Double the wait time on each failed attempt
 const EXPIRY_MS = 15 * 60 * 1000; // Clear old entries after 15 minutes
 const DURABLE_WINDOW_SECONDS = 15 * 60;
 
-let durableTableInitialized = false;
 
 function durableRateLimitEnabled(): boolean {
   return process.env.PPBF_DURABLE_RATE_LIMIT === 'true';
@@ -56,29 +55,37 @@ async function withDurableClient<T>(work: (client: PoolClient) => Promise<T>): P
 
   try {
     return await withPoolClient(work);
-  } catch {
+  } catch (error) {
     // Includes connection acquisition, which the previous implementation let
-    // escape. Nothing a rate-limit lookup does is worth failing a login for.
+    // escape. Nothing a rate-limit lookup does is worth failing a login for --
+    // but the flag was ON and a connection string was present, so this is an
+    // unexpected degradation to the weaker limiter, not the ordinary
+    // flag-off path. Worth a line an operator can find, not worth failing on.
+    console.warn('Durable rate limit unavailable, falling back to in-memory limiter', error);
     return null;
   }
 }
 
-async function ensureDurableRateLimitTable(client: PoolClient): Promise<void> {
-  if (durableTableInitialized) {
-    return;
-  }
-
-  await client.query(
-    `create table if not exists pilot.auth_rate_limit_buckets (
-       bucket_key text primary key,
-       attempt_count integer not null default 0,
-       blocked_until timestamptz not null,
-       updated_at timestamptz not null default now()
-     )`,
-  );
-
-  durableTableInitialized = true;
-}
+// pilot.auth_rate_limit_buckets used to be created HERE, by
+// `create table if not exists` issued from inside a request handler -- on the
+// login path, which by definition runs before anyone has authenticated. So the
+// first anonymous sign-in attempt against a fresh database executed DDL to
+// bring the table into being, and the application needed `create table` rights
+// on the one path an attacker reaches without credentials.
+//
+// That is the pattern #111 removed ("An anonymous request could execute DDL
+// against production Postgres"). It was removed from the surface that made it
+// obvious and survived here.
+//
+// The table is now created by infra/azure/pilot_slice_postgres_rate_limit_migration.sql,
+// applied through the same gated workflow as every other migration.
+//
+// Nothing replaces this function, and nothing needs to. withDurableClient()
+// returns null on ANY failure -- including a missing relation -- and every
+// caller treats null as "fall back to the in-memory limiter", never as "deny".
+// An environment that has not run the migration rate-limits in process memory
+// instead of locking every athlete out, which is the same degradation the
+// durable store already has for a database blip.
 
 function trustedProxyCount(): number {
   const raw = process.env.PPBF_TRUSTED_PROXY_COUNT;
@@ -202,7 +209,6 @@ export function clearRateLimit(key: string): void {
 
 export async function checkDurableRateLimit(key: string): Promise<{ isLimited: boolean; delayMs?: number }> {
   const result = await withDurableClient(async (client) => {
-    await ensureDurableRateLimitTable(client);
     const row = await client.query<{ blocked_until: Date }>(
       `select blocked_until
        from pilot.auth_rate_limit_buckets
@@ -230,7 +236,6 @@ export async function recordDurableFailedAttempt(key: string): Promise<{ delayMs
   const fallback = recordFailedAttempt(key);
 
   const durableResult = await withDurableClient(async (client) => {
-    await ensureDurableRateLimitTable(client);
 
     await client.query(
       `delete from pilot.auth_rate_limit_buckets
@@ -278,7 +283,6 @@ export async function clearDurableRateLimit(key: string): Promise<void> {
   clearRateLimit(key);
 
   await withDurableClient(async (client) => {
-    await ensureDurableRateLimitTable(client);
     await client.query(
       `delete from pilot.auth_rate_limit_buckets
        where bucket_key = $1`,

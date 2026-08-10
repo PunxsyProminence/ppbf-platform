@@ -4,8 +4,8 @@ Write-Host "=== PPBF Full Platform Initialization ===" -ForegroundColor Cyan
 Write-Host "`n[1/6] Creating directory structure..." -ForegroundColor Yellow
 # (Already created in previous batches)
 
-Write-Host "`n[2/6] Applying Supabase schema..." -ForegroundColor Yellow
-Write-Host "   → Run: psql or Supabase dashboard → infra/supabase/schema.sql"
+Write-Host "`n[2/6] Applying Postgres schema..." -ForegroundColor Yellow
+Write-Host "   → Run: cd apps/web; npm run pilot:apply-schema"
 
 Write-Host "`n[3/6] Installing dependencies..." -ForegroundColor Yellow
 Write-Host "   → cd apps/web && npm install"

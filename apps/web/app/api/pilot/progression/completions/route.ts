@@ -5,6 +5,7 @@ import {
   recordCompletion,
   verifyCompletion,
   getAssignmentCompletions,
+  getCompletionById,
   getDrillAssignmentById,
 } from '@/src/server/pilot/progression';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
@@ -53,11 +54,45 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       assignment_id?: string;
       athlete_id?: string;
+      completion_id?: string;
       reps_completed?: number;
       notes?: string;
       verify?: boolean;
       verified?: boolean;
     };
+
+    // Coach/admin verifying an existing athlete-logged completion. No new
+    // completion row is written; only the verification_status flips.
+    if (body.completion_id && body.verify !== undefined) {
+      requireRole(principal, ['coach', 'admin', 'organization_admin']);
+
+      if (!body.athlete_id) {
+        throw new Error('Missing athlete_id');
+      }
+
+      await assertActorCanAccessAthlete(principal, body.athlete_id);
+
+      // Ownership is checked BEFORE the flip. The previous order updated first
+      // and then 404'd on the mismatch, which hid the response but left the
+      // verification_status changed -- a coach could flip a completion for an
+      // athlete in the same organization but off their roster.
+      const completion = await getCompletionById(principal.organizationId, body.completion_id);
+      if (!completion || completion.athlete_id !== body.athlete_id) {
+        return hiddenNotFound();
+      }
+
+      const updated = await verifyCompletion(
+        body.completion_id,
+        principal.accountId,
+        body.verified !== false,
+        principal.organizationId,
+      );
+      if (!updated) {
+        return hiddenNotFound();
+      }
+
+      return NextResponse.json(updated);
+    }
 
     if (!body.assignment_id || !body.athlete_id) {
       throw new Error('Missing assignment_id or athlete_id');
@@ -70,7 +105,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Assignment does not belong to the specified athlete' }, { status: 400 });
     }
 
-    // Record the completion
+    // Record the completion (also recomputes assignment percentage/status).
     const completion = await recordCompletion({
       organizationId: principal.organizationId,
       assignmentId: body.assignment_id,
@@ -79,10 +114,15 @@ export async function POST(request: NextRequest) {
       notes: body.notes,
     });
 
-    // If verification requested (coach only). assertActorCanAccessAthlete
+    // If verification requested on the same write (coach only). assertActorCanAccessAthlete
     // above already confirmed this coach is assigned to body.athlete_id.
     if (body.verify && (principal.role === 'coach' || principal.role === 'admin' || principal.role === 'organization_admin')) {
-      await verifyCompletion(completion.completion_id, principal.accountId, body.verified || false);
+      await verifyCompletion(
+        completion.completion_id,
+        principal.accountId,
+        body.verified || false,
+        principal.organizationId,
+      );
     }
 
     return NextResponse.json(completion, { status: 201 });

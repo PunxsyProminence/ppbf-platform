@@ -91,7 +91,43 @@ function collect(threshold) {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
 
+  /* `rgb(30, 23, 18)` / `rgba(0, 0, 0, 0.4)` → {r,g,b,a}, or null for anything
+     that is not an rgb triple.
+
+     Splitting on commas and reading index 3 is what this used to do, and for
+     `rgba(0, 0, 0, 0.4)` that yields " 0.4)" -- the closing paren rides along
+     and Number() returns NaN. Every comparison against NaN is false, so the
+     alpha policy below never fired for any rgba background at all: a 40%-black
+     plaque was skipped exactly like a 4.5% ghost wash, and the walker climbed
+     to a wall the reader cannot see through. The false readings that produced
+     (~2.25:1 on the research and knowledge-graph plaques, which measure ~5.3:1
+     once composited) are the kind that teach people to ignore the tool. Same
+     defect, same fix as the backdrop walker in e2e/public-homepage.spec.ts. */
+  const parseColor = (value) => {
+    const inner = /^rgba?\(([^)]+)\)$/.exec(value || '');
+    if (!inner) return null;
+    const parts = inner[1].split(',').map((p) => Number(p.trim()));
+    if (parts.length < 3 || parts.some((p) => !Number.isFinite(p))) return null;
+    return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+  };
+
+  /* Paint the translucent layers we passed through back onto the opaque ground
+     beneath them, nearest layer last, which is what the eye actually receives.
+     Compositing rather than skipping is what makes a translucent panel report
+     its own ground instead of the wall behind it. */
+  const composite = (layers, ground) => {
+    let { r, g, b } = ground;
+    for (let i = layers.length - 1; i >= 0; i -= 1) {
+      const l = layers[i];
+      r = l.r * l.a + r * (1 - l.a);
+      g = l.g * l.a + g * (1 - l.a);
+      b = l.b * l.a + b * (1 - l.a);
+    }
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  };
+
   const bgOf = (el) => {
+    const layers = [];
     let n = el;
     while (n && n !== document.documentElement) {
       const cs = getComputedStyle(n);
@@ -100,16 +136,17 @@ function collect(threshold) {
       // wrong layer. This is how mat-brass--patina behaves.
       if (cs.backgroundImage !== 'none' && /gradient/.test(cs.backgroundImage)
           && /rgba\(0, 0, 0, 0\)/.test(cs.backgroundColor)) return null;
-      if (cs.backgroundColor && !/transparent/.test(cs.backgroundColor)) {
-        const a = cs.backgroundColor.startsWith('rgba')
-          ? Number(cs.backgroundColor.split(',')[3]) : 1;
-        // A near-transparent wash is not the ground. Treating .btn--ghost's
-        // rgba(0,0,0,.045) as one scored cream-backed text at 1.59.
-        if (a >= 0.5) return cs.backgroundColor;
+      const bg = parseColor(cs.backgroundColor);
+      if (bg) {
+        if (bg.a >= 0.999) return composite(layers, bg);
+        // Fully transparent contributes nothing; anything between is a real
+        // layer between the reader and the ground, so it is carried down.
+        if (bg.a > 0) layers.push(bg);
       }
       n = n.parentElement;
     }
-    return getComputedStyle(document.body).backgroundColor;
+    const body = parseColor(getComputedStyle(document.body).backgroundColor);
+    return body && body.a >= 0.999 ? composite(layers, body) : null;
   };
 
   const out = [];
@@ -138,7 +175,14 @@ function collect(threshold) {
   };
 }
 
-const browser = await chromium.launch();
+/* Same escape hatch playwright.config.ts documents: a container may ship a
+   Chromium at a different revision than @playwright/test wants and be unable
+   to fetch the matching one. Without this the sweep is the one design tool
+   that cannot run in the environment where the design work happens. CI
+   installs the matching revision and leaves it unset. */
+const browser = await chromium.launch(
+  process.env.PPBF_CHROMIUM_PATH ? { executablePath: process.env.PPBF_CHROMIUM_PATH } : {},
+);
 const results = [];
 
 for (const [path, role] of routes) {

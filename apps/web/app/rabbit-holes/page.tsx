@@ -15,6 +15,7 @@ import {
 } from '@/components/rabbitHoleAnchorLabels';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymCustom } from '@/src/lib/gymTime';
 
 // The authoring view of one lesson: what a reader gets, plus the three fields
 // only the people who write them need.
@@ -28,14 +29,14 @@ interface AuthoredLesson extends RabbitHoleLessonItem {
   updated_at: string;
 }
 
-const STATUS_TONE: Record<AuthoredLesson['status'], string> = {
-  published: 'border-[var(--status-ready)] bg-[#dce7ca]',
-  retired: 'border-[var(--gray-medium)] bg-[var(--canvas-tan)]',
-};
-
-const STATUS_LABELS: Record<AuthoredLesson['status'], string> = {
-  published: 'PUBLISHED',
-  retired: 'RETIRED',
+/* Law 3: publication state carries a glyph and an uppercase label. Published
+   is a live queue outcome and rides the ladder; retired is inert, so it wears
+   a neutral chip rather than a saturated rung. */
+const STATUS_BADGES: Record<AuthoredLesson['status'], { className: string; glyph: string; label: string }> = {
+  published: { className: 'badge badge--cleared', glyph: '✓', label: 'Published' },
+  /* The sheet's own administrative rung (badge--filed) replaced the
+     hand-rolled chip this entry used to carry -- same ◌, same job. */
+  retired: { className: 'badge badge--filed', glyph: '◌', label: 'Retired' },
 };
 
 const EMPTY_DRAFT = {
@@ -52,12 +53,12 @@ function formatWrittenTime(value: string): string {
   }
 
   try {
-    return new Date(parsed).toLocaleString(undefined, {
+    return formatGymCustom(parsed, {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    });
+    }) ?? value;
   } catch {
     return value;
   }
@@ -235,37 +236,48 @@ function RabbitHoleAuthoringPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-      <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
-        <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Gym Coaching</p>
-          <h1 className="font-display text-4xl font-black">Rabbit Holes</h1>
-          <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+    /* Law 6: authoring is coach/admin work -- ink leather, the front-office
+       desk, not the family canvas this page wore before. */
+    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <div className="mx-auto w-full max-w-[1200px] px-[var(--s5)] py-[var(--s6)]">
+        <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
+          <p className="t-eyebrow">Gym Coaching</p>
+          <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-2xl)' }}>
+            Rabbit Holes
+          </h1>
+          <p className="t-body mt-[var(--s4)] max-w-[72ch]">
             A rabbit hole is a concept worth understanding and something to go and do with it. Pick the term it is
             about, write it, and it appears inside every card that already names that term.
           </p>
           {/* The claim this surface must never let an author make by accident.
               Evidence tiers mean retrieved and cited; this is a person writing. */}
-          <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+          <p className="t-body mt-[var(--s3)] max-w-[72ch]">
             What you write here is the gym&apos;s own coaching, published under your name. It is not research, it
             carries no SHADOW evidence tier, and readers are told both.
           </p>
-          {loadError ? <p className="text-sm text-[var(--red-primary)]">{loadError}</p> : null}
+          {loadError ? (
+            <div role="alert" className="mt-[var(--s4)]">
+              <span className="badge badge--locked">
+                <i>✕</i>Load Failed
+              </span>
+              <p className="t-body mt-[var(--s2)]">{loadError}</p>
+            </div>
+          ) : null}
         </header>
 
-        <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">What Is It About?</h2>
-          <p className="text-sm leading-6 text-[var(--gray-dark)]">
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>What Is It About?</h2>
+          <p className="t-body">
             A lesson attaches to a term the platform already uses, never to a card. The card&apos;s wording can
             change; the term does not.
           </p>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-              Kind of term
+          <div className="grid gap-[var(--s4)] md:grid-cols-2">
+            <label className="field">
+              <span className="t-label">Kind of term</span>
               <select
                 value={anchorType}
                 onChange={(event) => selectAnchorType(event.target.value)}
-                className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-normal normal-case tracking-normal text-[var(--black)]"
+                className="select"
               >
                 {AUTHORABLE_ANCHOR_TYPES.map((type) => (
                   <option key={type} value={type}>
@@ -274,12 +286,12 @@ function RabbitHoleAuthoringPage() {
                 ))}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-              Term
+            <label className="field">
+              <span className="t-label">Term</span>
               <select
                 value={anchorKey}
                 onChange={(event) => setAnchorKey(event.target.value)}
-                className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-normal normal-case tracking-normal text-[var(--black)]"
+                className="select"
               >
                 {keyOptions.map((option) => (
                   <option key={option.key} value={option.key}>
@@ -290,19 +302,19 @@ function RabbitHoleAuthoringPage() {
             </label>
           </div>
 
-          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
-            <h3 className="text-sm font-bold">Already Written For {anchorLabel(anchorType, anchorKey)}</h3>
+          <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+            <h3 className="t-label">Already Written For {anchorLabel(anchorType, anchorKey)}</h3>
             {anchorLoadError ? (
-              <p className="mt-2 text-sm text-[var(--red-primary)]">{anchorLoadError}</p>
+              <p className="t-body mt-[var(--s3)]">{anchorLoadError}</p>
             ) : publishedHere.length === 0 ? (
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              <p className="t-muted mt-[var(--s3)]">
                 Nothing is published against this term yet.
               </p>
             ) : (
-              <ul className="mt-2 space-y-2">
+              <ul className="mt-[var(--s3)] space-y-[var(--s3)]">
                 {publishedHere.map((lesson) => (
-                  <li key={lesson.rabbit_hole_id} className="text-sm leading-6 text-[var(--gray-dark)]">
-                    <span className="font-semibold text-[var(--black)]">{lesson.title}</span> - by{' '}
+                  <li key={lesson.rabbit_hole_id} className="t-body">
+                    <span className="font-semibold text-[color:var(--bone-100)]">{lesson.title}</span> - by{' '}
                     {lesson.author_display_name}, for {audienceLabel(lesson.audience)}
                   </li>
                 ))}
@@ -311,33 +323,42 @@ function RabbitHoleAuthoringPage() {
           </div>
         </section>
 
-        <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Write</h2>
-          <input
-            value={draft.title}
-            onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
-            placeholder="Title of the lesson"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
-          />
-          <textarea
-            value={draft.concept}
-            onChange={(event) => setDraft((current) => ({ ...current, concept: event.target.value }))}
-            placeholder="Concept - why this works the way it does"
-            className="h-32 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2"
-          />
-          <textarea
-            value={draft.homework}
-            onChange={(event) => setDraft((current) => ({ ...current, homework: event.target.value }))}
-            placeholder="Homework (optional) - something to go and do with it"
-            className="h-24 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2"
-          />
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-              Who reads it
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Write</h2>
+          <label className="field">
+            <span className="t-label">Title of the lesson</span>
+            <input
+              value={draft.title}
+              onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+              placeholder="Title of the lesson"
+              className="input"
+            />
+          </label>
+          <label className="field">
+            <span className="t-label">Concept</span>
+            <textarea
+              value={draft.concept}
+              onChange={(event) => setDraft((current) => ({ ...current, concept: event.target.value }))}
+              placeholder="Concept - why this works the way it does"
+              className="textarea h-[144px]"
+            />
+          </label>
+          <label className="field">
+            <span className="t-label">Homework (optional)</span>
+            <textarea
+              value={draft.homework}
+              onChange={(event) => setDraft((current) => ({ ...current, homework: event.target.value }))}
+              placeholder="Homework (optional) - something to go and do with it"
+              className="textarea h-[89px]"
+            />
+          </label>
+          <div className="grid gap-[var(--s4)] md:grid-cols-2">
+            <label className="field">
+              <span className="t-label">Who reads it</span>
               <select
                 value={draft.audience}
                 onChange={(event) => setDraft((current) => ({ ...current, audience: event.target.value }))}
-                className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-normal normal-case tracking-normal text-[var(--black)]"
+                className="select"
               >
                 {RABBIT_HOLE_AUDIENCE_OPTIONS.map((audience) => (
                   <option key={audience} value={audience}>
@@ -346,12 +367,15 @@ function RabbitHoleAuthoringPage() {
                 ))}
               </select>
             </label>
-            <input
-              value={authorName}
-              onChange={(event) => setAuthorName(event.target.value)}
-              placeholder="Your name, as readers will see it"
-              className="h-11 w-full self-end border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
-            />
+            <label className="field">
+              <span className="t-label">Your name, as readers will see it</span>
+              <input
+                value={authorName}
+                onChange={(event) => setAuthorName(event.target.value)}
+                placeholder="Your name, as readers will see it"
+                className="input"
+              />
+            </label>
           </div>
           <button
             type="button"
@@ -361,70 +385,72 @@ function RabbitHoleAuthoringPage() {
                 setMessage(error instanceof Error ? error.message : 'Unable to publish.'),
               )
             }
-            className="h-11 border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn disabled:cursor-not-allowed disabled:opacity-60 disabled:grayscale"
           >
             {isPublishing ? 'Publishing...' : 'Publish'}
           </button>
-          {message ? <p className="text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
+          {message ? <p role="status" className="t-body font-semibold text-[color:var(--brass-300)]">{message}</p> : null}
         </section>
 
-        <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Everything This Gym Has Written</h2>
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Everything This Gym Has Written</h2>
           {allLessons.length === 0 && !loadError ? (
-            <p className="text-sm leading-6 text-[var(--gray-dark)]">
+            <p className="t-muted">
               No rabbit holes have been written for this gym yet.
             </p>
           ) : null}
-          <div className="grid gap-3">
-            {allLessons.map((lesson) => (
-              <article
-                key={lesson.rabbit_hole_id}
-                className="grid gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4 md:grid-cols-[1fr_auto] md:items-start"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`border-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${STATUS_TONE[lesson.status]}`}>
-                      {STATUS_LABELS[lesson.status]}
-                    </span>
-                    <span className="text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
-                      {anchorLabel(lesson.anchor_type, lesson.anchor_key)}
-                    </span>
-                    <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-                      {audienceLabel(lesson.audience)}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm font-semibold leading-6 text-[var(--black)]">{lesson.title}</p>
-                  <p className="mt-1 text-sm leading-6 text-[var(--gray-dark)]">{lesson.concept}</p>
-                  {lesson.homework ? (
-                    <p className="mt-2 border-l-2 border-[color:var(--brass-600)] pl-2 text-sm leading-6 text-[var(--gray-dark)]">
-                      Homework: {lesson.homework}
+          <div className="grid gap-[var(--s4)]">
+            {allLessons.map((lesson) => {
+              const statusBadge = STATUS_BADGES[lesson.status];
+              return (
+                <article
+                  key={lesson.rabbit_hole_id}
+                  className="mat-leather--raised grid gap-[var(--s4)] rounded-[var(--r-md)] p-[var(--s5)] md:grid-cols-[1fr_auto] md:items-start"
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                      <span className={statusBadge.className}>
+                        <i>{statusBadge.glyph}</i>
+                        {statusBadge.label}
+                      </span>
+                      <span className="t-eyebrow">
+                        {anchorLabel(lesson.anchor_type, lesson.anchor_key)}
+                      </span>
+                      <span className="t-label">
+                        {audienceLabel(lesson.audience)}
+                      </span>
+                    </div>
+                    <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--bone-100)]">{lesson.title}</p>
+                    <p className="t-body mt-[var(--s2)]">{lesson.concept}</p>
+                    {lesson.homework ? (
+                      <p className="t-body mt-[var(--s3)] border-l-2 border-[color:var(--brass-600)] pl-[var(--s3)]">
+                        Homework: {lesson.homework}
+                      </p>
+                    ) : null}
+                    {/* Law 4: authorship and time are the record -- mono voice. */}
+                    <p className="t-data mt-[var(--s3)] text-[color:var(--bone-400)]">
+                      By {lesson.author_display_name} - {formatWrittenTime(lesson.created_at)}
                     </p>
+                  </div>
+                  {canManage(lesson) ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void setStatus(lesson.rabbit_hole_id, lesson.status === 'published' ? 'retired' : 'published')
+                      }
+                      className="btn btn--ghost"
+                    >
+                      {lesson.status === 'published' ? 'Retire' : 'Restore'}
+                    </button>
                   ) : null}
-                  <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--gray-medium)]">
-                    By {lesson.author_display_name} - {formatWrittenTime(lesson.created_at)}
-                  </p>
-                </div>
-                {canManage(lesson) ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void setStatus(lesson.rabbit_hole_id, lesson.status === 'published' ? 'retired' : 'published')
-                    }
-                    className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
-                  >
-                    {lesson.status === 'published' ? 'Retire' : 'Restore'}
-                  </button>
-                ) : null}
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         </section>
 
-        <div className="mt-8">
-          <Link
-            href="/coach/progression-intelligence"
-            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
-          >
+        <div className="mt-[var(--s6)]">
+          <Link href="/coach/progression-intelligence" className="btn btn--ghost">
             Back to Progression Intelligence
           </Link>
         </div>

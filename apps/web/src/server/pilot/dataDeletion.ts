@@ -1,0 +1,303 @@
+import type { PilotRole } from './contracts';
+import { query, withTransaction } from './db';
+
+export interface ActorIdentity {
+  accountId: string;
+  role: PilotRole;
+  organizationId: string;
+}
+
+export interface DeletionResult {
+  deletedEntityType: 'athlete' | 'guardian';
+  deletedEntityId: string;
+  deletedRecordsCounts: {
+    athletes?: number;
+    accounts?: number;
+    athletePhotos?: number;
+    athleteVideos?: number;
+    // Retained, not deleted -- a soft delete leaves observations in place.
+    coachObservationsRetained?: number;
+    medicalRecords?: number;
+  };
+  deletedAt: string;
+  auditEventId: number;
+}
+
+/**
+ * Deletes a guardian/parent account and cascade-marks all linked athletes for deletion.
+ * Organization-admin only. Logs to audit trail before deletion.
+ */
+export async function deleteGuardianAccount(
+  actor: ActorIdentity,
+  parentAccountId: string,
+  reason?: string,
+): Promise<DeletionResult> {
+  if (actor.role !== 'organization_admin' && actor.role !== 'admin') {
+    throw new Error('Forbidden: only organization admin can delete accounts');
+  }
+
+  return withTransaction(async (client) => {
+    // Verify the parent account exists and belongs to this organization
+    const parentRow = await client.query<{ account_id: string; role: string }>(
+      `select account_id, role from pilot.accounts
+       where account_id = $1 and organization_id = $2 and role = 'parent'`,
+      [parentAccountId, actor.organizationId],
+    );
+
+    if (parentRow.rows.length === 0) {
+      throw new Error('Not found: parent account does not exist or is not a parent role');
+    }
+
+    // Take the timestamp the DATABASE stamped, not one minted in JavaScript.
+    // The cascade trigger copies new.deleted_at onto the linked athletes, so
+    // this is the only value that can match them. The count previously compared
+    // against a JS ISO string, which never equals now() from the same
+    // statement, so it reported zero cascaded athletes every time -- including
+    // when it had just soft-deleted several.
+    // ::text, not the bare column. node-pg parses timestamptz into a JS Date,
+    // which holds milliseconds while Postgres stores microseconds -- so a value
+    // round-tripped through JS no longer equals the one on the row, and the
+    // count below silently returns zero. Keeping it as text preserves the exact
+    // value for the comparison.
+    const deleted = await client.query<{ deleted_at: string }>(
+      `update pilot.accounts
+       set deleted_at = now(), updated_at = now()
+       where account_id = $1
+       returning deleted_at::text as deleted_at`,
+      [parentAccountId],
+    );
+    const deletionTime = deleted.rows[0].deleted_at;
+
+    const athleteCount = await client.query<{ count: string }>(
+      `select count(*)::text as count from pilot.athletes
+       where deleted_at = $1::timestamptz and organization_id = $2`,
+      [deletionTime, actor.organizationId],
+    );
+
+    // Log to audit trail
+    const auditResult = await client.query<{ audit_id: number }>(
+      `insert into pilot.audit_events (
+         event_type, actor_account_id, actor_role, organization_id,
+         entity_type, entity_id, details
+       ) values (
+         $1, $2, $3, $4, $5, $6, $7
+       ) returning audit_id`,
+      [
+        'data_deletion_initiated',
+        actor.accountId,
+        actor.role,
+        actor.organizationId,
+        'parent_account',
+        parentAccountId,
+        JSON.stringify({
+          reason: reason || 'Not specified',
+          cascade_deleted_athletes: parseInt(athleteCount.rows[0].count, 10),
+          deleted_at: new Date(deletionTime).toISOString(),
+        }),
+      ],
+    );
+
+    return {
+      deletedEntityType: 'guardian',
+      deletedEntityId: parentAccountId,
+      deletedRecordsCounts: {
+        accounts: 1,
+        athletes: parseInt(athleteCount.rows[0].count, 10),
+      },
+      deletedAt: new Date(deletionTime).toISOString(),
+      auditEventId: auditResult.rows[0].audit_id,
+    };
+  });
+}
+
+/**
+ * Deletes an athlete record and marks all linked data (photos, videos, observations) for deletion.
+ * Organization-admin only. Logs to audit trail before deletion.
+ */
+export async function deleteAthleteRecord(
+  actor: ActorIdentity,
+  athleteId: string,
+  reason?: string,
+): Promise<DeletionResult> {
+  if (actor.role !== 'organization_admin' && actor.role !== 'admin') {
+    throw new Error('Forbidden: only organization admin can delete athlete records');
+  }
+
+  return withTransaction(async (client) => {
+    // Verify the athlete exists and belongs to this organization
+    const athleteRow = await client.query<{ athlete_id: string }>(
+      `select athlete_id from pilot.athletes
+       where athlete_id = $1 and organization_id = $2`,
+      [athleteId, actor.organizationId],
+    );
+
+    if (athleteRow.rows.length === 0) {
+      throw new Error('Not found: athlete does not exist in this organization');
+    }
+
+    const deletedAthlete = await client.query<{ deleted_at: string }>(
+      `update pilot.athletes
+       set deleted_at = now(), updated_at = now()
+       where athlete_id = $1 and organization_id = $2
+       returning deleted_at::text as deleted_at`,
+      [athleteId, actor.organizationId],
+    );
+    const deletionTime = deletedAthlete.rows[0].deleted_at;
+
+    // Observations still on file for this athlete. NOT a deletion count: a soft
+    // delete leaves the athlete row in place, so the FK cascade does not fire
+    // and nothing here is removed. The audit record used to call this
+    // 'cascade_deleted_observations', which claimed a deletion that had not
+    // happened -- in the record whose whole purpose is being accurate about
+    // what was deleted.
+    const observationCount = await client.query<{ count: string }>(
+      `select count(*)::text as count from pilot.coach_observations
+       where athlete_id = $1 and organization_id = $2`,
+      [athleteId, actor.organizationId],
+    );
+
+    // Log to audit trail
+    const auditResult = await client.query<{ audit_id: number }>(
+      `insert into pilot.audit_events (
+         event_type, actor_account_id, actor_role, organization_id,
+         entity_type, entity_id, details
+       ) values (
+         $1, $2, $3, $4, $5, $6, $7
+       ) returning audit_id`,
+      [
+        'data_deletion_initiated',
+        actor.accountId,
+        actor.role,
+        actor.organizationId,
+        'athlete',
+        athleteId,
+        JSON.stringify({
+          reason: reason || 'Not specified',
+          observations_retained: parseInt(observationCount.rows[0].count, 10),
+          deleted_at: new Date(deletionTime).toISOString(),
+        }),
+      ],
+    );
+
+    return {
+      deletedEntityType: 'athlete',
+      deletedEntityId: athleteId,
+      deletedRecordsCounts: {
+        athletes: 1,
+        coachObservationsRetained: parseInt(observationCount.rows[0].count, 10),
+      },
+      deletedAt: new Date(deletionTime).toISOString(),
+      auditEventId: auditResult.rows[0].audit_id,
+    };
+  });
+}
+
+/**
+ * Hard-deletes data that has been soft-deleted and reached its retention window.
+ * Runs as a background process. Returns count of rows deleted.
+ */
+export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }> {
+  // One transaction. These are the only irreversible deletes in the platform,
+  // and the audit row is the sole record that they happened. Run apart, a
+  // failure at the audit insert leaves rows permanently gone and nothing
+  // saying so -- which is precisely the evidence a retention policy exists to
+  // produce.
+  return withTransaction(async (client) => {
+    let totalDeleted = 0;
+
+    // Delete athletes soft-deleted more than 2 years ago
+    const athleteDelete = await client.query(
+      `delete from pilot.athletes
+       where deleted_at is not null
+         and deleted_at < (now() - interval '2 years')
+       returning athlete_id`,
+    );
+    totalDeleted += athleteDelete.rows.length;
+
+    // Delete accounts (parents) soft-deleted more than 1 year ago
+    const accountDelete = await client.query(
+      `delete from pilot.accounts
+       where deleted_at is not null
+         and deleted_at < (now() - interval '1 year')
+         and role = 'parent'
+       returning account_id`,
+    );
+    totalDeleted += accountDelete.rows.length;
+
+    if (totalDeleted > 0) {
+      await client.query(
+      `insert into pilot.audit_events (
+         event_type, organization_id, entity_type, entity_id, details
+       ) values (
+         $1, $2, $3, $4, $5
+       )`,
+        [
+          'data_purged',
+          null,
+          'retention_cleanup',
+          'system',
+          JSON.stringify({
+            athletes_deleted: athleteDelete.rows.length,
+            accounts_deleted: accountDelete.rows.length,
+            total_rows_deleted: totalDeleted,
+          }),
+        ],
+      );
+    }
+
+    return { rowsDeleted: totalDeleted };
+  });
+}
+
+/**
+ * Reports on deletion status for audit/compliance purposes.
+ */
+export async function getDeletionStatus(organizationId: string) {
+  const softDeletedRecords = await query<{
+    entity_type: string;
+    count: string;
+    oldest_deleted_at: string;
+  }>(
+    `select
+       'athletes' as entity_type,
+       count(*)::text as count,
+       min(deleted_at)::text as oldest_deleted_at
+     from pilot.athletes
+     where deleted_at is not null and organization_id = $1
+     union all
+     select
+       'parent_accounts' as entity_type,
+       count(*)::text as count,
+       min(deleted_at)::text as oldest_deleted_at
+     from pilot.accounts
+     where deleted_at is not null and role = 'parent' and organization_id = $1`,
+    [organizationId],
+  );
+
+  const recentDeletions = await query<{
+    event_id: number;
+    deleted_entity: string;
+    actor_name: string;
+    created_at: string;
+    reason: string;
+  }>(
+    `select
+       audit_id::text as event_id,
+       entity_id as deleted_entity,
+       actor_account_id as actor_name,
+       created_at::text as created_at,
+       (details->>'reason')::text as reason
+     from pilot.audit_events
+     where event_type = 'data_deletion_initiated'
+       and organization_id = $1
+       and created_at > now() - interval '1 year'
+     order by created_at desc
+     limit 20`,
+    [organizationId],
+  );
+
+  return {
+    softDeletedRecords,
+    recentDeletions,
+  };
+}

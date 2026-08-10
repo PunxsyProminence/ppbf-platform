@@ -29,6 +29,8 @@ export interface RosterExportRow {
   guardians: string | null;
   athlete_login_id: string | null;
   athlete_login_active: boolean | null;
+  /** present / (present + absent), rounded to 3 places; null when never marked. See attendanceReporting.ts#computeAttendanceRate. */
+  attendance_rate: number | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -56,6 +58,7 @@ export const ROSTER_EXPORT_COLUMNS: readonly RosterExportColumn[] = [
   { key: 'guardians', header: 'Guardians' },
   { key: 'athlete_login_id', header: 'Athlete sign-in ID' },
   { key: 'athlete_login_active', header: 'Athlete sign-in active' },
+  { key: 'attendance_rate', header: 'Attendance rate' },
   { key: 'created_at', header: 'Record created' },
   { key: 'updated_at', header: 'Record updated' },
 ];

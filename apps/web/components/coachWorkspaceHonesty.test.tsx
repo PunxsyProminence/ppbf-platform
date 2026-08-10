@@ -12,6 +12,7 @@ interface RouteResponses {
   reviewProjection?: () => Promise<Response>;
   coachReviews?: () => Promise<Response>;
   announcements?: () => Promise<Response>;
+  intakeReviewAction?: (body: { intake_case_id?: string; action?: string }) => Promise<Response>;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -39,7 +40,7 @@ function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }): 
 }
 
 function installFetch(routes: RouteResponses = {}): jest.Mock {
-  const fetchMock = jest.fn(async (input: unknown) => {
+  const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
 
     if (url.includes('/api/pilot/auth/session')) {
@@ -63,6 +64,12 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     if (url.includes('/api/pilot/announcements/get')) {
       return routes.announcements ? routes.announcements() : jsonResponse({ ok: true, announcements: [] });
     }
+    if (url.includes('/api/pilot/intake/review-action')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { intake_case_id?: string; action?: string };
+      if (routes.intakeReviewAction) return routes.intakeReviewAction(body);
+      const status = body.action === 'approve' ? 'approved' : 'rejected';
+      return jsonResponse({ ok: true, intake_case_id: body.intake_case_id, status });
+    }
 
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -79,8 +86,12 @@ async function renderWorkspace(routes: RouteResponses = {}): Promise<jest.Mock> 
   return fetchMock;
 }
 
+// A tab carrying a pending-count badge (see StatusBadge in CoachWorkspace.tsx)
+// has that count in its accessible name too -- "Tasks 3 pending", not just
+// "Tasks" -- so this matches on the label as a prefix rather than requiring
+// an exact string that only holds when the queue happens to be empty.
 function openTab(label: string): void {
-  fireEvent.click(screen.getByRole('button', { name: label }));
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}\\b`) }));
 }
 
 afterEach(() => {
@@ -97,7 +108,7 @@ describe('coach workspace does not fabricate the coach\'s own records', () => {
     expect(screen.queryByText(/Bronze Certification/i)).toBeNull();
     expect(screen.queryByText(/USA Boxing Coach License/i)).toBeNull();
     expect(screen.queryByText(/Expires:/i)).toBeNull();
-    expect(screen.getAllByText(/PLANNED \| NOT YET IMPLEMENTED/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Planned — Not Yet Implemented/i).length).toBeGreaterThan(0);
   });
 
   test('Development topics are a reference list, not controls that save nothing', async () => {
@@ -206,9 +217,179 @@ describe('coach review submission', () => {
   });
 });
 
+// The Tasks tab's own copy tells a coach to "use the SHADOW tab to act on
+// review-queue items" -- these prove that action actually exists and works.
+// /api/pilot/intake/review-action already authorizes 'coach' for
+// approve/reject server-side; before this, nothing in the coach-facing UI
+// ever called it, so the promise in the Tasks tab's copy was false.
+describe('the SHADOW tab lets a coach act on review-queue items, as the Tasks tab promises', () => {
+  function queueItem(overrides: Record<string, unknown> = {}) {
+    return {
+      intake_case_id: 'case_1',
+      status: 'pending_review',
+      summary: 'New athlete intake: Jordan T.',
+      document_count: 2,
+      updated_at: '2026-08-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  function reviewActionCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
+    return fetchMock.mock.calls
+      .filter((call) => String(call[0]).includes('/api/pilot/intake/review-action'))
+      .map((call) => JSON.parse(String((call[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>);
+  }
+
+  test('a pending_review item shows working Approve/Reject buttons', async () => {
+    const fetchMock = await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem()] }),
+    });
+    openTab('SHADOW Intel');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    await waitFor(() => expect(reviewActionCalls(fetchMock)).toEqual([
+      { intake_case_id: 'case_1', action: 'approve' },
+    ]));
+    await waitFor(() => expect(screen.queryByText('Status: approved')).not.toBeNull());
+  });
+
+  test('an already-decided item shows no action buttons', async () => {
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem({ status: 'approved' })] }),
+    });
+    openTab('SHADOW Intel');
+
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+  });
+
+  test('a rejection outside the coach\'s assigned athletes surfaces the server\'s refusal, not a silent no-op', async () => {
+    const fetchMock = await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem()] }),
+      intakeReviewAction: async () => jsonResponse({ error: 'Forbidden: coach not assigned to athlete' }, { ok: false, status: 403 }),
+    });
+    openTab('SHADOW Intel');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+
+    await waitFor(() => expect(screen.queryByText(/Forbidden: coach not assigned to athlete/i)).not.toBeNull());
+    // The item's own local status must not be optimistically flipped on a
+    // refused request -- it is still exactly what the server last said.
+    expect(screen.queryByText('Status: pending_review')).not.toBeNull();
+    expect(reviewActionCalls(fetchMock)).toHaveLength(1);
+  });
+
+  test('a double-click sends exactly one review-action request', async () => {
+    let releaseAction: (() => void) | undefined;
+    const fetchMock = await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem()] }),
+      intakeReviewAction: (body) =>
+        new Promise<Response>((resolve) => {
+          releaseAction = () => resolve(jsonResponse({ ok: true, intake_case_id: body.intake_case_id, status: 'approved' }));
+        }),
+    });
+    openTab('SHADOW Intel');
+
+    const approveButton = screen.getByRole('button', { name: 'Approve' });
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+
+    expect(reviewActionCalls(fetchMock)).toHaveLength(1);
+
+    await act(async () => {
+      releaseAction?.();
+    });
+    await waitFor(() => expect(screen.queryByText('Status: approved')).not.toBeNull());
+    expect(reviewActionCalls(fetchMock)).toHaveLength(1);
+  });
+});
+
 // Authored notices and motivational copy are data, so the workspace has to ask
 // for its own surface and has to survive the answer -- including no answer at
 // all.
+describe('the review queue admits what it is not showing', () => {
+  function queueItem(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      intake_case_id: id,
+      status: 'pending_review',
+      summary: `New athlete intake ${id}`,
+      document_count: 1,
+      updated_at: '2026-08-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  // The panel rendered slice(0, 6) against a request for 20, so fourteen
+  // pending cases could sit behind the last card with nothing on screen
+  // suggesting they existed. On a queue of decisions waiting on a person, an
+  // undisclosed cap means the work silently disappears.
+  test('renders every case it fetched, not the first six', async () => {
+    const ten = Array.from({ length: 10 }, (_, i) => queueItem(`case_${i}`));
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: ten, total: 10 }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText('New athlete intake case_9')).toBeTruthy();
+    });
+    expect(screen.getByText('New athlete intake case_6')).toBeTruthy();
+  });
+
+  test('states how many cases exist beyond the ones listed', async () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => queueItem(`case_${i}`));
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: twenty, total: 34 }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText(/Showing 20 of 34/)).toBeTruthy();
+    });
+    expect(screen.getByText(/14 more cases are in the queue/)).toBeTruthy();
+  });
+
+  test('says nothing when it is showing the whole queue', async () => {
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem('case_1')], total: 1 }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText('New athlete intake case_1')).toBeTruthy();
+    });
+    expect(screen.queryByText(/Showing/)).toBeNull();
+  });
+
+  // A projection that omits `total` must not produce "Showing 3 of undefined".
+  test('stays quiet rather than guessing when the projection reports no total', async () => {
+    const three = Array.from({ length: 3 }, (_, i) => queueItem(`case_${i}`));
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: three }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText('New athlete intake case_0')).toBeTruthy();
+    });
+    expect(screen.queryByText(/Showing/)).toBeNull();
+    expect(screen.queryByText(/undefined/)).toBeNull();
+  });
+
+  test('uses the singular for a single withheld case', async () => {
+    const two = Array.from({ length: 2 }, (_, i) => queueItem(`case_${i}`));
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: two, total: 3 }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 more case is in the queue/)).toBeTruthy();
+    });
+  });
+});
+
 describe('authored announcements on the coach workspace', () => {
   function announcementRequests(fetchMock: jest.Mock): Array<Record<string, unknown>> {
     return fetchMock.mock.calls

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { setAccountActiveStatus } from '@/src/server/pilot/auth';
+import { getAccountRoleInOrganization, setAccountActiveStatus } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -23,6 +23,20 @@ export async function POST(request: NextRequest) {
 
     if (!organizationId || !accountId || typeof body.active_flag !== 'boolean') {
       throw new Error('Missing organization_id, account_id, or active_flag');
+    }
+
+    // Suspending a gym's staff account is legitimate platform operation -- a
+    // compromised admin has to be stoppable from outside the gym. A child is
+    // not. setAccountActiveStatus revokes every session for the account, and
+    // session revocation for an athlete belongs to that gym's own admin, the
+    // same boundary the PIN directory, PIN reset and revoke routes hold.
+    //
+    // Scoped deliberately narrowly: this refuses athletes, not the route.
+    const targetRole = await getAccountRoleInOrganization(accountId, organizationId);
+    if (targetRole === 'athlete') {
+      throw new Error(
+        'Forbidden: an athlete account is administered by their own gym',
+      );
     }
 
     await setAccountActiveStatus(accountId, organizationId, body.active_flag);

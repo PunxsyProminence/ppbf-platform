@@ -35,7 +35,7 @@ jobs:
       RESOURCE_GROUP: rg-ppbf-enterprise-staging
     steps:
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Verify Exact Tested SHA And Schema Gate
         env:
@@ -74,14 +74,41 @@ jobs:
           fi
 
       - name: Authenticate via Azure OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Checks the schema_migrations_complete attestation rather than trusting
+      # it. See the equivalent step in deploy-production.yml for why: the
+      # attestation is the one gate nothing verifies, and it has been given
+      # ahead of the migration more than once. Read-only.
+      - name: Set up Node For The Schema Check
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Verify Staging Schema Matches This Commit
+        run: |
+          CONN="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-verify-schema.mjs; then
+            echo "::error::Staging is missing schema objects this commit expects. Run apply-migrations against staging first."
+            exit 1
+          fi
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to Azure Container Registry
         run: |
@@ -89,7 +116,7 @@ jobs:
 
       - name: Build and Push Container Image to ACR
         id: build-image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -110,7 +137,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Staging Digest Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: staging-image-digest
           path: staging-image-digest.txt
@@ -219,7 +246,17 @@ jobs:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
           AZURE_AI_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_DEPLOYMENT_NAME }}
           AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
+          RESEARCH_BRIDGE_EXPORT_AUDIENCE: ${{ vars.RESEARCH_BRIDGE_EXPORT_AUDIENCE }}
+          RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS: ${{ vars.RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS }}
+          RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST: ${{ vars.RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST }}
         run: |
+          for name in RESEARCH_BRIDGE_EXPORT_AUDIENCE RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST; do
+            if [ -z "${!name}" ]; then
+              echo "Required staging research bridge variable '$name' is not configured."
+              exit 1
+            fi
+          done
+
           az containerapp update \
             --name app-ppbf-staging \
             --resource-group "$RESOURCE_GROUP" \
@@ -247,7 +284,14 @@ jobs:
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
-              PPBF_DURABLE_RATE_LIMIT=true
+              PPBF_DURABLE_RATE_LIMIT=true \
+              RESEARCH_BRIDGE_EXPORT_ENABLED=true \
+              RESEARCH_BRIDGE_EXPORT_ENVIRONMENT=staging \
+              RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST="$RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST" \
+              RESEARCH_BRIDGE_EXPORT_AUDIENCE="$RESEARCH_BRIDGE_EXPORT_AUDIENCE" \
+              RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS="$RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS" \
+              RESEARCH_BRIDGE_ORGANIZATION_ID=secretref:ppbf-pilot-default-org-id \
+              AZURE_TENANT_ID=secretref:ppbf-ms-tenant-id
 
       - name: Verify Staging AI Secret Reference
         run: |
@@ -399,6 +443,14 @@ jobs:
           PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
           PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
           PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          # Read-only probe fixtures for the runtime-verification step below.
+          # The interesting probes are refusals -- an org-admin-gated route must
+          # refuse a coach, and must refuse the platform owner too -- and a
+          # refusal cannot be proven without a session of the role being
+          # refused. Both are provisioned Microsoft-authenticated with no PIN
+          # hash, so neither can ever authenticate through the login form.
+          PILOT_PROBE_COACH_ACCOUNT_ID: gate_probe_coach
+          PILOT_PROBE_PLATFORM_OWNER_ACCOUNT_ID: gate_probe_platform_owner
         run: |
           npm --prefix apps/web run gate:pilot:fixtures
 
@@ -423,6 +475,62 @@ jobs:
           PILOT_SHADOW_GUARDIAN_PARENT_ID: gate_shadow_parent_1
         run: |
           npm --prefix apps/web run gate:pilot:shadow-e2e
+
+      # Thirty-two queue rows reached PRODUCTION_DEPLOYED having skipped
+      # RUNTIME_VERIFIED. Deploying is not verifying: what those rows attest is
+      # that the code is running, not that any surface has been exercised. This
+      # runs the declared probe set against the environment that was just
+      # deployed and writes a ledger a gatekeeper can read.
+      #
+      # continue-on-error, DELIBERATELY, and this is the part to revisit:
+      # two probes are expected to FAIL until reference data is seeded (the
+      # drill library and disciplines are empty on both environments today), and
+      # a brand-new check must not turn a successful deploy red for a condition
+      # already known and already tracked. So it reports rather than gates.
+      # Once the ledger is clean, deleting this one line makes it a gate -- that
+      # is the whole change, and it should be made rather than left forever.
+      #
+      # It never mints a session against production: the engine refuses that
+      # without an explicit flag, which is not passed here and should not be.
+      - name: Runtime Verification Ledger
+        if: inputs.enable_shadow_gate
+        continue-on-error: true
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PILOT_PROBE_COACH_ACCOUNT_ID: gate_probe_coach
+          PILOT_PROBE_PLATFORM_OWNER_ACCOUNT_ID: gate_probe_platform_owner
+        run: |
+          {
+            echo ''
+            echo '### Runtime verification ledger'
+            echo ''
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # set +e, not pipefail: this shell runs with -e, so a failing probe
+          # would abort the step before the status could be captured and the
+          # summary would be left with an unterminated code fence and no verdict
+          # -- the failure case is exactly the one whose output matters most.
+          #
+          # tee so the ledger lands in both the step summary and the run log:
+          # the summary is what a gatekeeper reads, the log is what survives
+          # being scrolled past.
+          set +e
+          npm --prefix apps/web run pilot:runtime-verify -- --target=staging \
+            2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo '```'
+            echo ''
+            echo "Probe exit status: \`$status\` (non-zero means at least one probe FAILED or errored)."
+            echo 'This step does not gate the deploy. A green ledger does not clear'
+            echo 'RUNTIME_VERIFIED either -- see the outstanding-probe list the ledger prints.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$status"
 
       # always(): a gate that fails partway through is exactly the case where a
       # live athlete credential must not be left behind on a publicly reachable

@@ -15,6 +15,7 @@ import {
   getAssignmentCompletions,
   getAthleteAssignments,
   getAthleteGaps,
+  verifyCompletion,
 } from './progression';
 import { query } from './db';
 
@@ -141,5 +142,36 @@ describe('getAthleteGaps', () => {
     expect(sql).not.toContain('order by severity desc');
     expect(sql).toContain("when 'critical' then 1");
     expect(sql).toContain("when 'low' then 4");
+  });
+});
+
+describe('verifyCompletion', () => {
+  // organizationId was briefly optional, with a fallback that updated by
+  // completion_id alone. A completion_id is not a secret, so that path let a
+  // caller in one gym flip a record in another. These pin the scope shut.
+  test('scopes the update by organization, not by completion id alone', async () => {
+    await verifyCompletion('c-1', 'coach-1', true, 'org-1');
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('organization_id = $5');
+    expect(params).toContain('org-1');
+  });
+
+  test('never issues an update that matches on completion_id alone', async () => {
+    await verifyCompletion('c-1', 'coach-1', false, 'org-1');
+
+    // The unscoped statement was a single line ending at the completion id.
+    // If it ever comes back, this fails rather than waiting for a breach.
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).not.toMatch(/where\s+completion_id\s*=\s*\$4\s*(returning|$)/i);
+  });
+
+  // A completion in another gym must be indistinguishable from one that does
+  // not exist, so a probe cannot enumerate another gym's records by comparing
+  // "not found" against "not yours".
+  test('returns null when no row matched, so the route can hide the difference', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await expect(verifyCompletion('c-other-gym', 'coach-1', true, 'org-1')).resolves.toBeNull();
   });
 });

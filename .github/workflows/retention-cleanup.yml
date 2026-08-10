@@ -1,0 +1,170 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Scheduled enforcement of the data retention policy.
+#
+# docs/DATA_RETENTION.md commits this organization to deleting a withdrawn
+# family's records after a fixed window -- two years for an athlete, one year
+# for a guardian account. Until this workflow existed, nothing anywhere ran the
+# job that does it. The soft-delete path shipped, the hard-delete script shipped
+# with an npm script beside it, and no scheduler ever called it. The policy was
+# a document, not a behaviour, and soft-deleted records would have accumulated
+# forever while the document said they had been purged. For a policy written to
+# satisfy COPPA and GDPR, saying it and not doing it is worse than not saying it.
+#
+# WHY THIS DECLARES NO `environment:`
+#   Same reason backup.yml does not, and the reasoning there applies verbatim: a
+#   scheduled run against a protected environment does not run, it waits for a
+#   human to approve it and is cancelled after thirty days. A retention job that
+#   needs a person every night does not enforce retention.
+#
+#   Unlike the backup, this one deletes. That is the point of it, and it is why
+#   the guards live in the script rather than in this file -- they apply to a
+#   laptop run too. See scripts/pilot-cleanup-deleted-data.mjs:
+#     * it refuses a database the caller did not name (POSTGRES_TARGET_MISMATCH)
+#     * it is dry-run unless PPBF_RETENTION_APPLY=true
+#     * it refuses to remove more than PPBF_RETENTION_MAX_ROWS rows at once
+#     * deletes and the audit row commit as one transaction
+#
+# THE SCHEDULED RUN IS A DRY RUN
+#   Deliberately. The nightly run reports what it WOULD delete and deletes
+#   nothing; enacting it requires a human to dispatch with apply=true. Retention
+#   deadlines here are measured in years, so a purge that waits a day for a
+#   person costs nothing, while an automatic purge that is wrong is
+#   unrecoverable -- there is no undo, and the backup is the only path back.
+#   When the dry run reports a number that looks right, dispatch it.
+#
+#   The dry run is not busywork: it is the monitor. A number that climbs
+#   unexpectedly means a bad deleted_at backfill or a cascade that fired too
+#   widely, and it surfaces before anything is destroyed rather than after.
+#
+# WHAT NEVER REACHES THE LOG
+#   No row content and no identifiers. The script emits one JSON line of counts.
+#   The connection string is masked before it is written anywhere.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: retention-cleanup
+
+on:
+  schedule:
+    # 07:40 UTC daily -- roughly 03:40 America/New_York, after backup.yml's
+    # 07:10 run, so the night's backup exists before anything is ever deleted.
+    - cron: '40 7 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which environment's database to sweep
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      apply:
+        description: Type APPLY to actually delete. Anything else is a dry run.
+        required: true
+        default: DRY_RUN
+        type: string
+      max_rows:
+        description: Refuse the run if it would delete more rows than this.
+        required: false
+        default: '50'
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: retention-cleanup-${{ inputs.target || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TARGET: ${{ inputs.target || 'production' }}
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ (inputs.target || 'production') == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Fetched from the target-NAMED Container App, so the fetch itself is the
+      # strong target guard: you cannot ask Azure for staging's app and get
+      # production's secret. The expected host/database are then derived from
+      # that same string and parsed exactly as the script parses it, which turns
+      # the script's own assertion into a consistency check. Repo variables
+      # override them when an operator wants an independent one.
+      - name: Resolve Database Connection
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$HOST"
+          test -n "$DB"
+
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # A scheduled run has no inputs, so `inputs.apply` is empty and this
+      # resolves to false. Deleting can therefore only ever be a deliberate
+      # dispatch by a person who typed APPLY.
+      - name: Sweep Expired Records
+        env:
+          PPBF_RETENTION_APPLY: ${{ inputs.apply == 'APPLY' }}
+          PPBF_RETENTION_MAX_ROWS: ${{ inputs.max_rows || '50' }}
+        run: |
+          npm --prefix apps/web run pilot:cleanup-deleted-data | tee cleanup-result.json
+
+      - name: Record What Ran
+        if: always()
+        run: |
+          {
+            echo "### Retention sweep -- \`$TARGET\`"
+            echo ''
+            if [ "${{ inputs.apply }}" = "APPLY" ]; then
+              echo '- mode: **APPLY** (rows were deleted)'
+            else
+              echo '- mode: dry run (nothing deleted)'
+            fi
+            echo "- outcome: \`${{ job.status }}\`"
+            echo ''
+            echo '```json'
+            cat cleanup-result.json 2>/dev/null || echo '{"event":"retention.cleanup.no-output"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

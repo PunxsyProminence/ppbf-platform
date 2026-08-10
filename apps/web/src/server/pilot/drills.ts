@@ -33,6 +33,24 @@ export interface PilotDrill {
   updated_at: string;
 }
 
+/**
+ * The body GET /api/pilot/drills answers with.
+ *
+ * This exists so the route and its clients cannot disagree about the key. They
+ * did: the route has always sent `items`, both clients read `drills`, and the
+ * drill library therefore rendered empty from the day it shipped. Route tests
+ * passed and component tests passed, because each side was only ever tested
+ * against its own idea of the shape.
+ *
+ * Import this on both sides. A rename is then a type error at every call site
+ * rather than an empty list nobody can explain.
+ */
+export interface DrillLibraryResponse {
+  ok: true;
+  organization_id: string;
+  items: PilotDrill[];
+}
+
 const DRILL_FIELDS =
   'organization_id, drill_id, name, category, focus, cues, difficulty, active, created_at, updated_at';
 

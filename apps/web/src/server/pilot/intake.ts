@@ -487,13 +487,19 @@ export async function upsertWaiver(params: {
   consentVersion: string;
   status: string;
   notes?: string;
+  // T-008: only meaningfully set for waiverType='photo_media'. One write
+  // path for every waiver_type -- see the guardian-media-consent migration's
+  // header for why this extends pilot.waivers instead of a second table.
+  parentId?: string | null;
+  coversVideo?: boolean;
+  publicUseAllowed?: boolean;
 }): Promise<string> {
   const waiverId = randomUUID();
 
   await query(
     `insert into pilot.waivers
-     (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role, signed_at, consent_version, status, notes)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+     (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role, signed_at, consent_version, status, notes, parent_id, covers_video, public_use_allowed)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
     [
       params.organizationId,
       waiverId,
@@ -505,6 +511,9 @@ export async function upsertWaiver(params: {
       params.consentVersion,
       params.status,
       params.notes ?? '',
+      params.parentId ?? null,
+      params.coversVideo ?? true,
+      params.publicUseAllowed ?? false,
     ],
   );
 
@@ -585,6 +594,48 @@ export async function createCoachObservation(params: {
   );
 
   return noteId;
+}
+
+export interface ParentMessageRow {
+  note_id: string;
+  athlete_id: string;
+  sender_role: string;
+  note_text: string;
+  created_at: string;
+}
+
+/**
+ * Capability #90: one-directional coach/admin -> parent messaging, scoped
+ * down from the full two-way channel deliberately -- reply, moderation, and
+ * a "message any coach" surface are real product decisions the owner should
+ * make, not guessed at. `pilot.coach_observations.note_type` is already
+ * unconstrained text and already reused this way (#125, #95/#96); a coach
+ * or admin sends via the existing `POST /api/pilot/intake/domain-upsert`
+ * (`entity_type: 'coach_note'`, `note_type: 'parent_message'`) -- no new
+ * write route. This is the read side, filtered to ONLY that one note_type
+ * so a guardian's message feed can never surface a behavior note or a
+ * barrier report filed under the same table.
+ *
+ * `sender_role` (via a join to pilot.accounts, never a resolved display
+ * name -- accounts has no name column for staff) matches ParentHub's own
+ * prior placeholder copy, "From Coach" -- a family reads who sent it by
+ * role, the same way the mock data this replaces always displayed it.
+ */
+export async function listParentMessages(organizationId: string, athleteIds: string[]): Promise<ParentMessageRow[]> {
+  if (athleteIds.length === 0) return [];
+
+  const rows = await query<ParentMessageRow>(
+    `select co.note_id, co.athlete_id, a.role as sender_role, co.note_text, co.created_at::text
+     from pilot.coach_observations co
+     join pilot.accounts a on a.account_id = co.coach_account_id
+     where co.organization_id = $1
+       and co.athlete_id = any($2::text[])
+       and co.note_type = 'parent_message'
+     order by co.created_at desc`,
+    [organizationId, athleteIds],
+  );
+
+  return rows;
 }
 
 export async function upsertGuardian(params: {

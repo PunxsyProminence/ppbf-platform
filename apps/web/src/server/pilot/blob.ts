@@ -1,6 +1,11 @@
 import { BlobServiceClient, StorageSharedKeyCredential, generateBlobSASQueryParameters, BlobSASPermissions } from '@azure/storage-blob';
 
-import { getAzureStorageConnectionString, getPilotShadowContainerName, getPilotVideoContainerName } from './env';
+import {
+  getAzureStorageConnectionString,
+  getPilotProfileContainerName,
+  getPilotShadowContainerName,
+  getPilotVideoContainerName,
+} from './env';
 
 let blobClient: BlobServiceClient | null = null;
 
@@ -122,4 +127,175 @@ export function getPilotVideoSasUrl(blobPath: string, expiryMinutes = 60): strin
 // document while looking at the review screen, not to be stored or shared.
 export function getPilotShadowSasUrl(blobPath: string, expiryMinutes = 15): string {
   return getReadOnlySasUrl(getPilotShadowContainerName(), blobPath, expiryMinutes);
+}
+
+/* --------------------------------------------------------------- PORTRAITS --
+ * Member portraits. Bytes in, bytes out, and no signed URL at any point.
+ *
+ * The other two containers mint read-only SAS links so a browser can fetch
+ * directly from storage. That is right for a board packet and defensible for a
+ * reviewer's one-off look at a quarantined document. It is not right for a
+ * child's face: a SAS URL is a bearer capability with no idea who is holding
+ * it, it survives being pasted into a chat window, and it outlives the session
+ * that minted it. downloadPilotVideoFile already refuses to mint one for a
+ * minor's footage for exactly this reason; portraits take the same stance.
+ *
+ * So the read path here returns a Buffer to the route, the route re-checks who
+ * is asking (profileVisibility.ts), and the bytes go out over the authenticated
+ * request with Cache-Control: private, no-store. There is no URL for a child's
+ * photograph that works without a session.
+ */
+
+export async function uploadPilotProfilePhoto(
+  path: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  // 'container' access is never requested. The default is private, and a
+  // portrait container that is publicly listable would defeat every check in
+  // profileVisibility.ts in one line.
+  await containerClient.createIfNotExists();
+  const blockBlobClient = containerClient.getBlockBlobClient(path);
+  await blockBlobClient.uploadData(Buffer.from(bytes), {
+    blobHTTPHeaders: {
+      blobContentType: contentType,
+      // Storage must not tell a CDN or a proxy that this is shareable.
+      blobCacheControl: 'private, no-store',
+    },
+  });
+}
+
+/**
+ * Read one portrait, server-side. Capped an order of magnitude above the upload
+ * limit rather than at it: the cap is here to stop an unbounded read into a
+ * request handler's memory, not to re-litigate the upload policy, and a blob
+ * that somehow exceeds it is a fault to surface rather than a photo to serve.
+ */
+export async function downloadPilotProfilePhoto(
+  blobPath: string,
+  maxBytes = 4 * 1024 * 1024,
+): Promise<Buffer> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  const blobClientForPath = containerClient.getBlockBlobClient(blobPath);
+
+  const properties = await blobClientForPath.getProperties();
+  if (typeof properties.contentLength === 'number' && properties.contentLength > maxBytes) {
+    throw new Error('PROFILE_PHOTO_TOO_LARGE');
+  }
+
+  return blobClientForPath.downloadToBuffer(0, undefined, { maxRetryRequestsPerBlock: 2 });
+}
+
+/**
+ * Delete a portrait outright.
+ *
+ * A member removing their own photo, or staff taking one down, has to mean the
+ * bytes are gone -- not that a flag flipped while the file sits in a container
+ * anyone with the storage key can list. Missing is success: a delete that finds
+ * nothing has achieved what it was asked to achieve.
+ */
+export async function deletePilotProfilePhoto(blobPath: string): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  await containerClient.getBlockBlobClient(blobPath).deleteIfExists();
+}
+
+/* --------------------------------------------------------- THE GYM WALL ----
+ * Photographs of the building, uploaded by an admin from /admin/gym-photos.
+ *
+ * Same container and same stance as portraits: private, no SAS at any point,
+ * bytes out over the authenticated request only. These are pictures of a room,
+ * not of a person -- but a picture of a room can have a person standing in it,
+ * and the cost of treating every upload with the portrait container's caution
+ * is one code path instead of two rules.
+ *
+ * The path is derived from the organization and the slot, never from a random
+ * id: one slot holds exactly one photograph, and a replacement overwrites
+ * rather than accumulating a history in the container.
+ */
+
+const GYM_WALL_BLOB_PREFIX = 'gym-wall';
+
+function gymWallBlobPath(organizationId: string, slotKey: string): string {
+  return `${GYM_WALL_BLOB_PREFIX}/${organizationId}/${slotKey}`;
+}
+
+export async function uploadPilotGymWallPhoto(
+  organizationId: string,
+  slotKey: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  await containerClient.createIfNotExists();
+  const blockBlobClient = containerClient.getBlockBlobClient(gymWallBlobPath(organizationId, slotKey));
+  await blockBlobClient.uploadData(Buffer.from(bytes), {
+    blobHTTPHeaders: {
+      blobContentType: contentType,
+      blobCacheControl: 'private, no-store',
+    },
+  });
+}
+
+/**
+ * Read one gym-wall photograph, or null when the slot has no upload. Absence
+ * is an ordinary answer here -- the wall falls back to the manifest -- so a
+ * missing blob returns null rather than throwing.
+ */
+export async function downloadPilotGymWallPhoto(
+  organizationId: string,
+  slotKey: string,
+  maxBytes = 12 * 1024 * 1024,
+): Promise<{ bytes: Buffer; contentType: string } | null> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  const blobClientForPath = containerClient.getBlockBlobClient(gymWallBlobPath(organizationId, slotKey));
+
+  let contentType = 'application/octet-stream';
+  try {
+    const properties = await blobClientForPath.getProperties();
+    if (typeof properties.contentLength === 'number' && properties.contentLength > maxBytes) {
+      throw new Error('GYM_WALL_PHOTO_TOO_LARGE');
+    }
+    contentType = properties.contentType ?? contentType;
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && (error as { statusCode?: number }).statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+
+  const bytes = await blobClientForPath.downloadToBuffer(0, undefined, { maxRetryRequestsPerBlock: 2 });
+  return { bytes, contentType };
+}
+
+/** Delete outright; the bytes go, not a flag. Missing is success. */
+export async function deletePilotGymWallPhoto(organizationId: string, slotKey: string): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  await containerClient.getBlockBlobClient(gymWallBlobPath(organizationId, slotKey)).deleteIfExists();
+}
+
+/** Which slots hold an uploaded photograph for this organization. */
+export async function listPilotGymWallSlotKeys(organizationId: string): Promise<string[]> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  const prefix = `${GYM_WALL_BLOB_PREFIX}/${organizationId}/`;
+  const keys: string[] = [];
+  try {
+    for await (const blob of containerClient.listBlobsFlat({ prefix })) {
+      const key = blob.name.slice(prefix.length);
+      if (key && !key.includes('/')) keys.push(key);
+    }
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && (error as { statusCode?: number }).statusCode === 404) {
+      return [];
+    }
+    throw error;
+  }
+  return keys;
 }

@@ -17,13 +17,17 @@ Two consequences worth knowing before you touch a page:
 
 - **New work should use ppbf tokens directly** — `var(--hide-800)`,
   `var(--t-md)`, `var(--s5)`, `var(--brass-500)`. The legacy aliases
-  (`--canvas-tan`, `--red-primary`, `--text-sm`) exist to carry pages written
+  (`--canvas-tan`, `--safety-locked`, `--text-sm`) exist to carry pages written
   before the design system existed, not as a second vocabulary to write in.
+- **`--safety-locked` means what it says.** It is the safety gate's red, and
+  Law 2 reserves saturated colour for safety state. It is not a chrome accent —
+  active tabs, KPI labels and panel borders take `--accent` (brass). The token
+  was called `--red-primary` until it was renamed for exactly this reason.
 - **ppbf.css ships real component classes** — `.badge`, `.tile`, `.frame`,
   `.mat-leather`, `.mat-paper`, `.gauge`, `.plaque`. Use them instead of
   rebuilding a panel out of utilities. Its `.stamp` is a *static ink mark*
-  (Law 7); `globals.css` separately defines `.stamp` as a *clickable button*,
-  and that one wins because it is imported later. Do not mix them.
+  (Law 7) and is reachable; `globals.css`'s clickable button is `.stamp-button`,
+  renamed out of the collision that used to shadow it.
 
 Ground is a real decision, not a style: **ink** (`--hide-950`) for staff and
 tactical surfaces, **canvas** (`--canvas-warm`, via `.on-canvas`) for family and
@@ -32,7 +36,7 @@ is listed per row.
 
 ---
 
-## Table shape — 17 routes
+## Table shape — 19 routes
 
 A header, a filter row, and rows with per-row actions. Highest-leverage shape in
 the app.
@@ -40,6 +44,8 @@ the app.
 | Route | Ground | Notes |
 |---|---|---|
 | `admin/people` | ink | **Build first.** 1048 lines already — port it, don't rewrite |
+| `admin/activation-codes` | ink | Per-athlete activation code issuance (T-001) |
+| `admin/video-review` | ink | Quarantined-video scan-review escalation (T-003); resolves `needs_human_review`, never overturns `blocked`/`infected` |
 | `admin` | ink | Hub: capability tiles + KPI row, so table + dashboard hybrid |
 | `admin/pin` | ink | Expiring keys use `.badge.badge--restricted` |
 | `admin/organizations` | ink | |
@@ -59,13 +65,15 @@ the app.
 
 ---
 
-## Dashboard shape — 26 routes
+## Dashboard shape — 28 routes
 
 KPI row over content sections. The nine named board routes are one page with a
 role parameter; build `board/[member]` and the rest are routing.
 
 | Route | Ground | Notes |
 |---|---|---|
+| `admin/attendance` | ink | Rolls up `pilot.scheduler_attendance` (capability #122); a never-marked athlete renders `Unavailable`, never a fabricated 0% |
+| `admin/escalations` | ink | Reads `pilot.safety_escalations` (capability #194); the only pull surface for a near miss / pain report / safety-gate flag severe enough to auto-escalate — this platform sends no notification of any kind |
 | `board/[member]` | ink | **Build first.** The nine named board routes are this page |
 | `board` | ink | |
 | `board/president` | ink | |
@@ -137,4 +145,4 @@ No shared shape. Schedule these last, individually.
 4. Those three groups are independent and can then run in parallel
 5. Custom routes last, one at a time
 
-17 + 26 + 8 + 10 = 61.
+19 + 28 + 8 + 10 = 65.

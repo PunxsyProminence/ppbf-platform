@@ -107,7 +107,7 @@ screen, the data it shows should map to these (don't invent data that has no sou
 
 ## 7. Hard rules Canvas must respect
 
-- **Visual:** tactical/field-manual look — tan paper bg `#d4c4a8`, thick black borders, **hard blur-free offset shadows**, condensed stencil headings, blood-red `#8b0000` as the *only* accent. Full spec in the brand brief. No gradients, no rounded SaaS cards, no blue/cyan.
+- **Visual:** the **"Leather & Brass"** system — a boxing gym run properly for forty years. Two grounds (ink for staff, warm canvas for family/public), real materials only (leather, brass, slate, cork, paper), heavy slab-serif display type (NOT stencil), **hard blur-free offset shadows**, saturated colour reserved for the safety ladder. Exact hexes, faces, and proportion live ONLY in [`BRAND_DESIGN_BRIEF.md`](./BRAND_DESIGN_BRIEF.md) — do not restate them here; when this file and the brief disagree, the brief wins. No gradients, no rounded SaaS cards, no blue/cyan.
 - **Accessibility:** visible red focus rings, 44px min touch targets, keyboard-navigable.
 - **Safety/governance tone:** this is a youth-safety product. Board/aggregate screens must never show individual athlete PII. Copy is disciplined and plain, not hype.
 - **Consistency:** match existing role workspaces before inventing new patterns; reuse `uiStyles.ts`.
@@ -117,9 +117,15 @@ screen, the data it shows should map to these (don't invent data that has no sou
 > Design a [ROLE] screen for the PPBF platform — a nonprofit youth-boxing training &
 > development web app (Next.js dashboards, not a marketing site). It's for the [ROLE]
 > workspace, showing [what data — e.g. the coach review queue / athlete progression /
-> board compliance summary]. Use the PPBF tactical aesthetic: canvas-tan `#d4c4a8`
-> paper background, thick 2–3px solid black borders on square panels, hard blur-free
-> offset drop shadows, condensed stencil headings (Oswald), mono uppercase micro-labels,
-> and blood-red `#8b0000` as the only accent (olive-green success, mustard warning).
-> Data-dense and scannable — tables, status badges, metric tiles, review cards. Visible
-> red keyboard focus rings, 44px touch targets. No gradients, no rounded cards, no blue.
+> board compliance summary]. Use the PPBF "Leather & Brass" aesthetic — the back
+> office of a boxing gym run properly for forty years: [ink `#14100D` ground for
+> staff screens | warm canvas `#EFE4C8` for family/public], leather panels with
+> saddle-stitch rules, oxidized patina hardware, heavy slab-serif wood-type
+> headings (like Alfa Slab One — NOT stencil), condensed-sans body (Oswald), mono
+> uppercase micro-labels, hard blur-free offset drop shadows on square panels.
+> Saturated colour ONLY for safety/status state (green `#3F7D4E` cleared, blue
+> `#2E6E96` monitor, orange `#C05A1E` restricted, red `#A81E22` locked), always
+> paired with a glyph (✓ ◉ ▲ ✕) and an uppercase label — full spec in
+> BRAND_DESIGN_BRIEF.md, which wins on any conflict. Data-dense and scannable —
+> tables, status badges, metric tiles, review cards. Brass focus rings, 55px
+> touch targets on floor surfaces. No gradients, no rounded cards, no cyan.

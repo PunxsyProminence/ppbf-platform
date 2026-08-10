@@ -27,6 +27,32 @@ interface VideoSession {
   created_at: string;
 }
 
+/* Publication lifecycle states are queue outcomes, so they wear the design
+   system's four-rung badge ladder with a glyph + uppercase label, never colour
+   alone (Laws 2 + 3). */
+type BadgeTone = 'cleared' | 'monitor' | 'restricted' | 'locked';
+
+const STATUS_GLYPH: Record<BadgeTone, string> = {
+  cleared: '✓',
+  monitor: '◉',
+  restricted: '▲',
+  locked: '✕',
+};
+
+function statusTone(status: VideoPublication['status']): BadgeTone {
+  if (status === 'published' || status === 'approved') return 'cleared';
+  if (status === 'rejected') return 'locked';
+  if (status === 'pending_review') return 'restricted';
+  return 'monitor'; // draft, archived: in-process / dormant, not an outcome
+}
+
+function complianceTone(check: string): BadgeTone {
+  if (check === 'passed') return 'cleared';
+  if (check === 'failed') return 'locked';
+  if (check === 'manual_review') return 'restricted';
+  return 'monitor';
+}
+
 // The one place the workflow is described to the coach. Each publication shows
 // where it stands and who has to act next, so an item that cannot be published
 // says why instead of simply omitting the button.
@@ -172,44 +198,44 @@ export default function CoachVideoPublicationsPage() {
   };
 
   return (
-    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/video-publications" allowedRoles={['coach']} showShellHeader={false}>
-      <div className="space-y-6">
-        <header className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Video Management</p>
-          <h1 className="mt-2 text-3xl font-black text-[color:var(--bone-100)]">Publication Workflow</h1>
-          <p className="mt-2 text-sm text-[color:var(--bone-300)]">
+    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/video-publications" allowedRoles={['coach']} room="floor" showShellHeader={false}>
+      <div className="space-y-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+          <p className="t-eyebrow">Video Management</p>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Publication Workflow</h1>
+          <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Publish coaching videos to the research library. You create the publication, an organization admin records a
             compliance check, and a passing check clears it for you to publish.
           </p>
-          <ol className="mt-3 space-y-1 text-xs text-[color:var(--bone-300)]">
+          <ol className="mt-[var(--s3)] space-y-1 text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
             <li>1. You create the publication from a released video. It starts as a draft.</li>
             <li>2. An organization admin records a compliance check against it.</li>
             <li>3. A passing check approves it; a failing check rejects it.</li>
             <li>4. You publish an approved publication to the research library.</li>
           </ol>
-          {errorMessage ? <p className="mt-3 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{errorMessage}</p> : null}
         </header>
 
         {/* Create Publication Form */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-[color:var(--bone-100)]">Create Publication</h2>
+          <div className="flex items-center justify-between gap-[var(--s3)] mb-[var(--s4)]">
+            <h2 className="t-command text-[length:var(--t-lg)]">Create Publication</h2>
             <button
               onClick={() => setShowCreateForm(!showCreateForm)}
-              className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-1 text-xs font-bold text-[color:var(--brass-300)]"
+              className="btn btn--ghost"
             >
               {showCreateForm ? 'Cancel' : '+ New Publication'}
             </button>
           </div>
 
           {showCreateForm && (
-            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4 space-y-3">
-              <div>
-                <label className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Select Video</label>
+            <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+              <div className="field">
+                <label className="t-label">Select Video</label>
                 <select
                   value={selectedVideo}
                   onChange={(e) => setSelectedVideo(e.target.value)}
-                  className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
+                  className="select"
                 >
                   <option value="">-- Choose Video --</option>
                   {publishableVideos.map((v) => (
@@ -219,56 +245,56 @@ export default function CoachVideoPublicationsPage() {
                   ))}
                 </select>
                 {publishableVideos.length === 0 ? (
-                  <p className="mt-1 text-xs text-[color:var(--bone-300)]">
+                  <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                     No videos linked to an athlete yet. Upload footage with an athlete on it from Video Analysis.
                   </p>
                 ) : null}
               </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Title</label>
+              <div className="field">
+                <label className="t-label">Title</label>
                 <input
                   type="text"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   placeholder="Publication title..."
-                  className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
+                  className="input"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Description</label>
+              <div className="field">
+                <label className="t-label">Description</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Publication description..."
-                  className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
+                  className="textarea"
                   rows={3}
                 />
               </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Publication Type</label>
+              <div className="field">
+                <label className="t-label">Publication Type</label>
                 <select
                   value={formData.publication_type}
                   onChange={(e) => setFormData({ ...formData, publication_type: e.target.value })}
-                  className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
+                  className="select"
                 >
                   <option value="research_library">Research Library</option>
                   <option value="public_coaching">Public Coaching</option>
                   <option value="private_archive">Private Archive</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Tags (comma-separated)</label>
+              <div className="field">
+                <label className="t-label">Tags (comma-separated)</label>
                 <input
                   type="text"
                   value={formData.tags}
                   onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
                   placeholder="technique, footwork, defense"
-                  className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
+                  className="input"
                 />
               </div>
               <button
                 onClick={handleCreatePublication}
-                className="w-full border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] py-2 text-xs font-bold uppercase text-[color:var(--brass-300)]"
+                className="btn w-full"
               >
                 Create Publication
               </button>
@@ -278,32 +304,34 @@ export default function CoachVideoPublicationsPage() {
 
         {/* Publications List */}
         <section>
-          <h2 className="mb-4 text-lg font-bold text-[color:var(--bone-100)]">Publications ({publications.length})</h2>
-          <div className="space-y-3">
+          <h2 className="t-command mb-[var(--s4)] text-[length:var(--t-lg)]">Publications ({publications.length})</h2>
+          <div className="space-y-[var(--s3)]">
             {publications.length === 0 ? (
-              <p className="text-sm text-[#9a8a7a]">No publications yet.</p>
+              <p className="t-body text-[color:var(--bone-300)]">No publications yet.</p>
             ) : (
               publications.map((pub) => {
                 const cleared = pub.status === 'approved' && pub.compliance_check_status === 'passed';
                 const isSubmitter = session.accountId !== null && pub.submitted_by_account_id === session.accountId;
 
                 return (
-                  <div key={pub.publication_id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
-                    <div className="flex items-start justify-between gap-4">
+                  <div key={pub.publication_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                    <div className="flex items-start justify-between gap-[var(--s4)]">
                       <div className="flex-1">
-                        <p className="font-semibold text-[color:var(--bone-200)]">{pub.title}</p>
-                        <p className="text-xs text-[color:var(--bone-300)]">{pub.description}</p>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <span className="text-xs font-mono px-2 py-1 border border-[color:var(--hide-600)] text-[color:var(--brass-300)]">
-                            status: {pub.status}
+                        <p className="font-semibold text-[color:var(--bone-100)]">{pub.title}</p>
+                        <p className="t-muted text-[color:var(--bone-300)]">{pub.description}</p>
+                        <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                          <span className={`badge badge--${statusTone(pub.status)}`}>
+                            <i>{STATUS_GLYPH[statusTone(pub.status)]}</i>
+                            {pub.status}
                           </span>
-                          <span className="text-xs font-mono px-2 py-1 border border-[color:var(--hide-600)] text-[color:var(--brass-300)]">
+                          <span className={`badge badge--${complianceTone(pub.compliance_check_status)}`}>
+                            <i>{STATUS_GLYPH[complianceTone(pub.compliance_check_status)]}</i>
                             checks: {pub.compliance_check_status}
                           </span>
                         </div>
-                        <p className="mt-2 text-xs text-[color:var(--bone-300)]">{nextStep(pub)}</p>
+                        <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">{nextStep(pub)}</p>
                         {cleared && !isSubmitter ? (
-                          <p className="mt-1 text-xs text-[color:var(--bone-300)]">
+                          <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                             Another coach submitted this one, so only they or an organization admin can publish it.
                           </p>
                         ) : null}
@@ -312,7 +340,7 @@ export default function CoachVideoPublicationsPage() {
                         <button
                           onClick={() => { void handlePublish(pub.publication_id, pub.video_session_id); }}
                           disabled={publishingId === pub.publication_id}
-                          className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-2 text-xs font-bold text-[color:var(--brass-300)] disabled:opacity-50"
+                          className="btn disabled:opacity-50"
                         >
                           {publishingId === pub.publication_id ? 'Publishing...' : 'Publish'}
                         </button>
@@ -325,8 +353,8 @@ export default function CoachVideoPublicationsPage() {
           </div>
         </section>
 
-        <div className="flex flex-wrap gap-3">
-          <Link href="/coach/video-analysis" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+        <div className="flex flex-wrap gap-[var(--s3)]">
+          <Link href="/coach/video-analysis" className="btn btn--ghost">
             Back to Video Analysis
           </Link>
         </div>

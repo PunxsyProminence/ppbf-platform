@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { readRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateNumeric, formatGymStamp } from '@/src/lib/gymTime';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -180,27 +181,26 @@ export default function ScoutReportPage() {
   );
 
   return (
-    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       {/* HEADER */}
-      <header className="border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-4 md:px-8">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[color:var(--locked)]">SHADOW Intelligence</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[color:var(--bone-200)]">Scout Reports</h1>
-            <p className="mt-1 text-xs text-[color:var(--bone-400)]">Profile intelligence, Recovery Round jobs, and The Scorecard</p>
+            <p className="t-eyebrow">SHADOW Intelligence</p>
+            <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
+              Scout Reports
+            </h1>
+            <p className="t-muted mt-[var(--s2)]">Profile intelligence, Recovery Round jobs, and The Scorecard</p>
           </div>
-          <div className="flex gap-3">
-            <Link
-              href="/shadow"
-              className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] px-3 py-2 text-xs font-mono text-[color:var(--bone-400)] transition hover:border-[color:var(--brass-700)] hover:text-[color:var(--bone-200)]"
-            >
+          <div className="flex flex-wrap items-center gap-[var(--s3)]">
+            <Link href="/shadow" className="btn btn--ghost">
               ← SHADOW
             </Link>
             <button
               type="button"
               disabled
               title="Requires the secure scheduled SHADOW worker"
-              className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono font-bold text-[#6a5a4a] opacity-60"
+              className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
             >
               Scout Report worker not active
             </button>
@@ -208,34 +208,40 @@ export default function ScoutReportPage() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl p-4 md:p-8 space-y-6">
+      <div className="mx-auto w-full max-w-[1200px] space-y-[var(--s5)] p-[var(--s5)]">
         {error ? (
-          <p className="border border-[color:var(--locked)] bg-[#1a0a0a] px-4 py-2 text-xs font-mono text-[color:var(--locked)]">{error}</p>
+          <div role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
+            <span className="badge badge--locked">
+              <i>✕</i>Load Failed
+            </span>
+            <p className="t-body mt-[var(--s3)]">{error}</p>
+          </div>
         ) : null}
 
         {/* METRICS DASHBOARD */}
         {scoreboard ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-5 space-y-4">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Metrics Dashboard — {scoreboard.period}</p>
+          <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow">Metrics Dashboard — {scoreboard.period}</p>
 
             {/* Tier Distribution */}
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-[var(--s4)] md:grid-cols-2">
               <div>
-                <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Tier Distribution</p>
-                <div className="space-y-2">
+                <p className="t-label mb-[var(--s3)]">Tier Distribution</p>
+                <div className="space-y-[var(--s3)]">
                   {[
-                    { label: '🥇 Gold', count: scoreboard.engagement.usersByTier.gold, percent: ((scoreboard.engagement.usersByTier.gold / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
-                    { label: '🥈 Silver', count: scoreboard.engagement.usersByTier.silver, percent: ((scoreboard.engagement.usersByTier.silver / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
-                    { label: '🥉 Bronze', count: scoreboard.engagement.usersByTier.bronze, percent: ((scoreboard.engagement.usersByTier.bronze / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
+                    { label: 'Gold', count: scoreboard.engagement.usersByTier.gold, percent: ((scoreboard.engagement.usersByTier.gold / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
+                    { label: 'Silver', count: scoreboard.engagement.usersByTier.silver, percent: ((scoreboard.engagement.usersByTier.silver / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
+                    { label: 'Bronze', count: scoreboard.engagement.usersByTier.bronze, percent: ((scoreboard.engagement.usersByTier.bronze / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
                   ].map(({ label, count, percent }: { label: string; count: number; percent: string }) => (
-                    <div key={label} className="space-y-1">
-                      <div className="flex justify-between text-[9px] text-[color:var(--bone-400)]">
-                        <span>{label} {count} users</span>
+                    <div key={label} className="space-y-[var(--s1)]">
+                      <div className="t-data flex justify-between text-[color:var(--bone-300)]">
+                        <span>{label} · {count} users</span>
                         <span>{percent}%</span>
                       </div>
-                      <div className="h-1.5 bg-[var(--hide-950)] border border-[#3a2a2a] overflow-hidden">
+                      {/* Law 1: the meter fill is chassis, so it is brass. */}
+                      <div className="h-[var(--s2)] overflow-hidden rounded-[var(--r-sm)] border border-[color:var(--hide-600)] bg-[rgba(0,0,0,.4)]">
                         <div
-                          className="h-full bg-[var(--brass-300)]"
+                          className="h-full bg-[var(--brass-500)]"
                           style={{ width: `${percent}%` }}
                         />
                       </div>
@@ -246,16 +252,16 @@ export default function ScoutReportPage() {
 
               {/* Effectiveness */}
               <div>
-                <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Effectiveness Metrics</p>
-                <div className="space-y-2">
+                <p className="t-label mb-[var(--s3)]">Effectiveness Metrics</p>
+                <div className="space-y-[var(--s3)]">
                   {[
-                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: 'var(--cleared)' },
-                    { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%`, color: 'var(--brass-300)' },
-                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: 'var(--locked)' },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} className="flex justify-between border border-[#3a2a2a] bg-[var(--hide-950)] px-3 py-2">
-                      <span className="text-[9px] text-[color:var(--bone-400)]">{label}</span>
-                      <span className="text-[9px] font-mono font-bold" style={{ color }}>{value}</span>
+                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%` },
+                    { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%` },
+                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="mat-leather--raised flex justify-between gap-[var(--s3)] rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)]">
+                      <span className="t-muted">{label}</span>
+                      <span className="t-data text-[color:var(--bone-100)]">{value}</span>
                     </div>
                   ))}
                 </div>
@@ -263,17 +269,17 @@ export default function ScoutReportPage() {
             </div>
 
             {/* Engagement Summary */}
-            <div className="border-t border-[#3a2a2a] pt-3">
-              <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Engagement Summary</p>
-              <div className="grid md:grid-cols-3 gap-2">
+            <div className="border-t border-[color:var(--hide-600)] pt-[var(--s4)]">
+              <p className="t-label mb-[var(--s3)]">Engagement Summary</p>
+              <div className="grid gap-[var(--s3)] md:grid-cols-3">
                 {[
                   { label: 'Total Interactions', value: scoreboard.growth.totalInteractions },
                   { label: 'Daily Active Users', value: scoreboard.engagement.dailyActiveUsers },
                   { label: 'Avg Messages / Session', value: scoreboard.engagement.avgMessagesPerSession?.toFixed(1) ?? 'Unavailable' },
                 ].map(({ label, value }) => (
-                  <div key={label} className="border border-[#3a2a2a] bg-[var(--hide-950)] px-3 py-2 text-center">
-                    <p className="text-[9px] text-[color:var(--bone-400)]">{label}</p>
-                    <p className="mt-1 text-sm font-mono font-bold text-[color:var(--brass-300)]">{value}</p>
+                  <div key={label} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)] text-center">
+                    <p className="t-label">{label}</p>
+                    <p className="t-data mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-100)]">{value}</p>
                   </div>
                 ))}
               </div>
@@ -281,12 +287,12 @@ export default function ScoutReportPage() {
 
             {/* Top Topics */}
             {scoreboard.effectiveness.concernedTopics.length > 0 ? (
-              <div className="border-t border-[#3a2a2a] pt-3">
-                <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Top Engaged Topics</p>
-                <div className="flex flex-wrap gap-2">
+              <div className="border-t border-[color:var(--hide-600)] pt-[var(--s4)]">
+                <p className="t-label mb-[var(--s3)]">Top Engaged Topics</p>
+                <div className="flex flex-wrap gap-[var(--s3)]">
                   {scoreboard.effectiveness.concernedTopics.map((topic, idx) => (
-                    <span key={topic} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-1 text-[9px] font-mono text-[color:var(--brass-300)]">
-                      #{idx + 1} {topic}
+                    <span key={topic} className="plaque">
+                      #{idx + 1} {topic.toUpperCase()}
                     </span>
                   ))}
                 </div>
@@ -297,33 +303,33 @@ export default function ScoutReportPage() {
 
         {/* THE SCORECARD */}
         {scoreboard ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-5">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">The Scorecard — {scoreboard.period}</p>
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow">The Scorecard — {scoreboard.period}</p>
+            <div className="mt-[var(--s4)] grid grid-cols-2 gap-[var(--s3)] md:grid-cols-4">
               {[
                 { label: 'Total Interactions', value: scoreboard.growth.totalInteractions },
                 { label: 'Positive Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%` },
                 { label: 'Active Users', value: scoreboard.engagement.dailyActiveUsers },
                 { label: 'Gold Profiles', value: scoreboard.engagement.usersByTier.gold },
               ].map(({ label, value }) => (
-                <div key={label} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3 text-center">
-                  <p className="text-xs font-mono text-[color:var(--bone-400)]">{label}</p>
-                  <p className="mt-1 text-xl font-black text-[color:var(--brass-300)]">{value}</p>
+                <div key={label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] text-center">
+                  <p className="t-label">{label}</p>
+                  <p className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">{value}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-4 flex gap-4">
+            <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s4)]">
               {[
-                { label: '🥇 Gold', count: scoreboard.engagement.usersByTier.gold },
-                { label: '🥈 Silver', count: scoreboard.engagement.usersByTier.silver },
-                { label: '🥉 Bronze', count: scoreboard.engagement.usersByTier.bronze },
+                { label: 'Gold', count: scoreboard.engagement.usersByTier.gold },
+                { label: 'Silver', count: scoreboard.engagement.usersByTier.silver },
+                { label: 'Bronze', count: scoreboard.engagement.usersByTier.bronze },
               ].map(({ label, count }) => (
-                <div key={label} className="text-xs font-mono text-[color:var(--bone-400)]">
+                <div key={label} className="t-data text-[color:var(--bone-300)]">
                   <span className="text-[color:var(--brass-300)]">{label}</span> {count} users
                 </div>
               ))}
               {scoreboard.effectiveness.concernedTopics.length > 0 ? (
-                <div className="text-xs font-mono text-[color:var(--bone-400)]">
+                <div className="t-data text-[color:var(--bone-300)]">
                   Topics needing review: <span className="text-[color:var(--brass-300)]">{scoreboard.effectiveness.concernedTopics.join(', ')}</span>
                 </div>
               ) : null}
@@ -332,18 +338,18 @@ export default function ScoutReportPage() {
         ) : null}
 
         {/* SCOUT REPORTS */}
-        <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-5">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <div className="flex items-center justify-between gap-[var(--s3)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               Scout Reports ({scoutJobs.length})
-            </p>
+            </h2>
           </div>
 
-          <div className="mt-3 border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-            <label htmlFor="generate-focus" className="block text-[10px] font-mono uppercase tracking-[0.14em] text-[#a89478]">
+          <div className="mat-leather--raised mt-[var(--s4)] rounded-[var(--r-md)] p-[var(--s4)]">
+            <label htmlFor="generate-focus" className="t-label block">
               Generate (optional focus)
             </label>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
               <input
                 id="generate-focus"
                 type="text"
@@ -351,14 +357,14 @@ export default function ScoutReportPage() {
                 onChange={(event) => setGenerateFocus(event.target.value)}
                 maxLength={500}
                 placeholder="e.g. progress since the last competition cycle"
-                className="min-w-[220px] flex-1 border border-[color:var(--hide-600)] bg-[#151515] px-3 py-2 text-xs text-[color:var(--bone-300)] outline-none focus:border-[color:var(--brass-300)]"
+                className="input min-w-[220px] flex-1"
                 disabled={generateBusy}
               />
               <button
                 type="button"
                 onClick={() => void requestGeneration('scout_report')}
                 disabled={generateBusy}
-                className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--locked)] transition hover:border-[color:var(--locked)] disabled:opacity-50"
+                className="btn disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {generateBusy ? 'Queuing…' : 'Generate scout report'}
               </button>
@@ -367,104 +373,117 @@ export default function ScoutReportPage() {
                   type="button"
                   onClick={() => void requestGeneration('board_summary')}
                   disabled={generateBusy}
-                  className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] disabled:opacity-50"
+                  className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Generate board summary
                 </button>
               ) : null}
             </div>
-            {generateNotice ? <p role="status" className="mt-2 text-xs text-[color:var(--brass-300)]">{generateNotice}</p> : null}
-            {generateError ? <p role="alert" className="mt-2 text-xs text-[color:var(--locked)]">{generateError}</p> : null}
+            {generateNotice ? <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{generateNotice}</p> : null}
+            {generateError ? (
+              <div role="alert" className="mt-[var(--s3)]">
+                <span className="badge badge--locked">
+                  <i>✕</i>Not Queued
+                </span>
+                <p className="t-body mt-[var(--s2)]">{generateError}</p>
+              </div>
+            ) : null}
           </div>
 
           {loadingJobs ? (
-            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">Loading...</p>
+            <p className="t-muted mt-[var(--s4)]">Loading...</p>
           ) : scoutJobs.length === 0 ? (
-            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">No Scout Reports yet. Generate one above — it is processed by the background worker and listed here when complete.</p>
+            <p className="t-muted mt-[var(--s4)]">No Scout Reports yet. Generate one above — it is processed by the background worker and listed here when complete.</p>
           ) : (
-            <div className="mt-4 space-y-3">
+            <div className="mt-[var(--s4)] space-y-[var(--s3)]">
               {scoutJobs.map((job) => (
                 <button
                   key={job.jobId}
-                  className={`border bg-[var(--hide-950)] p-4 cursor-pointer transition w-full text-left ${
-                    selectedJob?.jobId === job.jobId ? 'border-[color:var(--brass-300)]' : 'border-[color:var(--hide-600)] hover:border-[color:var(--brass-700)]'
+                  className={`mat-leather--raised w-full cursor-pointer rounded-[var(--r-md)] p-[var(--s4)] text-left transition ${
+                    selectedJob?.jobId === job.jobId
+                      ? 'border-2 border-[color:var(--brass-400)]'
+                      : 'border border-[color:rgba(212,175,74,.18)] hover:border-[color:var(--brass-500)]'
                   }`}
                   onClick={() => setSelectedJob(selectedJob?.jobId === job.jobId ? null : job)}
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center justify-between gap-[var(--s3)]">
                     <div>
                       <StatusBadge status={job.status} />
-                      <p className="mt-1 text-[10px] text-[color:var(--bone-400)] font-mono">{job.jobId.slice(0, 8)}... · {new Date(job.createdAt).toLocaleDateString()}</p>
+                      {/* Law 4: job identity and date are records -- mono voice. */}
+                      <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{job.jobId.slice(0, 8)}... · {formatGymDateNumeric(job.createdAt)}</p>
                     </div>
                     {safeCompleted(job) && job.output?.profileTier ? (
-                      <span className="text-[10px] font-mono text-[color:var(--brass-300)] border border-[color:var(--hide-600)] px-2 py-0.5">
-                        {job.output.profileTier.toUpperCase()}
-                      </span>
+                      <span className="plaque">{job.output.profileTier.toUpperCase()}</span>
                     ) : null}
                   </div>
 
                   {/* Expanded report */}
                   {selectedJob?.jobId === job.jobId && safeCompleted(job) && job.output ? (
-                    <div className="mt-4 space-y-3 text-xs">
+                    <div className="mt-[var(--s4)] space-y-[var(--s4)]">
                       {job.output.summary ? (
                         <div>
-                          <p className="font-mono text-[color:var(--brass-300)] uppercase tracking-[0.1em]">Summary</p>
-                          <p className="mt-1 leading-6 text-[color:var(--bone-300)]">{job.output.summary}</p>
+                          <p className="t-label">Summary</p>
+                          <p className="t-body mt-[var(--s2)]">{job.output.summary}</p>
                         </div>
                       ) : null}
                       {job.output.strengths?.length ? (
                         <div>
-                          <p className="font-mono text-[color:var(--brass-300)] uppercase tracking-[0.1em]">Strengths</p>
-                          <ul className="mt-1 space-y-1 text-[color:var(--bone-300)]">
-                            {job.output.strengths.map((s) => <li key={s}>→ {s}</li>)}
+                          <p className="t-label">Strengths</p>
+                          <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
+                            {job.output.strengths.map((s) => <li key={s} className="t-body">→ {s}</li>)}
                           </ul>
                         </div>
                       ) : null}
                       {job.output.growthAreas?.length ? (
                         <div>
-                          <p className="font-mono text-[color:var(--brass-300)] uppercase tracking-[0.1em]">Growth Areas</p>
-                          <ul className="mt-1 space-y-1 text-[color:var(--bone-300)]">
-                            {job.output.growthAreas.map((a) => <li key={a}>→ {a}</li>)}
+                          <p className="t-label">Growth Areas</p>
+                          <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
+                            {job.output.growthAreas.map((a) => <li key={a} className="t-body">→ {a}</li>)}
                           </ul>
                         </div>
                       ) : null}
                       {job.output.recommendedTopics?.length ? (
                         <div>
-                          <p className="font-mono text-[color:var(--brass-300)] uppercase tracking-[0.1em]">Recommended Topics</p>
-                          <div className="mt-1 flex flex-wrap gap-2">
+                          <p className="t-label">Recommended Topics</p>
+                          <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s3)]">
                             {job.output.recommendedTopics.map((t) => (
-                              <span key={t} className="border border-[color:var(--hide-600)] px-2 py-0.5 text-[9px] text-[color:var(--bone-400)]">{t}</span>
+                              <span key={t} className="plaque">{t.toUpperCase()}</span>
                             ))}
                           </div>
                         </div>
                       ) : null}
                       {job.output.insightNotes ? (
                         <div>
-                          <p className="font-mono text-[color:var(--brass-300)] uppercase tracking-[0.1em]">Insight Notes</p>
-                          <p className="mt-1 leading-6 text-[color:var(--bone-300)]">{job.output.insightNotes}</p>
+                          <p className="t-label">Insight Notes</p>
+                          <p className="t-body mt-[var(--s2)]">{job.output.insightNotes}</p>
                         </div>
                       ) : null}
                     </div>
                   ) : null}
 
+                  {/* Law 7: a result withheld at the safety boundary is a
+                      governance refusal -- a static ink stamp, never a toast. */}
                   {selectedJob?.jobId === job.jobId
                     && job.status === 'completed'
                     && !safeCompleted(job) ? (
-                      <p className="mt-2 text-[10px] font-mono text-[color:var(--brass-300)]">
-                        This result is unavailable because it did not pass the server safety boundary or the required model capability is not active.
-                      </p>
+                      <div className="mt-[var(--s4)]">
+                        <span className="stamp">Withheld</span>
+                        <p className="t-muted mt-[var(--s3)]">
+                          This result is unavailable because it did not pass the server safety boundary or the required model capability is not active.
+                        </p>
+                      </div>
                     ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'pending' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[color:var(--bone-400)]">Queued for secure background processing.</p>
+                    <p className="t-muted mt-[var(--s3)]">Queued for secure background processing.</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[color:var(--locked)]">Error: {job.error}</p>
+                    <p className="t-data mt-[var(--s3)] text-[color:var(--locked-ink)]">Error: {job.error}</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'cancelled' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[color:var(--brass-300)]">
+                    <p className="t-muted mt-[var(--s3)]">
                       Cancelled{job.error ? `: ${job.error}` : ''} — usually the request expired before the worker reached it. Re-run it if you still need the report.
                     </p>
                   ) : null}
@@ -476,21 +495,24 @@ export default function ScoutReportPage() {
 
         {/* BOARD SUMMARIES */}
         {canViewOrgMetrics && boardJobs.length > 0 ? (
-          <section className="border-2 border-[color:var(--hide-600)] bg-[#151515] p-5">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               Board Summaries ({boardJobs.length})
-            </p>
-            <div className="mt-4 space-y-3">
+            </h2>
+            <div className="mt-[var(--s4)] space-y-[var(--s3)]">
               {boardJobs.slice(0, 10).map((job) => (
-                <div key={job.jobId} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-4">
-                  <div className="flex items-center justify-between gap-3">
+                <div key={job.jobId} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                  <div className="flex items-center justify-between gap-[var(--s3)]">
                     <StatusBadge status={job.status} />
-                    <p className="text-[10px] text-[color:var(--bone-400)] font-mono">{job.jobId.slice(0, 8)}… · {new Date(job.createdAt).toLocaleDateString()}</p>
+                    <p className="t-data text-[color:var(--bone-400)]">{job.jobId.slice(0, 8)}… · {formatGymDateNumeric(job.createdAt)}</p>
                   </div>
                   {safeCompleted(job) && typeof job.output?.summary === 'string' ? (
-                    <p className="mt-3 whitespace-pre-wrap text-xs leading-6 text-[color:var(--bone-300)]">{job.output.summary}</p>
+                    <p className="t-body mt-[var(--s3)] whitespace-pre-wrap">{job.output.summary}</p>
                   ) : job.status === 'completed' ? (
-                    <p className="mt-3 text-xs text-[color:var(--bone-400)] font-mono">Result withheld or unavailable — no validated summary to display.</p>
+                    <div className="mt-[var(--s3)]">
+                      <span className="stamp">Withheld</span>
+                      <p className="t-muted mt-[var(--s2)]">Result withheld or unavailable — no validated summary to display.</p>
+                    </div>
                   ) : null}
                 </div>
               ))}
@@ -500,22 +522,22 @@ export default function ScoutReportPage() {
 
         {/* HEAVY BAG HISTORY */}
         {heavyBagJobs.length > 0 ? (
-          <section className="border-2 border-[color:var(--hide-600)] bg-[#151515] p-5">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--bone-400)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               Heavy Bag Session History ({heavyBagJobs.length})
-            </p>
-            <div className="mt-3 space-y-2">
+            </h2>
+            <div className="mt-[var(--s4)] space-y-[var(--s3)]">
               {heavyBagJobs.slice(0, 10).map((job) => (
                 <div
                   key={job.jobId}
-                  className="flex items-center justify-between border border-[#3a2a2a] bg-[var(--hide-950)] px-3 py-2"
+                  className="mat-leather--raised flex items-center justify-between gap-[var(--s3)] rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)]"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-[var(--s3)]">
                     <StatusBadge status={job.status} />
-                    <span className="text-[10px] font-mono text-[color:var(--bone-400)]">{new Date(job.createdAt).toLocaleString()}</span>
+                    <span className="t-data text-[color:var(--bone-400)]">{formatGymStamp(job.createdAt)}</span>
                   </div>
                   {job.status === 'completed' && job.completedAt ? (
-                    <span className="text-[9px] font-mono text-[#6a5a4a]">
+                    <span className="t-data text-[color:var(--bone-400)]">
                       {Math.round((new Date(job.completedAt).getTime() - new Date(job.createdAt).getTime()) / 1000)}s
                     </span>
                   ) : null}
@@ -530,17 +552,24 @@ export default function ScoutReportPage() {
   );
 }
 
+/* Law 2/3: a job status is a queue outcome, so it rides the status ladder --
+   glyph + uppercase label, never colour alone. Pending is not yet an outcome
+   and wears a neutral chip off the saturated rungs. */
 function StatusBadge({ status }: { readonly status: JobStatusResult['status'] }) {
-  const styles: Record<JobStatusResult['status'], string> = {
-    pending:   'text-[color:var(--bone-400)] border-[color:var(--hide-600)]',
-    running:   'text-[color:var(--brass-300)] border-[color:var(--brass-300)]',
-    completed: 'text-[#4a8a4a] border-[#4a8a4a]',
-    failed:    'text-[color:var(--locked)] border-[color:var(--locked)]',
-    cancelled: 'text-[#6a5a4a] border-[color:var(--hide-600)]',
+  const badges: Record<JobStatusResult['status'], { className: string; glyph: string; label: string }> = {
+    /* The sheet's own administrative rung (badge--filed) replaced the
+       hand-rolled chip this entry used to carry -- same ◌, same job. */
+    pending: { className: 'badge badge--filed', glyph: '◌', label: 'Pending' },
+    running: { className: 'badge badge--monitor', glyph: '◉', label: 'Running' },
+    completed: { className: 'badge badge--cleared', glyph: '✓', label: 'Completed' },
+    failed: { className: 'badge badge--locked', glyph: '✕', label: 'Failed' },
+    cancelled: { className: 'badge badge--restricted', glyph: '▲', label: 'Cancelled' },
   };
+  const badge = badges[status];
   return (
-    <span className={`border px-2 py-0.5 text-[9px] font-mono uppercase tracking-[0.1em] ${styles[status]}`}>
-      {status}
+    <span className={badge.className}>
+      <i>{badge.glyph}</i>
+      {badge.label}
     </span>
   );
 }

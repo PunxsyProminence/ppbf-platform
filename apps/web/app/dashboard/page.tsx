@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   clearRoleSession,
@@ -52,22 +53,49 @@ export default function DashboardEntryPage() {
   }, [retryNonce, router]);
 
   return (
+    /* Ink ground (Law 6): this is a staff-side routing hub, not a family
+       surface. Most visitors see it for under a second before the redirect
+       lands, so it reads as one riveted brass frame around a leather panel —
+       the same wayfinding chassis the consoles use — rather than a bare page. */
     <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
-      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center justify-center px-6 py-10 text-center lg:px-10">
-        <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-300)]">Dashboard Entry</p>
-        <h1 className="mt-3 text-4xl font-black tracking-tight md:text-5xl">The Bell</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--bone-400)] md:text-base">
-          Your verified server session decides where you land.
-        </p>
-        {retryable && (
-          <button
-            type="button"
-            onClick={() => setRetryNonce((value) => value + 1)}
-            className="mt-5 min-h-[44px] border border-[color:var(--brass-700)] bg-[#2a1515] px-5 text-sm font-black uppercase tracking-[0.12em] text-[color:var(--bone-200)]"
-          >
-            Retry
-          </button>
-        )}
+      <div className="mx-auto flex min-h-screen w-full max-w-[610px] flex-col items-stretch justify-center px-[var(--s5)] py-[var(--s6)]">
+        <div className="frame">
+          <span className="rivet rivet--tl" />
+          <span className="rivet rivet--tr" />
+          <span className="rivet rivet--bl" />
+          <span className="rivet rivet--br" />
+          <div className="frame-in mat-leather text-center" style={{ padding: 'var(--s6)' }}>
+            <p className="t-eyebrow tracking-[0.35em]">Dashboard Entry</p>
+            <h1 className="t-command mt-[var(--s4)]" style={{ fontSize: 'var(--t-2xl)' }}>
+              The Bell
+            </h1>
+            <p className="t-body mx-auto mt-[var(--s4)] max-w-[52ch]">
+              Your verified server session decides where you land.
+            </p>
+            {retryable && (
+              <div className="mt-[var(--s5)] grid justify-items-center gap-[var(--s4)]">
+                {/* Law 3: the failed check carries a glyph and an uppercase
+                    label, not colour alone. */}
+                <div className="alert alert--critical alert--tight">
+                  <span className="alert-icon" aria-hidden="true">✕</span>
+                  <div className="alert-body">
+                    <p className="alert-title">Session check failed</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRetryNonce((value) => value + 1)}
+                  className="btn"
+                >
+                  Retry
+                </button>
+                <Link href="/login" className="btn btn--ghost">
+                  Back to sign in
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </main>
   );

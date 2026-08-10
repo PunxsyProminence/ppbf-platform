@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import { CONTROL_SAFEGUARD } from './sessionBarControls';
 
 /**
  * The comment box, mounted in the global header so it is reachable from
@@ -96,7 +97,27 @@ export default function FeedbackBox() {
         onClick={toggle}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        className="btn btn--ghost px-[var(--s4)] text-[length:var(--t-xs)]"
+        /*
+          The bar's own safeguard control, sharing the bar's own geometry.
+
+          This is the control a child taps to say someone hurt them, it sits on
+          every authenticated route, and it was 28.5px before anyone noticed --
+          the smallest thing in the header. The WCAG sweep that claimed "every
+          interactive target" edited this exact file, raised the two buttons
+          INSIDE the panel, and never touched the one that opens it.
+
+          The fix after that reached for `.btn btn--ghost` and corrected its
+          geometry with min-h-[var(--tap)]. That correction never landed:
+          ppbf.css is unlayered, so `.btn { min-height: 44px }` outranked it and
+          this shipped at 44px beside 55px siblings -- still the smallest target
+          on the bar, which is the exact thing the fix was written to prevent.
+          It also inherited `.btn`'s 15px display face, making the report-harm
+          button the loudest voice on every page rather than the easiest to hit.
+
+          CONTROL_SAFEGUARD composes no unlayered class, so the --tap target it
+          was always supposed to have actually applies.
+        */
+        className={CONTROL_SAFEGUARD}
       >
         Tell Us
       </button>

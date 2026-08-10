@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
 
 // The gym's drill library, written by the coaches who teach it.
 //
@@ -13,15 +14,12 @@ import { apiBase } from '@/lib/apiBase';
 // assignment carried only the name a coach typed, and two coaches assigning the
 // same drill produced two unrelated strings.
 
-interface Drill {
-  drill_id: string;
-  name: string;
-  category: string;
-  focus: string;
-  cues: string[];
-  difficulty: string;
-  active_flag: boolean;
-}
+// The server's own row type, not a restatement of it. The restatement had two
+// drifts at once: it read the list under `drills` when the route sends `items`,
+// and it declared `active_flag` where the route sends `active`. The first made
+// the library render empty; the second was dead weight waiting to do the same.
+// Type-only import, so nothing server-side is pulled into this client bundle.
+type Drill = PilotDrill;
 
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'elite'] as const;
 
@@ -50,8 +48,13 @@ function CoachDrillLibrary() {
         credentials: 'include',
       });
       if (!response.ok) throw new Error('The drill library could not be loaded.');
-      const payload = (await response.json()) as { drills?: Drill[] };
-      setDrills(payload.drills ?? []);
+      // Typed from the route's own response contract rather than restated
+      // here. It was restated here, as `drills`, and the route has always sent
+      // `items` -- so the library rendered empty from the day it shipped. Route
+      // tests and component tests both passed; nothing covered the seam, which
+      // is the only place the defect lived.
+      const payload = (await response.json()) as Partial<DrillLibraryResponse>;
+      setDrills(payload.items ?? []);
       setLoadError('');
     } catch (error) {
       setDrills([]);
@@ -119,64 +122,61 @@ function CoachDrillLibrary() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-6 py-10 text-[var(--black)]">
+    <main className="room--office min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
-        <header className="border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[color:var(--brass-800)]">Coach</p>
-          <h1 className="mt-2 text-4xl font-black tracking-tight">Drill Library</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--gray-dark)]">
+        <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
+          <p className="t-eyebrow">Coach</p>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Drill Library</h1>
+          <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             Drills written here are what athletes see and what assignments point at. Writing one once
             means the same drill means the same thing for every coach and every athlete.
           </p>
-          <Link
-            href="/coach/review-queue"
-            className="mt-4 inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.16)] bg-white px-4 text-xs font-bold uppercase tracking-[0.1em]"
-          >
+          <Link href="/coach/review-queue" className="btn btn--ghost mt-[var(--s4)]">
             Back to review queue
           </Link>
         </header>
 
-        <section className="mt-8 rounded-2xl border-2 border-[var(--black)] bg-white p-6">
-          <h2 className="text-xl font-black">Add a drill</h2>
+        <section className="mat-leather mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s5)]">
+          <h2 className="t-command text-[length:var(--t-lg)]">Add a drill</h2>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <div>
-              <label htmlFor="drill-name" className="block text-xs font-bold uppercase tracking-[0.12em]">Name</label>
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+            <div className="field">
+              <label htmlFor="drill-name" className="t-label">Name</label>
               <input
                 id="drill-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="mt-1 min-h-[44px] w-full rounded-lg border-2 border-[var(--black)] px-3"
+                className="input"
                 placeholder="Straight jab retraction"
               />
             </div>
-            <div>
-              <label htmlFor="drill-category" className="block text-xs font-bold uppercase tracking-[0.12em]">Category</label>
+            <div className="field">
+              <label htmlFor="drill-category" className="t-label">Category</label>
               <input
                 id="drill-category"
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
-                className="mt-1 min-h-[44px] w-full rounded-lg border-2 border-[var(--black)] px-3"
+                className="input"
                 placeholder="Striking"
               />
             </div>
           </div>
 
-          <div className="mt-4">
-            <label htmlFor="drill-focus" className="block text-xs font-bold uppercase tracking-[0.12em]">What it is for</label>
+          <div className="field mt-[var(--s4)]">
+            <label htmlFor="drill-focus" className="t-label">What it is for</label>
             <textarea
               id="drill-focus"
               value={focus}
               onChange={(event) => setFocus(event.target.value)}
               rows={2}
-              className="mt-1 w-full rounded-lg border-2 border-[var(--black)] px-3 py-2"
+              className="textarea"
               placeholder="Quick fist return to protect the chin after the jab."
             />
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <div>
-              <label htmlFor="drill-cues" className="block text-xs font-bold uppercase tracking-[0.12em]">
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+            <div className="field">
+              <label htmlFor="drill-cues" className="t-label">
                 Coaching cues, one per line
               </label>
               <textarea
@@ -184,17 +184,17 @@ function CoachDrillLibrary() {
                 value={cues}
                 onChange={(event) => setCues(event.target.value)}
                 rows={4}
-                className="mt-1 w-full rounded-lg border-2 border-[var(--black)] px-3 py-2 font-mono text-sm"
+                className="textarea font-mono"
                 placeholder={'Elbow tucked\nShoulder covers chin\nSnap the fist back'}
               />
             </div>
-            <div>
-              <label htmlFor="drill-difficulty" className="block text-xs font-bold uppercase tracking-[0.12em]">Difficulty</label>
+            <div className="field">
+              <label htmlFor="drill-difficulty" className="t-label">Difficulty</label>
               <select
                 id="drill-difficulty"
                 value={difficulty}
                 onChange={(event) => setDifficulty(event.target.value)}
-                className="mt-1 min-h-[44px] w-full rounded-lg border-2 border-[var(--black)] px-3"
+                className="select"
               >
                 {DIFFICULTIES.map((level) => (
                   <option key={level} value={level}>{level}</option>
@@ -204,13 +204,13 @@ function CoachDrillLibrary() {
           </div>
 
           {formError && (
-            <p role="alert" className="mt-4 rounded-lg border-2 border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-sm font-semibold text-[var(--red-primary)]">
+            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
               {formError}
             </p>
           )}
           {saved && (
-            <p className="mt-4 rounded-lg border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm font-semibold">
-              {saved}
+            <p className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--cleared)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--cleared-ink)]">
+              ✓ {saved}
             </p>
           )}
 
@@ -218,49 +218,47 @@ function CoachDrillLibrary() {
             type="button"
             onClick={() => void createDrill()}
             disabled={saving}
-            className="mt-5 min-h-[48px] rounded-xl border-2 border-[var(--black)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn mt-[var(--s5)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? 'Saving...' : 'Add drill'}
           </button>
         </section>
 
-        <section className="mt-8">
-          <h2 className="text-xl font-black">In the library</h2>
+        <section className="mt-[var(--s6)]">
+          <h2 className="t-command text-[length:var(--t-lg)]">In the library</h2>
 
-          {loading && <p className="mt-3 text-sm text-[var(--gray-dark)]">Loading...</p>}
+          {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
           {!loading && loadError && (
-            <div className="mt-3 rounded-lg border-2 border-[var(--red-primary)] bg-white p-4">
-              <p className="text-sm font-semibold text-[var(--red-primary)]">{loadError}</p>
-              <p className="mt-1 text-sm text-[var(--gray-dark)]">
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">{loadError}</p>
+              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty library.
               </p>
             </div>
           )}
 
           {!loading && !loadError && drills.length === 0 && (
-            <p className="mt-3 text-sm text-[var(--gray-dark)]">
+            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Nothing yet. The first drill you add is the first one your athletes will see.
             </p>
           )}
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
             {drills.map((drill) => (
-              <article key={drill.drill_id} className="rounded-2xl border-2 border-[var(--black)] bg-white p-4">
-                <div className="flex items-baseline justify-between gap-2">
-                  <h3 className="text-base font-black">{drill.name}</h3>
-                  <span className="text-[11px] font-mono uppercase tracking-[0.1em] text-[color:var(--brass-800)]">
-                    {drill.difficulty}
-                  </span>
+              <article key={drill.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
+                <div className="flex items-baseline justify-between gap-[var(--s3)]">
+                  <h3 className="t-command text-[length:var(--t-md)]">{drill.name}</h3>
+                  <span className="plaque">{drill.difficulty}</span>
                 </div>
-                <p className="mt-1 text-[12px] font-mono uppercase tracking-[0.1em] text-[var(--gray-dark)]">
+                <p className="t-label mt-[var(--s2)]">
                   {drill.category}
                 </p>
-                <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{drill.focus}</p>
+                <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{drill.focus}</p>
                 {drill.cues.length > 0 && (
-                  <ul className="mt-3 flex flex-wrap gap-1">
+                  <ul className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
                     {drill.cues.map((cue) => (
-                      <li key={`${drill.drill_id}-${cue}`} className="rounded bg-[var(--canvas-tan-light)] px-2 py-1 text-xs">
+                      <li key={`${drill.drill_id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                         {cue}
                       </li>
                     ))}

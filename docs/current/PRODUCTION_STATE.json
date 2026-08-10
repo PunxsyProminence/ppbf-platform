@@ -1,0 +1,66 @@
+{
+  "_readme": "Controller-owned. Only the gatekeeper (VS Code Claude session) writes verified fields, after observing the target environment directly (az containerapp show / live smoke probes) -- never from reading source, a merged PR, or an agent's claim. External agents may read this file and may propose an update in a PR, but the PR does not become truth until the gatekeeper re-observes and re-writes it. Use null / 'not_verified' rather than guessing; a wrong value here is worse than an honest gap.",
+  "environments": {
+    "staging": {
+      "deployed_sha": "fbb81559c0cdeb70002d28d677c25a71828a44db",
+      "deployed_image_digest": "sha256:e3ca7dc3cb91bc6cf4f193738f865073f721eb2c877186e8f274d977536326d1",
+      "deployment_timestamp": "2026-08-09T01:32:34Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31288251081",
+      "container_app": "app-ppbf-staging",
+      "revision": "not_verified",
+      "last_verified_by": "agent -- PROPOSED, NOT YET GATEKEEPER-OBSERVED",
+      "last_verified_at": "2026-08-09T21:30:00Z",
+      "last_verification_method": "CORRECTION OF A STALE ENTRY, not a new observation. This entry read c4660ce/2026-08-08T16:55:02Z/run 31267967708/revision --0000138 until now, but staging moved to fbb8155 on 2026-08-09T01:25:58Z and this file was never updated -- so it under-reported staging by one deploy while the production entry directly below it already named fbb8155. Basis: deploy-staging run 31288251081 (head_sha fbb8155, conclusion success, completed 01:32:34Z) read off the Actions API, and deploy-staging.yml genuinely deploys rather than only building -- it runs 'Deploy to Azure Container App' (az containerapp update) followed by 'Wait For New Revision To Take Traffic'. NOT read off the live app: no az call was made, so 'revision' is now not_verified rather than carrying the old --0000138, which belonged to c4660ce and would have been actively wrong. The digest is the one the production entry already attributes to this same run 31288251081 ('the digest is the one deploy-staging run 31288251081 built and the SHADOW E2E gate passed against'), so it is inherited from that recorded provenance chain, NOT independently observed on staging. A gatekeeper must re-observe revision and digest before this entry counts as verified. The PRIOR gatekeeper verification remains real history and is not being erased: on 2026-08-08T18:20Z a gatekeeper read revision --0000138 and digest sha256:a5e3960... off the live app and ran a full magic-link round trip against it, with the database rows read back directly (token issued, delivered to a real mailbox, consumed, session created) -- but that observation was of c4660ce, which staging no longer runs.",
+      "known_staging_gaps": [
+        "Outbound mail RESOLVED 2026-08-08T18:07Z. It was never a permissions gap and never a code gap: a token probe inside the container showed roles=[\"Mail.Send\"], and the refusal carried graph_error_code=ErrorAccessDenied, which is Exchange's application access policy rather than Entra. The policy was created 07:13Z and began enforcing between 07:54Z (last refusal) and 18:07Z (first success). Test-ApplicationAccessPolicy reported Granted the whole time because it evaluates configured state, not enforced state -- worth remembering before trusting it again."
+      ]
+    },
+    "production": {
+      "deployed_sha": "fbb81559c0cdeb70002d28d677c25a71828a44db",
+      "deployed_image_digest": "sha256:e3ca7dc3cb91bc6cf4f193738f865073f721eb2c877186e8f274d977536326d1",
+      "deployment_timestamp": "2026-08-09T01:36:58Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31288537060",
+      "container_app": "app-ppbf-production",
+      "resource_group": "rg-ppbf-enterprise-staging",
+      "revision": "not_verified",
+      "app_origin": "https://www.punxsyprominence.org",
+      "last_verified_by": "agent -- PROPOSED, NOT YET GATEKEEPER-OBSERVED",
+      "last_verified_at": "2026-08-09T01:37:02Z",
+      "last_verification_method": "Read off deploy-production run 31288537060's own steps, NOT off the live app. All eleven steps green, including 'Verify Production Schema Matches This Commit', 'Verify release digest exists in ACR', 'Refuse a Rollback Nobody Asked For' and 'Pilot API Smoke Checks'. The digest is the one deploy-staging run 31288251081 built and the SHADOW E2E gate passed against. NOT independently confirmed by az: the revision name and the 100%-traffic-on-latest condition were not read off the live app, which is why revision is 'not_verified' here rather than carrying a number. A gatekeeper must re-observe before this entry counts as verified.",
+      "known_production_gaps": [
+        "Production reference data is NOT seeded. The schema is present and the code is deployed, but seed-reference-data has never been run against production for any of the three datasets, so pilot.drill_library, pilot.disciplines and the competence ladder are empty. /coach/cohorts and /coach/disciplines therefore render empty lists -- that is missing data, not a broken page. Blocked on seed_account_id: drill-library (and therefore dataset 'all') requires it, production's active platform owner is Admin@punxsyprominence.org with a CAPITAL A, the lowercase row is retired, and no read-only workflow exposes the id -- check-database.yml has three fixed checks and none of them look it up. It has to come from a human who can read it out of the database.",
+        "Magic-link mail delivery is not_verified on production. It has never been attempted here -- no production account has auth_provider='magic_link', so nothing would be sent. Staging's refusal has since resolved on its own (see the staging entry), so the tenant-level condition that caused it is gone; production still needs its own access policy checked before anything is claimed.",
+        "T-001 and T-002 reached production without a RUNTIME_VERIFIED row and still have none. Their PRs (#239, #242) merged 2026-08-06 and rode to production inside a deploy of main dispatched for the magic-link work. The pipeline's own rule is that no item may skip a state; two still have. T-003 was in this list and came out of it the honest way -- its probe was actually run on 2026-08-08 (see capabilities.runtime_verified), not backfilled."
+      ]
+    }
+  },
+  "schema": {
+    "known_applied_migrations": [
+      "goal-category-progress (confirmed applied to both staging and production, apply-migrations runs 2026-08-05T03:48Z and 04:30Z)",
+      "magic-link (staging: apply-migrations run for 1adc244, 2026-08-08T05:31Z; production: run 31247060574, 2026-08-08T07:52Z, output 'PILOT MAGIC LINK MIGRATION PASS' against host ppbf-pg-195892.postgres.database.azure.com database postgres)",
+      "PR #238's full set, migration=all against PRODUCTION -- run 31268298138, 2026-08-08T18:02Z, every step PASS including dead-schema-removal, activity-log, drill-library-v3, drill-vocabulary-widening, assessment-protocols, clearance-register, sparring-exposure, safety-flags, floor-hours-ledger, local-findings, workout-templates-v2, source-citation-checks, retraction-surveillance, multidiscipline, session-scripts, transfer-claims, competence-cohorts and method-naming",
+      "PR #238's full set against STAGING -- applied ahead of the 2026-08-08T16:51Z deploy of c4660ce",
+      "migration=all against PRODUCTION -- run 31353018907, 2026-08-10T03:43:28Z, on f7869e5 (the PR #285 merge). Every migration in the `all` list PASS, drills included; zero FAIL or Error lines in the run log, and no DRILLS_NOT_READY. Target read off the runner's own output: host ppbf-pg-195892.postgres.database.azure.com, database postgres. Read from the run log, NOT from the database: 60 of the list's migrations were counted PASS directly and the remainder are covered by the step's own success (the loop exits non-zero on any failure), so this is an observation of the runner, not of the schema. SIGNIFICANCE BEYOND THE SCHEMA BEING CURRENT: this is the first migration=all to succeed on production since run 69 (2026-08-08T16:59Z), and the first since the drills readiness contradiction was fixed. Between those two runs the production migration path was BROKEN AND UNAWARE OF IT -- run 69 installed drill-versioning, which replaces pilot_drills_one_name_per_org with a partial unique index, while pilot-apply-drills still required a total one and runs earlier in the list. Nothing surfaced because nobody re-dispatched production in that window; staging runs 70/71/72 died on it. What changed tonight is not that the schema advanced (it was already current) but that the path is repeatable."
+    ],
+    "note": "This is a log of what has been OBSERVED applied via apply-migrations run output, not a generated schema version. Every pilot:apply-* runner is additive/idempotent, so re-running one is safe -- this list exists to avoid re-running unnecessarily, not to gate anything. Added 2026-08-10: entries here record what a RUNNER reported, which is weaker than reading the schema back. A green apply-migrations run proves each runner's own readiness assertion passed -- and the drills incident showed a readiness assertion can itself be wrong, so a gatekeeper checking a specific object should still query for it rather than trust this list."
+  },
+  "capabilities": {
+    "runtime_verified": [
+      "magic-link redemption on staging: POST /api/pilot/auth/magic-link/consume returns 200 and sets ppbf_pilot_session for the correct principal; the same token replayed returns TOKEN_ALREADY_USED; GET returns 405 with Allow: POST so a mail scanner's prefetch cannot burn a link; exactly one session row created (2026-08-08, staging)",
+      "magic-link DELIVERY on staging, the whole chain with a human in it (2026-08-08T18:07-18:12Z): request answered 202 and wrote a token row; no magic_link.issue_failed line on a warm container; the mail arrived in a real mailbox; the owner clicked it; consumed_at 18:12:51.064Z. Silence alone would not have proved this -- issueMagicLink is deliberately silent for an unknown address too -- so the token row was read back to separate 'sent' from 'no such account'.",
+      "magic-link single-transaction claim: the session row's created_at is 18:12:51.064Z, identical to the token's consumed_at, confirming the claim and the session insert happen in one transaction rather than two writes that could interleave. Exactly one session for that account from that click, and the only other session in the window belongs to a Microsoft sign-in by the owner.",
+      "magic-link supersession: every older token row carries invalidated_at set by the request that followed it, and no two were ever live at once -- so requesting a second link genuinely kills the first rather than leaving both valid.",
+      "T-003 quarantined-video scan-review console (2026-08-08, retroactive). Acceptance criteria: page.test.tsx 5/5 including a WrongRoleNotice case for a non-deciding role and separate approve and block cases. Role gate proven against the DEPLOYED app, not only against mocks: a real coach session returns 403 'Forbidden: role not allowed' on POST /api/pilot/video/scan-review, which is the ticket's P0 rule (the coach who filmed footage of a minor gets no path into the decision). A real platform_owner session is refused identically -- VIDEO_REVIEW_DECIDE_ROLES is ['organization_admin'] and nothing else, so even the platform owner cannot decide. Unauthenticated, video/list, review-link and scan-review all answer 401 on BOTH environments and /admin/video-review renders 200. Production has 4 active organization_admin accounts, so the console is usable by someone. Probe sessions were minted on staging only and deleted in a finally block; 0 remained. No session was minted on production and no real video was approved or blocked anywhere."
+    ],
+    "merged_not_deployed": [],
+    "deployed_not_runtime_verified": [
+      "T-001 admin activation-code console (#239)",
+      "T-002 covering-coach access window (#242, depends on #243)",
+      "everything PR #238 added -- now deployed to BOTH environments (production 2026-08-09T01:36:58Z, run 31288537060), with its ~26 migrations applied to both databases. Deployed is not verified: none of its surfaces has been exercised on production, and the three new coach pages cannot be meaningfully checked there until the reference data is seeded.",
+      "magic-link on production -- the code is deployed and the schema is applied, but nothing has been sent or redeemed there"
+    ],
+    "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
+  },
+  "last_updated_by": "agent -- production migration run 31353018907 recorded from run output; environment entries still PROPOSED, pending gatekeeper re-observation",
+  "last_updated_at": "2026-08-10T03:55:00Z"
+}

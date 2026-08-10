@@ -11,15 +11,25 @@ import {
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { createMicrosoftSignInHandler } from '@/src/client/loginPageHelpers';
+import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
-type LoginMethod = 'microsoft' | 'pin';
+type LoginMethod = 'microsoft' | 'pin' | 'magic_link';
 
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('pin');
+  // Microsoft, not PIN. PIN sign-in admits only athletes -- credentialPolicy
+  // says so and loginWithAccountIdAndPin enforces it -- and athletes have their
+  // own door at /athlete/sign-in. Opening on the PIN tab meant every coach,
+  // parent and staff member met a form that could not authenticate them, and a
+  // refusal that blamed their credential instead of the door.
+  const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('microsoft');
   const [loginAccountId, setLoginAccountId] = useState('');
   const [loginPin, setLoginPin] = useState('');
+  const [magicLinkEmail, setMagicLinkEmail] = useState('');
+  const [magicLinkBusy, setMagicLinkBusy] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkError, setMagicLinkError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState('');
 
@@ -102,12 +112,61 @@ function LoginPageContent() {
     return () => controller.abort();
   }, [router]);
 
+  async function requestMagicLink() {
+    const email = magicLinkEmail.trim();
+    setMagicLinkError('');
+
+    if (!email) {
+      setMagicLinkError('Enter your email address.');
+      return;
+    }
+
+    setMagicLinkBusy(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/auth/magic-link/request`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      if (response.status === 429) {
+        setMagicLinkError('Too many requests. Wait a few minutes and try again.');
+        return;
+      }
+      if (response.status === 400) {
+        setMagicLinkError('That does not look like an email address.');
+        return;
+      }
+
+      // Anything else is treated as sent. The server answers 202 whether or
+      // not the address has an account, and the confirmation below says the
+      // same thing either way -- reporting a distinction the server refused to
+      // make would put the enumeration leak back in the client.
+      setMagicLinkSent(true);
+    } catch {
+      setMagicLinkError('Could not reach the gym right now. Try again in a moment.');
+    } finally {
+      setMagicLinkBusy(false);
+    }
+  }
+
   async function loginWithPin() {
     const acctId = loginAccountId.trim();
     const pinCode = loginPin.trim();
 
     if (!acctId || !pinCode) {
       setLoginError('Account ID and PIN are required.');
+      return;
+    }
+
+    // Caught here so a wrong-length PIN is named as a wrong length. The server
+    // answers every failure with the same "Invalid account ID or PIN", and this
+    // label used to read "4+ digits" -- so someone who followed it and entered
+    // four was told their PIN was wrong, retried the same four, and hit the
+    // rate limiter. The policy is exactly DEFAULT_PIN_LENGTH digits.
+    if (!new RegExp(`^\\d{${DEFAULT_PIN_LENGTH}}$`).test(pinCode)) {
+      setLoginError(`Your PIN is exactly ${DEFAULT_PIN_LENGTH} digits.`);
       return;
     }
 
@@ -236,7 +295,7 @@ function LoginPageContent() {
 
             <fieldset className="mb-[var(--s6)] border-0 p-0">
               <legend className="t-label mb-[var(--s4)]">Choose Sign-In Method</legend>
-              <div className="grid gap-[var(--s4)] sm:grid-cols-2">
+              <div className="grid gap-[var(--s4)] sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => setSelectedMethod('microsoft')}
@@ -244,6 +303,14 @@ function LoginPageContent() {
                   className={methodButton('microsoft')}
                 >
                   {selectedMethod === 'microsoft' ? '✓ ' : ''}Microsoft
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMethod('magic_link')}
+                  aria-pressed={selectedMethod === 'magic_link'}
+                  className={methodButton('magic_link')}
+                >
+                  {selectedMethod === 'magic_link' ? '✓ ' : ''}Email Link
                 </button>
                 <button
                   type="button"
@@ -270,6 +337,63 @@ function LoginPageContent() {
                   Continue With Microsoft
                 </button>
               </div>
+            )}
+
+            {selectedMethod === 'magic_link' && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void requestMagicLink();
+                }}
+                className="grid gap-[var(--s5)]"
+              >
+                <div>
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+                    Email Link
+                  </h2>
+                  <p className="t-body mt-[var(--s3)]">
+                    For coaches, staff, volunteers and parents. Enter your email and we
+                    will send a link that signs you in. No password to remember.
+                  </p>
+                </div>
+                <div className="field">
+                  <label className="t-label" htmlFor="magic-link-email">
+                    Email Address
+                  </label>
+                  <input
+                    id="magic-link-email"
+                    type="email"
+                    value={magicLinkEmail}
+                    onChange={(event) => setMagicLinkEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    className="input input--kiosk"
+                  />
+                </div>
+                {/* Deliberately the same message whether the address has an
+                    account or not. The server answers identically for both --
+                    saying "sent!" for one and "not found" for the other would
+                    make this form a way to ask which families attend the gym. */}
+                {magicLinkSent && (
+                  <div className="rounded-[var(--r-md)] border-2 border-[color:var(--proven)] p-[var(--s4)]" role="status">
+                    <p className="t-body">
+                      If that address has an account, a sign-in link is on its way. It
+                      works once and expires in 15 minutes.
+                    </p>
+                  </div>
+                )}
+                {magicLinkError && (
+                  <div
+                    className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.06)] p-[var(--s4)]"
+                    role="alert"
+                  >
+                    <p className="t-body">{magicLinkError}</p>
+                  </div>
+                )}
+                <button type="submit" disabled={magicLinkBusy} className="btn btn--kiosk">
+                  {magicLinkBusy ? 'Sending…' : 'Send Sign-In Link'}
+                </button>
+              </form>
             )}
 
             {selectedMethod === 'pin' && (
@@ -315,15 +439,22 @@ function LoginPageContent() {
                   </div>
                   <div className="field">
                     <label className="t-label" htmlFor="login-pin">
-                      PIN (4+ digits)
+                      PIN ({DEFAULT_PIN_LENGTH} digits)
                     </label>
                     <input
                       id="login-pin"
                       type="password"
                       inputMode="numeric"
                       value={loginPin}
-                      onChange={(event) => setLoginPin(event.target.value)}
-                      placeholder="••••"
+                      // Non-digits dropped and the value capped, so the field
+                      // cannot hold something the policy will reject. The old
+                      // field took any length and any character, and the server
+                      // refused it with a message about the wrong thing.
+                      onChange={(event) =>
+                        setLoginPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))
+                      }
+                      maxLength={DEFAULT_PIN_LENGTH}
+                      placeholder={'•'.repeat(DEFAULT_PIN_LENGTH)}
                       autoComplete="current-password"
                       className="input input--kiosk"
                     />

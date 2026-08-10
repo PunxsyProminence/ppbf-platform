@@ -44,28 +44,20 @@ export type BoardSummaryVariant = 'hub' | 'workspace';
 interface BoardSummaryPalette {
   frame: string;
   tile: string;
-  label: string;
-  value: string;
-  note: string;
-  accent: string;
 }
 
+// Both call sites — the hub and the seat workspace — now stand on the ink
+// ground of the board room, so the two variants resolve to the same leather
+// materials. The variant prop survives for call-site compatibility and as the
+// seam where a future ground split would land.
 const palettes: Record<BoardSummaryVariant, BoardSummaryPalette> = {
   hub: {
-    frame: 'border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)]/80',
-    tile: 'border border-[#654535] bg-[var(--hide-900)]',
-    label: 'text-[#8f7f72]',
-    value: 'text-[color:var(--bone-200)]',
-    note: 'text-[#cbb8a8]',
-    accent: 'text-[color:var(--brass-300)]',
+    frame: 'mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)]',
+    tile: 'stat',
   },
   workspace: {
-    frame: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)]',
-    tile: 'border-2 border-[var(--black)] bg-[var(--canvas-tan)]',
-    label: 'text-[var(--gray-dark)]',
-    value: 'text-[var(--black)]',
-    note: 'text-[var(--gray-dark)]',
-    accent: 'text-[color:var(--brass-800)]',
+    frame: 'mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)]',
+    tile: 'stat',
   },
 };
 
@@ -234,13 +226,15 @@ export default function BoardSummaryPanel({
     : [];
 
   return (
-    <section className={`${palette.frame} p-5`}>
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+    <section className={`${palette.frame} p-[var(--s5)]`}>
+      <div className="flex flex-col gap-[var(--s2)] md:flex-row md:items-end md:justify-between">
         <div>
-          <p className={`text-xs font-mono uppercase tracking-[0.22em] ${palette.accent}`}>{heading}</p>
-          <h2 className={`mt-2 text-lg font-black ${palette.value}`}>Organization-level figures</h2>
+          <p className="t-eyebrow tracking-[0.22em]">{heading}</p>
+          <h2 className="t-command mt-[var(--s2)] text-[length:var(--t-md)]">Organization-level figures</h2>
         </div>
-        <p className={`text-[12px] font-mono ${palette.note}`}>
+        {/* The read time is part of the record (a safeguarding figure carries
+            its own timestamp), so it speaks in the data voice. */}
+        <p className="t-data">
           {isLoading
             ? 'Loading figures...'
             : measuredAt
@@ -249,27 +243,41 @@ export default function BoardSummaryPanel({
         </p>
       </div>
 
-      {errorMessage ? <p className={`mt-3 text-sm ${palette.accent}`}>{errorMessage}</p> : null}
+      {errorMessage ? (
+        <p className="t-body mt-[var(--s3)] flex items-center gap-[var(--s2)]">
+          <span aria-hidden="true" className="text-[color:var(--brass-400)]">▲</span>
+          <span>{errorMessage}</span>
+        </p>
+      ) : null}
 
       {summary ? (
         <>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2 xl:grid-cols-3">
             {tiles.map((tile) => {
               const display = boardMetricDisplay(tile.metric, summary.minimumCohortSize, tile.unitLabel);
+              const suppressed = tile.metric.status === 'insufficient_data';
               return (
-                <article key={tile.label} className={`${palette.tile} p-3`}>
-                  <p className={`text-[12px] font-mono uppercase tracking-[0.14em] ${palette.label}`}>{tile.label}</p>
-                  <p className={`mt-2 text-[22px] font-black ${palette.value}`}>{display.value}</p>
-                  <p className={`mt-1 text-[13px] leading-5 ${palette.note}`}>{display.note}</p>
+                <article key={tile.label} className={palette.tile}>
+                  <p className="stat-label">{tile.label}</p>
+                  {suppressed ? (
+                    // k-anonymity withholding is a static ink stamp (Law 7),
+                    // never a blank and never a zero.
+                    <p>
+                      <span className="stamp stamp--flat">{display.value}</span>
+                    </p>
+                  ) : (
+                    <p className="stat-val">{display.value}</p>
+                  )}
+                  <p className="stat-note">{display.note}</p>
                   {tile.metric.status === 'available' && tile.detail ? (
-                    <p className={`mt-1 text-[13px] leading-5 ${palette.note}`}>{tile.detail}</p>
+                    <p className="stat-note">{tile.detail}</p>
                   ) : null}
                 </article>
               );
             })}
           </div>
 
-          <p className={`mt-4 text-[13px] leading-5 ${palette.note}`}>
+          <p className="t-muted mt-[var(--s4)]">
             Figures cover the whole organization. Any figure drawn from fewer than {summary.minimumCohortSize} athletes
             is suppressed rather than reduced, and &quot;No records&quot; means nothing was recorded in the period, not that
             the count is zero.

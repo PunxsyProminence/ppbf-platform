@@ -1,0 +1,58 @@
+name: branch-cleanup
+
+# Deletes a pasted list of branches. Manual dispatch only -- this workflow
+# does nothing on push, PR, or schedule, and it refuses to touch main.
+#
+# Why this exists: bulk cleanup was vetted in a Claude Code session (every
+# candidate branch proven merged-by-ancestry or patch-equivalent to main),
+# but the session's git proxy refuses deletion pushes. The repository
+# deletes its own refs instead, with the run log as the record.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: 'Branch names to delete (space, comma, or newline separated)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          # Through env, never interpolated into the script: a branch name is
+          # untrusted input and must not become code.
+          BRANCHES: ${{ inputs.branches }}
+        with:
+          script: |
+            const branches = (process.env.BRANCHES ?? '').split(/[\s,]+/).filter(Boolean);
+            core.info(`asked to delete ${branches.length} branches`);
+            let deleted = 0, failed = 0;
+            for (const branch of branches) {
+              if (branch === 'main') {
+                core.warning('refusing to delete main');
+                failed += 1;
+                continue;
+              }
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `heads/${branch}`,
+                });
+                core.info(`deleted ${branch}`);
+                deleted += 1;
+              } catch (error) {
+                core.warning(`failed ${branch}: ${error.message}`);
+                failed += 1;
+              }
+            }
+            core.summary.addRaw(`Deleted ${deleted}, failed ${failed}.`).write();
+            if (deleted === 0 && branches.length > 0) {
+              core.setFailed('Nothing was deleted.');
+            }

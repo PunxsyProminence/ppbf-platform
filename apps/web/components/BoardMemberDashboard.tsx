@@ -118,10 +118,13 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
   // is theirs, so this leaves rather than refusing.
   if (!access.allowed) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
-        <div className="max-w-xl text-center">
+      <main className="room--board grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+        {/* Raised leather rather than bare wall: centred content can straddle
+            the board room's plaster/wainscot seam, and a panel carries its own
+            ground on either side of it. */}
+        <div className="mat-leather--raised max-w-xl rounded-[var(--r-lg)] p-[var(--s6)] text-center">
           <p className="t-eyebrow tracking-[0.35em]">Board Seat</p>
-          <h1 className="mt-3 text-3xl font-black tracking-tight">Opening the board hub</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Opening the board hub</h1>
           <p className="t-body mt-[var(--s3)]">
             The {seat.seatLabel} workspace opens for the holders of that seat and for the President and Chair. Every board member reaches the same aggregate hub.
           </p>
@@ -137,15 +140,19 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
   }
 
   return (
-    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
-          <div className="space-y-3">
+    <main className="room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+        {/* The header stands on the board room's plaster upper wall, so it is
+            written in dark ink by hand: the .t-* voices pin the light colours
+            that belong on the leather panels below, and an unlayered voice
+            class cannot be re-coloured by a utility. */}
+        <header className="on-plaster flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
+          <div className="space-y-[var(--s3)]">
             <p className="t-eyebrow tracking-[0.35em]">Board Workspace Framework</p>
-            <h1 className="text-4xl font-black tracking-tight md:text-5xl">{seat.seatLabel} Workspace</h1>
+            <h1 className="t-command text-[length:var(--t-2xl)] md:text-[length:var(--t-3xl)]">{seat.seatLabel} Workspace</h1>
             <p className="t-body max-w-[80ch]">One board workspace shell with seat-specific visibility for nonprofit governance, mission stewardship, and strategic oversight.</p>
           </div>
-          <div className="mat-leather rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.28)] px-[var(--s4)] py-[var(--s3)] t-data">{seat.seatLabel}</div>
+          <div className="plaque">{seat.seatLabel}</div>
         </header>
 
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
@@ -165,7 +172,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
 
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
           <p className="t-eyebrow">Nonprofit Identity</p>
-          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-[var(--s3)] grid gap-[var(--s2)] md:grid-cols-2 xl:grid-cols-4">
             {['Veteran-Founded', '501(c)(3) Public Charity', 'Mission-Focused Governance', 'Community Impact Oversight'].map((item) => (
               <div key={item} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)] t-command">
                 {item}
@@ -174,19 +181,19 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           </div>
         </section>
 
-        <div className="mt-6">
+        <div className="mt-[var(--s5)]">
           <BoardSummaryPanel variant="workspace" heading="Organization Aggregate" />
         </div>
 
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
           <p className="t-eyebrow">Governance Modules</p>
-          <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-9">
+          <div className="mt-[var(--s4)] grid gap-[var(--s2)] sm:grid-cols-3 xl:grid-cols-9">
             {boardWorkspaceTabs.map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className={`min-h-[44px] border px-3 text-sm font-bold transition ${
+                className={`min-h-[44px] rounded-[var(--r-sm)] border px-[var(--s3)] text-[length:var(--t-sm)] font-bold transition ${
                   activeTab === tab
                     ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
                     : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
@@ -198,17 +205,24 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           </div>
         </section>
 
-        <section className="mt-6 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
-          <div className="space-y-6">
+        <section className="mt-[var(--s5)] grid gap-[var(--s5)] lg:grid-cols-[1.35fr_0.65fr]">
+          <div className="space-y-[var(--s5)]">
             <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
               <h2 className="t-command">{activeTab}</h2>
               <p className="t-body mt-[var(--s3)]">
                 Every card states its own condition. A card marked {BOARD_PLANNED_STAMP} describes intended work and has nothing behind it.
               </p>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-3">
                 {cards.map((card) => (
                   <div key={card.title} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                    <p className="t-eyebrow">{cardStatusLabel[card.status]}</p>
+                    {card.status === 'planned' ? (
+                      // A card with nothing behind it wears the refusal as
+                      // static ink (Law 7), not as another eyebrow that reads
+                      // like chrome on a working module.
+                      <p><span className="stamp stamp--flat">{cardStatusLabel[card.status]}</span></p>
+                    ) : (
+                      <p className="t-eyebrow">{cardStatusLabel[card.status]}</p>
+                    )}
                     <p className="t-command mt-[var(--s3)]">{card.title}</p>
                     <p className="t-body mt-[var(--s3)]">{card.detail}</p>
                   </div>
@@ -229,11 +243,11 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
 
             <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
               <h2 className="t-command">Seat Modules</h2>
-              <p className="t-eyebrow mt-[var(--s3)]">{BOARD_PLANNED_STAMP}</p>
+              <p className="mt-[var(--s3)]"><span className="stamp stamp--flat">{BOARD_PLANNED_STAMP}</span></p>
               <p className="t-body mt-[var(--s3)]">
                 The scope this seat is meant to cover. None of it reads or writes data yet.
               </p>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
                 {modules.map((moduleGroup) => (
                   <div key={moduleGroup.title} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                     <p className="t-command">{moduleGroup.title}</p>
@@ -250,9 +264,16 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             <BoardSeatEvidence seat={seat.slug} />
 
             <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-              <h2 className="t-command">Board intelligence unavailable</h2>
+              <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+                <h2 className="t-command">Board intelligence unavailable</h2>
+                {/* Law 7: a governance refusal is pressed in ink, not narrated. */}
+                <span className="stamp stamp--flat">
+                  <span aria-hidden="true">✕ </span>
+                  <span>Disabled</span>
+                </span>
+              </div>
               <p className="t-body mt-[var(--s3)]">Board chat and generated background summaries remain disabled. Only the authenticated organization-aggregate summary API is available.</p>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
                 <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                   <p className="t-eyebrow">Generation status</p>
                   <p className="t-body mt-[var(--s3)]">Disabled. No model call or background Board job is available.</p>
@@ -270,7 +291,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             </article>
           </div>
 
-          <aside className="grid gap-6">
+          <aside className="grid gap-[var(--s5)]">
             <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
               <h2 className="t-command">Not stored by this platform</h2>
               <p className="t-body mt-[var(--s3)]">
@@ -288,7 +309,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
 
             <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
               <h2 className="t-command">Workspace Links</h2>
-              <div className="mt-4 grid gap-2">
+              <div className="mt-[var(--s4)] grid gap-[var(--s2)]">
                 {links.map((link) => (
                   <Link
                     key={link.href}

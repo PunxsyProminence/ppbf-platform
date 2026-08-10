@@ -76,3 +76,28 @@ test('the notices authoring surface is reachable from the hub', async () => {
 
   expect(screen.getByRole('link', { name: 'Notices & Motivation' }).getAttribute('href')).toBe('/notices');
 });
+
+// The capability map is supposed to be reality-based; it was telling
+// operators a shipped, staging-verified console (T-003's admin/video-review)
+// didn't exist, while calling a screen with real upload/playback/persistence
+// a "mock-only" placeholder. Pinned so a future edit can't quietly revert
+// either claim.
+test('Video Review Intelligence reads as shipped, not a placeholder', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'Video Review Intelligence' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('EXISTS');
+  expect(card.textContent).not.toContain('PLACEHOLDER');
+  const link = card.querySelector('a') as HTMLAnchorElement | null;
+  expect(link?.getAttribute('href')).toBe('/admin/video-review');
+});
+
+test('AI Video Analysis reads as partial (real upload/playback), not mock-only', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'AI Video Analysis' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('PARTIAL');
+  expect(card.textContent).not.toContain('mock-only');
+});

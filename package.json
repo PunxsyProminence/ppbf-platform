@@ -11,11 +11,19 @@
     "build": "npm --workspace web run build",
     "start": "npm --workspace web run start --",
     "lint": "npm --workspace web run lint",
-    "typecheck": "npm --workspace web run typecheck",
+    "typecheck": "npm --workspace web run typecheck && npm run typecheck:scripts",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
     "test": "npm --workspace web run test --",
     "test:migrations": "npm --workspace web run test:migrations --",
+    "design:manifest": "node design-system/build-manifest.mjs",
+    "shots": "npm --workspace web run shots --",
     "deep:audit": "powershell -ExecutionPolicy Bypass -File ./scripts/deep-audit.ps1",
-    "seed:data": "npx ts-node scripts/seed-data.ts",
-    "seed:data:dry": "npx ts-node scripts/seed-data.ts --dry-run"
+    "seed:data": "tsx scripts/seed-data.ts",
+    "seed:data:dry": "tsx scripts/seed-data.ts --dry-run"
+  },
+  "devDependencies": {
+    "csv-parse": "^7.0.2",
+    "tsx": "^4.23.6",
+    "typescript": "^5"
   }
 }

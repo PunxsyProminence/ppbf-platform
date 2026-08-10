@@ -74,6 +74,30 @@ export async function GET(request: NextRequest) {
           [principal.organizationId, athleteId, limit],
         );
       } else {
+        // BREADTH HERE IS DELIBERATE, AND WAS CONFIRMED BY THE OWNER
+        //
+        // Two things about this branch look like bugs and are not. An audit
+        // flagged both on 2026-08-08; the owner confirmed both as intended.
+        //
+        //   athlete_id is null   every coach sees unassigned footage, not only
+        //                        their own athletes'. Unassigned video is
+        //                        general gym footage that any coach may triage.
+        //
+        //   no status filter     unlike the athlete and parent branches above,
+        //                        which both pin status = 'ready', a coach sees
+        //                        quarantined and scanning rows too. That is the
+        //                        point: a coach whose upload was quarantined
+        //                        needs to see that it was, and scan_state tells
+        //                        them whether a scan is in flight or gave up.
+        //                        Hiding it would leave them with an upload that
+        //                        silently never appeared.
+        //
+        // Assignment is still enforced for a NAMED athlete -- the athleteId
+        // branch above calls assertActorCanAccessAthlete first. What is broad
+        // is only the unfiltered listing.
+        //
+        // Written here rather than in a doc because this is where the next
+        // audit will look, and it has already been raised once.
         rows = await query<VideoSessionRow>(
           `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
            from pilot.video_sessions

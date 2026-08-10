@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
 type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
@@ -25,6 +26,10 @@ interface DeepTrackResult {
   // the record is kept deliberately -- but the athlete should be told, not left
   // to discover it from a coach later.
   safetyReviewRaised: boolean;
+  // What earns clearance, from the gate's own requirement_text -- the "teaching
+  // moment" doctrine: a stop names what's missing and where to fix it, not just
+  // that it happened. Undefined when no review was raised.
+  safetyReviewLesson: string | undefined;
 }
 
 async function submitDeepTrackObservations(input: {
@@ -50,8 +55,21 @@ async function submitDeepTrackObservations(input: {
     unit: string;
     dimensions?: Record<string, string | number | boolean>;
   }> = [
-    { kind: 'contact_level', value: input.contactLevel, unit: 'level_0_3', dimensions: baseDimensions },
-    { kind: 'contact_rounds', value: input.totalRoundsCompleted, unit: 'count', dimensions: baseDimensions },
+    // The contact pair is sent only when contact actually happened. The
+    // rounds field on this form is TOTAL session rounds, so sending it as
+    // 'contact_rounds' for a contact level of 0 ('None') would report 6
+    // rounds of contact for a bag-work session -- which files a
+    // contact-without-clearance safety flag against an athlete who honestly
+    // logged that no contact occurred. Omitting the whole pair keeps the
+    // formula engine's pair-per-context invariant intact and contributes
+    // exactly what a zero-contact session should to Contact Exposure:
+    // nothing.
+    ...(input.contactLevel > 0
+      ? [
+          { kind: 'contact_level', value: input.contactLevel, unit: 'level_0_3', dimensions: baseDimensions },
+          { kind: 'contact_rounds', value: input.totalRoundsCompleted, unit: 'count', dimensions: baseDimensions },
+        ]
+      : []),
     { kind: 'punch_attempted', value: input.punchesAttempted, unit: 'count', dimensions: { punchType: input.punchType } },
     { kind: 'punch_landed', value: input.punchesLanded, unit: 'count', dimensions: { punchType: input.punchType } },
     { kind: 'punch_absorbed', value: input.punchesAbsorbed, unit: 'count', dimensions: baseDimensions },
@@ -92,9 +110,13 @@ async function submitDeepTrackObservations(input: {
     });
 
     const payload = (await response.json().catch(() => ({}))) as {
-      safetyReview?: { raised?: boolean };
+      safetyReview?: { raised?: boolean; lesson?: string };
     };
-    return { ok: response.ok, safetyReviewRaised: payload.safetyReview?.raised === true };
+    return {
+      ok: response.ok,
+      safetyReviewRaised: payload.safetyReview?.raised === true,
+      safetyReviewLesson: payload.safetyReview?.lesson,
+    };
   }));
 
   const fulfilled = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
@@ -106,6 +128,7 @@ async function submitDeepTrackObservations(input: {
     // Any one of the contact observations tripping the gate is enough; they all
     // concern the same session.
     safetyReviewRaised: fulfilled.some((value) => value.safetyReviewRaised),
+    safetyReviewLesson: fulfilled.find((value) => value.safetyReviewLesson)?.safetyReviewLesson,
   };
 }
 
@@ -156,7 +179,7 @@ export default function SparringTelemetryPage() {
     const observedAt = new Date().toISOString();
 
     try {
-      const { ok, savedCount, safetyReviewRaised } = await submitDeepTrackObservations({
+      const { ok, savedCount, safetyReviewRaised, safetyReviewLesson } = await submitDeepTrackObservations({
         athleteId,
         contextId,
         observedAt,
@@ -178,11 +201,12 @@ export default function SparringTelemetryPage() {
         return;
       }
 
-      const timestamp = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const timestamp = formatGymTimeOfDay(new Date()) ?? '';
       setLastSubmitted(timestamp);
       const savedMessage = safetyReviewRaised
         ? 'Telemetry saved. Because there is no current medical clearance on file for this athlete, '
           + 'a safety review has been raised for your coach. The session was still recorded -- do not re-enter it.'
+          + (safetyReviewLesson ? ` ${safetyReviewLesson}` : '')
         : 'Telemetry saved and sent to the SHADOW formula engine for coach review.';
 
       setStatusMessage(ok
@@ -196,35 +220,32 @@ export default function SparringTelemetryPage() {
   const contactLevelLabel = ['None', 'Light', 'Moderate', 'Heavy'][contactLevel] ?? 'Unknown';
 
   return (
-    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
-      <header className="border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-10 py-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[0.72rem] uppercase tracking-[0.24em] text-[color:var(--brass-300)] font-mono">
-              Track D/E · Deep-Track
-            </div>
-            <div className="font-display text-2xl tracking-tight">Combat Telemetry Log</div>
-          </div>
-          <div className="inline-flex items-center gap-2 border-2 border-[color:var(--brass-700)] bg-[#3d2817] px-3 py-2 text-xs font-mono text-[color:var(--bone-200)]">
-            SHADOW formula engine surface
-          </div>
+    /* Athlete-facing gym-floor surface: ink ground, the floor room's brick wall
+       (same pattern as /schedule), and Law 5 sizing throughout — every control
+       clears var(--tap), the working type sits at var(--t-md). */
+    <main className="room--floor min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <header className="flex flex-wrap items-center justify-between gap-[var(--s4)] border-b-[3px] border-[color:var(--brass-500)] bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s4)]">
+        <div>
+          <p className="t-eyebrow">Track D/E · Deep-Track</p>
+          <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Combat Telemetry Log</h1>
         </div>
+        <span className="plaque">SHADOW formula engine surface</span>
       </header>
 
-      <form onSubmit={onSubmit} className="px-10 py-7">
-        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-          <section className="grid gap-4 border-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 shadow-2xl shadow-black/70">
-            <div className="grid gap-1.5">
-              <h2 className="m-0 font-display text-2xl tracking-tight">Session Capture</h2>
-              <p className="m-0 leading-6 text-[color:var(--bone-400)]">
+      <form onSubmit={onSubmit} className="px-[var(--s5)] py-[var(--s6)]">
+        <div className="grid items-start gap-[var(--s5)] lg:grid-cols-[var(--split-major)_var(--split-minor)]">
+          <section className="mat-leather--raised grid gap-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s6)]">
+            <div className="grid gap-[var(--s2)]">
+              <h2 className="t-command m-0" style={{ fontSize: 'var(--t-lg)' }}>Session Capture</h2>
+              <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                 Log rounds, contact, punch output, focus, and weight for the coach review pipeline. Every field here
                 feeds a real SHADOW formula -- this is the high-effort, high-quality-feedback path.
               </p>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <label htmlFor="roundsCompleted" className="font-semibold">Total Rounds Completed</label>
+            <div className="grid gap-[var(--s5)] sm:grid-cols-2">
+              <div className="field">
+                <label htmlFor="roundsCompleted" className="t-label">Total Rounds Completed</label>
                 <input
                   id="roundsCompleted"
                   type="number"
@@ -232,17 +253,17 @@ export default function SparringTelemetryPage() {
                   max={12}
                   value={totalRoundsCompleted}
                   onChange={(event) => setTotalRoundsCompleted(Number(event.target.value))}
-                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)]"
+                  className="input input--kiosk"
                 />
               </div>
 
-              <div className="grid gap-2">
-                <label htmlFor="opponentStance" className="font-semibold">Opponent Stance</label>
+              <div className="field">
+                <label htmlFor="opponentStance" className="t-label">Opponent Stance</label>
                 <select
                   id="opponentStance"
                   value={opponentStance}
                   onChange={(event) => setOpponentStance(event.target.value as OpponentStance)}
-                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)]"
+                  className="select input--kiosk"
                 >
                   <option value="Orthodox">Orthodox</option>
                   <option value="Southpaw">Southpaw</option>
@@ -251,9 +272,9 @@ export default function SparringTelemetryPage() {
               </div>
             </div>
 
-            <div className="grid gap-2.5">
-              <label htmlFor="contactLevel" className="font-semibold">Contact Level</label>
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="grid gap-[var(--s3)]">
+              <label htmlFor="contactLevel" className="t-label">Contact Level</label>
+              <div className="flex flex-wrap items-center justify-between gap-[var(--s4)]">
                 <input
                   id="contactLevel"
                   type="range"
@@ -262,66 +283,67 @@ export default function SparringTelemetryPage() {
                   step={1}
                   value={contactLevel}
                   onChange={(event) => setContactLevel(Number(event.target.value))}
+                  className="min-h-[var(--tap)] cursor-pointer"
                   style={{ accentColor: 'var(--brass-400)', flex: '1 1 260px' }}
                 />
-                <span className="min-w-[122px] border-2 border-[color:var(--brass-700)] bg-[#3d2817] px-3 py-2 text-center text-sm text-[color:var(--bone-200)]">
+                <span className="plaque min-w-[122px] text-center">
                   {contactLevel}/3 {contactLevelLabel}
                 </span>
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="grid gap-2">
-                <label htmlFor="punchType" className="font-semibold">Primary Punch Type</label>
+            <div className="grid gap-[var(--s5)] sm:grid-cols-3">
+              <div className="field">
+                <label htmlFor="punchType" className="t-label">Primary Punch Type</label>
                 <select
                   id="punchType"
                   value={punchType}
                   onChange={(event) => setPunchType(event.target.value as PunchType)}
-                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)]"
+                  className="select input--kiosk"
                 >
                   {PUNCH_TYPES.map((type) => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
               </div>
-              <div className="grid gap-2">
-                <label htmlFor="punchesAttempted" className="font-semibold">Attempted</label>
+              <div className="field">
+                <label htmlFor="punchesAttempted" className="t-label">Attempted</label>
                 <input
                   id="punchesAttempted"
                   type="number"
                   min={0}
                   value={punchesAttempted}
                   onChange={(event) => setPunchesAttempted(Math.max(0, Number(event.target.value)))}
-                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)]"
+                  className="input input--kiosk"
                 />
               </div>
-              <div className="grid gap-2">
-                <label htmlFor="punchesLanded" className="font-semibold">Landed</label>
+              <div className="field">
+                <label htmlFor="punchesLanded" className="t-label">Landed</label>
                 <input
                   id="punchesLanded"
                   type="number"
                   min={0}
                   value={punchesLanded}
                   onChange={(event) => setPunchesLanded(Math.max(0, Number(event.target.value)))}
-                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)]"
+                  className="input input--kiosk"
                 />
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <label htmlFor="punchesAbsorbed" className="font-semibold">Punches Absorbed</label>
+            <div className="grid gap-[var(--s5)] sm:grid-cols-2">
+              <div className="field">
+                <label htmlFor="punchesAbsorbed" className="t-label">Punches Absorbed</label>
                 <input
                   id="punchesAbsorbed"
                   type="number"
                   min={0}
                   value={punchesAbsorbed}
                   onChange={(event) => setPunchesAbsorbed(Math.max(0, Number(event.target.value)))}
-                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)]"
+                  className="input input--kiosk"
                 />
               </div>
-              <div className="grid gap-2">
-                <label htmlFor="bodyWeight" className="font-semibold">Body Weight (kg, optional)</label>
+              <div className="field">
+                <label htmlFor="bodyWeight" className="t-label">Body Weight (kg, optional)</label>
                 <input
                   id="bodyWeight"
                   type="number"
@@ -330,65 +352,68 @@ export default function SparringTelemetryPage() {
                   value={bodyWeightKg}
                   onChange={(event) => setBodyWeightKg(event.target.value)}
                   placeholder="Leave blank to skip"
-                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)] placeholder-[#6a5a4a]"
+                  className="input input--kiosk"
                 />
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
-              <input type="checkbox" checked={focusAchieved} onChange={(event) => setFocusAchieved(event.target.checked)} className="w-4 h-4" />
+            <label className="flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)] text-[length:var(--t-md)]">
+              <input
+                type="checkbox"
+                checked={focusAchieved}
+                onChange={(event) => setFocusAchieved(event.target.checked)}
+                className="h-[21px] w-[21px] accent-[var(--brass-600)]"
+              />
               <span>Today&apos;s technical focus was achieved</span>
             </label>
 
-            <div className="grid gap-2">
-              <label htmlFor="recoveryNotes" className="font-semibold">Recovery Notes</label>
+            <div className="field">
+              <label htmlFor="recoveryNotes" className="t-label">Recovery Notes</label>
               <textarea
                 id="recoveryNotes"
                 value={recoveryNotes}
                 onChange={(event) => setRecoveryNotes(event.target.value)}
                 maxLength={RECOVERY_NOTES_MAX_LENGTH}
                 placeholder="How the athlete felt afterward, recovery plan, anything the coach should know..."
-                className="w-full h-20 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)] placeholder-[#6a5a4a]"
+                className="textarea input--kiosk h-[89px]"
               />
             </div>
 
             <button
               type="submit"
               disabled={isSubmitting || !athleteId}
-              className="mt-1 w-fit border-2 border-[color:var(--brass-700)] bg-[var(--rust-700)] px-4 py-3 font-semibold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--brass-700)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn btn--kiosk disabled:cursor-not-allowed disabled:opacity-50 disabled:grayscale"
             >
               {isSubmitting ? 'Saving…' : 'Log Combat Session'}
             </button>
           </section>
 
-          <aside className="grid gap-4 border-4 border-[#3d2817] bg-[var(--hide-900)] p-6">
-            <div className="grid gap-2">
-              <div className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[color:var(--brass-300)]">
-                SHADOW formula status
-              </div>
-              <p className="m-0 leading-6 text-[color:var(--bone-200)]">{statusMessage}</p>
+          <aside className="mat-leather grid gap-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
+            <div className="grid gap-[var(--s2)]">
+              <p className="t-eyebrow m-0">SHADOW formula status</p>
+              <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{statusMessage}</p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3.5">
-                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[color:var(--brass-300)]">Rounds</div>
-                <div className="mt-2 text-2xl font-black text-[color:var(--bone-200)]">{totalRoundsCompleted}</div>
+            <div className="grid gap-[var(--s4)] sm:grid-cols-2">
+              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-label m-0">Rounds</p>
+                <p className="t-data m-0 mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>{totalRoundsCompleted}</p>
               </div>
-              <div className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3.5">
-                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[color:var(--brass-300)]">Stance</div>
-                <div className="mt-2 text-2xl font-black text-[color:var(--bone-200)]">{opponentStance}</div>
+              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-label m-0">Stance</p>
+                <p className="t-data m-0 mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>{opponentStance}</p>
               </div>
-              <div className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3.5">
-                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[color:var(--brass-300)]">Contact</div>
-                <div className="mt-2 text-2xl font-black text-[color:var(--bone-200)]">{contactLevelLabel}</div>
+              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-label m-0">Contact</p>
+                <p className="t-data m-0 mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>{contactLevelLabel}</p>
               </div>
-              <div className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3.5">
-                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[color:var(--brass-300)]">Last save</div>
-                <div className="mt-2 text-lg font-black text-[color:var(--bone-200)]">{lastSubmitted}</div>
+              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-label m-0">Last save</p>
+                <p className="t-data m-0 mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>{lastSubmitted}</p>
               </div>
             </div>
 
-            <div className="border-2 border-[color:var(--brass-700)] bg-[#3d2817] p-3.5 leading-6 text-[color:var(--bone-200)]">
+            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-200)]">
               This is Deep-Track: rounds, contact level, punch accuracy, focus attainment, and weight all become real
               inputs to SHADOW&apos;s formula engine (Accuracy, Connect Differential, Contact Exposure, Focus
               Attainment Rate, 7-Day Weight Change) the moment you submit.
@@ -397,7 +422,7 @@ export default function SparringTelemetryPage() {
         </div>
       </form>
 
-      <footer className="px-10 pb-8 text-sm text-[color:var(--bone-400)]">
+      <footer className="t-muted px-[var(--s5)] pb-[var(--s6)]">
         Punxsy Prominence Boxing and Fitness, Registered Office: 204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715
       </footer>
     </main>

@@ -26,6 +26,17 @@
 #   FKs, and finding out is a precondition for running the corrected migration
 #   without it failing partway through.
 #
+#   orphan-chat-audit: whether pilot.athlete_chat_audit, board_chat_audit,
+#   coach_chat_audit or individual_chat_audit exist -- four tables the 07-31
+#   audit and the shared work queue both asserted were "in production with no
+#   DDL anywhere", left behind by the DDL-over-HTTP route removed in #111.
+#   Checked against production on 08-02 and all four are ABSENT, in pilot and
+#   in every other schema; the only %chat_audit% table there is SHADOW's own
+#   live pilot.shadow_chat_audit. So the claim was false for that database.
+#   STAGING HAS NEVER BEEN CHECKED, and if it holds them that is a genuinely
+#   different finding -- which is the reason this belongs here rather than
+#   staying a command someone runs from a laptop pointed at production.
+#
 #   stranded-guardians: which non-athlete accounts sit on auth_provider
 #   'ppbf_local' and therefore have no working login path (PIN login is
 #   athlete-only, Microsoft login only matches provider 'microsoft', and any
@@ -55,6 +66,8 @@ on:
         options:
           - multiorg-orphans
           - stranded-guardians
+          - orphan-chat-audit
+          - seed-identity
 
 permissions:
   id-token: write
@@ -71,10 +84,10 @@ jobs:
 
     steps:
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -83,7 +96,7 @@ jobs:
         run: npm ci
 
       - name: Authenticate via Azure OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -116,6 +129,15 @@ jobs:
               ;;
             stranded-guardians)
               npm run pilot:check-stranded-guardians | tee /tmp/check-output.txt
+              ;;
+            orphan-chat-audit)
+              npm run pilot:check-orphan-chat-audit | tee /tmp/check-output.txt
+              ;;
+            seed-identity)
+              # Read-only. Prints the organization ids and the PRIVILEGED account ids that the
+              # seeding workflows ask an operator to type, so nobody has to read them out of a
+              # production SQL client by eye. Athlete and parent accounts are never selected.
+              npm run pilot:check-seed-identity | tee /tmp/check-output.txt
               ;;
             *)
               echo "::error::Unknown check '$CHECK'"

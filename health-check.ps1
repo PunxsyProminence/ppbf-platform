@@ -17,8 +17,8 @@ if (Test-Path "packages/continuity/ledger.ts") { Write-Host "   ✓ operational"
 Write-Host "[5/7] Major portals..." -ForegroundColor Yellow
 if (Test-Path "apps/web/app/launch") { Write-Host "   ✓ portals present (launch + others)" -ForegroundColor Green } else { Write-Host "   ✗ missing!" -ForegroundColor Red }
 
-Write-Host "[6/7] Supabase schema..." -ForegroundColor Yellow
-if (Test-Path "infra/supabase/schema.sql") { Write-Host "   ✓ ready" -ForegroundColor Green } else { Write-Host "   ✗ missing!" -ForegroundColor Red }
+Write-Host "[6/7] Postgres schema..." -ForegroundColor Yellow
+if (Test-Path "infra/azure/pilot_slice_postgres.sql") { Write-Host "   ✓ ready" -ForegroundColor Green } else { Write-Host "   ✗ missing!" -ForegroundColor Red }
 
 Write-Host "[7/7] Feature flags..." -ForegroundColor Yellow
 if (Test-Path "packages/governance/featureFlags.ts") { Write-Host "   ✓ active" -ForegroundColor Green } else { Write-Host "   ✗ missing!" -ForegroundColor Red }

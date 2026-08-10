@@ -203,10 +203,10 @@ export default function PlatformConsole() {
 
   if (!authChecked) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
+      <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Checking Access</p>
-          <h1 className="mt-3 font-display text-2xl tracking-tight">Loading...</h1>
+          <p className="t-eyebrow">Checking Access</p>
+          <h1 className="t-command mt-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Loading...</h1>
         </div>
       </main>
     );
@@ -214,18 +214,18 @@ export default function PlatformConsole() {
 
   if (!hasPlatformAccess) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
-        <div className="mx-auto max-w-2xl space-y-6 text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Access Denied</p>
-          <h1 className="font-display text-3xl font-black">Platform Owner Access Required</h1>
-          <p className="text-sm leading-7 text-[var(--gray-dark)]">
+      <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+        <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s6)] text-center">
+          <p className="t-eyebrow">Access Denied</p>
+          <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Platform Owner Access Required</h1>
+          <p className="t-body">
             This console is for PPBF platform administrators only.
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
+          <div className="flex flex-wrap items-center justify-center gap-[var(--s4)]">
+            <Link href="/login" className="btn">
               Sign In With Microsoft
             </Link>
-            <Link href="/admin" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+            <Link href="/admin" className="btn btn--ghost">
               Go To Admin Dashboard
             </Link>
           </div>
@@ -235,20 +235,20 @@ export default function PlatformConsole() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-      <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12 lg:px-10">
-        <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Platform Console</p>
-          <h1 className="font-display text-4xl font-black">Omega</h1>
-          <p className="text-base leading-7 text-[var(--gray-dark)]">
+    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <div className="mx-auto w-full max-w-3xl space-y-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+        <header className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <p className="t-eyebrow">Platform Console</p>
+          <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Omega</h1>
+          <p className="t-body">
             View any gym individually here, or see every gym at once in the overview. Reaches across
             organizations for operational data only -- never medical/PHI records, which stay each gym&apos;s own.
           </p>
-          <div className="flex flex-wrap gap-3 pt-2">
-            <Link href="/admin/platform/overview" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+          <div className="flex flex-wrap gap-[var(--s4)] pt-[var(--s3)]">
+            <Link href="/admin/platform/overview" className="btn btn--ghost">
               All Gyms Overview
             </Link>
-            <Link href="/admin/organizations" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+            <Link href="/admin/organizations" className="btn btn--ghost">
               Onboard A New Gym
             </Link>
           </div>
@@ -256,124 +256,134 @@ export default function PlatformConsole() {
 
         {feedback && (
           <div
-            className={`rounded-xl border px-4 py-3 ${
+            role={feedback.kind === 'error' ? 'alert' : 'status'}
+            className={`alert ${
               feedback.kind === 'error'
-                ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
+                ? 'alert--critical'
                 : feedback.kind === 'success'
-                  ? 'border-[#4caf50] bg-[rgba(76,175,80,0.05)]'
-                  : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
+                  ? 'alert--success'
+                  : 'alert--info'
             }`}
           >
-            <p
-              className={`text-sm font-semibold ${
-                feedback.kind === 'error' ? 'text-[var(--red-primary)]' : feedback.kind === 'success' ? 'text-[#2e7d32]' : 'text-[var(--gray-dark)]'
-              }`}
-            >
-              {feedback.kind === 'error' && '❌ '}
-              {feedback.kind === 'success' && '✓ '}
-              {feedback.text}
-            </p>
+            <span className="alert-icon">
+              {feedback.kind === 'error' ? '✕' : feedback.kind === 'success' ? '✓' : '◉'}
+            </span>
+            <span className="alert-msg font-semibold">{feedback.text}</span>
           </div>
         )}
 
-        <section className="rounded-2xl border-2 border-[rgba(0,0,0,0.14)] bg-white p-6">
-          <label className="block text-sm font-semibold text-[var(--black)]">Choose A Gym</label>
-          <select
-            value={selectedOrgId}
-            onChange={(event) => setSelectedOrgId(event.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-          >
-            <option value="">Select a gym...</option>
-            {organizations.map((org) => (
-              <option key={org.organization_id} value={org.organization_id}>
-                {org.organization_name} ({org.status})
-              </option>
-            ))}
-          </select>
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <label className="field">
+            <span className="t-label">Choose A Gym</span>
+            <select
+              value={selectedOrgId}
+              onChange={(event) => setSelectedOrgId(event.target.value)}
+              className="select"
+            >
+              <option value="">Select a gym...</option>
+              {organizations.map((org) => (
+                <option key={org.organization_id} value={org.organization_id}>
+                  {org.organization_name} ({org.status})
+                </option>
+              ))}
+            </select>
+          </label>
 
-          {loadingSummary && <p className="mt-4 text-sm text-[var(--gray-dark)]">Loading summary...</p>}
+          {loadingSummary && <p className="t-muted mt-[var(--s4)]">Loading summary...</p>}
 
           {summary && summary.organization_id === selectedOrgId && (
-            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div className="rounded-lg border border-[rgba(0,0,0,0.1)] p-3">
-                <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">Active Athletes</p>
-                <p className="mt-1 text-xl font-black">{metricLabel(summary.board.activeAthletes)}</p>
+            <div className="mt-[var(--s5)] grid grid-cols-2 gap-[var(--s4)] sm:grid-cols-4">
+              <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
+                <p className="t-eyebrow">Active Athletes</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{metricLabel(summary.board.activeAthletes)}</p>
               </div>
-              <div className="rounded-lg border border-[rgba(0,0,0,0.1)] p-3">
-                <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">Sessions (30d)</p>
-                <p className="mt-1 text-xl font-black">{metricLabel(summary.board.trainingSessions30Days)}</p>
+              <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
+                <p className="t-eyebrow">Sessions (30d)</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{metricLabel(summary.board.trainingSessions30Days)}</p>
               </div>
-              <div className="rounded-lg border border-[rgba(0,0,0,0.1)] p-3">
-                <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">Coach Reviews (30d)</p>
-                <p className="mt-1 text-xl font-black">{metricLabel(summary.board.coachReviews30Days)}</p>
+              <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
+                <p className="t-eyebrow">Coach Reviews (30d)</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{metricLabel(summary.board.coachReviews30Days)}</p>
               </div>
-              <div className="rounded-lg border border-[rgba(0,0,0,0.1)] p-3">
-                <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">SHADOW Uses (30d)</p>
-                <p className="mt-1 text-xl font-black">{summary.growth.totalInteractions}</p>
+              <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
+                <p className="t-eyebrow">SHADOW Uses (30d)</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{summary.growth.totalInteractions}</p>
               </div>
             </div>
           )}
         </section>
 
-        <section className="rounded-2xl border-2 border-[rgba(0,0,0,0.14)] bg-white p-6">
-          <h2 className="text-lg font-bold">Invite Staff Or A Gym Admin</h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Invite Staff Or A Gym Admin</h2>
+          <p className="t-body mt-[var(--s3)]">
             Sends a Microsoft-authenticated invite into the selected gym.
           </p>
-          <div className="mt-4 space-y-3">
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(event) => setInviteEmail(event.target.value)}
-              placeholder="name@example.org"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-            />
-            <select
-              value={inviteRole}
-              onChange={(event) => setInviteRole(event.target.value)}
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-            >
-              {INVITABLE_ROLES.map((role) => (
-                <option key={role.value} value={role.value}>{role.label}</option>
-              ))}
-            </select>
+          <div className="mt-[var(--s4)] space-y-[var(--s4)]">
+            <label className="field">
+              <span className="t-label">Microsoft email</span>
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="name@example.org"
+                className="input"
+              />
+            </label>
+            <label className="field">
+              <span className="t-label">Role</span>
+              <select
+                value={inviteRole}
+                onChange={(event) => setInviteRole(event.target.value)}
+                className="select"
+              >
+                {INVITABLE_ROLES.map((role) => (
+                  <option key={role.value} value={role.value}>{role.label}</option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void inviteStaff()}
-              className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Working...' : 'Send Invite'}
             </button>
           </div>
         </section>
 
-        <section className="rounded-2xl border-2 border-[rgba(0,0,0,0.14)] bg-white p-6">
-          <h2 className="text-lg font-bold">Prepare An Athlete Account</h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Prepare An Athlete Account</h2>
+          <p className="t-body mt-[var(--s3)]">
             Creates the login shell only -- no PIN, cannot sign in yet. The gym&apos;s own admin
             must finish activation from Admin &gt; People before this athlete can log in.
           </p>
-          <div className="mt-4 space-y-3">
-            <input
-              type="text"
-              value={athleteAccountId}
-              onChange={(event) => setAthleteAccountId(event.target.value)}
-              placeholder="Account ID (how they'll sign in)"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-            />
-            <input
-              type="text"
-              value={athleteRosterId}
-              onChange={(event) => setAthleteRosterId(event.target.value)}
-              placeholder="Existing athlete roster ID"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-            />
+          <div className="mt-[var(--s4)] space-y-[var(--s4)]">
+            <label className="field">
+              <span className="t-label">Account ID (how they&apos;ll sign in)</span>
+              <input
+                type="text"
+                value={athleteAccountId}
+                onChange={(event) => setAthleteAccountId(event.target.value)}
+                placeholder="Account ID (how they'll sign in)"
+                className="input"
+              />
+            </label>
+            <label className="field">
+              <span className="t-label">Existing athlete roster ID</span>
+              <input
+                type="text"
+                value={athleteRosterId}
+                onChange={(event) => setAthleteRosterId(event.target.value)}
+                placeholder="Existing athlete roster ID"
+                className="input"
+              />
+            </label>
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void createAthleteShell()}
-              className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Working...' : 'Create Account Shell'}
             </button>

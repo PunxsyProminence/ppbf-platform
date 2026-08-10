@@ -304,3 +304,109 @@ describe('removing a guardian link', () => {
     expect(await screen.findByText(/only athlete this guardian is linked to/i)).toBeTruthy();
   });
 });
+
+/**
+ * The add-athlete form is how a gym onboards its first athlete, and it went out
+ * with a submit button gated on EIGHT conditions that said nothing about which
+ * one was unmet. An admin filled in what looked like the whole form, found the
+ * button dead, and reported it as "it won't let me save" -- which is exactly
+ * what it looks like from the outside.
+ */
+describe('the add-athlete form', () => {
+  async function openAddAthlete(roster = ROSTER) {
+    global.fetch = fetchMock({ members: [], guardianLinks: [], roster }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+  }
+
+  test('names every field still holding the submit button down', async () => {
+    await openAddAthlete();
+
+    // Nothing filled in yet, so it should name the fields rather than just
+    // greying out.
+    const stillNeeded = await screen.findByText(/Still needed before this can be saved/i);
+    expect(stillNeeded.textContent).toMatch(/Full name/);
+    expect(stillNeeded.textContent).toMatch(/Date of birth/);
+    expect(stillNeeded.textContent).toMatch(/Sign-in ID/);
+    // The record ID is auto-filled, so it is NOT among the missing.
+    expect(stillNeeded.textContent).not.toMatch(/Athlete record ID/);
+  });
+
+  test('the message shrinks as fields are filled', async () => {
+    await openAddAthlete();
+    await screen.findByText(/Still needed before this can be saved/i);
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Jo Fighter' } });
+
+    const stillNeeded = screen.getByText(/Still needed before this can be saved/i);
+    expect(stillNeeded.textContent).not.toMatch(/Full name/);
+    expect(stillNeeded.textContent).toMatch(/Date of birth/);
+  });
+
+  // The request: stop making an admin invent an id, and stop them landing on
+  // one that is taken.
+  test('fills the record ID with the next free one for the gym', async () => {
+    await openAddAthlete();
+
+    const idField = (await screen.findByLabelText(/Athlete record ID/i)) as HTMLInputElement;
+    // ath-1 and ath-2 exist, but neither matches ath-NNN, so the first
+    // suggestion is ath-001. The point under test is that it is populated and
+    // not blank.
+    expect(idField.value).toMatch(/^ath-\d{3}$/);
+  });
+
+  test('skips over ids already used rather than counting rows', async () => {
+    await openAddAthlete([
+      { athlete_id: 'ath-001', full_name: 'A', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+      { athlete_id: 'ath-007', full_name: 'B', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+    ]);
+
+    const idField = (await screen.findByLabelText(/Athlete record ID/i)) as HTMLInputElement;
+    // Counting rows would offer ath-003 and collide later; the highest+1 rule
+    // gives ath-008.
+    expect(idField.value).toBe('ath-008');
+  });
+
+  test('an admin can still type their own id, and a cleared box stays cleared', async () => {
+    await openAddAthlete();
+
+    const idField = (await screen.findByLabelText(/Athlete record ID/i)) as HTMLInputElement;
+    fireEvent.change(idField, { target: { value: 'fighter-12' } });
+    expect(idField.value).toBe('fighter-12');
+
+    // Deliberately emptied. A plain `value || suggestion` fallback would snap
+    // back to the suggestion here, which reads as the form fighting them.
+    fireEvent.change(idField, { target: { value: '' } });
+    expect(idField.value).toBe('');
+    expect(screen.getByText(/Still needed before this can be saved/i).textContent).toMatch(/Athlete record ID/);
+  });
+
+  /**
+   * The duplicate that actually costs something. Two records can never share an
+   * id -- the create route is create-only and the primary key refuses it. What
+   * nothing prevents is the same CHILD entered twice under two ids, and
+   * auto-filling the id makes that MORE likely by removing the moment where an
+   * admin types a taken id and reconsiders.
+   */
+  test('warns when the name is already on the roster, and does not block', async () => {
+    await openAddAthlete();
+    await screen.findByLabelText(/Athlete record ID/i);
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'alex   johnson' } });
+
+    // Case and spacing insensitive, so a retyped name still matches.
+    const warning = await screen.findByText(/Alex Johnson is already on your roster as ath-1/i);
+    expect(warning).toBeTruthy();
+    // A warning, not a wall: two children can share a name.
+    expect(warning.textContent).toMatch(/If they are different people who share a name, carry on/i);
+  });
+
+  test('does not warn about a name nobody on the roster has', async () => {
+    await openAddAthlete();
+    await screen.findByLabelText(/Athlete record ID/i);
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Nobody Here' } });
+
+    expect(screen.queryByText(/is already on your roster as/i)).toBeNull();
+  });
+});

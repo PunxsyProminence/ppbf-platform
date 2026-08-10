@@ -176,6 +176,27 @@ export async function claimNextVideoSessionForScan(): Promise<VideoScanClaim | n
  * closes the window between claiming a row and settling it, so a scan that
  * started before an operator archived or re-quarantined a video cannot resurrect
  * it as 'ready' minutes later.
+ *
+ * The `scan_state <> 'blocked'` guard closes the window that one did not.
+ *
+ * A human 'block' decision LEAVES status at 'quarantined' -- only an approve
+ * moves it to 'ready' (see reviewVideoSessionScan). So the status guard above
+ * never fired for the case that matters most: a scan still in flight when an
+ * administrator refused the video could return minutes later, set status
+ * 'ready' and scan_state 'passed', and -- because scan_detail is REPLACED here,
+ * not merged -- erase the human_review record that says a person refused it.
+ * A video of a child that an administrator blocked would be published, with no
+ * trace of the decision.
+ *
+ * The invariant this platform holds is that a human RESOLVES what the scan
+ * could not decide and never overturns what it refused. The converse has to
+ * hold just as hard: the machine does not overturn the human. Once scan_state
+ * is 'blocked' this row is settled by a person, and a late scan result is
+ * information about a decision already made, not a decision.
+ *
+ * Returns false when the row was not updated -- claim lost, video archived, or
+ * a human already blocked it. Callers must not treat that as an error; see
+ * recordUnsettledScanOutcome for the blocked case, which is worth keeping.
  */
 export async function settleVideoSessionScan(params: {
   videoSessionId: string;
@@ -196,6 +217,7 @@ export async function settleVideoSessionScan(params: {
          updated_at = now()
      where video_session_id = $1
        and status = 'quarantined'
+       and scan_state <> 'blocked'
      returning video_session_id`,
     [
       params.videoSessionId,
@@ -206,7 +228,58 @@ export async function settleVideoSessionScan(params: {
       params.terminal,
     ],
   );
+
+  if (rows.length === 0) {
+    // The row was not settled. If a human blocked it, keep what the scan found
+    // -- appended, never replacing -- so the record shows both the person's
+    // refusal and what the machine concluded afterwards. Anything else (claim
+    // lost, video archived) leaves no trace here, which is what those cases
+    // deserve.
+    await recordScanOutcomeOnBlockedVideo(params.videoSessionId, params.scanState, params.detail);
+  }
+
   return rows.length > 0;
+}
+
+/**
+ * A scan result that arrived after an administrator had already blocked the
+ * video.
+ *
+ * Appends to scan_detail rather than replacing it, so the human_review record
+ * survives. Touches no status and no scan_state: the point is that this outcome
+ * does not decide anything. It is kept because a scanner disagreeing with a
+ * person -- in either direction -- is exactly the kind of thing someone will
+ * want to look at later, and silently dropping it makes that impossible.
+ *
+ * Deliberately best-effort: it must never turn a settled refusal into an error
+ * for the sweep that called it.
+ */
+async function recordScanOutcomeOnBlockedVideo(
+  videoSessionId: string,
+  scanState: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await query(
+      `update pilot.video_sessions
+       set scan_detail = scan_detail || $2::jsonb,
+           updated_at = now()
+       where video_session_id = $1
+         and scan_state = 'blocked'`,
+      [
+        videoSessionId,
+        JSON.stringify({
+          late_scan_after_human_block: {
+            scan_state: scanState,
+            detail,
+            recorded_at: new Date().toISOString(),
+          },
+        }),
+      ],
+    );
+  } catch {
+    // Nothing here is worth failing the sweep for.
+  }
 }
 
 /**
