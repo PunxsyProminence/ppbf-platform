@@ -87,7 +87,7 @@ const GUARDIAN = { athleteId: 'ath-1', fullName: 'Dana Johnson', relationshipToA
 // record yet.
 function guardianClient(options: {
   athleteRows?: Array<{ athlete_id: string }>;
-  parentRows?: Array<{ parent_id: string; account_id: string | null }>;
+  parentRows?: Array<{ parent_id: string; account_id: string | null; email_matches?: boolean }>;
 } = {}) {
   return fakeClient((sql) => {
     if (sql.includes('from pilot.athletes')) {
@@ -499,6 +499,134 @@ describe('guardian link provisioning', () => {
     ).rejects.toThrow('Forbidden: guardian record id is already in use by another guardian');
 
     expect(guardianLinkInsertCalls()).toHaveLength(0);
+  });
+
+  // The roster import (scripts/seed-data.ts, #281) writes a guardian's
+  // pilot.parents row with a content-hashed parent_id and account_id NULL,
+  // already carrying one guardian_link per sibling. Before this, the invite
+  // matched only on account_id or par-<accountId>, saw nothing, and inserted a
+  // second row -- so the account attached to the new row and every imported
+  // sibling link stayed on the orphaned one.
+  test('claims the unclaimed guardian record the roster import left, instead of inserting a second one', async () => {
+    currentClient = guardianClient({
+      parentRows: [{ parent_id: 'par_org-1_9f2c4a', account_id: null, email_matches: true }],
+    });
+    stubLookups({});
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      guardian: GUARDIAN,
+    });
+
+    // The imported parent_id, not par-dana@example.com. That is the whole
+    // point: guardian_links key on parent_id, so reusing the imported id is
+    // what keeps the siblings the import already linked.
+    expect(result.guardianLink).toEqual({ parentId: 'par_org-1_9f2c4a', athleteId: 'ath-1' });
+    expect(parentUpsertCalls()).toHaveLength(1);
+    expect(parentUpsertCalls()[0][1]).toEqual([
+      'org-1',
+      'par_org-1_9f2c4a',
+      'dana@example.com',
+      'Dana Johnson',
+      'dana@example.com',
+    ]);
+    expect(guardianLinkInsertCalls()[0][1]).toEqual(['org-1', 'par_org-1_9f2c4a', 'ath-1', 'mother']);
+  });
+
+  test('asks Postgres for unclaimed records by normalized email, not only by account or derived id', async () => {
+    currentClient = guardianClient();
+    stubLookups({});
+
+    await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: '  Dana@Example.COM ',
+      organizationId: 'org-1',
+      role: 'parent',
+      guardian: GUARDIAN,
+    });
+
+    const lookup = currentClient.query.mock.calls.find(
+      (call) => typeof call[0] === 'string' && call[0].includes('from pilot.parents'),
+    );
+
+    // Without the account_id-is-null branch the imported row is invisible and
+    // the defect returns, so the predicate itself is asserted, not just the
+    // decision made from its rows.
+    expect(lookup?.[0]).toContain('account_id is null');
+    expect(lookup?.[1]).toEqual(['org-1', 'dana@example.com', 'par-dana@example.com', 'dana@example.com']);
+  });
+
+  test('does not claim an unclaimed record whose email is a different address', async () => {
+    currentClient = guardianClient({
+      parentRows: [{ parent_id: 'par-dana@example.com', account_id: null, email_matches: false }],
+    });
+    stubLookups({});
+
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'dana@example.com',
+        organizationId: 'org-1',
+        role: 'parent',
+        guardian: GUARDIAN,
+      }),
+    ).rejects.toThrow('Forbidden: guardian record id is already in use by another guardian');
+
+    expect(parentUpsertCalls()).toHaveLength(0);
+    expect(guardianLinkInsertCalls()).toHaveLength(0);
+  });
+
+  test('refuses to guess when two unclaimed records share the address', async () => {
+    currentClient = guardianClient({
+      parentRows: [
+        { parent_id: 'par_org-1_aaa', account_id: null, email_matches: true },
+        { parent_id: 'par_org-1_bbb', account_id: null, email_matches: true },
+      ],
+    });
+    stubLookups({});
+
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'dana@example.com',
+        organizationId: 'org-1',
+        role: 'parent',
+        guardian: GUARDIAN,
+      }),
+    ).rejects.toThrow('Conflict: more than one unclaimed guardian record carries this email address');
+
+    // Claiming either one would strand the other's children -- the exact
+    // failure this block exists to prevent -- so it writes nothing.
+    expect(parentUpsertCalls()).toHaveLength(0);
+    expect(guardianLinkInsertCalls()).toHaveLength(0);
+  });
+
+  test('prefers the record this account already owns over an unclaimed match', async () => {
+    currentClient = guardianClient({
+      parentRows: [
+        { parent_id: 'par_org-1_imported', account_id: null, email_matches: true },
+        { parent_id: 'par-7', account_id: 'dana@example.com', email_matches: true },
+      ],
+    });
+    stubLookups({
+      existingByEmail: {
+        account_id: 'dana@example.com',
+        organization_id: 'org-1',
+        role: 'parent',
+        auth_provider: 'microsoft',
+        is_platform_owner: false,
+      },
+    });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      guardian: { ...GUARDIAN, athleteId: 'ath-2' },
+    });
+
+    // Already-claimed wins. Re-pointing an established guardian at a stale
+    // imported row would move them off the links they have been using.
+    expect(result.guardianLink).toEqual({ parentId: 'par-7', athleteId: 'ath-2' });
   });
 
   test('rejects a guardian link on a role that has no read path for it', async () => {
