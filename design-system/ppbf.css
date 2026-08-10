@@ -2156,6 +2156,15 @@ body.ppbf.on-canvas {
   background-image: linear-gradient(180deg, rgba(110,84,60,.95), rgba(42,31,24,.98));
 }
 .corridor-trigger-glyph { color: var(--brass-300); font-size: 13px; }
+/* The room name. It was referenced by the component and the preview and never
+   defined — found by the class guard, not by looking, because a missing class
+   changes nothing visible enough to notice. The trigger carries a glyph, this
+   label and the current surface, and it sits in a header that already competes
+   for width, so the room name is what gives way first. */
+.corridor-trigger-lbl {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 18ch;
+}
 .corridor-trigger-here {
   font: 400 10.5px/1 var(--font-data); letter-spacing: .04em;
   text-transform: none; color: var(--bone-400);
