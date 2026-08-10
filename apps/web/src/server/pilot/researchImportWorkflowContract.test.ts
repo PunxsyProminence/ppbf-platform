@@ -1,0 +1,80 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+// import-shadow-research.yml previously required organization_id as a typed input, while its
+// sibling seed-reference-data.yml resolves the same value from the target app's own
+// ppbf-pilot-default-org-id secret. #273 made that change on the grounds that the value is a secret
+// the operator cannot see from the dispatch form, and a typo seeds a live database under an
+// organization that does not exist. The argument applied identically here and had not been applied.
+//
+// Source-level, like seedWorkflowContract.test.ts, so it runs in the fast suite rather than behind
+// the pg chain. It guards the two properties that can break while leaving the YAML completely valid
+// -- which is why neither would be caught by anything else.
+
+const PILOT_DIR = __dirname;
+const REPO_ROOT = path.resolve(PILOT_DIR, '../../../../..');
+const WORKFLOW = path.join(REPO_ROOT, '.github/workflows/import-shadow-research.yml');
+
+// The repo checks out CRLF, so anchoring on '\n' matches nothing. seedWorkflowContract.test.ts was
+// written with that bug and passed vacuously until it was found; not repeating it here.
+const raw = fs.readFileSync(WORKFLOW, 'utf8').replace(/\r\n/g, '\n');
+
+function indexOfStep(name: string): number {
+  const at = raw.indexOf(`- name: ${name}`);
+  expect(at).toBeGreaterThan(-1);
+  return at;
+}
+
+describe('import-shadow-research.yml resolves the owning organization', () => {
+  it('does not require organization_id from the operator', () => {
+    const block = raw.slice(raw.indexOf('organization_id:'), raw.indexOf('seed_account_id:'));
+    expect(block).toContain('required: false');
+  });
+
+  it('resolves it from the app secret when the input is blank', () => {
+    expect(raw).toContain('--secret-name ppbf-pilot-default-org-id');
+  });
+
+  // The bug this exists to prevent. $GITHUB_ENV only reaches LATER steps, so a resolve step placed
+  // after its consumers leaves the YAML valid and hands the importer an empty organization -- which
+  // surfaces as MISSING_PPBF_ORG_ID for a reason nobody would guess from the dispatch form.
+  it('resolves the organization BEFORE the steps that read it', () => {
+    const resolve = indexOfStep('Resolve Owning Organization');
+    expect(resolve).toBeLessThan(indexOfStep('Validate Research Package'));
+    expect(resolve).toBeLessThan(indexOfStep('Import Research Package'));
+    // az is needed to read the secret, so the login has to come first.
+    expect(indexOfStep('Authenticate via Azure OIDC')).toBeLessThan(resolve);
+  });
+
+  // Two sources for one name is precisely the defect #273 fixed in the sibling workflow: a job-level
+  // env entry would win over, or race with, the value written to $GITHUB_ENV.
+  it('does not also declare PPBF_ORG_ID in the job env block', () => {
+    const jobEnv = raw.slice(raw.indexOf('    env:\n'), raw.indexOf('    steps:'));
+    expect(jobEnv).not.toContain('PPBF_ORG_ID:');
+    // SEED_ACCOUNT_ID stays here on purpose -- it is operator-supplied, not resolved.
+    expect(jobEnv).toContain('SEED_ACCOUNT_ID:');
+  });
+
+  it('masks the resolved organization', () => {
+    expect(raw).toContain('::add-mask::$ORG');
+  });
+
+  // A masked value printed into the run summary is a masked value no longer. The summary reports
+  // where the organization came from, never what it is.
+  it('never echoes the organization value into the run summary', () => {
+    expect(raw).not.toContain('- organization: `${{ inputs.organization_id }}`');
+    expect(raw).toContain('$ORG_SOURCE');
+  });
+
+  it('fails closed when neither the input nor the secret yields a value', () => {
+    expect(raw).toContain('Could not resolve an owning organization');
+  });
+
+  // seed_account_id genuinely cannot be resolved this way -- it is an account id, not a secret the
+  // app holds. #283 adds the read-only seed-identity check so an operator can look it up without
+  // reading production by eye; it must stay a required input here.
+  it('still requires seed_account_id', () => {
+    const block = raw.slice(raw.indexOf('seed_account_id:'));
+    expect(block.slice(0, 200)).toContain('required: true');
+  });
+});
