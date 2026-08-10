@@ -1,4 +1,4 @@
-import type { PilotAthlete, PilotCoachReview, PilotGoal, PilotSession } from './contracts';
+import type { CoachRosterAthlete, PilotAthlete, PilotCoachReview, PilotGoal, PilotSession } from './contracts';
 import { query, queryOne } from './db';
 
 export async function getAthleteById(organizationId: string, athleteId: string): Promise<PilotAthlete | null> {
@@ -235,6 +235,86 @@ export async function getAthletesByOrganization(organizationId: string): Promise
     'select * from pilot.athletes where organization_id = $1 order by created_at desc',
     [organizationId]
   );
+}
+
+/**
+ * The relationship a coach has to one athlete, as a boolean expression over
+ * `a` (an alias for pilot.athletes). The same two ways in that
+ * access.ts#assertCoachAssignedToAthlete admits a coach, so the roster agrees
+ * with the per-athlete gate instead of inventing a third rule: coach of
+ * record, or an active coverage grant -- started, not yet expired, and in this
+ * organization. A revoked grant has expires_at forced to now(), so it stops
+ * revealing the fields the moment it is revoked, with no cleanup job.
+ */
+const COACH_RELATED_WITH_COVERAGE = `(
+  a.coach_id = $2
+  or exists (
+    select 1
+    from pilot.coach_coverage c
+    where c.organization_id = a.organization_id
+      and c.athlete_id = a.athlete_id
+      and c.covering_coach_id = $2
+      and c.starts_at <= now()
+      and c.expires_at > now()
+  )
+)`;
+
+/** The same question where pilot.coach_coverage does not exist yet. */
+const COACH_RELATED_RECORD_ONLY = '(a.coach_id = $2)';
+
+/**
+ * Written once and interpolated, never copy-pasted per column: two hand-kept
+ * copies of a redaction predicate drift, and the drift leaks exactly one
+ * field. The alias is computed in an inner select because Postgres cannot
+ * reference a select-list alias from a sibling item in the same list.
+ */
+function coachRosterQuery(relationship: string): string {
+  return `select athlete_id,
+                 full_name,
+                 weight_class,
+                 gym_status,
+                 active_flag,
+                 coach_id,
+                 created_at,
+                 updated_at,
+                 case when coach_related then dob end as dob,
+                 case when coach_related then emergency_contact end as emergency_contact
+          from (
+            select a.*, ${relationship} as coach_related
+            from pilot.athletes a
+            where a.organization_id = $1
+          ) scoped
+          order by created_at desc`;
+}
+
+/**
+ * The roster a coach reads: every athlete in the organization, with dob and
+ * emergency_contact present only for the ones this coach actually has a
+ * relationship to. See CoachRosterAthlete for why the list stays whole and
+ * the fields narrow instead.
+ *
+ * Redaction happens in SQL, so the two columns never leave the database for
+ * an athlete this coach is unrelated to -- a filter applied in JavaScript
+ * afterwards would still have loaded them into the response-building process,
+ * and is one forgotten `map` away from being skipped.
+ */
+export async function getAthletesForCoach(organizationId: string, coachId: string): Promise<CoachRosterAthlete[]> {
+  try {
+    return await query<CoachRosterAthlete>(coachRosterQuery(COACH_RELATED_WITH_COVERAGE), [organizationId, coachId]);
+  } catch (error) {
+    // Migrations are operator-applied (guardrails section 7), so this runs
+    // against databases the coach_coverage migration has not reached. A
+    // missing relation (Postgres 42P01) must not 500 the whole roster --
+    // access.ts makes the same allowance at the same table for the same
+    // reason. Falling back to coach-of-record only fails SAFE: it redacts
+    // more, never less. Any other database error still propagates.
+    const code = (error as { code?: unknown }).code;
+    if (code !== '42P01') {
+      throw error;
+    }
+
+    return query<CoachRosterAthlete>(coachRosterQuery(COACH_RELATED_RECORD_ONLY), [organizationId, coachId]);
+  }
 }
 
 export async function getGoalsByAthlete(

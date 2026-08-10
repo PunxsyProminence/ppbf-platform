@@ -146,32 +146,43 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     note: 'Reaches the public tier ONLY through a dated, guardian-signed consent row; defaults to initials.',
   },
   'athletes.dob': {
-    tier: 'organization',
-    enforcedBy: 'organizationScope.convention.test.ts',
+    tier: 'athlete_record',
+    enforcedBy: 'entities.ts#getAthletesForCoach',
     note:
-      'Honest, not aspirational: athletes/list hands any coach in the org the full row today, so the '
-      + 'enforced tier is the org floor, not per-relationship. Null DOB is treated as a minor wherever '
-      + 'age gates anything (wallDisplay.ts#isMinor). Narrowing coach reads is an athletes/list work '
-      + 'item; record it here only when real.',
+      'Per-relationship for coaches, and now real rather than aspirational: the roster list still names '
+      + 'every athlete, but dob comes back only for the coach of record or the holder of an active '
+      + 'coverage grant. Every coach-reachable read of this column is scoped -- athletes/list through '
+      + 'getAthletesForCoach, athletes/get + athletes/update + intake/domain-get through '
+      + 'assertActorCanAccessAthlete. profile/roster selects dob to feed the portrait age gate and never '
+      + 'returns it. Organization admins still read it org-wide, which is exactly what keeps this '
+      + 'athlete_record rather than minor_circle. Redaction fails safe: a null dob is treated as a minor '
+      + 'wherever age gates anything (wallDisplay.ts#isMinor).',
   },
   'athletes.weight_class': {
     tier: 'organization',
     enforcedBy: 'organizationScope.convention.test.ts',
     note:
       'A record about a person\'s body; the public floor is separately held by the wall denylist '
-      + '(wallOfNamesPrivacy.test.ts). Org-wide staff reads exist today via athletes/list.',
+      + '(wallOfNamesPrivacy.test.ts). Org-wide for staff through athletes/list, and left that way on '
+      + 'purpose when dob and emergency_contact were narrowed: a coach matching people for sparring or '
+      + 'picking up cover needs it across the gym, and it identifies a body far less than a birth date '
+      + 'or a guardian\'s phone number does.',
   },
   'athletes.gym_status': {
     tier: 'organization',
     enforcedBy: 'organizationScope.convention.test.ts',
-    note: 'Public floor held by the wall denylist; org-wide staff reads exist today via athletes/list.',
+    note:
+      'Public floor held by the wall denylist; org-wide for staff through athletes/list, kept that way '
+      + 'deliberately in the same field split -- who is active is what a coach plans a floor from.',
   },
   'athletes.emergency_contact': {
-    tier: 'organization',
-    enforcedBy: 'organizationScope.convention.test.ts',
+    tier: 'athlete_record',
+    enforcedBy: 'entities.ts#getAthletesForCoach',
     note:
       'A phone number belonging to somebody who never agreed to appear anywhere; forbidden on every '
-      + 'public read (wall denylist). Org-wide staff reads exist today via athletes/list.',
+      + 'public read (wall denylist). Per-relationship for coaches by the same field split as '
+      + 'athletes.dob -- org-wide staff reads through athletes/list ended with it. The roster export '
+      + '(admin/export/roster) still carries it and is gated to organization_admin alone.',
   },
   'account_profiles.photo_blob_path': {
     tier: 'minor_circle',
