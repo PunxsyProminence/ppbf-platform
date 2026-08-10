@@ -66,6 +66,7 @@ on:
         options:
           - multiorg-orphans
           - stranded-guardians
+          - duplicate-guardians
           - orphan-chat-audit
           - seed-identity
 
@@ -129,6 +130,13 @@ jobs:
               ;;
             stranded-guardians)
               npm run pilot:check-stranded-guardians | tee /tmp/check-output.txt
+              ;;
+            duplicate-guardians)
+              # Read-only. Finds guardians split across two pilot.parents rows -- the shape the
+              # invite path used to create against a row the roster import had already written, which
+              # left a family's other children unreachable with no error anywhere. Fails only when a
+              # child is actually hidden; a split that hides nobody prints but passes.
+              npm run pilot:check-duplicate-guardians | tee /tmp/check-output.txt
               ;;
             orphan-chat-audit)
               npm run pilot:check-orphan-chat-audit | tee /tmp/check-output.txt
