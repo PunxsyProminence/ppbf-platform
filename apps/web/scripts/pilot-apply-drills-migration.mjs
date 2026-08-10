@@ -55,11 +55,13 @@ function resolveSslConfig() {
 // name is present. Three of these checks measure a property that a name-only
 // check would pass while the migration's whole point was missing:
 //
-// `drill_name_unique_ready` asserts the index is UNIQUE and NOT PARTIAL
-// (indpred is null). A plain non-unique index on (organization_id, name) would
-// satisfy a name-only check and would still admit two drills of the same name
-// in one gym -- the ambiguous anchor this table exists to prevent -- and a
-// partial one would enforce the rule over only some rows.
+// `drill_name_unique_ready` asserts the index is UNIQUE. A plain non-unique
+// index on (organization_id, name) would satisfy a name-only check and would
+// still admit two drills of the same name in one gym -- the ambiguous anchor
+// this table exists to prevent. Whether the index is total or partial is not
+// constrained here: drill-versioning intentionally replaces the total index
+// with a PARTIAL one (WHERE active) and asserts that shape in its own
+// readiness check. Each runner asserts only what it owns.
 //
 // `assignment_drill_id_ready` asserts the column is NULLABLE. A NOT NULL
 // drill_id would refuse every assignment that predates this migration, so an
