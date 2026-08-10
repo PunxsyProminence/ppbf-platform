@@ -16,6 +16,49 @@ real-world testing with coaches and their own children**. That is the bar to
 build against — real minors' data, informed adults present, failures
 recoverable. It is not a public launch, and it is not a demo.
 
+> **This file is the only queue.** It supersedes `docs/WORK_QUEUE_2026-08-01.md`,
+> which was written by the other session against the same repository on the same
+> day and merged as #157. Two queues of record is the exact failure this file
+> opens by describing, so the older one has been deleted and everything in it
+> that was still live has been folded in below — the SHADOW follow-ups, the
+> runtime-verification items, the two owner decisions, and its checked-and-dropped
+> list. Nothing was dropped silently.
+
+---
+
+## Which session can do what
+
+The two sessions are not interchangeable, and the asymmetry decides ownership
+rather than preference.
+
+| | Remote (Claude Code on the web) | VS Code (local) |
+|---|---|---|
+| Writes code, tests, docs | yes | yes |
+| Runs lint / typecheck / jest | yes | yes |
+| Opens PRs | yes | yes |
+| **Merges** | only when told | yes |
+| **Deploys** | no — no credentials | **yes, and only VS Code** |
+| **Applies migrations** | no | **yes** |
+| Verifies behavior in a real browser | no | **yes** |
+| Reads Azure state, logs, secrets | no | **yes** |
+
+**Remote cannot observe runtime.** Every Remote finding is read from source.
+Anything whose truth depends on what production actually does is VS Code work by
+nature. Seeding real data from the share drives is likewise VS Code's — nothing
+is mounted in the Remote container and it carries no database credentials.
+
+---
+
+## Open PRs
+
+| PR | State | What it needs |
+|---|---|---|
+| [#150](https://github.com/PunxsyProminence/ppbf-platform/pull/150) — reviewer video access, `blocked` administrator | **draft, green, complete** | Undraft and merge. Called unfinished once from its draft flag alone; that was wrong. Oldest open branch, untouched since 04:35 |
+| [#151](https://github.com/PunxsyProminence/ppbf-platform/pull/151) — Law 5 tap floor, design laws rewrite | ready | A human read on the *laws rewrite*. The tap fixes are verified in-browser and are a real accessibility defect (`Engage Medical Lock` at 38px) |
+| [#153](https://github.com/PunxsyProminence/ppbf-platform/pull/153) — SHADOW surfaces/spec audit | draft, green | Docs only. Merge whenever; blocks nothing |
+| [#155](https://github.com/PunxsyProminence/ppbf-platform/pull/155) — app on its own design system | draft | Unreviewed |
+| [#161](https://github.com/PunxsyProminence/ppbf-platform/pull/161) — this branch | ready, green | 104 files, ~19.7k insertions, one green check, no human review |
+
 ---
 
 ## The rules that stop us colliding
@@ -67,18 +110,21 @@ Ordered by a floor-readiness trace run 2026-08-01.
 
 ### The pilot cannot honestly start without these
 
-- [ ] **Backup and export. Neither exists.** A repo-wide search for `pg_dump`,
-      `text/csv` and `Content-Disposition` returns zero matches;
-      `scripts/backup-export.ps1` is eleven `Write-Host` lines telling you to
-      back up Supabase, a database this platform no longer uses. No workflow
-      has a schedule. **This is the only item here that cannot be repaired
-      after the fact** — lose the database in week three and forty children's
-      records are gone. Needs a scheduled dump of the `pilot` schema to durable
-      storage, plus a roster export in the product.
-- [ ] **`/admin` writes 13 fabricated capability rows into the production
-      database the first time it is opened** (`app/admin/page.tsx` seeds,
-      hydrates, and POSTs them back). This is where demo data stops being a UI
-      artifact and becomes a record nobody can distinguish from a real one.
+- [x] **Backup and export.** ✅ Built on this branch: `.github/workflows/backup.yml`,
+      `scripts/pilot-export-verify-dump.mjs` (a dump that verifies itself),
+      a rebuilt `scripts/backup-export.ps1`, and an in-product roster export
+      (`/admin/export` + `api/pilot/admin/export/roster`). The CSV serializer
+      guards formula injection, always-quotes, emits a UTF-8 BOM, and sanitizes
+      the filename against `Content-Disposition` header injection.
+      **Still needs the deploy to be real** — see the owner block above.
+- [x] **`/admin` writes 13 fabricated capability rows into the production
+      database the first time it is opened.** ✅ Fixed by
+      [#158](https://github.com/PunxsyProminence/ppbf-platform/pull/158), already
+      in `main`. `mergeSeedCapabilities` no longer exists. The defect was worse
+      than filed: the save effect fired on the hydration merge itself, so
+      archiving a capability could not stick — the removal saved, and the next
+      page load added it back and rewrote it, attributed to whoever opened the
+      page.
 - [ ] **Do not invite anyone as "Parent / Guardian" until guardian linking has
       a screen.** `createOrUpdateMicrosoftStaffAccount` writes `pilot.accounts`
       and never touches `pilot.parents`, while every parent read path joins
@@ -102,11 +148,12 @@ Ordered by a floor-readiness trace run 2026-08-01.
       writes call `assertCoachAssignedToAthlete` and 403. A coach covering
       someone else's class picks the child in front of them and gets an error
       they cannot resolve. That is a coach stuck mid-session.
-- [ ] **A pain report does not name the child on the coach's screen.** The
-      write path is the best-engineered thing in the platform — it fails the
-      request rather than storing a child's pain unannounced. The read path
-      renders `SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW` with no name, no
-      severity and no body location, in a mixed feed on a non-default tab.
+- [x] **A pain report does not name the child on the coach's screen.** ✅ Fixed
+      on this branch (`formulas/painReportAlert.ts`, `api/pilot/coach/pain-reports`).
+      The write path was already the best-engineered thing in the platform — it
+      fails the request rather than storing a child's pain unannounced. It was
+      the read path that rendered `SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW`
+      with no name, no severity and no body location.
 - [ ] **Athlete check-out loses notes silently.** Session state is in-memory
       React state, never rehydrated from the server. A reload or a recycled tab
       makes the Check Out button vanish, the session row stays open forever,
@@ -141,8 +188,118 @@ Ordered by a floor-readiness trace run 2026-08-01.
       `access.ts` states three files away.
 - [ ] **Rabbit Hole seed content** — re-author the original Biomechanics lesson
       through the real path so the feature ships with something in it.
-- [ ] **`drillsPersistence.pg.test.ts` runs nowhere.** No `test:migrations:*`
-      script names it, so a 397-line Postgres suite never executes.
+- [x] **Postgres suites that ran nowhere.** ✅ Fixed. Two suites were unreachable
+      by construction — `npm test` excludes `\.pg\.test\.ts$` by pattern, and
+      `npm run test:migrations` is a hand-written chain that named neither:
+
+      | Suite | Lines | Was |
+      |---|---|---|
+      | `drillsPersistence.pg.test.ts` | 397 | self-flagged here |
+      | `guardianInviteLink.pg.test.ts` | 334 | **unflagged — nobody knew** |
+
+      Both are now wired (`test:migrations:drills-persistence`,
+      `test:migrations:guardian-invite-link`) and in the chain, which is 24
+      suites. Both were run before wiring and pass — 8/8 and 9/9. They were
+      never failing, only never executing, so this buys coverage rather than
+      fixing a break. `guardianInviteLink` is the one that mattered: guardian
+      integrity is in this PR's own title, and its only Postgres coverage had
+      never run once.
+
+**When adding a `.pg.test.ts`, adding the file is not enough.** It must also get
+a `test:migrations:<name>` script *and* be appended to the `test:migrations`
+chain, or it silently never runs and CI stays green.
+
+### SHADOW follow-ups
+
+- [ ] **Two sources of truth for the quick tier's completion budget.** The quick
+      path sends the environment value (`resolveShadowMaxCompletionTokens()`,
+      `api/pilot/shadow/chat/route.ts`), while `shadowRouter.ts` computes a
+      `maxTokens` at seven sites that **only** `shadowHeavyBag.ts` ever reads. So
+      every per-model budget in the registry is dead config on the quick path —
+      including `gpt-5-mini`'s, which is below its own measured need and would
+      matter the moment anything started reading it. Nothing is broken today:
+      both environments send 8192. **Needs an owner call on which source wins**
+      before either is touched, because the environment variable is also the
+      lever you would want mid-incident.
+- [ ] **SHADOW response validator** `[DESIGN]`. Two unsafe-advice patterns still
+      pass `validateShadowResponse`. Deliberately unwritten: the two cases are
+      grammatically indistinguishable from six benign coaching lines that were
+      tested against, so a pattern-based fix over-filters legitimate coaching.
+      The real path is a curated high-risk-practice list or a small classifier.
+      Wants design, not a regex.
+
+### Runtime verification — VS Code only
+
+Not defects. **Claims nobody has checked**, and Remote structurally cannot.
+
+- [ ] **Exercise `/admin/shadow` per role in a browser.** The 2026-08-01 audit
+      states its own limit plainly: findings are from source. Its per-role access
+      table (`organization_admin` 8/8 … `athlete` 1/8) is derived from
+      `requireRole` lists, not observed. Worth an hour with real sessions — a
+      coach at 5/8 is the case the audit reasoned hardest about and never saw.
+- [ ] **Confirm the SHADOW runtime migration is live and the restore path works.**
+      `evidence_tier` and `handoff` were added to the conversation-message table
+      and the client falls back to `RESEARCH_NEEDED` for older rows. The migration
+      was confirmed applied via workflow run history, **not by inspecting the
+      schema**. Verify the columns exist, then reload a conversation older than
+      the migration and confirm it restores without drawing a confidence badge it
+      has no basis for.
+- [ ] **Watch the Heavy Bag rate limiter after deploy.** #154 is merged but not
+      live. Once it is, confirm a real Heavy Bag turn is charged, an admin is
+      not, and a Quick Round is not. The tests assert this and were verified to
+      fail without the fix, but they are unit tests against a mocked bucket.
+
+### Owner decisions that stall whoever reaches them
+
+- [ ] **Scout Reports — build or retitle.** `/shadow/scout` is linked and titled
+      for Scout Reports. The generation pipeline (`generateScoutReport`) was
+      deliberately deleted — only a tombstone remains at `shadowHeavyBag.ts` —
+      and the spec's `GET /shadow/scout-reports` never existed. The page shows
+      the generic job list. Neither option is a bug fix, which is why it has sat:
+      retitling adds no function, building the pipeline is a feature. **It should
+      not be picked by whichever session gets there first.**
+- [ ] **Board seat data.** Seats route correctly; roughly thirty metric tiles
+      read "Unavailable." Program & Safety Director and Secretary are the two
+      seats whose data already exists (compliance escalations; the audit trail).
+      **The Treasurer, whose duty is clearest, has the least data** — the platform
+      collects nothing financial until the payment slot is built. Filling these is
+      a project, not a queue item; listing which seats *could* be filled today is
+      the useful first step.
+
+### Also open, unowned
+
+- [ ] Team-wide (athlete-less) videos cannot be published.
+- [ ] Athlete goal category and progress are read by the UI and stored nowhere —
+      confirmed: `pilot.goals` carries `title`, `target_date`, `metric`, `status`
+      and no category or progress column
+      (`infra/azure/pilot_slice_postgres.sql`).
+
+---
+
+## Checked and dropped — do not re-file these
+
+Recorded so the next audit does not spend the same hours.
+
+- **`/source-control` shows sample data.** True — `sampleStateLanes` and
+  `sampleVersionHistory`, zero fetches, linked from six real surfaces. **But the
+  page labels itself** `PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED |
+  BACKEND REQUIRED` in five places, including the surface header. It is honest
+  about what it is, so it is not the `/audit` defect class. Whether to keep
+  shipping a placeholder is a product call, not a truth-on-screen violation.
+- **Board seats are unimplemented.** False. Fully built: `boardSeats.ts`,
+  `api/pilot/board/seats/`, `admin/board-seats/`, `BoardSeatWorkspace.tsx`, a
+  migration, and both unit and pg tests. What remains is the board seat *data*
+  item above.
+- **The orphaned `migrations/` DDL file needs wiring up.** Obsolete — the
+  directory is gone, and the four undocumented tables it described were resolved
+  by #160.
+- **Cross-athlete goal takeover in `entities.ts`.** Was real; is fixed.
+  `upsertGoal` no longer keys on `goal_id` alone — it updates
+  `where organization_id = $1 and goal_id = $2`, closing the cross-tenant path.
+  What remains is that reusing a `goal_id` with a different `athlete_id`
+  reassigns the goal within one gym, which reads as intended behavior.
+
+---
 
 ## In progress — claimed
 
@@ -165,8 +322,7 @@ Ordered by a floor-readiness trace run 2026-08-01.
 
 Good unclaimed candidates: per-athlete starting PIN, the honesty sweep
 (fabricated donations, the example minors in `scripts/data/`, `/public`
-program copy), the two platform-owner routes returning minors' names, and
-`drillsPersistence.pg.test.ts` running nowhere.
+program copy), and the two platform-owner routes returning minors' names.
 
 ---
 
@@ -183,6 +339,15 @@ program copy), the two platform-owner routes returning minors' names, and
   safeguarding body never leaves its own gym.
 - Gyms created after the seed migration now get their compliance rules.
 - Payments reserved as two Stripe accounts, connected by OAuth button.
+- **The other session's merge pass** — #154 (Heavy Bag capped per user), #157
+  (its queue, now retired into this file), #158 (capability console), #159
+  (compliance rules for gyms made through the app), #160 (**the database is
+  buildable from nothing** — the four `*_chat_audit` tables that existed in an
+  environment with no DDL anywhere in the repository are resolved).
+  **All of it is in `main` and none of it is deployed.**
+- SHADOW's quick tier no longer caps completion tokens below its own measured
+  need (#81). The remaining question is which source owns that number — see the
+  SHADOW follow-ups above.
 
 ---
 
