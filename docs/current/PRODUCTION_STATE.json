@@ -39,9 +39,10 @@
       "goal-category-progress (confirmed applied to both staging and production, apply-migrations runs 2026-08-05T03:48Z and 04:30Z)",
       "magic-link (staging: apply-migrations run for 1adc244, 2026-08-08T05:31Z; production: run 31247060574, 2026-08-08T07:52Z, output 'PILOT MAGIC LINK MIGRATION PASS' against host ppbf-pg-195892.postgres.database.azure.com database postgres)",
       "PR #238's full set, migration=all against PRODUCTION -- run 31268298138, 2026-08-08T18:02Z, every step PASS including dead-schema-removal, activity-log, drill-library-v3, drill-vocabulary-widening, assessment-protocols, clearance-register, sparring-exposure, safety-flags, floor-hours-ledger, local-findings, workout-templates-v2, source-citation-checks, retraction-surveillance, multidiscipline, session-scripts, transfer-claims, competence-cohorts and method-naming",
-      "PR #238's full set against STAGING -- applied ahead of the 2026-08-08T16:51Z deploy of c4660ce"
+      "PR #238's full set against STAGING -- applied ahead of the 2026-08-08T16:51Z deploy of c4660ce",
+      "migration=all against PRODUCTION -- run 31353018907, 2026-08-10T03:43:28Z, on f7869e5 (the PR #285 merge). Every migration in the `all` list PASS, drills included; zero FAIL or Error lines in the run log, and no DRILLS_NOT_READY. Target read off the runner's own output: host ppbf-pg-195892.postgres.database.azure.com, database postgres. Read from the run log, NOT from the database: 60 of the list's migrations were counted PASS directly and the remainder are covered by the step's own success (the loop exits non-zero on any failure), so this is an observation of the runner, not of the schema. SIGNIFICANCE BEYOND THE SCHEMA BEING CURRENT: this is the first migration=all to succeed on production since run 69 (2026-08-08T16:59Z), and the first since the drills readiness contradiction was fixed. Between those two runs the production migration path was BROKEN AND UNAWARE OF IT -- run 69 installed drill-versioning, which replaces pilot_drills_one_name_per_org with a partial unique index, while pilot-apply-drills still required a total one and runs earlier in the list. Nothing surfaced because nobody re-dispatched production in that window; staging runs 70/71/72 died on it. What changed tonight is not that the schema advanced (it was already current) but that the path is repeatable."
     ],
-    "note": "This is a log of what has been OBSERVED applied via apply-migrations run output, not a generated schema version. Every pilot:apply-* runner is additive/idempotent, so re-running one is safe -- this list exists to avoid re-running unnecessarily, not to gate anything."
+    "note": "This is a log of what has been OBSERVED applied via apply-migrations run output, not a generated schema version. Every pilot:apply-* runner is additive/idempotent, so re-running one is safe -- this list exists to avoid re-running unnecessarily, not to gate anything. Added 2026-08-10: entries here record what a RUNNER reported, which is weaker than reading the schema back. A green apply-migrations run proves each runner's own readiness assertion passed -- and the drills incident showed a readiness assertion can itself be wrong, so a gatekeeper checking a specific object should still query for it rather than trust this list."
   },
   "capabilities": {
     "runtime_verified": [
@@ -60,6 +61,6 @@
     ],
     "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
-  "last_updated_by": "agent -- production AND staging entries both PROPOSED, pending gatekeeper re-observation",
-  "last_updated_at": "2026-08-09T21:30:00Z"
+  "last_updated_by": "agent -- production migration run 31353018907 recorded from run output; environment entries still PROPOSED, pending gatekeeper re-observation",
+  "last_updated_at": "2026-08-10T03:55:00Z"
 }
