@@ -67,6 +67,7 @@ on:
           - multiorg-orphans
           - stranded-guardians
           - orphan-chat-audit
+          - seed-identity
 
 permissions:
   id-token: write
@@ -131,6 +132,12 @@ jobs:
               ;;
             orphan-chat-audit)
               npm run pilot:check-orphan-chat-audit | tee /tmp/check-output.txt
+              ;;
+            seed-identity)
+              # Read-only. Prints the organization ids and the PRIVILEGED account ids that the
+              # seeding workflows ask an operator to type, so nobody has to read them out of a
+              # production SQL client by eye. Athlete and parent accounts are never selected.
+              npm run pilot:check-seed-identity | tee /tmp/check-output.txt
               ;;
             *)
               echo "::error::Unknown check '$CHECK'"
