@@ -196,7 +196,12 @@ export async function GET(request: NextRequest) {
 
     response.cookies.set(PILOT_SESSION_COOKIE, loginResult.token, {
       httpOnly: true,
-      sameSite: 'lax',
+      // The frontend calls the API cross-origin in production (Static Web
+      // App + Container App -- see pilotSessionCookieAttributes' comment in
+      // env.ts), so this cookie must be SameSite=None to survive the very
+      // next fetch(). None requires Secure, hence tying it to the same
+      // `secure` this route already computes rather than a fixed 'lax'.
+      sameSite: secure ? 'none' : 'lax',
       secure,
       path: '/',
       maxAge: SESSION_ABSOLUTE_LIFETIME_SECONDS,

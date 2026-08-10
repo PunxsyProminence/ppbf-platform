@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { redeemActivationCode } from '@/src/server/pilot/activation';
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
+import { PILOT_SESSION_COOKIE, pilotSessionCookieAttributes } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
 import {
   checkDurableRateLimit,
@@ -120,8 +120,7 @@ export async function POST(request: NextRequest) {
 
       response.cookies.set(PILOT_SESSION_COOKIE, loginResult.token, {
         httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
+        ...pilotSessionCookieAttributes(),
         path: '/',
         maxAge: SESSION_ABSOLUTE_LIFETIME_SECONDS,
       });

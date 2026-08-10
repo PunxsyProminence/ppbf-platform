@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { logoutWithToken } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
+import { PILOT_SESSION_COOKIE, pilotSessionCookieAttributes } from '@/src/server/pilot/env';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -29,8 +29,7 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ ok: true });
     response.cookies.set(PILOT_SESSION_COOKIE, '', {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      ...pilotSessionCookieAttributes(),
       path: '/',
       maxAge: 0,
     });
