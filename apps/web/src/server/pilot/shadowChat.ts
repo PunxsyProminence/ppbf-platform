@@ -73,11 +73,51 @@ export interface ShadowContextResult {
   evidenceIds?: string[];
 }
 
+/**
+ * Every reason validateShadowResponse can give, as a stable code paired with
+ * the sentence a human reads.
+ *
+ * The prose is the only form these reasons had, and prose is the wrong join
+ * key. It is edited whenever a rule's wording is clarified -- three of these
+ * sentences were reworded in a single week -- and a GROUP BY over prose splits
+ * one rule into two series at the moment someone fixes a typo, which reads as a
+ * rule that stopped firing and a new one that started. The code is what gets
+ * persisted and counted; the sentence stays free to change.
+ *
+ * Codes are append-only for the same reason. Renaming one rewrites history.
+ */
+export const SHADOW_FILTER_REASONS = {
+  diagnostic_claim: 'Contains diagnostic claim without evidence or human deference',
+  prescriptive_claim: 'Contains prescriptive claim without medical authority',
+  treatment_directive: 'Contains a personal treatment directive without medical authority',
+  clearance_claim: 'Contains clearance claim without medical authority',
+  disclosure_risk: 'May disclose protected instructions, secrets, or cross-tenant information',
+  authority_override: 'Attempts to override human authority',
+  weight_cut_directive: 'Contains a rapid weight-loss or dehydration directive without medical authority',
+  unauthorized_citation: 'Contains an unknown, malformed, or unauthorized evidence citation',
+  uncited_claim: 'Makes an evidence or quantitative claim without an exact retrieved evidence citation',
+  missing_deferral: 'Missing human deferral language',
+  human_review: 'Human review required',
+} as const;
+
+export type ShadowFilterReasonCode = keyof typeof SHADOW_FILTER_REASONS;
+
 export interface ShadowResponseValidation {
   valid: boolean;
   filtered: boolean;
   message: string;
   reasons: string[];
+  /**
+   * The same reasons as `reasons`, in the same order, as stable codes.
+   *
+   * Persisted alongside response_state so "how often does SHADOW withhold an
+   * answer, and which rule did it" is one query instead of a log dig. Before
+   * this existed the reasons were computed on every filtered response and
+   * dropped on the floor, so the only artifact of a withheld answer was the
+   * word 'filtered' -- which is how three separate over-filters went unnoticed
+   * until someone tripped over each one by hand.
+   */
+  reasonCodes: ShadowFilterReasonCode[];
   requiresHumanReview: boolean;
   citationIds: string[];
   /**
@@ -440,6 +480,14 @@ export function validateShadowResponse(
 ): ShadowResponseValidation {
   let filtered = false;
   const reasons: string[] = [];
+  const reasonCodes: ShadowFilterReasonCode[] = [];
+  // One call site per rule, so the code and the sentence cannot drift apart --
+  // the previous shape had the sentence written inline at eleven separate
+  // pushes, which is exactly how a reworded duplicate gets introduced.
+  const flag = (code: ShadowFilterReasonCode) => {
+    reasonCodes.push(code);
+    reasons.push(SHADOW_FILTER_REASONS[code]);
+  };
   let message = response;
   const normalized = response.toLowerCase().replace(/\s+/g, ' ');
 
@@ -525,7 +573,7 @@ export function validateShadowResponse(
   }
   if (makesDiagnosisClaim) {
     filtered = true;
-    reasons.push('Contains diagnostic claim without evidence or human deference');
+    flag('diagnostic_claim');
   }
 
   // Check for direct prescription claims
@@ -533,7 +581,7 @@ export function validateShadowResponse(
     /\b(take|start|stop|increase|decrease|double|dose|use)\b.{0,40}\b(medication|medicine|drug|pill|ibuprofen|acetaminophen|supplement|injection)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('Contains prescriptive claim without medical authority');
+    flag('prescriptive_claim');
   }
 
   // Minute-scale rest is training vocabulary, not a medical directive.
@@ -560,7 +608,7 @@ export function validateShadowResponse(
     || /\b(?:you\s+(?:should|need\s+to|must)|i\s+recommend(?:\s+that)?\s+you)\b.{0,60}\b(?:ice|immobilize|tape|compress|elevate|massage|rehab|treat)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('Contains a personal treatment directive without medical authority');
+    flag('treatment_directive');
   }
 
   // Check for clearance claims
@@ -569,21 +617,21 @@ export function validateShadowResponse(
     || /\b(you are|the athlete is|safe to|may now|can now)\b.{0,40}\b(cleared|return to play|return to training|resume contact|compete)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('Contains clearance claim without medical authority');
+    flag('clearance_claim');
   }
 
   if (
     /\b(system prompt|api key|secret|password|other organization|another tenant)\b.{0,80}\b(is|equals|contains|show|reveal|access)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('May disclose protected instructions, secrets, or cross-tenant information');
+    flag('disclosure_risk');
   }
 
   if (
     /\b(ignore|disregard|override|do not contact)\b.{0,50}\b(doctor|physician|clinician|medical professional|coach|policy)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('Attempts to override human authority');
+    flag('authority_override');
   }
 
   // Weight cutting was gated on the REQUEST only. A response that volunteered a
@@ -603,7 +651,7 @@ export function validateShadowResponse(
   );
   if (makesWeightCutDirective) {
     filtered = true;
-    reasons.push('Contains a rapid weight-loss or dehydration directive without medical authority');
+    flag('weight_cut_directive');
   }
 
   const allowedEvidenceIds = new Set(
@@ -629,7 +677,7 @@ export function validateShadowResponse(
   }
   if (hasInvalidCitation) {
     filtered = true;
-    reasons.push('Contains an unknown, malformed, or unauthorized evidence citation');
+    flag('unauthorized_citation');
   }
   const makesEvidenceClaim = (
     /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/i.test(response)
@@ -741,17 +789,17 @@ export function validateShadowResponse(
   );
   if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
     filtered = true;
-    reasons.push('Makes an evidence or quantitative claim without an exact retrieved evidence citation');
+    flag('uncited_claim');
   }
 
   const hasDeferralLanguage = /professional|medical authority|clinician|doctor|physician|medical evaluation/i.test(response);
   const hasHumanReviewLanguage = /requires? professional medical evaluation|needs? professional medical evaluation|further study required|professional medical authority|clinician|doctor|physician/i.test(response);
 
   if (filtered && !hasDeferralLanguage) {
-    reasons.push('Missing human deferral language');
+    flag('missing_deferral');
   }
   if (hasHumanReviewLanguage) {
-    reasons.push('Human review required');
+    flag('human_review');
   }
 
   if (filtered) {
@@ -763,6 +811,7 @@ export function validateShadowResponse(
     filtered,
     message,
     reasons,
+    reasonCodes,
     requiresHumanReview: filtered || reasons.length > 0,
     citationIds: filtered ? [] : citationIds,
     ...(makesWeightCutDirective ? { topic: 'weight_cutting' } : {}),

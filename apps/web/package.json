@@ -32,6 +32,7 @@
     "pilot:apply-shadow-chunk-embedding": "node scripts/pilot-apply-shadow-chunk-embedding-migration.mjs",
     "pilot:apply-shadow-formula-foundation": "node scripts/pilot-apply-shadow-formula-foundation-migration.mjs",
     "pilot:apply-shadow-job-lease": "node scripts/pilot-apply-shadow-job-lease-migration.mjs",
+    "pilot:apply-shadow-filter-reason": "node scripts/pilot-apply-shadow-filter-reason-migration.mjs",
     "pilot:apply-public-interest": "node scripts/pilot-apply-public-interest-migration.mjs",
     "pilot:apply-announcements": "node scripts/pilot-apply-announcements-migration.mjs",
     "pilot:apply-announcement-placements": "node scripts/pilot-apply-announcement-placements-migration.mjs",

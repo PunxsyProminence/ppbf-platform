@@ -1046,6 +1046,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         responseState: state,
         evidenceTier: persistedEvidenceTier,
         handoff: persistedHandoff,
+        // Which rule withheld the answer, not only that one did. These were
+        // computed on every filtered response and dropped, so the whole
+        // database record of a withheld answer was the word 'filtered' -- and
+        // three separate over-filters went unnoticed until someone tripped over
+        // each one by hand. Ignored on an 'ok' response by the write boundary.
+        filterReasons: responseValidation.reasonCodes,
         evidence: evidenceBundle.bundleId
           ? {
               bundleId: evidenceBundle.bundleId,

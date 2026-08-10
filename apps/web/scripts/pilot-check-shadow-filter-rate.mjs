@@ -165,6 +165,65 @@ export async function checkShadowFilterRate(client) {
        limit 15`,
     );
 
+    // By reason -- which validator rule actually withheld the answer.
+    //
+    // Guarded on the column existing rather than assumed, because this script
+    // runs against whatever is deployed and the shadow-filter-reason migration
+    // may not have reached it yet. A missing column here is a normal state with
+    // a specific remedy, not a crash: reporting "not applied" keeps every other
+    // figure in this report readable, where an exception would lose all of them.
+    const reasonColumn = await client.query(
+      `select exists (
+         select 1 from information_schema.columns
+         where table_schema = 'pilot'
+           and table_name = 'shadow_chat_messages'
+           and column_name = 'filter_reasons'
+       ) as present`,
+    );
+    const reasonColumnPresent = reasonColumn.rows[0].present === true;
+
+    let byReason = [];
+    let unattributed = null;
+    if (reasonColumnPresent) {
+      byReason = (await client.query(
+        `select
+           reason,
+           count(*)::int as messages
+         from pilot.shadow_chat_messages m
+         cross join lateral unnest(m.filter_reasons) as reason
+         where m.role = 'assistant'
+           and m.response_state = 'filtered'
+           and m.created_at >= now() - interval '30 days'
+         group by reason
+         order by count(*) desc, reason`,
+      )).rows;
+
+      // Filtered messages carrying no reasons at all. Two causes, and the
+      // difference matters: a row written before the migration has nothing to
+      // recover, while a row written after it means a write path is filtering
+      // without recording why -- which is the gap this column exists to close,
+      // reopened. Split on the migration's own arrival rather than a guess: the
+      // oldest attributed row is the earliest moment attribution was live.
+      unattributed = (await client.query(
+        `with attributed_from as (
+           select min(created_at) as first_attributed
+           from pilot.shadow_chat_messages
+           where role = 'assistant'
+             and response_state = 'filtered'
+             and filter_reasons is not null
+         )
+         select
+           count(*)::int as total,
+           count(*) filter (
+             where m.created_at >= (select first_attributed from attributed_from)
+           )::int as since_attribution_began
+         from pilot.shadow_chat_messages m
+         where m.role = 'assistant'
+           and m.response_state = 'filtered'
+           and m.filter_reasons is null`,
+      )).rows[0];
+    }
+
     // Daily trend. A fix landing should show as a step change, not a slope --
     // that is how you tell a real improvement from ordinary variance.
     const byDay = await client.query(
@@ -230,6 +289,9 @@ export async function checkShadowFilterRate(client) {
       byRole: byRole.rows,
       buckets: buckets.rows,
       heavyBagAtCap: heavyBagAtCap.rows[0],
+      reasonColumnPresent,
+      byReason,
+      unattributed,
     };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
@@ -274,6 +336,39 @@ function report(result) {
     }
   };
 
+  push();
+  push('=== Why answers were withheld, last 30 days ===');
+  if (!result.reasonColumnPresent) {
+    push('  filter_reasons column not present -- the shadow-filter-reason migration');
+    push('  has not been applied to this database. Every other figure in this report');
+    push('  is unaffected; only the rule breakdown is missing. Apply it with the');
+    push('  apply-migrations workflow, target shadow-filter-reason.');
+  } else if (!result.byReason.length) {
+    push('  (no withheld answers carrying a recorded reason in this window)');
+  } else {
+    // Counts, not a rate. A message can trip several rules, so these sum to
+    // more than the number of withheld answers -- presenting them as
+    // percentages of the total would invite reading a column that adds past
+    // 100% as an error.
+    const widest = Math.max(...result.byReason.map((row) => String(row.reason).length), 10);
+    for (const row of result.byReason) {
+      push(`  ${String(row.reason).padEnd(widest)}  ${String(row.messages).padStart(6)} message(s)`);
+    }
+    push('  A withheld answer commonly trips more than one rule, so these total');
+    push('  more than the number of withheld answers above.');
+  }
+  if (result.unattributed && result.unattributed.total > 0) {
+    push(`  ${result.unattributed.total} withheld message(s) carry no recorded reason.`);
+    if (result.unattributed.since_attribution_began > 0) {
+      // This is the one line here that is a defect rather than history.
+      push(`  ATTRIBUTION GAP: ${result.unattributed.since_attribution_began} of those were written after`);
+      push('  attribution began, so a write path is withholding answers without');
+      push('  recording why -- the gap this column exists to close, reopened.');
+    } else {
+      push('  All of them pre-date the migration and have nothing to recover.');
+    }
+  }
+
   section('By tier, last 30 days', result.bySessionType, 'session_type');
   section('By topic, last 30 days (filtered only)', result.byTopic, 'topic');
   section('By role, last 30 days (from the audit trail)', result.byRole, 'user_role');
@@ -295,12 +390,11 @@ function report(result) {
   push('=== What this report cannot tell you ===');
   // Stated rather than left for the reader to discover, because both limits
   // change how the numbers above should be read.
-  push('  * WHICH validator rule fired. No table stores the filter reasons --');
-  push('    not shadow_chat_messages, not shadow_chat_audit, and the chat route');
-  push('    emits no telemetry on the filter path. Reasons exist only in');
-  push('    application logs. If this report shows a rate worth chasing, the');
-  push('    cheapest next step is persisting the reason alongside');
-  push('    response_state, which turns a log dig into a GROUP BY.');
+  push('  * WHAT the withheld answer actually said. Only the rule is recorded,');
+  push('    never the text -- deliberately, since the withheld text is the');
+  push('    generation judged unsafe to show anyone. A rule firing far more than');
+  push('    the others is a lead, not a verdict; confirming an over-filter still');
+  push('    means reproducing it against validateShadowResponse, the way #174 did.');
   push('  * Heavy Bag cap history beyond ~2 days. enforceShadowRateLimit purges');
   push('    buckets older than two days, so the cap figures above are a recent');
   push('    window, not a full history. A zero there means "not in the last two');
