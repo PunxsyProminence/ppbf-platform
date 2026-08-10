@@ -16,58 +16,43 @@ const roleSelector = [
 const priorityLanes = [
   {
     lane: 'PROGRAM',
-    count: 9,
     summary: 'Floor coverage, readiness signals, and session execution windows.',
   },
   {
     lane: 'BOARD',
-    count: 5,
     summary: 'Governance actions, approvals, and oversight checkpoints.',
   },
   {
     lane: 'SYSTEM',
-    count: 4,
     summary: 'Platform integrity, audit state, and release-path integrity checks.',
   },
 ];
 
-const systemStatus = [
-  { label: 'Safety Gates', value: 'Live', tone: 'text-[color:var(--cleared-ink)]' },
-  { label: 'Continuity Ledger', value: 'Logging', tone: 'text-[color:var(--cleared-ink)]' },
-  { label: 'Context Boundaries', value: 'Enforced', tone: 'text-[color:var(--cleared-ink)]' },
-  { label: 'SHADOW', value: 'Operational', tone: 'text-[color:var(--restricted-ink)]' },
-  { label: 'Validation Status', value: 'Stable', tone: 'text-[color:var(--cleared-ink)]' },
-];
 
 const workspaces = [
   {
     label: 'Athlete Workspace',
     href: '/athlete/dashboard',
-    openCount: 7,
     note: 'Readiness, goals, drills, and session log actions.',
   },
   {
     label: 'Coach Workspace',
     href: '/coach/review-queue',
-    openCount: 6,
     note: 'Review queue, floor operations, and athlete management actions.',
   },
   {
     label: 'Parent Hub',
     href: '/parent/dashboard',
-    openCount: 4,
     note: 'Family support tasks, attendance visibility, and check-ins.',
   },
   {
     label: 'Admin Hub',
     href: '/admin',
-    openCount: 8,
     note: 'Capability controls, assignment matrix, and system posture.',
   },
   {
     label: 'Board Hub',
     href: '/board',
-    openCount: 5,
     note: 'Oversight, policy trace, and governance routing.',
   },
 ];
@@ -338,7 +323,6 @@ export default function OperationsHubPage() {
                   {priorityLanes.map((lane) => (
                     <article key={lane.lane} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)]">
                       <p className="t-eyebrow">{lane.lane}</p>
-                      <p className="t-command mt-[var(--s3)]">{lane.count}</p>
                       <p className="t-body mt-[var(--s3)]">{lane.summary}</p>
                     </article>
                   ))}
@@ -354,7 +338,6 @@ export default function OperationsHubPage() {
                         <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{workspace.label}</h3>
                         <p className="t-body mt-[var(--s2)]">{workspace.note}</p>
                       </div>
-                      <p className="t-eyebrow">{workspace.openCount} open</p>
                       <Link
                         href={workspace.href}
                         className="btn"
@@ -424,17 +407,6 @@ export default function OperationsHubPage() {
             </div>
 
             <aside className="space-y-6">
-              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>SYSTEM STATUS</h2>
-                <div className="grid gap-2">
-                  {systemStatus.map((item) => (
-                    <div key={item.label} className="flex items-center justify-between mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
-                      <span className="t-body">{item.label}</span>
-                      <span className={`text-xs font-mono uppercase tracking-[0.15em] ${item.tone}`}>{item.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
 
               {/* A solid red panel for "planned, not yet implemented". The
                   copy underneath is the important part — an empty panel here

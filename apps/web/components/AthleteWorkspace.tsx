@@ -1490,88 +1490,13 @@ export default function AthleteWorkspace() {
             what a board by the door holds. See Chalkboard.tsx. */}
         <Chalkboard placement="athlete_workspace" />
 
-        {/* The gym wall used to hang here, third from the top. It is 421px of
-            empty frames on a page whose Quick Actions -- Open Scheduler,
-            Complete Check-In, Open Floor Tasks -- began at 2123px, so an
-            athlete opening their own training dashboard saw a blank chalkboard
-            and two empty frames above the fold and had to scroll past two full
-            screens to reach anything they could do.
-
-            The wall is ambient by design and correct as an object; it is the
-            room, hung on a wall, waiting for somebody to photograph it. That
-            makes it the last thing on the page rather than the third. It is
-            rendered at the foot of this component now. */}
-
-        <div className={PANEL}>
-          <p className="t-eyebrow">Daily Reminder</p>
-          <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
-          {backendSyncMessage ? <p className="mt-[var(--s3)] t-data" style={{ fontSize: 'var(--t-xs)' }} role="status">{backendSyncMessage}</p> : null}
-        </div>
-
-        {/* ROLE SUMMARY PANEL */}
-        {/* Class times and registrations live behind the unified scheduler;
-            this workspace has no feed for the athlete's next class, so the
-            tile must not name one. */}
-        <AthleteSummaryPanel
-          readiness={currentReadiness}
-          tasksDue={tasksDue}
-          goalsActive={goalsActive}
-          upcomingSession="Unavailable - not yet tracked"
-          unreadMessages={0}
-        />
-
-        {/* The training card. One stamp per session row from the ledger -- a
-            record the athlete accumulates, so there is something to come back
-            to. Cumulative, never a streak: see TrainingCard.tsx.
-
-            The athlete id scopes the ceremony's record of which seals have
-            already been pressed. This is a shared gym tablet: without it, the
-            first athlete to open their card on one would silence the next
-            athlete's first milestone. */}
-        <TrainingCard sessions={trainingSessions} athleteId={backendAthleteId ?? undefined} />
-
-        {/* Everything the card cannot count. The card measures attendance, and
-            attendance is one of four programmes this gym runs -- a fitness-only
-            member and a kid here for the mentorship both had a progression
-            system that was measuring somebody else's sport. This panel carries
-            what a coach said, the conditioning / craft / community path, and
-            who mentors whom. Complete for every programme: what somebody's
-            programme does not include is absent, never greyed out. */}
-        <AthleteAchievements athleteId={backendAthleteId} />
-
-        {/* Two things that leave the screen. A route nobody can reach is a dead
-            feature, and neither of these has a home anywhere else. */}
-        <div className={PANEL}>
-          <p className="t-eyebrow">Off the screen</p>
-          <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/print" className="btn btn--ghost min-h-[var(--tap)]">
-              Print your card
-            </Link>
-            <Link href="/names" className="btn btn--ghost min-h-[var(--tap)]">
-              The Wall of Names
-            </Link>
-          </div>
-        </div>
-
-        <details className={PANEL}>
-          <summary className="t-label cursor-pointer">What&apos;s Coming</summary>
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Video Analysis - Not Built Yet</p>
-              <p className="t-muted mt-[var(--s2)]">The screens are drawn. Nothing behind them works yet.</p>
-              <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Video Analysis
-              </Link>
-            </article>
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Automatic Progress Tracking - Not Built Yet</p>
-              <p className="t-muted mt-[var(--s2)]">Your coach still decides what comes next. Nothing here scores you on its own.</p>
-              <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Progress Tracking
-              </Link>
-            </article>
-          </div>
-        </details>
+        {/* Daily Reminder, the role summary, the training card, achievements,
+            "Off the screen", and "What's Coming" all moved to the foot of the
+            page, below the tab content -- same reasoning already applied to
+            the gym wall (see its comment below): these are ambient/summary
+            content, not something an athlete opens this dashboard to act on,
+            and they used to sit between the header and Quick Actions, pushing
+            Quick Actions -- including Check-In -- below the fold. */}
 
         {/* TAB NAVIGATION — floor-sized targets (Law 5). */}
         <div className="mat-leather rounded-[var(--r-md)]">
@@ -1721,19 +1646,33 @@ export default function AthleteWorkspace() {
                       <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-[var(--s3)] pt-[var(--s2)]">
-                      {painLocations.slice(0, 3).map(loc => (
-                        <button
-                          key={loc}
-                          onClick={() => {
-                            setSelectedPainLocation(loc);
-                            setShowPainModal(true);
-                          }}
-                          className="btn btn--ghost min-h-[var(--tap)] px-[var(--s3)]"
+                    {/* All 10 locations, not just the first 3 -- a dropdown
+                        scales to the list where a row of buttons did not, and
+                        the other 7 were previously unreachable from this
+                        screen entirely. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-[var(--s3)] pt-[var(--s2)] items-end">
+                      <div className="field">
+                        <label className="t-label block mb-[var(--s2)]" htmlFor="pain-location-select">Body location</label>
+                        <select
+                          id="pain-location-select"
+                          value={selectedPainLocation ?? ''}
+                          onChange={(e) => setSelectedPainLocation(e.target.value || null)}
+                          className="select input--kiosk"
                         >
-                          {loc}
-                        </button>
-                      ))}
+                          <option value="">Select a location...</option>
+                          {painLocations.map(loc => (
+                            <option key={loc} value={loc}>{loc}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowPainModal(true)}
+                        disabled={!selectedPainLocation}
+                        className="btn btn--ghost min-h-[var(--tap)] px-[var(--s3)] disabled:opacity-50 disabled:grayscale"
+                      >
+                        Report Pain
+                      </button>
                     </div>
                     {painSaveMessage ? (
                       <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{painSaveMessage}</p>
@@ -2540,6 +2479,77 @@ export default function AthleteWorkspace() {
             </div>
           )}
         </div>
+
+        <div className={PANEL}>
+          <p className="t-eyebrow">Daily Reminder</p>
+          <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
+          {backendSyncMessage ? <p className="mt-[var(--s3)] t-data" style={{ fontSize: 'var(--t-xs)' }} role="status">{backendSyncMessage}</p> : null}
+        </div>
+
+        {/* ROLE SUMMARY PANEL */}
+        {/* Class times and registrations live behind the unified scheduler;
+            this workspace has no feed for the athlete's next class, so the
+            tile must not name one. */}
+        <AthleteSummaryPanel
+          readiness={currentReadiness}
+          tasksDue={tasksDue}
+          goalsActive={goalsActive}
+          upcomingSession="Unavailable - not yet tracked"
+          unreadMessages={0}
+        />
+
+        {/* The training card. One stamp per session row from the ledger -- a
+            record the athlete accumulates, so there is something to come back
+            to. Cumulative, never a streak: see TrainingCard.tsx.
+
+            The athlete id scopes the ceremony's record of which seals have
+            already been pressed. This is a shared gym tablet: without it, the
+            first athlete to open their card on one would silence the next
+            athlete's first milestone. */}
+        <TrainingCard sessions={trainingSessions} athleteId={backendAthleteId ?? undefined} />
+
+        {/* Everything the card cannot count. The card measures attendance, and
+            attendance is one of four programmes this gym runs -- a fitness-only
+            member and a kid here for the mentorship both had a progression
+            system that was measuring somebody else's sport. This panel carries
+            what a coach said, the conditioning / craft / community path, and
+            who mentors whom. Complete for every programme: what somebody's
+            programme does not include is absent, never greyed out. */}
+        <AthleteAchievements athleteId={backendAthleteId} />
+
+        {/* Two things that leave the screen. A route nobody can reach is a dead
+            feature, and neither of these has a home anywhere else. */}
+        <div className={PANEL}>
+          <p className="t-eyebrow">Off the screen</p>
+          <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/print" className="btn btn--ghost min-h-[var(--tap)]">
+              Print your card
+            </Link>
+            <Link href="/names" className="btn btn--ghost min-h-[var(--tap)]">
+              The Wall of Names
+            </Link>
+          </div>
+        </div>
+
+        <details className={PANEL}>
+          <summary className="t-label cursor-pointer">What&apos;s Coming</summary>
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Video Analysis - Not Built Yet</p>
+              <p className="t-muted mt-[var(--s2)]">The screens are drawn. Nothing behind them works yet.</p>
+              <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                Open Video Analysis
+              </Link>
+            </article>
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Automatic Progress Tracking - Not Built Yet</p>
+              <p className="t-muted mt-[var(--s2)]">Your coach still decides what comes next. Nothing here scores you on its own.</p>
+              <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                Open Progress Tracking
+              </Link>
+            </article>
+          </div>
+        </details>
 
         {/* PAIN MODAL */}
         {showPainModal && selectedPainLocation && (
