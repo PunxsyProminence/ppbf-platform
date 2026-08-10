@@ -359,23 +359,75 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     // One pilot.parents record per account, reused across invites so a
     // guardian of two athletes ends up with two links rather than two
     // guardian records that each resolve half their family.
+    //
+    // THE ROSTER IMPORT GETS THERE FIRST. scripts/seed-data.ts writes a
+    // pilot.parents row per guardian on the roster with a content-hashed
+    // parent_id and account_id left NULL -- deliberately, because importing a
+    // family must not mint logins. That row already carries a guardian_link per
+    // sibling. Matching only on account_id or the derived id therefore missed
+    // it entirely: the invite inserted a SECOND row for the same human, the
+    // account attached to the new row, and every imported sibling link stayed
+    // on the orphaned one. The guardian signed in and saw exactly the one child
+    // named in their invite, with no indication the rest existed.
+    //
+    // So an unclaimed row whose email matches is a candidate to CLAIM rather
+    // than an obstacle. Email is the right key: it is what the importer
+    // deduplicates guardians on, and it is normalized identically on both sides
+    // (trim + lowercase). A row carrying no email cannot be claimed here -- the
+    // only thing left to match on would be the name, and merging two families
+    // because two adults share a name is worse than the duplicate row.
     const derivedParentId = `par-${accountId}`;
-    const parentRows = await client.query<{ parent_id: string; account_id: string | null }>(
-      `select parent_id, account_id
+    // email_matches is nullable, not boolean: a row with no email compares
+    // NULL against the address, which is neither a match nor a mismatch. The
+    // filter below treats it as "not claimable", which is the intended reading.
+    const parentRows = await client.query<{
+      parent_id: string;
+      account_id: string | null;
+      email_matches: boolean | null;
+    }>(
+      `select parent_id,
+              account_id,
+              (nullif(lower(trim(coalesce(email, ''))), '') = $4) as email_matches
        from pilot.parents
-       where organization_id = $1 and (account_id = $2 or parent_id = $3)
+       where organization_id = $1
+         and (
+           account_id = $2
+           or parent_id = $3
+           or (account_id is null and nullif(lower(trim(coalesce(email, ''))), '') = $4)
+         )
        order by parent_id asc`,
-      [organizationId, accountId, derivedParentId],
+      [organizationId, accountId, derivedParentId, loginEmail],
     );
 
     const ownRecord = parentRows.rows.find((row) => row.account_id === accountId);
-    if (!ownRecord && parentRows.rows.length > 0) {
-      // The derived id is already held by a different guardian -- linking to
-      // it would hand this account that family's children.
-      throw new Error('Forbidden: guardian record id is already in use by another guardian');
-    }
 
-    const parentId = ownRecord?.parent_id ?? derivedParentId;
+    let parentId: string;
+    if (ownRecord) {
+      parentId = ownRecord.parent_id;
+    } else {
+      const claimable = parentRows.rows.filter((row) => row.account_id === null && row.email_matches === true);
+
+      if (claimable.length > 1) {
+        // Two unclaimed records for one address means the import ran on a file
+        // that disagreed with itself. Picking one would silently strand the
+        // other's children, which is the very failure this block exists to fix,
+        // so it stops and says so instead.
+        throw new Error(
+          'Conflict: more than one unclaimed guardian record carries this email address, so the record to claim is ambiguous',
+        );
+      }
+
+      if (claimable.length === 1) {
+        parentId = claimable[0].parent_id;
+      } else if (parentRows.rows.length > 0) {
+        // Something holds the derived id, or an unclaimed record sits on it
+        // under a different address. Either way it is not this guardian's, and
+        // linking to it would hand this account that family's children.
+        throw new Error('Forbidden: guardian record id is already in use by another guardian');
+      } else {
+        parentId = derivedParentId;
+      }
+    }
 
     await client.query(
       `insert into pilot.parents (organization_id, parent_id, account_id, full_name, email)
