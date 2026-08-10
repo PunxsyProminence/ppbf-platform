@@ -57,6 +57,22 @@ function required(name) {
   return value.trim();
 }
 
+// The same two-condition test hatch 76 other scripts in this directory already
+// carry; this file was the outlier, hardcoding rejectUnauthorized and therefore
+// unable to reach an embedded Postgres. That is why it had no test at all,
+// while creating accounts, memberships, an organization and an athlete.
+//
+// Both conditions are required and neither is settable by accident in a
+// deployed environment: NODE_ENV is 'production' in the container, and the
+// second variable exists nowhere but the test harness. A caller who sets both
+// in production has bypassed far more than this.
+function resolveSslConfig() {
+  if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {
+    return false;
+  }
+  return { rejectUnauthorized: true };
+}
+
 // --deactivate-athlete: clear the gate athlete's PIN hash and deactivate the
 // account. The gate's athlete PIN is minted fresh per run and must not remain
 // usable afterwards -- a literal PIN previously sat in deploy-staging.yml, in a
@@ -84,12 +100,29 @@ async function run() {
   const athleteId = required('PILOT_SHADOW_ATHLETE_ID');
   const athletePin = required('PILOT_SHADOW_ATHLETE_PIN');
 
+  // Read-only probe fixtures for pilot:runtime-verify. Deliberately OPTIONAL,
+  // unlike everything above: this script already runs in a working pipeline,
+  // and promoting these to required() would fail the next staging deploy for
+  // anyone who has not set them yet -- including a developer running it by
+  // hand. An unset one is skipped and SAID so at the end, never silently.
+  //
+  // They exist because the runtime-verify manifest's most valuable probes are
+  // refusals -- a coach and even the platform owner must be refused by
+  // org-admin-gated routes -- and there is no way to prove a refusal without a
+  // session of the role being refused. gate-session.mjs will not invent one.
+  //
+  // Both are 'microsoft' for the same reason the administrator fixture is:
+  // resolvePrincipal revokes any privileged ppbf_local session on sight, so a
+  // PIN-backed coach or platform_owner would be destroyed by its own first use.
+  const probeCoachAccountId = process.env.PILOT_PROBE_COACH_ACCOUNT_ID?.trim() || null;
+  const probeOwnerAccountId = process.env.PILOT_PROBE_PLATFORM_OWNER_ACCOUNT_ID?.trim() || null;
+
   // Fixture-specific address on an RFC 2606 reserved TLD: cannot collide with
   // a real person's login_email under the unique lower(login_email) index, and
   // cannot receive mail.
   const adminLoginEmail = `${adminAccountId}.gate@ppbf.invalid`;
 
-  const client = new Client({ connectionString, ssl: { rejectUnauthorized: true } });
+  const client = new Client({ connectionString, ssl: resolveSslConfig() });
   await client.connect();
 
   if (DEACTIVATE_ONLY) {
@@ -198,12 +231,62 @@ async function run() {
       [athleteAccountId, organizationId],
     );
 
+    // Probe fixtures. Same two-statement shape as the administrator above --
+    // the account, then the membership resolvePrincipal joins -- and no PIN
+    // hash at all, so neither can ever be used through the login form. They are
+    // reachable only by a caller that can already read the database, which is
+    // exactly the position gate-session.mjs is written for.
+    for (const [probeAccountId, probeRole] of [
+      [probeCoachAccountId, 'coach'],
+      [probeOwnerAccountId, 'platform_owner'],
+    ]) {
+      if (!probeAccountId) continue;
+
+      await client.query(
+        `insert into pilot.accounts
+           (account_id, login_email, auth_provider, role, organization_id,
+            pin_hash, must_change_pin, active_flag)
+         values ($1, $2, 'microsoft', $3, $4, null, false, true)
+         on conflict (account_id) do update set
+           login_email = excluded.login_email,
+           auth_provider = excluded.auth_provider,
+           role = excluded.role,
+           organization_id = excluded.organization_id,
+           pin_hash = null,
+           must_change_pin = false,
+           active_flag = true,
+           updated_at = now()`,
+        [probeAccountId, `${probeAccountId}.gate@ppbf.invalid`, probeRole, organizationId],
+      );
+
+      await client.query(
+        `insert into pilot.organization_memberships
+           (account_id, organization_id, role, active_flag)
+         values ($1, $2, $3, true)
+         on conflict (account_id, organization_id) do update set
+           role = excluded.role,
+           active_flag = true,
+           updated_at = now()`,
+        [probeAccountId, organizationId, probeRole],
+      );
+    }
+
     await client.query('commit');
   } catch (error) {
     await client.query('rollback').catch(() => {});
     throw error;
   } finally {
     await client.end();
+  }
+
+  for (const [probeAccountId, probeRole, variable] of [
+    [probeCoachAccountId, 'coach', 'PILOT_PROBE_COACH_ACCOUNT_ID'],
+    [probeOwnerAccountId, 'platform_owner', 'PILOT_PROBE_PLATFORM_OWNER_ACCOUNT_ID'],
+  ]) {
+    console.log(probeAccountId
+      ? `Provisioned ${probeRole} probe fixture "${probeAccountId}" in organization "${organizationId}".`
+      : `SKIPPED the ${probeRole} probe fixture: ${variable} is not set. `
+        + 'pilot:runtime-verify will report its role probes as SKIPPED rather than invent a fixture.');
   }
 
   console.log(`Provisioned gate fixture administrator "${adminAccountId}" in organization "${organizationId}".`);
