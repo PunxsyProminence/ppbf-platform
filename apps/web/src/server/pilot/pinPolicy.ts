@@ -1,3 +1,5 @@
+import { ValidationError } from './errors';
+
 export const DEFAULT_PIN_LENGTH = 6;
 
 /**
@@ -36,14 +38,20 @@ export const DEFAULT_FIRST_LOGIN_PIN = '123456';
  * knows the sign-in ID -- on a PIN that is published in this file and printed in
  * the admin UI. It is also the first PIN anyone would guess.
  *
- * The message has to lead with "PIN" like the ones in validatePinPolicy:
- * jsonError maps that prefix to a 400 carrying the text, and anything else to a
- * 500 "Internal server error", which would tell the athlete nothing about why
- * their chosen PIN was refused.
+ * The message must reach the athlete, so this throws ValidationError rather
+ * than Error: jsonError returns a PilotError's own status with its message
+ * intact. This used to depend on the message LEADING with "PIN", which
+ * jsonError prefix-matched to a 400 -- and the trivially-guessable check
+ * eleven lines below the old note began with "That", so it 500'd and told the
+ * athlete nothing. Carrying the status on the type removes the spelling from
+ * the contract.
  */
 export function assertChosenPinAllowed(pin: string): void {
   if (pin.trim() === DEFAULT_FIRST_LOGIN_PIN) {
-    throw new Error('PIN cannot be the starting PIN everyone is given. Choose a different one.');
+    throw new ValidationError(
+      'PIN cannot be the starting PIN everyone is given. Choose a different one.',
+      'PIN_IS_DEFAULT_FIRST_LOGIN',
+    );
   }
 }
 
@@ -89,20 +97,23 @@ function isTriviallyGuessablePin(pin: string): boolean {
 export function validatePinPolicy(pin: string): void {
   const normalized = pin.trim();
   if (!normalized) {
-    throw new Error('PIN is required');
+    throw new ValidationError('PIN is required', 'PIN_REQUIRED');
   }
 
   if (!/^\d+$/.test(normalized)) {
-    throw new Error('PIN must contain only digits');
+    throw new ValidationError('PIN must contain only digits', 'PIN_NOT_NUMERIC');
   }
 
   if (normalized.length !== DEFAULT_PIN_LENGTH) {
-    throw new Error(`PIN must be exactly ${DEFAULT_PIN_LENGTH} digits`);
+    throw new ValidationError(`PIN must be exactly ${DEFAULT_PIN_LENGTH} digits`, 'PIN_WRONG_LENGTH');
   }
 
   // Checked after the shape rules so the message a caller sees is the most
   // specific one, and skipped for the issued bootstrap PIN as described above.
   if (normalized !== DEFAULT_FIRST_LOGIN_PIN && isTriviallyGuessablePin(normalized)) {
-    throw new Error('That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.');
+    throw new ValidationError(
+      'That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.',
+      'PIN_TRIVIALLY_GUESSABLE',
+    );
   }
 }
