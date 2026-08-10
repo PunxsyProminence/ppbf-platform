@@ -46,6 +46,36 @@ describe('import-shadow-research.yml resolves the owning organization', () => {
     expect(indexOfStep('Authenticate via Azure OIDC')).toBeLessThan(resolve);
   });
 
+  // Ordering alone was not enough, and this test is here because the ordering
+  // assertion above passed while the workflow was broken.
+  //
+  // Authenticate via Azure OIDC carried `if: inputs.mode == 'apply'`. Resolve
+  // Owning Organization is unconditional and shells out to
+  // `az containerapp secret show` whenever organization_id is blank -- the
+  // normal case, and one dry-run reaches. So in dry-run the login was skipped,
+  // the az call ran unauthenticated, and `set -euo pipefail` failed the step:
+  // the feature's headline path, in the mode an operator tries first.
+  //
+  // Asserting the ORDER of two steps says nothing about whether either RUNS.
+  it('does not gate the Azure login on mode, because dry-run needs az too', () => {
+    const loginAt = raw.indexOf('- name: Authenticate via Azure OIDC');
+    expect(loginAt).toBeGreaterThan(-1);
+
+    // Everything between the step name and its `uses:` -- where an `if:` would sit.
+    const header = raw.slice(loginAt, raw.indexOf('uses:', loginAt));
+    expect(header).not.toContain('if:');
+  });
+
+  // The other half: if someone later makes the resolve step conditional instead,
+  // the same hole reopens from the other direction.
+  it('resolves the organization in every mode', () => {
+    const resolveAt = raw.indexOf('- name: Resolve Owning Organization');
+    expect(resolveAt).toBeGreaterThan(-1);
+
+    const header = raw.slice(resolveAt, raw.indexOf('run:', resolveAt));
+    expect(header).not.toContain("if: inputs.mode");
+  });
+
   // Two sources for one name is precisely the defect #273 fixed in the sibling workflow: a job-level
   // env entry would win over, or race with, the value written to $GITHUB_ENV.
   it('does not also declare PPBF_ORG_ID in the job env block', () => {
