@@ -1,5 +1,10 @@
 # Work queue — shared between agent sessions
 
+> **Superseded.** The current queue is
+> [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md). Kept here because the
+> incidents below are real history worth keeping, not because this table is
+> still authoritative — do not claim an item from it.
+
 Two Claude sessions work this repository at the same time. Today that cost real
 duplicated work: the same nine compliance/progression/publication tables were
 ported to migrations twice (once as one file, once as three), and video release
@@ -195,9 +200,18 @@ Ordered by a floor-readiness trace run 2026-08-01.
 | Athlete record correction + deactivation | session A | `feature/knowledge-and-feedback` |
 | Athlete check-out losing notes | session A | `feature/knowledge-and-feedback` |
 | Coach coverage (403 on a covered class) | session A | `feature/knowledge-and-feedback` |
-| Security audit fixes + Capability #2 hardening | session B | `claude/ppbf-platform-audit-w3va0j` |
-| Per-athlete starting PIN | session B | `claude/ppbf-platform-audit-w3va0j` |
-| Platform-owner athlete-shell takeover (security) | session B | `claude/ppbf-platform-audit-w3va0j` |
+| Security audit fixes + Capability #2 hardening | session B (audit) | `claude/ppbf-platform-audit-w3va0j` |
+| Per-athlete starting PIN | session B (audit) | `claude/ppbf-platform-audit-w3va0j` |
+| Platform-owner athlete-shell takeover (security) | session B (audit) | `claude/ppbf-platform-audit-w3va0j` |
+| Attendance Engine (#122, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md`): attendance reporting/rollup, bulk class check-in, parent-check-in method attribution fix | session B (capabilities) | `claude/remaining-capabilities-ab0q7d` — PR [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238), ready for review |
+| Safety Gate Matrix (#3 + #43, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md` Phase 1): `pilot.safety_gates` + `pilot.safety_gate_evaluations` substrate, `contactClearanceGate.ts` wired in as its first (flag-type) gate, per-org seeding on org creation | session B (capabilities) | `claude/remaining-capabilities-ab0q7d` — same PR [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) |
+| Red Flag Escalation Protocol (#194, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md` Phase 1): `pilot.safety_escalations`, `escalationLadder.ts`, auto-escalation from `shadowNearMisses.ts`, `/admin/escalations`, repeated-pattern detector, board-safe summary | session B (capabilities) | `claude/remaining-capabilities-ab0q7d` — same PR [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) |
+
+> ⚠️ **Two different sessions were both labelling themselves "session B".** This
+> merge is the first place they met. Disambiguated above as *session B (audit)* —
+> `claude/ppbf-platform-audit-w3va0j`, this branch — and *session B (capabilities)* —
+> `claude/remaining-capabilities-ab0q7d` / PR #238. Neither claim was dropped. If a
+> third session arrives, take a name nobody is using.
 
 ### 🔴 Security fix on that branch — present on `main` today
 
@@ -245,11 +259,54 @@ combined suite is green (2746 tests, `tsc` clean). No reconciliation appears to 
 needed, but **session A should confirm** before either branch merges, because
 "clean merge + green tests" does not prove the two intents agree.
 
+### PR #238 — ready for VS Code
+
+Three items above are in one PR (single-branch constraint this session; see
+the PR body for why). Remote's side is done: typecheck/lint clean, full unit
+suite green (3726 tests), all four new `test:migrations:*` suites green
+against embedded Postgres, `list-check` equivalent passed locally. A GitHub
+Copilot review caught 4 real issues (a foreign-key crash risk on a
+pre-migration organization, an N+1 + race in the bulk attendance upsert, a
+raw-string category field with no compile-time link to the DB's CHECK
+constraint, an unvalidated `since` query param that could 500 instead of
+400) — all four fixed and covered by new/updated tests in the same PR. One
+comment (RoleSessionGate missing `organization_admin`) was investigated and
+found incorrect for this codebase (`mapPilotRoleToClubRole` already
+normalizes `organization_admin` to the client-side `admin` role before
+`RoleSessionGate` ever sees it) — not changed, replied on the PR explaining
+why.
+
+**What VS Code needs to do, in order:**
+1. Confirm CI is green on #238 (Remote cannot see runtime, only dispatch and
+   local results).
+2. Merge #238.
+3. Dispatch `apply-migrations` with target=whichever environment is being
+   updated, migration=`all` (or individually: `attendance-parent-method`,
+   `safety-gate-matrix`, `safety-escalations` — no ordering dependency
+   between them, but all three must land before the image that expects
+   them). **Migrations before image promotion**, per this file's standing
+   rule.
+4. Promote the image.
+5. Runtime verification Remote cannot do: exercise `/admin/attendance` as a
+   coach and as an org admin; exercise a contact observation against an
+   athlete with no medical clearance and confirm the near miss, the lesson
+   text, AND a new row in `/admin/escalations` all appear; confirm a parent
+   test account's check-in records `method: 'parent'` in
+   `pilot.scheduler_attendance`, not `coach_override`; acknowledge/resolve
+   an escalation as coach and as admin and confirm the role split holds.
+
 **Free for the other session** — none of the above, and none of these files:
 `scripts/`, `.github/workflows/`, `apps/web/app/admin/page.tsx`,
 `apps/web/app/admin/people/page.tsx`, `apps/web/components/CoachWorkspace.tsx`,
 `apps/web/components/AthleteWorkspace.tsx`,
 `apps/web/src/server/pilot/{staffProvisioning,access,drills,feedback,rabbitHoles}.ts`.
+
+Session B (capabilities)'s attendance work stays inside `pilot.scheduler_attendance`
+(the existing check-in store), `schedulerDb.ts`, `app/api/pilot/scheduler/**`, a
+new `attendanceReporting.ts` module, a new `app/admin/attendance` page, and a
+new migration — it does not touch `CoachWorkspace.tsx`'s hardcoded
+`attendance: 'Unknown'` roster column, since that file is session A's. That
+wiring is real follow-up work, left for whoever has that file free next.
 
 ~~Good unclaimed candidates: the honesty sweep, the two platform-owner routes,
 and `drillsPersistence.pg.test.ts`.~~
@@ -286,6 +343,15 @@ whoever owns the next reconciliation.
 shows no `feature/knowledge-and-feedback` — the branch holding every session A
 claim is gone, and its work is in `main`. A reservation whose branch no longer
 exists is spent, so the file is treated as free. Recorded rather than assumed.
+
+> **Merge note (2026-08-03).** `main` still carried the older candidate list —
+> "per-athlete starting PIN, the honesty sweep, the two platform-owner routes,
+> `drillsPersistence.pg.test.ts`". That list is superseded by the item-by-item
+> verification above, not by opinion: each was checked against the code, and every
+> one is now closed. It was dropped in this merge rather than kept alongside, because
+> leaving a list that sends the next session after four finished items is the
+> duplicated work this file exists to prevent. Main's attendance-scope note above was
+> kept in full.
 
 ---
 

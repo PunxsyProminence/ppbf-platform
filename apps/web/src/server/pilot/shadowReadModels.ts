@@ -1,5 +1,7 @@
 import type { PilotRole } from './contracts';
 import { query } from './db';
+import { guardianAthleteIds } from './guardianAccess';
+import { PAIN_REPORT_PENDING_REVIEW_EVENT_NAME } from './formulas/painReportAlert';
 
 export interface ShadowReadContext {
   organizationId: string;
@@ -135,16 +137,7 @@ async function resolveAthleteScope(context: ShadowReadContext): Promise<AthleteS
   }
 
   if (context.actorRole === 'parent') {
-    const rows = await query<{ athlete_id: string }>(
-      `select gl.athlete_id
-       from pilot.guardian_links gl
-       where gl.organization_id = $1
-         and gl.parent_id in (
-           select parent_id from pilot.parents where organization_id = $1 and account_id = $2
-         )`,
-      [context.organizationId, context.actorAccountId],
-    );
-    const athleteIds = rows.map((row) => row.athlete_id);
+    const athleteIds = await guardianAthleteIds(context.organizationId, context.actorAccountId);
     return { restrictToAthleteIds: athleteIds.length > 0 ? athleteIds : ['__unbound_athlete__'], excludeAthleteScoped: false };
   }
 
@@ -559,6 +552,62 @@ export async function getShadowResearchProjection(
     .filter((item): item is ShadowResearchProjectionItem => item !== null);
 }
 
+/**
+ * Human labels for pain-report events in the mixed SHADOW observation feed.
+ *
+ * Without this, the feed renders the bare event name
+ * (SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW) with no name, severity, or body
+ * location -- see docs/WORK_QUEUE.md's description of this exact gap. The
+ * dedicated "Athlete Pain Reports" panel elsewhere on the coach's screen
+ * already resolves the athlete's name via pilot.athletes, so this mirrors
+ * that lookup for the events that need it rather than joining on every event
+ * in the feed regardless of type.
+ */
+async function resolveAthleteNames(
+  organizationId: string,
+  athleteIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (athleteIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await query<{ athlete_id: string; full_name: string | null }>(
+    `select athlete_id, full_name
+     from pilot.athletes
+     where organization_id = $1
+       and athlete_id = any($2::text[])`,
+    [organizationId, [...athleteIds]],
+  );
+
+  const names = new Map<string, string>();
+  for (const row of rows) {
+    if (typeof row.full_name === 'string' && row.full_name.trim().length > 0) {
+      names.set(row.athlete_id, row.full_name.trim());
+    }
+  }
+  return names;
+}
+
+function painReportPayloadText(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function describePainReportEvent(event: ShadowEventRow, athleteNames: ReadonlyMap<string, string>): string {
+  const payload = event.payload ?? {};
+  const athleteId = painReportPayloadText(payload, 'athlete_id') ?? event.entity_id;
+  const athleteName = athleteNames.get(athleteId) ?? `Athlete ${athleteId}`;
+  const location = painReportPayloadText(payload, 'location');
+  const painType = painReportPayloadText(payload, 'pain_type');
+  const severity = typeof payload.severity_1_10 === 'number' ? payload.severity_1_10 : null;
+
+  const where = location ? ` at ${location}` : '';
+  const type = painType ? ` (${painType})` : '';
+  const score = severity === null ? '' : `, severity ${severity}/10`;
+
+  return `Pain report: ${athleteName}${where}${type}${score}, pending review`;
+}
+
 export async function getShadowObservationProjection(
   context: ShadowReadContext,
   filters: ShadowListFilters = {},
@@ -573,10 +622,17 @@ export async function getShadowObservationProjection(
     limit: Math.floor((filters.limit ?? 60) / 2),
   });
 
+  const painReportAthleteIds = events
+    .filter((event) => event.event_name === PAIN_REPORT_PENDING_REVIEW_EVENT_NAME)
+    .map((event) => painReportPayloadText(event.payload ?? {}, 'athlete_id') ?? event.entity_id);
+  const athleteNames = await resolveAthleteNames(context.organizationId, [...new Set(painReportAthleteIds)]);
+
   const observationEvents = events.map<ShadowObservationProjectionItem>((event) => ({
     id: `event-${event.shadow_event_id}`,
     source: 'event',
-    label: event.event_name,
+    label: event.event_name === PAIN_REPORT_PENDING_REVIEW_EVENT_NAME
+      ? describePainReportEvent(event, athleteNames)
+      : event.event_name,
     entity_type: event.entity_type,
     entity_id:
       event.entity_id

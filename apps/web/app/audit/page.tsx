@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import FeatureSurface from '@/components/FeatureSurface';
+import Link from 'next/link';
+import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
 
 interface AuditEvent {
@@ -83,75 +85,125 @@ function AuditTrace() {
     return () => controller.abort();
   }, [reloadNonce]);
 
+  const stats = [
+    { label: 'Current Stage', value: 'Audit Trace' },
+    { label: 'Next Stage', value: 'Source Control' },
+    { label: 'Source', value: 'pilot.audit_events' },
+    { label: 'Events Shown', value: loadState === 'loaded' ? String(events.length) : '--' },
+  ];
+
   return (
-    <FeatureSurface
-      eyebrow="Audit & Change Trace"
-      title="Timeline visibility for governance and traceability"
-      description="Track who changed what and why, then hand approved trace flows to Source Control for promotion."
-      status="Live | Organization audit log"
-      currentStage="audit"
-      primaryLinks={[
-        { label: 'Source control', href: '/source-control' },
-        { label: 'Simulator', href: '/simulator' },
-      ]}
-      stats={[
-        { label: 'Current Stage', value: 'Audit Trace' },
-        { label: 'Next Stage', value: 'Source Control' },
-        { label: 'Source', value: 'pilot.audit_events' },
-        { label: 'Events Shown', value: loadState === 'loaded' ? String(events.length) : '--' },
-      ]}
-    >
-      <div className="space-y-3">
+    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
+          <div>
+            <p className="t-eyebrow">Audit &amp; Change Trace</p>
+            <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
+              The Ledger
+            </h1>
+            <p className="t-body mt-[var(--s3)] max-w-[64ch]">
+              Track who changed what and why, then hand approved trace flows to Source Control for promotion.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-[var(--s3)]">
+            <ShadowChatButton context="Audit Trace" />
+            <Link href="/source-control" className="btn btn--ghost">
+              Source Control
+            </Link>
+            <Link href="/simulator" className="btn btn--ghost">
+              Simulator
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto w-full max-w-[1200px] space-y-[var(--s5)] p-[var(--s5)]">
+        <DevelopmentPipelineBanner currentStage="audit" />
+
+        <section aria-label="Audit trace status" className="flex flex-wrap gap-[var(--s3)]">
+          {stats.map((item) => (
+            <span key={item.label} className="plaque">
+              {item.label.toUpperCase()}: {item.value.toUpperCase()}
+            </span>
+          ))}
+        </section>
+
         {loadState === 'loading' && (
-          <p className="text-[16px] leading-7 text-[color:var(--bone-200)]">Loading the audit trail...</p>
+          <p className="t-body">Loading the audit trail...</p>
         )}
 
         {/* A failed read and an empty trail must never look the same: one means
             nothing has happened, the other means we do not know what has. */}
         {loadState === 'failed' && (
-          <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4" role="alert">
-            <p className="text-[16px] leading-7 text-[color:var(--bone-200)]">
+          <div className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s5)]" role="alert">
+            <span className="badge badge--locked">
+              <i>✕</i>Trail Not Read
+            </span>
+            <p className="t-body mt-[var(--s3)]">
               The audit trail could not be loaded, so this is not a record of nothing happening -- it is a record of
               nothing being read.
             </p>
-            <button
-              type="button"
-              onClick={retry}
-              className="mt-3 min-h-[44px] border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-4 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[color:var(--brass-300)]"
-            >
+            <button type="button" onClick={retry} className="btn btn--ghost mt-[var(--s4)]">
               Retry loading the audit trail
             </button>
           </div>
         )}
 
         {loadState === 'loaded' && events.length === 0 && (
-          <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4">
-            <p className="text-[16px] leading-7 text-[color:var(--bone-200)]">
+          <div className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
+            <p className="t-typed text-[length:var(--t-sm)]">
               No audit events have been recorded for your organization yet.
             </p>
           </div>
         )}
 
-        {loadState === 'loaded' && events.map((event) => (
-          <article key={String(event.audit_id)} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4">
-            <div className="grid gap-2 text-[14px] text-[color:var(--bone-300)] md:grid-cols-2">
-              <p><span className="font-semibold text-[color:var(--brass-300)]">Timestamp:</span> {event.created_at}</p>
-              <p><span className="font-semibold text-[color:var(--brass-300)]">Actor:</span> {event.actor_account_id ?? 'Not recorded'}</p>
-              <p><span className="font-semibold text-[color:var(--brass-300)]">Actor Role:</span> {event.actor_role ?? 'Not recorded'}</p>
-              <p><span className="font-semibold text-[color:var(--brass-300)]">Event:</span> {event.event_type}</p>
-              <p><span className="font-semibold text-[color:var(--brass-300)]">Entity:</span> {event.entity_type}</p>
-              <p><span className="font-semibold text-[color:var(--brass-300)]">Entity ID:</span> {event.entity_id}</p>
-              <p className="md:col-span-2"><span className="font-semibold text-[color:var(--brass-300)]">Details:</span> {formatDetails(event.details)}</p>
+        {/* Law 4: every row is auditable, so the whole record speaks in the
+            mono voice -- a ruled paper ledger, append-only, no row actions. */}
+        {loadState === 'loaded' && events.length > 0 && (
+          <section className="mat-paper aged rounded-[var(--r-md)] p-[var(--s5)]">
+            <div className="overflow-x-auto">
+              <table className="ledger">
+                <caption className="text-left">Organization Audit Trail</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Timestamp</th>
+                    <th scope="col">Actor</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Entity</th>
+                    <th scope="col">Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((event) => (
+                    <tr key={String(event.audit_id)}>
+                      <td className="whitespace-nowrap">{event.created_at}</td>
+                      <td>{event.actor_account_id ?? 'Not recorded'}</td>
+                      <td>{event.actor_role ?? 'Not recorded'}</td>
+                      <td>
+                        <span className="ledger-val">{event.event_type}</span>
+                      </td>
+                      <td>
+                        {event.entity_type}
+                        <span className="ledger-id block">{event.entity_id}</span>
+                      </td>
+                      <td className="max-w-[34ch] break-words">{formatDetails(event.details)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </article>
-        ))}
+          </section>
+        )}
 
-        <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-          <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Flow Direction</p>
-          <p className="mt-2 text-[16px] leading-7 text-[color:var(--bone-200)]">Audited items move into Source Control promotion states for controlled publication.</p>
+        <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <p className="t-eyebrow">Flow Direction</p>
+          <p className="t-body mt-[var(--s3)]">
+            Audited items move into Source Control promotion states for controlled publication.
+          </p>
         </div>
       </div>
-    </FeatureSurface>
+    </main>
   );
 }
 

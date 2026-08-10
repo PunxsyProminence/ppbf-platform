@@ -118,5 +118,5 @@ it('reports a failure when the server updated no volunteer row', async () => {
 
   await screen.findByText(/no longer on this roster/i);
   expect(screen.queryByText('Volunteer status updated to active.')).toBeNull();
-  expect(screen.getByText('Status: pending')).toBeTruthy();
+  expect(screen.getAllByText('pending').length).toBeGreaterThan(0);
 });

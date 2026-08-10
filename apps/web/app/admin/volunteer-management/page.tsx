@@ -19,6 +19,15 @@ interface VolunteerRecord {
 const volunteerStatuses = ['active', 'pending', 'inactive'] as const;
 type VolunteerStatus = (typeof volunteerStatuses)[number];
 
+// Law 3: a volunteer's roster state carries a glyph and an uppercase label,
+// never colour alone. Rungs are queue outcomes: active is cleared, pending is
+// restricted (awaiting checks), inactive is monitor (tracked, not serving).
+const VOLUNTEER_STATUS_BADGE: Record<VolunteerStatus, { rung: string; glyph: string }> = {
+  active: { rung: 'badge--cleared', glyph: '✓' },
+  pending: { rung: 'badge--restricted', glyph: '▲' },
+  inactive: { rung: 'badge--monitor', glyph: '◉' },
+};
+
 interface VolunteerCardProps {
   item: VolunteerRecord;
   onStatusChange: (volunteerId: string, status: VolunteerStatus) => void;
@@ -26,22 +35,25 @@ interface VolunteerCardProps {
 
 function VolunteerCard(props: Readonly<VolunteerCardProps>) {
   const { item, onStatusChange } = props;
+  const badge = VOLUNTEER_STATUS_BADGE[item.status];
   return (
-    <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-      <h2 className="text-sm font-bold uppercase tracking-[0.08em]">{item.full_name}</h2>
-      <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{item.role_focus}</p>
-      <p className="text-sm leading-6 text-[var(--gray-dark)]">Availability: {item.availability}</p>
-      <p className="text-sm leading-6 text-[var(--gray-dark)]">Certification: {item.certification_status}</p>
-      <p className="text-sm leading-6 text-[var(--gray-dark)]">Background Check: {item.background_check_status}</p>
-      <p className="text-sm font-mono uppercase tracking-[0.08em] text-[color:var(--brass-800)]">Status: {item.status}</p>
-      {item.notes ? <p className="mt-2 text-sm text-[var(--gray-dark)]">{item.notes}</p> : null}
-      <div className="mt-3 flex flex-wrap gap-2">
+    <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+      <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+        <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{item.full_name}</h2>
+        <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.status}</span>
+      </div>
+      <p className="t-body mt-[var(--s3)]">{item.role_focus}</p>
+      <p className="t-body">Availability: {item.availability}</p>
+      <p className="t-body">Certification: {item.certification_status}</p>
+      <p className="t-body">Background Check: {item.background_check_status}</p>
+      {item.notes ? <p className="t-muted mt-[var(--s3)]">{item.notes}</p> : null}
+      <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
         {volunteerStatuses.map((status) => (
           <button
             key={status}
             type="button"
             onClick={() => onStatusChange(item.volunteer_id, status)}
-            className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em]"
+            className="btn--lever min-h-[44px]"
           >
             {status}
           </button>
@@ -181,66 +193,94 @@ export default function VolunteerManagementPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-        <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
-          <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Admin Workspace</p>
-            <h1 className="font-display text-4xl font-black">Volunteer Management</h1>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[color:var(--brass-800)]">LIVE | TABLE-BACKED | BACKEND CONNECTED</p>
-            <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+      <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+        <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow">Admin Workspace</p>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Volunteer Management</h1>
+            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | TABLE-BACKED | BACKEND CONNECTED</p>
+            <p className="t-body mt-[var(--s3)] max-w-4xl">
               Volunteer roster, status, and availability are now backed by persistent records instead of placeholders.
             </p>
-            {errorMessage ? <p className="text-sm text-[var(--safety-locked)]">{errorMessage}</p> : null}
+            {errorMessage ? (
+              <p role="alert" className="alert alert--critical">
+                <span className="alert-icon">✕</span>
+                <span className="alert-msg">{errorMessage}</span>
+              </p>
+            ) : null}
           </header>
 
-          <section className="mt-6 grid gap-4 md:grid-cols-3">
+          <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
             {[
               { label: 'Active', value: counts.active },
               { label: 'Pending', value: counts.pending },
               { label: 'Inactive', value: counts.inactive },
             ].map((item) => (
-              <article key={item.label} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-                <h2 className="text-sm font-bold uppercase tracking-[0.08em]">{item.label}</h2>
-                <p className="mt-2 text-3xl font-black">{item.value}</p>
+              <article key={item.label} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
+                <p className="t-eyebrow">{item.label}</p>
+                <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{item.value}</p>
               </article>
             ))}
           </section>
 
-          <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-            <h2 className="text-lg font-bold">Add Volunteer</h2>
-            <input value={draft.full_name} onChange={(event) => setDraft((current) => ({ ...current, full_name: event.target.value }))} placeholder="Full name" className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3" />
-            <div className="grid gap-3 md:grid-cols-2">
-              <input value={draft.role_focus} onChange={(event) => setDraft((current) => ({ ...current, role_focus: event.target.value }))} placeholder="Role focus" className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3" />
-              <input value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Availability" className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3" />
+          <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add Volunteer</h2>
+            <label className="field">
+              <span className="t-label">Full name</span>
+              <input value={draft.full_name} onChange={(event) => setDraft((current) => ({ ...current, full_name: event.target.value }))} placeholder="Full name" className="input" />
+            </label>
+            <div className="grid gap-[var(--s4)] md:grid-cols-2">
+              <label className="field">
+                <span className="t-label">Role focus</span>
+                <input value={draft.role_focus} onChange={(event) => setDraft((current) => ({ ...current, role_focus: event.target.value }))} placeholder="Role focus" className="input" />
+              </label>
+              <label className="field">
+                <span className="t-label">Availability</span>
+                <input value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Availability" className="input" />
+              </label>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <input value={draft.certification_status} onChange={(event) => setDraft((current) => ({ ...current, certification_status: event.target.value }))} placeholder="Certification status" className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3" />
-              <input value={draft.background_check_status} onChange={(event) => setDraft((current) => ({ ...current, background_check_status: event.target.value }))} placeholder="Background check status" className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3" />
+            <div className="grid gap-[var(--s4)] md:grid-cols-2">
+              <label className="field">
+                <span className="t-label">Certification status</span>
+                <input value={draft.certification_status} onChange={(event) => setDraft((current) => ({ ...current, certification_status: event.target.value }))} placeholder="Certification status" className="input" />
+              </label>
+              <label className="field">
+                <span className="t-label">Background check status</span>
+                <input value={draft.background_check_status} onChange={(event) => setDraft((current) => ({ ...current, background_check_status: event.target.value }))} placeholder="Background check status" className="input" />
+              </label>
             </div>
-            <textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Notes" className="h-24 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2" />
+            <label className="field">
+              <span className="t-label">Notes</span>
+              <textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Notes" className="textarea min-h-[89px]" />
+            </label>
             <button
               type="button"
               disabled={isCreating || !draft.full_name.trim()}
               onClick={() => void handleCreateVolunteer().catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to create volunteer.'))}
-              className="h-11 border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isCreating ? 'Creating...' : 'Create Volunteer'}
             </button>
           </section>
 
-          <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((item) => (
-              <VolunteerCard key={item.volunteer_id} item={item} onStatusChange={(volunteerId, status) => void handleStatusUpdate(volunteerId, status)} />
-            ))}
-          </section>
+          {items.length === 0 ? (
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">◌</div>
+              <div className="empty-title">No volunteers on record yet</div>
+              <div className="empty-msg">Add the first volunteer above and they&apos;ll show up here.</div>
+            </div>
+          ) : (
+            <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
+              {items.map((item) => (
+                <VolunteerCard key={item.volunteer_id} item={item} onStatusChange={(volunteerId, status) => void handleStatusUpdate(volunteerId, status)} />
+              ))}
+            </section>
+          )}
 
-          {message ? <p className="mt-6 text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
+          {message ? <p className="t-body mt-[var(--s5)] font-semibold text-[color:var(--brass-300)]">{message}</p> : null}
 
-          <div className="mt-8">
-            <Link
-              href="/operations"
-              className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
-            >
+          <div className="mt-[var(--s6)]">
+            <Link href="/operations" className="btn btn--ghost">
               Back to Mission Control
             </Link>
           </div>

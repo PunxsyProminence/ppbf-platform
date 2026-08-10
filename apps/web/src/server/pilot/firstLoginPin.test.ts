@@ -86,17 +86,26 @@ describe('an issued PIN can never be chosen', () => {
       .toThrow('PIN cannot be the old shared starting PIN. Choose a different one.');
   });
 
-  // It is also now caught one layer earlier, as the ascending run it always
-  // was. The old code exempted it so the admin reset could issue it; nothing
-  // issues it any more, so the exemption is gone.
+  // It is also refused one layer earlier now. The old code exempted it from
+  // validatePinPolicy so the shared-PIN reset could issue it; nothing issues it
+  // any more, so the exemption is gone. It is an ascending run and the generic
+  // rule would catch it, but the specific message is the one that names the
+  // situation of someone still sitting on that PIN.
   test('the old shared PIN no longer passes the policy either', () => {
     expect(() => validatePinPolicy(LEGACY_SHARED_FIRST_LOGIN_PIN))
-      .toThrow('That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.');
+      .toThrow('PIN cannot be the starting PIN everyone is given. Choose a different one.');
   });
 
-  // The refusal is only useful if the athlete sees it. jsonError maps by
-  // message prefix, so a message that does not begin with "PIN" comes back as
-  // a 500 "Internal server error" with the reason stripped out.
+  // The refusal is only useful if the athlete sees it. This used to depend on
+  // the message beginning with "PIN", which jsonError prefix-matched to a 400;
+  // anything else came back as a 500 with the reason stripped out. It now
+  // throws ValidationError, so the status comes from the type and rewording
+  // the message can no longer silence it.
+  //
+  // The body also carries `code` now. That is the point of the machine code
+  // moving out of the message prefix: a client can branch on
+  // PIN_IS_DEFAULT_FIRST_LOGIN without string-matching prose, which is the
+  // same fragility this change removes on the server side.
   test('the refusal reaches the athlete as a 400 carrying the reason', async () => {
     let refusal: unknown;
     try {
@@ -109,6 +118,7 @@ describe('an issued PIN can never be chosen', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       error: 'PIN cannot be the one you were given to sign in with. Choose a different one.',
+      code: 'PIN_IS_ISSUED_PIN',
     });
   });
 

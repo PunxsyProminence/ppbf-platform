@@ -21,6 +21,47 @@
  * approve would either fail server-side validation or, on an ID collision,
  * attach a coach review to an unrelated athlete. Triage needs a coach-facing
  * write endpoint for intake cases first.
+ *
+ * ADDENDUM — /api/pilot/intake/review-action EXISTS, AND TRIAGE STILL DOES NOT
+ * GET A KEY.
+ *
+ * The paragraph above is about /api/pilot/coach-reviews and is still exactly
+ * right about it. But it reads as "no coach-facing write endpoint for intake
+ * cases exists", and that is no longer true: app/api/pilot/intake/review-action
+ * takes `{ intake_case_id, action: 'approve' | 'reject' | 'promote' }` and its
+ * requireRole admits 'coach'. So the ID-collision hazard is not the live reason
+ * any more, and anyone reading only the paragraph above would conclude the gap
+ * has closed and bind the key. It has not, and they must not:
+ *
+ *   1. APPROVAL IS GATED ON A HUMAN DOCUMENT REVIEW, ON PURPOSE. Intake
+ *      documents are born `pending_security_review`; approval refuses until a
+ *      person has reviewed them and left an audit row. That refusal is one of
+ *      the platform's named landmines (guardrails §5) and the deploy gate
+ *      asserts it BEFORE reviewing anything. A keystroke that means "approve"
+ *      is a keystroke aimed squarely at the guard, and the only outcomes are a
+ *      refusal the user does not understand or — the day somebody "fixes" the
+ *      confusing refusal — a child's intake approved by a keypress.
+ *
+ *   2. THE THREE ACTIONS ARE NOT PEERS. 'promote' carries a whole
+ *      IntakePromotionPayload — guardian, emergency contact, medical intake,
+ *      waiver. There is no keystroke-sized version of that, and a key that
+ *      silently sends the empty one writes a hollow athlete record.
+ *
+ *   3. IRREVERSIBLE, AND ABOUT A CHILD. Nothing else this registry binds
+ *      changes a record at all; every key here moves you somewhere or opens a
+ *      panel. Triage is the first thing that would, and it is the worst
+ *      possible candidate to be the first.
+ *
+ * What would make it bindable: a coach-facing action whose precondition is
+ * already satisfied on screen, which is a queue that knows a case is
+ * review-complete and offers exactly the one action it is eligible for. That
+ * is a product design, not a key binding, and it belongs in the review queue
+ * before it belongs here.
+ *
+ * SEPARATELY: the card catalog now RUNS things as well as navigating (see
+ * CardCatalog.tsx). Those acts are not in this registry because they carry no
+ * key of their own — they are rows you search for, not chords. The registry is
+ * for keys, and every key in it is bound.
  */
 
 export interface Shortcut {
@@ -77,7 +118,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     keys: '↵',
-    label: 'Open the highlighted result',
+    label: 'Open the highlighted result, or run it if it is an action',
     scope: 'list',
     bound: true,
     owner: 'CardCatalog.tsx',

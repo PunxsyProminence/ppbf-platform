@@ -27,6 +27,25 @@ export const AUDIT_EVENT_TYPES = [
   'shadow_classification',
   'shadow_routing',
   'shadow_research_upload_requirement',
+  // #82: pausing a child's training is a safety action, not bookkeeping. A
+  // hold recorded as a generic 'update' would be indistinguishable from a
+  // typo correction in the audit stream.
+  'safety_hold_placed',
+  'safety_hold_lifted',
+  // T-008: same reasoning as #82's pair -- a guardian granting or
+  // withdrawing consent for their child's photo/video is a safeguarding
+  // decision, not bookkeeping. Recorded as bare 'update' it would be
+  // indistinguishable from any other waiver row edit in the audit stream,
+  // and this is the one waiver_type this platform gates something on.
+  'consent_granted',
+  'consent_withdrawn',
+  // T-007 retention. Both were written by dataDeletion.ts and by the cleanup
+  // script from the day that feature shipped, and neither was ever added here
+  // -- so every call to the admin deletion endpoint died on SQLSTATE 23514,
+  // exactly the failure this file exists to prevent. The deletion path is
+  // transactional so nothing was half-deleted, but the feature never worked.
+  'data_deletion_initiated',
+  'data_purged',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

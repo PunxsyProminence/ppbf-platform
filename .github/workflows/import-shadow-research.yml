@@ -1,0 +1,179 @@
+name: import-shadow-research
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Database environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly
+        required: true
+        type: string
+      mode:
+        description: Validate files only, or apply the idempotent import
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      confirm_import:
+        description: For apply mode, type IMPORT RESEARCH exactly
+        required: false
+        type: string
+      organization_id:
+        description: >-
+          Owning organization. Leave blank to resolve it from the target app's own
+          ppbf-pilot-default-org-id secret; set it only to import for some other organization
+          deliberately.
+        required: false
+        type: string
+      seed_account_id:
+        description: Existing privileged account_id recorded as the importer
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: import-shadow-research-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  import:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+      # PPBF_ORG_ID is deliberately NOT set here -- it is resolved in a step below, because a
+      # value that may come from a secret must be written to $GITHUB_ENV at run time. Declaring it
+      # here as well would give one name two sources, which is exactly the bug #273 fixed in the
+      # sibling workflow.
+      SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}
+    steps:
+      - name: Confirm Explicit Target And Apply Intent
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_IMPORT: ${{ inputs.confirm_import }}
+        run: |
+          set -euo pipefail
+          test "$TARGET" = "$CONFIRM_TARGET"
+          if [ "$MODE" = "apply" ]; then
+            test "$CONFIRM_IMPORT" = "IMPORT RESEARCH"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        if: inputs.mode == 'apply'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Must precede every step that reads PPBF_ORG_ID: $GITHUB_ENV only reaches LATER steps, so
+      # reordering this leaves the YAML valid and hands the importer an empty organization -- a
+      # failure nobody would guess from the dispatch form. seedWorkflowContract.test.ts asserts the
+      # ordering for that reason.
+      - name: Resolve Owning Organization
+        env:
+          SUPPLIED: ${{ inputs.organization_id }}
+        run: |
+          set -euo pipefail
+          if [ -n "$SUPPLIED" ]; then
+            ORG="$SUPPLIED"
+            SOURCE="operator input"
+          else
+            ORG="$(az containerapp secret show \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --secret-name ppbf-pilot-default-org-id \
+              --query value -o tsv)"
+            SOURCE="$CONTAINER_APP_NAME default org secret"
+          fi
+          if [ -z "$ORG" ]; then
+            echo "::error::Could not resolve an owning organization. Supply organization_id explicitly."
+            exit 1
+          fi
+          # Masked because the app treats it as a secret. The importer prints counts and never the
+          # organization, so nothing downstream leaks it either.
+          echo "::add-mask::$ORG"
+          echo "PPBF_ORG_ID=$ORG" >> "$GITHUB_ENV"
+          echo "ORG_SOURCE=$SOURCE" >> "$GITHUB_ENV"
+          echo "Owning organization resolved from $SOURCE."
+
+      - name: Resolve Declared Database Target
+        if: inputs.mode == 'apply'
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) process.exit(2);
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      - name: Validate Research Package
+        if: inputs.mode == 'dry-run'
+        working-directory: apps/web
+        run: npm run seed:shadow:research:dry
+
+      - name: Import Research Package
+        if: inputs.mode == 'apply'
+        working-directory: apps/web
+        run: npm run seed:shadow:research -- --apply
+
+      - name: Record Human Review Boundary
+        run: |
+          {
+            echo '### SHADOW research intake'
+            echo ''
+            echo "- target: \`${{ inputs.target }}\`"
+            echo "- mode: \`${{ inputs.mode }}\`"
+            # Prints the SOURCE, never the value: the organization is masked and may have come
+            # from a secret, and a run summary is not a place to undo that.
+            echo "- organization resolved from: \`$ORG_SOURCE\`"
+            echo '- evidence approval: `pending_review`'
+            echo '- embeddings: not generated by this workflow'
+            echo ''
+            echo 'Imported evidence remains unavailable to SHADOW retrieval until a qualified reviewer approves it and the existing embedding backfill completes.'
+          } >> "$GITHUB_STEP_SUMMARY"

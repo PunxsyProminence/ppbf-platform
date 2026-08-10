@@ -25,6 +25,24 @@ import type { ClubRole } from './roleRoutes';
  * help, the public pages, and a handful of internal surfaces that are still
  * ungated. They are listed as open because that is what the code does; several
  * of them arguably should be gated, which is a separate piece of work.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT IS DELIBERATELY NOT HERE, so it is not re-added by the next person who
+ * runs `npm run shots` and reads the UNLISTED count as a to-do list:
+ *
+ *   - The way in: `/`, `/login`, `/athlete/sign-in`, `/activate`, `/change-pin`.
+ *     You do not navigate to a sign-in from inside the building; you arrive
+ *     through it. Listing them would put a door to the front step in every
+ *     corridor.
+ *   - `/launch`: a one-line re-export of `/operations`, not a second surface.
+ *     Two doors onto one room is how a catalog starts lying about the size of
+ *     the building.
+ *
+ * Everything else that exists should have a row. Eight surfaces did not, and
+ * `/coach/drills` -- the library a coach assigns drills from -- was one of
+ * them: reachable only by typing the URL, from a page whose whole job is
+ * assigning drills.
+ * ---------------------------------------------------------------------------
  */
 
 export type Room = 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
@@ -59,16 +77,59 @@ export const BUILDING: readonly Door[] = [
     keywords: 'roster members directory participants' },
   { href: '/admin/pin', label: 'PIN Management', room: 'office', roles: ADMIN_GATE,
     keywords: 'pin codes credentials reset kiosk access' },
+  { href: '/admin/activation-codes', label: 'Activation Codes', room: 'office', roles: ADMIN_GATE,
+    keywords: 'activation codes onboarding invite new athlete' },
+  { href: '/admin/feedback', label: 'Feedback Triage', room: 'office', roles: ADMIN_GATE,
+    keywords: 'tell us box submissions triage inbox' },
+  { href: '/admin/attendance', label: 'Attendance', room: 'office', roles: ['admin', 'coach'],
+    keywords: 'attendance rollup check-in reporting summary class' },
   { href: '/admin/volunteer-management', label: 'Volunteers', room: 'office', roles: ADMIN_GATE,
     keywords: 'volunteer hours coverage signup' },
+  { href: '/admin/customize', label: 'Customize the Gym', room: 'office', roles: ADMIN_GATE,
+    keywords: 'photos photographs wall pictures upload building frames banners boards chalk customization appearance',
+    hint: 'Photographs, boards, and notices — the gym’s look and voice, one desk.' },
   { href: '/admin/organizations', label: 'Organizations', room: 'office', roles: ADMIN_GATE,
     keywords: 'orgs tenants gyms affiliates' },
   { href: '/admin/board-seats', label: 'Board Seats', room: 'office', roles: ['admin', 'board'],
     keywords: 'seats appointments governance officers' },
   { href: '/admin/public-interest', label: 'Public Interest', room: 'office', roles: ADMIN_GATE,
     keywords: 'disclosure transparency public record' },
+  { href: '/admin/escalations', label: 'Escalations', room: 'office', roles: ['admin', 'coach'],
+    keywords: 'safety red flag near miss pain report escalation queue safeguarding',
+    hint: 'Safety, near-miss, and pain-report escalations — the only place they surface.' },
+  { href: '/admin/consent', label: 'Waivers & Consent', room: 'office', roles: ['admin', 'coach'],
+    keywords: 'waiver consent signature record general medical travel',
+    hint: 'Record that a guardian signed — general, medical, travel, or media.' },
+  { href: '/admin/athlete-consent', label: 'Media Consent Audit', room: 'office', roles: ['admin'],
+    keywords: 'guardian photo video consent audit safeguarding',
+    hint: 'Which athletes have full guardian consent for photo/video use.' },
+  { href: '/admin/waiver-status', label: 'Waiver Compliance', room: 'office', roles: ['admin'],
+    keywords: 'waiver consent audit compliance general medical travel missing',
+    hint: 'Which athletes are missing a signed general/medical/travel/media waiver.' },
+  { href: '/admin/safety-review', label: 'Safety Review', room: 'office', roles: ['admin'],
+    keywords: 'safety rollup holds gates escalations compliance violations review',
+    hint: 'Everything open right now across holds, gates, escalations, and compliance.' },
+  { href: '/admin/coach-coverage', label: 'Coach Coverage', room: 'office', roles: ['admin'],
+    keywords: 'coach coverage grant revoke sub substitute temporary access athlete',
+    hint: 'Grant or revoke temporary access when a coach is covering another coach’s athlete.' },
+  { href: '/admin/portrait-review', label: 'Portrait Review', room: 'office', roles: ['admin'],
+    keywords: 'photo portrait review pending release block safeguarding' },
+  { href: '/admin/video-review', label: 'Video Scan Review', room: 'office', roles: ADMIN_GATE,
+    keywords: 'quarantine scan escalation approve block video safeguarding',
+    hint: 'Quarantined footage the automated scanner deferred to a human.' },
+  { href: '/admin/video-compliance', label: 'Video Compliance Review', room: 'office', roles: ['admin'],
+    keywords: 'publication compliance approve reject request changes video safeguarding' },
   { href: '/admin/platform', label: 'Platform', room: 'office', roles: OPEN,
     keywords: 'system settings internals' },
+  { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
+    keywords: 'print roster cards sheets document', hint: 'Print rosters and session cards.' },
+  /* "Wall of Names", not "Name Sync": the page's own header calls it the Wall
+     of Names and serves initials and years to every signed-in role. There is
+     no synchronizing anything here, and a catalog entry that describes a
+     directory tool sends a coach looking for admin settings. */
+  { href: '/names', label: 'Wall of Names', room: 'office', roles: ['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],
+    keywords: 'names roll honour honor alumni initials years wall directory',
+    hint: 'Everyone who has trained here — initials and years.' },
   { href: '/operations', label: 'Operations Hub', room: 'office', roles: OPEN,
     keywords: 'mission control operations hub', hint: 'Cross-role operational launcher.' },
   { href: '/operations/external-competition', label: 'External Competition', room: 'office', roles: OPEN,
@@ -80,16 +141,34 @@ export const BUILDING: readonly Door[] = [
   { href: '/notices', label: 'Notices', room: 'office',
     roles: ['admin', 'coach', 'platform_owner', 'board'],
     keywords: 'announcements bulletins posts alerts' },
+  { href: '/chalkboard', label: 'Chalkboard', room: 'office', roles: ['coach', 'admin', 'platform_owner', 'board'],
+    keywords: 'announcements boards notices chalk', hint: 'Live board editing — from behind the desk.' },
   { href: '/guardian', label: 'Guardian Portal', room: 'office', roles: ['parent'],
     keywords: 'waiver consent minor family guardian renewal',
     hint: 'Minor records and consent, for the person responsible.' },
   { href: '/parent/dashboard', label: 'Parent Hub', room: 'office', roles: ['parent'],
     keywords: 'family child progress parent' },
+  { href: '/parent/consent', label: 'Photo & Video Consent', room: 'office', roles: ['parent'],
+    keywords: 'guardian media photo video consent grant withdraw',
+    hint: 'Grant or withdraw consent for your child’s photos and videos.' },
+  { href: '/parent/safety', label: 'Safety Status', room: 'office', roles: ['parent'],
+    keywords: 'guardian hold pause gate clearance safety status',
+    hint: 'See whether your child’s training is paused and their safety-check status.' },
   { href: '/parent/progression-visibility', label: 'Progress Visibility', room: 'office',
     roles: ['parent'], keywords: 'child progress attendance visibility' },
   { href: '/public', label: 'Public Page', room: 'office', roles: OPEN,
     keywords: 'enrollment join intake public onboarding' },
   { href: '/help', label: 'Help', room: 'office', roles: OPEN, keywords: 'support docs how-to faq' },
+  { href: '/store', label: 'Equipment Store', room: 'office', roles: OPEN,
+    keywords: 'shop store gear equipment gloves wraps buy price',
+    hint: 'Gyms with a store, and what they sell.' },
+  /* The office, not the board room: the board room's doors are a board-only
+     set (cardCatalog.test.tsx asserts a coach never sees it), and this door is
+     open to everybody. A member's own record is an office record. */
+  { href: '/profile', label: 'Your Corner', room: 'office',
+    roles: ['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer'],
+    keywords: 'profile identity portrait photo ring name nickname corner fight card programme',
+    hint: 'Your portrait, ring name, corner and programme.' },
   { href: '/source-control', label: 'Source Control', room: 'office', roles: OPEN,
     keywords: 'versions publication workflow provenance' },
   { href: '/source-control/publication-workflow', label: 'Publication Workflow', room: 'office',
@@ -100,6 +179,8 @@ export const BUILDING: readonly Door[] = [
     roles: ['athlete', 'coach', 'parent', 'admin'],
     keywords: 'classes sessions registration attendance calendar today',
     hint: "The day's sessions — registration and attendance." },
+  { href: '/wall', label: 'The Wall', room: 'floor', roles: OPEN,
+    keywords: 'display floor screen tv broadcast', hint: 'Gym floor display — TV at the front desk.' },
   { href: '/athlete/dashboard', label: 'Athlete Workspace', room: 'floor', roles: ['athlete'],
     keywords: 'my training check-in rpe session athlete' },
   { href: '/athlete/dashboard/sparring', label: 'Sparring', room: 'floor', roles: OPEN,
@@ -113,6 +194,9 @@ export const BUILDING: readonly Door[] = [
     hint: 'Layer 10 — the decision queue.' },
   { href: '/coach/decision-loop', label: 'Decision Loop', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'decisions loop feedback' },
+  { href: '/coach/recognition', label: 'Recognition', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'praise credit caught being good character mentorship pairing well done',
+    hint: 'Tell an athlete they did well — two taps. And pair mentors with newer athletes.' },
   { href: '/coach/progression-intelligence', label: 'Progression Intelligence', room: 'floor',
     roles: ['coach'], keywords: 'athlete progress load profiles cohort' },
   { href: '/coach/video-analysis', label: 'Video Analysis', room: 'floor',
@@ -123,6 +207,21 @@ export const BUILDING: readonly Door[] = [
     roles: ['coach'], keywords: 'intake routing new athlete triage' },
   { href: '/coach/environment/passbook-check', label: 'Passbook Check', room: 'floor',
     roles: ['coach'], keywords: 'usa boxing passbook insurance eligibility verification' },
+  { href: '/coach/drills', label: 'Drills', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'drills exercises techniques practice assign library catalogue',
+    hint: 'Drill library and programming.' },
+  { href: '/coach/session-scripts', label: 'Session Scripts', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'session script lesson plan block minute run sheet class plan cheat sheet reset protocol',
+    hint: 'The plan for a session, block by block. Minutes from the start, not clock times.' },
+  { href: '/coach/cohorts', label: 'Cohorts', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'cohort group room competence level tenure ladder who fits where grouping',
+    hint: 'Which room an athlete stands in, by what they can do and how long they have trained.' },
+  { href: '/coach/disciplines', label: 'Disciplines', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'discipline boxing grappling exposure neck joint choke participation multidiscipline',
+    hint: 'What the gym runs, and one athlete’s grappling exposure history.' },
+  { href: '/rabbit-holes', label: 'Rabbit Holes', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'lessons tangents deep dives notes anchors',
+    hint: 'The tangents worth following, anchored to where they came up.' },
   { href: '/simulator', label: 'Simulator', room: 'floor', roles: OPEN,
     keywords: 'scenario model what-if simulate' },
   { href: '/retro-lab', label: 'Retro Lab', room: 'floor', roles: OPEN,

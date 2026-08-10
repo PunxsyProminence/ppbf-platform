@@ -1,5 +1,11 @@
 # Work queue — 2026-08-01
 
+> **Superseded.** The current queue is
+> [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md), which generalizes this
+> file's Remote/VS Code split into the Owner/Builder/Gatekeeper roles used by
+> [docs/AI_DELIVERY_PIPELINE.md](AI_DELIVERY_PIPELINE.md). Kept for its
+> collision-rule history — do not claim an item from it.
+
 A shared queue for two agents working the same repository: **Remote** (Claude Code on the
 web, ephemeral container, no Azure access) and **VS Code** (local, holds the deploy
 credentials). This file is the only medium both can read, so it is the queue of record.
@@ -40,19 +46,18 @@ by nature, not by preference.
 
 ---
 
-## Band 0 — open PRs, oldest first
+## Band 0 — ✅ all merged
 
-Four PRs are open right now. Nothing else should start until these are resolved, because
-every one of them touches files later items also touch.
+All four PRs have been merged as of 2026-08-02.
 
-| Id | PR | State | Owner | Action |
-|---|---|---|---|---|
-| 0.1 | [#150](https://github.com/PunxsyProminence/ppbf-platform/pull/150) — reviewer video access, `blocked` administrator | draft, **green, and complete** | VS Code | **Undraft and review.** My first pass called this "unfinished" from its draft flag alone, which was wrong: 851 lines across 7 files, 16 route tests, 6 pg tests, mutation-verified, CI green since 04:39. It is the oldest open branch and it is ready. It also closes a dead end — a video the content screen `blocked` had no exit anywhere in the platform |
-| 0.2 | [#151](https://github.com/PunxsyProminence/ppbf-platform/pull/151) — Law 5 tap floor, design laws rewrite | **ready**, clean | VS Code | Needs a human read on the *laws rewrite*, not the tap fixes. The tap fixes are verified in-browser and are a real accessibility defect (`Engage Medical Lock` rendered at 38px). The laws rewrite has had no audit and says so |
-| 0.3 | [#154](https://github.com/PunxsyProminence/ppbf-platform/pull/154) — Heavy Bag cap, metrics panel error | draft, green | VS Code | Undraft → merge → **deploy**. This is the only item in the queue that changes what a user is charged for |
-| 0.4 | [#153](https://github.com/PunxsyProminence/ppbf-platform/pull/153) — SHADOW surfaces/spec audit | draft, green | Either | Docs only. Merge whenever; blocks nothing |
+| Id | PR | Merged | What |
+|---|---|---|---|
+| 0.1 | [#150](https://github.com/PunxsyProminence/ppbf-platform/pull/150) | 2026-08-02 | Reviewer video access + `blocked` administrator surface |
+| 0.2 | [#151](https://github.com/PunxsyProminence/ppbf-platform/pull/151) | 2026-08-01 | Law 5 tap floor fixes + design laws rewrite |
+| 0.3 | [#154](https://github.com/PunxsyProminence/ppbf-platform/pull/154) | 2026-08-01 | Heavy Bag cap per user + metrics panel error handling |
+| 0.4 | [#153](https://github.com/PunxsyProminence/ppbf-platform/pull/153) | 2026-08-02 | SHADOW surfaces/spec audit (docs) |
 
-0.3 and 0.4 are independent — either order.
+Blocking items resolved. Next work depends on owner decisions (3.2, 4.4) and VS Code runtime verification (4.1-4.3).
 
 ---
 
@@ -272,6 +277,21 @@ Carried from 07-31 and not yet decided. Listed for completeness, not queued:
 - Athlete goal category and progress are read by the UI and stored nowhere — confirmed:
   `pilot.goals` carries `title`, `target_date`, `metric`, `status` and no category or
   progress column (`infra/azure/pilot_slice_postgres.sql:77`).
+  **DONE (remote)** — 2026-08-03 on `claude/workflow-task-n49qv2`. This is item **11**
+  in the 08-03 capability build plan's Phase 1. Tracing it before writing code found it is
+  worse than filed on both halves: the athlete *picks* a category in the create form
+  (`AthleteWorkspace.tsx:1747`) and it is never sent — `validateGoalPayload`'s
+  `assertOnlyAllowedKeys` would reject it if it were — so every stored goal reloads as
+  **"Boxing"** regardless of what the athlete chose, and the progress bar at `:1839` renders a
+  filled-width affordance from a number no column holds and no path writes.
+
+  Both columns are nullable and neither is backfilled — a default would attribute a category
+  nobody chose and a progress reading nobody gave to every goal that predates the change, and
+  null vs. 0 is exactly the distinction the bar needs. **Needs VS Code:** the migration is
+  written and tested against embedded Postgres but has not been applied anywhere; dispatch
+  `apply-migrations` with `goal-category-progress` before the code deploys, or the goals list
+  fails at the database. **Owner decision inside it:** the category vocabulary omits
+  `Weight Loss` and `Weight Gain`, which the dropdown offered and never stored — see the PR.
 
 ---
 

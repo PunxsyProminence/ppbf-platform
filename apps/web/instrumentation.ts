@@ -78,12 +78,16 @@ export async function register(): Promise<void> {
   const { createShadowArchivalSweep } = await import('./src/server/pilot/shadowArchival');
   const intervalMs = resolveShadowWorkerIntervalMs();
   const sweepShadowAudit = createShadowArchivalSweep();
+  let loggedScanUnconfigured = false;
   const handle = startShadowJobWorker({
     processOne: () => processNextShadowJob(),
     intervalMs,
     // Promotes quarantined uploads that clear every configured scan gate
     // (#49). No-ops entirely when no gate is configured, so this is inert
-    // until PPBF_VIDEO_CONTENT_SCAN / PPBF_VIDEO_MALWARE_SCAN are set.
+    // until PPBF_VIDEO_CONTENT_SCAN / PPBF_VIDEO_MALWARE_SCAN are set --
+    // logged once at startup, not every tick, so an operator who forgot to
+    // set either flag has one line to find instead of silence, and a
+    // configured environment isn't spammed once scanning is caught up.
     sweep: async () => {
       const result = await sweepQuarantinedVideos();
       if (result.scanned > 0) {
@@ -92,6 +96,12 @@ export async function register(): Promise<void> {
           promoted: result.promoted,
           blocked: result.blocked,
         });
+      } else if (result.skippedReason === 'not_configured' && !loggedScanUnconfigured) {
+        loggedScanUnconfigured = true;
+        console.warn(
+          'SHADOW video scan sweep: no scanner configured, quarantined videos will never promote '
+          + '(set PPBF_VIDEO_MALWARE_SCAN and/or PPBF_VIDEO_CONTENT_SCAN)',
+        );
       }
     },
     housekeeping: async () => {

@@ -150,25 +150,19 @@ function signInStatus(
  */
 function WrongRoleNotice() {
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
-      <div className="mx-auto max-w-xl space-y-5 text-center">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Different Console</p>
-        <h1 className="font-display text-3xl font-black">People is managed per gym</h1>
-        <p className="text-sm leading-7 text-[var(--gray-dark)]">
+    <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
+        <p className="t-eyebrow">Different Console</p>
+        <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>People is managed per gym</h1>
+        <p className="t-body">
           This console belongs to a gym admin — it manages one organization&apos;s coaches, staff, and athletes. As
           platform owner you create organizations and appoint their admins, and they take it from there.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link
-            href="/admin/organizations"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
-          >
+        <div className="flex flex-wrap items-center justify-center gap-[var(--s3)]">
+          <Link href="/admin/organizations" className="btn">
             Organization Provisioning
           </Link>
-          <Link
-            href="/admin"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)]"
-          >
+          <Link href="/admin" className="btn btn--ghost">
             Admin Home
           </Link>
         </div>
@@ -212,6 +206,10 @@ function PeopleConsoleContent() {
   const [athleteMode, setAthleteMode] = useState<AthleteMode>('new');
   const [athleteAccountId, setAthleteAccountId] = useState('');
   const [athleteId, setAthleteId] = useState('');
+  // Whether the admin has edited the record id themselves. Until they have,
+  // the field shows the next free ath-NNN; afterwards it is theirs, including
+  // when they have deliberately emptied it.
+  const [athleteIdTouched, setAthleteIdTouched] = useState(false);
   const [athleteFullName, setAthleteFullName] = useState('');
   const [athleteDob, setAthleteDob] = useState('');
   const [athleteWeightClass, setAthleteWeightClass] = useState('');
@@ -355,7 +353,44 @@ function PeopleConsoleContent() {
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
 
-  const trimmedAthleteId = athleteId.trim();
+  /**
+   * The next unused ath-NNN for this gym.
+   *
+   * Reads the highest existing number and adds one, rather than counting rows:
+   * counting hands out ath-004 to a roster of four that has already used
+   * ath-007, and the create route would refuse it -- safe, but it leaves the
+   * admin typing numbers until one sticks. Ids that do not fit the pattern are
+   * ignored rather than parsed, so a gym mixing conventions still gets a usable
+   * suggestion instead of NaN.
+   */
+  const suggestedAthleteId = useMemo(() => {
+    let highest = 0;
+    for (const athlete of roster) {
+      const match = /^ath-(\d+)$/i.exec(athlete.athlete_id.trim());
+      if (match) {
+        highest = Math.max(highest, Number.parseInt(match[1], 10));
+      }
+    }
+    return `ath-${String(highest + 1).padStart(3, '0')}`;
+  }, [roster]);
+
+  /**
+   * The id actually in the field: the suggestion until the admin touches it,
+   * theirs from then on.
+   *
+   * Derived rather than seeded through an effect. Writing state from an effect
+   * is CI-blocked here (react-hooks/set-state-in-effect) and would also fight
+   * the admin: the roster arrives after first render, so a seeding effect would
+   * overwrite an id they had already started typing.
+   *
+   * `athleteIdTouched` is what makes a DELIBERATELY EMPTY field stay empty. A
+   * plain `athleteId || suggestion` fallback snaps back to the suggestion the
+   * moment someone clears the box to retype it, which reads as the form
+   * fighting them.
+   */
+  const effectiveAthleteId = athleteIdTouched ? athleteId : suggestedAthleteId;
+
+  const trimmedAthleteId = effectiveAthleteId.trim();
 
   // A hand-typed athlete_id that lands on someone already in the roster is the
   // dangerous case: the create route now refuses it, but catching it here
@@ -365,6 +400,40 @@ function PeopleConsoleContent() {
     athleteMode === 'new' && trimmedAthleteId && rosterCreatedFor !== trimmedAthleteId
       ? rosterById.get(trimmedAthleteId)
       : undefined;
+
+  /**
+   * Someone already on the roster under this name.
+   *
+   * THIS is the duplicate that matters, and it is not the one auto-filling an
+   * id solves. Two records can never share an id -- the create route is
+   * create-only and the primary key refuses a second row. What nothing
+   * prevents is the same CHILD entered twice under two different ids, which
+   * leaves one kid holding two sets of sessions, goals and reviews that can
+   * never be added together.
+   *
+   * Auto-filling the id makes that MORE likely, not less: it removes the
+   * moment where an admin types ath-001, finds it taken, and thinks "hold on,
+   * is this the same kid?". So the suggestion and this check ship together.
+   *
+   * NAME ONLY, deliberately. Matching on date of birth too would be far more
+   * precise, and the roster this page reads comes from the athlete PIN
+   * directory -- a credential-adjacent route that was narrowed earlier
+   * precisely because it returns every athlete's name. Adding every child's
+   * birthday to that payload to sharpen a convenience warning is the wrong
+   * trade. A name match is noisier, which is survivable because this warns
+   * and never blocks.
+   */
+  const duplicateAthlete = useMemo(() => {
+    const name = athleteFullName.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (athleteMode !== 'new' || !name) {
+      return undefined;
+    }
+    return roster.find(
+      (athlete) =>
+        athlete.full_name.trim().toLowerCase().replace(/\s+/g, ' ') === name
+        && athlete.athlete_id !== trimmedAthleteId,
+    );
+  }, [roster, athleteMode, athleteFullName, trimmedAthleteId]);
 
   // Once the roster half of the create has been written, the retry only
   // resubmits the sign-in half -- createAthleteRecord is skipped. Editing
@@ -387,6 +456,38 @@ function PeopleConsoleContent() {
   const canSubmitAthlete =
     Boolean(athleteAccountId.trim() && trimmedAthleteId)
     && (athleteMode === 'new' ? newAthleteReady && !collidingAthlete : true);
+
+  /**
+   * Which fields are still holding the submit button down, in the order they
+   * appear on screen.
+   *
+   * The button is gated on EIGHT conditions and used to just grey out. An
+   * admin filled in what looked like the whole form, found the button dead,
+   * and had nothing to work from -- reported as "it won't let me save", which
+   * is exactly what it looks like from the outside. A disabled control that
+   * cannot say why is a dead end, and this form is the one a gym uses to
+   * onboard its first athlete.
+   *
+   * Named after the labels on the fields rather than the state variables, so
+   * the sentence points at something the reader can see.
+   */
+  const missingAthleteFields = useMemo(() => {
+    const missing: string[] = [];
+    if (athleteMode === 'new') {
+      if (!athleteFullName.trim()) missing.push('Full name');
+      if (!athleteDob.trim()) missing.push('Date of birth');
+      if (!athleteWeightClass.trim()) missing.push('Weight class');
+      if (!athleteGymStatus) missing.push('Gym status');
+      if (!athleteEmergencyContact.trim()) missing.push('Emergency contact');
+      if (!athleteCoachId) missing.push('Coach');
+    }
+    if (!trimmedAthleteId) missing.push('Athlete record ID');
+    if (!athleteAccountId.trim()) missing.push('Sign-in ID');
+    return missing;
+  }, [
+    athleteMode, athleteFullName, athleteDob, athleteWeightClass, athleteGymStatus,
+    athleteEmergencyContact, athleteCoachId, trimmedAthleteId, athleteAccountId,
+  ]);
 
   // A parent invite is not submittable until the athlete it links to has been
   // chosen. The server refuses the role without one, and an account created
@@ -490,6 +591,10 @@ function PeopleConsoleContent() {
   function resetAthleteForm() {
     setAthleteAccountId('');
     setAthleteId('');
+    // Back to untouched, so the next athlete gets a fresh suggestion rather
+    // than an empty box -- the roster has just grown by one, so the suggestion
+    // has moved on too.
+    setAthleteIdTouched(false);
     setAthleteFullName('');
     setAthleteDob('');
     setAthleteWeightClass('');
@@ -553,7 +658,11 @@ function PeopleConsoleContent() {
     setBusy(true);
 
     const accountId = athleteAccountId.trim();
-    const recordId = athleteId.trim();
+    // The EFFECTIVE id, not the raw state. Until the admin edits the field it
+    // shows the suggested next ath-NNN while `athleteId` is still empty, so
+    // submitting the raw value here would post an empty athlete_id against a
+    // form that visibly reads ath-005. Same value the button gated on.
+    const recordId = trimmedAthleteId;
 
     // Tracked locally as well as in state because the catch below runs before
     // React has applied setRosterCreatedFor, and it needs to know whether the
@@ -690,37 +799,31 @@ function PeopleConsoleContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)] sm:px-6">
-      <div className="mx-auto w-full max-w-5xl space-y-6">
-        <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+      <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">People</p>
-              <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Manage Your Gym</h1>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              <p className="t-eyebrow">People</p>
+              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Manage Your Gym</h1>
+              <p className="t-body mt-[var(--s3)]">
                 Add coaches and staff, and create athlete sign-ins.
                 {organizationId && (
                   <>
-                    {' '}Gym: <span className="font-mono font-semibold text-[var(--black)]">{organizationId}</span>
+                    {' '}Gym: <span className="t-data text-[color:var(--bone-100)]">{organizationId}</span>
                   </>
                 )}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-[var(--s3)]">
               {/* Board members are appointed to a seat, not added to the gym
                   roster, so the two surfaces are separate. Only an
                   organization admin reaches this markup -- a platform owner is
                   shown WrongRoleNotice before the console renders. */}
-              <Link
-                href="/admin/board-seats"
-                className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
-              >
+              <Link href="/admin/board-seats" className="btn btn--ghost">
                 Board Seats
               </Link>
-              <Link
-                href="/admin"
-                className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
-              >
+              <Link href="/admin" className="btn btn--ghost">
                 Admin Home
               </Link>
             </div>
@@ -732,55 +835,63 @@ function PeopleConsoleContent() {
             this panel is dismissed nothing can read it back. Losing it is
             recoverable only by issuing a new one from the row's reset action. */}
         {createdAthlete && (
-          <section className="rounded-2xl border-2 border-[color:var(--brass-600)] bg-white p-5 shadow-[var(--shadow-md)]">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-black">{createdAthlete.accountId} can sign in now</h2>
-                <p className="mt-1 text-sm text-[var(--gray-dark)]">
-                  Write these down or hand them over now — the PIN is shown only here, and cannot be looked up again.
-                  They will have to choose their own PIN the first time they sign in, and you will never see what they
-                  pick.
-                </p>
+          <section className="frame">
+            <span className="rivet rivet--tl" />
+            <span className="rivet rivet--tr" />
+            <span className="rivet rivet--bl" />
+            <span className="rivet rivet--br" />
+            <div className="frame-in mat-leather p-[var(--s5)]">
+              <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
+                <div>
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>{createdAthlete.accountId} can sign in now</h2>
+                  <p className="t-body mt-[var(--s2)]">
+                    Write these down or hand them over now — the PIN is shown only here, and cannot be looked up again.
+                    They will have to choose their own PIN the first time they sign in, and you will never see what they
+                    pick.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setCreatedAthlete(null)} className="btn btn--ghost">
+                  Done — I have written it down
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setCreatedAthlete(null)}
-                className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.14)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
-              >
-                Done — I have written it down
-              </button>
+
+              <dl className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2">
+                <div className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
+                  <dt className="t-label">Sign-in ID</dt>
+                  <dd className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] text-[color:var(--bone-100)]">{createdAthlete.accountId}</dd>
+                </div>
+                <div className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
+                  <dt className="t-label">Starting PIN</dt>
+                  <dd className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] tracking-[0.2em] text-[color:var(--bone-100)]">{createdAthlete.startingPin}</dd>
+                </div>
+              </dl>
+
+              <p className="t-muted mt-[var(--s3)]">
+                This PIN belongs to this athlete alone. It cannot be used to see anything — the only screen it opens is
+                the one that asks them to replace it — but treat it as theirs and do not post it where others can read it.
+              </p>
             </div>
-
-            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-4 py-3">
-                <dt className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Sign-in ID</dt>
-                <dd className="mt-1 font-mono text-xl font-black">{createdAthlete.accountId}</dd>
-              </div>
-              <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-4 py-3">
-                <dt className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Starting PIN</dt>
-                <dd className="mt-1 font-mono text-xl font-black tracking-[0.2em]">{createdAthlete.startingPin}</dd>
-              </div>
-            </dl>
-
-            <p className="mt-3 text-xs leading-5 text-[var(--gray-dark)]">
-              This PIN belongs to this athlete alone. It cannot be used to see anything — the only screen it opens is
-              the one that asks them to replace it — but treat it as theirs and do not post it where others can read it.
-            </p>
           </section>
         )}
 
         {error && (
-          <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
-            {error}
-          </p>
+          <div role="alert" className="alert alert--critical">
+            <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert-body">
+              <p className="alert-msg">{error}</p>
+            </div>
+          </div>
         )}
         {notice && (
-          <p className="rounded-xl border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[var(--cleared-deep)]">
-            {notice}
-          </p>
+          <div className="alert alert--success">
+            <span className="alert-icon" aria-hidden="true">✓</span>
+            <div className="alert-body">
+              <p className="alert-msg">{notice}</p>
+            </div>
+          </div>
         )}
 
-        <nav className="flex flex-wrap gap-2 rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white p-2">
+        <nav className="mat-leather flex flex-wrap gap-[var(--s2)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s2)]">
           {([
             ['people', `Everyone${members.length ? ` (${members.length})` : ''}`],
             ['invite-staff', 'Add Coach, Staff Or Guardian'],
@@ -790,10 +901,10 @@ function PeopleConsoleContent() {
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className={`min-h-[44px] flex-1 rounded-xl px-4 text-sm font-bold uppercase tracking-[0.1em] transition ${
+              className={`min-h-[44px] flex-1 rounded-[var(--r-md)] border px-[var(--s4)] text-[length:var(--t-sm)] font-bold uppercase tracking-[0.1em] transition ${
                 tab === key
-                  ? 'bg-[var(--brass-800)] text-white'
-                  : 'bg-transparent text-[var(--gray-dark)] hover:bg-[var(--canvas-tan)]'
+                  ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
+                  : 'border-transparent bg-transparent text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
               }`}
             >
               {label}
@@ -807,18 +918,18 @@ function PeopleConsoleContent() {
                 sign in and see nothing, and nothing else in the product says
                 so. */}
             {strandedGuardians.length > 0 && (
-              <div className="rounded-2xl border-2 border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] p-4">
-                <p className="text-sm font-bold text-[var(--safety-locked)]">
-                  {strandedGuardians.length} guardian{strandedGuardians.length === 1 ? '' : 's'} linked to no athlete
+              <div className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-sm)] font-bold text-[color:var(--locked-ink)]">
+                  ▲ {strandedGuardians.length} guardian{strandedGuardians.length === 1 ? '' : 's'} linked to no athlete
                 </p>
-                <p className="mt-1 text-sm text-[var(--gray-dark)]">
+                <p className="t-body mt-[var(--s2)]">
                   {strandedGuardians.length === 1 ? 'This account signs in' : 'These accounts sign in'} successfully and
                   then {strandedGuardians.length === 1 ? 'shows' : 'show'} no children at all. Add the same email
                   address again on “Add Coach, Staff Or Guardian”, choose Parent / Guardian, and name their athlete.
                 </p>
-                <ul className="mt-2 space-y-1">
+                <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
                   {strandedGuardians.map((guardian) => (
-                    <li key={guardian.account_id} className="truncate font-mono text-xs font-semibold">
+                    <li key={guardian.account_id} className="t-data truncate">
                       {guardian.login_email || guardian.account_id}
                     </li>
                   ))}
@@ -829,7 +940,7 @@ function PeopleConsoleContent() {
             {members.some((member) => member.role === 'parent') && !guardianLinksAvailable && (
               <p
                 role="status"
-                className="rounded-2xl border border-[rgba(0,0,0,0.2)] bg-white px-4 py-3 text-sm text-[var(--gray-dark)]"
+                className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]"
               >
                 Guardian links could not be read, so this list cannot say which children each Parent / Guardian sees.
                 Reload the page to try again.
@@ -837,18 +948,21 @@ function PeopleConsoleContent() {
             )}
 
             {pendingAthletes.length > 0 && (
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--accent)_35%,white)] bg-[color-mix(in_srgb,var(--accent)_4%,white)] p-4">
-                <p className="text-sm font-bold">
-                  {pendingAthletes.length} athlete{pendingAthletes.length === 1 ? '' : 's'} cannot sign in yet
+              <div className="mat-leather--raised rounded-[var(--r-md)] border border-[color:var(--restricted)] p-[var(--s4)]">
+                <p className="flex flex-wrap items-center gap-[var(--s3)]">
+                  <span className="badge badge--restricted"><i>▲</i>{pendingAthletes.length} Pending</span>
+                  <span className="text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)]">
+                    {pendingAthletes.length === 1 ? 'athlete cannot' : 'athletes cannot'} sign in yet
+                  </span>
                 </p>
-                <p className="mt-1 text-sm text-[var(--gray-dark)]">
+                <p className="t-body mt-[var(--s2)]">
                   Each of them has their own starting PIN, shown once when their account was created. If that PIN was
                   not written down, “Reset to starting PIN” on their row issues a new one and shows it.
                 </p>
                 {/* Two screens can put an athlete back on a working PIN, and
                     the difference matters: only this one forces the athlete to
                     replace it at next sign-in. */}
-                <p className="mt-2 text-xs text-[var(--gray-dark)]">
+                <p className="t-muted mt-[var(--s2)]">
                   Resetting here issues a fresh random PIN and forces a change at next sign-in. To set a custom 6-digit
                   PIN instead, use the{' '}
                   <Link href="/admin/pin" className="font-semibold underline">
@@ -859,18 +973,23 @@ function PeopleConsoleContent() {
               </div>
             )}
 
-            <div className="overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white shadow-[var(--shadow-sm)]">
+            <div className="frame">
+              <span className="rivet rivet--tl" />
+              <span className="rivet rivet--tr" />
+              <span className="rivet rivet--bl" />
+              <span className="rivet rivet--br" />
+              <div className="frame-in mat-leather">
               {loading ? (
-                <p className="p-6 text-sm text-[var(--gray-dark)]">Loading your gym roster...</p>
+                <p className="t-body p-[var(--s5)]">Loading your gym roster...</p>
               ) : members.length === 0 ? (
-                <div className="space-y-3 p-6 text-center">
-                  <p className="text-sm font-semibold">Nobody here yet.</p>
-                  <p className="text-sm text-[var(--gray-dark)]">
+                <div className="space-y-[var(--s3)] p-[var(--s5)] text-center">
+                  <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Nobody here yet.</p>
+                  <p className="t-body">
                     Start by adding a coach, or create your first athlete account.
                   </p>
                 </div>
               ) : (
-                <ul className="divide-y divide-[rgba(0,0,0,0.08)]">
+                <ul className="divide-y divide-[color:var(--hide-700)]">
                   {members.map((member) => {
                     const isGuardian = member.role === 'parent';
                     const memberLinks = guardianLinksByAccount.get(member.account_id) || [];
@@ -879,34 +998,28 @@ function PeopleConsoleContent() {
                     const isPinAthlete = member.auth_provider === 'ppbf_local' && member.role === 'athlete';
 
                     return (
-                      <li key={member.account_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+                      <li key={member.account_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] px-[var(--s4)] py-[var(--s4)]">
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold">{member.login_email || member.account_id}</p>
-                          <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                          <p className="truncate text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{member.login_email || member.account_id}</p>
+                          <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
                             {roleLabel(member.role)}
                             {member.athlete_id && <> · Athlete ID {member.athlete_id}</>}
                           </p>
-                          {/* A chip rather than a line of text: a roster is
-                              scanned down the status column, and a bordered
-                              pill is findable in that scan where bare
-                              uppercase prose is not. The wording stays
-                              deliberately long where it is carrying a warning
-                              -- a guardian linked to nobody sees an empty
-                              dashboard, and "Pending" would not say so. The
-                              muted tone for 'blocked' is deliberate too:
-                              deactivation is an intended admin action, and the
-                              one blocked case that is a real fault already has
-                              its own banner above the list. */}
-                          <p className="mt-1.5">
+                          {/* The wording inside the badge stays deliberately long
+                              where it is carrying a warning -- a guardian linked
+                              to nobody sees an empty dashboard, and a terse
+                              "Pending" would not say so. See signInStatus. */}
+                          <p className="mt-[var(--s2)]">
                             <span
-                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] ${
+                              className={`badge ${
                                 status.tone === 'ok'
-                                  ? 'border-[color-mix(in_srgb,var(--cleared-deep)_35%,white)] bg-[color-mix(in_srgb,var(--cleared-deep)_8%,white)] text-[var(--cleared-deep)]'
+                                  ? 'badge--cleared'
                                   : status.tone === 'pending'
-                                    ? 'border-[color-mix(in_srgb,var(--brass-800)_35%,white)] bg-[color-mix(in_srgb,var(--brass-800)_8%,white)] text-[color:var(--brass-800)]'
-                                    : 'border-[rgba(0,0,0,0.18)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]'
+                                    ? 'badge--restricted'
+                                    : 'badge--locked'
                               }`}
                             >
+                              <i>{status.tone === 'ok' ? '✓' : status.tone === 'pending' ? '▲' : '✕'}</i>
                               {status.label}
                             </span>
                           </p>
@@ -915,7 +1028,7 @@ function PeopleConsoleContent() {
                               guardian row without it says nothing about the
                               only thing the account does. */}
                           {isGuardian && guardianLinksAvailable && memberLinks.length > 0 && (
-                            <ul className="mt-2 space-y-1">
+                            <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
                               {memberLinks.map((link) => {
                                 const confirming =
                                   pendingUnlink?.accountId === member.account_id
@@ -924,10 +1037,10 @@ function PeopleConsoleContent() {
                                 return (
                                   <li
                                     key={link.athlete_id}
-                                    className="flex flex-wrap items-center gap-2 text-xs text-[var(--gray-dark)]"
+                                    className="t-muted flex flex-wrap items-center gap-[var(--s2)]"
                                   >
                                     <span>
-                                      Sees <span className="font-semibold text-[var(--black)]">{link.athlete_full_name}</span>{' '}
+                                      Sees <span className="font-semibold text-[color:var(--bone-100)]">{link.athlete_full_name}</span>{' '}
                                       ({link.relationship_to_athlete})
                                     </span>
                                     {confirming ? (
@@ -942,7 +1055,7 @@ function PeopleConsoleContent() {
                                               link.athlete_full_name,
                                             )
                                           }
-                                          className="min-h-[44px] rounded-full border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-3 text-[11px] font-black uppercase tracking-[0.08em] text-[var(--accent-ink)] disabled:opacity-50"
+                                          className="btn btn--danger px-[var(--s4)] text-[length:var(--t-xs)] disabled:opacity-50"
                                         >
                                           Confirm Remove
                                         </button>
@@ -950,7 +1063,7 @@ function PeopleConsoleContent() {
                                           type="button"
                                           disabled={busy}
                                           onClick={() => setPendingUnlink(null)}
-                                          className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                                          className="btn btn--ghost px-[var(--s4)] text-[length:var(--t-xs)] disabled:opacity-50"
                                         >
                                           Keep
                                         </button>
@@ -965,7 +1078,7 @@ function PeopleConsoleContent() {
                                             athleteId: link.athlete_id,
                                           })
                                         }
-                                        className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                                        className="btn btn--ghost px-[var(--s4)] text-[length:var(--t-xs)] disabled:opacity-50"
                                       >
                                         Remove
                                       </button>
@@ -977,7 +1090,7 @@ function PeopleConsoleContent() {
                           )}
 
                           {isGuardian && guardianLinksAvailable && memberLinks.length === 0 && (
-                            <p className="mt-2 text-xs leading-5 text-[color:var(--brass-800)]">
+                            <p className="mt-[var(--s2)] text-[length:var(--t-xs)] leading-5 text-[color:var(--restricted-ink)]">
                               This guardian resolves no children, so they sign in to an empty page. Invite the same
                               email address again on “Add Coach, Staff Or Guardian” and name the athlete to repair it.
                             </p>
@@ -989,7 +1102,7 @@ function PeopleConsoleContent() {
                             type="button"
                             disabled={busy}
                             onClick={() => void handleResetToStartingPin(member.account_id)}
-                            className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--accent)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent-quiet)] transition hover:bg-[color-mix(in_srgb,var(--accent)_6%,white)] disabled:opacity-50"
+                            className="btn btn--ghost shrink-0 disabled:opacity-50"
                           >
                             Reset To Starting PIN
                           </button>
@@ -999,29 +1112,30 @@ function PeopleConsoleContent() {
                   })}
                 </ul>
               )}
+              </div>
             </div>
           </section>
         )}
 
         {tab === 'invite-staff' && (
-          <form onSubmit={inviteStaff} className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
+          <form onSubmit={inviteStaff} className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
             <div>
-              <h2 className="text-lg font-black">Add a coach, staff member, or guardian</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add a coach, staff member, or guardian</h2>
+              <p className="t-body mt-[var(--s3)]">
                 Adults sign in with Microsoft, not a PIN. Enter the Microsoft email address they will use.
               </p>
             </div>
 
-            <div className="rounded-xl border border-[color-mix(in_srgb,var(--accent)_25%,white)] bg-[color-mix(in_srgb,var(--accent)_4%,white)] p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">Two steps, not one</p>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="t-eyebrow">Two steps, not one</p>
+              <p className="t-body mt-[var(--s2)]">
                 This form gives them a role in PPBF. If they are outside your Microsoft organization, someone also has to
                 invite them as a guest in Entra ID — until that is done, their sign-in will be rejected.
               </p>
             </div>
 
-            <div>
-              <label htmlFor="invite-email" className="block text-sm font-semibold">
+            <div className="field">
+              <label htmlFor="invite-email" className="t-label">
                 Microsoft email address
               </label>
               <input
@@ -1031,25 +1145,25 @@ function PeopleConsoleContent() {
                 value={inviteEmail}
                 onChange={(event) => setInviteEmail(event.target.value)}
                 placeholder="coach@example.com"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                className="input"
               />
             </div>
 
             <fieldset>
-              <legend className="text-sm font-semibold">Role</legend>
-              <div className="mt-2 space-y-2">
+              <legend className="t-label">Role</legend>
+              <div className="mt-[var(--s2)] space-y-[var(--s2)]">
                 {STAFF_ROLES.map((option) => {
                   const blockedReason = option.value === 'parent' ? parentInviteBlockedReason : null;
 
                   return (
                     <label
                       key={option.value}
-                      className={`flex items-start gap-3 rounded-xl border p-3 transition ${
+                      className={`flex items-start gap-[var(--s3)] rounded-[var(--r-md)] border p-[var(--s3)] transition ${
                         blockedReason
-                          ? 'cursor-not-allowed border-[rgba(0,0,0,0.12)] opacity-70'
+                          ? 'mat-leather cursor-not-allowed border-[color:var(--hide-700)] opacity-70'
                           : inviteRole === option.value
-                            ? 'cursor-pointer border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,white)]'
-                            : 'cursor-pointer border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
+                            ? 'mat-leather--raised cursor-pointer border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)]'
+                            : 'mat-leather cursor-pointer border-[color:var(--hide-700)] hover:border-[color:var(--brass-700)]'
                       }`}
                     >
                       <input
@@ -1059,14 +1173,14 @@ function PeopleConsoleContent() {
                         checked={inviteRole === option.value}
                         disabled={Boolean(blockedReason)}
                         onChange={() => setInviteRole(option.value)}
-                        className="mt-1 accent-[var(--accent-quiet)]"
+                        className="mt-1 accent-[var(--brass-500)]"
                       />
                       <span>
-                        <span className="block text-sm font-semibold">{option.label}</span>
-                        <span className="mt-0.5 block text-xs text-[var(--gray-dark)]">{option.blurb}</span>
+                        <span className="block text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{option.label}</span>
+                        <span className="t-muted mt-[var(--s1)] block">{option.blurb}</span>
                         {blockedReason && (
-                          <span className="mt-1 block text-xs font-semibold text-[var(--safety-locked)]">
-                            {blockedReason}
+                          <span className="mt-[var(--s1)] block text-[length:var(--t-xs)] font-semibold text-[color:var(--restricted-ink)]">
+                            ▲ {blockedReason}
                           </span>
                         )}
                       </span>
@@ -1074,7 +1188,7 @@ function PeopleConsoleContent() {
                   );
                 })}
               </div>
-              <p className="mt-3 text-xs text-[var(--gray-dark)]">
+              <p className="t-muted mt-[var(--s3)]">
                 Adding another gym admin is a platform-owner action — ask PPBF to do it.
               </p>
             </fieldset>
@@ -1083,17 +1197,17 @@ function PeopleConsoleContent() {
                 else, so it is captured with the invite rather than left for a
                 screen that does not exist. */}
             {inviteRole === 'parent' && !parentInviteBlockedReason && (
-              <fieldset className="space-y-4 rounded-xl border border-[rgba(0,0,0,0.12)] p-4">
-                <legend className="px-1 text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">
+              <fieldset className="space-y-[var(--s4)] rounded-[var(--r-md)] border border-[color:var(--hide-600)] p-[var(--s4)]">
+                <legend className="t-eyebrow px-[var(--s1)]">
                   Which child
                 </legend>
-                <p className="text-sm leading-6 text-[var(--gray-dark)]">
+                <p className="t-body">
                   A guardian sees only the athletes named here, and this is the only screen that links them. To give a
                   guardian a second child, add the same email address again and choose the other athlete.
                 </p>
 
-                <div>
-                  <label htmlFor="guardian-full-name" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="guardian-full-name" className="t-label">
                     Guardian&apos;s full name
                   </label>
                   <input
@@ -1103,15 +1217,15 @@ function PeopleConsoleContent() {
                     value={guardianFullName}
                     onChange={(event) => setGuardianFullName(event.target.value)}
                     placeholder="Dana Johnson"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="input"
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="guardian-athlete" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="guardian-athlete" className="t-label">
                     Athlete
                   </label>
-                  <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                  <p className="t-muted mb-[var(--s2)]">
                     Check this carefully — it decides whose records this adult can open.
                   </p>
                   <select
@@ -1119,7 +1233,7 @@ function PeopleConsoleContent() {
                     required
                     value={guardianAthleteId}
                     onChange={(event) => setGuardianAthleteId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="select"
                   >
                     <option value="">Choose an athlete...</option>
                     {roster.map((athlete) => (
@@ -1130,8 +1244,8 @@ function PeopleConsoleContent() {
                   </select>
                 </div>
 
-                <div>
-                  <label htmlFor="guardian-relationship" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="guardian-relationship" className="t-label">
                     Relationship to the athlete
                   </label>
                   <select
@@ -1139,7 +1253,7 @@ function PeopleConsoleContent() {
                     required
                     value={guardianRelationship}
                     onChange={(event) => setGuardianRelationship(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="select"
                   >
                     {GUARDIAN_RELATIONSHIPS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1154,7 +1268,7 @@ function PeopleConsoleContent() {
             <button
               type="submit"
               disabled={busy || !inviteReady}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? 'Adding...' : 'Add To My Gym'}
             </button>
@@ -1162,10 +1276,10 @@ function PeopleConsoleContent() {
         )}
 
         {tab === 'add-athlete' && (
-          <form onSubmit={addAthlete} className="space-y-5 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
+          <form onSubmit={addAthlete} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
             <div>
-              <h2 className="text-lg font-black">Add an athlete</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add an athlete</h2>
+              <p className="t-body mt-[var(--s3)]">
                 This puts the athlete in your gym and gives you a sign-in ID to hand them, along with the starting PIN
                 every new athlete gets. They have to choose their own PIN the first time they sign in — you never see it.
               </p>
@@ -1175,15 +1289,15 @@ function PeopleConsoleContent() {
             </div>
 
             <fieldset>
-              <legend className="text-sm font-semibold">Where is this athlete now?</legend>
-              <div className="mt-2 space-y-2">
+              <legend className="t-label">Where is this athlete now?</legend>
+              <div className="mt-[var(--s2)] space-y-[var(--s2)]">
                 {ATHLETE_MODES.map((option) => (
                   <label
                     key={option.value}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                    className={`flex cursor-pointer items-start gap-[var(--s3)] rounded-[var(--r-md)] border p-[var(--s3)] transition ${
                       athleteMode === option.value
-                        ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,white)]'
-                        : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
+                        ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)]'
+                        : 'mat-leather border-[color:var(--hide-700)] hover:border-[color:var(--brass-700)]'
                     }`}
                   >
                     <input
@@ -1199,11 +1313,11 @@ function PeopleConsoleContent() {
                         // the admin never picked in this mode.
                         setAthleteId('');
                       }}
-                      className="mt-1 accent-[var(--brass-600)]"
+                      className="mt-1 accent-[var(--brass-500)]"
                     />
                     <span>
-                      <span className="block text-sm font-semibold">{option.label}</span>
-                      <span className="mt-0.5 block text-xs text-[var(--gray-dark)]">{option.blurb}</span>
+                      <span className="block text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{option.label}</span>
+                      <span className="t-muted mt-[var(--s1)] block">{option.blurb}</span>
                     </span>
                   </label>
                 ))}
@@ -1240,44 +1354,78 @@ function PeopleConsoleContent() {
               // already-written row orphaned behind a second one.
               <fieldset
                 disabled={athleteDetailsLocked}
-                className="space-y-4 rounded-xl border border-[rgba(0,0,0,0.12)] p-4 disabled:opacity-70"
+                className="space-y-[var(--s4)] rounded-[var(--r-md)] border border-[color:var(--hide-600)] p-[var(--s4)] disabled:opacity-70"
               >
-                <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">Athlete Details</p>
+                <p className="t-eyebrow">Athlete Details</p>
 
-                <div>
-                  <label htmlFor="athlete-id" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="athlete-id" className="t-label">
                     Athlete record ID
                   </label>
-                  <p className="mt-1 text-xs text-[var(--gray-dark)]">
-                    Permanent id for their record in your roster — every session, goal, and review hangs off it. Short
-                    and unique, like <code>ath-001</code>.
+                  <p className="t-muted mb-[var(--s2)]">
+                    Permanent id for their record in your roster — every session, goal, and review hangs off it.
+                    {athleteIdTouched ? (
+                      <>
+                        {' '}
+                        Short and unique, like <code>ath-001</code>.
+                      </>
+                    ) : (
+                      ` Filled in with the next free one for your gym (${suggestedAthleteId}). Change it if your gym numbers differently.`
+                    )}
                   </p>
                   <input
                     id="athlete-id"
                     type="text"
                     required
-                    value={athleteId}
-                    onChange={(event) => setAthleteId(event.target.value.trim())}
+                    value={effectiveAthleteId}
+                    onChange={(event) => {
+                      setAthleteIdTouched(true);
+                      setAthleteId(event.target.value.trim());
+                    }}
                     placeholder="ath-001"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="input font-mono"
                   />
+                  {/*
+                    The duplicate that actually costs something, and the reason
+                    the suggestion above could not ship alone. Two records can
+                    never share an id -- the create route is create-only and the
+                    primary key refuses it. What nothing prevents is the same
+                    CHILD entered twice under two ids, leaving one kid with two
+                    sets of sessions, goals and reviews that can never be added
+                    together.
+
+                    Auto-filling the id makes that MORE likely, because it
+                    removes the moment where an admin types ath-001, finds it
+                    taken, and thinks "hold on, is this the same kid?".
+
+                    It warns and never blocks: siblings share surnames and twins
+                    share birthdays, so a match on both is a question, not proof.
+                  */}
+                  {duplicateAthlete && (
+                    <p className="mt-2 rounded-xl border border-[color:var(--brass-600)] bg-[color-mix(in_srgb,var(--brass-600)_10%,white)] px-3 py-2 text-xs font-semibold">
+                      {duplicateAthlete.full_name} is already on your roster as {duplicateAthlete.athlete_id}. If that
+                      is this same athlete, switch to “Already on the roster” above rather than adding a second record
+                      — otherwise their sessions, goals and reviews end up split across two. If they are different
+                      people who share a name, carry on.
+                    </p>
+                  )}
                   {collidingAthlete && (
-                    <p className="mt-2 rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-3 py-2 text-xs font-semibold text-[var(--safety-locked)]">
-                      {collidingAthlete.full_name} already holds record ID {collidingAthlete.athlete_id}. Pick a
+                    <p className="mt-[var(--s2)] rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] font-semibold text-[color:var(--locked-ink)]">
+                      ▲ {collidingAthlete.full_name} already holds record ID {collidingAthlete.athlete_id}. Pick a
                       different ID — or, if that is this same athlete, switch to “Already on the roster”.
                     </p>
                   )}
                   {athleteDetailsLocked && (
-                    <p className="mt-2 text-xs font-semibold text-[var(--cleared-deep)]">
-                      Roster record saved, so these details are locked — they are not resent when you submit again.
+                    <p className="mt-[var(--s2)] text-[length:var(--t-xs)] font-semibold text-[color:var(--cleared-ink)]">
+                      ✓ Roster record saved, so these details are locked — they are not resent when you submit again.
                       Finish by giving them a sign-in ID below. To start a different athlete instead, switch modes
                       above and back.
                     </p>
                   )}
                 </div>
 
-                <div>
-                  <label htmlFor="athlete-full-name" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="athlete-full-name" className="t-label">
                     Full name
                   </label>
                   <input
@@ -1287,13 +1435,13 @@ function PeopleConsoleContent() {
                     value={athleteFullName}
                     onChange={(event) => setAthleteFullName(event.target.value)}
                     placeholder="Alex Johnson"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="input"
                   />
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="athlete-dob" className="block text-sm font-semibold">
+                <div className="grid gap-[var(--s4)] sm:grid-cols-2">
+                  <div className="field">
+                    <label htmlFor="athlete-dob" className="t-label">
                       Date of birth
                     </label>
                     <input
@@ -1302,12 +1450,12 @@ function PeopleConsoleContent() {
                       required
                       value={athleteDob}
                       onChange={(event) => setAthleteDob(event.target.value)}
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                      className="input"
                     />
                   </div>
 
-                  <div>
-                    <label htmlFor="athlete-weight-class" className="block text-sm font-semibold">
+                  <div className="field">
+                    <label htmlFor="athlete-weight-class" className="t-label">
                       Weight class
                     </label>
                     <input
@@ -1317,13 +1465,13 @@ function PeopleConsoleContent() {
                       value={athleteWeightClass}
                       onChange={(event) => setAthleteWeightClass(event.target.value)}
                       placeholder="middleweight"
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                      className="input"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label htmlFor="athlete-gym-status" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="athlete-gym-status" className="t-label">
                     Status in the gym
                   </label>
                   <select
@@ -1331,7 +1479,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteGymStatus}
                     onChange={(event) => setAthleteGymStatus(event.target.value as GymStatus)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="select"
                   >
                     {GYM_STATUS_CHOICES.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1341,11 +1489,11 @@ function PeopleConsoleContent() {
                   </select>
                 </div>
 
-                <div>
-                  <label htmlFor="athlete-emergency-contact" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="athlete-emergency-contact" className="t-label">
                     Emergency contact
                   </label>
-                  <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                  <p className="t-muted mb-[var(--s2)]">
                     Who to call, and the number. Required — an athlete cannot train without one on file.
                   </p>
                   <input
@@ -1355,15 +1503,15 @@ function PeopleConsoleContent() {
                     value={athleteEmergencyContact}
                     onChange={(event) => setAthleteEmergencyContact(event.target.value)}
                     placeholder="Dana Johnson (mother) 555-0101"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="input"
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="athlete-coach" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="athlete-coach" className="t-label">
                     Coach
                   </label>
-                  <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                  <p className="t-muted mb-[var(--s2)]">
                     {coachOptions.length > 0
                       ? 'A coach only sees the athletes assigned to them. Every athlete record has to name one, so pick whoever will be working with them.'
                       : 'No coaches in your gym yet, and an athlete record has to name one — add a coach on the “Add Coach, Staff Or Guardian” tab, then come back here.'}
@@ -1373,7 +1521,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteCoachId}
                     onChange={(event) => setAthleteCoachId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="select"
                   >
                     <option value="">Choose a coach...</option>
                     {coachOptions.map((coach) => (
@@ -1386,22 +1534,22 @@ function PeopleConsoleContent() {
               </fieldset>
             ) : rosterAvailable ? (
               unlinkedAthletes.length === 0 ? (
-                <div className="rounded-xl border border-[color-mix(in_srgb,var(--accent)_25%,white)] bg-[color-mix(in_srgb,var(--accent)_4%,white)] p-4">
-                  <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">
+                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                  <p className="t-eyebrow">
                     Nobody is waiting
                   </p>
-                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+                  <p className="t-body mt-[var(--s2)]">
                     {roster.length === 0
                       ? 'There are no athlete records in your gym yet, so there is nothing to attach a login to. Choose “New to the gym” above.'
                       : 'Every athlete on your roster already has a sign-in. Choose “New to the gym” above to add someone else.'}
                   </p>
                 </div>
               ) : (
-                <div>
-                  <label htmlFor="athlete-id-picker" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="athlete-id-picker" className="t-label">
                     Which athlete
                   </label>
-                  <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                  <p className="t-muted mb-[var(--s2)]">
                     Only athletes with no sign-in yet are listed — {unlinkedAthletes.length} of {roster.length} on your
                     roster.
                   </p>
@@ -1410,7 +1558,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteId}
                     onChange={(event) => setAthleteId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="select"
                   >
                     <option value="">Choose an athlete...</option>
                     {unlinkedAthletes.map((athlete) => (
@@ -1426,11 +1574,11 @@ function PeopleConsoleContent() {
               // link still works by id, so keep the tab usable -- but say
               // plainly that this mode will not create anything, which is
               // exactly the confusion the typed-id form used to cause.
-              <div>
-                <label htmlFor="athlete-id" className="block text-sm font-semibold">
+              <div className="field">
+                <label htmlFor="athlete-id" className="t-label">
                   Athlete record ID
                 </label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                <p className="t-muted mb-[var(--s2)]">
                   Your roster could not be loaded, so type the id. The record must already exist — this mode only
                   attaches a login to it. If the athlete is new, choose “New to the gym” above instead.
                 </p>
@@ -1441,16 +1589,16 @@ function PeopleConsoleContent() {
                   value={athleteId}
                   onChange={(event) => setAthleteId(event.target.value.trim())}
                   placeholder="ath-001"
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input font-mono"
                 />
               </div>
             )}
 
-            <div>
-              <label htmlFor="athlete-account-id" className="block text-sm font-semibold">
+            <div className="field">
+              <label htmlFor="athlete-account-id" className="t-label">
                 Sign-in ID
               </label>
-              <p className="mt-1 text-xs text-[var(--gray-dark)]">
+              <p className="t-muted mb-[var(--s2)]">
                 What the athlete types to sign in. Keep it simple and unique, like <code>jsmith</code>.
               </p>
               <input
@@ -1460,14 +1608,29 @@ function PeopleConsoleContent() {
                 value={athleteAccountId}
                 onChange={(event) => setAthleteAccountId(event.target.value.trim())}
                 placeholder="jsmith"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                className="input font-mono"
               />
             </div>
+
+            {/*
+              A disabled button that cannot say why is a dead end, and this is
+              the form a gym uses to onboard its first athlete. Rendered above
+              the button so it is read before the thing that will not respond,
+              and only while something is actually missing.
+            */}
+            {!busy && missingAthleteFields.length > 0 && (
+              <p
+                aria-live="polite"
+                className="rounded-xl border border-[rgba(0,0,0,0.16)] bg-[color-mix(in_srgb,var(--brass-600)_8%,white)] px-3 py-2 text-xs font-semibold"
+              >
+                Still needed before this can be saved: {missingAthleteFields.join(', ')}.
+              </p>
+            )}
 
             <button
               type="submit"
               disabled={busy || !canSubmitAthlete}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy
                 ? 'Creating...'
@@ -1487,8 +1650,8 @@ function PeopleConsoleRoleSwitch() {
 
   if (session.loading) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
-        <p className="text-sm text-[var(--gray-dark)]">Loading...</p>
+      <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+        <p className="t-body">Loading...</p>
       </main>
     );
   }

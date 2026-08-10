@@ -86,7 +86,7 @@ never be mistaken for a safety state.
 **Bone & paper — type and printed surfaces**
 | Token | Hex | |
 |---|---|---|
-| `--bone-100` | `#F7F1E1` | stencil display type |
+| `--bone-100` | `#F7F1E1` | display type |
 | `--bone-200` | `#EFE6D0` | body copy on leather |
 | `--bone-300` | `#DCCFB2` | secondary on leather |
 | `--bone-400` | `#B5A688` | tertiary, captions |
@@ -119,20 +119,34 @@ is off-brand even if the hexes are right.
 
 ## 5. Typography
 
-| Use | Ships as | Design-system intent | Notes |
+**The display voice is a heavy slab serif — wood type, NOT stencil.** The
+reference art is a jobbing printshop: letterpress-printed, ink eroded at the
+edges, visible serif feet on every header. Stencil letterforms carry bridges cut
+through the strokes, and not one reference header has them — an earlier draft of
+this brief asked for a stencil, and that direction is dead. (`--font-stencil`
+survives in `ppbf.css` only as a legacy alias pointing at the display face.)
+
+All faces are **self-hosted `.woff2`, SIL OFL 1.1, free** — see
+`design-system/fonts/`. No CDN, no licensing gap.
+
+| Voice | Face | Job (Law 4) | Notes |
 |---|---|---|---|
-| Headings, buttons, mottos ("stencil") | **Oswald** (400/500/700) | Big Shoulders Stencil / Stardos Stencil | condensed poster face; tracking 1–2px; leading 1.2 |
-| Body | **Roboto Condensed** (400/700) | Inter | leading 1.5 |
-| Chalk / schedules | — | Segoe Print, Bradley Hand, Chalkboard SE | handwriting; erasable by definition |
-| Mono — IDs, timestamps, RPE, hashes | **Geist Mono** | ui-monospace | UPPERCASE, letter-spacing to 0.35em |
+| **Display** | **Alfa Slab One** (400) | Commands — headers, mottos, tile names, buttons | uppercase; `.t-press` bites it into paper, `.t-eroded` breaks the ink up, `.t-painted` is hand-painted signage (−0.6° rotation, rust offset shadow) |
+| **Bone sans** | **Oswald** (variable) | Informs — body copy, forms, anything read at length | condensed; leading 1.5 |
+| **Chalk / hand** | **Caveat** (variable) | Schedules & annotates — the day's sessions, a coach's note, a signature | erasable by definition |
+| **Typed** | **Special Elite** (400) | A document from the back-office typewriter — prose that was typed, not printed | distinct from mono, which is for columns that must align |
+| **Mono** | ui-monospace stack | Records — IDs, timestamps, RPE, ledger hashes; anything auditable | UPPERCASE, wide letter-spacing |
+| **Gothic** | **UnifrakturCook** (700) | The clinic masthead ONLY | never body copy; fails Law 3 small |
 
-The app ships Oswald because it is a really loaded face where the stencil fallback
-chain is not; swapping to a licensed stencil is one token in `ppbf.css`. For
-external visuals, **a true condensed stencil is preferred** — that is the intended
-voice.
+Don't mix the voices' jobs. For external visuals the two you will use most are
+the slab display (headline) and Oswald (supporting copy), with mono micro-labels
+for anything numbered or dated.
 
-**Four voices, each with a job (Law 4):** stencil *commands*, bone sans *informs*,
-chalk *schedules*, mono *records* anything auditable. Don't mix their jobs.
+**Established headline copy.** The live public page leads with the gym's own
+words — *"Boxing is the engagement platform. Youth development is the
+objective."* — set in the display face with the `.t-painted` treatment. Reuse
+this line on public-facing pieces before inventing new copy; it is the board
+over the door.
 
 **Type scale — √φ (1.272) steps from a 15px base (Law 8):**
 11.8 · 15 · 19.1 · 24.3 · 30.9 · 39.3 · 50 · 63.6
@@ -165,6 +179,15 @@ scale. Nothing is sized by eye.
   `2px 2px 0` / `4px 4px 0` / `6px 6px 0` in black at 30–50% opacity.
 - **Stamps are permanent ink** (Law 7): refusals and redactions are stamped on the
   page — `RESEARCH NEEDED`, `REDACTED` — not floated as a dismissible notice.
+- **The seal is the ceremonial mark.** A circular rubber-stamp roundel
+  (`.seal` in `ppbf.css`): stamp-red `#A81E22`, rotated −7°, double circular
+  rule, curved uppercase text following the rim, a large slab-serif monogram
+  centered, worn/eroded ink at the edge — pressed by hand, not placed by a
+  designer. Use it as the one ceremonial element a piece is allowed; it is
+  where the polished-brass budget or the red budget gets spent, never both.
+- **Hand-painted signage** (`.t-painted`): display face, uppercase, −0.6°
+  rotation, rust-brown offset shadow under the ink, edges slightly worn — the
+  board over the door, for hero headlines on public pieces.
 - **Touch targets:** 55px minimum with 19.1px type on anything used on the gym
   floor (Law 5) — sweaty hands, bad light, a queue behind them.
 
@@ -183,8 +206,14 @@ scale. Nothing is sized by eye.
 > patina** `#6B6430`/`#46421F`, with polished brass `#B8912F` (highlight `#E8CE7A`)
 > reserved for one ceremonial element only. Type in warm bone `#EFE6D0`.
 >
-> Headlines in a **condensed stencil** face, uppercase, wide letter-spacing; body in
-> a condensed sans; tiny uppercase mono labels for any ID, date, or number.
+> Headlines in a **heavy slab-serif wood-type** face (like Alfa Slab One) —
+> letterpress-printed, ink slightly broken at the edges, uppercase. Explicitly
+> NOT a stencil: no bridges or gaps cut through the letterforms. Body in a
+> condensed sans (Oswald); tiny uppercase mono labels for any ID, date, or number.
+> Where a headline is wanted, prefer the gym's own line: "BOXING IS THE
+> ENGAGEMENT PLATFORM. YOUTH DEVELOPMENT IS THE OBJECTIVE." on a slight −0.6°
+> rotation like hand-painted signage. One ceremonial mark permitted: a circular
+> rubber-stamp seal in `#A81E22`, rotated ~−7°, curved rim text, worn ink edge.
 > **Hard blur-free offset drop shadows** (`4px 4px 0` black) on square panels — no
 > soft shadows, no glossy gradients, no rounded SaaS cards, no blue or cyan.
 >
@@ -196,13 +225,46 @@ scale. Nothing is sized by eye.
 > Lay it out on a golden-section split (38.2% / 61.8%) with margins from the
 > Fibonacci scale (13/21/34/55px). Disciplined and safety-forward, not hype.
 
-## 9. Known gaps / to supply
+## 9. Photography — real frames, replaceable pictures
 
-- **No logo asset in the repo** — `public/` contains only default Next.js SVGs.
-  Provide a wordmark/mark, or have a design tool propose one in the stencil style.
-- **The stencil face is unlicensed.** Big Shoulders Stencil / Stardos Stencil should
-  be self-hosted (the floor kiosk renders offline, and Law 6 makes type part of the
-  chassis, not a progressive enhancement). Until then the app ships Oswald.
+The platform's photography rule is already built (`apps/web/src/shared/gymPhotos.ts`,
+rendered by `GymWallModule`): **pictures of the building, never member media** —
+no athlete uploads, no children's faces, ever, by construction. Six named slots
+exist and are empty today, each with a title and caption written to be true
+while the frame is empty: *the front door, the floor, the ring, the bags, where
+you wrap up, the wall* — plus staff cards (adults doing a public-facing job).
+
+**How a real photo ships in the app:** drop the file into
+`apps/web/public/gym/`, set that slot's `file` in `gymPhotos.ts`, commit.
+Committing the file IS the release decision, made by a person who can see what
+is in the picture. No migration, no storage account, no review queue.
+
+**For external visuals (Canva, etc.):**
+
+- Build every photo area as a **separate, replaceable image frame** — never
+  bake imagery into a flattened background. The gym's real photos (ring, bags,
+  entrance) must be able to drop in later without re-laying-out the piece.
+- Until real photos exist, the placeholder is an **empty labeled frame in the
+  design's own vocabulary** (a leather- or paper-matted frame with its slot
+  title, e.g. "THE RING") — not stock photography, not an illustration, not a
+  gradient. The empty frame is a primary state here, same as in the app.
+- **No stock imagery of people, ever.** When real people appear later they are
+  the gym's own photos of adults, or building shots, released by the person
+  committing them.
+- Frame hardware follows the material rules: patina/brass frame, square
+  corners, hard offset shadow; a taped or pinned paper border also fits
+  (`.pin`, cork) for casual pieces.
+
+## 10. Known gaps / to supply
+
+- **No standalone logo asset in the repo** — `public/` contains only default
+  Next.js SVGs. The sanctioned mark to build from is the **`.seal` roundel**
+  (§7); a wordmark should be set in the display slab, not invented in another
+  style.
+- **Real gym photographs** — all six photo slots and the staff cards are empty;
+  see §9 for how they ship once taken.
+- **Real coach sayings** for motivational pieces — collect from the gym; do not
+  invent quotes.
 
 ## References
 

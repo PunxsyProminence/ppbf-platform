@@ -13,7 +13,17 @@ interface AthleteSummaryPanelProps {
 }
 
 interface CoachSummaryPanelProps {
-  sessionStatus: string;
+  /**
+   * The live session, or null when nothing tracks one yet.
+   *
+   * Null rather than a placeholder string on purpose. This used to arrive as
+   * 'Unavailable - not yet tracked' and render as a KPI tile, which put a tile
+   * whose entire content is "this does not work" at the head of a row of
+   * measurements. A tile is a claim that something was measured; saying so is
+   * a disclosure, and the two do not belong in the same object. The disclosure
+   * survives below the row, in a voice that fits it.
+   */
+  sessionStatus: string | null;
   activeAthletes: number;
   injuryFlags: number;
   reviewsNeeded: number;
@@ -58,10 +68,28 @@ interface RoleSpecificShadowProps {
   chatContext: string;
 }
 
+/* The KPI vocabulary of these panels, drawn from the sheet rather than
+   rebuilt per cell. A neutral figure sits on raised leather; a safety state
+   keeps its saturated band (Law 2) and always carries a glyph beside its
+   uppercase label (Law 3). Auditable numbers speak in the data voice at a
+   ladder size — .t-data pins 13px, so the size is composed by hand. */
+const KPI_TILE = 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]';
+const KPI_VALUE = 'mt-[var(--s3)] font-mono text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]';
+/* The sheet now ships that composition as the .stat family; neutral
+   measurement cells compose it with their material. Banded safety cells
+   (Law 2) keep the hand-composed pair above. */
+const STAT_TILE = 'stat';
+
 function getAttendanceColor(attendancePercent: number): string {
-  if (attendancePercent >= 90) return 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[var(--status-ready)]';
-  if (attendancePercent >= 75) return 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[var(--status-warning)]';
+  if (attendancePercent >= 90) return 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[color:var(--cleared)]';
+  if (attendancePercent >= 75) return 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[color:var(--restricted)]';
   return 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]';
+}
+
+function getAttendanceGlyph(attendancePercent: number): string {
+  if (attendancePercent >= 90) return '✓';
+  if (attendancePercent >= 75) return '▲';
+  return '✕';
 }
 
 // ATHLETE SUMMARY PANEL
@@ -73,8 +101,8 @@ export function AthleteSummaryPanel({
   unreadMessages
 }: Readonly<AthleteSummaryPanelProps>) {
   const readinessColor = {
-    GREEN: 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[var(--status-ready)]',
-    YELLOW: 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[var(--status-warning)]',
+    GREEN: 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[color:var(--cleared)]',
+    YELLOW: 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[color:var(--restricted)]',
     RED: 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]'
   }[readiness];
 
@@ -84,36 +112,45 @@ export function AthleteSummaryPanel({
     RED: 'COACH REVIEW REQUIRED'
   }[readiness];
 
+  const readinessGlyph = {
+    GREEN: '✓',
+    YELLOW: '▲',
+    RED: '✕'
+  }[readiness];
+
   return (
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Readiness */}
-      <div className={`border-2 p-4 ${readinessColor}`}>
+      <div className={`rounded-[var(--r-md)] border-2 p-[var(--s4)] ${readinessColor}`}>
         <p className="t-label">Status</p>
-        <p className="t-command mt-[var(--s3)]">{readinessText}</p>
+        <p className="t-command mt-[var(--s3)]">
+          <span aria-hidden="true">{readinessGlyph} </span>
+          <span>{readinessText}</span>
+        </p>
       </div>
 
       {/* Tasks */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Tasks Due</p>
-        <p className="t-command mt-[var(--s3)]">{tasksDue}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Tasks Due</p>
+        <p className="stat-val">{tasksDue}</p>
       </div>
 
       {/* Goals */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Active Goals</p>
-        <p className="t-command mt-[var(--s3)]">{goalsActive}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Active Goals</p>
+        <p className="stat-val">{goalsActive}</p>
       </div>
 
       {/* Upcoming Session */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)] md:col-span-1">
+      <div className={`${KPI_TILE} md:col-span-1`}>
         <p className="t-label">Next Session</p>
         <p className="t-body mt-[var(--s3)]">{upcomingSession || 'No session'}</p>
       </div>
 
       {/* Messages */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Messages</p>
-        <p className="t-command mt-[var(--s3)]">{unreadMessages}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Messages</p>
+        <p className="stat-val">{unreadMessages}</p>
       </div>
     </div>
   );
@@ -127,40 +164,67 @@ export function CoachSummaryPanel({
   reviewsNeeded,
   assignmentsDue
 }: Readonly<CoachSummaryPanelProps>) {
-  const injuryAlert = injuryFlags > 0 ? 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]' : 'border-[color:rgba(212,175,74,.28)] ';
+  const injuriesFlagged = injuryFlags > 0;
+
+  /* A zero is worth reading only once there is somebody it could have counted.
+     "Injuries 0" across a real roster is the good news a coach came to check;
+     the same 0 with nobody assigned is arithmetic on an empty set, and four
+     tiles of it read as a working dashboard with nothing in it rather than as
+     an empty floor. So the counts appear when the roster does, and the empty
+     floor says it is empty in one line. */
+  if (activeAthletes === 0) {
+    return (
+      <div className="mb-[var(--s6)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] mat-leather p-[var(--s5)]">
+        <p className="t-label">Your floor</p>
+        <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+          Nobody is assigned to you yet. Injuries, reviews and assignments start counting here the
+          moment an athlete lands on your roster.
+        </p>
+        {sessionStatus ? <p className="t-muted mt-[var(--s3)]">{sessionStatus}</p> : null}
+      </div>
+    );
+  }
 
   return (
-    <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
-      {/* Session Status */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Session</p>
-        <p className="t-body mt-[var(--s3)]">{sessionStatus}</p>
-      </div>
-
+    <>
+    <div className="mb-[var(--s4)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-4">
       {/* Active Athletes */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Athletes</p>
-        <p className="t-command mt-[var(--s3)]">{activeAthletes}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Athletes</p>
+        <p className="stat-val">{activeAthletes}</p>
       </div>
 
       {/* Injury Flags */}
-      <div className={`border-2 p-4 ${injuryAlert}`}>
+      <div className={injuriesFlagged
+        ? 'rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)]'
+        : KPI_TILE}
+      >
         <p className="t-label">Injuries</p>
-        <p className="t-command mt-[var(--s3)]">{injuryFlags}</p>
+        <p className={KPI_VALUE}>
+          {injuriesFlagged ? <span aria-hidden="true">✕ </span> : null}
+          <span>{injuryFlags}</span>
+        </p>
       </div>
 
       {/* Reviews */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Reviews</p>
-        <p className="t-command mt-[var(--s3)]">{reviewsNeeded}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Reviews</p>
+        <p className="stat-val">{reviewsNeeded}</p>
       </div>
 
       {/* Assignments */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Due</p>
-        <p className="t-command mt-[var(--s3)]">{assignmentsDue}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Due</p>
+        <p className="stat-val">{assignmentsDue}</p>
       </div>
     </div>
+
+    {/* The session disclosure, out of the tile row. It is not a measurement,
+        so it does not get the object that means one. */}
+    {sessionStatus ? (
+      <p className="t-muted mb-[var(--s6)]">{sessionStatus}</p>
+    ) : null}
+    </>
   );
 }
 
@@ -176,40 +240,46 @@ export function ParentSummaryPanel({
   // neutral "no data" state, not a colored/numeric band. Feeding null
   // through as 0 would color-code an absence of data as the same red
   // "bad attendance" band a genuinely low percentage gets.
-  const attendanceColor = attendancePercent === null
-    ? 'border-[color:rgba(212,175,74,.28)]'
-    : getAttendanceColor(attendancePercent);
-
   return (
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Progress */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+      <div className={KPI_TILE}>
         <p className="t-label">Progress</p>
         <p className="t-body mt-[var(--s3)]">{childProgress}</p>
       </div>
 
       {/* Tasks */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Home Tasks</p>
-        <p className="t-command mt-[var(--s3)]">{tasksDue}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Home Tasks</p>
+        <p className="stat-val">{tasksDue}</p>
       </div>
 
       {/* Events */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Upcoming</p>
-        <p className="t-command mt-[var(--s3)]">{upcomingEvents}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Upcoming</p>
+        <p className="stat-val">{upcomingEvents}</p>
       </div>
 
       {/* Attendance */}
-      <div className={`border-2 p-4 ${attendanceColor}`}>
-        <p className="t-label">Attendance</p>
-        <p className="t-command mt-[var(--s3)]">{attendancePercent === null ? 'Unavailable' : `${attendancePercent}%`}</p>
-      </div>
+      {attendancePercent === null ? (
+        <div className={KPI_TILE}>
+          <p className="t-label">Attendance</p>
+          <p className="t-body mt-[var(--s3)]">Unavailable</p>
+        </div>
+      ) : (
+        <div className={`rounded-[var(--r-md)] border-2 p-[var(--s4)] ${getAttendanceColor(attendancePercent)}`}>
+          <p className="t-label">Attendance</p>
+          <p className={KPI_VALUE}>
+            <span aria-hidden="true">{getAttendanceGlyph(attendancePercent)} </span>
+            <span>{`${attendancePercent}%`}</span>
+          </p>
+        </div>
+      )}
 
       {/* Messages */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Messages</p>
-        <p className="t-command mt-[var(--s3)]">{unreadMessages}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Messages</p>
+        <p className="stat-val">{unreadMessages}</p>
       </div>
     </div>
   );
@@ -223,39 +293,51 @@ export function AdminSummaryPanel({
   complianceItems,
   pendingReviews
 }: Readonly<AdminSummaryPanelProps>) {
-  const programAlert = programAlerts > 0 ? 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]' : 'border-[color:rgba(212,175,74,.28)] ';
-  const boardAlert = boardAlerts > 0 ? 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[var(--status-warning)]' : 'border-[color:rgba(212,175,74,.28)] ';
+  const programFlagged = programAlerts > 0;
+  const boardFlagged = boardAlerts > 0;
 
   return (
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Program Alerts */}
-      <div className={`border-2 p-4 ${programAlert}`}>
+      <div className={programFlagged
+        ? 'rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)]'
+        : KPI_TILE}
+      >
         <p className="t-label">Program</p>
-        <p className="t-command mt-[var(--s3)]">{programAlerts}</p>
+        <p className={KPI_VALUE}>
+          {programFlagged ? <span aria-hidden="true">✕ </span> : null}
+          <span>{programAlerts}</span>
+        </p>
       </div>
 
       {/* Board Alerts */}
-      <div className={`border-2 p-4 ${boardAlert}`}>
+      <div className={boardFlagged
+        ? 'rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)]'
+        : KPI_TILE}
+      >
         <p className="t-label">Board</p>
-        <p className="t-command mt-[var(--s3)]">{boardAlerts}</p>
+        <p className={KPI_VALUE}>
+          {boardFlagged ? <span aria-hidden="true">▲ </span> : null}
+          <span>{boardAlerts}</span>
+        </p>
       </div>
 
       {/* Open Assignments */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Open</p>
-        <p className="t-command mt-[var(--s3)]">{openAssignments}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Open</p>
+        <p className="stat-val">{openAssignments}</p>
       </div>
 
       {/* Compliance */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Compliance</p>
-        <p className="t-command mt-[var(--s3)]">{complianceItems}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Compliance</p>
+        <p className="stat-val">{complianceItems}</p>
       </div>
 
       {/* Reviews */}
-      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
-        <p className="t-label">Reviews</p>
-        <p className="t-command mt-[var(--s3)]">{pendingReviews}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Reviews</p>
+        <p className="stat-val">{pendingReviews}</p>
       </div>
     </div>
   );
@@ -280,7 +362,7 @@ export function HelpPanel({
         aria-expanded={expanded}
       >
         <h3 className="t-label">HELP: {title}</h3>
-        <span aria-hidden="true" className="text-xl text-[color:var(--brass-400)]">{expanded ? '−' : '+'}</span>
+        <span aria-hidden="true" className="text-[length:var(--t-lg)] text-[color:var(--brass-400)]">{expanded ? '−' : '+'}</span>
       </button>
 
       {expanded && (
@@ -359,8 +441,12 @@ export function RoleSpecificShadow({
   // from the real chat below/linked here, never a static placeholder that
   // could be mistaken for real guidance about a real athlete.
   return (
-    <div className={`border-l-4 ${borderColor} space-y-3  p-4 font-mono text-xs`}>
-      <p className="text-[color:var(--brass-400)]">&gt; {roleIdentity}</p>
+    <div className={`border-l-4 ${borderColor} space-y-[var(--s3)] p-[var(--s4)] font-mono text-[length:var(--t-xs)]`}>
+      {/* prompt-line, not a stated brass: this card renders on leather for the
+          coach and admin and on canvas inside ParentHub, and --brass-400 is a
+          leather ink -- on cream it measured ~2.9:1. The sheet restates the
+          class per ground the way it does for the type voices. */}
+      <p className="prompt-line">&gt; {roleIdentity}</p>
       <p className="t-body whitespace-pre-wrap">{description}</p>
       <ShadowChatButton
         context={chatContext}

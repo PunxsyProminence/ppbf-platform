@@ -4,8 +4,11 @@ import type { PoolClient } from 'pg';
 import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 
 import { seedDefaultComplianceRules } from './complianceRuleSeeds';
+import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
+import { usesPin } from './credentialPolicy';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
+import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
@@ -28,7 +31,7 @@ export interface PilotPrincipal {
   organizationId: string;
   athleteId: string | null;
   sessionToken: string;
-  authProvider: 'ppbf_local' | 'microsoft';
+  authProvider: AuthProvider;
   hasMasterShadowAccess?: boolean;
   /**
    * True while this account is still on the admin-issued bootstrap PIN.
@@ -48,7 +51,7 @@ interface AccountRow {
   organization_id: string | null;
   is_platform_owner: boolean;
   athlete_id: string | null;
-  auth_provider: 'ppbf_local' | 'microsoft';
+  auth_provider: AuthProvider;
   pin_hash: string | null;
   must_change_pin: boolean;
   active_flag: boolean;
@@ -62,7 +65,7 @@ interface FederatedAccountRow {
   organization_id: string | null;
   is_platform_owner: boolean;
   athlete_id: string | null;
-  auth_provider: 'ppbf_local' | 'microsoft';
+  auth_provider: AuthProvider;
   active_flag: boolean;
   has_master_shadow_access: boolean;
   organization_status: string | null;
@@ -135,7 +138,11 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
 
   // PIN sessions are athlete self-service only. Enforce before creating
   // any session token row so privileged local sessions are never minted.
-  if (data.role !== 'athlete') {
+  //
+  // Asks credentialPolicy rather than testing the role here. This check and the
+  // login page's default tab used to state the rule separately, and the page
+  // had it wrong -- it offered a PIN form to everyone.
+  if (!usesPin({ role: data.role })) {
     return null;
   }
 
@@ -246,7 +253,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     organization_id: string | null;
     is_platform_owner: boolean;
     athlete_id: string | null;
-    auth_provider: 'ppbf_local' | 'microsoft';
+    auth_provider: AuthProvider;
     active_flag: boolean;
     has_master_shadow_access: boolean;
     must_change_pin: boolean;
@@ -283,7 +290,12 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   // Fail closed: legacy or pre-deployment privileged local sessions are not
   // valid under athlete-only PIN policy. Revoke the session row immediately
   // so subsequent checks also fail without re-evaluating this branch.
-  if (row.auth_provider === 'ppbf_local' && row.role !== 'athlete') {
+  //
+  // This is what made the 19 abandoned platform-owner accounts found in
+  // production on 2026-08-07 inert rather than exploitable: every one was
+  // ppbf_local with a non-athlete role, so no session they held could survive
+  // this branch.
+  if (row.auth_provider === 'ppbf_local' && !usesPin({ role: row.role })) {
     await query(
       'update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null',
       [tokenHash],
@@ -462,10 +474,29 @@ export async function activateAccountPin(accountId: string, pin: string, organiz
   const pinHash = await hashPin(pin);
 
   await withTransaction(async (client) => {
+    // must_change_pin is set for the same reason resetAccountPin sets it, and
+    // it was the only one of the three PIN paths that did not. An activation
+    // PIN is typed by an administrator, so it is a PIN somebody other than the
+    // athlete knows -- and until this line, an athlete promoted from intake
+    // signed in on it and was never once asked to replace it. The whole
+    // enforcement chain hangs on this boolean: requirePrincipal refuses every
+    // route while it is set (http.ts), and roleSession.ts and /athlete/sign-in
+    // both send that state to /change-pin. At false, none of it fires.
+    //
+    // Measured before changing it, against real Postgres: createAthleteAccount
+    // left it true, resetAccountPin left it true, and activateAccountPin left
+    // it false because pilot.accounts.must_change_pin defaults to false and
+    // this UPDATE never named it.
+    //
+    // The cost is one extra prompt when an admin activates with the athlete
+    // standing next to them having chosen the PIN themselves. That is the
+    // right trade in a system holding youth records: the alternative is an
+    // admin-known credential that grants full athlete access indefinitely.
     const result = await client.query<{ account_id: string }>(
       `update pilot.accounts
        set pin_hash = $1,
            active_flag = true,
+           must_change_pin = true,
            updated_at = now()
        where account_id = $2
          and organization_id = $3
@@ -610,7 +641,11 @@ export async function changeOwnPin(accountId: string, currentPin: string, newPin
     );
 
     const row = account.rows[0];
-    if (!row?.active_flag || !row.pin_hash || row.role !== 'athlete') {
+    // Only someone whose credential IS a PIN may change one. Asks the policy
+    // rather than naming the role -- this was the third independent copy of the
+    // athlete-only rule, and the drift guard found it after two rounds of
+    // reading the file missed it.
+    if (!row?.active_flag || !row.pin_hash || !usesPin({ role: row.role })) {
       throw new Error('Unauthorized');
     }
 
@@ -902,12 +937,13 @@ export async function createOrRotateAdminAccount(
 }
 
 export async function createOrganization(organizationId: string, organizationName: string, createdBy: string): Promise<void> {
-  // Organization and compliance rules are created together, in one transaction.
-  // The seed migration only reaches organizations that existed when an operator
-  // ran it, so a gym created afterwards through this route started with an empty
-  // rule set and compliance monitoring that silently checked nothing. Seeding
-  // here rather than leaving it to the next migration run means a gym cannot
-  // exist in that state, and the transaction means it cannot half-exist either.
+  // Organization, compliance rules, and safety gates are created together, in
+  // one transaction. The seed migrations only reach organizations that
+  // existed when an operator ran them, so a gym created afterwards through
+  // this route started with an empty rule set and no safety gate to evaluate
+  // contact observations against -- the same gap seedDefaultComplianceRules
+  // was written to close, now closed for safety_gates too. The transaction
+  // means the organization cannot half-exist either.
   await withTransaction(async (client) => {
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status, created_by_account_id)
@@ -920,6 +956,7 @@ export async function createOrganization(organizationId: string, organizationNam
     );
 
     await seedDefaultComplianceRules(organizationId, client);
+    await seedDefaultSafetyGates(organizationId, client);
   });
 }
 

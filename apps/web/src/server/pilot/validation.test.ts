@@ -1,3 +1,4 @@
+import { GOAL_CATEGORIES } from './contracts';
 import { jsonError } from './http';
 import {
   validateAthletePayload,
@@ -124,5 +125,103 @@ describe('the rejection names the field the caller has to fix', () => {
 
     const body = await jsonError(refusal).json();
     expect(body.error).toContain('full_name');
+  });
+});
+
+// pilot.goals gained `category` and `progress_percent` on 2026-08-03. Both are
+// optional on the wire and nullable in the column, and the tests below are
+// about the three ways that could quietly go wrong: a payload that predates the
+// columns getting rejected, a null being turned into a value, and the API
+// admitting a category the database will then refuse.
+function goalPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    goal_id: 'goal-1',
+    athlete_id: 'ath-1',
+    title: 'Land 100 clean jabs',
+    target_date: '2026-09-01',
+    metric: '100 reps logged',
+    status: 'active',
+    created_at: '2026-07-29T12:00:00.000Z',
+    updated_at: '2026-07-29T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('goal category and progress are optional and nullable', () => {
+  test('a payload written before the columns existed still validates', () => {
+    expect(validateGoalPayload(goalPayload())).toMatchObject({
+      goal_id: 'goal-1',
+      category: null,
+      progress_percent: null,
+    });
+  });
+
+  test('an explicit null is kept as null rather than defaulted', () => {
+    expect(validateGoalPayload(goalPayload({ category: null, progress_percent: null }))).toMatchObject({
+      category: null,
+      progress_percent: null,
+    });
+  });
+
+  // The distinction the nullable column exists to preserve. If 0 were folded
+  // into null anywhere on this path, an athlete reporting "I have not started"
+  // would be indistinguishable from an athlete who was never asked.
+  test('a reported 0 is not the same value as no report', () => {
+    expect(validateGoalPayload(goalPayload({ progress_percent: 0 })).progress_percent).toBe(0);
+    expect(validateGoalPayload(goalPayload()).progress_percent).toBeNull();
+  });
+
+  test('a category from the vocabulary is accepted', () => {
+    expect(validateGoalPayload(goalPayload({ category: 'Academics' })).category).toBe('Academics');
+  });
+
+  test('every category the athlete form offers is accepted', () => {
+    for (const category of GOAL_CATEGORIES) {
+      expect(validateGoalPayload(goalPayload({ category })).category).toBe(category);
+    }
+  });
+
+  test('progress of 100 is accepted and 101 is not', () => {
+    expect(validateGoalPayload(goalPayload({ progress_percent: 100 })).progress_percent).toBe(100);
+    expect(statusOf(() => validateGoalPayload(goalPayload({ progress_percent: 101 })))).toBe(400);
+  });
+});
+
+describe('the goal validator refuses what the column would refuse', () => {
+  test('a category outside the vocabulary is a 400, not a constraint violation', () => {
+    expect(statusOf(() => validateGoalPayload(goalPayload({ category: 'Underwater Basket Weaving' })))).toBe(400);
+  });
+
+  // Held to the same standard as any other value outside the list. These two
+  // are withheld pending the Privacy-Tier System rather than dropped forever,
+  // so the test records the intent: while they are out of GOAL_CATEGORIES, the
+  // API must refuse them rather than write a row the CHECK will reject.
+  test.each(['Weight Loss', 'Weight Gain'])('%s is refused while it is out of the vocabulary', (category) => {
+    expect(GOAL_CATEGORIES as readonly string[]).not.toContain(category);
+    expect(statusOf(() => validateGoalPayload(goalPayload({ category })))).toBe(400);
+  });
+
+  test('a negative percentage is refused', () => {
+    expect(statusOf(() => validateGoalPayload(goalPayload({ progress_percent: -1 })))).toBe(400);
+  });
+
+  test('a fractional percentage is refused, because the column is an integer', () => {
+    expect(statusOf(() => validateGoalPayload(goalPayload({ progress_percent: 42.5 })))).toBe(400);
+  });
+
+  test('a percentage sent as a string is refused', () => {
+    expect(statusOf(() => validateGoalPayload(goalPayload({ progress_percent: '50' })))).toBe(400);
+  });
+
+  test('the refusal names the field the caller has to fix', async () => {
+    let refusal: unknown;
+    try {
+      validateGoalPayload(goalPayload({ category: 'Nope' }));
+    } catch (error) {
+      refusal = error;
+    }
+
+    const body = await jsonError(refusal).json();
+    expect(body.error).toContain('category');
   });
 });

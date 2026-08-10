@@ -67,6 +67,7 @@ on:
           - multiorg-orphans
           - stranded-guardians
           - orphan-chat-audit
+          - seed-identity
 
 permissions:
   id-token: write
@@ -83,10 +84,10 @@ jobs:
 
     steps:
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -95,7 +96,7 @@ jobs:
         run: npm ci
 
       - name: Authenticate via Azure OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -131,6 +132,12 @@ jobs:
               ;;
             orphan-chat-audit)
               npm run pilot:check-orphan-chat-audit | tee /tmp/check-output.txt
+              ;;
+            seed-identity)
+              # Read-only. Prints the organization ids and the PRIVILEGED account ids that the
+              # seeding workflows ask an operator to type, so nobody has to read them out of a
+              # production SQL client by eye. Athlete and parent accounts are never selected.
+              npm run pilot:check-seed-identity | tee /tmp/check-output.txt
               ;;
             *)
               echo "::error::Unknown check '$CHECK'"

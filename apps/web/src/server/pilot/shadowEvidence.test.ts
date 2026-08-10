@@ -40,6 +40,8 @@ describe('SHADOW evidence bundles', () => {
       source_status: 'active',
       publication_date: null,
       text_content: privateExcerpt,
+      evidence_class: 'VERIFIED EVIDENCE',
+      boxing_specificity: 'boxing_specific',
       score: 50,
     }]);
     const clientQuery = jest.fn(async (sql: string, params: unknown[]) => ({
@@ -122,6 +124,8 @@ describe('SHADOW evidence bundles', () => {
       source_status: 'active',
       publication_date: null,
       text_content: 'Approved text at search time.',
+      evidence_class: 'VERIFIED EVIDENCE',
+      boxing_specificity: 'boxing_specific',
       score: 50,
     }]);
     const clientQuery = jest.fn()

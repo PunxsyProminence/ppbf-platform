@@ -130,10 +130,18 @@ describe('the anchor vocabularies match their sources', () => {
 
   test('evidence_tier is every tier deriveEvidenceTier can produce', () => {
     const derived = [
-      deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', citationCount: 2 }),
-      deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', citationCount: 1 }),
-      deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', citationCount: 0 }),
-      deriveEvidenceTier({ isAnsweredState: false, evidenceAvailability: 'available', citationCount: 0 }),
+      deriveEvidenceTier({
+        isAnsweredState: true,
+        evidenceAvailability: 'available',
+        strongestEvidence: { evidenceClass: 'VERIFIED EVIDENCE', authorityTier: 1, boxingSpecificity: 'boxing_specific' },
+      }),
+      deriveEvidenceTier({
+        isAnsweredState: true,
+        evidenceAvailability: 'available',
+        strongestEvidence: { evidenceClass: 'VERIFIED EVIDENCE', authorityTier: 3, boxingSpecificity: 'transferred' },
+      }),
+      deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', strongestEvidence: null }),
+      deriveEvidenceTier({ isAnsweredState: false, evidenceAvailability: 'available', strongestEvidence: null }),
     ];
 
     expect([...RABBIT_HOLE_CLOSED_ANCHOR_KEYS.evidence_tier].sort()).toEqual([...new Set(derived)].sort());

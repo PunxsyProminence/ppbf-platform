@@ -85,5 +85,24 @@ test('a failed notice read does not invent a notice, and leaves sign-in usable',
 
   expect(screen.queryByText(/📢 Gym Notice/)).toBeNull();
   expect(screen.queryByText(/Welcome to PPBF/i)).toBeNull();
-  expect(screen.getByPlaceholderText('account-001')).toBeTruthy();
+  // Asserts the Microsoft control, not the PIN field. The page now opens on
+  // Microsoft because PIN sign-in admits only athletes and athletes have their
+  // own door -- see the comment on selectedMethod. The claim being made here is
+  // unchanged: a failed notice fetch must leave sign-in usable.
+  expect(screen.getByText('Continue With Microsoft')).toBeTruthy();
+});
+
+test('opens on Microsoft, not on a PIN form only athletes can use', async () => {
+  await renderPage(async () => jsonResponse({ ok: true, announcements: [] }));
+
+  // The PIN tab exists, but it is not what an arriving coach or parent meets.
+  // While this defaulted to PIN they were shown a form that could never
+  // authenticate them and a refusal that blamed their credential for it.
+  // Two buttons say "Microsoft" -- the method tab and "Continue With
+  // Microsoft". Only the tab carries aria-pressed, which is what identifies it.
+  const microsoftTab = screen
+    .getAllByRole('button', { name: /Microsoft/ })
+    .find((button) => button.hasAttribute('aria-pressed'));
+  expect(microsoftTab?.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.queryByPlaceholderText('account-001')).toBeNull();
 });

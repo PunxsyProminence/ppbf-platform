@@ -13,7 +13,8 @@ import { writeShadowTelemetryEvent } from './shadowTelemetry';
 // chunk that merely lost least badly. Deliberately permissive: embeddings
 // separate related from unrelated text well above this line, and the
 // downstream evidence review gates still apply to whatever is returned.
-const SEMANTIC_SCORE_FLOOR = 0.15;
+// Exported so pilotOpsReadiness.ts can report the real value.
+export const SEMANTIC_SCORE_FLOOR = 0.15;
 
 export type ShadowLibrarySourceType =
   | 'peer_reviewed'
@@ -147,12 +148,39 @@ export interface ShadowLibrarySearchResult {
   publication_date: string | null;
   text_content: string;
   score: number;
+  // Extracted from the chunk's own metadata jsonb -- the quality-weighted
+  // evidence tier rule (shadowEvidenceTier.ts) reads these. Null for a
+  // chunk whose metadata does not carry the field (e.g. content seeded
+  // before the research-program corpus existed), which
+  // shadowEvidenceTier.ts's callers must treat as "not gradeable", never
+  // as a passing grade.
+  evidence_class: string | null;
+  boxing_specificity: string | null;
+}
+
+export interface ShadowApprovedEvidenceExportRow {
+  chunk_id: string;
+  source_title: string;
+  source_publisher: string | null;
+  source_type: 'peer_reviewed' | 'clinical_guideline' | 'governing_body' | 'textbook';
+  authority_tier: number;
+  source_url: string | null;
+  publication_date: string | null;
+  text_content: string;
 }
 
 export interface ShadowLibraryClaimResult {
   answer: string;
   status: ShadowLibraryClaimStatus;
+  // NOT a calibrated probability. This is one of exactly three fixed values
+  // (0.78 / 0.46 / 0.12) selected solely by which `status` band evidence.length
+  // and distinctSourceCount land in below -- a precise-looking float standing
+  // in for an ordinal judgment. Kept for existing callers rather than removed,
+  // but `status` is the honest signal; a caller wanting the reasoning behind
+  // it should read `evidenceCount` / `distinctSourceCount`, not this number.
   confidence: number;
+  evidenceCount: number;
+  distinctSourceCount: number;
   evidence: ShadowLibrarySearchResult[];
   researchRequirementId: number | null;
 }
@@ -194,7 +222,12 @@ function clampSourceCount(value: number): number {
   return Math.max(1, Math.min(100, Math.trunc(value)));
 }
 
-function requireEvidenceReviewer(role: PilotRole): void {
+// Exported: drillVersioning.ts reuses this exact check for adopting/declining
+// a drill change proposal. Shared coaching content read by every athlete in
+// the org needs the same reviewer tier as SHADOW evidence review -- one
+// source of truth for "who may approve organization-wide content" rather
+// than a second copy that could drift from this one.
+export function requireEvidenceReviewer(role: PilotRole): void {
   if (role !== 'organization_admin' && role !== 'admin' && role !== 'platform_owner') {
     throw new Error('Forbidden: SHADOW evidence review requires an organization administrator');
   }
@@ -489,6 +522,50 @@ export async function listShadowLibrarySources(input: {
      limit $4
      offset $5`,
     [input.organizationId, input.sourceType?.trim() || null, input.status?.trim() || null, limit, offset],
+  );
+}
+
+// Dedicated export boundary for the read-only research bridge. It deliberately
+// excludes subject-scoped chunks and all observational/self-report source types,
+// then reapplies the same source + document approval gate used by Library search.
+export async function listApprovedGlobalEvidenceForResearchBridge(input: {
+  organizationId: string;
+  limit?: number;
+}): Promise<ShadowApprovedEvidenceExportRow[]> {
+  const limit = Math.max(1, Math.min(2_000, Math.trunc(input.limit ?? 1_000)));
+  const allowedSourceTypes = ['peer_reviewed', 'clinical_guideline', 'governing_body', 'textbook'];
+
+  return query<ShadowApprovedEvidenceExportRow>(
+    `select
+       c.chunk_id,
+       s.title as source_title,
+       s.publisher as source_publisher,
+       s.source_type,
+       s.authority_tier,
+       s.url as source_url,
+       s.publication_date::text as publication_date,
+       c.text_content
+     from pilot.shadow_library_chunks c
+     join pilot.shadow_library_documents d
+       on d.document_id = c.document_id
+      and d.organization_id = c.organization_id
+     join pilot.shadow_library_sources s
+       on s.source_id = c.source_id
+      and s.organization_id = c.organization_id
+     where c.organization_id = $1
+       and c.subject_id is null
+       and d.subject_id is null
+       and s.status = 'active'
+       and s.approval_state = 'approved'
+       and s.verification_state = 'verified'
+       and d.ingest_state = 'indexed'
+       and d.index_completed_at is not null
+       and d.approval_state = 'approved'
+       and d.verification_state = 'verified'
+       and s.source_type = any($2::text[])
+     order by s.authority_tier asc, s.title asc, c.ordinal asc
+     limit $3`,
+    [input.organizationId, allowedSourceTypes, limit],
   );
 }
 
@@ -901,6 +978,15 @@ export async function searchShadowLibrary(input: {
   if (isSemanticLibrarySearchEnabled()) {
     const queryEmbedding = await embedText(normalizedQuery);
     if (queryEmbedding) {
+      // Restricted to embedding_model = the CURRENT deployment, not merely
+      // "has an embedding". Two different embedding models can share a
+      // dimension count -- cosineSimilarity only guards dimension mismatch,
+      // so a vector from a retired deployment would compare as a real-looking
+      // but semantically meaningless score, clear SEMANTIC_SCORE_FLOOR by
+      // chance, and get cited to a user as evidence. A model change must
+      // degrade those rows to the keyword path, same as never having been
+      // embedded, until the backfill catches up.
+      const currentEmbeddingModel = getEmbeddingDeploymentName();
       const candidates = await query<ShadowLibrarySearchResult & { embedding: number[] }>(
         `select
            c.chunk_id, c.document_id, c.source_id, c.subject_id, c.ordinal,
@@ -909,6 +995,8 @@ export async function searchShadowLibrary(input: {
            s.source_type, s.authority_tier, s.status as source_status,
            s.publication_date::text as publication_date,
            c.text_content, c.embedding,
+           c.metadata->>'evidence_class' as evidence_class,
+           c.metadata->>'boxing_specificity' as boxing_specificity,
            0::float as score
          from pilot.shadow_library_chunks c
          join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
@@ -917,18 +1005,20 @@ export async function searchShadowLibrary(input: {
            and s.status = 'active'
            and s.approval_state = 'approved'
            and s.verification_state = 'verified'
+           and not coalesce(s.retrieval_suppressed, false)
            and d.ingest_state = 'indexed'
            and d.index_completed_at is not null
            and d.approval_state = 'approved'
            and d.verification_state = 'verified'
            and c.embedding is not null
+           and c.embedding_model = $4
            and (
              ($2::text = 'scoped' and c.subject_id is null)
              or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
            )
          order by s.authority_tier asc, c.created_at asc
          limit 200`,
-        [input.organizationId, normalized.scope, normalized.effectiveSubjectId],
+        [input.organizationId, normalized.scope, normalized.effectiveSubjectId, currentEmbeddingModel],
       );
 
       const ranked = candidates
@@ -982,6 +1072,8 @@ export async function searchShadowLibrary(input: {
        s.status as source_status,
        s.publication_date::text as publication_date,
        c.text_content,
+       c.metadata->>'evidence_class' as evidence_class,
+       c.metadata->>'boxing_specificity' as boxing_specificity,
        (
           case when lower(c.text_content) like '%' || $4 || '%' then 40 else 0 end
           + case when lower(d.document_name) like '%' || $4 || '%' then 20 else 0 end
@@ -1002,6 +1094,7 @@ export async function searchShadowLibrary(input: {
         and s.status = 'active'
         and s.approval_state = 'approved'
         and s.verification_state = 'verified'
+        and not coalesce(s.retrieval_suppressed, false)
         and d.ingest_state = 'indexed'
         and d.index_completed_at is not null
         and d.approval_state = 'approved'
@@ -1149,6 +1242,8 @@ export async function createShadowLibraryClaim(input: {
     answer,
     status,
     confidence,
+    evidenceCount: evidence.length,
+    distinctSourceCount,
     evidence,
     researchRequirementId,
   };

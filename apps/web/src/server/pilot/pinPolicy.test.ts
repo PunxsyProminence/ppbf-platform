@@ -56,8 +56,12 @@ describe('PIN policy', () => {
   // own output through validatePinPolicy. Nothing legitimate issues a weak PIN,
   // so the carve-out that used to exempt the shared 123456 is gone.
   describe('the retired shared starting PIN', () => {
-    test('validatePinPolicy now rejects it as the ascending run it always was', () => {
-      expect(() => validatePinPolicy(LEGACY_SHARED_FIRST_LOGIN_PIN)).toThrow('too easy to guess');
+    // The exemption that let the shared-PIN reset issue it is gone, so
+    // validatePinPolicy refuses it on every path -- including an admin typing it
+    // into the PIN console. It names the starting PIN rather than falling through
+    // to the generic guessable message, which would be true but less useful.
+    test('validatePinPolicy now rejects it, naming the starting PIN', () => {
+      expect(() => validatePinPolicy(LEGACY_SHARED_FIRST_LOGIN_PIN)).toThrow('starting PIN everyone is given');
     });
 
     test('assertChosenPinAllowed refuses it as well, with its own message', () => {

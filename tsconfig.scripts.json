@@ -1,0 +1,23 @@
+{
+  // Root-level operator scripts. apps/web/tsconfig.json covers only apps/web,
+  // so scripts/ was typechecked by nothing -- which is how seed-data.ts came to
+  // import a path alias that does not exist outside apps/web (TS2307, the
+  // script could not start) and to test `.rowCount` on an array (always
+  // undefined, so its coach-existence check never fired). Both were compiler
+  // errors sitting in a file no compiler read.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowJs": false
+  },
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["node_modules", "scripts/seed-data.config.ts"]
+}

@@ -25,7 +25,7 @@ create table if not exists pilot.organization_memberships (
 create table if not exists pilot.accounts (
   account_id text primary key,
   login_email text null,
-  auth_provider text not null default 'ppbf_local' check (auth_provider in ('ppbf_local', 'microsoft')),
+  auth_provider text not null default 'ppbf_local' check (auth_provider in ('ppbf_local', 'microsoft', 'magic_link')),
   role text not null check (role in ('platform_owner', 'organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff')),
   organization_id text not null references pilot.organizations(organization_id),
   is_platform_owner boolean not null default false,
@@ -137,7 +137,7 @@ create table if not exists pilot.audit_events (
   -- auditEventVocabulary.test.ts asserts this constraint matches it -- these
   -- two previously drifted, and the missing value failed every SHADOW
   -- research-requirement upload at the audit write.
-  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement')),
+  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement', 'safety_hold_placed', 'safety_hold_lifted', 'consent_granted', 'consent_withdrawn', 'data_deletion_initiated', 'data_purged')),
   actor_account_id text null,
   actor_role text null,
   organization_id text null references pilot.organizations(organization_id),
@@ -283,18 +283,6 @@ create table if not exists pilot.volunteers (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (organization_id, volunteer_id)
-);
-
-create table if not exists pilot.staff (
-  organization_id text not null references pilot.organizations(organization_id),
-  staff_id text not null,
-  account_id text null references pilot.accounts(account_id),
-  full_name text not null,
-  title text not null,
-  active_flag boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  primary key (organization_id, staff_id)
 );
 
 create table if not exists pilot.attendance (
@@ -460,29 +448,6 @@ create table if not exists pilot.coach_observations (
   constraint pilot_coach_observations_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
 );
 
-create table if not exists pilot.messages (
-  organization_id text not null references pilot.organizations(organization_id),
-  message_id uuid not null,
-  sender_account_id text not null references pilot.accounts(account_id),
-  recipient_account_id text not null references pilot.accounts(account_id),
-  body text not null,
-  created_at timestamptz not null default now(),
-  primary key (organization_id, message_id)
-);
-
-create table if not exists pilot.skills (
-  organization_id text not null references pilot.organizations(organization_id),
-  skill_id uuid not null,
-  athlete_id text not null,
-  skill_name text not null,
-  level text not null,
-  recorded_at timestamptz not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  primary key (organization_id, skill_id),
-  constraint pilot_skills_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
-);
-
 create index if not exists idx_pilot_memberships_org_role on pilot.organization_memberships(organization_id, role);
 create index if not exists idx_pilot_sessions_org_athlete_id on pilot.sessions(organization_id, athlete_id);
 create index if not exists idx_pilot_goals_org_athlete_id on pilot.goals(organization_id, athlete_id);
@@ -504,8 +469,6 @@ create index if not exists idx_pilot_medical_intake_org_athlete on pilot.medical
 create index if not exists idx_pilot_waivers_org_athlete on pilot.waivers(organization_id, athlete_id, created_at desc);
 create index if not exists idx_pilot_guardian_links_org_athlete on pilot.guardian_links(organization_id, athlete_id);
 create index if not exists idx_pilot_coach_observations_org_athlete on pilot.coach_observations(organization_id, athlete_id, created_at desc);
-create index if not exists idx_pilot_messages_org_recipient_created on pilot.messages(organization_id, recipient_account_id, created_at desc);
-create index if not exists idx_pilot_skills_org_athlete_recorded on pilot.skills(organization_id, athlete_id, recorded_at desc);
 
 -- SHADOW Feedback (effectiveness tracking)
 create table if not exists pilot.shadow_feedback (
@@ -685,7 +648,7 @@ create table if not exists pilot.scheduler_attendance (
   class_id                text not null,
   athlete_id              text not null,
   status                  text not null check (status in ('present', 'absent', 'excused')),
-  method                  text not null check (method in ('self', 'coach_override', 'admin_override')),
+  method                  text not null check (method in ('self', 'parent', 'coach_override', 'admin_override')),
   checked_in_by_role      text not null check (checked_in_by_role in ('athlete', 'parent', 'coach', 'organization_admin', 'admin')),
   checked_in_by_account_id text not null,
   note                    text not null default '',
@@ -703,6 +666,160 @@ create table if not exists pilot.scheduler_attendance (
 
 create index if not exists idx_scheduler_attendance_org_class
   on pilot.scheduler_attendance(organization_id, class_id, checked_in_at desc);
+
+-- Safety Gate Matrix: reusable substrate for athlete-safety gates
+-- (capabilities #3/#43). See
+-- pilot_slice_postgres_safety_gate_matrix_migration.sql for the full
+-- design rationale -- enforcement is 'block' or 'flag' per gate, never
+-- assumed, and requirement_text carries the "teaching moment" lesson a
+-- refusal or flag surfaces alongside the stop.
+create table if not exists pilot.safety_gates (
+  organization_id   text not null references pilot.organizations(organization_id) on delete cascade,
+  gate_id           text not null,
+  gate_key          text not null,
+  name              text not null,
+  category          text not null check (category in ('medical', 'age', 'training_level', 'contact', 'equipment', 'behavioral', 'other')),
+  enforcement       text not null check (enforcement in ('block', 'flag')),
+  requirement_text  text not null,
+  active_flag       boolean not null default true,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  primary key (organization_id, gate_id),
+  unique (organization_id, gate_key)
+);
+
+create table if not exists pilot.safety_gate_evaluations (
+  organization_id          text not null references pilot.organizations(organization_id) on delete cascade,
+  evaluation_id             text not null,
+  gate_key                  text not null,
+  athlete_id                text not null,
+  outcome                   text not null check (outcome in ('passed', 'blocked', 'flagged')),
+  reason                    text not null default '',
+  evaluated_by_account_id   text not null,
+  evaluated_by_role         text not null,
+  context_id                text not null default '',
+  metadata                  jsonb not null default '{}'::jsonb,
+  evaluated_at              timestamptz not null,
+  created_at                timestamptz not null default now(),
+  primary key (organization_id, evaluation_id),
+  foreign key (organization_id, gate_key)
+    references pilot.safety_gates(organization_id, gate_key)
+    on delete cascade,
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_safety_gate_evaluations_org_athlete
+  on pilot.safety_gate_evaluations(organization_id, athlete_id, evaluated_at desc);
+
+create index if not exists idx_safety_gate_evaluations_org_gate
+  on pilot.safety_gate_evaluations(organization_id, gate_key, evaluated_at desc);
+
+-- Red Flag Escalation ladder (capability #194): pull-based surface a coach
+-- or admin checks so a near miss, pain report, or safety-gate flag does not
+-- sit undiscovered in its own insert-only table. See
+-- pilot_slice_postgres_safety_escalations_migration.sql for the full design
+-- rationale -- escalated_to_role is constrained and deliberately excludes
+-- 'board' (an aggregate-only side channel, not a rung on the escalation
+-- ladder).
+create table if not exists pilot.safety_escalations (
+  organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
+  escalation_id                text not null,
+  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident')),
+  source_id                    text null,
+  athlete_id                   text not null,
+  severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
+  reason                       text not null,
+  escalated_to_role            text not null check (escalated_to_role in ('coach', 'organization_admin', 'admin')),
+  triggered_by                 text not null check (triggered_by in ('system', 'human')),
+  triggered_by_account_id      text null,
+  triggered_by_role            text null,
+  status                       text not null default 'open' check (status in ('open', 'acknowledged', 'resolved')),
+  acknowledged_by_account_id   text null,
+  acknowledged_at              timestamptz null,
+  resolved_by_account_id       text null,
+  resolved_at                  timestamptz null,
+  resolution_note              text not null default '',
+  metadata                     jsonb not null default '{}'::jsonb,
+  created_at                   timestamptz not null default now(),
+  updated_at                   timestamptz not null default now(),
+  primary key (organization_id, escalation_id),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_safety_escalations_org_status
+  on pilot.safety_escalations(organization_id, status, created_at desc);
+
+create index if not exists idx_safety_escalations_org_athlete
+  on pilot.safety_escalations(organization_id, athlete_id, created_at desc);
+
+-- Coach coverage grants (ticket T-002): per-athlete, time-bounded access
+-- for a coach substituting for the athlete's coach of record. See
+-- pilot_slice_postgres_coach_coverage_migration.sql for the design
+-- rationale (and why a roster-wide membership flag was rejected). The
+-- access gate checks `starts_at <= now() and expires_at > now()` at read
+-- time -- expiry needs no cron, and revocation forces expires_at to now().
+create table if not exists pilot.coach_coverage (
+  coverage_id uuid primary key default gen_random_uuid(),
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  athlete_id text not null,
+  covering_coach_id text not null references pilot.accounts(account_id) on delete cascade,
+  granted_by_account_id text not null references pilot.accounts(account_id) on delete cascade,
+  starts_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  constraint pilot_coach_coverage_athlete_fk
+    foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id) on delete cascade,
+  constraint pilot_coach_coverage_window_check check (expires_at > starts_at)
+);
+
+create index if not exists idx_pilot_coach_coverage_lookup
+  on pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, expires_at);
+
+-- Training holds (capability #82): durable, attributed, expiring pauses on
+-- an athlete's training. See pilot_slice_postgres_training_holds_migration.sql
+-- for the full design rationale (why not gym_status, why not a gate row
+-- alone, what Stop/Hold/Regress each mean). The athlete_explanation is NOT
+-- NULL on purpose: a hold a child cannot read a reason for is a punishment,
+-- not a safety measure.
+create table if not exists pilot.training_holds (
+  organization_id        text not null references pilot.organizations(organization_id) on delete cascade,
+  hold_id                text not null,
+  athlete_id             text not null,
+  scope                  text not null check (scope in ('all_training', 'contact_only', 'conditioning_only')),
+  reason_category        text not null check (reason_category in ('medical', 'fatigue', 'behavioral', 'administrative', 'other')),
+  reason_text            text not null default '',
+  athlete_explanation    text not null check (length(btrim(athlete_explanation)) > 0),
+  lift_condition_text    text not null default '',
+  placed_by_account_id   text not null,
+  placed_by_role         text not null check (placed_by_role in ('coach', 'organization_admin', 'admin')),
+  placed_at              timestamptz not null default now(),
+  expires_at             timestamptz null,
+  lifted_by_account_id   text null,
+  lifted_at              timestamptz null,
+  lift_note              text not null default '',
+  status                 text not null default 'active' check (status in ('active', 'lifted', 'expired')),
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now(),
+  primary key (organization_id, hold_id),
+  constraint pilot_training_holds_athlete_fk
+    foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade,
+  constraint pilot_training_holds_expiry_check
+    check (expires_at is null or expires_at > placed_at)
+);
+
+create unique index if not exists idx_training_holds_one_active
+  on pilot.training_holds(organization_id, athlete_id)
+  where status = 'active';
+
+create index if not exists idx_training_holds_org_status
+  on pilot.training_holds(organization_id, status, placed_at desc);
 
 -- Document ingest backend audit stream
 create table if not exists pilot.document_ingest_audit (

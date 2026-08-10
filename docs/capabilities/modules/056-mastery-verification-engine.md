@@ -1,39 +1,20 @@
-# Module 056 — Mastery Verification Engine
+# Module 056
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 7 tracker) |
 | Active | false |
-| Promotion required | true |
-| Category | Learning / Skill Acquisition (`learningSkillAcquisition`) |
-| Source | `2.0.0-draft-merged` |
-| Parent original-25 | _unmapped_ |
-
-## Intent
-_One paragraph: what this module owns and what it must never do._
+| ManualVerification | PENDING_SIGN_OFF |
+| Parent | 6 Skill |
+| Vertical slice | mastery status enum coach-set: learning|practiced|verified (no auto) |
 
 ## Boundaries
-- Does **not** auto-approve progression, medical, or board decisions.
-- Does **not** expose athlete-level data to board / public aggregates without suppression rules.
-- Does **not** invent metrics that are not stored by the platform.
-
-## Dependencies
-- Upstream: 
-- Downstream: 
-- Related original-25 capability: 
-
-## Acceptance criteria
-- [ ] Data model / tables named
-- [ ] API surface listed (or explicitly none)
-- [ ] Roles that may read / write
-- [ ] Safety / refusal cases
-- [ ] Audit events
-- [ ] UI surface or "API-only"
-
-## Implementation notes
-_Scaffold only. Do not mark active until promotion review._
+- No AI auto-mastery
+- No board individual mental health detail
+- No invented psychometrics beyond simple scales you store
+- governance.active stays false
 
 ## Audit log
 | Date | Actor | Note |
 |------|-------|------|
-| 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-03 | wave7-ps | Wave 7 batch DONE in tracker |

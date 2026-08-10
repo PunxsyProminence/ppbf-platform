@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { FEEDBACK_ACKNOWLEDGEMENT } from '@/lib/feedbackWording';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 /**
  * The queue an administrator works.
@@ -47,7 +48,20 @@ type Scope = 'organization' | 'platform';
 
 function formatWhen(value: string): string {
   const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? value : new Date(parsed).toLocaleString();
+  return formatGymStamp(parsed) ?? value;
+}
+
+/**
+ * Presentation only: the triage vocabulary mapped onto the badge ladder so the
+ * state carries a glyph and a label (Law 3), never colour alone. `new` is the
+ * rung that demands attention; `done` is the cleared outcome; `declined` is a
+ * closed refusal; the two in-between states are being watched.
+ */
+function triageBadge(status: TriageStatus): { className: string; glyph: string } {
+  if (status === 'done') return { className: 'badge badge--cleared', glyph: '✓' };
+  if (status === 'declined') return { className: 'badge badge--locked', glyph: '✕' };
+  if (status === 'new') return { className: 'badge badge--restricted', glyph: '▲' };
+  return { className: 'badge badge--monitor', glyph: '◉' };
 }
 
 interface SubmissionCardProps {
@@ -62,39 +76,41 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
   const [note, setNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const statusBadge = triageBadge(item.triage_status);
+
   return (
     <article
       className={
         isSafeguarding
-          ? 'border-[3px] border-[color:var(--brass-600)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-md)]'
-          : 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4'
+          ? 'mat-leather--raised rounded-[var(--r-lg)] border border-[color:var(--restricted)] p-[var(--s4)]'
+          : 'mat-leather rounded-[var(--r-lg)] border border-[color:var(--hide-700)] p-[var(--s4)]'
       }
     >
       {isSafeguarding ? (
-        <p className="mb-3 border-2 border-[var(--black)] bg-[var(--brass-800)] px-2 py-1 text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-[var(--white)]">
-          Safeguarding — a person must read this
+        <p className="mb-[var(--s3)]">
+          <span className="badge badge--restricted"><i>▲</i>Safeguarding — a person must read this</span>
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-        <span className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-[var(--black)]">
+      <div className="flex flex-wrap items-center gap-[var(--s2)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.12em] text-[color:var(--bone-400)]">
+        <span className="rounded-[var(--r-sm)] border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-[var(--s2)] py-[var(--s1)] text-[color:var(--bone-300)]">
           {item.submitted_by_role}
         </span>
-        <span className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-[var(--black)]">
+        <span className="rounded-[var(--r-sm)] border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-[var(--s2)] py-[var(--s1)] text-[color:var(--bone-300)]">
           {item.kind}
         </span>
         {scope === 'platform' && item.organization_name ? (
-          <span className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-[var(--black)]">
+          <span className="rounded-[var(--r-sm)] border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-[var(--s2)] py-[var(--s1)] text-[color:var(--bone-300)]">
             {item.organization_name}
           </span>
         ) : null}
         {scope === 'organization' && item.submitter_name ? (
-          <span className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-[var(--black)]">
+          <span className="rounded-[var(--r-sm)] border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-[var(--s2)] py-[var(--s1)] text-[color:var(--bone-300)]">
             {item.submitter_name}
           </span>
         ) : null}
-        <span>{formatWhen(item.created_at)}</span>
-        <span className="text-[color:var(--brass-800)]">{item.triage_status}</span>
+        <span className="t-data text-[color:var(--bone-400)]">{formatWhen(item.created_at)}</span>
+        <span className={statusBadge.className}><i>{statusBadge.glyph}</i>{item.triage_status}</span>
       </div>
 
       {/*
@@ -106,29 +122,29 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
         text somewhere it should not be found.
       */}
       {item.body === null || item.body === '' ? (
-        <p className="mt-3 border-l-4 border-[var(--red-primary)] bg-[var(--canvas-tan)] px-3 py-2 text-sm leading-6 text-[var(--gray-dark)]">
+        <p className="mt-[var(--s3)] border-l-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--bone-400)]">
           Withheld. This was routed to a person at {item.organization_name ?? 'the gym'}, and what the
           submitter wrote stays with them. Nothing failed to load and there is nothing to open.
         </p>
       ) : (
-        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[var(--black)]">{item.body}</p>
+        <p className="t-body mt-[var(--s3)] whitespace-pre-wrap">{item.body}</p>
       )}
 
       {item.triage_note ? (
-        <p className="mt-3 border-l-4 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm leading-6 text-[var(--gray-dark)]">
+        <p className="mt-[var(--s3)] border-l-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--bone-300)]">
           {item.triage_note}
         </p>
       ) : null}
 
       {scope === 'organization' ? (
-        <div className="mt-4 space-y-2 border-t-2 border-[var(--black)] pt-3">
-          <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+        <div className="mt-[var(--s4)] space-y-[var(--s2)] border-t border-[color:var(--hide-600)] pt-[var(--s3)]">
+          <label className="t-label block">
             Status
             <select
               aria-label={`Status for submission ${item.submission_id}`}
               value={status}
               onChange={(event) => setStatus(event.target.value as TriageStatus)}
-              className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal text-[var(--black)]"
+              className="select mt-[var(--s2)] normal-case tracking-normal"
             >
               {TRIAGE_STATUSES.map((value) => (
                 <option key={value} value={value}>
@@ -142,7 +158,7 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
             value={note}
             onChange={(event) => setNote(event.target.value)}
             placeholder="What was done about it"
-            className="h-20 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm text-[var(--black)]"
+            className="textarea h-20"
           />
           <button
             type="button"
@@ -153,7 +169,7 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
                 .then(() => setNote(''))
                 .finally(() => setIsSaving(false));
             }}
-            className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--brass-800)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSaving ? 'Saving...' : 'Save Triage'}
           </button>
@@ -247,34 +263,34 @@ export default function FeedbackTriagePage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-        <div className="mx-auto w-full max-w-5xl px-6 py-10 lg:px-10">
-          <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Admin Workspace</p>
-            <h1 className="font-display text-4xl font-black">What People Told Us</h1>
-            <p className="max-w-3xl text-sm leading-6 text-[var(--gray-dark)]">
+      <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+        <div className="mx-auto w-full max-w-5xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+          <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
+            <p className="t-eyebrow">Admin Workspace</p>
+            <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>What People Told Us</h1>
+            <p className="t-body max-w-3xl">
               {scope === 'platform'
                 ? 'Every gym, with the person who wrote each one reduced to their role and their gym. This view shows whether a frustration is one person or a pattern; the gym that received a submission is the one that works it.'
                 : 'Everything this gym has been told, newest first, with anything an athlete wrote about being hurt or frightened at the top.'}
             </p>
-            {errorMessage ? <p className="text-sm text-[var(--accent-quiet)]">{errorMessage}</p> : null}
+            {errorMessage ? <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">{errorMessage}</p> : null}
           </header>
 
           {safeguarding.length > 0 ? (
-            <section className="mt-6">
-              <div className="border-[3px] border-[var(--black)] bg-[var(--brass-800)] px-4 py-3">
-                <h2 className="font-display text-xl tracking-tight text-[var(--white)]">
+            <section className="mt-[var(--s5)]">
+              <div className="mat-leather--raised rounded-[var(--r-lg)] border border-[color:var(--restricted)] px-[var(--s4)] py-[var(--s3)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
                   {safeguarding.length === 1
                     ? '1 submission needs a person today'
                     : `${safeguarding.length} submissions need a person today`}
                 </h2>
-                <p className="mt-1 text-sm leading-6 text-[var(--white-off)]">
+                <p className="t-body mt-[var(--s2)]">
                   An athlete wrote about being hurt, frightened, or not wanting to be here. All they were
                   told is: &ldquo;{FEEDBACK_ACKNOWLEDGEMENT}&rdquo; They were not promised a reply or a
                   conversation, so they do not know one is coming.
                 </p>
               </div>
-              <div className="mt-4 grid gap-4">
+              <div className="mt-[var(--s4)] grid gap-[var(--s4)]">
                 {safeguarding.map((item) => (
                   <SubmissionCard
                     key={item.submission_id}
@@ -288,11 +304,11 @@ export default function FeedbackTriagePage() {
           ) : null}
 
           {product.length > 0 ? (
-            <section className="mt-8">
-              <h2 className="font-display text-xl tracking-tight text-[var(--black)]">
+            <section className="mt-[var(--s6)]">
+              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
                 Bugs, frustrations and ideas
               </h2>
-              <div className="mt-4 grid gap-4">
+              <div className="mt-[var(--s4)] grid gap-[var(--s4)]">
                 {product.map((item) => (
                   <SubmissionCard
                     key={item.submission_id}
@@ -306,16 +322,13 @@ export default function FeedbackTriagePage() {
           ) : null}
 
           {isLoaded && !errorMessage && items.length === 0 ? (
-            <p className="mt-8 text-sm leading-6 text-[var(--gray-dark)]">Nobody has sent anything yet.</p>
+            <p className="t-body mt-[var(--s6)]">Nobody has sent anything yet.</p>
           ) : null}
 
-          {message ? <p className="mt-6 text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
+          {message ? <p className="mt-[var(--s5)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{message}</p> : null}
 
-          <div className="mt-8">
-            <Link
-              href="/operations"
-              className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
-            >
+          <div className="mt-[var(--s6)]">
+            <Link href="/operations" className="btn btn--ghost">
               Back to Mission Control
             </Link>
           </div>

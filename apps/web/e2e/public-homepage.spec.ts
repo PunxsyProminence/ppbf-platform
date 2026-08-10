@@ -168,8 +168,22 @@ test.describe('Public homepage', () => {
     // rewritten, so the test failed for a reason that had nothing to do with
     // what it is named for. The two sign-in methods are the contract; the
     // sentence introducing them is not.
-    await expect(page.getByRole('button', { name: /Microsoft/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Account ID \/ PIN/ })).toBeVisible();
+    //
+    // Both method tabs are the contract. Which one opens is not -- the page now
+    // opens on Microsoft, because PIN sign-in admits only athletes and athletes
+    // have their own door at /athlete/sign-in. The tabs carry aria-pressed and
+    // the panel buttons do not, which is what disambiguates "Microsoft" the tab
+    // from "Continue With Microsoft" the action.
+    const microsoftTab = page.getByRole('button', { name: /Microsoft/ }).and(page.locator('[aria-pressed]'));
+    const pinTab = page.getByRole('button', { name: /Account ID \/ PIN/ });
+    await expect(microsoftTab).toBeVisible();
+    await expect(pinTab).toBeVisible();
+    await expect(microsoftTab).toHaveAttribute('aria-pressed', 'true');
+
+    // The PIN form is still reachable -- one click away rather than the front
+    // door. Asserting it appears after the click keeps the original claim that
+    // both methods work, without pinning which one greets you.
+    await pinTab.click();
     await expect(page.getByLabel(/Account ID/i).first()).toBeVisible();
   });
 

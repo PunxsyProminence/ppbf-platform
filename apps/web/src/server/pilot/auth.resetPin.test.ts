@@ -140,6 +140,46 @@ describe('activateAccountPin', () => {
     expect(revokeParams).toEqual(['ath-acct-1']);
   });
 
+  /**
+   * The asymmetry this closes. resetAccountPin has forced a PIN change since
+   * the reset button shipped, with the reasoning written next to it: a reset
+   * PIN is always known to somebody other than the athlete. An activation PIN
+   * is typed by an administrator too, and this path was the only one of the
+   * three that left the flag alone -- so an athlete promoted from intake got a
+   * credential their admin knows and was never asked to replace it.
+   *
+   * Measured against real Postgres before the fix: createAthleteAccount true,
+   * resetAccountPin true, activateAccountPin false.
+   */
+  test('forces a PIN change, because an activation PIN is typed by an administrator', async () => {
+    currentClient = fakeClient();
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'ath-acct-1' }] });
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+
+    await activateAccountPin('ath-acct-1', '482913', 'org-1');
+
+    const [updateSql] = currentClient.query.mock.calls[0];
+    expect(updateSql).toContain('must_change_pin = true');
+  });
+
+  // Negative control on the assertion above: it must be reading the activation
+  // statement, not any statement that happens to mention the column.
+  test('sets the flag on the accounts update and not somewhere else', async () => {
+    currentClient = fakeClient();
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'ath-acct-1' }] });
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+
+    await activateAccountPin('ath-acct-1', '482913', 'org-1');
+
+    const [updateSql] = currentClient.query.mock.calls[0];
+    const [membershipSql] = currentClient.query.mock.calls[1];
+
+    expect(updateSql).toContain('update pilot.accounts');
+    expect(membershipSql).not.toContain('must_change_pin');
+  });
+
   test('rejects activation when account is outside organization scope', async () => {
     currentClient = fakeClient();
     currentClient.query.mockResolvedValueOnce({ rows: [] });

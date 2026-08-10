@@ -192,6 +192,64 @@ export async function assignDrill(params: {
   });
 }
 
+/**
+ * Recompute assignment completion_percentage and status from the completion
+ * count. frequency_per_week is the intended session cadence for the week; when
+ * set, percentage is count / frequency capped at 100. When unset, each log is
+ * worth 25% so four sessions close the loop without requiring a frequency.
+ * Status advances assigned → in_progress on the first log, and to completed at
+ * 100%. Cancelled assignments are left alone.
+ */
+async function touchAssignmentProgress(
+  client: { query: <T = unknown>(sql: string, params?: unknown[]) => Promise<{ rows: T[]; rowCount: number | null }> },
+  organizationId: string,
+  assignmentId: string,
+): Promise<void> {
+  const assignmentRows = await client.query<{
+    frequency_per_week: number | null;
+    status: string;
+  }>(
+    `select frequency_per_week, status
+     from pilot.drill_assignments
+     where organization_id = $1 and assignment_id = $2
+     for update`,
+    [organizationId, assignmentId],
+  );
+  const assignment = assignmentRows.rows[0];
+  if (!assignment || assignment.status === 'cancelled') {
+    return;
+  }
+
+  const countRows = await client.query<{ n: string }>(
+    `select count(*)::text as n
+     from pilot.assignment_completions
+     where organization_id = $1 and assignment_id = $2`,
+    [organizationId, assignmentId],
+  );
+  const count = Number(countRows.rows[0]?.n ?? 0);
+  const frequency = assignment.frequency_per_week;
+  const percentage =
+    count <= 0
+      ? 0
+      : frequency && frequency > 0
+        ? Math.min(100, Math.round((count / frequency) * 100))
+        : Math.min(100, count * 25);
+
+  let nextStatus = assignment.status;
+  if (percentage >= 100) {
+    nextStatus = 'completed';
+  } else if (count > 0 && assignment.status === 'assigned') {
+    nextStatus = 'in_progress';
+  }
+
+  await client.query(
+    `update pilot.drill_assignments
+     set completion_percentage = $1, status = $2
+     where organization_id = $3 and assignment_id = $4`,
+    [percentage, nextStatus, organizationId, assignmentId],
+  );
+}
+
 export async function recordCompletion(params: {
   organizationId: string;
   assignmentId: string;
@@ -203,37 +261,88 @@ export async function recordCompletion(params: {
   const completionId = `completion_${Date.now()}_${randomUUID().substring(0, 8)}`;
   const now = new Date().toISOString();
 
-  const result = await query<AssignmentCompletion>(
-    `insert into pilot.assignment_completions (
-      completion_id, organization_id, assignment_id, athlete_id, completed_at, reps_completed, notes, verification_status
-    ) values ($1, $2, $3, $4, $5, $6, $7, 'pending')
-    returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at`,
-    [
-      completionId,
-      params.organizationId,
-      params.assignmentId,
-      params.athleteId,
-      now,
-      params.repsCompleted || null,
-      params.notes || '',
-    ],
-  );
+  // Insert and percentage update must commit together: a completion that does
+  // not move the parent gauge leaves the product surface lying about progress.
+  return withTransaction(async (client) => {
+    const result = await client.query<AssignmentCompletion>(
+      `insert into pilot.assignment_completions (
+        completion_id, organization_id, assignment_id, athlete_id, completed_at, reps_completed, notes, verification_status
+      ) values ($1, $2, $3, $4, $5, $6, $7, 'pending')
+      returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at`,
+      [
+        completionId,
+        params.organizationId,
+        params.assignmentId,
+        params.athleteId,
+        now,
+        params.repsCompleted || null,
+        params.notes || '',
+      ],
+    );
 
-  return result[0];
+    await touchAssignmentProgress(client, params.organizationId, params.assignmentId);
+
+    return result.rows[0];
+  });
 }
 
+/**
+ * The completion row with its athlete, for authorisation checks that must run
+ * BEFORE any write. Verification needs to know whose completion this is; asking
+ * after the flip means the flip already happened for a completion the caller
+ * had no business touching.
+ */
+export async function getCompletionById(
+  organizationId: string,
+  completionId: string,
+): Promise<{ completion_id: string; assignment_id: string; athlete_id: string } | null> {
+  const rows = await query<{ completion_id: string; assignment_id: string; athlete_id: string }>(
+    `select completion_id, assignment_id, athlete_id
+     from pilot.assignment_completions
+     where organization_id = $1 and completion_id = $2`,
+    [organizationId, completionId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Mark a completion verified or disputed, within one organization.
+ *
+ * organizationId is REQUIRED, and the update is scoped by it. It was briefly
+ * optional, with an unscoped fallback that updated by completion_id alone --
+ * and a completion_id is not a secret, so that path would let a caller in one
+ * gym flip a record belonging to another. Both call sites already passed the
+ * organization, so nothing depended on the fallback; it was a door left open
+ * for whoever forgot the argument next, and nothing would have failed loudly
+ * enough to notice.
+ *
+ * getCompletionById above is the read that answers "whose is this" before the
+ * flip. This scope is the second lock rather than a substitute for it: the read
+ * decides whether the caller may act, and the WHERE clause makes certain the
+ * write lands only where the read looked.
+ *
+ * Returns null when no row matched, which is also what a caller sees when the
+ * completion belongs to a different gym. The route renders that as
+ * hiddenNotFound() rather than a 403, so a probe cannot use the difference
+ * between "does not exist" and "not yours" to enumerate another gym's records.
+ */
 export async function verifyCompletion(
   completionId: string,
   verifiedByAccountId: string,
   verified: boolean,
-): Promise<void> {
+  organizationId: string,
+): Promise<AssignmentCompletion | null> {
   const now = new Date().toISOString();
   const status = verified ? 'verified' : 'disputed';
 
-  await query(
-    `update pilot.assignment_completions set verification_status = $1, verified_by_account_id = $2, verified_at = $3 where completion_id = $4`,
-    [status, verifiedByAccountId, now, completionId],
+  const result = await query<AssignmentCompletion>(
+    `update pilot.assignment_completions
+     set verification_status = $1, verified_by_account_id = $2, verified_at = $3
+     where completion_id = $4 and organization_id = $5
+     returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at`,
+    [status, verifiedByAccountId, now, completionId, organizationId],
   );
+  return result[0] ?? null;
 }
 
 export async function getAthleteGaps(

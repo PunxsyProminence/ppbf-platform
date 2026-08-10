@@ -20,10 +20,10 @@ const PIN_PATTERN = /^\d{6}$/;
 
    The cards were bg-white with rounded-2xl and rounded-xl fields: white is not
    one of the five materials and neither radius is on the Fibonacci scale. They
-   are paper now. The chrome came off --safety-locked, which aliases to --locked
-   -- a Continue button is not a safety state. Red survives only on the genuine
-   refusal, and the success panel takes the ladder's own --cleared instead of a
-   hardcoded #4caf50.
+   are paper now. The chrome came off the safety gate's red alias, since a
+   Continue button is not a safety state. Red survives only on the genuine
+   refusal, and the success panel takes the ladder's own --cleared instead of
+   the hardcoded material-green hex it used to carry.
 
    Sizes are set with Tailwind rather than ppbf's .t-* voices on purpose:
    globals.css imports ppbf.css after Tailwind, so .t-body and .t-label pin
@@ -302,8 +302,8 @@ function ActivatePageContent() {
         {stage === 'done' && (
           /* Day one. This is the first thing the platform ever says to a new
              athlete, so it gets the cleared rung rather than the hardcoded
-             #4caf50 it used to wear -- the same green the safety gate uses when
-             it says you are good to go. */
+             green hex it used to wear -- the same green the safety gate uses
+             when it says you are good to go. */
           <section className="mat-paper flex flex-col gap-[var(--s5)] rounded-[var(--r-lg)] border-2 border-[color:var(--cleared)] p-[var(--s6)] text-center">
             <p className="text-[length:var(--t-3xl)] leading-none text-[color:var(--cleared)]" aria-hidden="true">✓</p>
             <h2 className="t-command text-[length:var(--t-lg)]">You&rsquo;re all set</h2>

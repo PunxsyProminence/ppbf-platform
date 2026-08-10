@@ -1,5 +1,7 @@
 import { randomInt } from 'node:crypto';
 
+import { ValidationError } from './errors';
+
 export const DEFAULT_PIN_LENGTH = 6;
 
 /**
@@ -68,20 +70,29 @@ export function generateStartingPin(): string {
  * already taken it from the athlete to authenticate the change, so comparing
  * here costs nothing and needs no database read.
  *
- * The message has to lead with "PIN" like the ones in validatePinPolicy:
- * jsonError maps that prefix to a 400 carrying the text, and anything else to a
- * 500 "Internal server error", which would tell the athlete nothing about why
- * their chosen PIN was refused.
+ * The message must reach the athlete, so this throws ValidationError rather
+ * than Error: jsonError returns a PilotError's own status with its message
+ * intact. This used to depend on the message LEADING with "PIN", which
+ * jsonError prefix-matched to a 400 -- and the trivially-guessable check
+ * eleven lines below the old note began with "That", so it 500'd and told the
+ * athlete nothing. Carrying the status on the type removes the spelling from
+ * the contract.
  */
 export function assertChosenPinAllowed(pin: string, currentPin?: string): void {
   const normalized = pin.trim();
 
   if (currentPin !== undefined && normalized === currentPin.trim()) {
-    throw new Error('PIN cannot be the one you were given to sign in with. Choose a different one.');
+    throw new ValidationError(
+      'PIN cannot be the one you were given to sign in with. Choose a different one.',
+      'PIN_IS_ISSUED_PIN',
+    );
   }
 
   if (normalized === LEGACY_SHARED_FIRST_LOGIN_PIN) {
-    throw new Error('PIN cannot be the old shared starting PIN. Choose a different one.');
+    throw new ValidationError(
+      'PIN cannot be the old shared starting PIN. Choose a different one.',
+      'PIN_IS_DEFAULT_FIRST_LOGIN',
+    );
   }
 }
 
@@ -128,20 +139,40 @@ function isTriviallyGuessablePin(pin: string): boolean {
 export function validatePinPolicy(pin: string): void {
   const normalized = pin.trim();
   if (!normalized) {
-    throw new Error('PIN is required');
+    throw new ValidationError('PIN is required', 'PIN_REQUIRED');
   }
 
   if (!/^\d+$/.test(normalized)) {
-    throw new Error('PIN must contain only digits');
+    throw new ValidationError('PIN must contain only digits', 'PIN_NOT_NUMERIC');
   }
 
   if (normalized.length !== DEFAULT_PIN_LENGTH) {
-    throw new Error(`PIN must be exactly ${DEFAULT_PIN_LENGTH} digits`);
+    throw new ValidationError(`PIN must be exactly ${DEFAULT_PIN_LENGTH} digits`, 'PIN_WRONG_LENGTH');
+  }
+
+  // The retired shared PIN is an ascending run, so the generic guessable rule
+  // below would catch it -- but "that is the starting PIN everyone was given" is
+  // the more useful thing to tell someone still sitting on it, and it is the
+  // message that names their actual situation. Checked first for that reason
+  // alone; either way it is refused.
+  if (normalized === LEGACY_SHARED_FIRST_LOGIN_PIN) {
+    throw new ValidationError(
+      'PIN cannot be the starting PIN everyone is given. Choose a different one.',
+      'PIN_IS_DEFAULT_FIRST_LOGIN',
+    );
   }
 
   // Checked after the shape rules so the message a caller sees is the most
   // specific one. No value is exempt -- see the note on isTriviallyGuessablePin.
+  //
+  // This message is why errors.ts exists: it begins with "That", so under the
+  // old prefix matcher an athlete who picked 111111 was told "Internal server
+  // error". Per-athlete starting PINs make every athlete choose a PIN, so this
+  // is now on the common path rather than the rare one -- it must stay typed.
   if (isTriviallyGuessablePin(normalized)) {
-    throw new Error('That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.');
+    throw new ValidationError(
+      'That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.',
+      'PIN_TRIVIALLY_GUESSABLE',
+    );
   }
 }

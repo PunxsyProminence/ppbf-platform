@@ -1,39 +1,20 @@
-# Module 007 — Session Builder
+# Module 007
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 5 tracker) |
 | Active | false |
-| Promotion required | true |
-| Category | Core Athlete System (`coreAthleteSystem`) |
-| Source | `2.0.0-draft-merged` |
-| Parent original-25 | _unmapped_ |
-
-## Intent
-_One paragraph: what this module owns and what it must never do._
+| ManualVerification | PENDING_SIGN_OFF |
+| Parent | 8 Session Logging |
+| Vertical slice | create draft session plan fields + list for coach |
 
 ## Boundaries
-- Does **not** auto-approve progression, medical, or board decisions.
-- Does **not** expose athlete-level data to board / public aggregates without suppression rules.
-- Does **not** invent metrics that are not stored by the platform.
-
-## Dependencies
-- Upstream: 
-- Downstream: 
-- Related original-25 capability: 
-
-## Acceptance criteria
-- [ ] Data model / tables named
-- [ ] API surface listed (or explicitly none)
-- [ ] Roles that may read / write
-- [ ] Safety / refusal cases
-- [ ] Audit events
-- [ ] UI surface or "API-only"
-
-## Implementation notes
-_Scaffold only. Do not mark active until promotion review._
+- No invented metrics
+- No board individual PII
+- No AI auto-approval
+- governance.active stays false
 
 ## Audit log
 | Date | Actor | Note |
 |------|-------|------|
-| 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-03 | wave5-ps | Wave 5 batch DONE in tracker |

@@ -1,0 +1,296 @@
+# Deploy runbook — folder 06–09 work (PR #238)
+
+Written 2026-08-08 for the six migrations and three coach surfaces added on
+`claude/remaining-capabilities-ab0q7d`. Every step below is one you run; none
+of it happens automatically on merge.
+
+**Read this first.** `deploy-production.yml` cannot verify that a migration was
+applied. Its `migrations_complete` input is an attestation you type, not a
+check against the database. Deploying code before its migration exists means
+every request touching the new tables fails. The order below is not a
+suggestion.
+
+---
+
+## What this ships
+
+Six migrations, none of which touch an existing table's data:
+
+| # | Migration | Creates | Depends on |
+|---|---|---|---|
+| 1 | `drill-vocabulary-widening` | nothing — widens two CHECKs | `drill-library-v3` (already applied) |
+| 2 | `multidiscipline` | `disciplines`, `grappling_exposure`, `athlete_discipline_participation`, `mixed_age_session_records`, + 4 additive `drill_library` columns | `drill-library-v3` |
+| 3 | `session-scripts` | `session_scripts`, `session_script_blocks`, `session_script_renderings`, `session_script_runs` | `drill-library-v3` (blocks FK `drill_library`) |
+| 4 | `transfer-claims` | `transfer_claims` | `drill-library-v3` |
+| 5 | `competence-cohorts` | `competence_levels`, `athlete_competence`, `cohort_definitions`, `v_athlete_tenure` | `activity-log` (view reads it) |
+| 6 | `method-naming` | `methods` | none |
+
+Three coach surfaces, all read-only: `/coach/session-scripts`,
+`/coach/cohorts`, `/coach/disciplines`.
+
+**The floor-hours clock stays at zero.** No attendance backfill is included and
+none should be added — synthetic history would corrupt every retention figure
+downstream.
+
+---
+
+## Order
+
+### 0. Merge
+
+PR #238 must be green and merged to `main`. Record the resulting merge SHA on
+`main` — every later step refers to it.
+
+```
+git rev-parse origin/main
+```
+
+### 1. Staging: apply migrations
+
+Dispatch `apply-migrations` against **staging**, once per migration, in this
+order. Order 1 → 6 matters: the widening must precede the drill-library seed,
+and `session-scripts` will fail outright if `drill-library-v3` is absent.
+
+```
+drill-vocabulary-widening
+multidiscipline
+session-scripts
+transfer-claims
+competence-cohorts
+method-naming
+```
+
+Each runner opens its own transaction and asserts readiness before committing,
+so a failure rolls back cleanly and leaves nothing half-applied. Confirm each
+one prints its `... MIGRATION PASS` line before starting the next.
+
+Every migration is catalog-guarded and re-runnable — if you lose track of which
+completed, re-running is a proven no-op, not a risk.
+
+### 2. Staging: load seed data
+
+Dispatch `seed-reference-data` with `dataset: all`, once in `dry-run` and once
+in `apply`. Dry-run performs every insert for real inside a transaction and
+rolls back, so it proves the data fits the live schema rather than only that
+the files parse.
+
+`all` runs the three loaders in dependency order inside one run. Prefer it.
+Dispatching one dataset at a time still works and is fine on staging, but on
+production it turns a full pass into six gated runs — six approval clicks for
+one deploy — and firing them together does **not** solve that: the concurrency
+group holds a single pending run, so a third dispatch **cancels** the second.
+That happened on 2026-08-08 and a cancelled run reads a lot like a finished
+one.
+
+Each loader still opens its own transaction, so `all` is three independent
+commits rather than one. A failure partway leaves the earlier datasets loaded;
+every loader is idempotent, so the fix is to re-run, not to unpick anything.
+
+| dataset | loads |
+|---|---|
+| `drill-library` | 119 drills, 357 scale levels, 674 stop rules, 258 cues |
+| `disciplines` | 5 disciplines |
+| `competence-cohorts` | 6 levels, 6 cohort definitions |
+
+`drill-library` requires `seed_account_id` and requires step 1's widening to
+have run first; without it, 228 scale-level rows and 63 stop-rule rows are
+rejected and the whole transaction aborts.
+
+Each loader is idempotent — re-running produces no duplicates.
+
+**Leave `organization_id` blank.** The workflow resolves the owning organization
+from the target app's own `ppbf-pilot-default-org-id` secret — the same value
+the app reads to answer requests, and the same one the SHADOW E2E gate uses. It
+is masked in the log and never printed into the run summary.
+
+Asking an operator to type it was the wrong shape to begin with: the value is a
+secret they cannot see from the Actions form, so supplying it meant copying it
+out of Azure by hand, and a typo seeds a real database under an organization
+that does not exist. Set it only to seed some *other* organization deliberately.
+
+`seed_account_id` is still yours to supply, and only `drill-library` needs it.
+It is an account id you already know, not a secret.
+
+That last point is a behaviour change. Until 2026-08-08 the workflow exported
+`PPBF_ORG_ID`/`SEED_ACCOUNT_ID` while every loader read
+`PPBF_SEED_ORG_ID`/`PPBF_SEED_ACCOUNT_ID`, so the operator's typed
+`organization_id` reached nothing and each loader silently defaulted to the
+fixture organization `ppbf-default-org`. A production dispatch would have
+written every row under that fixture org and reported success. The names now
+match, the defaults are gone, and `seedWorkflowContract.test.ts` fails if either
+side drifts again.
+
+Do NOT run the npm scripts directly against a real database. The workflow reads
+the connection string from the Container App's own secret and masks it; running
+locally means putting a production connection string on a laptop to do
+something the pipeline does properly.
+
+### Two seed loaders you must NOT run
+
+Both fail against the shipped schema, and both fail *whole*: each loader runs
+in a single transaction, so one bad row rolls back everything else in the same
+call. There is no partial load to salvage.
+
+**`npm run seed:session-scripts`** — two Friday-sparring blocks
+(`blk_df4fb688e5b181` "Sparring Drill Rounds", `blk_01b502a7e7336d` "Open
+Sparring") are `block_kind='instruction'` with all four `what_to_*` fields
+empty, which the loader converts to NULL, which violates `pilot_ssb_content`.
+The CSV holds 3 scripts / 65 blocks / 4 renderings; **0 of them load.** A
+real-Postgres test pins exactly this (`sessionScriptsTransfer.pg.test.ts`).
+
+Consequence: `/coach/session-scripts` renders "No session scripts yet" until
+those two blocks are given content or reclassified. The page and its tables are
+correct and deployed — there is simply nothing in them.
+
+**`npm run seed:transfer-claims`** — all 173 rows reference a generation of
+`drl_*` ids that resolves against neither the archive's own drill library nor
+the 119 drills shipped here, so every row violates `pilot_transfer_drill_fk`.
+Needs a decision about which drill-id generation is authoritative.
+
+Consequence: `pilot.transfer_claims` ships empty.
+
+### 3. Staging: verify before going further
+
+- `/coach/session-scripts` renders "No session scripts yet" — expected, see the
+  seed exclusion above. It is not evidence of a broken page.
+- `/coach/cohorts` lists 6 cohorts and the 6-rung ladder. Look up a real
+  athlete id — an athlete with no logged training must read "No logged training
+  yet", not zero hours.
+- `/coach/disciplines` lists 5 disciplines. Any age policy shown must carry its
+  cited source.
+
+### 4. Staging: deploy code
+
+Dispatch `deploy-staging` with `expected_sha` = the merge SHA and
+`schema_migrations_complete` = `CONFIRMED`.
+
+**Capture the image digest this run produces** (`sha256:...`). Production will
+not accept a deploy without it.
+
+### 5. Production: apply the same six migrations
+
+Same order as step 1, against production. This is the step
+`deploy-production.yml` cannot check for you.
+
+Take a backup first if `backup.yml` has not run recently.
+
+### 6. Production: load seed data
+
+Same as step 2 — `dataset: all`, dry-run then apply — with the same two
+datasets absent (session-scripts, transfer-claims).
+
+Leave `organization_id` blank, as in step 2 — the workflow resolves production's
+own default org from its secret.
+
+`seed_account_id` is the one value that is **not** the same string as staging's:
+production's active platform owner is `Admin@punxsyprominence.org` with a
+**capital A**, and the lowercase row is retired. Read it from the database
+rather than reusing what staging took — a retired account id would be stamped
+onto all 119 drills as the seeder.
+
+### 7. Production: deploy code
+
+Dispatch `deploy-production` with:
+
+| Input | Value |
+|---|---|
+| `confirm_sha` | the merge SHA from step 0 |
+| `release_digest` | the digest captured in step 4 |
+| `migrations_complete` | `CONFIRMED` — only if steps 5 and 6 actually finished |
+| `allow_rollback` | `NO` |
+
+This requires the production environment approval. That click is yours and is
+not delegable.
+
+---
+
+## Rollback
+
+Application code rolls back by dispatching `deploy-production` with an older
+SHA and digest and `allow_rollback: YES`.
+
+**The migrations do not roll back, and do not need to.** All six are additive —
+new tables, new columns, and two widened CHECK vocabularies. Older application
+code ignores tables it does not know about, and the widened CHECKs accept
+everything the narrow ones did. Rolling the code back while leaving the schema
+forward is safe.
+
+The one thing that is *not* reversible by redeploying is seeded data. If a seed
+load goes wrong, the fix is to correct the CSV and re-run the loader (they are
+idempotent), not to roll back the schema.
+
+---
+
+## Still open — decide before these matter
+
+1. **`pilot_transfer_drill_fk`** — all 173 transfer claims reference an
+   unresolvable drill-id generation. Blocks `seed:transfer-claims` entirely.
+   The `transfer_claims` table ships empty until this is settled.
+
+   **Disposition 2026-08-09: leave the table empty; do not attempt a
+   mapping.** The ids resolve against neither the archive's own drill library
+   nor the 119 drills shipped here, so any crosswalk built from this side is
+   a guess about which drill a claim refers to. A transfer claim asserts that
+   training X carries over to Y; pointing one at the wrong drill fabricates
+   evidence-backed provenance between two techniques, which is worse than
+   having no rows at all. This needs a crosswalk from whoever generated the
+   ids, not inference from the ids themselves.
+2. **`pilot_ssb_content`** — two Friday-sparring blocks are
+   `block_kind='instruction'` with all four `what_to_*` fields empty. This
+   blocks the ENTIRE session-scripts seed, not just those two rows: 0 of 65
+   blocks and 0 of 3 scripts load. `/coach/session-scripts` stays empty until
+   it is resolved.
+
+   **Reclassifying does not fix this — checked 2026-08-09, and the obvious
+   move is a trap.** The constraint exempts exactly three kinds:
+
+   ```sql
+   coalesce(what_to_say, what_to_explain, what_to_watch, what_to_fix) is not null
+   or block_kind in ('transition','arrival','close')
+   ```
+
+   `drill_round` — the semantically correct kind for "Sparring Drill Rounds"
+   — is **not** exempt, so moving the blocks to the right kind still violates
+   the constraint.
+
+   Both blockers (`blk_df4fb688e5b181`, `blk_01b502a7e7336d`) carry
+   `contact_level='controlled_sparring'`. A third empty block
+   (`blk_3bc86d4ec3c442`) is `arrival` and is legal. So the two rows holding
+   up the seed are the two highest-contact blocks in the script, and they
+   have no `what_to_watch` and no `what_to_fix` — which is what the
+   constraint's own comment means by "an empty block is an authoring error".
+   The guard is working; the source data is incomplete at exactly the point
+   where it matters most.
+
+   Four ways forward, one of which must not be taken:
+
+   1. **Author the content.** The only option whose result is true.
+      `what_to_watch` for a controlled-sparring round is safety guidance for
+      minors, so it is the gym's to write, not a builder's.
+   2. **Do NOT reclassify to `transition`/`arrival`/`close`.** It satisfies
+      the constraint by declaring a `controlled_sparring` block a
+      transition, which hides contact exposure from anything that reasons
+      about contact. This is the move to avoid, recorded here because it is
+      the one that looks like a fix.
+   3. **Widening the exempt list to include `drill_round`** lets any empty
+      drill round through and defeats the guard for every future script.
+   4. **Dropping the two rows and loading 63** yields a Friday sparring
+      script whose sparring blocks are silently absent.
+3. ~~**The 8 combatives claims** in `evidence_fragment_CB.csv` are still not
+   merged into the 1,235-claim registry.~~ **Resolved 2026-08-09** — merged,
+   1,235 -> 1,243. The fragment was a strict column subset of the registry, so
+   nothing was dropped; the eight registry columns it lacks (`sample_size`,
+   `effect_or_estimate`, `ppbf_implication`, `url`, `verification`,
+   `tbd_flag`, `track`, `independent_verification_detail`) are left EMPTY
+   rather than derived. Several claims state a figure in prose ("20.8
+   concussions per 100 exposures", "9.2 per 1000 exposures", "n=15") and
+   parsing those into `effect_or_estimate`/`sample_size` would be
+   interpretation presented as extraction.
+4. **Seven orphaned admin surfaces** (`/admin/export`, `/admin/import`,
+   `/admin/gear`, `/admin/gear/vendors`, `/admin/athletes`,
+   `/admin/organizations/test`, `/admin/platform/overview`) have no door in the
+   building map. Unrelated to this deploy, but recorded in
+   `buildingMapCoverage.test.ts`'s `PENDING_TRIAGE`.
+5. **Grappling exposure has no write path.** The tables and the read surface
+   ship; what a coach is prompted to enter when a choke was completed on a
+   child is a safeguarding-practice decision that has not been made.

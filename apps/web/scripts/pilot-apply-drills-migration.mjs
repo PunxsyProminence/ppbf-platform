@@ -117,6 +117,23 @@ const READINESS_QUERY = `
         and contype = 'p'
         and pg_get_constraintdef(oid) like '%(organization_id, drill_id)%'
     ) as drill_key_ready,
+    -- Deliberately does NOT constrain indpred. This migration creates the
+    -- index total, but drill-versioning later replaces it with a PARTIAL
+    -- unique index on (organization_id, name) WHERE active, reusing the same
+    -- name on purpose so drills.ts#isDrillNameCollision keeps matching it.
+    --
+    -- This check used to require "indpred is null", which made apply-migrations
+    -- migration=all a one-way door: drills runs at position 27 of that list and
+    -- drill-versioning at 44, so the first pass succeeded (total, then
+    -- converted) and every later pass failed here (now partial), on staging and
+    -- production alike, with "create unique index if not exists" unable to
+    -- restore the shape it wanted. Three dispatches died on this.
+    --
+    -- Not a weakening: what this runner owns is that the one-name-per-gym rule
+    -- is held by a UNIQUE index of that name, and it still asserts exactly
+    -- that. Which rows the rule spans is drill-versioning's decision, and
+    -- drill-versioning's own readiness check asserts the partial shape. Each
+    -- runner now asserts only what it owns, so neither can contradict the other.
     exists (
       select 1
       from pg_index i
@@ -124,7 +141,6 @@ const READINESS_QUERY = `
       where i.indrelid = to_regclass('pilot.drills')
         and c.relname = 'pilot_drills_one_name_per_org'
         and i.indisunique
-        and i.indpred is null
     ) as drill_name_unique_ready,
     exists (
       select 1
@@ -165,9 +181,28 @@ const READINESS_QUERY = `
     ) as assignment_free_text_preserved
 `;
 
+// The readiness query asks eleven separate questions and names every one of
+// them in its select list. Collapsing all eleven into a bare DRILLS_NOT_READY
+// threw that away: `apply-migrations` (migration=all, target=staging) failed on
+// this runner twice -- runs 31293202234 and 31337647625, seventeen hours apart
+// -- and neither failure said which check was unmet, so neither was actionable.
+// The information was already in the row; only the message was missing.
+//
+// Deliberately reports EVERY unmet check, not just the first: these are
+// independent properties of the same table, so stopping at one would turn a
+// single diagnosis into as many round trips as there are problems, and each
+// round trip here is a workflow dispatch against a real database.
+export function unmetReadinessChecks(row) {
+  if (!row) return ['(the readiness query returned no row at all)'];
+  return Object.entries(row)
+    .filter(([, value]) => value !== true)
+    .map(([name, value]) => `${name}=${JSON.stringify(value)}`);
+}
+
 function assertReadiness(row) {
-  if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('DRILLS_NOT_READY');
+  const unmet = unmetReadinessChecks(row);
+  if (unmet.length > 0) {
+    throw new Error(`DRILLS_NOT_READY -- unmet: ${unmet.join(', ')}`);
   }
 }
 

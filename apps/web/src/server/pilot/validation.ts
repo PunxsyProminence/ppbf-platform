@@ -1,7 +1,9 @@
 import {
   ATHLETE_FIELDS,
   COACH_REVIEW_FIELDS,
+  GOAL_CATEGORIES,
   GOAL_FIELDS,
+  GOAL_OPTIONAL_FIELDS,
   SESSION_FIELDS,
   type PilotAthlete,
   type PilotCoachReview,
@@ -17,9 +19,17 @@ function asRecord(payload: unknown): Record<string, unknown> {
   return payload as Record<string, unknown>;
 }
 
-function assertOnlyAllowedKeys(record: Record<string, unknown>, allowedKeys: readonly string[]): void {
+// `optionalKeys` are accepted but not demanded. Everything in `allowedKeys`
+// stays required, so the existing payloads are unchanged: the parameter exists
+// so a field can be added to a contract without breaking every caller that
+// predates it, which is the situation the goal columns arrived in.
+function assertOnlyAllowedKeys(
+  record: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  optionalKeys: readonly string[] = [],
+): void {
   const incoming = Object.keys(record);
-  const extras = incoming.filter((key) => !allowedKeys.includes(key));
+  const extras = incoming.filter((key) => !allowedKeys.includes(key) && !optionalKeys.includes(key));
   if (extras.length > 0) {
     throw new Error(`Unsupported fields: ${extras.join(', ')}`);
   }
@@ -56,12 +66,43 @@ function requireNumber(value: unknown, field: string): number {
   return value;
 }
 
+// Same shape as optionalCategory below: the allow-list is checked here so a bad
+// value is a 400 naming the field, not a constraint violation surfacing as a 500.
+// Unlike the goal fields, gym_status is required, so there is no null branch.
 function requireGymStatus(value: unknown, field: string): GymStatus {
   const candidate = requireString(value, field);
   if (!isGymStatus(candidate)) {
     throw new Error(`Request body field ${field} must be one of: ${GYM_STATUS_OPTIONS.join(', ')}`);
   }
   return candidate;
+}
+
+// Absent and explicitly null both mean "not recorded" and both store as NULL.
+// The distinction the column exists to keep is between null and 0: null is
+// nobody has reported progress, 0 is an athlete reporting they have not started.
+function optionalProgressPercent(value: unknown, field: string): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 100) {
+    throw new Error(`Request body field ${field} must be a whole number from 0 to 100`);
+  }
+  return value;
+}
+
+// Checked against the vocabulary here rather than left to the database, so a
+// bad value is a 400 naming the field instead of a constraint violation
+// surfacing as a 500. GOAL_CATEGORIES and the SQL CHECK are the same list.
+function optionalCategory(value: unknown, field: string): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'string' || !(GOAL_CATEGORIES as readonly string[]).includes(value)) {
+    throw new Error(
+      `Request body field ${field} must be one of: ${GOAL_CATEGORIES.join(', ')}`,
+    );
+  }
+  return value;
 }
 
 export function validateAthletePayload(payload: unknown): PilotAthlete {
@@ -84,7 +125,7 @@ export function validateAthletePayload(payload: unknown): PilotAthlete {
 
 export function validateGoalPayload(payload: unknown): PilotGoal {
   const record = asRecord(payload);
-  assertOnlyAllowedKeys(record, GOAL_FIELDS);
+  assertOnlyAllowedKeys(record, GOAL_FIELDS, GOAL_OPTIONAL_FIELDS);
 
   return {
     goal_id: requireString(record.goal_id, 'goal_id'),
@@ -93,6 +134,8 @@ export function validateGoalPayload(payload: unknown): PilotGoal {
     target_date: requireString(record.target_date, 'target_date'),
     metric: requireString(record.metric, 'metric'),
     status: requireString(record.status, 'status'),
+    category: optionalCategory(record.category, 'category'),
+    progress_percent: optionalProgressPercent(record.progress_percent, 'progress_percent'),
     created_at: requireString(record.created_at, 'created_at'),
     updated_at: requireString(record.updated_at, 'updated_at'),
   };

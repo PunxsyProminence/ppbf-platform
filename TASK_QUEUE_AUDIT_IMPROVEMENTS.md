@@ -485,6 +485,56 @@ this route. Verified they fail when the fix is reverted (2 of 7).
 
 ---
 
+## 🔀 Merge with `main` (249 commits) — what it changed about this work
+
+Six files conflicted, not the two an early truncated read suggested. Resolutions:
+
+- **`pinPolicy.ts`** — main introduced typed errors (`ValidationError` with ALL_CAPS
+  codes, `src/server/pilot/errors.ts`) and converted PIN policy onto them.
+  **Taking "mine" here would have reintroduced a bug main had just fixed:** the
+  message *"That PIN is too easy to guess…"* begins with "That", which the old
+  prefix matcher did not map, so an athlete picking `111111` was shown "Internal
+  server error" instead of the reason. Resolved as *my semantics on main's typed
+  errors*, with a new `PIN_IS_ISSUED_PIN` code alongside main's
+  `PIN_IS_DEFAULT_FIRST_LOGIN`. This matters more now, not less — per-athlete PINs
+  mean every athlete chooses one, so that path is common rather than rare.
+- **`admin/people/page.tsx`** — main restyled the page onto a design system
+  (`frame`, `mat-leather`, `badge`, `t-*` tokens). Took main's markup with my PIN
+  semantics. Main had also independently built the status chip from CAP2-P2-001,
+  natively via `badge--cleared/restricted/locked`; **theirs replaced mine**, and my
+  hand-rolled Tailwind version is gone. Kept only the note explaining why the
+  warning wording stays long.
+- **`change-pin/page.tsx`** — my hunk was a duplicate of a form main had already
+  restyled; keeping it would have rendered duplicate DOM ids. Dropped mine, ported
+  the copy fix onto main's.
+- **`validation.ts`, `firstLoginPin.test.ts`, `WORK_QUEUE.md`** — additive; both
+  sides kept.
+
+**Two sessions were both calling themselves "session B".** This merge is where they
+met, in the shared claims table. Disambiguated as *session B (audit)* and
+*session B (capabilities)*; no claim was dropped.
+
+### A fourth `gym_status` write path, found by the typechecker
+
+Main added `rosterImport.ts` (CSV roster import) carrying its **own** copy of the
+vocabulary, commented as "the only thing holding the vocabulary together" — no
+longer true. It now reads `GYM_STATUS_OPTIONS`, and the write narrows through
+`isGymStatus` rather than casting. That makes **four** write paths found for this
+one field: roster create, intake promotion, athlete update, and CSV import. Only
+the first was in the original audit's API surface map.
+
+### My own defect, caught by a guard main added
+
+`gymTimeDrift.test.ts` prohibits `toLocale*` formatters outside `src/lib/gymTime.ts`,
+because every date this platform shows describes something that happened at a gym in
+Punxsutawney — and CI runs in UTC, so viewer-timezone bugs stay invisible. My
+last-correction panel (CAP2-P2-002) used `toLocaleString`, reasoning that an audit
+`created_at` is an instant and so viewer-local was fine. **That reasoning was wrong
+for this domain:** a coach reading the panel on a phone set to another zone would see
+a shifted time. Now uses `formatGymStamp`.
+
+---
+
 ## 🔎 Found while implementing, not in the original audit
 
 **The intake promotion route was a second unvalidated write path.**

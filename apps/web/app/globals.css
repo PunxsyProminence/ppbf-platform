@@ -88,36 +88,27 @@
   --accent-ink: var(--hide-950);
   --accent-quiet: var(--brass-800);
 
-  /* --font-stencil keeps its next/font wiring — --font-tactical-display is a
-     real loaded face, where the design system's fallback chain is not. The
-     design system's own --font-stencil stays available for previews. */
-  --font-stencil: var(--font-tactical-display), "Impact", "Arial Black", sans-serif;
+  /* Golden-era pass: the app now speaks the design system's own faces.
+
+     Every family named here is SHIPPED BY THIS REPO — ppbf.css @imports
+     fonts.css, whose @font-face rules resolve to design-system/fonts/*.woff2
+     and ride the same bundle as the sheet itself. So the determinism argument
+     that used to justify the Oswald/Roboto stand-ins now points the other way:
+     Alfa Slab One (wood-type display), Oswald (bone-sans UI), Special Elite
+     (typewriter), and Caveat (the chalk hand, Law 4's fourth voice — real
+     handwriting at last) all come from files in the repo, render offline on the
+     floor kiosk, and wrap identically on every machine.
+
+     Body prose and aligned data columns stay on the next/font self-hosted pair
+     (Roboto Condensed, Geist Mono): the DS's own --font-body chain begins with
+     Inter, which the repo does NOT ship, and that would reintroduce
+     machine-dependent wrapping for the app's largest text mass. */
+  --font-stencil: "Alfa Slab One", var(--font-tactical-display), Impact, Haettenschweiler, "Arial Black", sans-serif;
   --font-body: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
-
-  /* ppbf.css names three more faces and only --font-stencil was ever pointed at
-     a real one. --font-ui, --font-data and --font-hand were still the sheet's
-     own system stacks — "Inter", ui-monospace, SFMono-Regular, Consolas,
-     "Segoe Print" — which resolve to whatever a given machine happens to have
-     installed. .t-eyebrow, .t-data and .badge are set in them.
-
-     That is not only a look problem, it is a determinism problem. Text set in a
-     font the repo does not ship wraps at machine-dependent widths, so the same
-     page is a different height on two computers. It is what made the homepage
-     412x3620 here and 412x3680 in CI, and it is why the screenshot baseline had
-     to be switched off. Pointing these at the faces next/font already
-     self-hosts means every glyph on every surface now comes from a file in this
-     repo, and the render stops depending on the machine.
-
-     --font-hand is the exception worth stating out loud. Law 4's fourth voice
-     is chalk — schedules in a gym hand — and no cursive face is loaded, so
-     there is nothing correct to point it at. It takes the body face, which
-     means .t-hand currently renders as ordinary type rather than handwriting.
-     Nothing in the app uses it today; giving the chalk voice back its character
-     means loading a real face, not restoring a system stack. */
-  --font-ui: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+  --font-ui: "Oswald", var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-data: var(--font-geist-mono), "Courier New", "Courier", monospace;
-  --font-hand: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+  --font-hand: "Caveat", "Segoe Print", "Bradley Hand", "Chalkboard SE", cursive;
 
   /* --- Type: was an eyeballed 11/12/15/16/18/24/32/48 ladder with no ratio.
      Now the √φ ladder (Law 8). --text-sm climbing 12px→15px and --text-lg
@@ -249,20 +240,44 @@ body {
 
    This is the floor instead. It works on `min-height`, which wins over the
    `height` a numeric utility sets, so an h-9 control lands at 44px without
-   anyone editing it. And because a bare element selector loses to any class,
-   an explicit `min-h-[Npx]` utility still overrides it -- a control that
-   genuinely must be smaller says so at its own call site, which is a decision
-   someone can read, rather than an omission nobody notices.
+   anyone editing it. And an explicit `min-h-[Npx]` utility overrides it -- a
+   control that genuinely must be smaller, or larger, says so at its own call
+   site, which is a decision someone can read rather than an omission nobody
+   notices.
+
+   THE @layer IS LOAD-BEARING. The original reasoning for the override was
+   "a bare element selector loses to any class", which is true of specificity
+   and irrelevant here: this sheet is unlayered and Tailwind's utilities sit in
+   `@layer utilities`, and an unlayered rule beats a layered one whatever the
+   selectors say. So the floor was not a floor -- it was a ceiling that no
+   utility could raise.
+
+   Measured on the session bar, where five controls ask for min-h-[var(--tap)]:
+   Operations and Bell reached 55px, Tell Us, Sound off and Logout sat at 44px.
+   The difference was not the classes, which are identical. It was that the
+   first two are `<a>`, which this rule deliberately does not name, and the
+   other three are `<button>`, which it does. The report-harm control carried a
+   comment explaining it had been raised to --tap for exactly this reason; it
+   had not been.
+
+   Putting the floor in `@layer base` restores what the paragraph above always
+   claimed. Buttons carrying no height class still land on 44px, because
+   nothing else speaks for them. Checked before moving it: one control in the
+   app asks for less than 44px (a min-h-[34px] input on /shadow), and it is an
+   `.input`, which ppbf.css floors at 46px unlayered -- so it does not drop.
 
    Deliberately NOT applied to `a`: a link inside a paragraph is not a target,
    and giving every inline link a 44px box would wreck prose. Links styled as
-   controls carry a class that sets their own geometry.
+   controls carry a class that sets their own geometry -- which is why the two
+   `<a>` controls on the session bar were the only ones getting the height they
+   asked for.
 
    Covers `select` and text-entry inputs too: the donation status select and the
    athlete's own session-duration field were both on the numeric scale, and a
    dropdown you cannot hit is a control you cannot use exactly like a button you
    cannot hit. Checkboxes, radios and hidden inputs are excluded -- a 44px
    checkbox is a layout bug, and their labels are the real target. */
+@layer base {
 button,
 [role="button"],
 select,
@@ -308,6 +323,10 @@ input[type="date"] {
 [data-surface="kiosk"] input[type="date"] {
   min-height: var(--tap);
 }
+}
+/* ^ closes @layer base for the interactive-target floor. Both rules live in
+   the layer together so the kiosk 55px still outranks the 44px default by
+   specificity, while an explicit utility at a call site outranks both. */
 
 body::before {
   content: "";
@@ -756,6 +775,35 @@ h6 {
   letter-spacing: 0.06em;
 }
 
+/* ---------------------------------------------------------------------------
+   Panels that open in place.
+
+   A row that expands its detail panel with no transition reads as "did
+   anything happen?" -- the content is simply there, and the eye has nothing
+   to follow from the button it just pressed to the thing that appeared. The
+   design system already names the motion for this exact case: --m-settle is
+   "something with mass arriving -- a sheet, a panel", and --e-settle is its
+   easing. Both are read from ppbf.css rather than restated, so a change to
+   the system's motion feel reaches this too.
+
+   The travel is --s2 (5px), one rung of the Fibonacci scale: enough to be a
+   direction, not enough to be a slide. `both` holds the from-state during any
+   delay so the panel never flashes at full opacity first.
+
+   No reduced-motion guard is needed here -- ppbf.css already kills every
+   animation globally under prefers-reduced-motion, and the panel still opens,
+   just instantly. */
+.panel-settle {
+  animation: panel-settle var(--m-settle) var(--e-settle) both;
+}
+
+@keyframes panel-settle {
+  from {
+    opacity: 0;
+    translate: 0 calc(var(--s2) * -1);
+  }
+}
+
 /* Floor-use: larger stamps on small screens */
 @media (max-width: 768px) {
   .stamp-button {
@@ -867,4 +915,1504 @@ h6 {
   --radius-2xl: 21px;  /* 16px */
   --radius-3xl: 34px;  /* 24px */
   --radius-4xl: 55px;  /* 32px */
+}
+
+/* ---------------------------------------------------------------------------
+   BUTTON HIERARCHY
+
+   ppbf.css owns the buttons and stays the source of truth. Nothing below
+   re-declares one: .btn is the brass primary, .btn--ghost the quiet outline,
+   .btn--danger the destructive red, .btn--kiosk the 55px floor control,
+   .btn--lever the form-history lever, and .btn[aria-busy] the mid-commit
+   state. What follows closes the four gaps the system left open, in the order
+   they bite.
+
+   1. THE VARIANTS LOSE THEIR IDENTITY ON HOVER.
+
+      `.btn:hover` sets `background-image` at (0,2,0). `.btn--ghost` and
+      `.btn--danger` set theirs at (0,1,0), and their own :hover rules restyle
+      border, colour and background-COLOR without ever mentioning
+      background-image. So the brass primary gradient wins the moment a
+      pointer lands on either of them: a ghost button lights up brass, and a
+      destructive Delete turns into the most primary-looking control on the
+      screen at exactly the moment the cursor is over it. Neither variant can
+      defend itself, because the property that overwrites them is one they
+      never set.
+
+      That is one bug reaching every secondary and every destructive action in
+      the app at once, and it is most of what "buttons are inconsistent" means
+      here -- the tiers are right at rest and collapse under the pointer.
+      Restated per variant below, which is the smallest fix that keeps a tier
+      looking like its tier for the whole of a hover.
+
+   2. THERE IS NO MIDDLE TIER.
+
+      Between brass ("do this") and ghost ("you may") the system offers
+      nothing, so every second-rank action -- Save Draft beside Publish,
+      Export beside Approve, Retry beside Resolve -- had to pick between
+      shouting and disappearing, and the app's answer was almost always ghost.
+      That is how important actions ended up rendering as the lowest-ranked
+      control on the page. .btn--secondary is an oiled-leather face with a
+      brass hairline: unmistakably a control with weight, and unmistakably not
+      the brass one.
+
+   3. NOTHING TRANSITIONS, AND THE PRESS HAS NO TIME IN IT.
+
+      The system names its own motion for precisely this -- --m-quick for a
+      hover, --m-instant for a state flip, --e-lever for a mechanical linkage,
+      --e-stamp for something driven down and stopped dead -- and the buttons
+      never read any of it, so every state change is a hard cut. .btn--lever
+      already does it correctly and is the model. A control in this aesthetic
+      has mass: it should come up over ~89ms and drop onto its seat in ~55ms.
+      The travel and the inset shadow are ppbf.css's; only the timing is new.
+
+   4. THERE IS NO DISABLED STATE AT ALL.
+
+      .btn--lever has one. .btn does not. A disabled brass button was
+      pixel-identical to a live one, still lit under the pointer, still
+      carrying the drop shadow that says "pressable". It is FLATTENED here
+      rather than merely dimmed -- the shadow that lifts it off the page is
+      removed, so it stops looking like an object you can push -- and hover
+      and press are neutralised rather than left to fight it.
+
+      One appearance for all four tiers, deliberately: a disabled control has
+      no rank, because there is no action to rank. [aria-disabled] rides
+      alongside :disabled throughout, because a .btn is frequently an anchor
+      and an <a> has no :disabled to match.
+
+   Two mechanical notes that the whole block depends on:
+
+   - This sheet is UNLAYERED and @imports ppbf.css at its top, so every rule
+     here is later in source order than the rule it has to beat. Each selector
+     below is written at or above the specificity of its ppbf.css counterpart,
+     and wins the tie on order. Nothing uses !important.
+   - Law 6's second ground is not optional. Every rule that names a colour has
+     an .on-canvas restatement, for the same reason ppbf.css restates
+     .btn--ghost there: a leather face and bone type on cream paper is a grey
+     smear, and a dimmed dark slab reads as a hole in the page rather than as
+     a control that is switched off.
+   --------------------------------------------------------------------------- */
+
+/* (3) Timing. ppbf.css already decides WHAT moves; this decides how long it
+   takes. box-shadow and translate run at --m-instant so the press is perceived
+   as "now" -- a stamp does not ease onto paper -- while colour and surface
+   changes take the --m-quick hover beat. Under prefers-reduced-motion,
+   ppbf.css's global `* { transition: none !important }` removes all of it. */
+.btn {
+  transition:
+    background-image var(--m-quick) var(--e-lever),
+    background-color var(--m-quick) var(--e-lever),
+    border-color var(--m-quick) var(--e-stamp),
+    color var(--m-quick) var(--e-stamp),
+    box-shadow var(--m-instant) var(--e-stamp),
+    translate var(--m-instant) var(--e-stamp);
+}
+
+/* (1) Ghost keeps its own surface through the hover. ppbf.css sets everything
+   else about this state on both grounds already -- border, colour, wash -- and
+   background-image is the single property it forgot, so that is the only
+   property stated here. */
+.btn--ghost:hover {
+  background-image: none;
+}
+
+/* (1) Danger keeps being danger. A destructive action must not be able to
+   render in the chassis colour, hovered or not (Law 2: saturated colour is
+   safety and destruction, and brass is neither). Built from --locked rather
+   than from a second red so the button and the badge reporting the same state
+   cannot disagree; hover lifts the face toward bone, which is a lamp coming up
+   on the same object, not a different colour. */
+.btn--danger:hover {
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--locked) 66%, var(--bone-100)) 0%,
+    color-mix(in srgb, var(--locked) 94%, var(--bone-100)) 55%,
+    var(--locked) 100%);
+}
+
+/* (2) The middle tier. Leather, not brass: the material the chassis is bolted
+   to rather than the chassis itself, with a brass hairline so it still reads
+   as hardware. It sits visibly below .btn and visibly above .btn--ghost at a
+   glance, which is the whole job. .btn sets `border: 0`, so the hairline has
+   to be restated rather than added to. */
+.btn--secondary {
+  border: 1px solid var(--brass-700);
+  color: var(--bone-200);
+  background-color: var(--hide-800);
+  background-image: linear-gradient(180deg,
+    var(--hide-600) 0%, var(--hide-800) 62%, var(--hide-900) 100%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--brass-300) 16%, transparent),
+    0 2px 5px rgba(0, 0, 0, .45);
+  text-shadow: none;
+}
+
+.btn--secondary:hover {
+  border-color: var(--brass-400);
+  color: var(--bone-100);
+  background-image: linear-gradient(180deg,
+    var(--hide-500) 0%, var(--hide-700) 62%, var(--hide-800) 100%);
+}
+
+/* The canvas restatement. Inverted material -- paper with a brass edge --
+   because the leather face above goes muddy on cream and bone type loses its
+   ground on it, which is the identical failure ppbf.css documents for
+   .btn--ghost. */
+.on-canvas .btn--secondary {
+  border: 1px solid var(--brass-700);
+  color: var(--hide-900);
+  background-color: var(--paper-2);
+  background-image: linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .6),
+    0 1px 3px rgba(0, 0, 0, .18);
+}
+
+.on-canvas .btn--secondary:hover {
+  border-color: var(--brass-800);
+  color: var(--hide-950);
+  background-image: linear-gradient(180deg, var(--bone-100) 0%, var(--paper) 100%);
+}
+
+/* (3) The press, on both new surfaces. ppbf.css's .btn:active already drives
+   every variant 1px down into an inset shadow; secondary only needs its
+   hairline to darken with it, so the edge does not stay lit while the face
+   goes into shadow. */
+.btn--secondary:active {
+  border-color: var(--brass-800);
+}
+
+/* (4) Disabled. Every state that could otherwise repaint it is enumerated in
+   the selector rather than trusted to lose the cascade: :hover still matches a
+   disabled button in every current browser, and aria-disabled anchors are
+   fully interactive as far as CSS is concerned, so :active matches them too.
+   Flat -- no gradient, no drop shadow, no bevel, no travel -- because the
+   thing that makes these buttons look pressable is the light on a raised face,
+   and a control that cannot be pressed should not have it. */
+.btn:disabled,
+.btn:disabled:hover,
+.btn:disabled:active,
+.btn[aria-disabled="true"],
+.btn[aria-disabled="true"]:hover,
+.btn[aria-disabled="true"]:active {
+  cursor: not-allowed;
+  color: var(--bone-400);
+  border-color: color-mix(in srgb, var(--brass-800) 50%, transparent);
+  background-image: none;
+  background-color: color-mix(in srgb, var(--hide-600) 62%, transparent);
+  box-shadow: none;
+  text-shadow: none;
+  translate: none;
+}
+
+.on-canvas .btn:disabled,
+.on-canvas .btn:disabled:hover,
+.on-canvas .btn:disabled:active,
+.on-canvas .btn[aria-disabled="true"],
+.on-canvas .btn[aria-disabled="true"]:hover,
+.on-canvas .btn[aria-disabled="true"]:active {
+  color: color-mix(in srgb, var(--hide-800) 58%, var(--paper-2));
+  border-color: color-mix(in srgb, var(--hide-800) 24%, transparent);
+  background-color: color-mix(in srgb, var(--hide-600) 14%, var(--paper-2));
+}
+
+/* --- Table density --------------------------------------------------------
+
+   The row-action button: Edit / Void / Resend, three to a cell, in a table
+   that has to show twenty rows at once. Written by hand at each call site so
+   far, and written small -- min-h-[32px] px-2 -- which is under every floor
+   this app has and is why it needs a name instead.
+
+   The floor here is 44px, not --tap, and that is the rule this file already
+   set out above rather than an exception to it: 55px is the GYM FLOOR number,
+   for a child in gloves on a cracked tablet, and it is scoped to
+   [data-surface="kiosk"] precisely so it does not push dense admin tables
+   around for people sitting at a desk. So a compact button gives up padding
+   and type size -- the two things that cost horizontal room in a cell -- and
+   gives up no height at all.
+
+   On a kiosk surface it goes to --tap anyway. `[data-surface="kiosk"] button`
+   is (0,1,1) and already outranks .btn--compact at (0,1,0), so a <button>
+   needs nothing; the rule below is for the anchors, since that selector only
+   names real controls and a .btn is often an <a>. */
+.btn--compact {
+  min-height: 44px;
+  padding: 0 var(--s3);
+  gap: var(--s2);
+  font-size: var(--t-xs);
+  letter-spacing: .09em;
+}
+
+[data-surface="kiosk"] .btn--compact {
+  min-height: var(--tap);
+  font-size: var(--t-sm);
+  padding: 0 var(--s4);
+}
+
+/* The 1px press travel is motion, and it is the one part of this block that
+   ppbf.css's global reduced-motion rule cannot reach: that rule cancels
+   transitions and animations, and a `translate` on :active is neither. The
+   button still reports the press through its inset shadow. Same call this file
+   already makes for .stamp-button and .brass-plate. */
+@media (prefers-reduced-motion: reduce) {
+  .btn:active {
+    translate: none;
+  }
+}
+
+/* ====================================================== THE WALL OF NAMES ===
+   /names -- everyone who has come through, in the year the gym wrote them
+   down. A member surface, not a television: this is read at arm's length on a
+   phone or a laptop, so the type sits on the ordinary end of the ladder rather
+   than the wall's three-rungs-up sizes.
+
+   These rules live here rather than in design-system/ppbf.css for the reason
+   the wall block above states: this is presently one screen's component. The
+   materials it stands on -- .room--floor, .nameplate, the bone ramp -- are all
+   the design system's, and none of them is restated.
+   --------------------------------------------------------------------------- */
+
+.wall-names {
+  color: var(--bone-200);
+}
+
+.wall-names-head {
+  border-bottom: 3px solid rgba(212, 175, 74, .30);
+  padding-bottom: var(--s5);
+}
+
+.wall-names-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+.wall-names-title {
+  margin: var(--s3) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-2xl);
+  font-weight: 400;
+  line-height: 1.05;
+  color: var(--bone-100);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .5);
+}
+
+.wall-names-blurb {
+  margin: var(--s4) 0 0;
+  max-width: 55ch;
+  font-size: var(--t-sm);
+  line-height: 1.62;
+  color: var(--bone-300);
+}
+
+/* The tally. Whole-wall numbers only -- there is deliberately no per-person
+   number anywhere on this surface (see wallOfNames.ts). */
+.wall-names-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s6);
+  margin: var(--s6) 0 0;
+}
+
+.wall-names-tally dt {
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+.wall-names-tally dd {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-xl);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--brass-200);
+}
+
+.wall-names-note {
+  margin: var(--s5) 0 0;
+  max-width: 62ch;
+  border-left: 3px solid var(--brass-700);
+  padding-left: var(--s4);
+  font-size: var(--t-sm);
+  line-height: 1.62;
+  color: var(--bone-300);
+}
+
+.wall-names-quiet {
+  margin: var(--s5) 0 0;
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--bone-400);
+}
+
+.wall-names-footnote {
+  margin: var(--s6) 0 0;
+  max-width: 62ch;
+  font-size: var(--t-xs);
+  line-height: 1.6;
+  color: var(--bone-400);
+}
+
+.wall-names-years {
+  margin-top: var(--s6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s6);
+}
+
+/* The year is an engraved plate on the board, which is what a wall of names
+   actually looks like. .nameplate is the design system's and is used as-is. */
+.wall-names-year-plate {
+  display: inline-block;
+  margin: 0;
+  padding: var(--s3) var(--s5);
+  border-radius: 2px;
+  background-color: var(--brass-600);
+  background-image: linear-gradient(174deg,
+    var(--brass-400) 0%, var(--brass-600) 34%,
+    var(--brass-500) 58%, var(--brass-700) 82%, var(--brass-800) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(242, 226, 168, .42),
+    inset 0 0 0 1px rgba(74, 52, 11, .55),
+    0 2px 6px rgba(0, 0, 0, .5);
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+  font-weight: 400;
+  letter-spacing: .1em;
+  color: var(--hide-950);
+  text-shadow: 0 1px 0 rgba(242, 226, 168, .34);
+}
+
+.wall-names-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(233px, 1fr));
+  gap: var(--s4) var(--s5);
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wall-names-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  border-left: 3px solid var(--patina-700);
+  padding-left: var(--s4);
+}
+
+/* Still training reads brighter, not redder. Law 2 keeps saturated colour for
+   safety state, and "comes in on Tuesdays" is not one -- so the difference is
+   brass and brightness, and the word underneath says it either way (Law 3). */
+.wall-names-item[data-standing="training"] {
+  border-left-color: var(--brass-500);
+}
+
+.wall-names-name {
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+  line-height: 1.15;
+  color: var(--bone-100);
+}
+
+.wall-names-item[data-standing="came_through"] .wall-names-name {
+  color: var(--bone-300);
+}
+
+.wall-names-standing {
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+.wall-names-item[data-standing="training"] .wall-names-standing {
+  color: var(--brass-300);
+}
+
+/* The day-one board, and the failed one. Both are a framed blank rather than
+   a message where content should be. */
+.wall-names-empty {
+  margin-top: var(--s6);
+  border: 2px solid var(--brass-800);
+  border-radius: var(--r-md);
+  padding: var(--s6);
+  text-align: center;
+}
+
+.wall-names-empty-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-lg);
+  color: var(--bone-100);
+}
+
+.wall-names-empty .wall-names-quiet {
+  margin-top: var(--s3);
+}
+
+.wall-names-back {
+  margin-top: var(--s7);
+}
+
+/* ========================================================== THE CHALKBOARD ===
+   The board by the door. Slate and chalk are already in the design system
+   (.mat-slate, .chalk, .chalk-dim); what is here is the OBJECT built out of
+   them -- a board with a frame, a writing face, and a rail along the bottom.
+
+   The hand is --font-hand (Caveat), which globals.css already names as Law 4's
+   fourth voice. It is the right voice for exactly one thing: words a person
+   wrote themselves. This is that thing.
+   --------------------------------------------------------------------------- */
+
+.chalkboard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  /* The wooden frame around the slate. Drawn, like every other material. */
+  border: var(--s3) solid var(--wood-700);
+  border-radius: var(--r-sm);
+  padding: var(--s5);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, .55),
+    0 6px 16px rgba(0, 0, 0, .45);
+}
+
+.chalkboard-face {
+  min-height: 89px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s3);
+}
+
+.chalkboard-line {
+  margin: 0;
+  font-family: var(--font-hand);
+  /* Handwriting reads small at a given px size, so the chalk line sits a rung
+     above the body copy around it rather than at it. */
+  font-size: var(--t-lg);
+  line-height: 1.25;
+  /* Nobody writes perfectly level on a board. One degree, fixed rather than
+     random, so it never reshuffles between renders. */
+  rotate: -.4deg;
+}
+
+.chalkboard-line--blank {
+  font-size: var(--t-md);
+  rotate: 0deg;
+}
+
+.chalkboard-by {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: var(--t-md);
+  line-height: 1.2;
+  text-align: right;
+}
+
+.chalkboard-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  align-items: center;
+  border-top: 1px solid rgba(230, 227, 214, .24);
+  padding-top: var(--s4);
+}
+
+.chalkboard-compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  width: 100%;
+}
+
+/* Writing on a board looks like writing on a board. The field is the slate
+   itself with a chalk line under it, not a form input dropped onto it. */
+.chalkboard-input {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid rgba(230, 227, 214, .38);
+  background: transparent;
+  padding: var(--s2) 0;
+  font-family: var(--font-hand);
+  font-size: var(--t-lg);
+  line-height: 1.3;
+  color: var(--chalk);
+}
+
+.chalkboard-input--name {
+  font-size: var(--t-md);
+}
+
+.chalkboard-input::placeholder {
+  color: var(--chalk-dim);
+  opacity: .8;
+}
+
+.chalkboard-input:focus-visible {
+  outline: var(--border-medium) solid var(--brass-700);
+  outline-offset: 3px;
+}
+
+.chalkboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+
+.chalkboard-hint,
+.chalkboard-error {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  letter-spacing: .04em;
+  line-height: 1.5;
+}
+
+/* The board is a DARK material that can hang on either ground (Law 6). The
+   parent hub is .on-canvas, and ppbf.css restates .btn--ghost there in ink for
+   cream paper -- correct for the page, wrong for a slate board sitting on it,
+   where dark type on a near-black face is a control you cannot read. This puts
+   the ink-ground ghost back inside the frame, which is where the board actually
+   is. Specificity (0,2,0) beats ppbf.css's .on-canvas .btn--ghost tie on source
+   order, and it reaches both grounds because it names neither. */
+.chalkboard .btn--ghost {
+  background-color: rgba(0, 0, 0, .28);
+  color: var(--bone-200);
+  border: 1.5px solid rgba(212, 175, 74, .42);
+  box-shadow: inset 0 1px 0 rgba(255, 244, 214, .10);
+}
+
+.chalkboard .btn--ghost:hover {
+  border-color: var(--brass-400);
+  color: var(--bone-100);
+  background-color: rgba(0, 0, 0, .14);
+}
+
+/* ============================================================ THE GYM WALL ===
+   Frames on a wall, most of them empty. The empty frame is the primary state
+   and is built first; the photograph is what happens to be in one.
+   --------------------------------------------------------------------------- */
+
+.photo-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin: 0;
+}
+
+/* The moulding. Wood, mitred, with a mount inside it -- the same object a
+   framed photograph in a gym office actually is. */
+.photo-slot-mount {
+  position: relative;
+  border: var(--s3) solid var(--wood-600);
+  border-radius: var(--r-sm);
+  padding: var(--s3);
+  background-color: var(--paper-2);
+  background-image: var(--grain-fine), linear-gradient(178deg, var(--paper), var(--paper-2));
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 0 0 1px rgba(31, 20, 9, .45),
+    inset 0 2px 10px rgba(0, 0, 0, .22),
+    0 4px 12px rgba(0, 0, 0, .4);
+}
+
+.photo-slot-mount > img,
+.photo-slot-mount > .photo-slot-mount-empty {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+}
+
+.photo-slot--wide .photo-slot-mount > img,
+.photo-slot--wide .photo-slot-mount > .photo-slot-mount-empty {
+  aspect-ratio: 3 / 2;
+}
+
+.photo-slot--tall .photo-slot-mount > img,
+.photo-slot--tall .photo-slot-mount > .photo-slot-mount-empty {
+  aspect-ratio: 4 / 5;
+}
+
+/* The empty mount. A flat card ground with a hairline where a print's edge
+   would sit -- deliberately NOT a gradient, a dashed box, or a grey field:
+   those three are what a failed image looks like on the web, and the whole
+   point of this object is that it does not look failed. */
+.photo-slot-mount-empty {
+  background-color: var(--paper-2);
+  box-shadow: inset 0 0 0 1px rgba(51, 41, 27, .22);
+}
+
+.photo-slot-caption {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.photo-slot-title {
+  font-family: var(--font-display);
+  font-size: var(--t-sm);
+  letter-spacing: .04em;
+  color: var(--bone-100);
+}
+
+.photo-slot-note {
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+  color: var(--bone-400);
+}
+
+/* Law 6's second ground. On cream the bone type is a smear, so the caption
+   takes ink -- the same restatement ppbf.css makes for every .t-* voice. */
+.on-canvas .photo-slot-title { color: var(--hide-950); }
+.on-canvas .photo-slot-note  { color: var(--hide-800); }
+
+.gym-wall {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.gym-wall-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+.on-canvas .gym-wall-eyebrow { color: var(--brass-800); }
+
+.gym-wall-empty {
+  display: grid;
+  gap: var(--s5);
+  grid-template-columns: repeat(auto-fit, minmax(233px, 1fr));
+}
+
+.gym-wall-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  max-width: 62ch;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+  color: var(--bone-400);
+}
+
+.on-canvas .gym-wall-note { color: var(--hide-800); }
+
+.gym-wall-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+}
+
+.gym-wall-count {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .12em;
+  color: var(--bone-400);
+  font-variant-numeric: tabular-nums;
+}
+
+.on-canvas .gym-wall-count { color: var(--hide-800); }
+
+/* ============================================================ PRINTED PAPER ===
+   /print produces two sheets of US Letter. design-system/ppbf.css already owns
+   the print TREATMENT -- grounds collapse to white, type goes to ink, the
+   safety ladder keeps its hue, buttons and nav disappear. Nothing below
+   restates any of that. What is here is the SHEET: its geometry, and where one
+   ends and the next begins.
+
+   @page is restated here rather than relied on from ppbf.css so the print
+   route's geometry is readable in one file and testable from one file. This
+   sheet is unlayered and imported after the design system, so it wins the tie.
+
+   6.5in x 9in is Letter (8.5 x 11) minus the 1in margin on each side. The
+   dimensions are in inches on purpose: this box is a piece of paper, and its
+   size is the paper's rather than the screen's.
+   --------------------------------------------------------------------------- */
+
+.print-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s6);
+  padding: var(--s6) var(--s5) var(--s7);
+}
+
+.print-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 6.5in;
+  max-width: 100%;
+  min-height: 9in;
+  border: 2px solid var(--hide-950);
+  padding: var(--s6);
+  background-color: var(--paper);
+  color: var(--hide-950);
+  /* A sheet is one object. It never splits across a fold. */
+  break-inside: avoid;
+}
+
+/* The page break goes BEFORE each sheet after the first, never after the last:
+   `break-after: page` on every sheet ejects one final blank page, which is the
+   classic way a two-page print becomes a three-page print. */
+.print-sheet + .print-sheet {
+  break-before: page;
+}
+
+.print-sheet-head {
+  border-bottom: 3px solid var(--hide-950);
+  padding-bottom: var(--s4);
+}
+
+.print-sheet-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .28em;
+  text-transform: uppercase;
+}
+
+.print-sheet-gym {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.print-sheet-title {
+  margin: var(--s3) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-xl);
+  font-weight: 400;
+  line-height: 1.05;
+}
+
+.print-sheet-body {
+  flex: 1 1 auto;
+  padding-top: var(--s5);
+}
+
+.print-sheet-foot {
+  border-top: 1px solid var(--hide-950);
+  padding-top: var(--s3);
+}
+
+.print-sheet-address {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .08em;
+}
+
+.print-sheet-note {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+}
+
+/* The struck plate, printed. Flat by design: the print rules strip every
+   gradient, so a plate that relies on one prints as a white box. This one is
+   a ruled box with letters in it, which is what a photocopier can carry. */
+.print-plate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 89px;
+  min-height: 89px;
+  border: 3px solid var(--hide-950);
+  font-family: var(--font-display);
+  font-size: var(--t-xl);
+  letter-spacing: .06em;
+}
+
+.print-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  align-items: flex-start;
+}
+
+.print-card-identity {
+  flex: 1 1 233px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.print-card-ring {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: var(--t-lg);
+  line-height: 1.2;
+}
+
+.print-card-programme {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+  line-height: 1.15;
+}
+
+.print-card-corner {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+
+.print-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--s2) var(--s5);
+  margin: var(--s6) 0 0;
+}
+
+.print-facts dt {
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.print-facts dd {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+}
+
+.print-notes {
+  margin-top: var(--s7);
+}
+
+.print-notes-label {
+  margin: 0 0 var(--s4);
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+
+/* A ruled line to write on, and the signature rule on the certificate. */
+.print-rule {
+  display: block;
+  height: 1px;
+  margin-bottom: var(--s6);
+  background: var(--hide-950);
+}
+
+.print-cert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  text-align: center;
+}
+
+.print-cert-lead {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  letter-spacing: .06em;
+}
+
+.print-cert-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-2xl);
+  font-weight: 400;
+  line-height: 1.05;
+}
+
+.print-cert-headline {
+  margin: var(--s5) 0 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.print-cert-said {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: var(--t-md);
+  line-height: 1.3;
+}
+
+.print-cert-facts {
+  justify-content: center;
+  text-align: left;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.print-cert-marked {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+}
+
+.print-cert-seal {
+  margin: var(--s5) 0 0;
+}
+
+.print-cert-signature {
+  margin-top: var(--s7);
+  width: 233px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.print-cert-signature .print-rule {
+  margin-bottom: var(--s2);
+}
+
+.print-cert-signature-label {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xs);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+
+.print-room-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  align-items: flex-end;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--brass-700);
+  padding: var(--s6) var(--s5);
+}
+
+.print-room-title {
+  margin: var(--s3) 0 var(--s3);
+  font-family: var(--font-display);
+  font-size: var(--t-xl);
+  font-weight: 400;
+  line-height: 1.05;
+}
+
+.print-room-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s4);
+}
+
+.print-room-pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.print-room-status {
+  margin: var(--s6) var(--s5);
+  font-size: var(--t-sm);
+  line-height: 1.6;
+}
+
+@media print {
+  /* US Letter, portrait, one inch all round. Restated from ppbf.css so the
+     sheet geometry above and the page it has to fit are in the same file. */
+  @page {
+    size: letter portrait;
+    margin: 1in;
+  }
+
+  /* Anything that only makes sense while somebody is looking at a screen. The
+     design system already hides buttons and nav; this covers the containers
+     around them, which it cannot know about. */
+  .screen-only {
+    display: none !important;
+  }
+
+  .print-stack {
+    display: block;
+    padding: 0;
+    gap: 0;
+  }
+
+  /* On paper the sheet IS the page: the @page margin is the border, so the
+     drawn one goes and the box fills the printable area exactly. */
+  .print-sheet {
+    width: 100%;
+    min-height: 9in;
+    border: 0;
+    padding: 0;
+  }
+}
+
+/* ============================================================== THE WALL ===
+   Scoped entirely to [data-surface="wall"], the marker app/wall/layout.tsx
+   puts on its subtree. Nothing here can reach another page: no other element
+   in the app carries that attribute, and every rule below is either descended
+   from it or a class name (.marquee, .wall-*) with no other consumer. That is
+   the whole reason this is a surface block and not a set of loose utilities --
+   the wall's type is three rungs above anything a desk uses, and a stray
+   selector would be very loud somewhere else.
+
+   ON .marquee. The Phase 2 roadmap records that `.marquee` "already exists in
+   the design system with zero consumers -- it was anticipated and never
+   built". Half of that is right: it was anticipated. It was never written.
+   design-system/ppbf.css carries no .marquee rule of any kind (grep it), so
+   the class was a prose promise, and this is where the promise is kept. It
+   lives here rather than in ppbf.css because it is presently one screen's
+   component; promoting it into the design system is a reasonable later move
+   once a second surface wants a travelling sign.
+
+   READ AT DISTANCE. Every size below comes off the φ ladder, which globals.css
+   continues past --text-6xl with a √φ generator. --text-6xl (80.9px) is the
+   BODY size on this screen. Nothing on the wall is smaller than --t-lg, and
+   the two things that are that small -- the eyebrow and the freshness stamp --
+   are the two things nobody needs to read from across the room.
+
+   BURN-IN. A television showing one layout for twelve hours will retain it.
+   Three defences, in order of how much they matter:
+     1. .wall-board drifts. A twenty-minute cycle moving the entire board a few
+        pixels in a slow ellipse means no edge sits on the same pixel column
+        for more than a moment. It is far below the threshold at which a person
+        notices anything moved.
+     2. The marquee travels continuously, which covers the brightest band.
+     3. No large flat field of maximum luminance anywhere: the ground is the
+        brick room, the type is bone rather than white, and the panels have no
+        filled backgrounds at all.
+   All of it stands down under prefers-reduced-motion, which also covers the
+   accessibility case where the drift itself would be the problem. */
+
+.wall-room {
+  /* .room ships padding and min-height:100%; a television is full bleed. */
+  padding: 0;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+[data-surface="wall"] {
+  /* Landscape, and only landscape. This is a 16:9 panel bolted to a wall. */
+  --wall-ink: var(--bone-100);
+  --wall-ink-quiet: var(--bone-300);
+  --wall-rule: rgba(212, 175, 74, .30);
+}
+
+[data-surface="wall"] .wall-board {
+  color: var(--wall-ink);
+  animation: wall-drift 1200s linear infinite;
+}
+
+@keyframes wall-drift {
+  0%   { transform: translate3d(0, 0, 0); }
+  25%  { transform: translate3d(9px, 5px, 0); }
+  50%  { transform: translate3d(4px, 10px, 0); }
+  75%  { transform: translate3d(-7px, 4px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+/* --- Masthead ------------------------------------------------------------ */
+
+[data-surface="wall"] .wall-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+[data-surface="wall"] .wall-day {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  color: var(--wall-ink);
+}
+
+[data-surface="wall"] .wall-date {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--bone-300);
+}
+
+[data-surface="wall"] .wall-clock {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: .9;
+  /* Tabular figures: without them the whole clock jumps sideways once a
+     minute as a 1 replaces a 0, which on a 130px glyph is a visible twitch
+     from across the room. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--brass-200);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .55);
+}
+
+/* --- Panels -------------------------------------------------------------- */
+
+[data-surface="wall"] .wall-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+  margin: 0 0 var(--s4);
+  padding-bottom: var(--s3);
+  border-bottom: 3px solid var(--wall-rule);
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xl);
+  font-weight: 600;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+[data-surface="wall"] .wall-count {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: var(--t-2xl);
+  letter-spacing: 0;
+  color: var(--bone-200);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-surface="wall"] .wall-quiet {
+  margin: var(--s5) 0 0;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--bone-400);
+}
+
+[data-surface="wall"] .wall-floor-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: var(--s3) var(--s6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* No scrollbar, ever. The server caps the list; anything past the cap is
+     reported as a count by .wall-more, and this clips the remainder rather
+     than growing a bar nobody can reach. */
+  overflow: hidden;
+}
+
+[data-surface="wall"] .wall-name {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: .01em;
+  color: var(--wall-ink);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .5);
+}
+
+/* The floor list steps DOWN the φ ladder as the room fills, rather than
+   overflowing and clipping the last row silently. A busy youth class with full
+   names consented would otherwise run past the bottom of the panel, and
+   overflow:hidden would hide the fact rather than report it.
+
+   Three rungs, all still far above any desk size: --text-6xl (80.9px) is the
+   roomy case, then --t-4xl (63.6px), then --t-3xl (50px), which on a 55-inch
+   panel is roughly a 1.5-inch glyph and reads comfortably from across a gym.
+   The Tailwind size class on the element is the roomy rung; these override it,
+   which is why they name the surface as well as the class. */
+[data-surface="wall"] .wall-floor-list[data-density="dense"] .wall-name {
+  font-size: var(--t-4xl);
+}
+[data-surface="wall"] .wall-floor-list[data-density="packed"] .wall-name {
+  font-size: var(--t-3xl);
+}
+
+[data-surface="wall"] .wall-more {
+  align-self: flex-end;
+  font-family: var(--font-ui);
+  color: var(--bone-400);
+}
+
+[data-surface="wall"] .wall-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+
+[data-surface="wall"] .wall-session {
+  display: grid;
+  grid-template-columns: min-content 1fr;
+  grid-template-areas: "time title" "time meta";
+  column-gap: var(--s4);
+  padding-left: var(--s4);
+  border-left: 6px solid var(--wall-rule);
+}
+
+[data-surface="wall"] .wall-session-time {
+  grid-area: time;
+  align-self: center;
+  font-family: var(--font-display);
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--brass-200);
+}
+
+[data-surface="wall"] .wall-session-title {
+  grid-area: title;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--wall-ink);
+}
+
+[data-surface="wall"] .wall-session-meta {
+  grid-area: meta;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+/* A session running right now is the one fact on this panel worth marking, and
+   it is marked with brightness and a rule -- not with a saturated hue. Law 2
+   keeps saturated colour for safety state, and "class in progress" is not one.
+   The two states below both restate themselves in words (.wall-session-meta
+   prints "On now" / "Cancelled"), so neither is colour alone. */
+[data-surface="wall"] .wall-session--now {
+  border-left-color: var(--brass-300);
+}
+[data-surface="wall"] .wall-session--now .wall-session-meta {
+  color: var(--brass-300);
+}
+[data-surface="wall"] .wall-session--done {
+  opacity: .48;
+}
+[data-surface="wall"] .wall-session--cancelled .wall-session-title {
+  text-decoration: line-through;
+  text-decoration-thickness: 3px;
+}
+[data-surface="wall"] .wall-session--cancelled {
+  opacity: .55;
+}
+
+/* --- The marquee --------------------------------------------------------- */
+
+.marquee {
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: var(--s4) 0;
+  border-top: 3px solid var(--wall-rule);
+  border-bottom: 3px solid var(--wall-rule);
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, .42), rgba(0, 0, 0, .16)),
+    radial-gradient(120% 180% at 50% -60%, rgba(212, 175, 74, .18), transparent 70%);
+}
+
+/* The bulbs on the sign board. Drawn, not imaged, like every other material in
+   this system: one radial gradient tiled along the edge is a row of lamps.
+   (repeating-radial-gradient would draw concentric rings, not a row -- it
+   repeats outward from a centre, which is not what a marquee's edge is.) */
+.marquee::before,
+.marquee::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background-image: radial-gradient(circle, var(--brass-300) 0 2px, transparent 2.5px);
+  background-size: 21px 5px;
+  background-repeat: repeat-x;
+  opacity: .55;
+  pointer-events: none;
+}
+.marquee::before { top: 0; }
+.marquee::after  { bottom: 0; }
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee-travel var(--marquee-secs, 48s) linear infinite;
+}
+
+/* min-width is what makes a ONE-NAME marquee work. Without it a single
+   crossing produces a track narrower than the screen, and the -50% loop below
+   snaps it back before it has travelled anywhere. At a screen wide per run the
+   name enters from the right, crosses, and leaves -- which is what a marquee
+   does -- and the loop stays seamless because run two is still exactly run
+   one's width. */
+.marquee-run {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-around;
+  gap: var(--s7);
+  min-width: 100vw;
+  margin: 0;
+  padding: 0 calc(var(--s7) / 2);
+  list-style: none;
+}
+
+.marquee-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+  white-space: nowrap;
+}
+
+.marquee-mark { color: var(--brass-300); font-size: var(--t-2xl); }
+
+.marquee-name {
+  font-family: var(--font-display);
+  font-size: calc(var(--t-5xl) * var(--root-phi));
+  line-height: 1;
+  color: var(--bone-100);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .5);
+}
+
+.marquee-count {
+  font-family: var(--font-display);
+  font-size: calc(var(--t-5xl) * var(--root-phi));
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--brass-200);
+}
+
+.marquee-unit {
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xl);
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+/* Two identical runs sit side by side, so translating exactly half the track
+   lands the second run where the first started: a seam-free loop with no
+   JavaScript and no measurement. */
+@keyframes marquee-travel {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+
+.marquee--idle {
+  display: flex;
+  justify-content: center;
+}
+
+.marquee-idle-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s5);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-3xl);
+  letter-spacing: .12em;
+  color: var(--bone-400);
+}
+
+.marquee-idle-label {
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+/* --- Standing screen ----------------------------------------------------- */
+
+[data-surface="wall"] .wall-standing-crest,
+.wall-board .wall-standing-crest {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(var(--t-5xl) * var(--root-phi) * var(--root-phi));
+  line-height: 1;
+  letter-spacing: .08em;
+  color: var(--brass-400);
+  opacity: .8;
+}
+
+[data-surface="wall"] .wall-standing-line,
+.wall-board .wall-standing-line {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  color: var(--bone-300);
+}
+
+/* --- Foot rule ----------------------------------------------------------- */
+
+[data-surface="wall"] .wall-notice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+  margin: 0;
+  font-family: var(--font-hand);
+  line-height: 1.1;
+  color: var(--bone-100);
+  /* One line. A staff member who writes a paragraph gets a legible sentence
+     rather than a wall of chalk, and the layout cannot be pushed off screen by
+     a long post. */
+  overflow: hidden;
+}
+
+[data-surface="wall"] .wall-notice-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-surface="wall"] .wall-notice-by {
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-xl);
+  color: var(--bone-400);
+}
+
+/* The bone ramp ends at --bone-400 (there is no --bone-500), so "quieter than
+   tertiary" is opacity on the last rung rather than an invented token. */
+[data-surface="wall"] .wall-notice--empty {
+  color: var(--bone-400);
+  opacity: .72;
+}
+
+[data-surface="wall"] .wall-stamp {
+  flex-shrink: 0;
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Motion stands down -------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-surface="wall"] .wall-board { animation: none; }
+  /* The marquee stops and becomes a list. It cannot simply freeze mid-travel:
+     a paused track leaves half a name off the edge of the screen, so the
+     transform is cleared and the run wraps instead. */
+  .marquee-track { animation: none; width: 100%; flex-wrap: wrap; justify-content: center; }
+  .marquee-track .marquee-run:last-child { display: none; }
+  .marquee-run { flex-wrap: wrap; justify-content: center; }
 }

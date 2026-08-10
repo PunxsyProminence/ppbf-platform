@@ -5,7 +5,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 export default function CoachIntakeRouterPage() {
   return (
-    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/environment/intake-router" allowedRoles={['coach']}>
+    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/environment/intake-router" allowedRoles={['coach']} room="floor">
       <CoachWorkspace />
     </RoleStandaloneView>
   );

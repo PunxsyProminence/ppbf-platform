@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import FeatureSurface from '@/components/FeatureSurface';
+import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
+import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
 
 interface ShadowResearchItem {
@@ -30,6 +31,22 @@ interface ShadowResearchRequirement {
   status: 'open' | 'resolved';
   created_at: string;
 }
+
+/* Law 3: a review state is a queue outcome -- glyph + uppercase label on the
+   status ladder, never a bare lowercase word or colour alone. */
+const REVIEW_STATE_BADGES: Record<ShadowResearchItem['review_state'], { className: string; glyph: string; label: string }> = {
+  pending_review: { className: 'badge badge--monitor', glyph: '◉', label: 'Pending Review' },
+  approved: { className: 'badge badge--cleared', glyph: '✓', label: 'Approved' },
+  rejected: { className: 'badge badge--locked', glyph: '✕', label: 'Rejected' },
+  promoted: { className: 'badge badge--cleared', glyph: '✓', label: 'Promoted' },
+  /* The sheet's own administrative rung (badge--filed) replaced the
+     hand-rolled chip this entry used to carry -- same ◌, same job. */
+  unknown: { className: 'badge badge--filed', glyph: '◌', label: 'Unknown' },
+};
+
+/* A paper-ground caption label. The sheet's .t-label is tuned for leather
+   (bone ink); on paper the same caption needs dark ink. */
+const PAPER_LABEL = 'font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.13em] text-[color:var(--hide-600)]';
 
 export default function ResearchIntakePage() {
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
@@ -187,134 +204,219 @@ export default function ResearchIntakePage() {
     }
   }
 
-  return (
-    <FeatureSurface
-      eyebrow="Research Intake"
-      title="Research Inbox and intake lane"
-      description="SHADOW research projection showing requirements, gaps, evidence labels, and review state."
-      status="ready"
-      currentStage="research"
-      primaryLinks={[
-        { label: 'Q&A Research Chat', href: '/research/chat' },
-        { label: 'Evidence review', href: '/evidence' },
-        { label: 'Pipeline publish stage', href: '/source-control#publish' },
-      ]}
-      stats={[
-        { label: 'Mode', value: 'Research Projection' },
-        { label: 'Current Stage', value: 'Research Intake' },
-        { label: 'Items', value: String(items.length) },
-        { label: 'Pending Review', value: String(counts.pending) },
-      ]}
-    >
-      <div className="space-y-4">
-        {errorMessage ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4 text-sm text-[var(--locked-ink)]">{errorMessage}</section>
-        ) : null}
+  const stats = [
+    { label: 'Mode', value: 'Research Projection' },
+    { label: 'Current Stage', value: 'Research Intake' },
+    { label: 'Items', value: String(items.length) },
+    { label: 'Pending Review', value: String(counts.pending) },
+  ];
 
-        {!errorMessage && items.length === 0 ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-            <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Empty State</p>
-            <p className="mt-2 text-[14px] text-[color:var(--bone-300)]">No SHADOW research projection items exist for this organization yet.</p>
+  return (
+    /* Room--file: the research wall. Intake cards are paper records pinned to
+       the cork; the requirement form is the leather-bound clipboard hung
+       beside them. */
+    <main className="room--file min-h-screen bg-[var(--hide-950)]">
+      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
+          <div>
+            <p className="t-eyebrow">Research Intake</p>
+            <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
+              Research Inbox
+            </h1>
+            <p className="t-body mt-[var(--s3)] max-w-[64ch]">
+              SHADOW research projection showing requirements, gaps, evidence labels, and review state.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-[var(--s3)]">
+            <ShadowChatButton context="Research Intake" />
+            <Link href="/research/chat" className="btn btn--ghost">
+              Q&amp;A Research Chat
+            </Link>
+            <Link href="/evidence" className="btn btn--ghost">
+              Evidence Review
+            </Link>
+            <Link href="/source-control#publish" className="btn btn--ghost">
+              Publish Stage
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto w-full max-w-[1200px] space-y-[var(--s5)] p-[var(--s5)]">
+        <DevelopmentPipelineBanner currentStage="research" />
+
+        <section aria-label="Research intake status" className="flex flex-wrap gap-[var(--s3)]">
+          {stats.map((item) => (
+            <span key={item.label} className="plaque">
+              {item.label.toUpperCase()}: {item.value.toUpperCase()}
+            </span>
+          ))}
+        </section>
+
+        {errorMessage ? (
+          <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
+            <span className="badge badge--locked">
+              <i>✕</i>Projection Unavailable
+            </span>
+            <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
           </section>
         ) : null}
 
-        <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Review State Summary</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {!errorMessage && items.length === 0 ? (
+          <section className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
+            <p className={PAPER_LABEL}>Empty State</p>
+            <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
+              No SHADOW research projection items exist for this organization yet.
+            </p>
+          </section>
+        ) : null}
+
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+            Review State Summary
+          </h2>
+          <div className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: 'Pending', value: counts.pending },
               { label: 'Approved', value: counts.approved },
               { label: 'Rejected', value: counts.rejected },
               { label: 'Promoted', value: counts.promoted },
             ].map((entry) => (
-              <article key={entry.label} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-                <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-[color:var(--bone-400)]">{entry.label}</p>
-                <p className="mt-2 text-2xl font-black text-[color:var(--bone-200)]">{entry.value}</p>
+              <article key={entry.label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-label">{entry.label}</p>
+                <p className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">{entry.value}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="space-y-3 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Research Intake Cards</p>
-          {items.map((item) => (
-            <article key={item.event_id} className="border border-[color:var(--brass-700)] bg-[var(--hide-900)]/70 p-4">
-              <div className="grid gap-2 md:grid-cols-2">
-                <p className="text-[16px] font-bold text-[color:var(--bone-200)]">{item.source_event_name}</p>
-                <p className="text-[13px] font-mono uppercase tracking-[0.1em] text-[color:var(--brass-300)]">Status: {item.review_state}</p>
-                <p className="text-[14px] text-[color:var(--bone-300)]">Requirement: {item.requirement || 'Not provided'}</p>
-                <p className="text-[14px] text-[color:var(--bone-300)]">Knowledge Gap: {item.knowledge_gap || 'Not provided'}</p>
-                <p className="text-[14px] text-[color:var(--bone-300)]">Evidence Label: {item.evidence_label || 'Not provided'}</p>
-                <p className="text-[14px] text-[color:var(--bone-300)]">Source Status: {item.source_status}</p>
-              </div>
-              <div className="mt-3 flex items-center justify-between border-t border-[color:var(--hide-600)] pt-3">
-                <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Next: Evidence Review</p>
-                <Link
-                  href="/evidence"
-                  className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[12px] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
-                >
-                  Move to Evidence -&gt;
-                </Link>
-              </div>
-            </article>
-          ))}
+        <section className="space-y-[var(--s4)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+            <span className="text-[color:var(--hide-900)]">Research Intake Cards</span>
+          </h2>
+          <div className="grid gap-[var(--s4)] lg:grid-cols-2">
+            {items.map((item) => {
+              const badge = REVIEW_STATE_BADGES[item.review_state];
+              return (
+                <article key={item.event_id} className="relative mat-paper rounded-[var(--r-sm)] p-[var(--s5)]">
+                  <span className="pin pin--brass" aria-hidden="true" />
+                  <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
+                    <p className="t-typed text-[length:var(--t-md)] font-bold">{item.source_event_name}</p>
+                    <span className={badge.className}>
+                      <i>{badge.glyph}</i>
+                      {badge.label}
+                    </span>
+                  </div>
+                  <dl className="mt-[var(--s4)] grid gap-x-[var(--s4)] gap-y-[var(--s3)] sm:grid-cols-2">
+                    <div>
+                      <dt className={PAPER_LABEL}>Requirement</dt>
+                      <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{item.requirement || 'Not provided'}</dd>
+                    </div>
+                    <div>
+                      <dt className={PAPER_LABEL}>Knowledge Gap</dt>
+                      <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{item.knowledge_gap || 'Not provided'}</dd>
+                    </div>
+                    <div>
+                      <dt className={PAPER_LABEL}>Evidence Label</dt>
+                      <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{item.evidence_label || 'Not provided'}</dd>
+                    </div>
+                    <div>
+                      <dt className={PAPER_LABEL}>Source Status</dt>
+                      <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{item.source_status}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-[var(--s4)] flex flex-wrap items-center justify-between gap-[var(--s3)] border-t border-[color:rgba(51,41,27,.26)] pt-[var(--s4)]">
+                    <p className={PAPER_LABEL}>Next: Evidence Review</p>
+                    <Link href="/evidence" className="btn">
+                      Move to Evidence
+                    </Link>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </section>
 
-        <section className="space-y-3 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Operational Research Requirements</p>
-          <form onSubmit={handleCreateRequirement} className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2">
-              <input
-                value={requirementDraft.sourceEventName}
-                onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEventName: event.target.value }))}
-                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
-                placeholder="Source event name"
-              />
-              <input
-                value={requirementDraft.sourceEntityType}
-                onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityType: event.target.value }))}
-                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
-                placeholder="Source entity type"
-              />
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+            Operational Research Requirements
+          </h2>
+          <form onSubmit={handleCreateRequirement} className="space-y-[var(--s4)]">
+            <div className="grid gap-[var(--s4)] md:grid-cols-2">
+              <label className="field">
+                <span className="t-label">Source event name</span>
+                <input
+                  value={requirementDraft.sourceEventName}
+                  onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEventName: event.target.value }))}
+                  className="input"
+                  placeholder="Source event name"
+                />
+              </label>
+              <label className="field">
+                <span className="t-label">Source entity type</span>
+                <input
+                  value={requirementDraft.sourceEntityType}
+                  onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityType: event.target.value }))}
+                  className="input"
+                  placeholder="Source entity type"
+                />
+              </label>
             </div>
-            <input
-              value={requirementDraft.sourceEntityId}
-              onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityId: event.target.value }))}
-              className="w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
-              placeholder="Source entity id"
-            />
-            <textarea
-              value={requirementDraft.researchRequirement}
-              onChange={(event) => setRequirementDraft((current) => ({ ...current, researchRequirement: event.target.value }))}
-              className="h-24 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
-              placeholder="Research requirement"
-            />
-            <textarea
-              value={requirementDraft.knowledgeGap}
-              onChange={(event) => setRequirementDraft((current) => ({ ...current, knowledgeGap: event.target.value }))}
-              className="h-20 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
-              placeholder="Knowledge gap"
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="submit"
-                className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-[12px] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
-              >
+            <label className="field">
+              <span className="t-label">Source entity id</span>
+              <input
+                value={requirementDraft.sourceEntityId}
+                onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityId: event.target.value }))}
+                className="input"
+                placeholder="Source entity id"
+              />
+            </label>
+            <label className="field">
+              <span className="t-label">Research requirement</span>
+              <textarea
+                value={requirementDraft.researchRequirement}
+                onChange={(event) => setRequirementDraft((current) => ({ ...current, researchRequirement: event.target.value }))}
+                className="textarea h-[89px]"
+                placeholder="Research requirement"
+              />
+            </label>
+            <label className="field">
+              <span className="t-label">Knowledge gap</span>
+              <textarea
+                value={requirementDraft.knowledgeGap}
+                onChange={(event) => setRequirementDraft((current) => ({ ...current, knowledgeGap: event.target.value }))}
+                className="textarea h-[55px]"
+                placeholder="Knowledge gap"
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-[var(--s4)]">
+              <button type="submit" className="btn">
                 Save Requirement
               </button>
-              <p className="text-[12px] text-[color:var(--bone-300)]">{submitMessage || 'Persist a requirement from evidence or a manual note.'}</p>
+              <p className="t-muted" role="status">
+                {submitMessage || 'Persist a requirement from evidence or a manual note.'}
+              </p>
             </div>
           </form>
-          <div className="space-y-2">
+          <div className="space-y-[var(--s3)]">
             {requirements.map((requirement) => (
-              <article key={requirement.research_requirement_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[14px] font-bold text-[color:var(--bone-200)]">{requirement.source_event_name}</p>
-                  <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-[color:var(--brass-300)]">{requirement.status}</p>
+              <article key={requirement.research_requirement_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+                  <p className="t-body font-bold text-[color:var(--bone-100)]">{requirement.source_event_name}</p>
+                  {requirement.status === 'open' ? (
+                    <span className="badge badge--monitor">
+                      <i>◉</i>Open
+                    </span>
+                  ) : (
+                    <span className="badge badge--cleared">
+                      <i>✓</i>Resolved
+                    </span>
+                  )}
                 </div>
-                <p className="mt-2 text-[13px] text-[color:var(--bone-300)]">{requirement.research_requirement}</p>
-                <p className="mt-1 text-[12px] text-[color:var(--bone-400)]">Gap: {requirement.knowledge_gap}</p>
-                <p className="mt-1 text-[12px] text-[color:var(--bone-400)]">
+                <p className="t-body mt-[var(--s3)]">{requirement.research_requirement}</p>
+                <p className="t-muted mt-[var(--s2)]">Gap: {requirement.knowledge_gap}</p>
+                {/* Law 4: sourcing facts a reviewer checks against are records -- mono voice. */}
+                <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                   Source: {requirement.source_status} | Confidence: {requirement.source_confidence_tier} | Verification: {requirement.source_verification_state}
                 </p>
                 {requirement.status === 'open' ? (
@@ -322,7 +424,7 @@ export default function ResearchIntakePage() {
                     type="button"
                     onClick={() => void handleResolveRequirement(requirement.research_requirement_id)}
                     disabled={resolvingId === requirement.research_requirement_id}
-                    className="mt-3 inline-flex min-h-[44px] items-center border border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] px-3 text-[12px] font-bold text-[var(--cleared-ink)] transition hover:border-[var(--cleared-ink)] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Mark Resolved'}
                   </button>
@@ -332,6 +434,6 @@ export default function ResearchIntakePage() {
           </div>
         </section>
       </div>
-    </FeatureSurface>
+    </main>
   );
 }
