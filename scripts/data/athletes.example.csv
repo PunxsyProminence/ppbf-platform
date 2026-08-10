@@ -1,4 +1,4 @@
-athlete_id,full_name,dob,weight_class,gym_status,emergency_contact,active_flag,coach_id
-EXAMPLE-001,EXAMPLE Athlete One,2010-01-01,middleweight,active,EXAMPLE guardian 000-000-0001,true,EXAMPLE-COACH-1
-EXAMPLE-002,EXAMPLE Athlete Two,2010-01-02,heavyweight,active,EXAMPLE guardian 000-000-0002,true,EXAMPLE-COACH-1
-EXAMPLE-003,EXAMPLE Athlete Three,2010-01-03,light-heavyweight,active,EXAMPLE guardian 000-000-0003,true,EXAMPLE-COACH-2
+athlete_id,full_name,dob,weight_class,gym_status,emergency_contact,active_flag,coach_id,guardian_full_name,guardian_phone,guardian_email,guardian_relationship
+EXAMPLE-001,EXAMPLE Athlete One,2010-01-01,middleweight,active,EXAMPLE guardian 000-000-0001,true,EXAMPLE-COACH-1,EXAMPLE Guardian One,000-000-0001,example.guardian1@example.invalid,mother
+EXAMPLE-002,EXAMPLE Athlete Two,2010-01-02,heavyweight,active,EXAMPLE guardian 000-000-0002,true,EXAMPLE-COACH-1,EXAMPLE Guardian One,000-000-0001,example.guardian1@example.invalid,mother
+EXAMPLE-003,EXAMPLE Athlete Three,2010-01-03,light-heavyweight,active,EXAMPLE guardian 000-000-0003,true,EXAMPLE-COACH-2,EXAMPLE Guardian Two,000-000-0002,example.guardian2@example.invalid,father

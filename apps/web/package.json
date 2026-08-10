@@ -48,6 +48,7 @@
     "seed:shadow:library": "node scripts/seed-shadow-library.mjs",
     "seed:shadow:research": "node scripts/import-shadow-research.mjs",
     "seed:shadow:research:dry": "node scripts/import-shadow-research.mjs --dry-run",
+    "rehearse:seed-guardians": "node scripts/rehearse-seed-guardians.mjs",
     "rehearse:shadow:research": "node scripts/rehearse-shadow-research-import.mjs",
     "seed:drill-library": "node scripts/seed-drill-library.mjs",
     "seed:drill-library:dry": "node scripts/seed-drill-library.mjs --dry-run",
