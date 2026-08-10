@@ -3,7 +3,8 @@
 #
 # The `pilot:check-*` scripts answer questions about a live database:
 # whether orphaned rows exist, whether guardians are stranded, whether the
-# tables an audit claimed are really there. Until this existed the only way
+# tables an audit claimed are really there, how often SHADOW withholds an
+# answer from the person who asked. Until this existed the only way
 # to run one was from someone's laptop with a connection string in their
 # shell -- the same gap apply-migrations.yml closed for schema changes.
 #
@@ -55,6 +56,7 @@ on:
           - multiorg-orphans
           - stranded-guardians
           - activation-pin-exposure
+          - shadow-filter-rate
 
 permissions:
   id-token: write
@@ -173,11 +175,13 @@ jobs:
               run_one multiorg-orphans    pilot:check-multiorg-orphans
               run_one stranded-guardians  pilot:check-stranded-guardians
               run_one activation-pin-exposure pilot:check-activation-pin-exposure
+              run_one shadow-filter-rate  pilot:check-shadow-filter-rate
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
             stranded-guardians) run_one stranded-guardians  pilot:check-stranded-guardians ;;
             activation-pin-exposure) run_one activation-pin-exposure pilot:check-activation-pin-exposure ;;
+            shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             *)
               echo "::error::Unknown check '$CHECK'."
               exit 1
