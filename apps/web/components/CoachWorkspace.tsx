@@ -210,6 +210,7 @@ export default function CoachWorkspace() {
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
   const [shadowQueueUnavailable, setShadowQueueUnavailable] = useState(false);
+  const [shadowQueueTotal, setShadowQueueTotal] = useState<number | null>(null);
   // Per-item, not a single shared flag: a coach can be resolving one case
   // while a different one's error is still on screen.
   const [intakeActionBusyId, setIntakeActionBusyId] = useState<string | null>(null);
@@ -578,8 +579,15 @@ export default function CoachWorkspace() {
           if (queueResult.value.ok) {
             const queuePayload = (await queueResult.value.json()) as {
               queue?: ShadowReviewQueueItem[];
+              total?: number;
             };
             setShadowQueue(queuePayload.queue ?? []);
+            // The projection reports how many cases exist, not just how many it
+            // returned. Kept so the panel can say what it is not showing rather
+            // than letting a coach believe the queue ends at the last card.
+            setShadowQueueTotal(
+              typeof queuePayload.total === 'number' ? queuePayload.total : null,
+            );
           } else {
             queueError = 'review projection';
           }
@@ -1562,7 +1570,22 @@ export default function CoachWorkspace() {
                     <p className="t-muted mt-[var(--s3)]">No SHADOW queue items returned.</p>
                   ) : (
                     <div className="mt-[var(--s3)] space-y-[var(--s3)]">
-                      {shadowQueue.slice(0, 6).map((item) => (
+                      {/* This panel used to render slice(0, 6) against a request
+                          for 20, so fourteen pending cases could sit behind the
+                          last card with nothing on screen suggesting they
+                          existed. On a queue of decisions waiting on a person,
+                          an undisclosed cap is not a display choice -- the work
+                          simply disappears. It renders what it fetched, and says
+                          what it did not fetch. */}
+                      {shadowQueueTotal !== null && shadowQueueTotal > shadowQueue.length && (
+                        <p className="t-muted">
+                          Showing {shadowQueue.length} of {shadowQueueTotal}.{' '}
+                          {shadowQueueTotal - shadowQueue.length} more{' '}
+                          {shadowQueueTotal - shadowQueue.length === 1 ? 'case is' : 'cases are'}{' '}
+                          in the queue and not listed here.
+                        </p>
+                      )}
+                      {shadowQueue.map((item) => (
                         <div key={item.intake_case_id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
                           <p>Status: {item.status}</p>
@@ -1602,6 +1625,15 @@ export default function CoachWorkspace() {
                     <p className="t-muted mt-[var(--s3)]">No SHADOW observation items returned.</p>
                   ) : (
                     <div className="mt-[var(--s3)] space-y-[var(--s3)]">
+                      {/* This one keeps its cap. It is a read-only feed rather
+                          than a list of decisions waiting on someone, so showing
+                          the most recent handful is a real editorial choice --
+                          but it still has to admit it is doing so. */}
+                      {shadowObservations.length > 6 && (
+                        <p className="t-muted">
+                          Showing the 6 most recent of {shadowObservations.length} loaded.
+                        </p>
+                      )}
                       {shadowObservations.slice(0, 6).map((item) => (
                         <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.label}</p>
