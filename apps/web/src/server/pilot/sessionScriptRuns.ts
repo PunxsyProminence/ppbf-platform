@@ -273,22 +273,26 @@ export async function pauseSessionScriptRun(
   accountId: string,
   runId: string,
 ): Promise<LiveSessionScriptRun> {
-  const run = await requireOwnLiveRun(organizationId, accountId, runId);
-  // Idempotent: pausing an already-paused run returns it unchanged rather than restarting the
-  // pause and losing the seconds already banked.
-  if (run.paused_at) {
-    return toLiveRun(run);
-  }
+  // Ownership and liveness still need the read -- 404-vs-409 cannot be decided from an UPDATE that
+  // matched nothing. But the pause itself must NOT depend on what that read saw.
+  await requireOwnLiveRun(organizationId, accountId, runId);
 
+  // IDEMPOTENT IN ONE STATEMENT. The previous version read paused_at, branched on it, then ran an
+  // UPDATE conditioned on `paused_at is null`. Two overlapping pauses -- a double tap, or a retried
+  // request -- both read null, the first won, and the second matched no row and returned
+  // SESSION_RUN_NOT_LIVE for a run that was live and had reached the state the caller asked for.
+  // `coalesce(paused_at, now())` needs no such condition: an already-paused run keeps the pause it
+  // has, so both callers succeed and neither loses the seconds already banked.
   const rows = await query<SessionScriptRunRow>(
     `update pilot.session_script_runs
-        set paused_at = now()
+        set paused_at = coalesce(paused_at, now())
       where organization_id = $1 and run_id = $2
-        and run_state = 'in_progress' and paused_at is null
+        and run_state = 'in_progress'
       returning ${RUN_COLUMNS}`,
     [organizationId, runId],
   );
   if (rows.length === 0) {
+    // Only reachable if the run settled between the read and this update, which is a real 409.
     throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
   }
   return toLiveRun(rows[0]);
@@ -299,20 +303,23 @@ export async function resumeSessionScriptRun(
   accountId: string,
   runId: string,
 ): Promise<LiveSessionScriptRun> {
-  const run = await requireOwnLiveRun(organizationId, accountId, runId);
-  if (!run.paused_at) {
-    return toLiveRun(run);
-  }
+  await requireOwnLiveRun(organizationId, accountId, runId);
 
-  // The pause is closed out into paused_seconds by the database, from the database's own clock, so
+  // Same race as pause, same shape of fix: no `paused_at is not null` condition, so two overlapping
+  // resumes both match and both succeed. The `case` makes it a no-op on an already-running run
+  // rather than adding a second interval, and the pause is closed out from the DATABASE's clock so
   // the banked total never depends on the caller's sense of time.
   const rows = await query<SessionScriptRunRow>(
     `update pilot.session_script_runs
         set paused_seconds = coalesce(paused_seconds, 0)
-                             + greatest(0, floor(extract(epoch from (now() - paused_at)))::integer),
+                             + case
+                                 when paused_at is not null
+                                   then greatest(0, floor(extract(epoch from (now() - paused_at)))::integer)
+                                 else 0
+                               end,
             paused_at = null
       where organization_id = $1 and run_id = $2
-        and run_state = 'in_progress' and paused_at is not null
+        and run_state = 'in_progress'
       returning ${RUN_COLUMNS}`,
     [organizationId, runId],
   );

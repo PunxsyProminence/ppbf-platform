@@ -87,8 +87,18 @@ export async function POST(request: NextRequest) {
 
     // A date, not a timestamp: delivered_on is which night this was, and accepting a full
     // timestamp here would invite it to be confused with the start time the server owns.
+    //
+    // The shape check alone is not enough. '2026-02-31' satisfies the pattern and then fails
+    // Postgres's ::date cast inside the writer, which surfaces as a 500 -- so an ordinary bad
+    // client date looked like an internal outage instead of a 400 naming the field. Round-tripping
+    // through Date and comparing back catches every non-existent day, including February 30th and
+    // the 31st of a 30-day month, without hand-coding a calendar.
     if (record.delivered_on !== undefined && record.delivered_on !== null) {
       if (typeof record.delivered_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(record.delivered_on)) {
+        return badRequest('delivered_on');
+      }
+      const parsed = new Date(`${record.delivered_on}T00:00:00Z`);
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== record.delivered_on) {
         return badRequest('delivered_on');
       }
     }

@@ -327,7 +327,7 @@ describe('the migration leaves pre-existing rows alone', () => {
   });
 });
 
-describe('the five check constraints actually reject', () => {
+describe('the six check constraints actually reject', () => {
   beforeEach(async () => {
     await seedScript(ORG_A, COACH_A, 'scr-c', ['blk-c1', 'blk-c2']);
   });
@@ -350,20 +350,19 @@ describe('the five check constraints actually reject', () => {
   it('rejects a run_state outside the vocabulary', async () => {
     await expect(
       insertRaw('run_state, started_at', `'paused', now()`, [ORG_A, 'run-v1', COACH_A]),
-    ).rejects.toThrow(/pilot_ssrun_state_vocab|pilot_ssrun_state_times/);
+    ).rejects.toThrow(/pilot_ssrun_state_vocab|pilot_ssrun_state_times|pilot_ssrun_cursor_matches_state/);
   });
 
   it('rejects an in_progress run with no start time', async () => {
     await expect(
-      insertRaw('run_state', `'in_progress'`, [ORG_A, 'run-v2', COACH_A]),
+      insertRaw('run_state, current_block_id', `'in_progress', 'blk-c1'`, [ORG_A, 'run-v2', COACH_A]),
     ).rejects.toThrow(/pilot_ssrun_state_times/);
   });
 
   it('rejects an in_progress run that has already ended', async () => {
     await expect(
-      insertRaw('run_state, started_at, ended_at', `'in_progress', now(), now()`, [
-        ORG_A, 'run-v3', COACH_A,
-      ]),
+      insertRaw('run_state, started_at, ended_at, current_block_id',
+        `'in_progress', now(), now(), 'blk-c1'`, [ORG_A, 'run-v3', COACH_A]),
     ).rejects.toThrow(/pilot_ssrun_state_times/);
   });
 
@@ -396,10 +395,31 @@ describe('the five check constraints actually reject', () => {
 
   it('rejects negative banked pause time', async () => {
     await expect(
-      insertRaw('run_state, started_at, paused_seconds', `'in_progress', now(), -1`, [
-        ORG_A, 'run-v7', COACH_A,
-      ]),
+      insertRaw('run_state, started_at, paused_seconds, current_block_id',
+        `'in_progress', now(), -1, 'blk-c1'`, [ORG_A, 'run-v7', COACH_A]),
     ).rejects.toThrow(/pilot_ssrun_paused_seconds_sane/);
+  });
+
+  it('rejects a live run with no cursor -- a session on no block at all', async () => {
+    await expect(
+      insertRaw('run_state, started_at', `'in_progress', now()`, [ORG_A, 'run-c1', COACH_A]),
+    ).rejects.toThrow(/pilot_ssrun_cursor_matches_state/);
+  });
+
+  it('rejects a settled run that still points at a block', async () => {
+    await expect(
+      insertRaw(
+        'run_state, started_at, ended_at, current_block_id',
+        `'completed', now(), now(), 'blk-c1'`,
+        [ORG_A, 'run-c2', COACH_A],
+      ),
+    ).rejects.toThrow(/pilot_ssrun_cursor_matches_state/);
+  });
+
+  it('still admits a legacy row with neither run_state nor cursor', async () => {
+    await expect(
+      insertRaw('blocks_completed', '5', [ORG_A, 'run-c3', COACH_A]),
+    ).resolves.toBeDefined();
   });
 
   it('rejects a cursor pointing at a block that does not exist', async () => {
@@ -572,6 +592,43 @@ describe("the database's own pause arithmetic", () => {
     // The backdated pause survived the second call, so resuming still banks the full 60s.
     const resumed = await resumeSessionScriptRun(ORG_A, COACH_A, live.run_id);
     expect(resumed.paused_seconds).toBeGreaterThanOrEqual(60);
+  });
+
+  // The race Codex found: both callers used to read paused_at, branch on it, then UPDATE conditioned
+  // on it. The loser matched no row and got SESSION_RUN_NOT_LIVE for a live run that had reached the
+  // state it asked for. Firing them together is the only way to see it.
+  it('survives two concurrent pauses without reporting the run as not live', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-racep', ['blk-rp1']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-racep' });
+
+    const results = await Promise.allSettled([
+      pauseSessionScriptRun(ORG_A, COACH_A, live.run_id),
+      pauseSessionScriptRun(ORG_A, COACH_A, live.run_id),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
+    expect((await readRun(live.run_id)).paused_at).not.toBeNull();
+  });
+
+  it('survives two concurrent resumes without double-banking the pause', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-racer', ['blk-rr1']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-racer' });
+    await pauseSessionScriptRun(ORG_A, COACH_A, live.run_id);
+    await client.query(
+      `update pilot.session_script_runs set paused_at = now() - interval '20 seconds'
+        where run_id = $1`,
+      [live.run_id],
+    );
+
+    const results = await Promise.allSettled([
+      resumeSessionScriptRun(ORG_A, COACH_A, live.run_id),
+      resumeSessionScriptRun(ORG_A, COACH_A, live.run_id),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
+    const row = await readRun(live.run_id);
+    expect(row.paused_at).toBeNull();
+    // Banked once, not twice: ~20s, definitely not ~40s.
+    expect(row.paused_seconds).toBeGreaterThanOrEqual(20);
+    expect(row.paused_seconds).toBeLessThan(30);
   });
 
   it('resuming a run that is not paused is a no-op rather than an error', async () => {

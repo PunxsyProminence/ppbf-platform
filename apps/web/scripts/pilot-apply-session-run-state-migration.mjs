@@ -65,7 +65,7 @@ const READINESS_QUERY = `
         )
     ) as columns_ready,
     (
-      select count(*) = 6 from pg_constraint
+      select count(*) = 7 from pg_constraint
       where conrelid = to_regclass('pilot.session_script_runs')
         and conname in (
           'pilot_ssrun_state_vocab',
@@ -73,6 +73,7 @@ const READINESS_QUERY = `
           'pilot_ssrun_end_after_start',
           'pilot_ssrun_pause_only_live',
           'pilot_ssrun_paused_seconds_sane',
+          'pilot_ssrun_cursor_matches_state',
           'pilot_ssrun_current_block_fk'
         )
     ) as constraints_ready,

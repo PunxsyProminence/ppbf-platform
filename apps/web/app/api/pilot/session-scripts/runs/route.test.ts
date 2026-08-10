@@ -191,6 +191,27 @@ describe('POST runs — start', () => {
 
   // delivered_on is which night this was, not when the session started. A timestamp here would
   // invite it to be confused with the start time the server owns.
+  // '2026-02-31' and friends satisfy the shape and then fail Postgres's ::date cast, which used to
+  // surface as a 500 -- an ordinary bad client date reading as an internal outage.
+  it.each(['2026-02-31', '2026-02-30', '2026-04-31', '2026-13-01', '2026-00-10', '2026-01-32'])(
+    'rejects the non-existent calendar date %s with a 400 naming the field',
+    async (value) => {
+      const response = await POST(post({ script_id: 'scr-1', delivered_on: value }));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'delivered_on' });
+      expect(mockStart).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['2024-02-29', '2026-02-28', '2026-12-31'])(
+    'accepts the real date %s (leap day included)',
+    async (value) => {
+      mockStart.mockResolvedValue(liveRun);
+      const response = await POST(post({ script_id: 'scr-1', delivered_on: value }));
+      expect(response.status).toBe(201);
+    },
+  );
+
   it.each(['2026-8-9', '09-08-2026', '2026-08-09T16:00:00Z', 'today'])(
     'rejects delivered_on %s',
     async (value) => {

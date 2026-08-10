@@ -96,6 +96,21 @@ alter table pilot.session_script_runs
     paused_seconds is null or paused_seconds >= 0
   );
 
+-- The cursor must EXIST while the room is live and must be gone once it is not. Without this the
+-- header's claim that these constraints make a half-populated live run impossible was an overclaim:
+-- a buggy write path or a manual fixup could leave an in_progress run with a null cursor (a session
+-- on no block at all) or a completed run still pointing at one, and every reader treats the cursor
+-- as meaningful only while in_progress. Legacy rows are exempt via the null run_state branch, the
+-- same way every other constraint here exempts them.
+alter table pilot.session_script_runs
+  drop constraint if exists pilot_ssrun_cursor_matches_state;
+alter table pilot.session_script_runs
+  add constraint pilot_ssrun_cursor_matches_state check (
+    run_state is null
+    or (run_state = 'in_progress' and current_block_id is not null)
+    or (run_state in ('completed', 'abandoned') and current_block_id is null)
+  );
+
 -- The cursor must be a real block. Script membership is checked in the write path rather than
 -- here -- a check constraint cannot reach another table -- and is covered by its own test, so a
 -- block belonging to a different script cannot be set as this run's cursor.
