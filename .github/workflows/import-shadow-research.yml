@@ -85,8 +85,14 @@ jobs:
       - name: Install Locked Dependencies
         run: npm ci
 
+      # NOT conditional on mode, deliberately. It was `if: inputs.mode == 'apply'`
+      # until Resolve Owning Organization below started calling
+      # `az containerapp secret show` whenever organization_id is blank -- which
+      # is the normal case now, and which dry-run reaches too. Skipping login in
+      # dry-run left that az call unauthenticated, so `set -euo pipefail` failed
+      # the step: the feature's own headline path, in the mode an operator uses
+      # first, was broken.
       - name: Authenticate via Azure OIDC
-        if: inputs.mode == 'apply'
         uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
