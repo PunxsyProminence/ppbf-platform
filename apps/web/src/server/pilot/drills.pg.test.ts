@@ -362,6 +362,60 @@ describe('drills migration against real Postgres', () => {
     }
   });
 
+  // The regression that broke `apply-migrations migration=all` on both
+  // environments. drill-versioning replaces this index with a PARTIAL unique
+  // index of the same name, on purpose. This runner used to demand a TOTAL one,
+  // so re-running `all` against any environment that had reached versioning
+  // failed here forever -- and `create unique index if not exists` could not
+  // put back the shape it was asking for.
+  test('the readiness check ACCEPTS the partial index drill-versioning installs', async () => {
+    const client = await freshDatabase('ppbf_test_drills_readiness_partial');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+
+      // Exactly what the drill-versioning migration does to this index.
+      await client.query('drop index pilot.pilot_drills_one_name_per_org');
+      await client.query(
+        `create unique index pilot_drills_one_name_per_org
+           on pilot.drills(organization_id, name) where active`,
+      );
+
+      // Re-running must now be a no-op rather than a refusal.
+      await expect(applyMigrationTransaction(client, 'select 1')).resolves.toBeUndefined();
+
+      // And the partial index is still there -- re-running did not quietly
+      // convert it back and re-break versioning.
+      const { rows } = await client.query(
+        `select indisunique, indpred is null as is_total
+         from pg_index i
+         join pg_class c on c.oid = i.indexrelid
+         where c.relname = 'pilot_drills_one_name_per_org'`,
+      );
+      expect(rows).toEqual([{ indisunique: true, is_total: false }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // A non-unique index of the right name is still a refusal: the rule this
+  // runner owns is uniqueness, and only the span of it moved.
+  test('the readiness check REFUSES a same-named index that is not unique', async () => {
+    const client = await freshDatabase('ppbf_test_drills_readiness_nonunique');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await client.query('drop index pilot.pilot_drills_one_name_per_org');
+      await client.query(
+        'create index pilot_drills_one_name_per_org on pilot.drills(organization_id, name)',
+      );
+
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /DRILLS_NOT_READY/,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
   // Half of this migration lands on pilot.drill_assignments. A database with
   // pilot.drills but no anchor column has the library and none of the point.
   test('the readiness check REFUSES a database whose assignment anchor is missing', async () => {

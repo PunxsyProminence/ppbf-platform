@@ -50,9 +50,16 @@ describe('the starting PIN can be issued but never chosen', () => {
       .toThrow('PIN cannot be the starting PIN everyone is given. Choose a different one.');
   });
 
-  // The refusal is only useful if the athlete sees it. jsonError maps by
-  // message prefix, so a message that does not begin with "PIN" comes back as
-  // a 500 "Internal server error" with the reason stripped out.
+  // The refusal is only useful if the athlete sees it. This used to depend on
+  // the message beginning with "PIN", which jsonError prefix-matched to a 400;
+  // anything else came back as a 500 with the reason stripped out. It now
+  // throws ValidationError, so the status comes from the type and rewording
+  // the message can no longer silence it.
+  //
+  // The body also carries `code` now. That is the point of the machine code
+  // moving out of the message prefix: a client can branch on
+  // PIN_IS_DEFAULT_FIRST_LOGIN without string-matching prose, which is the
+  // same fragility this change removes on the server side.
   test('the refusal reaches the athlete as a 400 carrying the reason', async () => {
     let refusal: unknown;
     try {
@@ -65,6 +72,7 @@ describe('the starting PIN can be issued but never chosen', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       error: 'PIN cannot be the starting PIN everyone is given. Choose a different one.',
+      code: 'PIN_IS_DEFAULT_FIRST_LOGIN',
     });
   });
 

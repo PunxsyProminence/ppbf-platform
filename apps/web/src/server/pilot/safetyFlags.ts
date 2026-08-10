@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne } from './db';
+import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 // pilot.safety_flags, pilot.v_flag_calibration, pilot.return_to_training_plans
 // and pilot.return_to_training_steps are owned by
@@ -110,11 +111,15 @@ export interface RaiseSafetyFlagInput {
  */
 export async function raiseSafetyFlag(input: RaiseSafetyFlagInput): Promise<SafetyFlagRow> {
   if (!input.athleteId && !input.personAccountId) {
-    throw new Error('SAFETY_FLAG_SUBJECT_REQUIRED: a flag needs an athlete_id or a person_account_id');
+    throw new ValidationError(
+      'A safety flag needs an athlete_id or a person_account_id.',
+      'SAFETY_FLAG_SUBJECT_REQUIRED',
+    );
   }
   if (MEDICAL_HUMAN_ONLY_FLAG_CODES.has(input.flagCode) && input.triggeredBy !== 'human_entry') {
-    throw new Error(
-      `SAFETY_FLAG_MEDICAL_CODE_REQUIRES_HUMAN_ENTRY: ${input.flagCode} may not be raised by SHADOW`,
+    throw new ValidationError(
+      `${input.flagCode} may not be raised by SHADOW; it requires human entry.`,
+      'SAFETY_FLAG_MEDICAL_CODE_REQUIRES_HUMAN_ENTRY',
     );
   }
 
@@ -184,7 +189,10 @@ export interface ResolveSafetyFlagInput {
  */
 export async function resolveSafetyFlag(input: ResolveSafetyFlagInput): Promise<SafetyFlagRow> {
   if (input.coachNote.trim().length < MIN_NOTE_LENGTH) {
-    throw new Error(`SAFETY_FLAG_NOTE_TOO_SHORT: resolution note must be at least ${MIN_NOTE_LENGTH} characters`);
+    throw new ValidationError(
+      `Resolution note must be at least ${MIN_NOTE_LENGTH} characters.`,
+      'SAFETY_FLAG_NOTE_TOO_SHORT',
+    );
   }
 
   const existing = await queryOne<Pick<SafetyFlagRow, 'flag_class'>>(
@@ -192,10 +200,13 @@ export async function resolveSafetyFlag(input: ResolveSafetyFlagInput): Promise<
     [input.organizationId, input.flagId],
   );
   if (!existing) {
-    throw new Error('SAFETY_FLAG_NOT_FOUND');
+    throw new NotFoundError('That safety flag does not exist.', 'SAFETY_FLAG_NOT_FOUND');
   }
   if (existing.flag_class === 'external_rule' && input.status === 'bypassed') {
-    throw new Error('SAFETY_FLAG_EXTERNAL_RULE_CANNOT_BYPASS: use status=acknowledged instead');
+    throw new ConflictError(
+      'An external-rule flag cannot be bypassed; use status=acknowledged instead.',
+      'SAFETY_FLAG_EXTERNAL_RULE_CANNOT_BYPASS',
+    );
   }
 
   const row = await queryOne<SafetyFlagRow>(
@@ -215,7 +226,10 @@ export async function resolveSafetyFlag(input: ResolveSafetyFlagInput): Promise<
     ],
   );
   if (!row) {
-    throw new Error('SAFETY_FLAG_NOT_FOUND_OR_NOT_OPEN');
+    throw new ConflictError(
+      'That safety flag is not open, or does not exist.',
+      'SAFETY_FLAG_NOT_FOUND_OR_NOT_OPEN',
+    );
   }
   return row;
 }
@@ -390,7 +404,10 @@ export async function addReturnToTrainingStep(
   } catch (error) {
     const { code, constraint } = (error ?? {}) as { code?: unknown; constraint?: unknown };
     if (code === '23505' && constraint === 'pilot_rtt_steps_week_uq') {
-      throw new Error('RTT_STEP_WEEK_DUPLICATE');
+      throw new ConflictError(
+        'A return-to-training step already exists for that week.',
+        'RTT_STEP_WEEK_DUPLICATE',
+      );
     }
     throw error;
   }
@@ -424,7 +441,10 @@ export async function advanceReturnToTrainingStep(
   input: AdvanceReturnToTrainingStepInput,
 ): Promise<ReturnToTrainingStepRow> {
   if (input.advancementNote.trim().length < MIN_NOTE_LENGTH) {
-    throw new Error(`RTT_STEP_ADVANCEMENT_NOTE_REQUIRED: note must be at least ${MIN_NOTE_LENGTH} characters`);
+    throw new ValidationError(
+      `Advancement note must be at least ${MIN_NOTE_LENGTH} characters.`,
+      'RTT_STEP_ADVANCEMENT_NOTE_REQUIRED',
+    );
   }
 
   const row = await queryOne<ReturnToTrainingStepRow>(
@@ -435,7 +455,10 @@ export async function advanceReturnToTrainingStep(
     [input.organizationId, input.stepId, input.advancedByAccountId, input.advancementNote.trim()],
   );
   if (!row) {
-    throw new Error('RTT_STEP_NOT_FOUND_OR_ALREADY_ADVANCED');
+    throw new ConflictError(
+      'That return-to-training step is not awaiting advancement, or does not exist.',
+      'RTT_STEP_NOT_FOUND_OR_ALREADY_ADVANCED',
+    );
   }
   return row;
 }

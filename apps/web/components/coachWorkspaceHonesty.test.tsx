@@ -86,8 +86,12 @@ async function renderWorkspace(routes: RouteResponses = {}): Promise<jest.Mock> 
   return fetchMock;
 }
 
+// A tab carrying a pending-count badge (see StatusBadge in CoachWorkspace.tsx)
+// has that count in its accessible name too -- "Tasks 3 pending", not just
+// "Tasks" -- so this matches on the label as a prefix rather than requiring
+// an exact string that only holds when the queue happens to be empty.
 function openTab(label: string): void {
-  fireEvent.click(screen.getByRole('button', { name: label }));
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}\\b`) }));
 }
 
 afterEach(() => {
@@ -304,6 +308,88 @@ describe('the SHADOW tab lets a coach act on review-queue items, as the Tasks ta
 // Authored notices and motivational copy are data, so the workspace has to ask
 // for its own surface and has to survive the answer -- including no answer at
 // all.
+describe('the review queue admits what it is not showing', () => {
+  function queueItem(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      intake_case_id: id,
+      status: 'pending_review',
+      summary: `New athlete intake ${id}`,
+      document_count: 1,
+      updated_at: '2026-08-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  // The panel rendered slice(0, 6) against a request for 20, so fourteen
+  // pending cases could sit behind the last card with nothing on screen
+  // suggesting they existed. On a queue of decisions waiting on a person, an
+  // undisclosed cap means the work silently disappears.
+  test('renders every case it fetched, not the first six', async () => {
+    const ten = Array.from({ length: 10 }, (_, i) => queueItem(`case_${i}`));
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: ten, total: 10 }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText('New athlete intake case_9')).toBeTruthy();
+    });
+    expect(screen.getByText('New athlete intake case_6')).toBeTruthy();
+  });
+
+  test('states how many cases exist beyond the ones listed', async () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => queueItem(`case_${i}`));
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: twenty, total: 34 }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText(/Showing 20 of 34/)).toBeTruthy();
+    });
+    expect(screen.getByText(/14 more cases are in the queue/)).toBeTruthy();
+  });
+
+  test('says nothing when it is showing the whole queue', async () => {
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem('case_1')], total: 1 }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText('New athlete intake case_1')).toBeTruthy();
+    });
+    expect(screen.queryByText(/Showing/)).toBeNull();
+  });
+
+  // A projection that omits `total` must not produce "Showing 3 of undefined".
+  test('stays quiet rather than guessing when the projection reports no total', async () => {
+    const three = Array.from({ length: 3 }, (_, i) => queueItem(`case_${i}`));
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: three }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText('New athlete intake case_0')).toBeTruthy();
+    });
+    expect(screen.queryByText(/Showing/)).toBeNull();
+    expect(screen.queryByText(/undefined/)).toBeNull();
+  });
+
+  test('uses the singular for a single withheld case', async () => {
+    const two = Array.from({ length: 2 }, (_, i) => queueItem(`case_${i}`));
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: two, total: 3 }),
+    });
+    openTab('SHADOW Intel');
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 more case is in the queue/)).toBeTruthy();
+    });
+  });
+});
+
 describe('authored announcements on the coach workspace', () => {
   function announcementRequests(fetchMock: jest.Mock): Array<Record<string, unknown>> {
     return fetchMock.mock.calls
