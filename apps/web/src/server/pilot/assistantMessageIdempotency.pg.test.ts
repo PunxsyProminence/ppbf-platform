@@ -134,6 +134,16 @@ beforeAll(async () => {
   await migrateClient.query(
     await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_shadow_runtime_migration.sql'), 'utf8'),
   );
+  // filter_reasons is a later increment again, and the append writes it too.
+  // Every increment the write path touches has to be loaded here or the insert
+  // fails on a column the production schema has -- which is the whole point of
+  // building this suite's database from the committed SQL rather than a fixture.
+  await migrateClient.query(
+    await fs.readFile(
+      path.join(INFRA_DIR, 'pilot_slice_postgres_shadow_filter_reason_migration.sql'),
+      'utf8',
+    ),
+  );
   await migrateClient.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
      values ($1, $1, 'active') on conflict do nothing`,
