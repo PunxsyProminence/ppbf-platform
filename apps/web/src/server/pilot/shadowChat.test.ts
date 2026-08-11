@@ -567,6 +567,37 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         });
       });
 
+      describe('one claim costs one citation, however many frames cover it', () => {
+        // #300 made each claim-shaped phrase require its own citation
+        // occurrence, which closed a real hole: one real citation used to
+        // license a fabricated claim sitting next to it. But it summed the
+        // people-count frames independently, so a single phrase satisfying two
+        // frames demanded two citations. Measured 2026-08-10 -- these three are
+        // the organizational-rollup-with-an-outcome shape, which is the most
+        // useful answer an administrator can ask SHADOW for, and all three were
+        // withheld while correctly cited.
+        const ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3311';
+        test.each([
+          ['existence plus outcome', `There are 30 athletes enrolled who improved their guard [E:${ID}].`],
+          ['serves plus outcome', `The gym serves 60 athletes and 40 improved this season [E:${ID}].`],
+          ['tracked plus outcome', `We tracked 40 participants who reported less soreness [E:${ID}].`],
+        ])('delivers %s when cited once', (_label, response) => {
+          const result = validateShadowResponse(response, { allowedEvidenceIds: [ID] });
+          expect(result.filtered).toBe(false);
+        });
+
+        // And the hole #300 closed must stay closed: a real citation on one
+        // claim cannot license a different, uncited one beside it.
+        test('a cited claim still does not license an uncited neighbour', () => {
+          const result = validateShadowResponse(
+            `Attendance is 94% [E:${ID}]. Also, 250 similar athletes fully recovered with no setbacks.`,
+            { allowedEvidenceIds: [ID] },
+          );
+          expect(result.filtered).toBe(true);
+          expect(result.reasonCodes).toContain('uncited_claim');
+        });
+      });
+
       test('still allows a cited quantity, so Omega rollups keep working', () => {
         const evidenceId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
         const result = validateShadowResponse(

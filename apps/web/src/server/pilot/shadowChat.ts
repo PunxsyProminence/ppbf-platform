@@ -809,23 +809,58 @@ export function validateShadowResponse(
   // The counts below re-run the exact patterns already used for detection
   // above (globalized), so they can only disagree with makesEvidenceClaim /
   // makesQuantifiedEvidenceClaim on HOW MANY, never on whether -- a response
-  // with zero claims still takes zero citations, unchanged from before. Where
-  // the same phrase happens to satisfy more than one of the assertion frames
-  // (e.g. both the "there are" frame and the "improved" frame), it is counted
-  // more than once; that asks for more citation occurrences than a single
-  // claim strictly needs, which is the safe direction to be wrong in here.
+  // with zero claims still takes zero citations, unchanged from before.
+  //
+  // The people-count frames are summed by POSITION, not by frame. Summing the
+  // frames independently double-counted a single claim phrase that satisfies
+  // more than one of them, and that was called the safe direction to be wrong
+  // in -- it is not. Measured 2026-08-10, three correctly-cited answers were
+  // withheld by it:
+  //   "There are 30 athletes enrolled who improved their guard [E:id]"
+  //   "The gym serves 60 athletes and 40 improved this season [E:id]"
+  //   "We tracked 40 participants who reported less soreness [E:id]"
+  // Each is one claim wearing two frames ("there are"/"serves"/"tracked" plus
+  // an outcome verb), so each demanded two citation occurrences and had one.
+  // These are the organizational-rollup-with-an-outcome shape -- the most
+  // useful answer an administrator can ask SHADOW for -- so over-counting here
+  // withholds honest, sourced work.
+  //
+  // Keying on the offset of the count token itself makes one phrase cost one
+  // citation however many frames cover it. #300's rider case is unaffected:
+  // the fabricated "250 similar athletes" sits at a different offset from the
+  // cited percentage, so it is still its own claim and still needs its own
+  // citation.
   const countMatches = (source: string, pattern: RegExp) => [...source.matchAll(pattern)].length;
   const evidenceClaimCount = (
     countMatches(response, /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/gi)
     + countMatches(response, /\b(?:clinically|scientifically|medically)?\s*proven\b/gi)
   );
+  const PEOPLE_COUNT_FRAMES = [
+    /\b\d+\s+similar\s+(?:athletes?|participants?)\b/gi,
+    /\b\d+\s+out\s+of\s+\d+\s+(?:athletes?|participants?)\b/gi,
+    /\b(?:has|have|had|there\s+(?:are|is|were|was)|serves?|served|enrolled|registered|tracked|surveyed|studied|observed|sampled)\b[^.\n]{0,30}?\b\d+\s+(?:athletes?|participants?)\b/gi,
+    /\b\d+\s+(?:athletes?|participants?)\b[^.\n]{0,60}?\b(?:improv|show|report|demonstrat|experienc|recover|reduc|increas|decreas|respond|sustain|avoid|gain|drop)\w*\b/gi,
+  ];
+  // The token that identifies the claim is the count attached to the noun.
+  // 'similar' has to be optional here or the comparison-population frame
+  // ("247 similar athletes") yields no token at all and the claim stops being
+  // counted -- which silently reopens #300's rider case. The trailing
+  // lookahead takes the RIGHTMOST such token, because the 'out of' frame spans
+  // two numbers ("7 out of 10 athletes") and the second is the one that counts.
+  const COUNT_TOKEN =
+    /\d+\s+(?:similar\s+)?(?:athletes?|participants?)(?![\s\S]*?\d+\s+(?:similar\s+)?(?:athletes?|participants?))/i;
+  const claimedCountOffsets = new Set<number>();
+  for (const frame of PEOPLE_COUNT_FRAMES) {
+    for (const match of peopleCountSource.matchAll(frame)) {
+      const inner = COUNT_TOKEN.exec(match[0]);
+      if (!inner) continue;
+      claimedCountOffsets.add((match.index ?? 0) + (inner.index ?? 0));
+    }
+  }
   const quantifiedClaimCount = (
     countMatches(quantSource, /\b\d+(?:\.\d+)?\s*%/gi)
     + countMatches(quantSource, /\b\d+\s+(?:similar\s+)?(?:cases?|studies?)\b/gi)
-    + countMatches(peopleCountSource, /\b\d+\s+similar\s+(?:athletes?|participants?)\b/gi)
-    + countMatches(peopleCountSource, /\b\d+\s+out\s+of\s+\d+\s+(?:athletes?|participants?)\b/gi)
-    + countMatches(peopleCountSource, /\b(?:has|have|had|there\s+(?:are|is|were|was)|serves?|served|enrolled|registered|tracked|surveyed|studied|observed|sampled)\b[^.\n]{0,30}?\b\d+\s+(?:athletes?|participants?)\b/gi)
-    + countMatches(peopleCountSource, /\b\d+\s+(?:athletes?|participants?)\b[^.\n]{0,60}?\b(?:improv|show|report|demonstrat|experienc|recover|reduc|increas|decreas|respond|sustain|avoid|gain|drop)\w*\b/gi)
+    + claimedCountOffsets.size
   );
   const totalEvidenceClaims = evidenceClaimCount + quantifiedClaimCount;
   if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && validCitationOccurrences < totalEvidenceClaims) {
