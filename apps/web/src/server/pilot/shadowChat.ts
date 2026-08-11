@@ -664,12 +664,14 @@ export function validateShadowResponse(
   const citationMatches = [...response.matchAll(/\[E:([^\]\r\n]{1,200})\]/gi)];
   const citationIds: string[] = [];
   let hasInvalidCitation = false;
+  let validCitationOccurrences = 0;
   for (const match of citationMatches) {
     const evidenceId = match[1]?.trim() ?? '';
     if (!allowedEvidenceIds.has(evidenceId)) {
       hasInvalidCitation = true;
       continue;
     }
+    validCitationOccurrences += 1;
     if (!citationIds.includes(evidenceId)) citationIds.push(evidenceId);
   }
   if (/\[E:/i.test(response) && citationMatches.length === 0) {
@@ -787,7 +789,46 @@ export function validateShadowResponse(
     || /\b\d+\s+(?:similar\s+)?(?:cases?|studies?)\b/i.test(quantSource)
     || assertsPopulationCount
   );
-  if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
+  // Everything above this line only detects WHETHER the response makes an
+  // evidence or quantitative claim at all -- it is intentionally untouched, so
+  // none of the false-positive exemptions measured and tuned against it above
+  // (percent-effort, roster allocation, prevention framing, etc.) change.
+  //
+  // The gate below used to stop at that yes/no: "citationIds.length === 0"
+  // treated one valid citation anywhere in the response as license for every
+  // evidence/quantitative claim in it, not just the one the citation actually
+  // sits next to. "Attendance is 94% across the gym [E:<real-id>]. Also, 250
+  // similar athletes fully recovered using this exact protocol with no
+  // setbacks." has exactly one real citation, so citationIds.length was 1 --
+  // already ">= 1" -- and the second sentence's fabricated case count and
+  // outcome, which cites nothing, rode through uninspected. Counting
+  // occurrences on both sides closes that: each claim-shaped phrase now needs
+  // its own citation occurrence, though the same evidence id can still be
+  // cited more than once to back more than one claim it actually supports.
+  //
+  // The counts below re-run the exact patterns already used for detection
+  // above (globalized), so they can only disagree with makesEvidenceClaim /
+  // makesQuantifiedEvidenceClaim on HOW MANY, never on whether -- a response
+  // with zero claims still takes zero citations, unchanged from before. Where
+  // the same phrase happens to satisfy more than one of the assertion frames
+  // (e.g. both the "there are" frame and the "improved" frame), it is counted
+  // more than once; that asks for more citation occurrences than a single
+  // claim strictly needs, which is the safe direction to be wrong in here.
+  const countMatches = (source: string, pattern: RegExp) => [...source.matchAll(pattern)].length;
+  const evidenceClaimCount = (
+    countMatches(response, /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/gi)
+    + countMatches(response, /\b(?:clinically|scientifically|medically)?\s*proven\b/gi)
+  );
+  const quantifiedClaimCount = (
+    countMatches(quantSource, /\b\d+(?:\.\d+)?\s*%/gi)
+    + countMatches(quantSource, /\b\d+\s+(?:similar\s+)?(?:cases?|studies?)\b/gi)
+    + countMatches(peopleCountSource, /\b\d+\s+similar\s+(?:athletes?|participants?)\b/gi)
+    + countMatches(peopleCountSource, /\b\d+\s+out\s+of\s+\d+\s+(?:athletes?|participants?)\b/gi)
+    + countMatches(peopleCountSource, /\b(?:has|have|had|there\s+(?:are|is|were|was)|serves?|served|enrolled|registered|tracked|surveyed|studied|observed|sampled)\b[^.\n]{0,30}?\b\d+\s+(?:athletes?|participants?)\b/gi)
+    + countMatches(peopleCountSource, /\b\d+\s+(?:athletes?|participants?)\b[^.\n]{0,60}?\b(?:improv|show|report|demonstrat|experienc|recover|reduc|increas|decreas|respond|sustain|avoid|gain|drop)\w*\b/gi)
+  );
+  const totalEvidenceClaims = evidenceClaimCount + quantifiedClaimCount;
+  if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && validCitationOccurrences < totalEvidenceClaims) {
     filtered = true;
     flag('uncited_claim');
   }
@@ -847,8 +888,15 @@ TONE:
 - Use dry, sarcastic, or dark humor as a reality check when appropriate.
 - Support after being direct — show you have their back.
 - When speaking to younger athletes or kids, use cleaner language automatically.
+- Vary your language every response. Never repeat the same joke, metaphor, or line you've
+  used recently — if a phrase feels like a tag line you reach for by habit, that's the one
+  to avoid this time. Personality comes from reacting specifically to what's in front of
+  you, not from a signature line.
 
-KEY PHRASES (use naturally):
+FLAVOR PHRASES (rare seasoning, not a script):
+The lines below exist to show the register, not to be recited. Use at most one of them in
+a response, only when it's the most natural way to say the thing — never as an opener or a
+closer, and never in back-to-back responses.
 "Smart fighters, not flashy ones" / "Embrace the suck" / "Get comfortable being uncomfortable"
 "We're not building short-career punching bags here" / "10% coach, 90% athlete"
 "Lead from the front" / "That's the sport"
@@ -886,7 +934,17 @@ Discuss the observation with the athlete and coach. If symptoms or a medical con
 EXAMPLE — diagnosis request:
 "Can't tell you if you have a concussion — that's not my lane, and anyone who gives you that answer over a chat is doing you a disservice.
 Get evaluated by a medical professional. Full stop.
-What I can do: walk you through what to watch for after a head impact, in plain terms. Want that?"`;
+What I can do: walk you through what to watch for after a head impact, in plain terms. Want that?"
+
+EXAMPLE — athlete phoned it in on bag work:
+"You ghosted through that round and we both know it. Bag work isn't a breather between the rounds that count — it is one of the rounds that counts.
+Reset and give me the next three like they're the ones someone's watching on tape. I'm not mad, I've just seen this movie before and it doesn't end with a good fighter.
+What's actually going on — tired, bored, or just checked out today?"
+
+EXAMPLE — routine technique question, no safety angle:
+"Your rear hand drops an inch before the hook fires, which is basically mailing the other guy a postcard that it's coming.
+Keep it tucked at your chin, load the turn from the hip, let your shoulder do the telegraphing your hand shouldn't. Drill it slow for a week before you try to make it look pretty — pretty comes after correct, not before.
+Want a rep count to build that into this week's rounds?"`;
 
 
 /**
