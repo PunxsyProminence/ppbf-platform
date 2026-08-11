@@ -599,7 +599,15 @@ function describePainReportEvent(event: ShadowEventRow, athleteNames: ReadonlyMa
   const athleteName = athleteNames.get(athleteId) ?? `Athlete ${athleteId}`;
   const location = painReportPayloadText(payload, 'location');
   const painType = painReportPayloadText(payload, 'pain_type');
-  const severity = typeof payload.severity_1_10 === 'number' ? payload.severity_1_10 : null;
+  // Number.isFinite, not just typeof -- matches the guard toCoachPainReport
+  // (painReportAlert.ts) already uses on this same field. The current sole
+  // writer (alertCoachToPainReport -> emitShadowEvent's JSON.stringify)
+  // cannot produce NaN/Infinity here, but jsonb accepts a raw insert or
+  // backfill that bypasses that normalization, and node-postgres parses an
+  // out-of-range numeric literal (e.g. 1e400) to Infinity on the way back.
+  const severity = typeof payload.severity_1_10 === 'number' && Number.isFinite(payload.severity_1_10)
+    ? payload.severity_1_10
+    : null;
 
   const where = location ? ` at ${location}` : '';
   const type = painType ? ` (${painType})` : '';
