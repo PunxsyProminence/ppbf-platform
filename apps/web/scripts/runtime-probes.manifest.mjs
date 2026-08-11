@@ -562,6 +562,44 @@ export const MANIFEST = [
       'The recorded disposition is to write no backfill at all and treat activity_log as '
       + 'go-forward only. There is no artifact to verify -- deliberately.',
   },
+  {
+    item: 'BACKLOG-triage-keyboard',
+    title: 'keyboard triage for the coach review queue',
+    noRuntimeProbe:
+      'Nothing is deployed to probe, and a probe would be the wrong artifact anyway. The '
+      + 'binding is blocked by landmine 5: approval refuses until a human document review '
+      + 'leaves an audit row, so the only thing a probe could assert today is that the '
+      + 'refusal fires -- which apply-migrations and the deploy gate already assert, before '
+      + 'reviewing anything. Author a probe only once the queue carries a review-complete '
+      + 'signal, and probe THAT rather than the keystroke.',
+  },
+  {
+    item: 'BACKLOG-offline-write-queue',
+    title: 'offline write queue for the floor kiosk',
+    noRuntimeProbe:
+      'Unbuilt, and it must stay unbuilt until the owner rules on where queued participant '
+      + 'data lives and how it is scoped to an identity on a shared tablet. Probing the '
+      + 'current behaviour would freeze "a check-in during an outage is lost" as though it '
+      + 'were the intended contract.',
+  },
+  {
+    item: 'BACKLOG-grant-packet',
+    title: 'grant/board packet export',
+    noRuntimeProbe:
+      'Unbuilt. The blocker is a disclosure decision -- which aggregates about minors may '
+      + 'leave the organisation, and at what k-anonymity floor -- so there is no behaviour '
+      + 'to verify and no defensible assertion to write before the owner sets that floor.',
+  },
+  {
+    item: 'BACKLOG-open-route-gates',
+    title: '21 buildingMap doors carry no role gate',
+    noRuntimeProbe:
+      'Explicitly not builder-decidable, the same shape as BACKLOG-coach-roster-scope: each '
+      + 'of the 21 is either intentionally open or a real over-exposure, and the owner has '
+      + 'not ruled route by route. A probe asserting today\'s reachability would make the '
+      + 'open question look settled. Note also that buildingMap is not the enforcement '
+      + 'point, so any probe belongs against the page guard, not the map.',
+  },
 ];
 
 export const PROBES = MANIFEST.flatMap((entry) => entry.probes || []);
