@@ -11,6 +11,25 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
+
+/**
+ * An explicit element type for the tab-bar array, rather than letting it
+ * infer one from the object literals. Without this, TypeScript's inference
+ * for an array of objects with differing optional keys silently widens every
+ * element to carry every key as optional-undefined -- so a typo'd `id` or
+ * `badge` property type-checks fine and just never renders, with no compiler
+ * signal pointing at the cause.
+ */
+interface CoachTabBadge {
+  readonly tone: BadgeTone;
+  readonly label: string;
+}
+interface CoachTab {
+  readonly id: TabID;
+  readonly label: string;
+  readonly badge?: CoachTabBadge;
+}
+
 type SessionMode = 'Group' | 'One-on-One';
 type ReadinessStatus = 'GREEN' | 'YELLOW' | 'RED';
 
@@ -395,6 +414,17 @@ export default function CoachWorkspace() {
   );
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
+  // A missing badge must mean "genuinely nothing pending", never "the queue
+  // failed to load" -- assignmentsDue is 0 in both cases, and the Tasks tab's
+  // own body already distinguishes them (the "Unable to load" box above).
+  // Collapsing that distinction back to silence one UI element up would
+  // reproduce the exact false-reassurance failure this file guards against
+  // elsewhere (see the readiness/injuryFlag handling).
+  const reviewQueueBadge: CoachTabBadge | undefined = shadowQueueUnavailable
+    ? { tone: 'locked', label: 'unavailable' }
+    : assignmentsDue > 0
+      ? { tone: 'monitor', label: `${assignmentsDue} pending` }
+      : undefined;
 
   // Athlete pain reports. The write path refuses to store a pain report it
   // could not raise a coach-visible record for, so anything returned here is a
@@ -925,26 +955,26 @@ export default function CoachWorkspace() {
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
           <div className={ui.tabRow}>
-            {[
+            {([
               { id: 'dashboard', label: 'Dashboard' },
               { id: 'floor', label: 'Floor' },
               { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
               { id: 'development', label: 'Development' },
               { id: 'goals', label: 'Goals' },
-              // Both counts are the same number by construction -- coachTasks
+              // Both badges are the same value by construction -- coachTasks
               // is derived entirely from shadowQueue's pending_review items
               // (see the comment above coachTasks) -- so Tasks and SHADOW
               // Intel badge the same underlying work seen from two angles,
               // not two different counts that could disagree.
-              { id: 'tasks', label: 'Tasks', count: assignmentsDue },
+              { id: 'tasks', label: 'Tasks', badge: reviewQueueBadge },
               { id: 'assessments', label: 'Assessments' },
               { id: 'film-study', label: 'Film Study' },
               { id: 'athlete-reviews', label: 'Athlete Reviews' },
-              { id: 'shadow', label: 'SHADOW Intel', count: assignmentsDue }
-            ].map(tab => (
+              { id: 'shadow', label: 'SHADOW Intel', badge: reviewQueueBadge }
+            ] satisfies CoachTab[]).map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabID)}
+                onClick={() => setActiveTab(tab.id)}
                 className={cx(
                   ui.tabButtonBase,
                   'gap-2',
@@ -952,7 +982,7 @@ export default function CoachWorkspace() {
                 )}
               >
                 {tab.label}
-                {tab.count ? <StatusBadge tone="monitor" label={`${tab.count} pending`} /> : null}
+                {tab.badge ? <StatusBadge tone={tab.badge.tone} label={tab.badge.label} /> : null}
               </button>
             ))}
           </div>
