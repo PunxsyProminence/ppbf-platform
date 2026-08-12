@@ -38,9 +38,15 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
 
     void (async () => {
       try {
+        // POST: /api/pilot/auth/session only ever implemented POST (see its
+        // route.ts -- there is no GET export). This briefly read 'GET' here,
+        // which 405s on every request; loadAuthoritativeRoleSession treats
+        // any non-401 failure status as 'unauthenticated', so every gated
+        // page cleared a perfectly valid session and bounced its owner to
+        // /login on arrival -- indistinguishable from being logged out.
         const resolution = await loadAuthoritativeRoleSession(
           `${apiBase()}/api/pilot/auth/session`,
-          { signal: controller.signal, method: 'GET' },
+          { signal: controller.signal },
         );
 
         if (controller.signal.aborted) {

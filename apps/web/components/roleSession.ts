@@ -1,4 +1,4 @@
-import { roleRoutes, type ClubRole } from './roleRoutes';
+import type { ClubRole } from './roleRoutes';
 import { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
 import type { BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
 
@@ -77,8 +77,43 @@ function sanitizeRoleSession(session: RoleSession | null): RoleSession | null {
   };
 }
 
+let lastSourceValue: RoleSession | null = null;
+let lastSnapshot: RoleSession | null = null;
+
+// useSyncExternalStore requires getSnapshot to return a STABLE reference when
+// nothing has changed -- a fresh object on every single call reads as "the
+// store changed" on every check, and React's own tearing guard treats a
+// getSnapshot that never settles as an infinite loop. That is exactly what
+// signing in used to do: createPersistentRoleSession's change notification
+// forced every subscriber to re-check, and sanitizeRoleSession allocated a
+// new (structurally identical) object each time, so the check never
+// concluded "unchanged" -- crashing the whole page with "Maximum update
+// depth exceeded" on the very first successful login.
+//
+// Memoized on cachedRoleSessionValue's REFERENCE, not on a deep comparison:
+// that reference only changes from createPersistentRoleSession or
+// clearRoleSession, so between those calls this returns the exact same
+// object every time. The one thing a reference check cannot catch -- the
+// session simply aging past its own expiresAt with no write in between --
+// is checked explicitly, once per source reference, rather than by
+// re-sanitizing (and re-allocating) on every call regardless of whether
+// anything actually changed.
+function computeRoleSessionSnapshot(): RoleSession | null {
+  if (cachedRoleSessionValue !== lastSourceValue) {
+    lastSourceValue = cachedRoleSessionValue;
+    lastSnapshot = sanitizeRoleSession(cachedRoleSessionValue);
+    return lastSnapshot;
+  }
+
+  if (lastSnapshot && lastSnapshot.expiresAt <= Date.now()) {
+    lastSnapshot = null;
+  }
+
+  return lastSnapshot;
+}
+
 export function readRoleSession(): RoleSession | null {
-  const session = sanitizeRoleSession(cachedRoleSessionValue);
+  const session = computeRoleSessionSnapshot();
   if (!session && cachedRoleSessionValue) {
     clearRoleSession();
   }
@@ -100,7 +135,7 @@ export function createPersistentRoleSession(role: ClubRole, boardSeat?: unknown)
 }
 
 export function getRoleSessionSnapshot(): RoleSession | null {
-  const session = sanitizeRoleSession(cachedRoleSessionValue);
+  const session = computeRoleSessionSnapshot();
   if (!session && cachedRoleSessionValue) {
     clearRoleSession();
   }

@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useSyncExternalStore } from "react";
-import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
+import { useEffect, useSyncExternalStore } from "react";
+import {
+  clearRoleSession,
+  getRoleSessionSnapshot,
+  loadAuthoritativeRoleSession,
+  persistAuthoritativeRoleSession,
+  subscribeRoleSession,
+} from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
 import FeedbackBox from "./FeedbackBox";
 import Corridor from "./Corridor";
@@ -50,6 +56,59 @@ export default function GlobalRoleHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const isWallRoute = pathname === "/wall" || pathname?.startsWith("/wall/");
+
+  /* This bar is the one component mounted on every route (see app/layout.tsx),
+     so it is the only place guaranteed to run regardless of which page-level
+     gate -- RoleSessionGate, /login's own effect, neither -- happens to be
+     present. Before this effect existed, the Logout button and role badge
+     depended entirely on some OTHER component having already populated the
+     shared in-memory cache: on any page without that gate (or before its
+     fetch resolved), this bar rendered the pre-auth look even though the
+     HttpOnly server session was still perfectly valid. A user who landed
+     there had no visible way to sign out short of knowing to revisit /login.
+
+     This self-heals that gap by asking the server directly whenever the
+     cache is empty, rather than waiting on someone else's side effect. It
+     never redirects on failure -- an unauthenticated visitor to a public
+     page is not an error, and redirect-on-401 stays RoleSessionGate's job so
+     this bar does not fight it over the URL. */
+  useEffect(() => {
+    if (session || isWallRoute || pathname === "/login") {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        // POST: /api/pilot/auth/session only implements POST (no GET export
+        // in its route.ts). RoleSessionGate briefly called this with 'GET'
+        // and 405'd on every check -- see the fix there for the incident.
+        const resolution = await loadAuthoritativeRoleSession(
+          `${apiBase()}/api/pilot/auth/session`,
+          { signal: controller.signal },
+        );
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        if (resolution.ok) {
+          persistAuthoritativeRoleSession(resolution.session);
+        }
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          return;
+        }
+        // Best-effort refresh only. A failed check here leaves the pre-auth
+        // bar showing, which is correct for a genuinely signed-out visitor;
+        // it is RoleSessionGate's job, not this bar's, to act on a refusal.
+      }
+    })();
+
+    return () => controller.abort();
+  }, [session, isWallRoute, pathname]);
 
   /* The wall display stands alone. /wall is a television bolted to the gym
      floor: no pointer, no keyboard, nobody signed in, and nobody within fifteen
@@ -60,7 +119,7 @@ export default function GlobalRoleHeader() {
 
      This is placed AFTER every hook above deliberately: an early return before
      useSyncExternalStore would make the hook order depend on the route. */
-  if (pathname === "/wall" || pathname?.startsWith("/wall/")) {
+  if (isWallRoute) {
     return null;
   }
 
