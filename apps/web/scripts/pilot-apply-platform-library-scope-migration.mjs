@@ -191,8 +191,21 @@ const READINESS_QUERY = `
 `;
 
 function assertReadiness(row) {
-  if (!row || Object.values(row).some((value) => value !== true)) {
+  if (!row) {
     throw new Error('PLATFORM_LIBRARY_SCOPE_NOT_READY');
+  }
+
+  // Name the failing assertions. A bare error code sends the next operator back
+  // into the SQL to guess which of twelve outcomes did not land, and two of them
+  // -- library_scope_exclusive_ready and platform_unscoped_ready -- assert an
+  // absence, which is the hardest kind to find by reading a migration that
+  // reports only that it is unhappy.
+  const failed = Object.entries(row)
+    .filter(([, value]) => value !== true)
+    .map(([key]) => key);
+
+  if (failed.length > 0) {
+    throw new Error(`PLATFORM_LIBRARY_SCOPE_NOT_READY: ${failed.join(', ')}`);
   }
 }
 
