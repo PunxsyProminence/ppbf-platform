@@ -116,6 +116,22 @@ them correctly:
   `gear_products` and has `having count(*) > 0`, so a shelf with no products is
   structurally excluded.
 
+### SHIPPED — 2026-08-12
+
+All four steps completed. `main` is `d2e78dd`, fast-forwarded (no merge commit), and
+production runs image `sha256:77e2c043d2edbd96b8301ffdb73f7e713cda45480388e588c15a317b76b1c716`.
+
+| Step | Run | Result |
+| --- | --- | --- |
+| staging migration | 82 | PASS (attempt 1 failed on a readiness bug, fixed in `d2e78dd`) |
+| staging deploy + SHADOW E2E gate | 196 | PASS, gate tally 72 |
+| production migration | 83 | `PILOT PLATFORM LIBRARY SCOPE MIGRATION PASS` |
+| production deploy | 140 | PASS, incl. schema-matches-commit, digest-in-ACR, rollback guard, API smoke |
+
+The reserved `__platform__` organization now exists in both databases and the
+baseline shelf is empty, waiting on the corpus import. Nothing is user-visible
+yet, by design.
+
 ### Deploy sequence — ORDER IS LOAD-BEARING
 
 The application code writes `shadow_evidence_items.library_organization_id`. If
