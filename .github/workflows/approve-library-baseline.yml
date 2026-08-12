@@ -142,11 +142,19 @@ jobs:
       # later edited carelessly.
       - name: Approve Library Evidence
         working-directory: apps/web
-        run: npm run pilot:approve-library-baseline
+        run: npm run pilot:approve-library-baseline 2>&1 | tee /tmp/tool-output.txt
 
       - name: Record The Attestation
         if: always()
         run: |
+          # Repeated to STDOUT deliberately, not only to the step summary. The
+          # decisive line of every one of these runs is the tool's final JSON, and
+          # it was landing hundreds of lines above the end of the job log, behind
+          # the runner's cleanup -- far enough that reading it cost more than
+          # guessing at it, which is exactly how a silent half-approval got
+          # believed. Printing it here puts it within a dozen lines of the end.
+          echo '--- tool output (repeated) ---'
+          tail -n 12 /tmp/tool-output.txt 2>/dev/null || echo '(none captured)'
           {
             echo '### SHADOW library approval'
             echo ''
@@ -154,6 +162,11 @@ jobs:
             echo "- mode: \`${{ inputs.mode }}\`"
             echo "- organization: \`${{ inputs.organization_id || '__platform__' }}\`"
             echo "- result: \`${{ job.status }}\`"
+            echo ''
+            echo 'Tool output (last lines):'
+            echo '```'
+            tail -n 12 /tmp/tool-output.txt 2>/dev/null || echo '(none captured)'
+            echo '```'
             echo ''
             echo 'On apply, one platform owner is recorded as approver AND verifier on every'
             echo 'row -- the review pair constraint permits no weaker state. The audit row in'

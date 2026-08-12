@@ -216,7 +216,7 @@ jobs:
       - name: Validate Research Package
         if: inputs.mode == 'dry-run'
         working-directory: apps/web
-        run: npm run seed:shadow:research:dry
+        run: npm run seed:shadow:research:dry 2>&1 | tee -a /tmp/tool-output.txt
 
       - name: Import Research Package
         if: inputs.mode == 'apply'
@@ -226,9 +226,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$TABLES" = "capability_map_only" ]; then
-            npm run seed:shadow:research -- --apply --capability-map-only
+            npm run seed:shadow:research -- --apply --capability-map-only 2>&1 | tee -a /tmp/tool-output.txt
           else
-            npm run seed:shadow:research -- --apply
+            npm run seed:shadow:research -- --apply 2>&1 | tee -a /tmp/tool-output.txt
           fi
 
       - name: Record Human Review Boundary

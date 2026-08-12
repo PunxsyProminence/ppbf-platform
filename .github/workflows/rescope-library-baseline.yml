@@ -135,11 +135,16 @@ jobs:
       # inside its own transaction and rolls back on any mismatch.
       - name: Re-scope Library Rows
         working-directory: apps/web
-        run: npm run pilot:rescope-library-baseline
+        run: npm run pilot:rescope-library-baseline 2>&1 | tee -a /tmp/tool-output.txt
 
       - name: Record What Moved
         if: always()
         run: |
+          # Printed to stdout as well as the summary: the tool's final JSON is the
+          # decisive line of the run, and it otherwise sits far above the runner's
+          # cleanup where reading it costs more than guessing at it.
+          echo '--- tool output (repeated) ---'
+          tail -n 12 /tmp/tool-output.txt 2>/dev/null || echo '(none captured)'
           {
             echo '### SHADOW library re-scope'
             echo ''
