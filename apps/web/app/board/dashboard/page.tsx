@@ -15,7 +15,14 @@ export default async function BoardDashboardPage() {
     });
 
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['board']);
+    // platform_owner is admitted for the same reason BoardRoleGate admits it in
+    // app/board/layout.tsx, and for the same reason /api/pilot/board/summary and
+    // /api/pilot/board/compliance-rules admit it: the platform owner has
+    // oversight of board surfaces but holds no seat. This gate named 'board'
+    // alone, so it refused a role the layout above it and the API beneath it
+    // both allow -- the owner reached every other page in this subtree and was
+    // ejected from exactly this one.
+    requireRole(principal, ['board', 'platform_owner']);
   } catch {
     redirect('/login');
   }
