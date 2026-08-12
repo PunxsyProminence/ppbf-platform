@@ -1,0 +1,155 @@
+name: rescope-library-baseline
+
+# Moves an already-imported research corpus off a gym's shelf onto the platform
+# baseline, leaving that gym its own policy material.
+#
+# Needed because both databases already hold the corpus under a gym organization,
+# imported before the platform/gym split existed, and source_id is a primary key
+# -- so the baseline import is refused (CROSS_TENANT_ID_COLLISION) and cannot be
+# made to work by any flag. The owner chose re-scoping over delete-and-reimport on
+# 2026-08-12, which also preserves the source_citation_checks and
+# source_retraction_checks history a delete would have cascaded away.
+#
+# Dispatch-only for the reason in scripts/lib/postgres-write-target.mjs: the
+# alternative is an operator holding a production connection string on a laptop,
+# which is how 361 orphaned rows got into production on 2026-07-18.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Database environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly
+        required: true
+        type: string
+      mode:
+        description: Report what would be moved, or move it
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      confirm_rescope:
+        description: For apply mode, type RESCOPE BASELINE exactly
+        required: false
+        type: string
+      from_organization_id:
+        description: >-
+          The gym currently holding the corpus. Its policy material stays with it;
+          everything the corpus assigns to the baseline moves to __platform__.
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: rescope-library-baseline-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  rescope:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+      PPBF_RESCOPE_FROM_ORG: ${{ inputs.from_organization_id }}
+      PPBF_RESCOPE_APPLY: ${{ inputs.mode == 'apply' }}
+    steps:
+      - name: Confirm Explicit Target And Apply Intent
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_RESCOPE: ${{ inputs.confirm_rescope }}
+        run: |
+          set -euo pipefail
+          test "$TARGET" = "$CONFIRM_TARGET"
+          if [ "$MODE" = "apply" ]; then
+            test "$CONFIRM_RESCOPE" = "RESCOPE BASELINE"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      # Not conditional on mode: the dry run reads the same database, so it needs
+      # the same connection string, resolved the same way. The sibling workflow
+      # learned this the hard way -- see its comment on the same step.
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Declared Database Target
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) process.exit(2);
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # One command for both modes. The script is read-only unless
+      # PPBF_RESCOPE_APPLY is exactly 'true', which the job env derives from the
+      # mode input -- so the dry run cannot write even if this step is later
+      # edited carelessly. It also verifies the end state against the corpus
+      # inside its own transaction and rolls back on any mismatch.
+      - name: Re-scope Library Rows
+        working-directory: apps/web
+        run: npm run pilot:rescope-library-baseline
+
+      - name: Record What Moved
+        if: always()
+        run: |
+          {
+            echo '### SHADOW library re-scope'
+            echo ''
+            echo "- target: \`${{ inputs.target }}\`"
+            echo "- mode: \`${{ inputs.mode }}\`"
+            echo "- from organization: \`${{ inputs.from_organization_id }}\`"
+            echo "- result: \`${{ job.status }}\`"
+            echo ''
+            echo 'Rows move to __platform__; the gym keeps its policy sources, their chunks,'
+            echo 'and copies of the documents those chunks sit in. The end state is verified'
+            echo 'against the corpus before the transaction commits, and pilot.audit_events'
+            echo 'records what moved.'
+          } >> "$GITHUB_STEP_SUMMARY"
