@@ -69,6 +69,7 @@ on:
           - duplicate-guardians
           - orphan-chat-audit
           - seed-identity
+          - library-scope
 
 permissions:
   id-token: write
@@ -140,6 +141,13 @@ jobs:
               ;;
             orphan-chat-audit)
               npm run pilot:check-orphan-chat-audit | tee /tmp/check-output.txt
+              ;;
+            library-scope)
+              # Read-only. Answers where the SHADOW research corpus lives and how
+              # much of it clears the retrieval gate -- the question the refused
+              # staging baseline import raised, where a corpus source id already
+              # existed under a gym organization.
+              npm run pilot:check-library-scope | tee /tmp/check-output.txt
               ;;
             seed-identity)
               # Read-only. Prints the organization ids and the PRIVILEGED account ids that the
