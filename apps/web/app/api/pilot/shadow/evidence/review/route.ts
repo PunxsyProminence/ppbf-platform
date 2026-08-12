@@ -16,10 +16,19 @@ type ReviewBody = {
   approvalState?: unknown;
 };
 
-function isLibraryId(value: unknown, prefix: 'source_' | 'doc_'): value is string {
+// Sources carry either prefix, and both are real. createShadowLibrarySource
+// mints `source_<uuid>`, but the research corpus in
+// seed-data/shadow-research/2026-08-07 is keyed `src_<hash>` -- 1,214 rows of it.
+// Accepting only `source_` meant every source the importer wrote answered 404
+// here, so the whole imported corpus was unreviewable and therefore permanently
+// unretrievable, since retrieval requires an approved source.
+const SOURCE_ID_PREFIXES = ['source_', 'src_'] as const;
+const DOCUMENT_ID_PREFIXES = ['doc_'] as const;
+
+function isLibraryId(value: unknown, prefixes: readonly string[]): value is string {
   return (
     typeof value === 'string'
-    && value.startsWith(prefix)
+    && prefixes.some((prefix) => value.startsWith(prefix))
     && value.length <= 100
     && /^[a-z0-9_-]+$/i.test(value)
   );
@@ -51,7 +60,7 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json() as ReviewBody;
 
     if (body.entityType === 'document' && body.action === 'complete_indexing') {
-      if (!isLibraryId(body.entityId, 'doc_')) {
+      if (!isLibraryId(body.entityId, DOCUMENT_ID_PREFIXES)) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
       }
       await completeShadowLibraryDocumentIndexing({
@@ -76,7 +85,7 @@ export async function PATCH(request: NextRequest) {
 
     const approvalState = body.approvalState as ShadowLibraryApprovalState;
     const verificationState = approvalState === 'approved' ? 'verified' : 'unverified';
-    if (body.entityType === 'source' && isLibraryId(body.entityId, 'source_')) {
+    if (body.entityType === 'source' && isLibraryId(body.entityId, SOURCE_ID_PREFIXES)) {
       await reviewShadowLibrarySource({
         organizationId: principal.organizationId,
         actorAccountId: principal.accountId,
@@ -85,7 +94,7 @@ export async function PATCH(request: NextRequest) {
         approvalState,
         verificationState,
       });
-    } else if (body.entityType === 'document' && isLibraryId(body.entityId, 'doc_')) {
+    } else if (body.entityType === 'document' && isLibraryId(body.entityId, DOCUMENT_ID_PREFIXES)) {
       await reviewShadowLibraryDocument({
         organizationId: principal.organizationId,
         actorAccountId: principal.accountId,

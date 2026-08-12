@@ -64,6 +64,29 @@ function metadata(value, fileName, rowNumber) {
   }
 }
 
+/**
+ * Parses the corpus's pipe-delimited feeder-track column ('A3|A6') into tracks.
+ *
+ * This column is the capability half of the evidence axis, and it was being
+ * thrown away: every `_`-prefixed column in the capability CSV is an annotation
+ * the schema has no home for, and `_feeder_tracks` was treated as one of them.
+ * The chunk half (`metadata->>'track'`) was imported all along, so the axis was
+ * one column short of being a join --
+ * pilot_slice_postgres_capability_feeder_tracks_migration.sql adds the column,
+ * and this reads it.
+ *
+ * Not parsePostgresTextArray: that expects `{a,b}` brace syntax, and this
+ * column is pipe-delimited. Empty is a legitimate value -- a capability with no
+ * declared feeder reads as an empty list, which is a fact about the corpus, not
+ * a parse failure.
+ */
+export function parseFeederTracks(value) {
+  return String(value ?? '')
+    .split('|')
+    .map((track) => track.trim())
+    .filter((track) => track !== '');
+}
+
 export function parsePostgresTextArray(value) {
   const text = String(value || '').trim();
   if (text === '{}') return [];
@@ -120,6 +143,167 @@ async function readCsv(seedDir, fileName) {
   });
 }
 
+/**
+ * The one source row that is structural rather than evidential.
+ *
+ * All 14 library documents hang off this single source -- it is the record of
+ * the research intake programme itself, not a document anyone cites. It is typed
+ * `internal_policy` like PPBF's house documents, which is why the scope split
+ * below cannot simply filter on source_type: doing that would take the parent of
+ * every document in the corpus with it.
+ */
+export const RESEARCH_PROGRAMME_SOURCE_ID = 'src_6563c68e39047128';
+
+/**
+ * Marker for rows this importer copies into a gym's own library.
+ *
+ * Legible rather than hashed, deliberately: an operator looking at two document
+ * rows with the same content_sha256 in two organizations can read which is the
+ * copy and what it copies, without going to the seed files.
+ *
+ * Inserted AFTER the type prefix -- `doc_x` becomes `doc_ppbfpol_x`, not
+ * `ppbfpol_doc_x`. Library ids carry their entity type in the first segment and
+ * the evidence review route validates on it (isLibraryId in
+ * app/api/pilot/shadow/evidence/review/route.ts), so a copy that led with the
+ * marker would be a document no reviewer could ever approve.
+ */
+const POLICY_COPY_MARKER = 'ppbfpol';
+
+export function policyCopyId(id) {
+  const separator = id.indexOf('_');
+  if (separator <= 0) fail(`UNPREFIXED_LIBRARY_ID:${id}`);
+  return `${id.slice(0, separator)}_${POLICY_COPY_MARKER}_${id.slice(separator + 1)}`;
+}
+
+export const SEED_SCOPES = Object.freeze(['platform_baseline', 'ppbf_policy']);
+
+/**
+ * What each scope must contain, derived from the corpus and asserted on import.
+ *
+ * EXPECTED_COUNTS above checks the *files* are complete and unmodified; this
+ * checks the *split* is the one intended. Without it a filter bug reads as a
+ * successful smaller import -- which for the platform baseline would mean SHADOW
+ * quietly missing evidence, the failure mode with no symptom.
+ *
+ *   platform_baseline  1214 - 20 policy sources = 1194; 1193 - 20 policy chunks
+ *                      = 1173; all 14 documents; the whole capability map and
+ *                      requirement set.
+ *   ppbf_policy        the 20 policy sources plus one copied programme source;
+ *                      their 20 chunks; copies of the 6 documents those chunks
+ *                      sit in. No capability map and no requirements -- those
+ *                      describe platform-wide coverage, not a gym's policies.
+ */
+export const SCOPE_EXPECTED_COUNTS = Object.freeze({
+  platform_baseline: Object.freeze({
+    sources: 1194, documents: 14, chunks: 1173, capabilityMap: 30, requirements: 229,
+  }),
+  ppbf_policy: Object.freeze({
+    sources: 21, documents: 6, chunks: 20, capabilityMap: 0, requirements: 0,
+  }),
+});
+
+/**
+ * The PPBF house documents inside the corpus: `internal_policy` sources that are
+ * not the structural programme row.
+ *
+ * These are the ~20 auto-extracted repo docs -- PPBF_repo_context_pack.md,
+ * docs/DATA_RETENTION.md, docs/SHADOW_AUTHORITY_MODEL.md and friends. They are
+ * PPBF's own operating documents, so they are not platform-wide evidence: the
+ * platform baseline is the material any gym can be told is true, and one gym's
+ * house rules are not that.
+ */
+export function policySourceIds(sources) {
+  return new Set(
+    sources
+      .filter((row) => row.source_type === 'internal_policy' && row.source_id !== RESEARCH_PROGRAMME_SOURCE_ID)
+      .map((row) => row.source_id),
+  );
+}
+
+/**
+ * Splits the loaded corpus into the rows one organization should hold.
+ *
+ * `null` returns the package untouched -- the whole corpus into one
+ * organization, which is what every caller did before the split existed.
+ *
+ * The awkward part, and the reason this is not a one-line filter: the 20 policy
+ * chunks are interleaved with peer-reviewed chunks inside 6 of the 14 track
+ * documents, and retrieval joins chunks to their document AND source on
+ * organization_id (shadowLibrary.ts). A chunk therefore cannot cite a document
+ * in another tenant, so the gym's copy of those 6 documents has to exist in the
+ * gym's own organization. They are copied with their real blob_path and
+ * content_sha256 -- the same file, ingested by a second tenant, which is what
+ * actually happened -- under new ids, because document_id is the primary key and
+ * the platform baseline holds the originals.
+ */
+export function applySeedScope(pkg, scope) {
+  if (scope === null || scope === undefined) return pkg;
+  if (!SEED_SCOPES.includes(scope)) fail(`UNKNOWN_SEED_SCOPE:${scope}`);
+
+  const policyIds = policySourceIds(pkg.sources);
+
+  if (scope === 'platform_baseline') {
+    return {
+      sources: pkg.sources.filter((row) => !policyIds.has(row.source_id)),
+      documents: pkg.documents,
+      chunks: pkg.chunks.filter((row) => !policyIds.has(row.source_id)),
+      capabilityMap: pkg.capabilityMap,
+      requirements: pkg.requirements,
+    };
+  }
+
+  const chunks = pkg.chunks.filter((row) => policyIds.has(row.source_id));
+  const neededDocumentIds = new Set(chunks.map((row) => row.document_id));
+
+  const programme = pkg.sources.find((row) => row.source_id === RESEARCH_PROGRAMME_SOURCE_ID);
+  if (!programme) fail(`RESEARCH_PROGRAMME_SOURCE_MISSING:${RESEARCH_PROGRAMME_SOURCE_ID}`);
+  const copiedProgrammeId = policyCopyId(programme.source_id);
+
+  const documents = pkg.documents
+    .filter((row) => neededDocumentIds.has(row.document_id))
+    .map((row) => ({
+      ...row,
+      document_id: policyCopyId(row.document_id),
+      source_id: copiedProgrammeId,
+      // Provenance in the row itself. Two documents sharing a content_sha256
+      // across two organizations is legitimate here and confusing to find later;
+      // this is what says which is the copy and what it copies.
+      metadata: {
+        ...row.metadata,
+        copied_from_document_id: row.document_id,
+        copied_for_scope: scope,
+      },
+    }));
+
+  const copiedDocumentIdByOriginal = new Map(
+    documents.map((row) => [row.metadata.copied_from_document_id, row.document_id]),
+  );
+
+  return {
+    sources: [
+      { ...programme, source_id: copiedProgrammeId },
+      ...pkg.sources.filter((row) => policyIds.has(row.source_id)),
+    ],
+    documents,
+    chunks: chunks.map((row) => ({
+      ...row,
+      document_id: copiedDocumentIdByOriginal.get(row.document_id),
+    })),
+    capabilityMap: [],
+    requirements: [],
+  };
+}
+
+function assertScopeCounts(scope, scoped) {
+  if (scope === null || scope === undefined) return;
+  const expected = SCOPE_EXPECTED_COUNTS[scope];
+  for (const [name, count] of Object.entries(expected)) {
+    if (scoped[name].length !== count) {
+      fail(`SCOPE_ROW_COUNT_MISMATCH:${scope}:${name}:expected=${count}:actual=${scoped[name].length}`);
+    }
+  }
+}
+
 function assertCount(name, rows) {
   const expected = EXPECTED_COUNTS[name];
   if (rows.length !== expected) fail(`ROW_COUNT_MISMATCH:${name}:expected=${expected}:actual=${rows.length}`);
@@ -139,6 +323,9 @@ export async function loadSeedPackage({
   organizationId,
   accountId,
   createdByRole = 'platform_owner',
+  // null imports the whole corpus into one organization, which is what this did
+  // before the platform baseline existed. See applySeedScope.
+  scope = null,
 }) {
   organizationId = required(organizationId, 'MISSING_PPBF_ORG_ID');
   accountId = required(accountId, 'MISSING_SEED_ACCOUNT_ID');
@@ -235,6 +422,7 @@ export async function loadSeedPackage({
     minimum_authority_tier: integer(row.minimum_authority_tier, 'minimum_authority_tier'),
     minimum_source_count: integer(row.minimum_source_count, 'minimum_source_count'),
     coverage_state: required(row.coverage_state, `MISSING_COVERAGE_STATE:${index + 2}`),
+    feeder_tracks: parseFeederTracks(row._feeder_tracks),
   }));
 
   const requirements = raw.requirements.map((row, index) => ({
@@ -254,34 +442,47 @@ export async function loadSeedPackage({
     metadata: metadata(row.metadata, FILES.requirements, index + 2),
   }));
 
-  for (const [name, rows] of Object.entries({ sources, documents, chunks, capabilityMap, requirements })) {
+  // Scope BEFORE the integrity checks below, so they validate the package that
+  // will actually be written rather than the file it came from. That ordering is
+  // the whole safety argument for splitting the corpus: filter out a source and
+  // leave a chunk citing it, and CHUNK_SOURCE_NOT_IN_PACKAGE fires here instead
+  // of a foreign key firing halfway through a production import.
+  // Scope BEFORE the integrity checks below, so they validate the package that
+  // will actually be written rather than the file it came from. That ordering is
+  // the whole safety argument for splitting the corpus: filter out a source and
+  // leave a chunk citing it, and CHUNK_SOURCE_NOT_IN_PACKAGE fires here instead
+  // of a foreign key firing halfway through a production import.
+  const scoped = applySeedScope({ sources, documents, chunks, capabilityMap, requirements }, scope);
+  assertScopeCounts(scope, scoped);
+
+  for (const [name, rows] of Object.entries(scoped)) {
     if (rows.some((row) => row.organization_id !== organizationId)) fail(`CROSS_TENANT_SEED_ROW:${name}`);
   }
 
-  assertUnique(sources, 'source_id', 'source_id');
-  assertUnique(documents, 'document_id', 'document_id');
-  assertUnique(chunks, 'chunk_id', 'chunk_id');
-  assertUnique(chunks, (row) => `${row.document_id}:${row.ordinal}`, 'document_ordinal');
-  assertUnique(capabilityMap, 'capability_map_id', 'capability_map_id');
-  assertUnique(capabilityMap, 'capability_key', 'capability_key');
+  assertUnique(scoped.sources, 'source_id', 'source_id');
+  assertUnique(scoped.documents, 'document_id', 'document_id');
+  assertUnique(scoped.chunks, 'chunk_id', 'chunk_id');
+  assertUnique(scoped.chunks, (row) => `${row.document_id}:${row.ordinal}`, 'document_ordinal');
+  assertUnique(scoped.capabilityMap, 'capability_map_id', 'capability_map_id');
+  assertUnique(scoped.capabilityMap, 'capability_key', 'capability_key');
   assertUnique(
-    requirements,
+    scoped.requirements,
     (row) => `${row.source_event_name}:${row.source_entity_type}:${row.source_entity_id}`,
     'research_requirement_natural_key',
   );
 
-  const sourceIds = new Set(sources.map((row) => row.source_id));
-  const documentsById = new Map(documents.map((row) => [row.document_id, row]));
-  for (const document of documents) {
+  const sourceIds = new Set(scoped.sources.map((row) => row.source_id));
+  const documentsById = new Map(scoped.documents.map((row) => [row.document_id, row]));
+  for (const document of scoped.documents) {
     if (!sourceIds.has(document.source_id)) fail(`DOCUMENT_SOURCE_NOT_IN_PACKAGE:${document.document_id}`);
   }
-  for (const chunk of chunks) {
+  for (const chunk of scoped.chunks) {
     const document = documentsById.get(chunk.document_id);
     if (!document) fail(`CHUNK_DOCUMENT_NOT_IN_PACKAGE:${chunk.chunk_id}`);
     if (!sourceIds.has(chunk.source_id)) fail(`CHUNK_SOURCE_NOT_IN_PACKAGE:${chunk.chunk_id}`);
   }
 
-  return { sources, documents, chunks, capabilityMap, requirements };
+  return scoped;
 }
 
 async function assertActor(client, organizationId, accountId) {
@@ -412,20 +613,24 @@ async function upsertCapabilityMap(client, rows) {
   await client.query(
     `insert into pilot.shadow_library_capability_map
        (capability_map_id, organization_id, capability_key, required_source_types,
-        minimum_authority_tier, minimum_source_count, coverage_state, last_evaluated_at)
+        minimum_authority_tier, minimum_source_count, coverage_state, feeder_tracks,
+        last_evaluated_at)
      select capability_map_id, organization_id, capability_key, required_source_types,
-            minimum_authority_tier, minimum_source_count, coverage_state, now()
+            minimum_authority_tier, minimum_source_count, coverage_state, feeder_tracks,
+            now()
      from jsonb_to_recordset($1::jsonb) as x(
        capability_map_id text, organization_id text, capability_key text,
        required_source_types text[], minimum_authority_tier smallint,
-       minimum_source_count smallint, coverage_state text
+       minimum_source_count smallint, coverage_state text, feeder_tracks text[]
      )
      on conflict (capability_map_id) do update set
        capability_key = excluded.capability_key,
        required_source_types = excluded.required_source_types,
        minimum_authority_tier = excluded.minimum_authority_tier,
        minimum_source_count = excluded.minimum_source_count,
-       coverage_state = excluded.coverage_state, last_evaluated_at = now(), updated_at = now()`,
+       coverage_state = excluded.coverage_state,
+       feeder_tracks = excluded.feeder_tracks,
+       last_evaluated_at = now(), updated_at = now()`,
     [JSON.stringify(rows)],
   );
 }
@@ -542,6 +747,13 @@ Required for --apply:
 
 Optional:
   PPBF_RESEARCH_SEED_DIR
+  PPBF_RESEARCH_SEED_SCOPE   platform_baseline | ppbf_policy
+
+Scopes split one corpus across two organizations. platform_baseline is every
+source except PPBF's own ~20 house documents, for the reserved platform
+organization; ppbf_policy is those house documents, their chunks and copies of
+the documents holding them, for PPBF's own gym. Unset imports everything into
+PPBF_ORG_ID, which is what this did before the baseline existed.
 
 Examples:
   PPBF_ORG_ID=... SEED_ACCOUNT_ID=... npm run seed:shadow:research:dry
@@ -564,6 +776,11 @@ export async function run() {
     ? path.resolve(process.env.PPBF_RESEARCH_SEED_DIR)
     : DEFAULT_SEED_DIR;
 
+  // Unset imports the whole corpus into one organization -- the behaviour that
+  // predates the platform baseline, kept so existing callers are unaffected.
+  const scope = process.env.PPBF_RESEARCH_SEED_SCOPE?.trim() || null;
+  if (scope !== null && !SEED_SCOPES.includes(scope)) fail(`UNKNOWN_SEED_SCOPE:${scope}`);
+
   let actorRole = 'platform_owner';
   let client = null;
   let target = null;
@@ -581,10 +798,11 @@ export async function run() {
   }
 
   try {
-    const seed = await loadSeedPackage({ seedDir, organizationId, accountId, createdByRole: actorRole });
+    const seed = await loadSeedPackage({ seedDir, organizationId, accountId, createdByRole: actorRole, scope });
     const summary = {
       mode: apply ? 'apply' : 'dry-run',
       organization_id: organizationId,
+      scope: scope ?? 'whole_corpus',
       target: target ? `${target.hostname}/${target.database}` : null,
       counts: Object.fromEntries(Object.entries(seed).map(([name, rows]) => [name, rows.length])),
       approval_state: 'pending_review',

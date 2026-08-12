@@ -44,8 +44,10 @@ The corpus itself is committed at
 (authority tiers 1–5: 170/259/574/167/44; 851 `peer_reviewed`, 21
 `internal_policy`) and 1,193 chunks (`transferred` 721, `boxing_specific` 376,
 `partly_boxing_specific` 92, `ppbf_specific` 4). **All 1,214 land as
-`pending_review` / `unverified`,** so importing alone does not light SHADOW up —
-a bulk-approval path is still needed and is not built.
+`pending_review` / `unverified`,** so importing alone does not light SHADOW up.
+The approval path is now built — `pilot:approve-library-baseline`, below — and
+the corpus has been imported and approved against a local Postgres carrying the
+real schema. **Neither has been run against staging or production.**
 
 ## The design decision already made — do not relitigate it
 
@@ -132,6 +134,77 @@ The reserved `__platform__` organization now exists in both databases and the
 baseline shelf is empty, waiting on the corpus import. Nothing is user-visible
 yet, by design.
 
+### SHIPPED — 2026-08-12 (second pass): the axis, the split, and approval
+
+Code complete and pushed; **not deployed, not run against staging or
+production.** The owner's decisions this implements: capability axis from the
+corpus (open decision 1), approve-once platform-wide (3), PPBF's own policy docs
+to PPBF's gym rather than the baseline (5).
+
+- [x] `infra/azure/pilot_slice_postgres_capability_feeder_tracks_migration.sql` +
+      `apps/web/scripts/pilot-apply-capability-feeder-tracks-migration.mjs` + npm
+      script + workflow wiring in all three places the `list-check` guard checks.
+      Readiness asserts four outcomes and names the failures.
+- [x] `import-shadow-research.mjs`: parses `_feeder_tracks`; gains
+      `PPBF_RESEARCH_SEED_SCOPE` (`platform_baseline` | `ppbf_policy`, unset =
+      whole corpus into one org, unchanged). Scoping happens **before** the
+      existing package-integrity checks, so a split that orphans a chunk fails at
+      load rather than on a foreign key mid-import.
+- [x] `apps/web/scripts/pilot-approve-library-baseline.mjs` +
+      `pilot:approve-library-baseline`. Dry-run default (`begin read only`),
+      target guard, single named platform-owner approver, pending-only,
+      blast radius 1500, one transaction, one audit row.
+- [x] `evidence/review/route.ts` now accepts `src_`-prefixed source ids.
+- [x] `researchImportScope.test.ts` — 21 tests against the real corpus.
+
+**Run order (each step is idempotent, and each was re-run to prove it):**
+
+1. `pilot:apply-capability-feeder-tracks` — must precede the import, which now
+   writes `feeder_tracks`.
+2. `PPBF_RESEARCH_SEED_SCOPE=platform_baseline PPBF_ORG_ID=__platform__
+   SEED_ACCOUNT_ID=<owner> seed:shadow:research -- --apply` → 1,194 sources,
+   14 documents, 1,173 chunks, 30 capability rows, 229 requirements.
+3. `PPBF_RESEARCH_SEED_SCOPE=ppbf_policy PPBF_ORG_ID=<ppbf gym>` → 21 sources,
+   6 documents, 20 chunks.
+4. `pilot:approve-library-baseline` (dry), then with
+   `PPBF_LIBRARY_APPROVAL_APPLY=true` → indexes 14 documents, approves 1,194
+   sources + 14 documents. Then again with
+   `PPBF_LIBRARY_APPROVAL_ORG=<ppbf gym>` for the gym's 21 + 6.
+
+**Verified locally against Postgres 16 with the full schema and all 66
+migrations:** the real lexical retrieval predicate, run as a coach in a second
+gym, returns peer-reviewed platform evidence with tracks attached. Isolation
+holds in the same query: that coach sees 1,173 chunks and **zero** PPBF policy
+rows, while PPBF sees 1,193 (1,173 platform + its own 20). Capability coverage
+resolves as a join — `injury_head_impact_risk` 267 chunks / 260 sources.
+
+### Three things found on the way, worth not rediscovering
+
+1. **A third gate nobody had recorded.**
+   `shadow_library_documents_review_pair_check` requires
+   `ingest_state='indexed'` AND `index_completed_at IS NOT NULL` *before* a
+   document may be approved — the sources constraint has no equivalent. The
+   corpus imports as `pending` because the importer refuses to claim indexing it
+   did not do. So the chain is import → **index** → approve, not import →
+   approve. The approval script completes indexing under
+   `completeShadowLibraryDocumentIndexing`'s own condition (the document must have
+   a non-empty chunk in its own organization) and skips any document without one.
+2. **The review route could not approve this corpus at all.**
+   `isLibraryId(body.entityId, 'source_')` rejected every `src_`-prefixed id, so
+   all 1,214 imported sources answered 404 there — and since retrieval requires an
+   approved source, the whole corpus was permanently unretrievable through the
+   API. Fixed. Note also that the route scopes writes to
+   `principal.organizationId` and no principal may exist in `__platform__`, so the
+   baseline is unreachable through the API **by construction**; the script is not
+   a shortcut around it.
+3. **The 20 policy chunks are interleaved, not separable by document.** They sit
+   inside 6 of the 14 track documents alongside peer-reviewed chunks, and
+   retrieval joins chunks to documents on `organization_id`, so a chunk cannot
+   cite a document in another tenant. PPBF's gym therefore gets **copies** of
+   those 6 documents (real `blob_path` and `content_sha256`, new ids, provenance
+   in `metadata.copied_from_document_id`). Copy ids keep the type prefix —
+   `doc_ppbfpol_x`, never `ppbfpol_doc_x` — because of finding 2.
+
 ### Deploy sequence — ORDER IS LOAD-BEARING
 
 The application code writes `shadow_evidence_items.library_organization_id`. If
@@ -177,14 +250,25 @@ export, and including the baseline would export it as if it were gym evidence.
 
 ## Open decisions the owner has not made
 
-1. **What "tied to type/role" binds to.** Neither the org id nor a scope column
-   does this. It needs its own axis on chunks or a mapping table, and it is the
-   part that actually does the work the owner asked for. Ask before designing it.
-2. **Retrieval semantics:** union (platform always in the pool) vs fallback
-   (platform only when the gym has nothing). Currently building union.
-3. **Approve-once-platform vs per-gym approval** of baseline rows.
+1. ~~**What "tied to type/role" binds to.**~~ **Answered by the corpus, not by a
+   design — shipped 2026-08-12.** Nothing needed inventing. Every chunk already
+   carries `metadata->>'track'` (14 tracks, A1-A8 and B1-B6, none missing; the 14
+   documents are those same 14 tracks, one each), and all 30 capability rows
+   already declare the tracks feeding them in `_feeder_tracks`. The importer was
+   dropping that column because it drops every `_`-prefixed annotation, so the
+   axis was one column short of being a join.
+   `pilot_slice_postgres_capability_feeder_tracks_migration.sql` adds
+   `shadow_library_capability_map.feeder_tracks text[]` plus an expression index
+   on `(organization_id, metadata->>'track')`, and the importer now parses it.
+   Capability coverage is a join today: `injury_head_impact_risk` resolves to 267
+   chunks over 260 sources, `safeguarding_boundaries` to 238 over 231.
+2. ~~**Retrieval semantics.**~~ Union, as built and shipped.
+3. ~~**Approve-once-platform vs per-gym.**~~ **Approve-once, decided by the owner
+   2026-08-12.** See `pilot:approve-library-baseline` below.
 4. **Who may write platform rows** beyond an operator with the importer.
-5. Whether to exclude the ~20 repo-doc sources from the corpus.
+5. ~~Whether to exclude the ~20 repo-doc sources.~~ **Decided: they go to PPBF's
+   own gym, not the baseline (owner, 2026-08-12).** Implemented as
+   `PPBF_RESEARCH_SEED_SCOPE`; see the scope split below.
 6. **The hallucination blocker copy** (`V21_HALLUCINATION_BLOCKER_RESPONSE`,
    `chat/route.ts:160`) — user-facing text that reads like a system crash,
    duplicated at `IncidentCommandCenter.tsx:135` where it renders
@@ -211,8 +295,8 @@ export, and including the baseline would export it as if it were gym evidence.
    `pilot-cleanup-deleted-data.mjs` and its retention window. **Still the
    owner's:** whether `coach@` stays, and each held identity.
 8. Nav entries for 8 orphaned routes; flipping the ledger probe's
-   `continue-on-error` (now justified by three clean runs); a bulk-approval
-   mechanism for the 1,214 `pending_review` sources.
+   `continue-on-error` (now justified by three clean runs). ~~A bulk-approval
+   mechanism~~ shipped as `pilot:approve-library-baseline`.
 
 ## Hard constraints — carry these forward
 
