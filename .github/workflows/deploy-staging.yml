@@ -417,11 +417,55 @@ jobs:
       # always() cleanup step after the gate regardless of outcome. The value
       # must satisfy the 6-digit PIN policy and must not be
       # DEFAULT_FIRST_LOGIN_PIN (123456), which a chosen PIN is refused.
+      #
+      # It must satisfy the WHOLE policy, which this step previously did not.
+      # It excluded exactly one value, 123456, while pinPolicy.ts refuses a much
+      # wider class -- and step 9b feeds this PIN to /admin/accounts/pin-reset,
+      # which enforces it. Run 31574292951 drew 'palindrome' and died with
+      # PIN_TRIVIALLY_GUESSABLE after a clean build and a clean deploy, failing
+      # a staging run for a dice roll rather than for a defect.
+      #
+      # The predicate below mirrors isTriviallyGuessablePin in
+      # src/server/pilot/pinPolicy.ts. Mirroring rather than importing follows
+      # the convention already used by pilot-provision-gate-fixtures.mjs, whose
+      # hashPin says the same thing -- these scripts run before any TypeScript
+      # build exists. Retry rather than patch: substituting a hardcoded fallback
+      # is what produced the single-value guard this replaces.
       - name: Mint Ephemeral Gate Athlete PIN
         if: inputs.enable_shadow_gate
         run: |
-          PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(900000)+100000:06d}")')"
-          if [ "$PIN" = "123456" ]; then PIN="224467"; fi
+          PIN="$(python3 - <<'PY'
+          import secrets
+
+          ASCENDING = '01234567890123456789'
+          DESCENDING = '98765432109876543210'
+          DEFAULT_FIRST_LOGIN_PIN = '123456'
+          LENGTH = 6
+
+          def trivially_guessable(pin):
+              if len(set(pin)) == 1:                                  # 000000, 111111
+                  return True
+              if pin in ASCENDING or pin in DESCENDING:               # 123456, 654321, 890123
+                  return True
+              for size in (1, 2, 3):                                  # 121212, 123123
+                  if pin[:size] * (LENGTH // size) == pin:
+                      return True
+              if all(pin[i] == pin[i + 1] for i in (0, 2, 4)):        # 112233
+                  return True
+              if pin == pin[::-1]:                                    # 123321
+                  return True
+              return False
+
+          for _ in range(10_000):
+              candidate = f"{secrets.randbelow(900000) + 100000:06d}"
+              if candidate != DEFAULT_FIRST_LOGIN_PIN and not trivially_guessable(candidate):
+                  print(candidate)
+                  break
+          else:
+              raise SystemExit('could not mint a policy-satisfying PIN')
+          PY
+          )"
+          test -n "$PIN"
           echo "::add-mask::$PIN"
           echo "GATE_ATHLETE_PIN=$PIN" >> "$GITHUB_ENV"
 
