@@ -239,5 +239,3 @@ end $$;
 -- across tenants rather than within one.
 create index if not exists idx_shadow_evidence_items_library_owner
   on pilot.shadow_evidence_items(library_organization_id, source_id);
-
-commit;
