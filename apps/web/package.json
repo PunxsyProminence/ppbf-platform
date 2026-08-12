@@ -52,6 +52,7 @@
     "pilot:cleanup-deleted-data": "node scripts/pilot-cleanup-deleted-data.mjs",
     "pilot:cleanup-accounts": "node scripts/pilot-cleanup-accounts.mjs",
     "pilot:approve-library-baseline": "node scripts/pilot-approve-library-baseline.mjs",
+    "pilot:rescope-library-baseline": "node scripts/pilot-rescope-library-baseline.mjs",
     "seed:shadow:library": "node scripts/seed-shadow-library.mjs",
     "seed:shadow:research": "node scripts/import-shadow-research.mjs",
     "seed:shadow:research:dry": "node scripts/import-shadow-research.mjs --dry-run",

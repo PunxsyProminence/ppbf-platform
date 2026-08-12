@@ -260,3 +260,28 @@ describe('capability feeder tracks', () => {
     expect(feeder.trailing).toEqual(['A5']);
   });
 });
+
+// Provenance on the copied programme source, added when the re-scope tool needed
+// to identify copies from the package rather than by matching an id prefix.
+// pilot-rescope-library-baseline.mjs reads copied_from_source_id to know which
+// row to copy from, so this is a contract between the two files, not decoration.
+describe('copied programme source provenance', () => {
+  test('records which source it copies and for which scope', () => {
+    const copied = policy.sources.find((row) => row.source_id === COPIED_PROGRAMME_SOURCE_ID);
+    expect(copied).toBeDefined();
+    expect(copied!.metadata!.copied_from_source_id).toBe(PROGRAMME_SOURCE_ID);
+    expect(copied!.metadata!.copied_for_scope).toBe('ppbf_policy');
+  });
+
+  test('exactly one source in the package is a copy', () => {
+    const copies = policy.sources.filter((row) => row.metadata?.copied_from_source_id);
+    expect(copies).toHaveLength(1);
+  });
+
+  test('the baseline carries no copies at all', () => {
+    // The baseline holds originals only; a copy there would be a duplicate of a
+    // row that is already in it.
+    expect(baseline.sources.filter((row) => row.metadata?.copied_from_source_id)).toEqual([]);
+    expect(baseline.documents.filter((row) => row.metadata?.copied_from_document_id)).toEqual([]);
+  });
+});

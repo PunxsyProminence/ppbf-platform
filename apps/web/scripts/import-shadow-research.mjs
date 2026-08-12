@@ -281,7 +281,20 @@ export function applySeedScope(pkg, scope) {
 
   return {
     sources: [
-      { ...programme, source_id: copiedProgrammeId },
+      {
+        ...programme,
+        source_id: copiedProgrammeId,
+        // Provenance on the copy, for the same reason the documents carry it:
+        // two source rows with the same title in two organizations is legitimate
+        // here and baffling to find later. pilot-rescope-library-baseline.mjs
+        // also reads this to know which row is a copy and what it copies, rather
+        // than re-deriving it from the shape of the package.
+        metadata: {
+          ...programme.metadata,
+          copied_from_source_id: programme.source_id,
+          copied_for_scope: scope,
+        },
+      },
       ...pkg.sources.filter((row) => policyIds.has(row.source_id)),
     ],
     documents,

@@ -86,6 +86,7 @@ on:
           - activation-pin-exposure
           - videos-missing-consent
           - seed-identity
+          - library-scope
           - runtime-claims
           - shadow-filter-rate
 
@@ -289,6 +290,7 @@ jobs:
               run_one activation-pin-exposure pilot:check-activation-pin-exposure
               run_one videos-missing-consent pilot:check-videos-missing-consent
               run_one seed-identity       pilot:check-seed-identity
+              run_one library-scope       pilot:check-library-scope
               run_one runtime-claims      pilot:check-runtime-claims
               run_one shadow-filter-rate  pilot:check-shadow-filter-rate
               ;;
@@ -299,6 +301,7 @@ jobs:
             activation-pin-exposure) run_one activation-pin-exposure pilot:check-activation-pin-exposure ;;
             videos-missing-consent) run_one videos-missing-consent pilot:check-videos-missing-consent ;;
             seed-identity)      run_one seed-identity       pilot:check-seed-identity ;;
+            library-scope)      run_one library-scope       pilot:check-library-scope ;;
             runtime-claims)     run_one runtime-claims      pilot:check-runtime-claims ;;
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             *)
