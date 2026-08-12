@@ -104,7 +104,20 @@ export async function checkLibraryScope(client) {
               (select count(*)::int from pilot.shadow_library_chunks c
                 where c.organization_id = o.organization_id) as chunks,
               (select count(*)::int from pilot.shadow_library_capability_map m
-                where m.organization_id = o.organization_id) as capabilities
+                where m.organization_id = o.organization_id) as capabilities,
+              -- The evidence axis, and the reason this column is worth reporting:
+              -- the corpus was imported into both databases before feeder_tracks
+              -- existed, and re-scoping moves rows without backfilling columns
+              -- that did not exist when they were written. So a capability map
+              -- can be fully present and completely unusable, and nothing else
+              -- here would show it.
+              (select count(*)::int from pilot.shadow_library_capability_map m
+                where m.organization_id = o.organization_id
+                  and array_length(m.feeder_tracks, 1) > 0) as capabilities_with_tracks,
+              (select count(distinct c.metadata->>'track')::int
+                 from pilot.shadow_library_chunks c
+                where c.organization_id = o.organization_id
+                  and c.metadata->>'track' is not null) as distinct_chunk_tracks
          from pilot.organizations o
         order by (o.organization_id = $1) desc, o.organization_id`,
       [PLATFORM_ORGANIZATION_ID],
@@ -175,11 +188,12 @@ export async function run() {
   console.log('==========================');
   console.log('');
   console.log('PER ORGANIZATION');
-  console.log(`  ${pad('organization_id', 24)}${pad('sources', 9)}${pad('approved', 10)}${pad('docs', 6)}${pad('ready', 7)}${pad('chunks', 8)}capabilities`);
+  console.log(`  ${pad('organization_id', 24)}${pad('sources', 9)}${pad('approved', 10)}${pad('docs', 6)}${pad('ready', 7)}${pad('chunks', 8)}${pad('caps', 6)}${pad('caps+tracks', 13)}chunk_tracks`);
   for (const r of result.byOrg) {
     console.log(
       `  ${pad(r.organization_id, 24)}${pad(r.sources, 9)}${pad(r.sources_approved, 10)}`
-      + `${pad(r.documents, 6)}${pad(r.documents_ready, 7)}${pad(r.chunks, 8)}${r.capabilities}`,
+      + `${pad(r.documents, 6)}${pad(r.documents_ready, 7)}${pad(r.chunks, 8)}${pad(r.capabilities, 6)}`
+      + `${pad(r.capabilities_with_tracks, 13)}${r.distinct_chunk_tracks}`,
     );
   }
 
@@ -244,10 +258,20 @@ export async function run() {
     if (strays.length > 0) {
       console.log(`  A gym holds more than the ${gymKeeps} it should keep: ${strays.map((r) => `${r.organization_id}=${r.corpus_sources}`).join(', ')}`);
     }
+  } else if (platformCorpus === expected && platformRow.capabilities > 0
+      && platformRow.capabilities_with_tracks === 0) {
+    console.log('PILOT LIBRARY SCOPE CHECK: BASELINE PRESENT, EVIDENCE AXIS EMPTY');
+    console.log(
+      `  ${platformRow.capabilities} capability row(s), none carrying feeder_tracks. Coverage `
+      + 'queries will return nothing. Backfill with the importer\'s capability_map_only mode '
+      + '(tables: capability_map_only) -- safe on an approved baseline, unlike a full import.',
+    );
   } else if (platformCorpus === expected) {
     console.log('PILOT LIBRARY SCOPE CHECK: BASELINE PRESENT AND CORRECTLY SPLIT');
     console.log(
-      `  ${platformCorpus} corpus source(s) in the baseline, ${platformRow.sources_approved} approved. `
+      `  ${platformCorpus} corpus source(s) in the baseline, ${platformRow.sources_approved} approved, `
+      + `${platformRow.capabilities_with_tracks}/${platformRow.capabilities} capabilities carrying feeder_tracks `
+      + `over ${platformRow.distinct_chunk_tracks} chunk track(s). `
       + `Gyms keep their own policy material: ${elsewhere.map((r) => `${r.organization_id}=${r.corpus_sources}`).join(', ') || 'none'}.`,
     );
   } else if (platformRow.chunks === 0) {
