@@ -1,24 +1,10 @@
-import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
-import { NextRequest } from 'next/server';
-
 import AthleteDailyCheckIn from '@/src/components/athlete/AthleteDailyCheckIn';
-import { requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AthleteDashboardPage() {
-  try {
-    const incomingHeaders = await headers();
-    const request = new NextRequest('http://localhost/athlete/dashboard', {
-      headers: new Headers(incomingHeaders),
-    });
-
-    const principal = await requirePrincipal(request);
-    requireRole(principal, ['athlete']);
-  } catch {
-    redirect('/login');
-  }
+  await requirePageRole(['athlete']);
 
   return (
     <main className="min-h-screen bg-[#09090b] text-slate-300 font-mono">

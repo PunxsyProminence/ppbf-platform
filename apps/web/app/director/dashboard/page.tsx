@@ -1,25 +1,11 @@
-import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
-import { NextRequest } from 'next/server';
-
 import IncidentCommandCenter from '@/src/components/director/IncidentCommandCenter';
-import { requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DirectorDashboardPage() {
-  try {
-    const incomingHeaders = await headers();
-    const request = new NextRequest('http://localhost/director/dashboard', {
-      headers: new Headers(incomingHeaders),
-    });
-
-    const principal = await requirePrincipal(request);
-    // Program & Safety Director maps to the canonical organization-admin role.
-    requireRole(principal, ['organization_admin']);
-  } catch {
-    redirect('/login');
-  }
+  // Program & Safety Director maps to the canonical organization-admin role.
+  await requirePageRole(['organization_admin']);
 
   return (
     <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
