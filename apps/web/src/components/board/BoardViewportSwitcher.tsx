@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { formatGymNumber } from '@/src/lib/gymTime';
 
 type GovernanceView = 'PRESIDENT' | 'TREASURER' | 'SECRETARY';
 
@@ -173,8 +174,8 @@ export default function BoardViewportSwitcher() {
                 {budgetRows.map((row) => (
                   <tr key={row.id} className="border border-zinc-800">
                     <td className="border border-zinc-800 p-2">{row.unit}</td>
-                    <td className="border border-zinc-800 p-2">${row.allocatedUsd.toLocaleString()}</td>
-                    <td className="border border-zinc-800 p-2">${row.spentUsd.toLocaleString()}</td>
+                    <td className="border border-zinc-800 p-2">${formatGymNumber(row.allocatedUsd)}</td>
+                    <td className="border border-zinc-800 p-2">${formatGymNumber(row.spentUsd)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -198,12 +199,12 @@ export default function BoardViewportSwitcher() {
                   <tr key={row.id} className="border border-zinc-800">
                     <td className="border border-zinc-800 p-2">{row.grant}</td>
                     <td className="border border-zinc-800 p-2">{row.stage}</td>
-                    <td className="border border-zinc-800 p-2">${row.projectedUsd.toLocaleString()}</td>
+                    <td className="border border-zinc-800 p-2">${formatGymNumber(row.projectedUsd)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="mt-3 text-[11px] text-zinc-500">Pipeline projection total: ${projectedGrantTotal.toLocaleString()}</p>
+            <p className="mt-3 text-[11px] text-zinc-500">Pipeline projection total: ${formatGymNumber(projectedGrantTotal)}</p>
           </section>
 
           <section className="lg:col-span-2 bg-black border border-zinc-800 rounded-none p-3">
@@ -245,7 +246,7 @@ export default function BoardViewportSwitcher() {
         <h2 className="text-xs uppercase tracking-[0.2em] text-slate-200">
           L22 Grant Reporting [V-BOARD-PUBLIC]
         </h2>
-        <p className="mt-2 text-sm text-slate-100">Total Training Floor Minutes: {trainingMinutes.toLocaleString()}</p>
+        <p className="mt-2 text-sm text-slate-100">Total Training Floor Minutes: {formatGymNumber(trainingMinutes)}</p>
         <p className="mt-1 text-[11px] text-zinc-500">Capacity index: {currentCapacity}%</p>
         <label htmlFor="training-floor-minutes" className="mt-3 block text-[11px] text-zinc-400">
           Locked Counter Input [V-BOARD-PUBLIC]
