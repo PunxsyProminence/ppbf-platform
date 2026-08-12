@@ -253,6 +253,11 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         responseState: bindingFiltered ? 'filtered' : 'ok',
         evidenceTier,
         handoff,
+        // Sync parity: the synchronous route persists the reason codes on a
+        // withheld answer, and a Heavy Bag answer withheld in the background
+        // has to be countable the same way. Without this the reporting split by
+        // tier would show the async tier filtering for no recorded reason.
+        filterReasons: decision.reasonCodes,
         evidence: binding.bundleId
           ? {
               bundleId: binding.bundleId,

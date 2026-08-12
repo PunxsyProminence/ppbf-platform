@@ -3,7 +3,8 @@
 #
 # The `pilot:check-*` scripts answer questions about a live database:
 # whether orphaned rows exist, whether guardians are stranded, whether the
-# tables an audit claimed are really there. Until this existed the only way
+# tables an audit claimed are really there, how often SHADOW withholds an
+# answer from the person who asked. Until this existed the only way
 # to run one was from someone's laptop with a connection string in their
 # shell -- the same gap apply-migrations.yml closed for schema changes.
 #
@@ -30,6 +31,32 @@
 #   confirmation would be ceremony rather than a guard. The target still
 #   appears in the run summary so the answer is never read against the wrong
 #   environment by accident.
+#
+# TWO KINDS OF CHECK, AND WHAT A RED RUN MEANS
+#   Most of these are GATES: they exit non-zero when a human still has to
+#   decide something, so a red run is a finding rather than a broken workflow.
+#   Two are REPORTS -- seed-identity and runtime-claims print an inventory and
+#   exit zero whenever they managed to run at all, so their answer is in the
+#   log and a green run says only "it connected". Do not read a green
+#   `all` as "seed identity is correct"; read the group.
+#
+# THE GAP THIS WORKFLOW HAD, AND THE list-check OPTION
+#   These lists are hand-maintained, so a `pilot:check-*` script is silently
+#   unreachable from here until someone remembers to add it in three places.
+#   Three were: seed-identity and runtime-claims had npm scripts and no
+#   workflow entry, and videos-missing-consent -- the standing guardian media
+#   consent sweep for minors, from a P1 safeguarding ticket -- had a file on
+#   disk and no npm script at all, so it could not be run by name from
+#   anywhere. `list-check` is the dispatchable audit for that, mirroring
+#   apply-migrations. It touches no database and needs no credentials, so it
+#   runs as its own job below with no `environment:` gate.
+#
+#   A dispatchable audit still has to be remembered, so the real guard is
+#   src/server/pilot/checkDispatchCoverage.test.ts, which runs on every CI
+#   build and starts from the FILES on disk rather than from the npm scripts.
+#   That direction is the one that catches a script with no npm entry -- the
+#   same blindness migrationDispatchCoverage.test.ts was written to fix for
+#   migrations, which had let seven of them ship reachable by nothing.
 # ─────────────────────────────────────────────────────────────────────────
 
 name: run-checks
@@ -51,10 +78,16 @@ on:
         type: choice
         options:
           - all
+          - list-check
           - orphan-chat-audit
           - multiorg-orphans
           - stranded-guardians
+          - duplicate-guardians
           - activation-pin-exposure
+          - videos-missing-consent
+          - seed-identity
+          - runtime-claims
+          - shadow-filter-rate
 
 permissions:
   id-token: write
@@ -68,7 +101,84 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Reads two files out of the checkout and nothing else. Deliberately NOT the
+  # `check` job with the database steps skipped: that job carries
+  # `environment: ${{ inputs.target }}`, so auditing a YAML list against
+  # production would sit waiting on a protection-rule reviewer, and the run
+  # would fetch a production connection string it has no use for. `target` is
+  # ignored here -- the answer is the same for every environment, because the
+  # question is about this repository.
+  list-check:
+    if: ${{ inputs.check == 'list-check' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Every Check Is Reachable From This Workflow
+        run: |
+          # -e matters here and is not boilerplate: without it the `test` at the
+          # bottom would report a failure, the trailing echo would reset $? to
+          # zero, and this step would go green having just printed its own
+          # errors. An audit that cannot fail is the thing it is auditing for.
+          set -euo pipefail
+          WF=.github/workflows/run-checks.yml
+          missing=0
+
+          # DIRECTION 1: from the files on disk. A script with no npm script is
+          # invisible to any audit keyed on npm scripts, and that is exactly how
+          # pilot-check-videos-missing-consent.mjs shipped unreachable.
+          for f in apps/web/scripts/pilot-check-*.mjs; do
+            s="$(basename "$f" .mjs)"; s="${s#pilot-check-}"
+            if ! node -e "process.exit(require('./apps/web/package.json').scripts['pilot:check-$s'] ? 0 : 1)"; then
+              echo "::error::apps/web/scripts/pilot-check-$s.mjs has no pilot:check-$s npm script, so it cannot be run by name from anywhere."
+              missing=1
+            fi
+          done
+
+          # DIRECTION 2: from the npm scripts into this file's three lists. The
+          # dropdown is what an operator picks from; the `all` arm and the
+          # per-check arm are what actually run it. Missing from any one of the
+          # three and the check is partly unreachable, which is harder to notice
+          # than being missing from all three.
+          for s in $(node -e "const p=require('./apps/web/package.json');Object.keys(p.scripts).filter(k=>k.startsWith('pilot:check-')).forEach(k=>console.log(k.replace('pilot:check-','')))"); do
+            option_hits="$(grep -cE "^[[:space:]]+- ${s}$" "$WF" || true)"
+            # The `all` line ends at the script name; the case arm ends with
+            # ` ;;`. Both must be present, hence two hits and not one.
+            arm_hits="$(grep -cE "run_one[[:space:]]+${s}[[:space:]]+pilot:check-${s}([[:space:]]|$)" "$WF" || true)"
+            if [ "$option_hits" -lt 1 ]; then
+              echo "::error::pilot:check-$s is not an option in this workflow's dropdown."
+              missing=1
+            fi
+            if [ "$arm_hits" -lt 2 ]; then
+              echo "::error::pilot:check-$s is not in both the 'all' list and its own case arm in this workflow (found $arm_hits of 2)."
+              missing=1
+            fi
+          done
+
+          # DIRECTION 3: no dropdown option that runs nothing. An operator
+          # picking one of those gets a green run and no answer.
+          for s in $(grep -E "^[[:space:]]+- [a-z0-9-]+$" "$WF" | sed -E 's/^[[:space:]]+- //' || true); do
+            case "$s" in
+              all|list-check|staging|production) continue ;;
+            esac
+            if ! node -e "process.exit(require('./apps/web/package.json').scripts['pilot:check-$s'] ? 0 : 1)"; then
+              echo "::error::this workflow offers '$s' but there is no pilot:check-$s script to run."
+              missing=1
+            fi
+          done
+
+          test "$missing" -eq 0
+          echo "Every pilot-check script has an npm script, a dropdown option, an 'all' entry and a case arm."
+
   check:
+    if: ${{ inputs.check != 'list-check' }}
     environment: ${{ inputs.target }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -142,8 +252,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
           echo "Checking host ${OVERRIDE_HOST:-$HOST} / db ${OVERRIDE_DB:-$DB}."
 
-      # Each script exits non-zero only when a human still has to decide
-      # something, so a red run here is a finding, not a broken workflow. With
+      # A gate script exits non-zero only when a human still has to decide
+      # something, so a red run here is a finding, not a broken workflow. The
+      # two report scripts exit zero whenever they ran -- see the header. With
       # `all`, every check runs even if an earlier one reports -- one finding
       # must not hide the next -- and the job fails at the end if any did.
       - name: Run Check
@@ -169,15 +280,27 @@ jobs:
 
           case "$CHECK" in
             all)
+              # Gates first, then the two inventory reports, so a finding is not
+              # buried under several screens of inventory in the log.
               run_one orphan-chat-audit   pilot:check-orphan-chat-audit
               run_one multiorg-orphans    pilot:check-multiorg-orphans
               run_one stranded-guardians  pilot:check-stranded-guardians
+              run_one duplicate-guardians pilot:check-duplicate-guardians
               run_one activation-pin-exposure pilot:check-activation-pin-exposure
+              run_one videos-missing-consent pilot:check-videos-missing-consent
+              run_one seed-identity       pilot:check-seed-identity
+              run_one runtime-claims      pilot:check-runtime-claims
+              run_one shadow-filter-rate  pilot:check-shadow-filter-rate
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
             stranded-guardians) run_one stranded-guardians  pilot:check-stranded-guardians ;;
+            duplicate-guardians) run_one duplicate-guardians pilot:check-duplicate-guardians ;;
             activation-pin-exposure) run_one activation-pin-exposure pilot:check-activation-pin-exposure ;;
+            videos-missing-consent) run_one videos-missing-consent pilot:check-videos-missing-consent ;;
+            seed-identity)      run_one seed-identity       pilot:check-seed-identity ;;
+            runtime-claims)     run_one runtime-claims      pilot:check-runtime-claims ;;
+            shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             *)
               echo "::error::Unknown check '$CHECK'."
               exit 1

@@ -1054,6 +1054,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           ? requestValidation.topic
           : undefined),
     });
+    // Same precedence as persistedHandoff above: a response that volunteers a
+    // high-risk topic the request never raised (e.g. an unprompted weight-cut
+    // directive) has to be filed, reviewed, and profiled under that topic, not
+    // whatever the request alone was classified as -- otherwise the stored
+    // message, the review-queue category, the profile's topic history, and the
+    // audit log all disagree with the handoff banner the user actually saw.
+    const effectiveTopic = responseValidation.topic ?? interactionTopic;
 
     if (state === 'ok' || state === 'filtered') {
       conversationId = await resolveConversation({
@@ -1069,10 +1076,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         userMessage: message,
         assistantMessage: finalResponse,
         sessionType,
-        topic: interactionTopic,
+        topic: effectiveTopic,
         responseState: state,
         evidenceTier: persistedEvidenceTier,
         handoff: persistedHandoff,
+        // Which rule withheld the answer, not only that one did. These were
+        // computed on every filtered response and dropped, so the whole
+        // database record of a withheld answer was the word 'filtered' -- and
+        // three separate over-filters went unnoticed until someone tripped over
+        // each one by hand. Ignored on an 'ok' response by the write boundary.
+        filterReasons: responseValidation.reasonCodes,
         evidence: evidenceBundle.bundleId
           ? {
               bundleId: evidenceBundle.bundleId,
@@ -1086,7 +1099,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           organizationId,
           accountId: userId,
           conversationId,
-          category: interactionTopic,
+          category: effectiveTopic,
           severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
             .includes(requestValidation.classification ?? '')
             ? ('critical' as const)
@@ -1123,7 +1136,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     if (state === 'ok' || state === 'queued') {
       try {
         await updateShadowUserProfile(userId, organizationId, {
-          topicAdded: interactionTopic,
+          topicAdded: effectiveTopic,
           athleteIdDiscussed: athleteId || undefined,
         });
       } catch {
@@ -1142,7 +1155,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           userId,
           userRole,
           athleteId || null,
-          `<redacted:${interactionTopic}>`,
+          `<redacted:${effectiveTopic}>`,
           `<state:${state}>`,
           state === 'filtered',
           createdAt.toISOString(),

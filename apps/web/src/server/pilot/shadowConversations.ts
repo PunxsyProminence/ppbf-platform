@@ -50,6 +50,34 @@ export interface ShadowConversationMessage {
   }>;
 }
 
+/**
+ * Normalises the validator's reason codes for storage.
+ *
+ * The invariant is enforced here rather than trusted from callers: the column
+ * is only meaningful for a withheld answer, and there are two write paths (the
+ * synchronous chat route and the background job processor) that must agree
+ * byte-for-byte or the same withheld answer is recorded two ways depending on
+ * which tier produced it.
+ *
+ * An 'ok' response stores null even when the validator returned reasons --
+ * `human_review` fires without withholding anything, and it already has a
+ * durable artifact in pilot.shadow_human_review_queue. Recording it here too
+ * would inflate every rule's share of the withheld population with answers that
+ * were never withheld.
+ *
+ * Empty stays null rather than becoming `{}`: "no reasons recorded" and "zero
+ * reasons" would both be true of an empty array, and the check script has to
+ * tell a pre-migration row from an attribution bug.
+ */
+export function storedFilterReasons(
+  responseState: ShadowStoredResponseState,
+  reasons: string[] | undefined,
+): string[] | null {
+  if (responseState !== 'filtered') return null;
+  const deduped = [...new Set((reasons ?? []).map((reason) => reason.trim()).filter(Boolean))];
+  return deduped.length > 0 ? deduped.slice(0, 20) : null;
+}
+
 function boundedLimit(value: number | undefined, defaultValue: number, maximum: number): number {
   if (value === undefined) return defaultValue;
   if (!Number.isSafeInteger(value) || value < 1) {
@@ -177,6 +205,7 @@ export async function appendConversationExchange(input: {
   // read path maps null to RESEARCH_NEEDED.
   evidenceTier?: ShadowStoredEvidenceTier;
   handoff?: string;
+  filterReasons?: string[];
   evidence?: {
     bundleId: string;
     availability: 'available' | 'unavailable';
@@ -204,10 +233,10 @@ export async function appendConversationExchange(input: {
     const assistantMessageId = randomUUID();
     await client.query(
       `insert into pilot.shadow_chat_messages
-         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, evidence_tier, handoff, created_at)
+         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, evidence_tier, handoff, filter_reasons, created_at)
        values
-         ($1, $2, $3, $4, 'user', $5, null, $9, $10, null, null, statement_timestamp()),
-         ($6, $2, $3, $4, 'assistant', $7, $8, $9, $10, $11, $12, statement_timestamp() + interval '1 microsecond')`,
+         ($1, $2, $3, $4, 'user', $5, null, $9, $10, null, null, null, statement_timestamp()),
+         ($6, $2, $3, $4, 'assistant', $7, $8, $9, $10, $11, $12, $13, statement_timestamp() + interval '1 microsecond')`,
       [
         userMessageId,
         input.conversationId,
@@ -221,6 +250,7 @@ export async function appendConversationExchange(input: {
         input.sessionType,
         input.evidenceTier ?? null,
         input.handoff?.slice(0, 500) ?? null,
+        storedFilterReasons(input.responseState, input.filterReasons),
       ],
     );
     await client.query(
@@ -406,6 +436,7 @@ export async function appendAssistantMessage(input: {
   responseState: ShadowStoredResponseState;
   evidenceTier?: ShadowStoredEvidenceTier;
   handoff?: string;
+  filterReasons?: string[];
   evidence?: {
     bundleId: string;
     availability: 'available' | 'unavailable';
@@ -451,8 +482,8 @@ export async function appendAssistantMessage(input: {
     // concurrent re-claim a no-op instead of a duplicate.
     const inserted = await client.query(
       `insert into pilot.shadow_chat_messages
-         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, evidence_tier, handoff, created_at)
-       values ($1, $2, $3, $4, 'assistant', $5, $6, $7, $8, $9, $10, statement_timestamp())
+         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, evidence_tier, handoff, filter_reasons, created_at)
+       values ($1, $2, $3, $4, 'assistant', $5, $6, $7, $8, $9, $10, $11, statement_timestamp())
        on conflict (message_id) do nothing
        returning message_id`,
       [
@@ -466,6 +497,7 @@ export async function appendAssistantMessage(input: {
         input.sessionType,
         input.evidenceTier ?? null,
         input.handoff?.slice(0, 500) ?? null,
+        storedFilterReasons(input.responseState, input.filterReasons),
       ],
     );
     // Already appended by an earlier attempt at the same job. Return the id

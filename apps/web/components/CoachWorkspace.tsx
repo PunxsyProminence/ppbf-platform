@@ -11,6 +11,25 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
+
+/**
+ * An explicit element type for the tab-bar array, rather than letting it
+ * infer one from the object literals. Without this, TypeScript's inference
+ * for an array of objects with differing optional keys silently widens every
+ * element to carry every key as optional-undefined -- so a typo'd `id` or
+ * `badge` property type-checks fine and just never renders, with no compiler
+ * signal pointing at the cause.
+ */
+interface CoachTabBadge {
+  readonly tone: BadgeTone;
+  readonly label: string;
+}
+interface CoachTab {
+  readonly id: TabID;
+  readonly label: string;
+  readonly badge?: CoachTabBadge;
+}
+
 type SessionMode = 'Group' | 'One-on-One';
 type ReadinessStatus = 'GREEN' | 'YELLOW' | 'RED';
 
@@ -210,6 +229,7 @@ export default function CoachWorkspace() {
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
   const [shadowQueueUnavailable, setShadowQueueUnavailable] = useState(false);
+  const [shadowQueueTotal, setShadowQueueTotal] = useState<number | null>(null);
   // Per-item, not a single shared flag: a coach can be resolving one case
   // while a different one's error is still on screen.
   const [intakeActionBusyId, setIntakeActionBusyId] = useState<string | null>(null);
@@ -394,6 +414,17 @@ export default function CoachWorkspace() {
   );
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
+  // A missing badge must mean "genuinely nothing pending", never "the queue
+  // failed to load" -- assignmentsDue is 0 in both cases, and the Tasks tab's
+  // own body already distinguishes them (the "Unable to load" box above).
+  // Collapsing that distinction back to silence one UI element up would
+  // reproduce the exact false-reassurance failure this file guards against
+  // elsewhere (see the readiness/injuryFlag handling).
+  const reviewQueueBadge: CoachTabBadge | undefined = shadowQueueUnavailable
+    ? { tone: 'locked', label: 'unavailable' }
+    : assignmentsDue > 0
+      ? { tone: 'monitor', label: `${assignmentsDue} pending` }
+      : undefined;
 
   // Athlete pain reports. The write path refuses to store a pain report it
   // could not raise a coach-visible record for, so anything returned here is a
@@ -578,8 +609,15 @@ export default function CoachWorkspace() {
           if (queueResult.value.ok) {
             const queuePayload = (await queueResult.value.json()) as {
               queue?: ShadowReviewQueueItem[];
+              total?: number;
             };
             setShadowQueue(queuePayload.queue ?? []);
+            // The projection reports how many cases exist, not just how many it
+            // returned. Kept so the panel can say what it is not showing rather
+            // than letting a coach believe the queue ends at the last card.
+            setShadowQueueTotal(
+              typeof queuePayload.total === 'number' ? queuePayload.total : null,
+            );
           } else {
             queueError = 'review projection';
           }
@@ -917,27 +955,34 @@ export default function CoachWorkspace() {
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
           <div className={ui.tabRow}>
-            {[
+            {([
               { id: 'dashboard', label: 'Dashboard' },
               { id: 'floor', label: 'Floor' },
               { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
               { id: 'development', label: 'Development' },
               { id: 'goals', label: 'Goals' },
-              { id: 'tasks', label: 'Tasks' },
+              // Both badges are the same value by construction -- coachTasks
+              // is derived entirely from shadowQueue's pending_review items
+              // (see the comment above coachTasks) -- so Tasks and SHADOW
+              // Intel badge the same underlying work seen from two angles,
+              // not two different counts that could disagree.
+              { id: 'tasks', label: 'Tasks', badge: reviewQueueBadge },
               { id: 'assessments', label: 'Assessments' },
               { id: 'film-study', label: 'Film Study' },
               { id: 'athlete-reviews', label: 'Athlete Reviews' },
-              { id: 'shadow', label: 'SHADOW Intel' }
-            ].map(tab => (
+              { id: 'shadow', label: 'SHADOW Intel', badge: reviewQueueBadge }
+            ] satisfies CoachTab[]).map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabID)}
+                onClick={() => setActiveTab(tab.id)}
                 className={cx(
                   ui.tabButtonBase,
+                  'gap-2',
                   activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
                 )}
               >
                 {tab.label}
+                {tab.badge ? <StatusBadge tone={tab.badge.tone} label={tab.badge.label} /> : null}
               </button>
             ))}
           </div>
@@ -1555,7 +1600,22 @@ export default function CoachWorkspace() {
                     <p className="t-muted mt-[var(--s3)]">No SHADOW queue items returned.</p>
                   ) : (
                     <div className="mt-[var(--s3)] space-y-[var(--s3)]">
-                      {shadowQueue.slice(0, 6).map((item) => (
+                      {/* This panel used to render slice(0, 6) against a request
+                          for 20, so fourteen pending cases could sit behind the
+                          last card with nothing on screen suggesting they
+                          existed. On a queue of decisions waiting on a person,
+                          an undisclosed cap is not a display choice -- the work
+                          simply disappears. It renders what it fetched, and says
+                          what it did not fetch. */}
+                      {shadowQueueTotal !== null && shadowQueueTotal > shadowQueue.length && (
+                        <p className="t-muted">
+                          Showing {shadowQueue.length} of {shadowQueueTotal}.{' '}
+                          {shadowQueueTotal - shadowQueue.length} more{' '}
+                          {shadowQueueTotal - shadowQueue.length === 1 ? 'case is' : 'cases are'}{' '}
+                          in the queue and not listed here.
+                        </p>
+                      )}
+                      {shadowQueue.map((item) => (
                         <div key={item.intake_case_id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
                           <p>Status: {item.status}</p>
@@ -1595,6 +1655,15 @@ export default function CoachWorkspace() {
                     <p className="t-muted mt-[var(--s3)]">No SHADOW observation items returned.</p>
                   ) : (
                     <div className="mt-[var(--s3)] space-y-[var(--s3)]">
+                      {/* This one keeps its cap. It is a read-only feed rather
+                          than a list of decisions waiting on someone, so showing
+                          the most recent handful is a real editorial choice --
+                          but it still has to admit it is doing so. */}
+                      {shadowObservations.length > 6 && (
+                        <p className="t-muted">
+                          Showing the 6 most recent of {shadowObservations.length} loaded.
+                        </p>
+                      )}
                       {shadowObservations.slice(0, 6).map((item) => (
                         <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.label}</p>

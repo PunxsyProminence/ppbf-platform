@@ -261,7 +261,8 @@ describe('athlete workspace honesty', () => {
 describe('athlete safety reporting', () => {
   async function openPainReport() {
     await renderWorkspace();
-    fireEvent.click(screen.getByRole('button', { name: 'Neck' }));
+    fireEvent.change(screen.getByLabelText('Body location'), { target: { value: 'Neck' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Report Pain' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   }
 

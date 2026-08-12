@@ -226,13 +226,66 @@ idempotent), not to roll back the schema.
 1. **`pilot_transfer_drill_fk`** — all 173 transfer claims reference an
    unresolvable drill-id generation. Blocks `seed:transfer-claims` entirely.
    The `transfer_claims` table ships empty until this is settled.
+
+   **Disposition 2026-08-09: leave the table empty; do not attempt a
+   mapping.** The ids resolve against neither the archive's own drill library
+   nor the 119 drills shipped here, so any crosswalk built from this side is
+   a guess about which drill a claim refers to. A transfer claim asserts that
+   training X carries over to Y; pointing one at the wrong drill fabricates
+   evidence-backed provenance between two techniques, which is worse than
+   having no rows at all. This needs a crosswalk from whoever generated the
+   ids, not inference from the ids themselves.
 2. **`pilot_ssb_content`** — two Friday-sparring blocks are
    `block_kind='instruction'` with all four `what_to_*` fields empty. This
    blocks the ENTIRE session-scripts seed, not just those two rows: 0 of 65
    blocks and 0 of 3 scripts load. `/coach/session-scripts` stays empty until
    it is resolved.
-3. **The 8 combatives claims** in `evidence_fragment_CB.csv` are still not
-   merged into the 1,235-claim registry.
+
+   **Reclassifying does not fix this — checked 2026-08-09, and the obvious
+   move is a trap.** The constraint exempts exactly three kinds:
+
+   ```sql
+   coalesce(what_to_say, what_to_explain, what_to_watch, what_to_fix) is not null
+   or block_kind in ('transition','arrival','close')
+   ```
+
+   `drill_round` — the semantically correct kind for "Sparring Drill Rounds"
+   — is **not** exempt, so moving the blocks to the right kind still violates
+   the constraint.
+
+   Both blockers (`blk_df4fb688e5b181`, `blk_01b502a7e7336d`) carry
+   `contact_level='controlled_sparring'`. A third empty block
+   (`blk_3bc86d4ec3c442`) is `arrival` and is legal. So the two rows holding
+   up the seed are the two highest-contact blocks in the script, and they
+   have no `what_to_watch` and no `what_to_fix` — which is what the
+   constraint's own comment means by "an empty block is an authoring error".
+   The guard is working; the source data is incomplete at exactly the point
+   where it matters most.
+
+   Four ways forward, one of which must not be taken:
+
+   1. **Author the content.** The only option whose result is true.
+      `what_to_watch` for a controlled-sparring round is safety guidance for
+      minors, so it is the gym's to write, not a builder's.
+   2. **Do NOT reclassify to `transition`/`arrival`/`close`.** It satisfies
+      the constraint by declaring a `controlled_sparring` block a
+      transition, which hides contact exposure from anything that reasons
+      about contact. This is the move to avoid, recorded here because it is
+      the one that looks like a fix.
+   3. **Widening the exempt list to include `drill_round`** lets any empty
+      drill round through and defeats the guard for every future script.
+   4. **Dropping the two rows and loading 63** yields a Friday sparring
+      script whose sparring blocks are silently absent.
+3. ~~**The 8 combatives claims** in `evidence_fragment_CB.csv` are still not
+   merged into the 1,235-claim registry.~~ **Resolved 2026-08-09** — merged,
+   1,235 -> 1,243. The fragment was a strict column subset of the registry, so
+   nothing was dropped; the eight registry columns it lacks (`sample_size`,
+   `effect_or_estimate`, `ppbf_implication`, `url`, `verification`,
+   `tbd_flag`, `track`, `independent_verification_detail`) are left EMPTY
+   rather than derived. Several claims state a figure in prose ("20.8
+   concussions per 100 exposures", "9.2 per 1000 exposures", "n=15") and
+   parsing those into `effect_or_estimate`/`sample_size` would be
+   interpretation presented as extraction.
 4. **Seven orphaned admin surfaces** (`/admin/export`, `/admin/import`,
    `/admin/gear`, `/admin/gear/vendors`, `/admin/athletes`,
    `/admin/organizations/test`, `/admin/platform/overview`) have no door in the

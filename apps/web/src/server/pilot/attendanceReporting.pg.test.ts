@@ -245,7 +245,21 @@ describe('getWeeklyAttendanceTrend against real Postgres', () => {
       // A second class the same week as w2a, marked absent -- proves the
       // group-by really buckets by week, not by class, and that a week's
       // rate reflects every mark in it.
-      await insertClass(client, 'class-w2b', "now() - interval '2 weeks' + interval '1 day'");
+      //
+      // Anchored to the START of w2a's week rather than written as
+      // "now() - interval '2 weeks' + interval '1 day'". Subtracting whole
+      // weeks preserves the weekday, so that phrasing lands on the same
+      // weekday the suite happens to run on -- and on a Sunday, +1 day is
+      // the next Monday, which date_trunc('week', ...) buckets as a
+      // DIFFERENT week. The mark then left this bucket for the one-week-ago
+      // bucket and absent_count read 0, so the test failed every Sunday
+      // while passing the other six days. Anchoring makes "the same week"
+      // true by construction on every day of the week.
+      await insertClass(
+        client,
+        'class-w2b',
+        "date_trunc('week', now() - interval '2 weeks') + interval '3 days'",
+      );
       await insertRegistration(client, 'reg-w2b', 'class-w2b');
       await client.query(
         `insert into pilot.scheduler_attendance (organization_id, attendance_id, class_id, athlete_id, status, method, checked_in_by_role, checked_in_by_account_id, note, checked_in_at)

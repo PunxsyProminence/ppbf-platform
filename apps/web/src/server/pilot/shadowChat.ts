@@ -73,11 +73,51 @@ export interface ShadowContextResult {
   evidenceIds?: string[];
 }
 
+/**
+ * Every reason validateShadowResponse can give, as a stable code paired with
+ * the sentence a human reads.
+ *
+ * The prose is the only form these reasons had, and prose is the wrong join
+ * key. It is edited whenever a rule's wording is clarified -- three of these
+ * sentences were reworded in a single week -- and a GROUP BY over prose splits
+ * one rule into two series at the moment someone fixes a typo, which reads as a
+ * rule that stopped firing and a new one that started. The code is what gets
+ * persisted and counted; the sentence stays free to change.
+ *
+ * Codes are append-only for the same reason. Renaming one rewrites history.
+ */
+export const SHADOW_FILTER_REASONS = {
+  diagnostic_claim: 'Contains diagnostic claim without evidence or human deference',
+  prescriptive_claim: 'Contains prescriptive claim without medical authority',
+  treatment_directive: 'Contains a personal treatment directive without medical authority',
+  clearance_claim: 'Contains clearance claim without medical authority',
+  disclosure_risk: 'May disclose protected instructions, secrets, or cross-tenant information',
+  authority_override: 'Attempts to override human authority',
+  weight_cut_directive: 'Contains a rapid weight-loss or dehydration directive without medical authority',
+  unauthorized_citation: 'Contains an unknown, malformed, or unauthorized evidence citation',
+  uncited_claim: 'Makes an evidence or quantitative claim without an exact retrieved evidence citation',
+  missing_deferral: 'Missing human deferral language',
+  human_review: 'Human review required',
+} as const;
+
+export type ShadowFilterReasonCode = keyof typeof SHADOW_FILTER_REASONS;
+
 export interface ShadowResponseValidation {
   valid: boolean;
   filtered: boolean;
   message: string;
   reasons: string[];
+  /**
+   * The same reasons as `reasons`, in the same order, as stable codes.
+   *
+   * Persisted alongside response_state so "how often does SHADOW withhold an
+   * answer, and which rule did it" is one query instead of a log dig. Before
+   * this existed the reasons were computed on every filtered response and
+   * dropped on the floor, so the only artifact of a withheld answer was the
+   * word 'filtered' -- which is how three separate over-filters went unnoticed
+   * until someone tripped over each one by hand.
+   */
+  reasonCodes: ShadowFilterReasonCode[];
   requiresHumanReview: boolean;
   citationIds: string[];
   /**
@@ -440,6 +480,14 @@ export function validateShadowResponse(
 ): ShadowResponseValidation {
   let filtered = false;
   const reasons: string[] = [];
+  const reasonCodes: ShadowFilterReasonCode[] = [];
+  // One call site per rule, so the code and the sentence cannot drift apart --
+  // the previous shape had the sentence written inline at eleven separate
+  // pushes, which is exactly how a reworded duplicate gets introduced.
+  const flag = (code: ShadowFilterReasonCode) => {
+    reasonCodes.push(code);
+    reasons.push(SHADOW_FILTER_REASONS[code]);
+  };
   let message = response;
   const normalized = response.toLowerCase().replace(/\s+/g, ' ');
 
@@ -525,7 +573,7 @@ export function validateShadowResponse(
   }
   if (makesDiagnosisClaim) {
     filtered = true;
-    reasons.push('Contains diagnostic claim without evidence or human deference');
+    flag('diagnostic_claim');
   }
 
   // Check for direct prescription claims
@@ -533,7 +581,7 @@ export function validateShadowResponse(
     /\b(take|start|stop|increase|decrease|double|dose|use)\b.{0,40}\b(medication|medicine|drug|pill|ibuprofen|acetaminophen|supplement|injection)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('Contains prescriptive claim without medical authority');
+    flag('prescriptive_claim');
   }
 
   // Minute-scale rest is training vocabulary, not a medical directive.
@@ -560,7 +608,7 @@ export function validateShadowResponse(
     || /\b(?:you\s+(?:should|need\s+to|must)|i\s+recommend(?:\s+that)?\s+you)\b.{0,60}\b(?:ice|immobilize|tape|compress|elevate|massage|rehab|treat)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('Contains a personal treatment directive without medical authority');
+    flag('treatment_directive');
   }
 
   // Check for clearance claims
@@ -569,21 +617,21 @@ export function validateShadowResponse(
     || /\b(you are|the athlete is|safe to|may now|can now)\b.{0,40}\b(cleared|return to play|return to training|resume contact|compete)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('Contains clearance claim without medical authority');
+    flag('clearance_claim');
   }
 
   if (
     /\b(system prompt|api key|secret|password|other organization|another tenant)\b.{0,80}\b(is|equals|contains|show|reveal|access)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('May disclose protected instructions, secrets, or cross-tenant information');
+    flag('disclosure_risk');
   }
 
   if (
     /\b(ignore|disregard|override|do not contact)\b.{0,50}\b(doctor|physician|clinician|medical professional|coach|policy)\b/.test(normalized)
   ) {
     filtered = true;
-    reasons.push('Attempts to override human authority');
+    flag('authority_override');
   }
 
   // Weight cutting was gated on the REQUEST only. A response that volunteered a
@@ -603,7 +651,7 @@ export function validateShadowResponse(
   );
   if (makesWeightCutDirective) {
     filtered = true;
-    reasons.push('Contains a rapid weight-loss or dehydration directive without medical authority');
+    flag('weight_cut_directive');
   }
 
   const allowedEvidenceIds = new Set(
@@ -616,12 +664,14 @@ export function validateShadowResponse(
   const citationMatches = [...response.matchAll(/\[E:([^\]\r\n]{1,200})\]/gi)];
   const citationIds: string[] = [];
   let hasInvalidCitation = false;
+  let validCitationOccurrences = 0;
   for (const match of citationMatches) {
     const evidenceId = match[1]?.trim() ?? '';
     if (!allowedEvidenceIds.has(evidenceId)) {
       hasInvalidCitation = true;
       continue;
     }
+    validCitationOccurrences += 1;
     if (!citationIds.includes(evidenceId)) citationIds.push(evidenceId);
   }
   if (/\[E:/i.test(response) && citationMatches.length === 0) {
@@ -629,7 +679,7 @@ export function validateShadowResponse(
   }
   if (hasInvalidCitation) {
     filtered = true;
-    reasons.push('Contains an unknown, malformed, or unauthorized evidence citation');
+    flag('unauthorized_citation');
   }
   const makesEvidenceClaim = (
     /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/i.test(response)
@@ -739,19 +789,93 @@ export function validateShadowResponse(
     || /\b\d+\s+(?:similar\s+)?(?:cases?|studies?)\b/i.test(quantSource)
     || assertsPopulationCount
   );
-  if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
+  // Everything above this line only detects WHETHER the response makes an
+  // evidence or quantitative claim at all -- it is intentionally untouched, so
+  // none of the false-positive exemptions measured and tuned against it above
+  // (percent-effort, roster allocation, prevention framing, etc.) change.
+  //
+  // The gate below used to stop at that yes/no: "citationIds.length === 0"
+  // treated one valid citation anywhere in the response as license for every
+  // evidence/quantitative claim in it, not just the one the citation actually
+  // sits next to. "Attendance is 94% across the gym [E:<real-id>]. Also, 250
+  // similar athletes fully recovered using this exact protocol with no
+  // setbacks." has exactly one real citation, so citationIds.length was 1 --
+  // already ">= 1" -- and the second sentence's fabricated case count and
+  // outcome, which cites nothing, rode through uninspected. Counting
+  // occurrences on both sides closes that: each claim-shaped phrase now needs
+  // its own citation occurrence, though the same evidence id can still be
+  // cited more than once to back more than one claim it actually supports.
+  //
+  // The counts below re-run the exact patterns already used for detection
+  // above (globalized), so they can only disagree with makesEvidenceClaim /
+  // makesQuantifiedEvidenceClaim on HOW MANY, never on whether -- a response
+  // with zero claims still takes zero citations, unchanged from before.
+  //
+  // The people-count frames are summed by POSITION, not by frame. Summing the
+  // frames independently double-counted a single claim phrase that satisfies
+  // more than one of them, and that was called the safe direction to be wrong
+  // in -- it is not. Measured 2026-08-10, three correctly-cited answers were
+  // withheld by it:
+  //   "There are 30 athletes enrolled who improved their guard [E:id]"
+  //   "The gym serves 60 athletes and 40 improved this season [E:id]"
+  //   "We tracked 40 participants who reported less soreness [E:id]"
+  // Each is one claim wearing two frames ("there are"/"serves"/"tracked" plus
+  // an outcome verb), so each demanded two citation occurrences and had one.
+  // These are the organizational-rollup-with-an-outcome shape -- the most
+  // useful answer an administrator can ask SHADOW for -- so over-counting here
+  // withholds honest, sourced work.
+  //
+  // Keying on the offset of the count token itself makes one phrase cost one
+  // citation however many frames cover it. #300's rider case is unaffected:
+  // the fabricated "250 similar athletes" sits at a different offset from the
+  // cited percentage, so it is still its own claim and still needs its own
+  // citation.
+  const countMatches = (source: string, pattern: RegExp) => [...source.matchAll(pattern)].length;
+  const evidenceClaimCount = (
+    countMatches(response, /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/gi)
+    + countMatches(response, /\b(?:clinically|scientifically|medically)?\s*proven\b/gi)
+  );
+  const PEOPLE_COUNT_FRAMES = [
+    /\b\d+\s+similar\s+(?:athletes?|participants?)\b/gi,
+    /\b\d+\s+out\s+of\s+\d+\s+(?:athletes?|participants?)\b/gi,
+    /\b(?:has|have|had|there\s+(?:are|is|were|was)|serves?|served|enrolled|registered|tracked|surveyed|studied|observed|sampled)\b[^.\n]{0,30}?\b\d+\s+(?:athletes?|participants?)\b/gi,
+    /\b\d+\s+(?:athletes?|participants?)\b[^.\n]{0,60}?\b(?:improv|show|report|demonstrat|experienc|recover|reduc|increas|decreas|respond|sustain|avoid|gain|drop)\w*\b/gi,
+  ];
+  // The token that identifies the claim is the count attached to the noun.
+  // 'similar' has to be optional here or the comparison-population frame
+  // ("247 similar athletes") yields no token at all and the claim stops being
+  // counted -- which silently reopens #300's rider case. The trailing
+  // lookahead takes the RIGHTMOST such token, because the 'out of' frame spans
+  // two numbers ("7 out of 10 athletes") and the second is the one that counts.
+  const COUNT_TOKEN =
+    /\d+\s+(?:similar\s+)?(?:athletes?|participants?)(?![\s\S]*?\d+\s+(?:similar\s+)?(?:athletes?|participants?))/i;
+  const claimedCountOffsets = new Set<number>();
+  for (const frame of PEOPLE_COUNT_FRAMES) {
+    for (const match of peopleCountSource.matchAll(frame)) {
+      const inner = COUNT_TOKEN.exec(match[0]);
+      if (!inner) continue;
+      claimedCountOffsets.add((match.index ?? 0) + (inner.index ?? 0));
+    }
+  }
+  const quantifiedClaimCount = (
+    countMatches(quantSource, /\b\d+(?:\.\d+)?\s*%/gi)
+    + countMatches(quantSource, /\b\d+\s+(?:similar\s+)?(?:cases?|studies?)\b/gi)
+    + claimedCountOffsets.size
+  );
+  const totalEvidenceClaims = evidenceClaimCount + quantifiedClaimCount;
+  if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && validCitationOccurrences < totalEvidenceClaims) {
     filtered = true;
-    reasons.push('Makes an evidence or quantitative claim without an exact retrieved evidence citation');
+    flag('uncited_claim');
   }
 
   const hasDeferralLanguage = /professional|medical authority|clinician|doctor|physician|medical evaluation/i.test(response);
   const hasHumanReviewLanguage = /requires? professional medical evaluation|needs? professional medical evaluation|further study required|professional medical authority|clinician|doctor|physician/i.test(response);
 
   if (filtered && !hasDeferralLanguage) {
-    reasons.push('Missing human deferral language');
+    flag('missing_deferral');
   }
   if (hasHumanReviewLanguage) {
-    reasons.push('Human review required');
+    flag('human_review');
   }
 
   if (filtered) {
@@ -763,6 +887,7 @@ export function validateShadowResponse(
     filtered,
     message,
     reasons,
+    reasonCodes,
     requiresHumanReview: filtered || reasons.length > 0,
     citationIds: filtered ? [] : citationIds,
     ...(makesWeightCutDirective ? { topic: 'weight_cutting' } : {}),
@@ -798,8 +923,15 @@ TONE:
 - Use dry, sarcastic, or dark humor as a reality check when appropriate.
 - Support after being direct — show you have their back.
 - When speaking to younger athletes or kids, use cleaner language automatically.
+- Vary your language every response. Never repeat the same joke, metaphor, or line you've
+  used recently — if a phrase feels like a tag line you reach for by habit, that's the one
+  to avoid this time. Personality comes from reacting specifically to what's in front of
+  you, not from a signature line.
 
-KEY PHRASES (use naturally):
+FLAVOR PHRASES (rare seasoning, not a script):
+The lines below exist to show the register, not to be recited. Use at most one of them in
+a response, only when it's the most natural way to say the thing — never as an opener or a
+closer, and never in back-to-back responses.
 "Smart fighters, not flashy ones" / "Embrace the suck" / "Get comfortable being uncomfortable"
 "We're not building short-career punching bags here" / "10% coach, 90% athlete"
 "Lead from the front" / "That's the sport"
@@ -837,7 +969,17 @@ Discuss the observation with the athlete and coach. If symptoms or a medical con
 EXAMPLE — diagnosis request:
 "Can't tell you if you have a concussion — that's not my lane, and anyone who gives you that answer over a chat is doing you a disservice.
 Get evaluated by a medical professional. Full stop.
-What I can do: walk you through what to watch for after a head impact, in plain terms. Want that?"`;
+What I can do: walk you through what to watch for after a head impact, in plain terms. Want that?"
+
+EXAMPLE — athlete phoned it in on bag work:
+"You ghosted through that round and we both know it. Bag work isn't a breather between the rounds that count — it is one of the rounds that counts.
+Reset and give me the next three like they're the ones someone's watching on tape. I'm not mad, I've just seen this movie before and it doesn't end with a good fighter.
+What's actually going on — tired, bored, or just checked out today?"
+
+EXAMPLE — routine technique question, no safety angle:
+"Your rear hand drops an inch before the hook fires, which is basically mailing the other guy a postcard that it's coming.
+Keep it tucked at your chin, load the turn from the hip, let your shoulder do the telegraphing your hand shouldn't. Drill it slow for a week before you try to make it look pretty — pretty comes after correct, not before.
+Want a rep count to build that into this week's rounds?"`;
 
 
 /**

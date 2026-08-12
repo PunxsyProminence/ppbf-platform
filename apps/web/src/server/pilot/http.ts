@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { PilotPrincipal } from './auth';
 import type { PilotRole } from './contracts';
 import { resolvePrincipal } from './auth';
+import { PilotError } from './errors';
 import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
 import { MedicalStatusBlockedError } from './shadowRecommendations';
 import { GuardianConsentMissingError } from './guardianConsent';
@@ -69,6 +70,22 @@ export function hiddenNotFound(): NextResponse {
 
 export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   const message = error instanceof Error ? error.message : 'Unknown server error';
+
+  // Checked FIRST, before the three specific types below and before any
+  // message matching. A PilotError carries its own status and asserts, by
+  // being that type, that its message was authored for the caller to read --
+  // which is the property the string-prefix branches further down were trying
+  // to infer from spelling. See errors.ts for why the inference failed.
+  //
+  // This is deliberately additive: every prefix branch below still runs for
+  // un-migrated call sites, so nothing changes for a throw that has not moved
+  // onto the type yet.
+  if (error instanceof PilotError) {
+    return NextResponse.json(
+      { error: error.message, ...(error.code ? { code: error.code } : {}) },
+      { status: error.status },
+    );
+  }
 
   // Checked by type before any message matching. A missing migration or unset
   // environment variable is a server-side availability problem, not a bad

@@ -249,7 +249,7 @@ describe('pilot_safety_flags_medical_human_only', () => {
           flagCode: 'concussion_rest_period',
           triggeredBy: 'shadow_inference',
         }),
-      ).rejects.toThrow('SAFETY_FLAG_MEDICAL_CODE_REQUIRES_HUMAN_ENTRY');
+      ).rejects.toMatchObject({ code: 'SAFETY_FLAG_MEDICAL_CODE_REQUIRES_HUMAN_ENTRY', status: 400 });
     } finally {
       activeClient = null;
       await client.end();
@@ -299,7 +299,7 @@ describe('pilot_safety_flags_external_not_bypassed', () => {
           resolvedByAccountId: COACH_A,
           resolvedByRole: 'coach',
         }),
-      ).rejects.toThrow('SAFETY_FLAG_EXTERNAL_RULE_CANNOT_BYPASS');
+      ).rejects.toMatchObject({ code: 'SAFETY_FLAG_EXTERNAL_RULE_CANNOT_BYPASS', status: 409 });
     } finally {
       activeClient = null;
       await client.end();
@@ -360,7 +360,7 @@ describe('pilot_safety_flags_note_required', () => {
           resolvedByAccountId: COACH_A,
           resolvedByRole: 'coach',
         }),
-      ).rejects.toThrow('SAFETY_FLAG_NOTE_TOO_SHORT');
+      ).rejects.toMatchObject({ code: 'SAFETY_FLAG_NOTE_TOO_SHORT', status: 400 });
     } finally {
       activeClient = null;
       await client.end();
@@ -506,7 +506,7 @@ describe('pilot_rtt_steps_advance', () => {
           advancedByAccountId: COACH_A,
           advancementNote: 'ok',
         }),
-      ).rejects.toThrow('RTT_STEP_ADVANCEMENT_NOTE_REQUIRED');
+      ).rejects.toMatchObject({ code: 'RTT_STEP_ADVANCEMENT_NOTE_REQUIRED', status: 400 });
     } finally {
       activeClient = null;
       await client.end();
@@ -568,7 +568,7 @@ describe('pilot_rtt_steps_advance', () => {
         addReturnToTrainingStep({
           organizationId: ORG_A, planId: plan.plan_id, weekNumber: 1, intensityLabel: 'Duplicate week 1.',
         }),
-      ).rejects.toThrow('RTT_STEP_WEEK_DUPLICATE');
+      ).rejects.toMatchObject({ code: 'RTT_STEP_WEEK_DUPLICATE', status: 409 });
     } finally {
       activeClient = null;
       await client.end();
