@@ -82,9 +82,12 @@ export default function GlobalRoleHeader() {
 
     void (async () => {
       try {
+        // POST: /api/pilot/auth/session only implements POST (no GET export
+        // in its route.ts). RoleSessionGate briefly called this with 'GET'
+        // and 405'd on every check -- see the fix there for the incident.
         const resolution = await loadAuthoritativeRoleSession(
           `${apiBase()}/api/pilot/auth/session`,
-          { signal: controller.signal, method: 'GET' },
+          { signal: controller.signal },
         );
 
         if (controller.signal.aborted) {

@@ -111,9 +111,15 @@ describe('self-heal against the server when no session is cached', () => {
     await waitFor(() => {
       expect(mockLoadAuthoritative).toHaveBeenCalledWith(
         expect.stringContaining('/api/pilot/auth/session'),
-        expect.objectContaining({ method: 'GET' }),
+        expect.anything(),
       );
     });
+
+    // No explicit method: the endpoint only implements POST (RoleSessionGate
+    // learned this the hard way -- see its fix for the 405-as-"logged out"
+    // incident), and loadAuthoritativeRoleSession defaults to POST when the
+    // caller doesn't override it.
+    expect(mockLoadAuthoritative.mock.calls[0][1]).not.toHaveProperty('method');
 
     await waitFor(() => {
       expect(mockPersistAuthoritative).toHaveBeenCalledWith(
