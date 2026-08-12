@@ -91,17 +91,67 @@ to `library_organization_id = organization_id OR library_organization_id =
 Branch: **`claude/production-deployment-description-nu7os9`**, based on `7347b1b`
 (what production runs). Never push to another branch without explicit permission.
 
-- [x] `infra/azure/pilot_slice_postgres_platform_library_scope_migration.sql` — reserved org row, three CHECK guards, the `library_organization_id` split
-- [ ] `apps/web/scripts/pilot-apply-platform-library-scope-migration.mjs` + `package.json` script + `.github/workflows/apply-migrations.yml` (all-loop, allowlist, dropdown). `src/server/pilot/migrationDispatchCoverage.test.ts` enforces all of this — read it first, it is precise about naming and about the `../../../infra/azure` path depth
-- [ ] `src/server/pilot/platformLibraryScope.ts` — one home for `PLATFORM_LIBRARY_ORGANIZATION_ID`, plus a test asserting the TS constant matches the literal in the migration SQL
-- [ ] Widen the read sites (five, not four):
+**Code work on this branch is complete and pushed.** What remains is the
+deploy sequence and the open decisions below.
+
+- [x] `infra/azure/pilot_slice_postgres_platform_library_scope_migration.sql` — reserved org row, three CHECK guards, the `library_organization_id` split, and two CHECKs forbidding an individual-scoped platform row
+- [x] `apps/web/scripts/pilot-apply-platform-library-scope-migration.mjs` + `package.json` script + `.github/workflows/apply-migrations.yml` (all-loop, allowlist, dropdown). Readiness asserts twelve outcomes and names the ones that fail
+- [x] `src/server/pilot/platformLibraryScope.ts` — one home for `PLATFORM_LIBRARY_ORGANIZATION_ID`, with tests binding it to the migration SQL and to the runner
+- [x] Widen the read sites (five, not four):
   - `shadowLibrary.ts` `searchShadowLibrary` semantic path (~line 1004) and lexical path (~line 1093) — `c.organization_id = any($1::text[])`
   - `shadowEvidence.ts` `persistEvidenceBundle` (~line 166) — chunk lookup admits either; the inserted `organization_id` stays the actor's
   - `rabbitHoles.ts` `CITATION_JOIN` (~line 203) — a coach's lesson citing a platform document
   - `shadowConversations.ts` (~line 592) — history join must move to `ei.library_organization_id` or platform-cited messages render with a null source title
-- [ ] Exclude `__platform__` from organization enumerations: `app/api/pilot/platform/organizations/route.ts`, `app/api/pilot/platform/overview/route.ts`, `omegaPlatformContext.ts`, `gearCatalog.ts`, `scripts/pilot-check-multiorg-orphans.mjs`, and the two per-org seeding migrations (`safety_gate_matrix`, `compliance_rule_seeds`)
-- [ ] `auth.ts` `createOrganization` must refuse `__platform__` — it is `on conflict do update`, so a `platform_owner` POST would rename the reserved row and seed it with compliance rules and safety gates
-- [ ] Verify against real Postgres, then run the jest suite
+- [x] Exclude `__platform__` from organization enumerations: `platform/organizations`, `platform/overview`, `omegaPlatformContext`, and the two per-org seeding migrations **plus their runners' readiness queries**, which assert that *every* organization is seeded and would have reported NOT READY forever
+- [x] `auth.ts` `createOrganization` refuses `__platform__` — it is `on conflict do update`, so a `platform_owner` POST would have renamed the reserved row and seeded it with compliance rules and safety gates
+- [x] Verified against Postgres 16 and the pg suites
+
+Two things I got wrong when scoping this, recorded so the next person prices
+them correctly:
+
+- `pilot-check-multiorg-orphans.mjs` needs **no** change. It looks for rows whose
+  `organization_id` has no matching `organizations` row; the reserved org exists,
+  so its library rows are not orphans.
+- `gearCatalog.listPublicStores` needs no change either — it inner-joins
+  `gear_products` and has `having count(*) > 0`, so a shelf with no products is
+  structurally excluded.
+
+### Deploy sequence — ORDER IS LOAD-BEARING
+
+The application code writes `shadow_evidence_items.library_organization_id`. If
+the code reaches an environment before the migration does, **every SHADOW
+evidence bundle insert fails** on a missing column, and SHADOW breaks mid-answer
+rather than degrading. So:
+
+1. `apply-migrations` workflow → staging → migration `platform-library-scope`.
+   Confirm `PILOT PLATFORM LIBRARY SCOPE MIGRATION PASS` in the log.
+2. `deploy-staging` — builds, pushes to ACR, runs the SHADOW E2E gate. Record the
+   digest it publishes.
+3. `apply-migrations` → production → `platform-library-scope`. Same confirmation.
+4. `deploy-production` — promotes the digest from step 2, never rebuilds.
+   `migrations_complete=CONFIRMED` is truthful **only after step 3 has actually
+   passed**, and the owner approves the environment gate.
+
+Rollback is asymmetric and safe in this direction: the migration is additive
+(one new column, new constraints, one reserved row), so old code runs fine
+against the migrated schema. The reverse is not true.
+
+### The pg tests are not part of `npx jest`
+
+Each `.pg.test.ts` boots an embedded Postgres and needs its own npm script
+(`npm run test:migrations:<slug>`) carrying `--experimental-vm-modules` and a
+180 s timeout. A bare `npx jest` sweeps them in and fails ~34 suites by
+construction — do not read that as a regression.
+
+They also **leak a 339 MB data directory in `/tmp` per crashed run**. A few full
+suite runs will fill the disk, after which every pg test fails with `No space
+left on device`, which looks exactly like a code fault. Clean up with
+`rm -rf /tmp/ppbf-*-pg-test-*` between runs.
+
+Real baseline for the non-pg suite: **10 failing tests across 2 suites**
+(`app/api/pilot/shadow/chat/route.test.ts`, `components/buildingMapCoverage.test.ts`),
+both pre-existing and deliberately untouched. Plus 5 eslint
+`react/no-unescaped-entities` errors in three components, also pre-existing.
 
 **Write paths stay org-only.** Do not widen `createShadowLibrarySource/Document/Chunk`,
 `listShadowLibrarySources`, `reviewShadowLibrarySource`,
