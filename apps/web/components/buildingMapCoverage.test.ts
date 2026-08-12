@@ -20,7 +20,22 @@ const APP_DIR = path.resolve(__dirname, '../app');
  * buildingMap.ts's own "WHAT IS DELIBERATELY NOT HERE" note.
  *
  * Adding a route here is a decision, not a formality. If the reason is not one
- * of the two below, it probably wants a door instead.
+ * of the three kinds below, it probably wants a door instead.
+ *
+ * The third kind was added 2026-08-12: a surface that reads NO data at all.
+ * Eight pages were orphaned, and every one of them is real and role-guarded --
+ * which by the rule above argued for doors. Reading them says otherwise: none
+ * performs a single fetch or query, and several present fabricated records as
+ * though they were the gym's (hardcoded athlete names in the coach floor desk,
+ * a mock escalation queue in the director view). The guardian page is the reason
+ * this is not a judgment call: its MEDIA / VIDEO CONSENT checkbox for a minor is
+ * wired to useState and persists nothing, so a guardian who ticks it has been
+ * told they set a consent that was never recorded.
+ *
+ * A door advertises a working surface. Advertising eight that show invented data
+ * -- to boards, guardians and coaches -- is worse than leaving them reachable
+ * only by URL. Each entry below therefore states what is missing, so the door
+ * goes in when the data does, and these are NOT settled the way the ways-in are.
  */
 const EXCLUDED: Record<string, string> = {
   '/': 'the way in -- you arrive through it, not to it',
@@ -30,6 +45,16 @@ const EXCLUDED: Record<string, string> = {
   '/change-pin': 'the way in',
   '/auth/link': 'the way in -- magic-link landing, arrived at from an email',
   '/launch': 'a one-line re-export of /operations, not a second surface',
+
+  // Reads no data. Door goes in when it is wired to something real.
+  '/admin/communications': 'prototype: MediaAndCommsHub holds 13 useState hooks and performs no fetch or query -- nothing it shows or accepts is persisted',
+  '/admin/curriculum': 'prototype: CurriculumProgressionEngine reads no data and saves no progression',
+  '/admin/macro-analytics': 'prototype: MacroCommandCenter charts nothing it queried -- figures are not the gym\'s',
+  '/admin/retro-lab': 'internal QA scaffolding (DevToolsQAConsole) -- a workbench, not a gym surface',
+  '/board/dashboard': 'prototype: BoardViewportSwitcher reads no data; a board must not be shown invented figures',
+  '/coach/operations': 'prototype: FloorOperationsDesk hardcodes sample athletes (clearanceChecklist, attendanceMonitor, matchmakerBoard) -- fabricated athlete records',
+  '/director/dashboard': 'prototype: IncidentCommandCenter renders a mock escalation queue and mock bag assignments -- a safety surface showing invented incidents',
+  '/guardian/dashboard': 'prototype AND unsafe to advertise: GuardianSafetyControls wires a minor\'s media-consent checkbox to useState with no persistence, so ticking it records nothing',
 };
 
 /**
