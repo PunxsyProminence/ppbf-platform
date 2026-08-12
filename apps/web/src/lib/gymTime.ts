@@ -234,3 +234,28 @@ export function formatGymCustom(
   if (!parsed) return null;
   return parsed.toLocaleString(GYM_LOCALE, { ...options, timeZone: GYM_TIME_ZONE });
 }
+
+/**
+ * A number in the gym's locale, for money and counts.
+ *
+ * Not a date function, but it belongs here for the same reason the rest do:
+ * this module exists to stop a viewer's device deciding how a gym's records
+ * read, and grouping separators are decided by locale exactly as timezones are.
+ * A board member opening the grant table on a device set to de-DE saw
+ * "$1.234" where the ledger says "$1,234".
+ *
+ * It also keeps src/lib/gymTimeDrift.test.ts honest. That ratchet matches
+ * /\.toLocale(Date|Time)?String\s*\(/, and the optional group means a bare
+ * Number.prototype.toLocaleString() trips a test written about timezones. The
+ * right answer is to pin the locale rather than to widen the prohibition or
+ * grandfather a file that never had a date bug in it.
+ */
+export function formatGymNumber(
+  value: number | null | undefined,
+  options: Intl.NumberFormatOptions = {},
+): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '';
+  }
+  return new Intl.NumberFormat(GYM_LOCALE, options).format(value);
+}
