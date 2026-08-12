@@ -51,8 +51,17 @@ const PRINT_LAB_SCHEDULE: LabSlot[] = [
   { slot: '17:00-18:00', owner: 'Ops Desk', task: 'Protective insert calibration test' },
 ];
 
+function isNotYetBuilt(status: BuildStatus): boolean {
+  return status === '[INTENDED / NOT YET BUILT]';
+}
+
 export default function GlobalCommandSwitcher() {
   const [showHandoff, setShowHandoff] = useState(false);
+  const [telemetryExpanded, setTelemetryExpanded] = useState(false);
+  const mockSwitcherEnabled = process.env.NEXT_PUBLIC_ENABLE_GLOBAL_COMMAND_SWITCHER === 'true'
+    || process.env.NODE_ENV !== 'production';
+  const telemetryDetailsEnabled = process.env.NEXT_PUBLIC_ENABLE_ZULU_TELEMETRY === 'true'
+    || process.env.NODE_ENV !== 'production';
 
   const zuluTelemetry = useMemo(
     () => [
@@ -87,9 +96,19 @@ export default function GlobalCommandSwitcher() {
     [],
   );
 
+  if (!mockSwitcherEnabled) {
+    return (
+      <section className="bg-[#09090b] font-mono text-slate-300 p-4 border-b border-zinc-800">
+        <div className="mx-auto w-full max-w-[1500px] border border-zinc-800 bg-black rounded-none p-3">
+          <p className="text-sm text-slate-300">Global Command Directory is disabled in this environment.</p>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
-      <div className="mx-auto w-full max-w-[1500px] space-y-4">
+    <section className="bg-[#09090b] font-mono text-slate-300 p-4">
+      <div className="mx-auto w-full max-w-[1500px] space-y-4 pb-52">
         <div className="border border-zinc-800 bg-black rounded-none p-3">
           <p className="text-sm text-[#b91c1c]">⚠️ WARNING: Live access permissions detached. System running in mock-only front-end simulation mode.</p>
         </div>
@@ -98,18 +117,41 @@ export default function GlobalCommandSwitcher() {
           <h2 className="text-sm uppercase tracking-[0.2em] text-slate-200">Global Command Directory</h2>
           <p className="mt-2 text-xs text-zinc-500">12 Mock Accounts - Route Architecture Switcher</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {COMMAND_ROUTES.map((entry) => (
-              <Link
-                key={`${entry.role}-${entry.href}`}
-                href={entry.href}
-                className="border border-zinc-800 hover:bg-zinc-900 rounded-none p-3 text-left transition-colors"
-              >
-                <p className="text-xs text-zinc-500">Role {entry.role}</p>
-                <p className="mt-1 text-sm text-slate-200">{entry.account}</p>
-                <p className="mt-1 text-xs text-zinc-500">{entry.href}</p>
-                <p className="mt-2 text-xs text-slate-300">{entry.status}</p>
-              </Link>
-            ))}
+            {COMMAND_ROUTES.map((entry) => {
+              const disabled = isNotYetBuilt(entry.status);
+              const cardClassName = disabled
+                ? 'border border-zinc-800 rounded-none p-3 text-left opacity-60 cursor-not-allowed'
+                : 'border border-zinc-800 hover:bg-zinc-900 rounded-none p-3 text-left transition-colors';
+
+              if (disabled) {
+                return (
+                  <div
+                    key={`${entry.role}-${entry.href}`}
+                    className={cardClassName}
+                    role="group"
+                    aria-disabled="true"
+                  >
+                    <p className="text-xs text-zinc-500">Role {entry.role}</p>
+                    <p className="mt-1 text-sm text-slate-200">{entry.account}</p>
+                    <p className="mt-1 text-xs text-zinc-500">{entry.href}</p>
+                    <p className="mt-2 text-xs text-slate-300">{entry.status}</p>
+                  </div>
+                );
+              }
+
+              return (
+                <Link
+                  key={`${entry.role}-${entry.href}`}
+                  href={entry.href}
+                  className={cardClassName}
+                >
+                  <p className="text-xs text-zinc-500">Role {entry.role}</p>
+                  <p className="mt-1 text-sm text-slate-200">{entry.account}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{entry.href}</p>
+                  <p className="mt-2 text-xs text-slate-300">{entry.status}</p>
+                </Link>
+              );
+            })}
           </div>
         </section>
 
@@ -156,8 +198,22 @@ export default function GlobalCommandSwitcher() {
 
       <section className="fixed inset-x-0 bottom-0 z-40 bg-black border-t border-zinc-800 text-green-500">
         <div className="mx-auto w-full max-w-[1500px] px-4 py-3">
-          <p className="text-xs">ROUTE: /system_control/pending/</p>
-          <pre className="mt-2 max-h-40 overflow-auto text-xs">{JSON.stringify(zuluTelemetry, null, 2)}</pre>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs">{telemetryDetailsEnabled ? 'ROUTE: /system_control/pending/' : 'ROUTE: telemetry-hidden-in-this-environment'}</p>
+            <button
+              type="button"
+              onClick={() => setTelemetryExpanded((prev) => !prev)}
+              disabled={!telemetryDetailsEnabled}
+              className="border border-zinc-700 bg-black px-2 py-1 text-xs text-green-500 hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {telemetryDetailsEnabled
+                ? (telemetryExpanded ? 'Hide Telemetry' : 'Show Telemetry')
+                : 'Telemetry Disabled'}
+            </button>
+          </div>
+          {telemetryExpanded && telemetryDetailsEnabled ? (
+            <pre className="mt-2 max-h-40 overflow-auto text-xs">{JSON.stringify(zuluTelemetry, null, 2)}</pre>
+          ) : null}
         </div>
       </section>
     </section>
