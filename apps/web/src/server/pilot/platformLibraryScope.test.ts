@@ -85,6 +85,56 @@ describe('the reserved organization id agrees everywhere it is written', () => {
   });
 });
 
+describe('the readiness query matches what Postgres renders, not what the migration says', () => {
+  /**
+   * pg_get_constraintdef does not echo a migration's text back. It re-renders
+   * the PARSED expression, and it renders operators and keywords in UPPER CASE:
+   * the migration says `subject_id is null` and Postgres reports
+   * `(subject_id IS NULL)`.
+   *
+   * A case-sensitive LIKE against the lower-case form therefore never matches,
+   * and the assertion fails against a database where the constraint is present
+   * and entirely correct. That is what happened on the first staging dispatch of
+   * this migration: eleven of twelve assertions passed, platform_unscoped_ready
+   * failed, and the transaction rolled back a migration that had applied fine.
+   *
+   * Identifiers are echoed verbatim, so `%library_organization_id%` and
+   * `%__platform__%` are safe as LIKE. It is the KEYWORDS that get re-cased.
+   */
+  const RERENDERED_KEYWORDS = [
+    'is null',
+    'is not null',
+    'foreign key',
+    'references',
+    'check',
+    'unique',
+    'primary key',
+    'on delete',
+    'and ',
+    'or ',
+    'not ',
+  ];
+
+  const constraintDefPatterns = [
+    ...runnerSource.matchAll(/pg_get_constraintdef\(oid\)\s+(i?like)\s+'([^']*)'/g),
+  ].map(([, operator, pattern]) => ({ operator, pattern }));
+
+  test('the sweep finds the readiness patterns it is meant to guard', () => {
+    // Guards the guard: if this regex stops matching, every case below is
+    // vacuous and the bug it exists for walks straight back in.
+    expect(constraintDefPatterns.length).toBeGreaterThanOrEqual(6);
+  });
+
+  test.each(constraintDefPatterns)(
+    'pattern %p is either case-insensitive or free of re-rendered keywords',
+    ({ operator, pattern }) => {
+      if (operator === 'ilike') return;
+      const offenders = RERENDERED_KEYWORDS.filter((keyword) => pattern.includes(keyword));
+      expect(offenders).toEqual([]);
+    },
+  );
+});
+
 describe('nothing seeds per-gym rows for the reserved organization', () => {
   /**
    * The ratchet. Two migrations seed one row per organization -- default

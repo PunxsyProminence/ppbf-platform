@@ -176,7 +176,13 @@ const READINESS_QUERY = `
           'pilot_shadow_library_chunks_platform_unscoped_check'
         )
         and contype = 'c'
-        and pg_get_constraintdef(oid) like '%subject_id is null%'
+        -- ILIKE, not LIKE. pg_get_constraintdef does not echo the migration's
+        -- text back; it re-renders the parsed expression, and it renders
+        -- operators in upper case. The migration says "subject_id is null" and
+        -- Postgres reports "(subject_id IS NULL)", so the case-sensitive form of
+        -- this predicate could never match and this assertion failed against a
+        -- database where the constraint was present and correct.
+        and pg_get_constraintdef(oid) ilike '%subject_id is null%'
         and pg_get_constraintdef(oid) like '%${PLATFORM_ORGANIZATION_ID}%'
     ) as platform_unscoped_ready,
     (
