@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
 
+import { SCOPE_EXPECTED_COUNTS } from './import-shadow-research.mjs';
+
 /**
  * Read-only diagnostic: where does the SHADOW research corpus actually live, and
  * is any of it retrievable?
@@ -212,18 +214,41 @@ export async function run() {
   }
 
   const platformRow = result.byOrg.find((r) => r.organization_id === PLATFORM_ORGANIZATION_ID);
+  const platformCorpus = result.corpusByOrg
+    .find((r) => r.organization_id === PLATFORM_ORGANIZATION_ID)?.corpus_sources ?? 0;
   const elsewhere = result.corpusByOrg.filter((r) => r.organization_id !== PLATFORM_ORGANIZATION_ID);
+  // A gym legitimately keeps corpus rows AFTER a re-scope: its own policy sources
+  // plus the copied programme source they hang off. So "corpus rows outside the
+  // baseline" is only a problem when the baseline does not hold its own share --
+  // the first version of this check called a correctly re-scoped database broken,
+  // which is worse than not checking, because the next operator believes it.
+  const expected = SCOPE_EXPECTED_COUNTS.platform_baseline.sources;
+  const gymKeeps = SCOPE_EXPECTED_COUNTS.ppbf_policy.sources;
+  const strays = elsewhere.filter((r) => r.corpus_sources > gymKeeps);
 
   console.log('');
   if (!platformRow) {
     console.log('PILOT LIBRARY SCOPE CHECK: NO RESERVED ORGANIZATION');
     console.log('  The platform library scope migration has not been applied to this database.');
-  } else if (elsewhere.length > 0) {
+  } else if (platformCorpus === 0 && elsewhere.length > 0) {
     console.log('PILOT LIBRARY SCOPE CHECK: CORPUS IS OUTSIDE THE BASELINE');
     console.log(
-      '  Corpus rows are held by a gym organization. source_id is a primary key, so the '
-      + 'baseline import CANNOT place the same rows in the reserved organization while these '
-      + 'exist. They must be re-scoped or removed first -- an owner decision, not a retry.',
+      '  Corpus rows are held by a gym organization and the baseline holds none. source_id is '
+      + 'a primary key, so the baseline import CANNOT place the same rows in the reserved '
+      + 'organization while these exist. Re-scope them (pilot:rescope-library-baseline) or '
+      + 'remove them first -- an owner decision, not a retry.',
+    );
+  } else if (platformCorpus > 0 && platformCorpus !== expected) {
+    console.log('PILOT LIBRARY SCOPE CHECK: BASELINE INCOMPLETE');
+    console.log(`  The baseline holds ${platformCorpus} corpus source(s); the corpus assigns it ${expected}.`);
+    if (strays.length > 0) {
+      console.log(`  A gym holds more than the ${gymKeeps} it should keep: ${strays.map((r) => `${r.organization_id}=${r.corpus_sources}`).join(', ')}`);
+    }
+  } else if (platformCorpus === expected) {
+    console.log('PILOT LIBRARY SCOPE CHECK: BASELINE PRESENT AND CORRECTLY SPLIT');
+    console.log(
+      `  ${platformCorpus} corpus source(s) in the baseline, ${platformRow.sources_approved} approved. `
+      + `Gyms keep their own policy material: ${elsewhere.map((r) => `${r.organization_id}=${r.corpus_sources}`).join(', ') || 'none'}.`,
     );
   } else if (platformRow.chunks === 0) {
     console.log('PILOT LIBRARY SCOPE CHECK: BASELINE EMPTY, NOTHING BLOCKING');
