@@ -1,0 +1,161 @@
+name: approve-library-baseline
+
+# Clears the SHADOW evidence review gate for one organization's library.
+#
+# Separate workflow rather than a mode on import-shadow-research.yml, because it
+# is a separate decision by a separate person. The import writes rows nobody can
+# retrieve; this one records that a named platform owner approved and verified
+# them, which is what makes SHADOW answer from them. Bundling the two would let a
+# single dispatch import and attest in one motion, and the attestation is the part
+# that carries a person's name.
+#
+# Dispatchable, and dispatch-only, for the reason in
+# scripts/lib/postgres-write-target.mjs: the alternative is an operator holding a
+# production connection string on a laptop, which is how 361 orphaned rows got
+# into production on 2026-07-18.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Database environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly
+        required: true
+        type: string
+      mode:
+        description: Report what would be approved, or approve it
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      confirm_approval:
+        description: For apply mode, type APPROVE EVIDENCE exactly
+        required: false
+        type: string
+      organization_id:
+        description: >-
+          Whose library to approve. Blank means the reserved platform organization
+          (__platform__), which is the baseline every gym reads. Name a gym to
+          approve that gym's own shelf instead.
+        required: false
+        type: string
+      approver_account_id:
+        description: >-
+          Platform owner recorded as approver AND verifier on every row. Required
+          only when the database holds more than one active platform owner.
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: approve-library-baseline-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  approve:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+      PPBF_LIBRARY_APPROVAL_ORG: ${{ inputs.organization_id }}
+      PPBF_LIBRARY_APPROVAL_ACCOUNT: ${{ inputs.approver_account_id }}
+      PPBF_LIBRARY_APPROVAL_APPLY: ${{ inputs.mode == 'apply' }}
+    steps:
+      - name: Confirm Explicit Target And Apply Intent
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_APPROVAL: ${{ inputs.confirm_approval }}
+        run: |
+          set -euo pipefail
+          test "$TARGET" = "$CONFIRM_TARGET"
+          if [ "$MODE" = "apply" ]; then
+            test "$CONFIRM_APPROVAL" = "APPROVE EVIDENCE"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      # Not conditional on mode: the dry run reads the same database, so it needs
+      # the same connection string, resolved the same way. The sibling workflow
+      # learned this the hard way -- see its comment on the same step.
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Declared Database Target
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) process.exit(2);
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # One command for both modes. The script is read-only unless
+      # PPBF_LIBRARY_APPROVAL_APPLY is exactly 'true', which the job env derives
+      # from the mode input -- so the dry run cannot write even if this step is
+      # later edited carelessly.
+      - name: Approve Library Evidence
+        working-directory: apps/web
+        run: npm run pilot:approve-library-baseline
+
+      - name: Record The Attestation
+        if: always()
+        run: |
+          {
+            echo '### SHADOW library approval'
+            echo ''
+            echo "- target: \`${{ inputs.target }}\`"
+            echo "- mode: \`${{ inputs.mode }}\`"
+            echo "- organization: \`${{ inputs.organization_id || '__platform__' }}\`"
+            echo "- result: \`${{ job.status }}\`"
+            echo ''
+            echo 'On apply, one platform owner is recorded as approver AND verifier on every'
+            echo 'row -- the review pair constraint permits no weaker state. The audit row in'
+            echo 'pilot.audit_events records who, how many, and on what basis.'
+          } >> "$GITHUB_STEP_SUMMARY"

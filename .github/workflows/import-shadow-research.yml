@@ -26,9 +26,23 @@ on:
         description: For apply mode, type IMPORT RESEARCH exactly
         required: false
         type: string
+      scope:
+        description: >-
+          Which slice of the corpus to import. platform_baseline is everything except PPBF's own
+          house documents and always lands in the reserved platform organization. ppbf_policy is
+          those house documents, for one gym. whole_corpus is the pre-split behaviour: everything
+          into one organization.
+        required: true
+        default: platform_baseline
+        type: choice
+        options:
+          - platform_baseline
+          - ppbf_policy
+          - whole_corpus
       organization_id:
         description: >-
-          Owning organization. Leave blank to resolve it from the target app's own
+          Owning organization. Ignored for platform_baseline, which is forced to the reserved
+          platform organization. Otherwise leave blank to resolve it from the target app's own
           ppbf-pilot-default-org-id secret; set it only to import for some other organization
           deliberately.
         required: false
@@ -106,8 +120,25 @@ jobs:
       - name: Resolve Owning Organization
         env:
           SUPPLIED: ${{ inputs.organization_id }}
+          SCOPE: ${{ inputs.scope }}
         run: |
           set -euo pipefail
+          # The platform baseline has exactly one legal home. Importing 1,194 sources into a gym's
+          # own organization would hand that gym a corpus every other gym reads as its private
+          # evidence, and the mistake is one wrong dropdown away -- so the scope decides the
+          # organization here rather than trusting the operator to pair them correctly. A supplied
+          # value that disagrees is refused rather than ignored: silently overriding an explicit
+          # input teaches an operator that the field does something it does not.
+          if [ "$SCOPE" = "platform_baseline" ]; then
+            if [ -n "$SUPPLIED" ] && [ "$SUPPLIED" != "__platform__" ]; then
+              echo "::error::scope platform_baseline imports only into __platform__; clear organization_id or set it to __platform__."
+              exit 1
+            fi
+            echo "PPBF_ORG_ID=__platform__" >> "$GITHUB_ENV"
+            echo "ORG_SOURCE=reserved platform organization (forced by scope)" >> "$GITHUB_ENV"
+            echo "Owning organization forced to the reserved platform organization by scope."
+            exit 0
+          fi
           if [ -n "$SUPPLIED" ]; then
             ORG="$SUPPLIED"
             SOURCE="operator input"
@@ -158,6 +189,18 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      # whole_corpus maps to an UNSET variable, not to the string 'whole_corpus': the importer
+      # treats unset as "no split", and would refuse an unknown scope name.
+      - name: Resolve Corpus Scope
+        env:
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE" != "whole_corpus" ]; then
+            echo "PPBF_RESEARCH_SEED_SCOPE=$SCOPE" >> "$GITHUB_ENV"
+          fi
+          echo "Corpus scope: $SCOPE"
+
       - name: Validate Research Package
         if: inputs.mode == 'dry-run'
         working-directory: apps/web
@@ -175,6 +218,7 @@ jobs:
             echo ''
             echo "- target: \`${{ inputs.target }}\`"
             echo "- mode: \`${{ inputs.mode }}\`"
+            echo "- scope: \`${{ inputs.scope }}\`"
             # Prints the SOURCE, never the value: the organization is masked and may have come
             # from a secret, and a run summary is not a place to undo that.
             echo "- organization resolved from: \`$ORG_SOURCE\`"

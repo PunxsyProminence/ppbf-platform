@@ -108,3 +108,84 @@ describe('import-shadow-research.yml resolves the owning organization', () => {
     expect(block.slice(0, 200)).toContain('required: true');
   });
 });
+
+// --- Corpus scope, added when the platform baseline split shipped ---
+//
+// The scope input decides which slice of the corpus is imported, and for the
+// platform baseline it also decides the organization. Both properties can break
+// while leaving the YAML valid, and both fail silently in the direction that
+// matters: a baseline landing in a gym's own organization hands that gym 1,194
+// sources every other gym reads as private evidence.
+
+describe('import-shadow-research.yml scopes the corpus', () => {
+  it('offers the three scopes and defaults to the platform baseline', () => {
+    const block = raw.slice(raw.indexOf('scope:'), raw.indexOf('organization_id:'));
+    expect(block).toContain('default: platform_baseline');
+    expect(block).toContain('- platform_baseline');
+    expect(block).toContain('- ppbf_policy');
+    expect(block).toContain('- whole_corpus');
+  });
+
+  it('forces the reserved organization for the platform baseline', () => {
+    const block = raw.slice(indexOfStep('Resolve Owning Organization'), indexOfStep('Resolve Declared Database Target'));
+    expect(block).toContain('if [ "$SCOPE" = "platform_baseline" ]; then');
+    expect(block).toContain('echo "PPBF_ORG_ID=__platform__" >> "$GITHUB_ENV"');
+  });
+
+  // Refused, not silently overridden: an input that quietly does nothing is
+  // worse than one that errors, because the operator keeps believing it works.
+  it('refuses an organization_id that disagrees with the platform baseline', () => {
+    const block = raw.slice(indexOfStep('Resolve Owning Organization'), indexOfStep('Resolve Declared Database Target'));
+    expect(block).toContain('!= "__platform__"');
+    expect(block).toMatch(/::error::scope platform_baseline imports only into __platform__/);
+  });
+
+  // whole_corpus is the importer's UNSET default, not a value it accepts --
+  // passing the literal string would trip UNKNOWN_SEED_SCOPE and fail the run.
+  it('maps whole_corpus to an unset variable rather than a literal', () => {
+    const block = raw.slice(indexOfStep('Resolve Corpus Scope'), indexOfStep('Validate Research Package'));
+    expect(block).toContain('if [ "$SCOPE" != "whole_corpus" ]; then');
+    expect(block).toContain('echo "PPBF_RESEARCH_SEED_SCOPE=$SCOPE" >> "$GITHUB_ENV"');
+  });
+
+  // Same $GITHUB_ENV trap as the organization: a resolve step after its
+  // consumers leaves the YAML valid and silently imports the whole corpus.
+  it('resolves the scope BEFORE the steps that read it', () => {
+    const resolve = indexOfStep('Resolve Corpus Scope');
+    expect(resolve).toBeLessThan(indexOfStep('Validate Research Package'));
+    expect(resolve).toBeLessThan(indexOfStep('Import Research Package'));
+  });
+});
+
+// --- The approval workflow ---
+
+const APPROVAL_WORKFLOW = path.join(REPO_ROOT, '.github/workflows/approve-library-baseline.yml');
+const approvalRaw = fs.readFileSync(APPROVAL_WORKFLOW, 'utf8').replace(/\r\n/g, '\n');
+
+describe('approve-library-baseline.yml', () => {
+  // The one property that makes the dry run trustworthy: the script writes only
+  // when this is exactly 'true', and the job derives it from the mode rather than
+  // letting a step set it.
+  it('derives the apply flag from the mode input', () => {
+    expect(approvalRaw).toContain("PPBF_LIBRARY_APPROVAL_APPLY: ${{ inputs.mode == 'apply' }}");
+  });
+
+  it('requires the target to be retyped and the approval phrase for apply', () => {
+    expect(approvalRaw).toContain('test "$TARGET" = "$CONFIRM_TARGET"');
+    expect(approvalRaw).toContain('test "$CONFIRM_APPROVAL" = "APPROVE EVIDENCE"');
+  });
+
+  // Same lesson as the sibling workflow: the dry run reads the same database, so
+  // gating the login on mode breaks the mode an operator tries first.
+  it('does not gate the Azure login on mode', () => {
+    const login = approvalRaw.indexOf('- name: Authenticate via Azure OIDC');
+    const nextStep = approvalRaw.indexOf('- name: Resolve Declared Database Target');
+    expect(login).toBeGreaterThan(-1);
+    expect(approvalRaw.slice(login, nextStep)).not.toContain('if: inputs.mode');
+  });
+
+  it('resolves the declared target before approving', () => {
+    expect(approvalRaw.indexOf('- name: Resolve Declared Database Target'))
+      .toBeLessThan(approvalRaw.indexOf('- name: Approve Library Evidence'));
+  });
+});
