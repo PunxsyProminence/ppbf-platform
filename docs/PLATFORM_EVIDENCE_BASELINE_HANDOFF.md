@@ -178,6 +178,56 @@ holds in the same query: that coach sees 1,173 chunks and **zero** PPBF policy
 rows, while PPBF sees 1,193 (1,173 platform + its own 20). Capability coverage
 resolves as a join — `injury_head_impact_risk` 267 chunks / 260 sources.
 
+### BLOCKED — the corpus is already on a gym's shelf
+
+The staging baseline import was **refused on 2026-08-12**, and this is the live
+blocker:
+
+    SHADOW RESEARCH IMPORT FAIL
+    CROSS_TENANT_ID_COLLISION:shadow_library_sources:src_003ec55ec16f050a
+
+Nothing was written -- the importer runs in one transaction and
+`assertNoCrossTenantIds` precedes the upserts. **This is not a retry-able
+failure.** `shadow_library_sources.source_id` is the primary key, so a corpus row
+exists in exactly one organization, ever.
+
+`npm run pilot:check-library-scope` (also `check-database` →
+`library-scope`, read-only, safe against production) reported staging:
+
+| organization_id | sources | approved | docs | ready | chunks | capabilities |
+| --- | --- | --- | --- | --- | --- | --- |
+| `__platform__` | 0 | 0 | 0 | 0 | 0 | 0 |
+| `ppbf-default-org` | 1219 | 5 | 19 | 5 | 1237 | 34 |
+
+Corpus rows (`src_` keys): **1,214, all in `ppbf-default-org`**. The colliding row
+is there, `peer_reviewed`, `pending_review`/`unverified`. So the whole corpus was
+imported into the gym's own shelf before the platform/gym split existed, and
+`__platform__` is empty exactly as recorded above -- what was never recorded is
+where the corpus actually went.
+
+Reading the arithmetic: 1219 = 1214 corpus + 5 API-created (`source_<uuid>`), and
+19 docs = 14 corpus + 5. The **5 approved/ready rows are the non-corpus ones** --
+someone's manual test evidence. **Every one of the 1,214 corpus sources is
+unapproved**, so nothing retrievable depends on them and nothing can.
+
+**Two ways out, and it is the owner's call:**
+
+1. **Delete the gym's corpus copy, then import as built.** Scope the delete to
+   `source_id like 'src\_%'` and still-pending rows: the 5 approved API rows
+   survive, nothing retrievable is lost, and the proven tooling (split, document
+   copies, count assertions) does the rest. Recommended.
+2. **Re-scope in place** (`UPDATE ... set organization_id = '__platform__'`).
+   Preserves ids, but it still has to create the 6 gym-scoped document copies and
+   repoint the 20 policy chunks, because retrieval joins chunks to documents on
+   `organization_id` -- so it is bespoke SQL against a live database to preserve
+   rows that are worthless as they stand.
+
+**Production state is unknown at the time of writing.** The same read-only check
+against production waits on the production environment's required-reviewer gate,
+which the agent that triggered it must not self-approve. Find out before planning
+production: if any production corpus row is approved or cited, option 1 is off the
+table there and re-scoping is the only safe route.
+
 ### Three things found on the way, worth not rediscovering
 
 1. **A third gate nobody had recorded.**
