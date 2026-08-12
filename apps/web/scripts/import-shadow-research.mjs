@@ -706,6 +706,45 @@ async function verifyRequirements(client, rows, organizationId) {
   }
 }
 
+/**
+ * Writes ONLY the capability map.
+ *
+ * Needed because of an ordering trap. The corpus was imported into staging and
+ * production long before `feeder_tracks` existed, so those 30 capability rows
+ * carry the column's empty default -- and `pilot-rescope-library-baseline.mjs`
+ * moves rows between organizations without backfilling them, so re-scoping alone
+ * leaves the capability axis empty.
+ *
+ * The obvious fix -- re-run the whole import, which is idempotent -- does not
+ * work once the baseline is approved: `upsertSources` sets `approval_state` from
+ * the seed file on conflict, and `shadow_library_sources_review_pair_check`
+ * forbids a pending row that still carries approval stamps. So the import fails
+ * closed rather than silently un-approving 1,194 sources, which is the right
+ * behaviour and also means it cannot be used as a backfill afterwards.
+ *
+ * The capability map has no approval columns, so writing just that table is safe
+ * at any point. Run the full import BEFORE approving where you can; use this
+ * where approval already happened.
+ */
+export async function importCapabilityMapOnly(client, seed, organizationId) {
+  await client.query('begin');
+  try {
+    await assertNoCrossTenantIds(
+      client, 'shadow_library_capability_map', 'capability_map_id',
+      seed.capabilityMap.map((r) => r.capability_map_id), organizationId,
+    );
+    await upsertCapabilityMap(client, seed.capabilityMap);
+    await verifyCount(
+      client, 'shadow_library_capability_map', 'capability_map_id',
+      seed.capabilityMap.map((r) => r.capability_map_id), organizationId, seed.capabilityMap.length,
+    );
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  }
+}
+
 export async function importSeedPackage(client, seed, organizationId) {
   await client.query('begin');
   try {
@@ -783,6 +822,8 @@ export async function run() {
   }
 
   const apply = process.argv.includes('--apply');
+  // Writes one table instead of five. See importCapabilityMapOnly.
+  const capabilityMapOnly = process.argv.includes('--capability-map-only');
   const organizationId = required(process.env.PPBF_ORG_ID, 'MISSING_PPBF_ORG_ID');
   const accountId = required(process.env.SEED_ACCOUNT_ID, 'MISSING_SEED_ACCOUNT_ID');
   const seedDir = process.env.PPBF_RESEARCH_SEED_DIR
@@ -820,9 +861,13 @@ export async function run() {
       counts: Object.fromEntries(Object.entries(seed).map(([name, rows]) => [name, rows.length])),
       approval_state: 'pending_review',
       embeddings_generated: false,
+      tables_written: capabilityMapOnly ? ['shadow_library_capability_map'] : 'all',
     };
 
-    if (apply) await importSeedPackage(client, seed, organizationId);
+    if (apply) {
+      if (capabilityMapOnly) await importCapabilityMapOnly(client, seed, organizationId);
+      else await importSeedPackage(client, seed, organizationId);
+    }
     console.log(JSON.stringify(summary, null, 2));
     console.log(apply ? 'SHADOW RESEARCH IMPORT PASS' : 'SHADOW RESEARCH DRY-RUN PASS');
   } finally {

@@ -22,6 +22,18 @@ on:
         options:
           - dry-run
           - apply
+      tables:
+        description: >-
+          all writes sources, documents, chunks, the capability map and requirements.
+          capability_map_only writes just the capability map -- use it to backfill feeder_tracks on a
+          baseline that is ALREADY APPROVED, because a full import would set approval_state from the
+          seed file and fail closed on the review-pair constraint.
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - capability_map_only
       confirm_import:
         description: For apply mode, type IMPORT RESEARCH exactly
         required: false
@@ -209,7 +221,15 @@ jobs:
       - name: Import Research Package
         if: inputs.mode == 'apply'
         working-directory: apps/web
-        run: npm run seed:shadow:research -- --apply
+        env:
+          TABLES: ${{ inputs.tables }}
+        run: |
+          set -euo pipefail
+          if [ "$TABLES" = "capability_map_only" ]; then
+            npm run seed:shadow:research -- --apply --capability-map-only
+          else
+            npm run seed:shadow:research -- --apply
+          fi
 
       - name: Record Human Review Boundary
         run: |
@@ -219,6 +239,7 @@ jobs:
             echo "- target: \`${{ inputs.target }}\`"
             echo "- mode: \`${{ inputs.mode }}\`"
             echo "- scope: \`${{ inputs.scope }}\`"
+            echo "- tables: \`${{ inputs.tables }}\`"
             # Prints the SOURCE, never the value: the organization is masked and may have come
             # from a secret, and a run summary is not a place to undo that.
             echo "- organization resolved from: \`$ORG_SOURCE\`"
