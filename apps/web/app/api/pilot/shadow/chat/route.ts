@@ -15,6 +15,7 @@ import {
 } from '@/src/server/pilot/shadowChat';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
+import { isPlatformLibraryOrganization } from '@/src/server/pilot/platformLibraryScope';
 import {
   getOrCreateShadowUserProfile,
   updateShadowUserProfile,
@@ -66,6 +67,7 @@ import {
 import { budgetConversationHistory } from '@/src/server/pilot/shadowConversationHistory';
 import {
   citedEvidenceQuality,
+  hasRetrievableLibraryEvidence,
   publicEvidenceCitations,
   retrieveShadowEvidenceBundle,
   unavailableShadowEvidenceBundle,
@@ -157,7 +159,22 @@ export function resolveShadowProviderTimeoutMs(
 
 const MAX_MESSAGE_LENGTH = 12_000;
 const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
-const V21_HALLUCINATION_BLOCKER_RESPONSE = '⚠️ CRITICAL LOG ERROR: Source parameters unavailable. AI hallucination blocker active. Generating missing parameter request trace string for Head Coach Jason.';
+/**
+ * Shown when the Library holds no retrievable evidence for anyone.
+ *
+ * This replaced a string reading '⚠️ CRITICAL LOG ERROR: Source parameters
+ * unavailable. AI hallucination blocker active. Generating missing parameter
+ * request trace string for Head Coach Jason.' Three things were wrong with it:
+ * it read as a crash rather than a decision, it leaked internal machinery to a
+ * coach who can act on none of it, and it named PPBF's head coach to every
+ * asker in every gym on the platform.
+ *
+ * It now fires only for the misconfiguration case -- see the answer path below,
+ * where a question that merely matched nothing gets a labelled answer instead.
+ * That is why this copy can afford to name an operator action: by the time
+ * anyone reads it, the operator is the only person who can help.
+ */
+const EMPTY_LIBRARY_RESPONSE = 'No verified evidence is loaded in the Library yet, so SHADOW will not answer from guesswork. This is a platform setup step, not something you did — ask an administrator to load and approve the evidence baseline.';
 
 function indicatesInsufficientContext(response: string): boolean {
   const normalized = response.toLowerCase();
@@ -976,17 +993,52 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       message, userId, organizationId, userRole, athleteId, unlockState, conversationHistory,
     });
 
-    // v21.1 Hallucination Blocker: intercept non-fallback generated output
-    // when no evidence chunks are available or when the model explicitly
-    // signals insufficient context.
-    const canApplyHallucinationBlocker = providerState !== 'filtered' && providerState !== 'queued';
+    // An answer with no evidence behind it: either nothing was retrieved, or the
+    // model itself said it lacked context.
+    //
+    // This used to be replaced wholesale with a blocker string. The owner's
+    // decision (2026-08-12) is to serve the answer and label it instead, and the
+    // label already exists: deriveEvidenceTier returns RESEARCH_NEEDED whenever
+    // evidenceAvailability is 'unavailable', and app/shadow/page.tsx already
+    // renders that tier in red as "Evidence: Research Needed". So the change is
+    // to stop overriding the text, not to invent a warning.
+    //
+    // What still guards this path -- because withholding the answer no longer
+    // does -- is validateShadowResponse, which runs below and is independent of
+    // any of this. With nothing retrieved, allowedEvidenceIds is empty, so
+    // `uncited_claim` filters any evidence or quantitative claim and
+    // `unauthorized_citation` filters any citation at all; `diagnostic_claim`,
+    // `prescriptive_claim`, `treatment_directive`, `clearance_claim` and
+    // `weight_cut_directive` are unaffected by evidence and keep filtering
+    // regardless. What survives to a reader is qualitative, uncited, deferring
+    // guidance, marked as unsourced.
+    const canServeUnsupported = providerState !== 'filtered' && providerState !== 'queued';
     const noRetrievedEvidence = evidenceBundle.items.length === 0;
     const modelSignaledInsufficientContext = indicatesInsufficientContext(llmResponse);
-    const hallucinationBlocked = canApplyHallucinationBlocker
+    const unsupportedAnswer = canServeUnsupported
       && (noRetrievedEvidence || modelSignaledInsufficientContext);
-    const interceptedLlmResponse = hallucinationBlocked
-      ? V21_HALLUCINATION_BLOCKER_RESPONSE
-      : llmResponse;
+
+    // The one case that still refuses. An empty bundle has two very different
+    // causes and the same appearance, so they are separated by asking the
+    // database rather than by guessing -- and only when a bundle came back empty,
+    // so the answered path pays nothing for it. Retrieval being degraded is not
+    // the same as the Library being empty: a lookup that failed says nothing
+    // about what is loaded, and treating it as emptiness would tell every asker
+    // to go find an administrator over a transient fault.
+    const libraryEmpty = noRetrievedEvidence
+      && !evidenceBundle.retrievalDegraded
+      && !(await hasRetrievableLibraryEvidence({ organizationId }));
+
+    if (libraryEmpty) {
+      // Operator-facing, because no asker can act on it. Named without the
+      // organization id: it is masked as a secret everywhere else, and the scope
+      // is the part that says where to look.
+      console.error('SHADOW library holds no retrievable evidence', {
+        scope: isPlatformLibraryOrganization(organizationId) ? 'platform_baseline' : 'organization',
+      });
+    }
+
+    const interceptedLlmResponse = libraryEmpty ? EMPTY_LIBRARY_RESPONSE : llmResponse;
 
     // Step 7: Validate response BEFORE displaying to user
     const contextEvidenceIds = roleBasedContext.evidenceIds ?? [];
@@ -1006,7 +1058,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       .filter((citationId) => !nonBundleEvidenceIdSet.has(citationId));
     const finalResponse = responseValidation.message;
     const citations = publicEvidenceCitations(evidenceBundle, responseValidation.citationIds);
-    const state: ShadowResponseState = (hallucinationBlocked || responseValidation.filtered)
+    // `libraryEmpty`, not `unsupportedAnswer`: an unsourced answer is now served,
+    // so it is a real answer ('ok') carrying the RESEARCH_NEEDED tier. Forcing
+    // 'filtered' here would withhold it again and undo the decision above, and
+    // would also mark every no-match turn as requiring human review -- see
+    // persistedRequiresHumanReview below, which ORs on this state.
+    const state: ShadowResponseState = (libraryEmpty || responseValidation.filtered)
       ? 'filtered'
       : providerState;
     let messageId = transientMessageId;
@@ -1182,9 +1239,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       requiresHumanReview: responseRequiresHumanReview,
       highRiskTopic: responseTopic,
       evidenceTier: persistedEvidenceTier,
-      // Present only when the evidence lookup itself failed -- the tier
-      // legend's "no verified evidence yet" must not cover for an outage.
-      evidenceNotice: evidenceBundle.retrievalDegraded ? 'EVIDENCE_RETRIEVAL_UNAVAILABLE' : undefined,
+      // Three distinct situations, and the tier alone cannot tell them apart --
+      // all three grade RESEARCH_NEEDED:
+      //   * the lookup itself failed, so the grade is not a statement about the
+      //     Library at all (checked first: an outage must never be reported as
+      //     "nothing matched", which would read as a settled fact);
+      //   * the Library has evidence but none matched, and the answer is being
+      //     served anyway, unsourced -- the case the owner chose to allow, and
+      //     the one a reader most needs told plainly;
+      //   * the Library is empty, which the refusal copy already explains in the
+      //     answer body, so it needs no second notice.
+      evidenceNotice: evidenceBundle.retrievalDegraded
+        ? 'EVIDENCE_RETRIEVAL_UNAVAILABLE'
+        : (unsupportedAnswer && !libraryEmpty ? 'NO_VERIFIED_EVIDENCE' : undefined),
       handoff: persistedHandoff,
       unlockHints: buildShadowUnlockHints(unlockState),
       tier: effectiveTier,

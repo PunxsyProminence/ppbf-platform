@@ -19,7 +19,7 @@ import { classifyRequest } from '@/src/server/pilot/shadowClassifier';
 import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
-import { retrieveShadowEvidenceBundle } from '@/src/server/pilot/shadowEvidence';
+import { hasRetrievableLibraryEvidence, retrieveShadowEvidenceBundle } from '@/src/server/pilot/shadowEvidence';
 import { getBoardSummary } from '@/src/server/pilot/boardSummary';
 import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
 import {
@@ -150,6 +150,11 @@ jest.mock('@/src/server/pilot/shadowMetrics', () => ({ getGrowthMetrics: jest.fn
 
 jest.mock('@/src/server/pilot/shadowEvidence', () => ({
   retrieveShadowEvidenceBundle: jest.fn(),
+  // Defaults to true: "the Library has evidence, this question just did not match
+  // any of it". That is the ordinary case, and the case every test written before
+  // the empty-Library split assumed -- an unsourced answer is served and labelled,
+  // not refused. The refusal path stubs this false explicitly.
+  hasRetrievableLibraryEvidence: jest.fn(async () => true),
   unavailableShadowEvidenceBundle: jest.fn(() => ({
     bundleId: null,
     availability: 'unavailable',
@@ -203,6 +208,7 @@ const mockExecuteHeavyBagSync = jest.mocked(executeHeavyBagSync);
 const mockExecuteHeavyBagAsync = jest.mocked(executeHeavyBagAsync);
 const mockIsShadowWorkerEnabled = jest.mocked(isShadowWorkerEnabled);
 const mockRetrieveEvidence = jest.mocked(retrieveShadowEvidenceBundle);
+const mockHasRetrievableEvidence = jest.mocked(hasRetrievableLibraryEvidence);
 const mockBoardSummary = jest.mocked(getBoardSummary);
 const mockGrowthMetrics = jest.mocked(getGrowthMetrics);
 const originalFetch = global.fetch;
@@ -243,6 +249,7 @@ beforeEach(() => {
   mockLoadConversationMessages.mockResolvedValue([]);
   mockQueueHumanReview.mockResolvedValue('review-1');
   mockEnforceRateLimit.mockResolvedValue(undefined);
+  mockHasRetrievableEvidence.mockResolvedValue(true);
   mockRetrieveEvidence.mockResolvedValue({
     bundleId: '00000000-0000-4000-8000-000000000200',
     availability: 'unavailable',
@@ -1204,5 +1211,113 @@ describe('background session types via the job worker', () => {
     expect(payload.state).toBe('ok');
     expect(payload.sessionType).toBe('quick_round');
     expect(mockExecuteHeavyBagAsync).not.toHaveBeenCalled();
+  });
+});
+
+// The owner's 2026-08-12 decision on the hallucination blocker: an answer with no
+// evidence behind it is served and labelled rather than replaced, EXCEPT when the
+// Library holds nothing for anyone, which is a platform fault no asker can act on.
+//
+// These two cases arrive at this code identically -- an empty evidence bundle --
+// so the only thing separating them is hasRetrievableLibraryEvidence. That makes
+// it worth testing in both directions rather than trusting the branch by reading.
+describe('unsupported answers and an empty Library', () => {
+  function answerWith(content: string) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content } }] }),
+    }) as unknown as typeof fetch;
+  }
+
+  test('serves the answer, labelled, when the Library has evidence but none matched', async () => {
+    answerWith('Keep the rounds short and check in with your coach on the plan.');
+
+    const response = await POST(postRequest({ message: 'How should we structure the round?' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    // 'ok', not 'filtered': the answer is genuinely served. Forcing 'filtered'
+    // here is what the blocker used to do, and it also dragged every no-match
+    // turn into the human-review queue.
+    expect(payload.state).toBe('ok');
+    expect(payload.response).toContain('Keep the rounds short');
+    expect(payload.evidenceTier).toBe('RESEARCH_NEEDED');
+    expect(payload.evidenceNotice).toBe('NO_VERIFIED_EVIDENCE');
+  });
+
+  test('never returns the old blocker copy, which read as a crash and named one gym\'s coach', async () => {
+    answerWith('Some general guidance with no citation.');
+
+    const response = await POST(postRequest({ message: 'What does the evidence show?' }));
+    const payload = await response.json();
+
+    expect(payload.response).not.toContain('CRITICAL LOG ERROR');
+    expect(payload.response).not.toContain('hallucination blocker');
+    // The name mattered: it went to every asker in every gym on the platform.
+    expect(payload.response).not.toContain('Jason');
+  });
+
+  test('refuses instead, with honest copy, when the Library holds nothing for anyone', async () => {
+    mockHasRetrievableEvidence.mockResolvedValue(false);
+    answerWith('Confident guidance drawn from nothing at all.');
+
+    const response = await POST(postRequest({ message: 'How should we structure the round?' }));
+    const payload = await response.json();
+
+    expect(payload.state).toBe('filtered');
+    expect(payload.response).not.toContain('Confident guidance');
+    expect(payload.response).toContain('No verified evidence is loaded in the Library yet');
+    // Tells the reader whose problem it is. The old copy told them a log error.
+    expect(payload.response).toContain('ask an administrator');
+    // The refusal body already explains itself; a second notice would be noise.
+    expect(payload.evidenceNotice).toBeUndefined();
+  });
+
+  test('does not call the Library probe when evidence was retrieved', async () => {
+    mockRetrieveEvidence.mockResolvedValue({
+      bundleId: '00000000-0000-4000-8000-000000000201',
+      availability: 'available',
+      items: [{
+        evidenceId: 'ev-1',
+        token: 'E1',
+        sourceTitle: 'A peer-reviewed source',
+        documentName: 'Track A1',
+        evidenceClass: 'VERIFIED EVIDENCE',
+        authorityTier: 2,
+        boxingSpecificity: 'boxing_specific',
+      }],
+      allowedEvidenceIds: ['ev-1'],
+      context: 'EVIDENCE',
+    } as never);
+    answerWith('An answer.');
+
+    await POST(postRequest({ message: 'What does the evidence show?' }));
+
+    // The probe is an extra query, and it exists only to explain an EMPTY
+    // bundle. A turn that retrieved evidence must not pay for it.
+    expect(mockHasRetrievableEvidence).not.toHaveBeenCalled();
+  });
+
+  test('treats a degraded lookup as an outage, not as an empty Library', async () => {
+    // A failed lookup says nothing about what is loaded. Reporting it as
+    // emptiness would send every asker to find an administrator over a
+    // transient fault -- and the outage notice has to win, because the tier
+    // alone cannot tell the two apart.
+    mockRetrieveEvidence.mockResolvedValue({
+      bundleId: null,
+      availability: 'unavailable',
+      items: [],
+      allowedEvidenceIds: [],
+      context: 'EVIDENCE RETRIEVAL UNAVAILABLE',
+      retrievalDegraded: true,
+    } as never);
+    answerWith('General guidance.');
+
+    const response = await POST(postRequest({ message: 'How should we structure the round?' }));
+    const payload = await response.json();
+
+    expect(mockHasRetrievableEvidence).not.toHaveBeenCalled();
+    expect(payload.state).toBe('ok');
+    expect(payload.evidenceNotice).toBe('EVIDENCE_RETRIEVAL_UNAVAILABLE');
   });
 });

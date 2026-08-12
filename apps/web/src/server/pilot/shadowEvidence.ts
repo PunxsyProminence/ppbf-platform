@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import type { ActorIdentity } from './access';
-import { withTransaction } from './db';
+import { queryOne, withTransaction } from './db';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { searchShadowLibrary, type ShadowLibrarySearchResult } from './shadowLibrary';
 
@@ -59,6 +59,54 @@ function buildUnavailableContext(): string {
   return `## VERIFIED EVIDENCE BUNDLE
 No approved, verified, fully indexed evidence was available in the authorized organization and subject scope.
 Do not describe any claim as research-supported or evidence-based. Clearly label unsupported claims as RESEARCH NEEDED or EVIDENCE UNAVAILABLE.`;
+}
+
+/**
+ * Whether ANY evidence is retrievable for this asker at all.
+ *
+ * Distinguishes two situations that look identical from an empty evidence
+ * bundle, and that call for opposite responses:
+ *
+ *   * the Library holds retrievable evidence but none of it matched this
+ *     question -- ordinary, and the asker's problem to reword;
+ *   * the Library holds none, for anyone, on any question -- a platform
+ *     misconfiguration (the corpus was never imported, or never approved), and
+ *     nobody asking a question can do a thing about it.
+ *
+ * Only called when a bundle comes back empty, so it costs nothing on the
+ * answered path.
+ *
+ * The predicate is the retrieval gate from the search queries below with the
+ * matching and scope clauses removed -- deliberately not a `count(*)`: the
+ * question is "any", and `exists` stops at the first row instead of walking
+ * 1,173 of them to compute a number nobody reads.
+ */
+export async function hasRetrievableLibraryEvidence(input: {
+  organizationId: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ any_evidence: boolean }>(
+    `select exists (
+       select 1
+         from pilot.shadow_library_chunks c
+         join pilot.shadow_library_documents d
+           on d.document_id = c.document_id
+          and d.organization_id = c.organization_id
+         join pilot.shadow_library_sources s
+           on s.source_id = c.source_id
+          and s.organization_id = c.organization_id
+        where c.organization_id = any($1::text[])
+          and s.status = 'active'
+          and s.approval_state = 'approved'
+          and s.verification_state = 'verified'
+          and not coalesce(s.retrieval_suppressed, false)
+          and d.ingest_state = 'indexed'
+          and d.index_completed_at is not null
+          and d.approval_state = 'approved'
+          and d.verification_state = 'verified'
+     ) as any_evidence`,
+    [libraryRetrievalOrganizationIds(input.organizationId)],
+  );
+  return row?.any_evidence === true;
 }
 
 export function unavailableShadowEvidenceBundle(): ShadowEvidenceBundle {

@@ -269,12 +269,37 @@ export, and including the baseline would export it as if it were gym evidence.
 5. ~~Whether to exclude the ~20 repo-doc sources.~~ **Decided: they go to PPBF's
    own gym, not the baseline (owner, 2026-08-12).** Implemented as
    `PPBF_RESEARCH_SEED_SCOPE`; see the scope split below.
-6. **The hallucination blocker copy** (`V21_HALLUCINATION_BLOCKER_RESPONSE`,
-   `chat/route.ts:160`) — user-facing text that reads like a system crash,
-   duplicated at `IncidentCommandCenter.tsx:135` where it renders
-   **unconditionally** as a pulsing red banner, and style-hooked at
-   `app/shadow/page.tsx:1261`. Whether an empty library should block all answers
-   is the owner's call.
+6. ~~**The hallucination blocker copy.**~~ **Decided by the owner 2026-08-12:
+   answer and label, except when the Library is empty.** Shipped.
+   - The blocker was never an empty-library message. It fired whenever *this
+     question* retrieved nothing, so it was SHADOW's permanent "I don't know"
+     face — and it read as a crash, leaked internals, and named PPBF's head
+     coach to every asker in every gym.
+   - The label already existed and was already computed: `deriveEvidenceTier`
+     returns `RESEARCH_NEEDED` whenever availability is `unavailable`, and
+     `app/shadow/page.tsx` renders it in red as "Evidence: Research Needed". So
+     the change was to stop overriding the answer text, plus a plain-sentence
+     notice (`NO_VERIFIED_EVIDENCE`) saying the answer is unsourced — a tier
+     badge does not tell a coach not to act on what they just read.
+   - What guards the path now that withholding does not:
+     `validateShadowResponse`, which is independent of evidence and keeps
+     `uncited_claim` (any evidence or quantitative claim without an exact
+     retrieved citation), `unauthorized_citation`, `diagnostic_claim`,
+     `prescriptive_claim`, `treatment_directive`, `clearance_claim` and
+     `weight_cut_directive`. With nothing retrieved, `allowedEvidenceIds` is
+     empty, so anything substantive still filters. What reaches a reader is
+     qualitative, uncited, deferring guidance, marked unsourced.
+   - An empty Library still refuses, with copy that names an operator action,
+     and logs `SHADOW library holds no retrievable evidence` with a scope. The
+     two cases look identical from an empty bundle, so
+     `hasRetrievableLibraryEvidence` (shadowEvidence.ts) separates them — called
+     only when a bundle came back empty. A degraded lookup is explicitly NOT
+     emptiness: a failed query says nothing about what is loaded.
+   - `IncidentCommandCenter.tsx`'s unconditional pulsing banner is gone.
+   - **This fixed 9 of the 10 pre-existing test failures.** The chat route's own
+     suite already expected answers to be served; the blocker had been failing
+     them. `npm test` is now 5,013 passing with one failure left, in
+     `components/buildingMapCoverage.test.ts` (orphaned routes, item 8).
 7. ~~**Account cleanup.**~~ **Tooling shipped 2026-08-12; the run has not been
    made.** `npm run pilot:cleanup-accounts` reports every account with a
    disposition and a reason, and writes nothing until

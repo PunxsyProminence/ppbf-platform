@@ -1272,6 +1272,17 @@ function ShadowChatPageContent() {
                       Evidence lookup temporarily unavailable -- graded without it.
                     </p>
                   ) : null}
+                  {/* Said in a sentence, not left to the tier badge. "Research
+                      Needed" describes the evidence; it does not tell a coach
+                      that what they just read is unsourced and should not be
+                      acted on alone. Amber rather than the tier's red, because
+                      this is an answer to weigh, not a refusal. */}
+                  {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' ? (
+                    <p className="mt-1 text-xs leading-relaxed text-[#b45309]">
+                      No verified Library evidence matched this question. Treat the answer above as
+                      unsourced -- confirm it with a coach before acting on it.
+                    </p>
+                  ) : null}
                   {msg.type === 'shadow' && msg.citations?.length ? (
                     <div className="mt-2 border-t border-zinc-800 pt-2">
                       <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Sources</p>

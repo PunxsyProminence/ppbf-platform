@@ -132,8 +132,6 @@ const MOCK_HEAVY_BAG_ASSIGNMENTS: HeavyBagAssignment[] = [
   { station: 'Bag-4', athlete_id: 'ath-018', athlete_name: 'K. Young', duration_min: 6, contact_level: 'light' },
 ];
 
-const HALLUCINATION_BLOCKER = '⚠️ CRITICAL LOG ERROR: Source parameters unavailable. AI hallucination blocker active. Generating missing parameter request trace string for Head Coach Jason.';
-
 function asOptionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
@@ -157,8 +155,6 @@ export default function IncidentCommandCenter() {
         <h1 className="mt-2 text-lg uppercase tracking-[0.12em] text-slate-200">Incident Command Center / Facility Operations</h1>
         <p className="mt-2 text-sm text-slate-400">Open escalation queue: {queuedCount}</p>
       </header>
-
-      <p className="mb-4 animate-pulse text-[#b91c1c] text-sm">{HALLUCINATION_BLOCKER}</p>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <section className="border border-zinc-800 rounded-none bg-black p-4">
