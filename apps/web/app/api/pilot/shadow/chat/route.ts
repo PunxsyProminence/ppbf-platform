@@ -108,6 +108,7 @@ export interface ShadowChatResponse {
   handoff?: string;
   unlockHints?: ShadowUnlockHint[];
   error?: string;
+  requestCorrelationId?: string;
 }
 
 // Fallback responses for critical topics
@@ -486,8 +487,8 @@ function resolveSessionType(input: {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<ShadowChatResponse>> {
+  const requestCorrelationId = resolveRequestCorrelationId(request);
   try {
-    const requestCorrelationId = resolveRequestCorrelationId(request);
     // Authenticate via session cookie (consistent with all other SHADOW routes)
     const principal = await requirePrincipal(request);
     requireRole(principal, ['admin', 'coach', 'athlete', 'parent', 'organization_admin', 'staff', 'volunteer', 'platform_owner']);
@@ -514,6 +515,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           requiresHumanReview: false,
           evidenceTier: 'RESEARCH_NEEDED',
           handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+          requestCorrelationId,
           error: 'Request body must be valid JSON.',
         },
         { status: 400 },
@@ -577,6 +579,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           requiresHumanReview: false,
           evidenceTier: 'RESEARCH_NEEDED',
           handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+          requestCorrelationId,
           error: `Request validation failed: ${invalidFieldReason}.`,
         },
         { status: 400 },
@@ -682,6 +685,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           tier: effectiveTier,
           complexity: classification.complexity,
+          requestCorrelationId,
           error: 'The requested SHADOW session type is not available from chat.',
         },
         { status: 400 },
@@ -707,6 +711,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           tier: effectiveTier,
           complexity: classification.complexity,
+          requestCorrelationId,
           error: 'Background worker unavailable.',
         },
         { status: 503 },
@@ -749,6 +754,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           handoff: resolveHandoff({ requiresHumanReview: true, topic: requestValidation.topic }),
           tier: effectiveTier,
           complexity: classification.complexity,
+          requestCorrelationId,
           error: requestValidation.error,
         },
         { status: 400 },
@@ -1263,6 +1269,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           requiresHumanReview: false,
           evidenceTier: 'RESEARCH_NEEDED',
           handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+          requestCorrelationId,
           error: 'Rate limit exceeded.',
         },
         {
@@ -1283,6 +1290,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           requiresHumanReview: false,
           evidenceTier: 'RESEARCH_NEEDED',
           handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+          requestCorrelationId,
           error: 'Not found',
         },
         { status: 404 },
@@ -1309,6 +1317,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         requiresHumanReview: false,
         evidenceTier: 'RESEARCH_NEEDED',
         handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+        requestCorrelationId,
         error: payload.error,
       },
       { status },
