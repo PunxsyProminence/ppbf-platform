@@ -5,9 +5,43 @@ import type { BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
 export { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
 
 export const ROLE_SESSION_KEY = 'ppbf-role-session';
+// Pre-authoritative-cache key, dead since the client role cache stopped being
+// keyed on the raw role string. Nothing has written it in a long time, but a
+// browser that received a write before that never has it cleaned up on its
+// own -- see purgeLegacyRoleSessionStorage.
+const LEGACY_CLUB_ROLE_KEY = 'ppbf-club-role';
 export const ROLE_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const ROLE_SESSION_CHANGE_EVENT = 'ppbf-role-session-change';
 let cachedRoleSessionValue: RoleSession | null = null;
+
+/**
+ * Best-effort removal of localStorage keys older builds wrote for the role
+ * session. The authoritative session is the HttpOnly server cookie plus the
+ * in-memory cache above; nothing reads either legacy key back, so their only
+ * effect is a browser carrying stale data forever with nothing to clean it up.
+ *
+ * Deliberately called ONLY from the write/transition paths below (a fresh
+ * login, an explicit logout) rather than from readRoleSession or
+ * getRoleSessionSnapshot: the latter is the getSnapshot function passed to
+ * useSyncExternalStore, which React may invoke repeatedly per render to check
+ * for tearing, and a getSnapshot with a storage side effect is exactly the
+ * category of bug that crashed sign-in before the snapshot fix above. Every
+ * active session eventually logs in or out, which is enough to converge a
+ * browser that still carries the old key to clean.
+ */
+function purgeLegacyRoleSessionStorage(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage?.removeItem(ROLE_SESSION_KEY);
+    window.localStorage?.removeItem(LEGACY_CLUB_ROLE_KEY);
+  } catch {
+    // Storage is not part of the auth contract; a blocked or full store must
+    // never turn a valid login or logout into a client-side failure.
+  }
+}
 
 export interface RoleSession {
   role: ClubRole;
@@ -129,6 +163,7 @@ export function createPersistentRoleSession(role: ClubRole, boardSeat?: unknown)
     ...(role === 'board' && isBoardSeatSlug(boardSeat) ? { boardSeat } : {}),
   };
   cachedRoleSessionValue = session;
+  purgeLegacyRoleSessionStorage();
 
   notifyRoleSessionChange();
   return session;
@@ -144,6 +179,7 @@ export function getRoleSessionSnapshot(): RoleSession | null {
 
 export function clearRoleSession() {
   cachedRoleSessionValue = null;
+  purgeLegacyRoleSessionStorage();
 
   notifyRoleSessionChange();
 }
