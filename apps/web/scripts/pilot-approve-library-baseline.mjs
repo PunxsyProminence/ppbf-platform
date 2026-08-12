@@ -294,7 +294,16 @@ async function main() {
               updated_at = now()
         where d.organization_id = $1
           and d.approval_state = 'pending_review'
-          and d.ingest_state <> 'indexed'
+          -- "not fully indexed", not "not indexed". A document can sit at
+          -- ingest_state='indexed' with index_completed_at NULL: the review-pair
+          -- constraint permits it (its pending branch constrains only the
+          -- approval columns), and staging's 14 corpus documents were in exactly
+          -- that state. The first version tested ingest_state <> 'indexed'
+          -- alone, so those rows matched neither this statement nor the approval
+          -- below, which requires index_completed_at -- they fell through both
+          -- and the run reported success having approved 1,194 sources and no
+          -- documents at all. Retrieval needs both, so the baseline stayed dark.
+          and (d.ingest_state <> 'indexed' or d.index_completed_at is null)
           and exists (
             select 1 from pilot.shadow_library_chunks c
              where c.document_id = d.document_id
@@ -328,6 +337,28 @@ async function main() {
     // widening it is its own migration. entity_type carries the specificity, and
     // details carry what an auditor actually needs -- who attested, on what
     // basis, and how many rows.
+    // The plan said what it would do; refuse to commit if it did not do it.
+    //
+    // Without this the run above committed with documents_indexed=0 against
+    // would_index=14 and called itself a success, which is the worst possible
+    // outcome: a half-approved library reads as a finished one, and the next
+    // person to look sees a green run. A mismatch here means the predicates and
+    // the counting query disagree about the same rows, which is a bug in this
+    // script, not a state the operator should be asked to interpret.
+    const documentShortfall = approvableDocuments - documents.rowCount;
+    const sourceShortfall = counts.sources_pending - sources.rowCount;
+    if (documentShortfall !== 0 || sourceShortfall !== 0) {
+      await client.query('rollback');
+      refuse('APPLY_DID_NOT_MATCH_PLAN', {
+        sources_planned: counts.sources_pending,
+        sources_approved: sources.rowCount,
+        documents_planned: approvableDocuments,
+        documents_indexed: indexed.rowCount,
+        documents_approved: documents.rowCount,
+      });
+      return;
+    }
+
     await client.query(
       `insert into pilot.audit_events
          (event_type, actor_account_id, actor_role, organization_id, entity_type, entity_id, details)
