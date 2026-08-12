@@ -178,6 +178,41 @@ holds in the same query: that coach sees 1,173 chunks and **zero** PPBF policy
 rows, while PPBF sees 1,193 (1,173 platform + its own 20). Capability coverage
 resolves as a join — `injury_head_impact_risk` 267 chunks / 260 sources.
 
+### STAGING COMPLETE — 2026-08-12, SHADOW is lit there
+
+The blocker below is resolved and staging is green end to end. Runs, in order:
+
+| Step | Run | Result |
+| --- | --- | --- |
+| `apply-migrations` = `all` | 31635299640 | success — so `schema_migrations_complete=CONFIRMED` is a fact, not an assumption |
+| `rescope-library-baseline` dry-run | 31636365893 | success |
+| `rescope-library-baseline` apply | 31636456564 | success |
+| `approve-library-baseline` (`__platform__`) | 31636567652 | success |
+| `approve-library-baseline` (`ppbf-default-org`) | 31636660837 | success |
+| `check-database` = `library-scope` | 31636769049 | 1,194 corpus sources in `__platform__`, approved/verified; gym keeps 21 |
+| `deploy-staging` + SHADOW E2E gate | 31636928365 | success — **every step, gate included, nothing skipped** |
+
+The row the failed import collided on now reads
+`organization_id=__platform__ type=peer_reviewed approved/verified`.
+
+**Production is next and is in the same pre-re-scope state** (1,215 sources, 15
+documents, 1,222 chunks under `ppbf-default-org`, **0 approved, 0 ready** — its
+SHADOW is dark for exactly this reason). The same sequence applies. Two things
+differ:
+
+1. Every production dispatch waits on the production environment's
+   required-reviewer gate, which the agent that triggered it must not
+   self-approve.
+2. `deploy-production` needs `release_digest` — the exact `sha256:` from the
+   staging run above (its step summary, or the `staging-image-digest` artifact).
+   The agent proxy blocks artifact blob downloads, so read it from the run page.
+
+Staging's second active platform owner, `gate_probe_platform_owner`, is still
+there: privileged gate residue, and one for the account cleanup rather than this
+work. `approve-library-baseline` refuses on it (`AMBIGUOUS_PLATFORM_OWNER`) unless
+an approver is named, which is why the runs above pass
+`approver_account_id=admin@punxsyprominence.org`.
+
 ### BLOCKED — the corpus is already on a gym's shelf
 
 The staging baseline import was **refused on 2026-08-12**, and this is the live
