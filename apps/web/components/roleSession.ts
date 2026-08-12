@@ -7,14 +7,6 @@ export { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRole
 export const ROLE_SESSION_KEY = 'ppbf-role-session';
 export const ROLE_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const ROLE_SESSION_CHANGE_EVENT = 'ppbf-role-session-change';
-// roleRoutes lists the roles that get a self-service landing card; it has no
-// platform_owner entry by design. But mapPilotRoleToClubRole legitimately
-// returns 'platform_owner' and createPersistentRoleSession stores it, so the
-// parse set must accept it too -- otherwise the very next read rejected the
-// owner's own session and erased it, blanking the global header.
-const clubRoles = new Set<ClubRole>([...roleRoutes.map((item) => item.role), 'platform_owner']);
-
-let cachedRoleSessionRaw: string | null | undefined;
 let cachedRoleSessionValue: RoleSession | null = null;
 
 export interface RoleSession {
@@ -54,23 +46,8 @@ export type AuthoritativeRoleSessionResolution =
         | 'privileged_auth_required'
         | 'pin_change_required'
         | 'server_error';
+      statusCode?: number;
     };
-
-function isClubRole(value: unknown): value is ClubRole {
-  return typeof value === 'string' && clubRoles.has(value as ClubRole);
-}
-
-function getRoleSessionStorage(): Storage | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
 
 function notifyRoleSessionChange(): void {
   if (typeof window === 'undefined') {
@@ -80,54 +57,29 @@ function notifyRoleSessionChange(): void {
   try {
     window.dispatchEvent(new Event(ROLE_SESSION_CHANGE_EVENT));
   } catch {
-    // Browser storage/events are a display cache only. Authentication remains
-    // authoritative in the HttpOnly server session.
+    // Best-effort change notification for subscribed UI only.
   }
 }
 
-function parseRoleSession(raw: string | null): RoleSession | null {
-  if (!raw) {
+function sanitizeRoleSession(session: RoleSession | null): RoleSession | null {
+  if (!session) {
     return null;
   }
 
-  try {
-    const parsed = JSON.parse(raw) as Partial<RoleSession>;
-    if (!isClubRole(parsed.role)) {
-      return null;
-    }
-
-    if (typeof parsed.expiresAt !== 'number' || !Number.isFinite(parsed.expiresAt) || parsed.expiresAt <= Date.now()) {
-      return null;
-    }
-
-    // An unrecognized seat is dropped rather than rejecting the session. The
-    // seat is display identity layered on the role; discarding the whole
-    // cache over it would sign a legitimately authenticated board member out.
-    return {
-      role: parsed.role,
-      expiresAt: parsed.expiresAt,
-      ...(isBoardSeatSlug(parsed.boardSeat) ? { boardSeat: parsed.boardSeat } : {}),
-    };
-  } catch {
+  if (typeof session.expiresAt !== 'number' || !Number.isFinite(session.expiresAt) || session.expiresAt <= Date.now()) {
     return null;
   }
+
+  return {
+    role: session.role,
+    expiresAt: session.expiresAt,
+    ...(session.role === 'board' && isBoardSeatSlug(session.boardSeat) ? { boardSeat: session.boardSeat } : {}),
+  };
 }
 
 export function readRoleSession(): RoleSession | null {
-  const storage = getRoleSessionStorage();
-  if (!storage) {
-    return null;
-  }
-
-  let raw: string | null;
-  try {
-    raw = storage.getItem(ROLE_SESSION_KEY);
-  } catch {
-    return null;
-  }
-
-  const session = parseRoleSession(raw);
-  if (!session && raw) {
+  const session = sanitizeRoleSession(cachedRoleSessionValue);
+  if (!session && cachedRoleSessionValue) {
     clearRoleSession();
   }
   return session;
@@ -141,87 +93,33 @@ export function createPersistentRoleSession(role: ClubRole, boardSeat?: unknown)
     // role's cache keeps exactly the two keys it has always had.
     ...(role === 'board' && isBoardSeatSlug(boardSeat) ? { boardSeat } : {}),
   };
-  const raw = JSON.stringify(session);
-
-  cachedRoleSessionRaw = raw;
   cachedRoleSessionValue = session;
-
-  const storage = getRoleSessionStorage();
-  if (storage) {
-    try {
-      storage.setItem(ROLE_SESSION_KEY, raw);
-      storage.removeItem('ppbf-club-role');
-    } catch {
-      // A blocked/full localStorage must never turn a valid server login into
-      // a client-side login failure.
-    }
-  }
 
   notifyRoleSessionChange();
   return session;
 }
 
 export function getRoleSessionSnapshot(): RoleSession | null {
-  const storage = getRoleSessionStorage();
-  if (!storage) {
-    return null;
-  }
-
-  let raw: string | null;
-  try {
-    raw = storage.getItem(ROLE_SESSION_KEY);
-  } catch {
-    return null;
-  }
-
-  if (
-    raw === cachedRoleSessionRaw
-    && cachedRoleSessionValue
-    && cachedRoleSessionValue.expiresAt > Date.now()
-  ) {
-    return cachedRoleSessionValue;
-  }
-
-  cachedRoleSessionRaw = raw;
-  cachedRoleSessionValue = parseRoleSession(raw);
-  if (!cachedRoleSessionValue && raw) {
+  const session = sanitizeRoleSession(cachedRoleSessionValue);
+  if (!session && cachedRoleSessionValue) {
     clearRoleSession();
   }
-  return cachedRoleSessionValue;
+  return session;
 }
 
 export function clearRoleSession() {
-  cachedRoleSessionRaw = null;
   cachedRoleSessionValue = null;
-
-  const storage = getRoleSessionStorage();
-  if (storage) {
-    try {
-      storage.removeItem(ROLE_SESSION_KEY);
-      storage.removeItem('ppbf-club-role');
-    } catch {
-      // Best-effort display cache cleanup only.
-    }
-  }
 
   notifyRoleSessionChange();
 }
 
 export function subscribeRoleSession(listener: () => void) {
-  const onStorage = (event: StorageEvent) => {
-    if (!event.key || event.key === ROLE_SESSION_KEY) {
-      listener();
-    }
-  };
-
   if (typeof window !== 'undefined') {
-    window.addEventListener('storage', onStorage);
     window.addEventListener(ROLE_SESSION_CHANGE_EVENT, listener);
   }
 
   return () => {
     if (typeof window !== 'undefined') {
-      window.removeEventListener('storage', onStorage);
       window.removeEventListener(ROLE_SESSION_CHANGE_EVENT, listener);
     }
   };
@@ -316,11 +214,13 @@ export async function loadAuthoritativeRoleSession(
   options: {
     signal?: AbortSignal;
     fetcher?: typeof fetch;
+    method?: 'GET' | 'POST';
   } = {},
 ): Promise<AuthoritativeRoleSessionResolution> {
   const fetcher = options.fetcher ?? fetch;
+  const method = options.method ?? 'POST';
   const response = await fetcher(url, {
-    method: 'POST',
+    method,
     credentials: 'include',
     cache: 'no-store',
     signal: options.signal,
@@ -330,6 +230,7 @@ export async function loadAuthoritativeRoleSession(
     return {
       ok: false,
       reason: response.status >= 500 ? 'server_error' : 'unauthenticated',
+      statusCode: response.status,
     };
   }
 

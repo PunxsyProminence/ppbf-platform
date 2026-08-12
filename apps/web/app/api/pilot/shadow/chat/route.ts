@@ -157,6 +157,19 @@ export function resolveShadowProviderTimeoutMs(
 
 const MAX_MESSAGE_LENGTH = 12_000;
 const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
+const V21_HALLUCINATION_BLOCKER_RESPONSE = '⚠️ CRITICAL LOG ERROR: Source parameters unavailable. AI hallucination blocker active. Generating missing parameter request trace string for Head Coach Jason.';
+
+function indicatesInsufficientContext(response: string): boolean {
+  const normalized = response.toLowerCase();
+  return (
+    /\bnot\s+enough\s+context\b/.test(normalized)
+    || /\binsufficient\s+context\b/.test(normalized)
+    || /\b(?:do\s+not|don't|cannot|can\s*not|can't)\s+have\s+enough\s+(?:context|information)\b/.test(normalized)
+    || /\b(?:i\s+)?(?:do\s+not|don't|cannot|can\s*not|can't)\s+(?:determine|answer)\b.{0,40}\b(?:provided|available)\s+context\b/.test(normalized)
+    || /\bneed\s+more\s+context\b/.test(normalized)
+    || /\b(?:do\s+not|don't|cannot|can\s*not|can't)\s+have\s+enough\s+information\b/.test(normalized)
+  );
+}
 
 /**
  * A reasoning deployment spends completion budget on reasoning tokens before it
@@ -963,9 +976,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       message, userId, organizationId, userRole, athleteId, unlockState, conversationHistory,
     });
 
+    // v21.1 Hallucination Blocker: intercept non-fallback generated output
+    // when no evidence chunks are available or when the model explicitly
+    // signals insufficient context.
+    const canApplyHallucinationBlocker = providerState !== 'filtered' && providerState !== 'queued';
+    const noRetrievedEvidence = evidenceBundle.items.length === 0;
+    const modelSignaledInsufficientContext = indicatesInsufficientContext(llmResponse);
+    const hallucinationBlocked = canApplyHallucinationBlocker
+      && (noRetrievedEvidence || modelSignaledInsufficientContext);
+    const interceptedLlmResponse = hallucinationBlocked
+      ? V21_HALLUCINATION_BLOCKER_RESPONSE
+      : llmResponse;
+
     // Step 7: Validate response BEFORE displaying to user
     const contextEvidenceIds = roleBasedContext.evidenceIds ?? [];
-    const responseValidation = validateShadowResponse(llmResponse, {
+    const responseValidation = validateShadowResponse(interceptedLlmResponse, {
       allowedEvidenceIds: [
         ...evidenceBundle.allowedEvidenceIds,
         ...platformEvidenceIds,
@@ -981,7 +1006,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       .filter((citationId) => !nonBundleEvidenceIdSet.has(citationId));
     const finalResponse = responseValidation.message;
     const citations = publicEvidenceCitations(evidenceBundle, responseValidation.citationIds);
-    const state: ShadowResponseState = responseValidation.filtered ? 'filtered' : providerState;
+    const state: ShadowResponseState = (hallucinationBlocked || responseValidation.filtered)
+      ? 'filtered'
+      : providerState;
     let messageId = transientMessageId;
     let conversationId: string | undefined;
 

@@ -40,7 +40,7 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
       try {
         const resolution = await loadAuthoritativeRoleSession(
           `${apiBase()}/api/pilot/auth/session`,
-          { signal: controller.signal },
+          { signal: controller.signal, method: 'GET' },
         );
 
         if (controller.signal.aborted) {
@@ -59,6 +59,12 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
           // page the server still allows.
           if (resolution.reason === 'pin_change_required') {
             router.replace('/change-pin');
+            return;
+          }
+
+          if (resolution.reason === 'unauthenticated' || resolution.statusCode === 401) {
+            clearRoleSession();
+            router.replace('/login');
             return;
           }
 

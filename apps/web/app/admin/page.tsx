@@ -7,6 +7,7 @@ import RevenueFundingCenter from '@/components/RevenueFundingCenter';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
+import GlobalCommandSwitcher from '@/src/components/core/GlobalCommandSwitcher';
 import {
   allTrackIds,
   athleteProfiles,
@@ -1260,6 +1261,8 @@ export default function AdminCapabilitiesPage() {
             </div>
           </div>
         </header>
+
+        <GlobalCommandSwitcher />
 
         <section className="border-b border-[color:var(--hide-600)] bg-[var(--hide-900)] px-6 py-3 text-[length:var(--t-sm)] text-[color:var(--bone-400)]">
           Capability, assignment, and gym feature changes are saved to your organization&apos;s record as you make them. Jason approval is still required for platform-wide changes.

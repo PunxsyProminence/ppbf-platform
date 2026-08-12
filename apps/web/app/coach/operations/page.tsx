@@ -2,15 +2,15 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
 
-import CoachReviewQueue from '@/src/components/coach/CoachReviewQueue';
+import FloorOperationsDesk from '@/src/components/coach/FloorOperationsDesk';
 import { requirePrincipal, requireRole } from '@/src/server/pilot/http';
 
 export const dynamic = 'force-dynamic';
 
-export default async function CoachReviewQueuePage() {
+export default async function CoachOperationsPage() {
   try {
     const incomingHeaders = await headers();
-    const request = new NextRequest('http://localhost/coach/review-queue', {
+    const request = new NextRequest('http://localhost/coach/operations', {
       headers: new Headers(incomingHeaders),
     });
 
@@ -21,8 +21,8 @@ export default async function CoachReviewQueuePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#09090b]">
-      <CoachReviewQueue />
+    <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
+      <FloorOperationsDesk />
     </main>
   );
 }
