@@ -1,24 +1,10 @@
-import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
-import { NextRequest } from 'next/server';
-
 import CoachReviewQueue from '@/src/components/coach/CoachReviewQueue';
-import { requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CoachReviewQueuePage() {
-  try {
-    const incomingHeaders = await headers();
-    const request = new NextRequest('http://localhost/coach/review-queue', {
-      headers: new Headers(incomingHeaders),
-    });
-
-    const principal = await requirePrincipal(request);
-    requireRole(principal, ['coach']);
-  } catch {
-    redirect('/login');
-  }
+  await requirePageRole(['coach']);
 
   return (
     <main className="min-h-screen bg-[#09090b]">
