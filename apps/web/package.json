@@ -49,6 +49,7 @@
     "pilot:apply-scheduler-race": "node scripts/pilot-apply-scheduler-race-migration.mjs",
     "session:cleanup": "tsx scripts/pilot-cleanup-sessions.ts",
     "pilot:cleanup-deleted-data": "node scripts/pilot-cleanup-deleted-data.mjs",
+    "pilot:cleanup-accounts": "node scripts/pilot-cleanup-accounts.mjs",
     "seed:shadow:library": "node scripts/seed-shadow-library.mjs",
     "seed:shadow:research": "node scripts/import-shadow-research.mjs",
     "seed:shadow:research:dry": "node scripts/import-shadow-research.mjs --dry-run",

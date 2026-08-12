@@ -191,14 +191,25 @@ export, and including the baseline would export it as if it were gym evidence.
    **unconditionally** as a pulsing red banner, and style-hooked at
    `app/shadow/page.tsx:1261`. Whether an empty library should block all answers
    is the owner's call.
-7. **Account cleanup.** The owner wants only `Admin@punxsyprominence.org`
-   (platform / Omega admin), `ppbf@punxsyprominence.org` (gym 1),
-   `Danielle@punxsyprominence.org` (gym 2), possibly `coach@punxsyprominence.org`.
-   Unresolved: `neeko@punxsyprominence.org` is the owner's own active
-   `organization_admin` of `audit-test-gym3` and is not on that list;
-   `jason.c.neale@outlook.com` and `admin-local-probe` are active; 28 inactive
-   test-residue accounts exist; `Danielle@` capital-D vs an active lowercase row.
-   Do not delete accounts without confirming each one.
+7. ~~**Account cleanup.**~~ **Tooling shipped 2026-08-12; the run has not been
+   made.** `npm run pilot:cleanup-accounts` reports every account with a
+   disposition and a reason, and writes nothing until
+   `PPBF_ACCOUNT_CLEANUP_APPLY=true`. Policy is in
+   `apps/web/scripts/lib/account-cleanup-plan.mjs`, unit-tested by
+   `accountCleanupPlan.test.ts`; the runner is
+   `apps/web/scripts/pilot-cleanup-accounts.mjs`. Keeps `Admin@` (also on
+   `is_platform_owner`, independent of the list), `ppbf@`, `Danielle@`, `coach@`.
+   Retires only inactive residue. Holds, pending the owner naming each in
+   `PPBF_ACCOUNT_CLEANUP_ALSO`: `neeko@punxsyprominence.org` (the owner's own
+   login, and the only active admin of `audit-test-gym3` — needs
+   `PPBF_ACCOUNT_CLEANUP_ALLOW_ORPHAN_ORGS` too), `jason.c.neale@outlook.com`,
+   `admin-local-probe`. Parents are held with no override, because
+   `pilot.cascade_parent_deletion` would soft-delete their linked athletes. The
+   `Danielle@`/`danielle@` pair both normalise to a keep-list address, so both
+   are kept and reported as a collision — resolving it is a rename or a merge,
+   not a retirement. Everything is soft delete; hard deletion stays with
+   `pilot-cleanup-deleted-data.mjs` and its retention window. **Still the
+   owner's:** whether `coach@` stays, and each held identity.
 8. Nav entries for 8 orphaned routes; flipping the ledger probe's
    `continue-on-error` (now justified by three clean runs); a bulk-approval
    mechanism for the 1,214 `pending_review` sources.
