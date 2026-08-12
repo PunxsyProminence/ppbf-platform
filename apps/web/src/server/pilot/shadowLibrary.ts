@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
 import { createShadowResearchRequirement, listShadowResearchRequirements } from './shadowResearch';
@@ -929,6 +930,22 @@ export async function reviewShadowLibraryDocument(input: {
   return row;
 }
 
+/**
+ * Retrieval reads two shelves: the caller's own organization, and the platform
+ * evidence baseline.
+ *
+ * Both queries below therefore filter `c.organization_id = any($1::text[])`
+ * rather than `= $1`. The joins keep restating `d.organization_id =
+ * c.organization_id`, which is what makes the widening safe: a platform chunk
+ * can only ever pair with a platform document and a platform source, so
+ * admitting a second organization to the candidate set cannot produce a row
+ * assembled from two different tenants.
+ *
+ * Only the reads widen. Every write in this module stays on a single
+ * organization_id, and listApprovedGlobalEvidenceForResearchBridge stays
+ * organization-only on purpose -- it is an export, and including the baseline
+ * would ship it out as though the gym had produced it.
+ */
 export async function searchShadowLibrary(input: {
   organizationId: string;
   actorAccountId: string;
@@ -1001,7 +1018,7 @@ export async function searchShadowLibrary(input: {
          from pilot.shadow_library_chunks c
          join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
          join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
-         where c.organization_id = $1
+         where c.organization_id = any($1::text[])
            and s.status = 'active'
            and s.approval_state = 'approved'
            and s.verification_state = 'verified'
@@ -1018,7 +1035,12 @@ export async function searchShadowLibrary(input: {
            )
          order by s.authority_tier asc, c.created_at asc
          limit 200`,
-        [input.organizationId, normalized.scope, normalized.effectiveSubjectId, currentEmbeddingModel],
+        [
+          libraryRetrievalOrganizationIds(input.organizationId),
+          normalized.scope,
+          normalized.effectiveSubjectId,
+          currentEmbeddingModel,
+        ],
       );
 
       const ranked = candidates
@@ -1090,7 +1112,7 @@ export async function searchShadowLibrary(input: {
      from pilot.shadow_library_chunks c
      join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
      join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
-      where c.organization_id = $1
+      where c.organization_id = any($1::text[])
         and s.status = 'active'
         and s.approval_state = 'approved'
         and s.verification_state = 'verified'
@@ -1121,7 +1143,7 @@ export async function searchShadowLibrary(input: {
      order by score desc, s.authority_tier asc, c.ordinal asc, c.created_at asc
       limit $6`,
     [
-      input.organizationId,
+      libraryRetrievalOrganizationIds(input.organizationId),
       normalized.scope,
       normalized.effectiveSubjectId,
       wholeQuery,

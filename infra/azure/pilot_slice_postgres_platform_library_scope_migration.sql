@@ -232,6 +232,43 @@ begin
   end if;
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- 4. The baseline is never about one person.
+-- ---------------------------------------------------------------------------
+--
+-- "non athlete/user/individual specific" is the defining property of the
+-- baseline, so it is a constraint rather than an instruction to whoever runs the
+-- importer next.
+--
+-- subject_id carries no foreign key on either table, so a platform row seeded
+-- with a real gym athlete's id would be accepted, and searchShadowLibrary's
+-- subject branch would then surface it to exactly that athlete -- baseline
+-- material masquerading as a finding about them. Section 2 cannot prevent this
+-- one: it stops a principal existing in the reserved organization, and this row
+-- would be written by an operator, not a principal.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pilot_shadow_library_documents_platform_unscoped_check'
+      and conrelid = to_regclass('pilot.shadow_library_documents')
+  ) then
+    alter table pilot.shadow_library_documents
+      add constraint pilot_shadow_library_documents_platform_unscoped_check
+      check (organization_id <> '__platform__' or subject_id is null);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pilot_shadow_library_chunks_platform_unscoped_check'
+      and conrelid = to_regclass('pilot.shadow_library_chunks')
+  ) then
+    alter table pilot.shadow_library_chunks
+      add constraint pilot_shadow_library_chunks_platform_unscoped_check
+      check (organization_id <> '__platform__' or subject_id is null);
+  end if;
+end $$;
+
 -- The three replacement foreign keys are satisfied by the tenant-identity
 -- unique indexes the shadow-evidence migration already created; no new unique
 -- index is needed. This index supports the reverse direction -- "what cites
@@ -239,5 +276,3 @@ end $$;
 -- across tenants rather than within one.
 create index if not exists idx_shadow_evidence_items_library_owner
   on pilot.shadow_evidence_items(library_organization_id, source_id);
-
-commit;

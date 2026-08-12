@@ -137,6 +137,7 @@
     "seed:transfer-claims": "node scripts/seed-transfer-claims.mjs",
     "pilot:apply-competence-cohorts": "node scripts/pilot-apply-competence-cohorts-migration.mjs",
     "pilot:apply-method-naming": "node scripts/pilot-apply-method-naming-migration.mjs",
+    "pilot:apply-platform-library-scope": "node scripts/pilot-apply-platform-library-scope-migration.mjs",
     "seed:competence-cohorts": "node scripts/seed-competence-cohorts.mjs",
     "verify:research-citations": "node scripts/verify-research-citations.mjs",
     "check:retractions": "node scripts/check-source-retractions.mjs",

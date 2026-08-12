@@ -589,12 +589,17 @@ export async function loadConversationMessages(input: {
       and ei.bundle_id = mc.bundle_id
       and ei.organization_id = mc.organization_id
       and ei.account_id = mc.account_id
+     -- library_organization_id, not organization_id: the latter is the tenant
+     -- whose bundle this is, and a citation of the platform evidence baseline
+     -- names a row that tenant does not own. Joining on the wrong one leaves a
+     -- baseline citation resolving to nothing, so the message renders with a
+     -- null source title and reads as a broken citation.
      left join pilot.shadow_library_sources ls
        on ls.source_id = ei.source_id
-      and ls.organization_id = ei.organization_id
+      and ls.organization_id = ei.library_organization_id
      left join pilot.shadow_library_documents d
        on d.document_id = ei.document_id
-      and d.organization_id = ei.organization_id
+      and d.organization_id = ei.library_organization_id
      where m.organization_id = $1
        and m.account_id = $2
        and m.conversation_id = $3

@@ -73,7 +73,12 @@ const READINESS_QUERY = `
     select 1
     from pilot.organizations o
     cross join defaults d
-    where not exists (
+    -- The reserved organization owning the platform SHADOW evidence baseline is
+    -- a shelf, not a gym: no accounts, no athletes, no conduct to police. The
+    -- seeding statements skip it, so asserting it is seeded would report this
+    -- migration NOT READY forever.
+    where o.organization_id <> '__platform__'
+      and not exists (
       select 1
       from pilot.compliance_rules r
       where r.organization_id = o.organization_id

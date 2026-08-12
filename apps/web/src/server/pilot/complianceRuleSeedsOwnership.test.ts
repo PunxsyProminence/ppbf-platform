@@ -48,14 +48,26 @@ describe('compliance rule seeds ownership', () => {
     );
   });
 
-  // The two guards that make a re-run safe. Losing either one is invisible
-  // until the workflow next runs `all` against production: without the name
-  // check an archived rule is switched back on, and without ON CONFLICT a
-  // renamed rule raises a duplicate-key error that aborts the whole migration.
-  test('each seed carries both idempotence guards', () => {
-    expect(statements.match(/where organization_id not in \(select organization_id from pilot\.compliance_rules where rule_name = /gi))
+  // The three guards that make a re-run safe. Losing any one is invisible until
+  // the workflow next runs `all` against production: without the name check an
+  // archived rule is switched back on; without ON CONFLICT a renamed rule raises
+  // a duplicate-key error that aborts the whole migration; and without the
+  // reserved-organization exclusion the runner's readiness query -- which asserts
+  // that EVERY organization is seeded -- reports NOT READY forever, because the
+  // platform evidence baseline is a shelf with no members to police.
+  test('each seed carries all three idempotence guards', () => {
+    expect(statements.match(/and organization_id not in \(select organization_id from pilot\.compliance_rules where rule_name = /gi))
       .toHaveLength(DEFAULT_RULE_NAMES.length);
     expect(statements.match(/on conflict do nothing/gi)).toHaveLength(DEFAULT_RULE_NAMES.length);
+    expect(statements.match(/where organization_id <> '__platform__'/gi))
+      .toHaveLength(DEFAULT_RULE_NAMES.length);
+  });
+
+  // The exclusion is only load-bearing if the runner agrees with it. These two
+  // are separate files with no shared constant between them, so the readiness
+  // query can silently start demanding what the seeds deliberately skip.
+  test('the runner does not assert the reserved organization was seeded', () => {
+    expect(runner).toContain("o.organization_id <> '__platform__'");
   });
 
   // The two runner families take opposite conventions, and getting this

@@ -115,7 +115,8 @@ describe('SHADOW library search scope', () => {
     expect(String(mockQuery.mock.calls[0][0])).toContain(
       "$2::text = 'scoped' and c.subject_id is null",
     );
-    expect(mockQuery.mock.calls[0][1]?.slice(0, 3)).toEqual(['org-1', 'scoped', null]);
+    expect(mockQuery.mock.calls[0][1]?.slice(0, 3))
+      .toEqual([['org-1', '__platform__'], 'scoped', null]);
     expect(mockAssertActorCanAccessAthlete).not.toHaveBeenCalled();
   });
 
@@ -148,10 +149,35 @@ describe('SHADOW library search scope', () => {
     });
 
     const sql = String(mockQuery.mock.calls[0][0]);
-    expect(sql).toContain('c.organization_id = $1');
+    // The chunk predicate admits a set -- the caller's organization and the
+    // platform evidence baseline -- but the two joins still restate tenancy
+    // against the chunk rather than against the parameter. That is what keeps
+    // the widening from ever assembling a row out of two organizations: a
+    // platform chunk can only pair with a platform document and source.
+    expect(sql).toContain('c.organization_id = any($1::text[])');
     expect(sql).toContain('d.organization_id = c.organization_id');
     expect(sql).toContain('s.organization_id = c.organization_id');
-    expect(mockQuery.mock.calls[0][1]?.[0]).toBe('org-a');
+
+    // Exactly two shelves, and the caller's is one of them. A third entry here
+    // would be another gym's evidence.
+    expect(mockQuery.mock.calls[0][1]?.[0]).toEqual(['org-a', '__platform__']);
+  });
+
+  it('never admits a third organization to the retrieval set', async () => {
+    // The failure this guards is a call site that widens the set from something
+    // other than libraryRetrievalOrganizationIds -- the predicate is an any(),
+    // so an over-long array is a cross-tenant read with no other symptom.
+    for (const organizationId of ['org-a', 'org-b', 'audit-test-gym3']) {
+      mockQuery.mockClear();
+      await searchShadowLibrary({
+        organizationId,
+        actorAccountId: 'coach-a',
+        actorRole: 'coach',
+        scope: 'scoped',
+        queryText: 'footwork',
+      });
+      expect(mockQuery.mock.calls[0][1]?.[0]).toEqual([organizationId, '__platform__']);
+    }
   });
 
   it('canonically authorizes an exact subject before searching global plus subject chunks', async () => {
@@ -173,7 +199,7 @@ describe('SHADOW library search scope', () => {
       'athlete-a',
     );
     expect(mockQuery.mock.calls[0][1]?.slice(0, 3))
-      .toEqual(['org-1', 'subject', 'athlete-a']);
+      .toEqual([['org-1', '__platform__'], 'subject', 'athlete-a']);
   });
 
   it('does not mark a document indexed merely because one chunk was inserted', async () => {

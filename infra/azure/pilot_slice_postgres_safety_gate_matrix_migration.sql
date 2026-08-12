@@ -1,3 +1,13 @@
+-- THE RESERVED ORGANIZATION IS NOT GATED
+--
+-- Both seeding statements below exclude '__platform__', which owns the platform
+-- SHADOW evidence baseline (see the platform-library-scope migration). It is a
+-- shelf, not a gym: no accounts, no athletes, nobody to clear for contact. The
+-- runner's readiness query excludes it for the same reason -- it asserts that
+-- EVERY organization holds the contact_medical_clearance gate, so without the
+-- exclusion this migration would report NOT READY from the first re-run after
+-- the baseline exists.
+--
 -- Safety Gate Matrix (pilot.safety_gates, pilot.safety_gate_evaluations) --
 -- generalizes the ad-hoc, single-purpose contact/medical clearance check
 -- into reusable substrate, per the 2026-08-03 capability build plan's Phase 1
@@ -114,7 +124,8 @@ select
   'This athlete needs an explicit ''cleared'' medical administrative status on file before taking contact. Set status to ''cleared'' in the Medical Status panel once a clearance decision has been made; the observation is kept either way, and contact logged without a current clearance raises a near miss for coach/admin review.',
   true
 from pilot.organizations
-where organization_id not in (
+where organization_id <> '__platform__'
+  and organization_id not in (
   select organization_id from pilot.safety_gates where gate_key = 'contact_medical_clearance'
 )
 on conflict do nothing;
@@ -147,7 +158,8 @@ select
   'Training is paused for this athlete until the hold placed by a coach or admin is lifted. The hold explains what earns the lift; talk to your coach or the gym admin.',
   true
 from pilot.organizations
-where organization_id not in (
+where organization_id <> '__platform__'
+  and organization_id not in (
   select organization_id from pilot.safety_gates where gate_key = 'training_hold'
 )
 on conflict do nothing;

@@ -5,6 +5,7 @@ import { createOrganization } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { excludePlatformLibraryOrganizationSql } from '@/src/server/pilot/platformLibraryScope';
 
 export const runtime = 'nodejs';
 
@@ -20,8 +21,13 @@ export async function GET(request: NextRequest) {
       created_at: string;
       updated_at: string;
     }>(
+      // The reserved organization owning the platform SHADOW evidence baseline
+      // is excluded: this list is the platform owner's roster of gyms, and every
+      // action offered against a row here -- activation, capability grants,
+      // staff provisioning -- is meaningless for a shelf with no members.
       `select organization_id, organization_name, status, created_at, updated_at
        from pilot.organizations
+       where ${excludePlatformLibraryOrganizationSql()}
        order by organization_name asc`,
     );
 

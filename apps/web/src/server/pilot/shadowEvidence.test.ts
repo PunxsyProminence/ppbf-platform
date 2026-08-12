@@ -73,7 +73,18 @@ describe('SHADOW evidence bundles', () => {
     const persistedParameters = JSON.stringify(clientQuery.mock.calls.map((call) => call[1]));
     expect(persistedParameters).not.toContain(privateQuery);
     expect(persistedParameters).not.toContain(privateExcerpt);
-    expect(String(clientQuery.mock.calls[1][0])).toContain('c.organization_id = $3');
+    // The chunk lookup admits the caller's organization OR the platform evidence
+    // baseline, while the row it writes still records $3 -- the caller -- as the
+    // bundle's owner. Those are two different questions, and they used to share
+    // one column: citing a baseline chunk needed organization_id to be the gym
+    // (for the bundle foreign key) and the baseline (for the library foreign
+    // keys) at the same time, so the insert died after the model had answered.
+    const persistSql = String(clientQuery.mock.calls[1][0]);
+    expect(persistSql).toContain('c.organization_id = any($11::text[])');
+    expect(persistSql).toContain('library_organization_id');
+    // Written from the CHUNK's owner, never from a parameter: a literal here
+    // would record the citing gym as the owner of a baseline row.
+    expect(persistSql).toContain('$8, $9, c.organization_id');
     expect(clientQuery.mock.calls[1][1]).toEqual(expect.arrayContaining([
       'org-a',
       'account-a',
@@ -81,6 +92,7 @@ describe('SHADOW evidence bundles', () => {
       'doc-a',
       'chunk-a',
       'athlete-a',
+      ['org-a', '__platform__'],
     ]));
   });
 

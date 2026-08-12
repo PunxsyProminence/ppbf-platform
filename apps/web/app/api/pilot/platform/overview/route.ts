@@ -4,6 +4,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { getBoardSummary, type BoardSummary } from '@/src/server/pilot/boardSummary';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { excludePlatformLibraryOrganizationSql } from '@/src/server/pilot/platformLibraryScope';
 import { getGrowthMetrics, type GrowthMetrics } from '@/src/server/pilot/shadowMetrics';
 
 export const runtime = 'nodejs';
@@ -65,8 +66,14 @@ export async function GET(request: NextRequest) {
     requireRole(principal, ['platform_owner']);
 
     const organizations = await query<OrganizationRow>(
+      // Excluded for the same reason as the organizations roster: every metric
+      // below is a per-gym figure, and the reserved organization owning the
+      // platform SHADOW evidence baseline has no athletes, sessions or capability
+      // grants to report. Including it would add a permanent all-zero row and
+      // inflate the platform gym count by one.
       `select organization_id, organization_name, status
        from pilot.organizations
+       where ${excludePlatformLibraryOrganizationSql()}
        order by organization_name asc`,
     );
 

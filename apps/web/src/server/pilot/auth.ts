@@ -8,6 +8,7 @@ import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { usesPin } from './credentialPolicy';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
+import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
@@ -898,6 +899,15 @@ export async function createOrRotateAdminAccount(
 }
 
 export async function createOrganization(organizationId: string, organizationName: string, createdBy: string): Promise<void> {
+  // The reserved organization owning the platform evidence baseline is not a
+  // gym, and this is an upsert: a platform_owner POSTing that id would rename
+  // the baseline shelf and seed it with the compliance rules and safety gates
+  // below, as though it had a floor and members. It is created by its migration
+  // and by nothing else.
+  if (isPlatformLibraryOrganization(organizationId.trim())) {
+    throw new Error('RESERVED_ORGANIZATION_ID');
+  }
+
   // Organization, compliance rules, and safety gates are created together, in
   // one transaction. The seed migrations only reach organizations that
   // existed when an operator ran them, so a gym created afterwards through

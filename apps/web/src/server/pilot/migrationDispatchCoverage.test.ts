@@ -135,5 +135,9 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const dependent of ['onboarding', 'board-role']) {
       expect(at(dependent)).toBeGreaterThan(at('multiorg'));
     }
+    // platform-library-scope splits shadow_evidence_items.organization_id into
+    // two columns, and shadow-evidence is the migration that creates the table
+    // and the library foreign keys it repoints.
+    expect(at('platform-library-scope')).toBeGreaterThan(at('shadow-evidence'));
   });
 });

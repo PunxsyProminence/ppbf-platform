@@ -45,6 +45,16 @@
 -- it and stays empty until the migration is dispatched again. Organization
 -- creation does not seed.
 --
+-- EXCEPT THE RESERVED ORGANIZATION
+--
+-- Every statement below also excludes '__platform__', which owns the platform
+-- SHADOW evidence baseline (see the platform-library-scope migration). It is a
+-- shelf, not a gym: no accounts, no athletes, no floor, so a Code of Conduct or
+-- an injury-prevention rule scoped to it is meaningless. The runner's readiness
+-- query excludes it for the same reason -- it asserts that EVERY organization is
+-- seeded, so without the exclusion this migration would report NOT READY from
+-- the first re-run after the baseline exists.
+--
 -- No `begin;`/`commit;`: the runner
 -- (apps/web/scripts/pilot-apply-compliance-rule-seeds-migration.mjs) opens the
 -- transaction itself, matching the compliance and volunteer-program runners.
@@ -68,7 +78,8 @@ select
   'admin',
   true
 from pilot.organizations
-where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Physical Injury Prevention')
+where organization_id <> '__platform__'
+  and organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Physical Injury Prevention')
 on conflict do nothing;
 
 insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
@@ -83,7 +94,8 @@ select
   'coach',
   true
 from pilot.organizations
-where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Proper Technique & Form')
+where organization_id <> '__platform__'
+  and organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Proper Technique & Form')
 on conflict do nothing;
 
 insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
@@ -98,7 +110,8 @@ select
   'coach',
   true
 from pilot.organizations
-where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Training Protocol Compliance')
+where organization_id <> '__platform__'
+  and organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Training Protocol Compliance')
 on conflict do nothing;
 
 insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
@@ -113,7 +126,8 @@ select
   'admin',
   true
 from pilot.organizations
-where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Medical Clearance Status')
+where organization_id <> '__platform__'
+  and organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Medical Clearance Status')
 on conflict do nothing;
 
 insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
@@ -128,5 +142,6 @@ select
   'coach',
   true
 from pilot.organizations
-where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Code of Conduct')
+where organization_id <> '__platform__'
+  and organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Code of Conduct')
 on conflict do nothing;

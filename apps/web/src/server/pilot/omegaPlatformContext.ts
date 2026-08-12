@@ -25,6 +25,7 @@ import crypto from 'node:crypto';
 
 import { getBoardSummary, type BoardSummary } from './boardSummary';
 import { query } from './db';
+import { excludePlatformLibraryOrganizationSql } from './platformLibraryScope';
 import { getGrowthMetrics, type GrowthMetrics } from './shadowMetrics';
 
 /**
@@ -220,9 +221,14 @@ async function buildPlatformRollup(nowMs: number): Promise<PlatformRollup> {
   // ones past the cap. The window count keeps the "further organizations not
   // listed" note honest now that the rows themselves are truncated.
   const organizations = await query<OrganizationRow>(
+    // The reserved organization owning the platform SHADOW evidence baseline is
+    // excluded before the window count, not after: totalGymCount below is read
+    // from count(*) over (), so filtering at render time would leave the
+    // "further organizations not listed" note counting a shelf as a gym.
     `select organization_id, organization_name, status,
             count(*) over () as total_count
      from pilot.organizations
+     where ${excludePlatformLibraryOrganizationSql()}
      order by organization_name asc
      limit $1`,
     [PLATFORM_ROLLUP_MAX_GYMS],

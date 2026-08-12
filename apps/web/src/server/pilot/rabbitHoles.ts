@@ -6,6 +6,7 @@ import { isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { FORMULA_IDS } from './formulas/types';
+import { PLATFORM_LIBRARY_ORGANIZATION_ID } from './platformLibraryScope';
 import type { ProgressionGap } from './progression';
 import type { ShadowEvidenceTier } from './shadowEvidenceTier';
 
@@ -193,14 +194,26 @@ const LESSON_COLUMNS = `
 // The citation is RESOLVED, never trusted. library_document_id carries no
 // foreign key because existence is not the property that matters: a document is
 // citable only while it is indexed, approved and verified, hanging off an
-// active, approved, verified source, and in the SAME organization -- seven
-// mutable columns across two tables, and approval is revocable. Without a
-// foreign key, organization scoping of the citation is this join's
-// responsibility. A left join, so a reference that does not resolve leaves the
-// lesson standing and the citation simply absent.
+// active, approved, verified source, and owned by an organization this lesson is
+// allowed to cite -- seven mutable columns across two tables, and approval is
+// revocable. Without a foreign key, organization scoping of the citation is this
+// join's responsibility. A left join, so a reference that does not resolve
+// leaves the lesson standing and the citation simply absent.
+//
+// "Allowed to cite" is the lesson's own organization or the platform evidence
+// baseline, which is the whole point of a coach being able to anchor a lesson to
+// peer-reviewed material the gym did not commission itself. The source
+// subquery still restates d.organization_id, so a platform document can only
+// resolve against a platform source -- the widening admits a second shelf, never
+// a row assembled from two.
+//
+// The reserved id is interpolated rather than parameterised because
+// CITATION_JOIN is shared by three queries whose parameter numbering differs;
+// it is a module constant, never input.
 const CITATION_JOIN = `
   left join pilot.shadow_library_documents d
-    on d.organization_id = r.organization_id
+    on (d.organization_id = r.organization_id
+        or d.organization_id = '${PLATFORM_LIBRARY_ORGANIZATION_ID}')
    and d.document_id = r.library_document_id
    and d.ingest_state = 'indexed'
    and d.index_completed_at is not null

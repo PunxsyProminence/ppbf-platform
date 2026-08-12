@@ -59,7 +59,12 @@ const READINESS_QUERY = `
   with unseeded as (
     select 1
     from pilot.organizations o
-    where not exists (
+    -- The reserved organization owning the platform SHADOW evidence baseline is
+    -- a shelf, not a gym: no accounts, no athletes, nobody to clear for contact.
+    -- The seeding statements skip it, so asserting it is seeded would report
+    -- this migration NOT READY forever.
+    where o.organization_id <> '__platform__'
+      and not exists (
       select 1
       from pilot.safety_gates g
       where g.organization_id = o.organization_id
