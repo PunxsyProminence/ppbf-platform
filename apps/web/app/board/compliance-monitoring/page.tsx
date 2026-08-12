@@ -145,7 +145,11 @@ export default function BoardComplianceMonitoringPage() {
   const VALUE = 'mt-[var(--s3)] font-mono text-[length:var(--t-xl)] font-bold text-[color:var(--bone-100)]';
 
   return (
-    <RoleSessionGate allowedRoles={['board']}>
+    // platform_owner is admitted to match BoardRoleGate in app/board/layout.tsx
+    // and /api/pilot/board/compliance-rules, which already serves this role.
+    // Listing 'board' alone refused the owner from a register its own API
+    // returns to them.
+    <RoleSessionGate allowedRoles={['board', 'platform_owner']}>
       {/* The clinic room: this is the safeguarding register, so it stands in
           the room the sheet gives to clearance and safety, on the ink ground
           the pattern requires (a room never sits on canvas). */}

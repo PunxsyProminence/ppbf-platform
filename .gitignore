@@ -26,3 +26,11 @@ punxsy-corpus/
 # Proposed-migrations research archive: source material, not a build artifact
 ppbf_proposed_migrations/
 ppbf_proposed_migrations.tar.gz
+
+# Local verification harness (agent/developer scratch). Deliberately ignored:
+# .localdev/sessions.json holds live pilot.session_tokens values and the local
+# Postgres password, and this repository is public -- see audit PPBF-SEC-002 for
+# what committing a working credential here has cost before. The screenshots and
+# the copied snakeoil CA are build-time noise. If any of these scripts is worth
+# keeping, promote it into apps/web/scripts as a deliberate, secret-free change.
+.localdev/

@@ -134,7 +134,7 @@ export const MANIFEST = [
     // harness's own control: if these fail, doubt the harness before the app.
     probes: [
       unauthenticated('T-003', '/api/pilot/video/list'),
-      unauthenticated('T-003', '/api/pilot/video/review-link'),
+      unauthenticated('T-003', '/api/pilot/video/review-link', { method: 'POST' }),
       unauthenticated('T-003', '/api/pilot/video/scan-review', { method: 'POST' }),
       pageRenders('T-003', '/admin/video-review'),
       {
@@ -242,7 +242,7 @@ export const MANIFEST = [
     title: 'Athlete Voice',
     probes: [
       unauthenticated('PR-238d', '/api/pilot/feedback/submit', { method: 'POST' }),
-      unauthenticated('PR-238d', '/api/pilot/feedback/list'),
+      unauthenticated('PR-238d', '/api/pilot/feedback/list', { method: 'POST' }),
     ],
     acceptanceProbeOutstanding:
       'The non-disclosing, oracle-safe property is the whole point of this item and cannot be '
@@ -307,7 +307,7 @@ export const MANIFEST = [
   {
     item: 'PR-238j',
     title: 'Incident Report Engine',
-    probes: [unauthenticated('PR-238j', '/api/pilot/incidents')],
+    probes: [unauthenticated('PR-238j', '/api/pilot/incidents', { method: 'POST' })],
     acceptanceProbeOutstanding: 'Filing an incident writes a safeguarding row. Fixture needed.',
   },
   {

@@ -15,7 +15,11 @@ export default async function AdminMacroAnalyticsPage() {
     });
 
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin']);
+    // 'organization_admin' is the canonical organization administrator;
+    // 'admin' is the legacy row name kept for compatibility (see roleEquals in
+    // src/server/pilot/access.ts). This gate listed only the legacy name, so
+    // every real organization admin was refused and bounced.
+    requireRole(principal, ['organization_admin', 'admin']);
   } catch {
     redirect('/login');
   }
