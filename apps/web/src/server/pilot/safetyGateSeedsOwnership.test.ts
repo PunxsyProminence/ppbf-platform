@@ -40,14 +40,26 @@ describe('safety gate seeds ownership', () => {
     expect(statements.match(/insert into pilot\.safety_gates/gi)).toHaveLength(DEFAULT_GATE_KEYS.length);
   });
 
-  // The two guards that make a re-run safe. Losing either one is invisible
-  // until the workflow next runs `all` against production: without the
-  // organization_id-not-in check a deactivated gate is switched back on, and
-  // without ON CONFLICT a renamed gate raises a duplicate-key error that
-  // aborts the whole migration.
-  test('the seed carries both idempotence guards', () => {
-    expect(statements).toMatch(/where organization_id not in\s*\(\s*select organization_id from pilot\.safety_gates where gate_key = /i);
+  // The three guards that make a re-run safe. Losing any one is invisible until
+  // the workflow next runs `all` against production: without the
+  // organization_id-not-in check a deactivated gate is switched back on; without
+  // ON CONFLICT a renamed gate raises a duplicate-key error that aborts the whole
+  // migration; and without the reserved-organization exclusion the runner's
+  // readiness query -- which asserts that EVERY organization holds the
+  // contact_medical_clearance gate -- reports NOT READY forever, because the
+  // platform evidence baseline is a shelf with no athletes to clear.
+  test('the seed carries all three idempotence guards', () => {
+    expect(statements).toMatch(/and organization_id not in\s*\(\s*select organization_id from pilot\.safety_gates where gate_key = /i);
     expect(statements.match(/on conflict do nothing/gi)?.length ?? 0).toBeGreaterThanOrEqual(DEFAULT_GATE_KEYS.length);
+    expect(statements.match(/where organization_id <> '__platform__'/gi))
+      .toHaveLength(DEFAULT_GATE_KEYS.length);
+  });
+
+  // The exclusion is only load-bearing if the runner agrees with it. These are
+  // separate files with no shared constant, so the readiness query can silently
+  // start demanding what the seeds deliberately skip.
+  test('the runner does not assert the reserved organization was gated', () => {
+    expect(runner).toContain("o.organization_id <> '__platform__'");
   });
 
   test('the migration carries no transaction boundary, because this runner opens one', () => {

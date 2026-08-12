@@ -387,7 +387,19 @@ describe('what a reader receives', () => {
 
     const [sql] = queryMock.mock.calls[0];
     expect(sql).toContain('left join pilot.shadow_library_documents d');
-    expect(sql).toContain('d.organization_id = r.organization_id');
+    // The lesson's own organization OR the platform evidence baseline, so a
+    // coach can anchor a lesson to peer-reviewed material the gym did not
+    // commission. Asserted as the whole disjunction rather than as the left half:
+    // 'd.organization_id = r.organization_id' is a substring of it, so a
+    // containment check on that alone passes whether the widening is present or
+    // not, and passed vacuously when the widening was added.
+    expect(sql).toContain(
+      "(d.organization_id = r.organization_id\n        or d.organization_id = '__platform__')",
+    );
+    // The source subquery still restates the DOCUMENT's organization, not the
+    // lesson's. That is what stops the widening resolving a platform document
+    // against a gym source, or the reverse.
+    expect(sql).toContain('s.organization_id = d.organization_id');
     expect(sql).toContain("d.ingest_state = 'indexed'");
     expect(sql).toContain('d.index_completed_at is not null');
     expect(sql).toContain("d.approval_state = 'approved'");

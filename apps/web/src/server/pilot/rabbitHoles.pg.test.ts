@@ -100,8 +100,14 @@ const PUBLISHED_WITH_CITATION_SQL = `
     d.document_id as cited_document_id,
     d.document_name as cited_document_name
   from pilot.rabbit_holes r
+  -- NOTE: this is a COPY of CITATION_JOIN from rabbitHoles.ts, not the module's
+  -- own constant, so this suite can pass while the module's join says something
+  -- else. It did exactly that when the platform-baseline widening was added:
+  -- 13 tests green against a stale copy. Kept in step by hand until the join is
+  -- exported and shared; rabbitHoles.test.ts asserts the module's actual text.
   left join pilot.shadow_library_documents d
-    on d.organization_id = r.organization_id
+    on (d.organization_id = r.organization_id
+        or d.organization_id = '__platform__')
    and d.document_id = r.library_document_id
    and d.ingest_state = 'indexed'
    and d.index_completed_at is not null
