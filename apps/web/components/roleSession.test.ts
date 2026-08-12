@@ -69,25 +69,22 @@ afterEach(() => {
   restoreWindow();
 });
 
-describe('roleSession display cache', () => {
-  test('stores only a bounded role cache with a future expiry', () => {
+describe('roleSession in-memory cache (no localStorage writes)', () => {
+  test('stores only a bounded in-memory role cache with a future expiry', () => {
     const storage = new MemoryStorage();
     installWindow(storage);
     jest.spyOn(Date, 'now').mockReturnValue(1_000);
 
     const session = createPersistentRoleSession('athlete');
-    const stored = JSON.parse(storage.getItem(ROLE_SESSION_KEY) ?? '{}') as Record<string, unknown>;
 
     expect(session).toEqual({ role: 'athlete', expiresAt: 1_000 + ROLE_SESSION_TTL_MS });
-    expect(stored).toEqual(session);
-    expect(Object.keys(stored).sort()).toEqual(['expiresAt', 'role']);
+    expect(readRoleSession()).toEqual(session);
+    // Must never write the role session (or the legacy club-role key) to storage.
+    expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
     expect(storage.getItem('ppbf-club-role')).toBeNull();
   });
 
-  // platform_owner has no roleRoutes landing card, so the parse set was built
-  // without it and threw away a session the login page had just written --
-  // blanking the global header on every ungated page for the owner.
-  test('a stored platform_owner session survives the next read', () => {
+  test('a platform_owner session survives the next read from the in-memory cache', () => {
     const storage = new MemoryStorage();
     installWindow(storage);
     jest.spyOn(Date, 'now').mockReturnValue(1_000);
@@ -95,25 +92,39 @@ describe('roleSession display cache', () => {
     createPersistentRoleSession('platform_owner');
 
     expect(readRoleSession()).toEqual({ role: 'platform_owner', expiresAt: 1_000 + ROLE_SESSION_TTL_MS });
-    expect(storage.getItem(ROLE_SESSION_KEY)).not.toBeNull();
+    expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
   });
 
-  test.each([
-    ['missing expiry', JSON.stringify({ role: 'admin' })],
-    ['expired', JSON.stringify({ role: 'admin', expiresAt: 999 })],
-    // Was 'platform_owner' until 95bc5f9 made that a real ClubRole that
-    // mapPilotRoleToClubRole returns and login stores. Keeping it here pinned
-    // the bug where the owner's own cache was erased on the next read.
-    ['unsupported role', JSON.stringify({ role: 'sysadmin', expiresAt: 2_000 })],
-    ['malformed JSON', '{'],
-  ])('rejects and removes a stale cache: %s', (_label, raw) => {
+  test('clearRoleSession and createPersistentRoleSession purge residual localStorage keys', () => {
     const storage = new MemoryStorage();
     installWindow(storage);
     jest.spyOn(Date, 'now').mockReturnValue(1_000);
-    storage.setItem(ROLE_SESSION_KEY, raw);
+
+    storage.setItem(ROLE_SESSION_KEY, JSON.stringify({ role: 'admin', expiresAt: 9_999 }));
+    storage.setItem('ppbf-club-role', 'coach');
+
+    createPersistentRoleSession('athlete');
+    expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
+    expect(storage.getItem('ppbf-club-role')).toBeNull();
+
+    storage.setItem(ROLE_SESSION_KEY, JSON.stringify({ role: 'coach', expiresAt: 9_999 }));
+    storage.setItem('ppbf-club-role', 'athlete');
+    clearRoleSession();
+    expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
+    expect(storage.getItem('ppbf-club-role')).toBeNull();
+    expect(readRoleSession()).toBeNull();
+  });
+
+  test('readRoleSession purges residual localStorage keys without reading them', () => {
+    const storage = new MemoryStorage();
+    installWindow(storage);
+
+    storage.setItem(ROLE_SESSION_KEY, JSON.stringify({ role: 'admin', expiresAt: Date.now() + 60_000 }));
+    storage.setItem('ppbf-club-role', 'admin');
 
     expect(readRoleSession()).toBeNull();
     expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
+    expect(storage.getItem('ppbf-club-role')).toBeNull();
   });
 
   test('blocked localStorage never turns a valid server login into a client failure', () => {
@@ -132,8 +143,12 @@ describe('roleSession display cache', () => {
     });
 
     expect(() => createPersistentRoleSession('athlete')).not.toThrow();
-    expect(readRoleSession()).toBeNull();
+    // In-memory cache still works even when storage is blocked.
+    expect(readRoleSession()).toEqual(
+      expect.objectContaining({ role: 'athlete' }),
+    );
     expect(() => clearRoleSession()).not.toThrow();
+    expect(readRoleSession()).toBeNull();
   });
 });
 
@@ -428,43 +443,42 @@ describe('the seat survives the display cache', () => {
   });
 
   test.each(['admin', 'coach', 'athlete', 'platform_owner'] as ClubRole[])(
-    'no seat is stored for a %s session even if one is offered',
+    'no seat is kept for a %s session even if one is offered',
     (role) => {
       const storage = new MemoryStorage();
       installWindow(storage);
 
       createPersistentRoleSession(role, 'president');
-      const stored = JSON.parse(storage.getItem(ROLE_SESSION_KEY) ?? '{}') as Record<string, unknown>;
 
-      expect(Object.keys(stored).sort()).toEqual(['expiresAt', 'role']);
-      expect(readRoleSession()?.boardSeat).toBeUndefined();
+      const session = readRoleSession();
+      expect(session?.role).toBe(role);
+      expect(session?.boardSeat).toBeUndefined();
+      expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
     },
   );
 
-  test('a seatless board session stores no seat key at all', () => {
+  test('a seatless board session keeps no seat key at all', () => {
     const storage = new MemoryStorage();
     installWindow(storage);
 
     createPersistentRoleSession('board');
-    const stored = JSON.parse(storage.getItem(ROLE_SESSION_KEY) ?? '{}') as Record<string, unknown>;
 
-    expect(Object.keys(stored).sort()).toEqual(['expiresAt', 'role']);
+    const session = readRoleSession();
+    expect(session?.role).toBe('board');
+    expect(session?.boardSeat).toBeUndefined();
+    expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
   });
 
-  // Dropping an unusable seat rather than the whole cache: a seat the app
-  // cannot render is worth nothing, but signing a valid board member out over
-  // it costs them the workspace they are authenticated for.
-  test('an unrecognized stored seat is discarded and the session survives', () => {
+  // An unrecognized seat must not poison the in-memory session: drop the
+  // seat, keep the role. localStorage is never the source of truth.
+  test('an unrecognized seat offered at create time is discarded and the session survives', () => {
     const storage = new MemoryStorage();
     installWindow(storage);
-    storage.setItem(ROLE_SESSION_KEY, JSON.stringify({
-      role: 'board',
-      expiresAt: Date.now() + ROLE_SESSION_TTL_MS,
-      boardSeat: 'vice-president',
-    }));
+
+    createPersistentRoleSession('board', 'vice-president');
 
     expect(readRoleSession()).toMatchObject({ role: 'board' });
     expect(readRoleSession()?.boardSeat).toBeUndefined();
-    expect(storage.getItem(ROLE_SESSION_KEY)).not.toBeNull();
+    expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
   });
 });

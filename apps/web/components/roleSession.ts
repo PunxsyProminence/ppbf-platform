@@ -5,9 +5,30 @@ import type { BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
 export { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
 
 export const ROLE_SESSION_KEY = 'ppbf-role-session';
+/** Legacy key from the pre-authoritative client role cache. Never written. */
+const LEGACY_CLUB_ROLE_KEY = 'ppbf-club-role';
 export const ROLE_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const ROLE_SESSION_CHANGE_EVENT = 'ppbf-role-session-change';
 let cachedRoleSessionValue: RoleSession | null = null;
+
+/**
+ * Purge residual client-side role session keys that older builds wrote to
+ * localStorage. The authoritative session is the HttpOnly server cookie only.
+ * This is best-effort: a blocked or full storage must never turn a valid
+ * server login or logout into a client failure.
+ */
+function purgeLegacyRoleSessionStorage(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage?.removeItem(ROLE_SESSION_KEY);
+    window.localStorage?.removeItem(LEGACY_CLUB_ROLE_KEY);
+  } catch {
+    // Ignore. Storage is not part of the auth contract.
+  }
+}
 
 export interface RoleSession {
   role: ClubRole;
@@ -78,6 +99,10 @@ function sanitizeRoleSession(session: RoleSession | null): RoleSession | null {
 }
 
 export function readRoleSession(): RoleSession | null {
+  // Opportunistic cleanup of residual localStorage so browsers that still
+  // carry a pre-v21.1 key do not keep it forever.
+  purgeLegacyRoleSessionStorage();
+
   const session = sanitizeRoleSession(cachedRoleSessionValue);
   if (!session && cachedRoleSessionValue) {
     clearRoleSession();
@@ -86,11 +111,15 @@ export function readRoleSession(): RoleSession | null {
 }
 
 export function createPersistentRoleSession(role: ClubRole, boardSeat?: unknown): RoleSession {
+  // Any residual localStorage entry from pre-v21.1 builds is not the source of
+  // truth and must not survive a fresh server-authorized session.
+  purgeLegacyRoleSessionStorage();
+
   const session: RoleSession = {
     role,
     expiresAt: Date.now() + ROLE_SESSION_TTL_MS,
     // Only a board session that actually holds a seat stores one. Every other
-    // role's cache keeps exactly the two keys it has always had.
+    // role's in-memory cache keeps exactly the two keys it has always had.
     ...(role === 'board' && isBoardSeatSlug(boardSeat) ? { boardSeat } : {}),
   };
   cachedRoleSessionValue = session;
@@ -100,6 +129,8 @@ export function createPersistentRoleSession(role: ClubRole, boardSeat?: unknown)
 }
 
 export function getRoleSessionSnapshot(): RoleSession | null {
+  purgeLegacyRoleSessionStorage();
+
   const session = sanitizeRoleSession(cachedRoleSessionValue);
   if (!session && cachedRoleSessionValue) {
     clearRoleSession();
@@ -109,6 +140,9 @@ export function getRoleSessionSnapshot(): RoleSession | null {
 
 export function clearRoleSession() {
   cachedRoleSessionValue = null;
+  // Eradicate any leftover localStorage key from older builds so logout and
+  // auth-state-expired paths cannot rehydrate a stale client session.
+  purgeLegacyRoleSessionStorage();
 
   notifyRoleSessionChange();
 }
