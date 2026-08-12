@@ -156,8 +156,17 @@ export function resolveShadowProviderTimeoutMs(
 }
 
 const MAX_MESSAGE_LENGTH = 12_000;
+const MAX_MESSAGE_BYTES = 48_000;
 const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
-const V21_HALLUCINATION_BLOCKER_RESPONSE = '⚠️ CRITICAL LOG ERROR: Source parameters unavailable. AI hallucination blocker active. Generating missing parameter request trace string for Head Coach Jason.';
+const V21_HALLUCINATION_BLOCKER_RESPONSE = 'SHADOW cannot generate a verified response right now because required source evidence is unavailable. Please provide additional verified context or contact your coach.';
+
+function resolveRequestCorrelationId(request: NextRequest): string {
+  const explicit = request.headers.get('x-request-id')?.trim();
+  if (explicit) return explicit;
+  const traceparent = request.headers.get('traceparent')?.trim();
+  if (traceparent) return traceparent;
+  return crypto.randomUUID();
+}
 
 function indicatesInsufficientContext(response: string): boolean {
   const normalized = response.toLowerCase();
@@ -478,6 +487,7 @@ function resolveSessionType(input: {
 
 export async function POST(request: NextRequest): Promise<NextResponse<ShadowChatResponse>> {
   try {
+    const requestCorrelationId = resolveRequestCorrelationId(request);
     // Authenticate via session cookie (consistent with all other SHADOW routes)
     const principal = await requirePrincipal(request);
     requireRole(principal, ['admin', 'coach', 'athlete', 'parent', 'organization_admin', 'staff', 'volunteer', 'platform_owner']);
@@ -518,22 +528,44 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       preferAsync = false,
     } = body;
 
-    if (
-      typeof rawMessage !== 'string'
-      || rawMessage.trim().length === 0
-      || rawMessage.length > MAX_MESSAGE_LENGTH
-      || (requestedConversationId !== undefined
-        && !isUuid(requestedConversationId))
-      || (athleteId !== undefined
-        && (typeof athleteId !== 'string' || !athleteId.trim() || athleteId.length > 200))
-      || (userRequestedTier !== undefined
-        && userRequestedTier !== 'quick_round' && userRequestedTier !== 'heavy_bag')
-      || (requestedSessionType !== undefined
-        && (typeof requestedSessionType !== 'string' || !SESSION_TYPE_OVERRIDES.has(
-          requestedSessionType as import('@/src/server/pilot/shadowRouter').ShadowSessionType,
-        )))
-      || typeof preferAsync !== 'boolean'
-    ) {
+    const messageBytes = typeof rawMessage === 'string'
+      ? new TextEncoder().encode(rawMessage).length
+      : Number.POSITIVE_INFINITY;
+
+    let invalidFieldReason: string | null = null;
+    if (typeof rawMessage !== 'string') {
+      invalidFieldReason = 'message_not_string';
+    } else if (rawMessage.trim().length === 0) {
+      invalidFieldReason = 'message_empty';
+    } else if (rawMessage.length > MAX_MESSAGE_LENGTH) {
+      invalidFieldReason = 'message_char_limit_exceeded';
+    } else if (messageBytes > MAX_MESSAGE_BYTES) {
+      invalidFieldReason = 'message_utf8_byte_limit_exceeded';
+    } else if (requestedConversationId !== undefined && !isUuid(requestedConversationId)) {
+      invalidFieldReason = 'conversation_id_invalid';
+    } else if (athleteId !== undefined && (typeof athleteId !== 'string' || !athleteId.trim() || athleteId.length > 200)) {
+      invalidFieldReason = 'athlete_id_invalid';
+    } else if (userRequestedTier !== undefined
+      && userRequestedTier !== 'quick_round' && userRequestedTier !== 'heavy_bag') {
+      invalidFieldReason = 'tier_invalid';
+    } else if (requestedSessionType !== undefined
+      && (typeof requestedSessionType !== 'string' || !SESSION_TYPE_OVERRIDES.has(
+        requestedSessionType as import('@/src/server/pilot/shadowRouter').ShadowSessionType,
+      ))) {
+      invalidFieldReason = 'session_type_invalid';
+    } else if (typeof preferAsync !== 'boolean') {
+      invalidFieldReason = 'prefer_async_invalid';
+    }
+
+    if (invalidFieldReason !== null) {
+      console.warn('shadow-chat-request-validation-failed', {
+        eventCode: 'SHADOW_CHAT_REQUEST_VALIDATION_FAILED',
+        requestCorrelationId,
+        organizationId,
+        userId,
+        role: userRole,
+        invalidFieldReason,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -545,7 +577,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           requiresHumanReview: false,
           evidenceTier: 'RESEARCH_NEEDED',
           handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
-          error: 'Request fields are invalid or exceed their allowed size.',
+          error: `Request validation failed: ${invalidFieldReason}.`,
         },
         { status: 400 },
       );
@@ -984,6 +1016,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const modelSignaledInsufficientContext = indicatesInsufficientContext(llmResponse);
     const hallucinationBlocked = canApplyHallucinationBlocker
       && (noRetrievedEvidence || modelSignaledInsufficientContext);
+    if (hallucinationBlocked) {
+      console.warn('shadow-hallucination-blocker-applied', {
+        eventCode: 'SHADOW_HALLUCINATION_BLOCKER_APPLIED',
+        requestCorrelationId,
+        organizationId,
+        userId,
+        role: userRole,
+        conversationId: requestedConversationId,
+        noRetrievedEvidence,
+        modelSignaledInsufficientContext,
+      });
+    }
     const interceptedLlmResponse = hallucinationBlocked
       ? V21_HALLUCINATION_BLOCKER_RESPONSE
       : llmResponse;
