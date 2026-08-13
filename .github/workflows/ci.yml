@@ -27,6 +27,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Test CI surface classifier
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { classifyPaths } from './scripts/ci-classify-paths.mjs';
+
+          assert.deepEqual(classifyPaths(['docs/README.md', 'AGENT_KERNEL.md']), {
+            docsOnly: true, migrations: false, boardE2e: false, homepageE2e: false, unknownCode: false,
+          });
+          assert.equal(classifyPaths(['apps/web/src/server/pilot/entities.ts']).migrations, true);
+          assert.deepEqual(classifyPaths(['apps/web/components/roleSession.ts']), {
+            docsOnly: false, migrations: false, boardE2e: true, homepageE2e: true, unknownCode: false,
+          });
+          assert.equal(classifyPaths(['apps/web/app/board/page.tsx']).boardE2e, true);
+          assert.equal(classifyPaths(['design-system/ppbf.css']).homepageE2e, true);
+          assert.equal(classifyPaths(['apps/web/components/SomeNewSurface.tsx']).unknownCode, true);
+          assert.equal(classifyPaths([]).docsOnly, false);
+          NODE
+
       - name: Classify changed surface
         id: changes
         shell: bash
@@ -45,51 +71,11 @@ jobs:
           git diff --name-only "$base" "$head" > /tmp/changed-files.txt
           echo "Changed files:"
           cat /tmp/changed-files.txt
-
-          docs_only=true
-          if grep -Ev '(^docs/|\.md$)' /tmp/changed-files.txt | grep -q .; then
-            docs_only=false
-          fi
-
-          migrations=false
-          if grep -Eq '^(infra/azure/|apps/web/src/server/pilot/|apps/web/scripts/pilot-|apps/web/package\.json$|package\.json$|\.github/workflows/apply-migrations\.yml$)' /tmp/changed-files.txt; then
-            migrations=true
-          fi
-
-          board_e2e=false
-          if grep -Eq '^(apps/web/app/board/|apps/web/app/api/pilot/board/|apps/web/components/[^/]*Board|apps/web/components/roleSession|apps/web/src/shared/pilotRoleRouting|apps/web/src/server/pilot/(auth|board))' /tmp/changed-files.txt; then
-            board_e2e=true
-          fi
-
-          homepage_e2e=false
-          if grep -Eq '^(apps/web/app/page\.|apps/web/app/globals\.css$|apps/web/components/[^/]*(Home|Landing|Public)|design-system/|apps/web/components/roleSession|apps/web/src/shared/pilotRoleRouting)' /tmp/changed-files.txt; then
-            homepage_e2e=true
-          fi
-
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
-          echo "migrations=$migrations" >> "$GITHUB_OUTPUT"
-          echo "board_e2e=$board_e2e" >> "$GITHUB_OUTPUT"
-          echo "homepage_e2e=$homepage_e2e" >> "$GITHUB_OUTPUT"
-
-          {
-            echo "### CI surface classification"
-            echo "- docs only: $docs_only"
-            echo "- PostgreSQL migration suite: $migrations"
-            echo "- board E2E: $board_e2e"
-            echo "- homepage E2E: $homepage_e2e"
-          } >> "$GITHUB_STEP_SUMMARY"
+          node scripts/ci-classify-paths.mjs /tmp/changed-files.txt
 
       - name: Documentation-only fast path
         if: steps.changes.outputs.docs_only == 'true'
-        run: |
-          echo "Documentation-only change: code, database, browser, and build gates are not applicable."
-
-      - name: Set up Node
-        if: steps.changes.outputs.docs_only != 'true'
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
+        run: echo "Documentation-only change: dependency, code, database, browser, and build gates are not applicable."
 
       - name: Install locked dependencies
         if: steps.changes.outputs.docs_only != 'true'
@@ -107,10 +93,6 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: npm test
 
-      # Persistence/schema tests are expensive because each .pg suite starts an
-      # isolated embedded Postgres process. Run them when the diff can affect the
-      # pilot persistence surface, SQL, migration runners, or package wiring.
-      # The release/deploy path still performs its independent schema checks.
       - name: Run PostgreSQL migration suite
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.migrations == 'true'
         run: npm run test:migrations

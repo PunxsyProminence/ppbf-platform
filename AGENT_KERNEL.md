@@ -12,7 +12,8 @@ For ordinary implementation work, read only:
 
 Read additional documents only when the task actually touches their domain:
 
-- shipping, staging, production, or gatekeeper work -> `docs/AI_DELIVERY_PIPELINE.md`
+- concurrent/multi-AI work -> `docs/AI_COLLABORATION.md`
+- shipping, staging, production, or migration release work -> `docs/AI_DELIVERY_PIPELINE.md`
 - SHADOW safety/model behavior -> relevant SHADOW contract/spec plus the applicable sections of `docs/AI_CONTRIBUTOR_GUARDRAILS.md`
 - authentication/roles -> `AUTH_CONTRACT.md` and `ORGANIZATION_ROLE_MODEL.md`
 - database/schema/migrations -> database rules in `docs/AI_CONTRIBUTOR_GUARDRAILS.md` and the existing migration/runner pattern
