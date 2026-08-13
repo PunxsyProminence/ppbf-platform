@@ -41,15 +41,41 @@ jobs:
           import { classifyPaths } from './scripts/ci-classify-paths.mjs';
 
           assert.deepEqual(classifyPaths(['docs/README.md', 'AGENT_KERNEL.md']), {
-            docsOnly: true, migrations: false, boardE2e: false, homepageE2e: false, unknownCode: false,
+            docsOnly: true,
+            migrations: false,
+            boardE2e: false,
+            homepageE2e: false,
+            unknownCode: false,
           });
-          assert.equal(classifyPaths(['apps/web/src/server/pilot/entities.ts']).migrations, true);
+
+          assert.equal(
+            classifyPaths(['apps/web/src/server/pilot/entities.ts']).migrations,
+            true
+          );
+
           assert.deepEqual(classifyPaths(['apps/web/components/roleSession.ts']), {
-            docsOnly: false, migrations: false, boardE2e: true, homepageE2e: true, unknownCode: false,
+            docsOnly: false,
+            migrations: false,
+            boardE2e: true,
+            homepageE2e: true,
+            unknownCode: false,
           });
-          assert.equal(classifyPaths(['apps/web/app/board/page.tsx']).boardE2e, true);
-          assert.equal(classifyPaths(['design-system/ppbf.css']).homepageE2e, true);
-          assert.equal(classifyPaths(['apps/web/components/SomeNewSurface.tsx']).unknownCode, true);
+
+          assert.equal(
+            classifyPaths(['apps/web/app/board/page.tsx']).boardE2e,
+            true
+          );
+
+          assert.equal(
+            classifyPaths(['design-system/ppbf.css']).homepageE2e,
+            true
+          );
+
+          assert.equal(
+            classifyPaths(['apps/web/components/SomeNewSurface.tsx']).unknownCode,
+            true
+          );
+
           assert.equal(classifyPaths([]).docsOnly, false);
           NODE
 
@@ -64,18 +90,22 @@ jobs:
 
           base="$BASE_SHA"
           head="$HEAD_SHA"
+
           if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
             base="$(git rev-parse "${head}^" 2>/dev/null || git rev-list --max-parents=0 "$head")"
           fi
 
           git diff --name-only "$base" "$head" > /tmp/changed-files.txt
+
           echo "Changed files:"
           cat /tmp/changed-files.txt
+
           node scripts/ci-classify-paths.mjs /tmp/changed-files.txt
 
       - name: Documentation-only fast path
         if: steps.changes.outputs.docs_only == 'true'
-        run: echo "Documentation-only change: dependency, code, database, browser, and build gates are not applicable."
+        run: |
+          echo "Documentation-only change: dependency, code, database, browser, and build gates are not applicable."
 
       - name: Install locked dependencies
         if: steps.changes.outputs.docs_only != 'true'
