@@ -147,7 +147,7 @@ export default function AthleteDailyCheckIn() {
       </div>
 
       <footer className="mt-5 border border-zinc-800 rounded-none p-3 text-xs uppercase tracking-[0.1em] text-slate-400">
-        Pending Coach Verification Flag {"{"}"verified_by_jason": false{"}"}
+        Pending Coach Verification Flag {"{"}&quot;verified_by_jason&quot;: false{"}"}
       </footer>
     </section>
   );

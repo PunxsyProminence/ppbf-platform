@@ -50,7 +50,7 @@ export default function GuardianSafetyControls() {
       </div>
 
       <p className="mt-4 animate-pulse text-[#b91c1c] text-sm uppercase tracking-[0.08em]">
-        YOUTH PROTECTION PROTOCOL ACTIVE: All digital communications are logged and CC'd to the Program & Safety Director.
+        YOUTH PROTECTION PROTOCOL ACTIVE: All digital communications are logged and CC&apos;d to the Program &amp; Safety Director.
       </p>
     </section>
   );

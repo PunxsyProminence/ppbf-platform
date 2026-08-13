@@ -168,7 +168,7 @@ export default function IncidentCommandCenter() {
                 <p className="mt-1 text-xs text-slate-500">Status: {row.status} · Triggered: {row.triggered_by}</p>
                 {asBoolean(row.metadata.awaiting_return_to_training) ? (
                   <p className="mt-2 border border-zinc-800 rounded-none bg-[#09090b] px-2 py-1 text-xs uppercase tracking-[0.08em] text-slate-300">
-                    Pending Coach Verification Flag {"{"}"verified_by_jason": false{"}"}
+                    Pending Coach Verification Flag {"{"}&quot;verified_by_jason&quot;: false{"}"}
                   </p>
                 ) : null}
               </article>
