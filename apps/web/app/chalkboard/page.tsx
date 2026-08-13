@@ -30,7 +30,7 @@ const BOARDS: ReadonlyArray<{ placement: AnnouncementPlacement; where: string; w
   {
     placement: 'everywhere',
     where: 'Everywhere',
-    who: 'Every surface at once — the sign-in page, athletes, coaches, and parents alike.',
+    who: 'Every board at once — athletes, coaches, and parents alike.',
   },
   {
     placement: 'athlete_workspace',

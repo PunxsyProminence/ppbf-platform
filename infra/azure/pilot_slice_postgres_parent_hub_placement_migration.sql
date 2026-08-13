@@ -14,9 +14,12 @@
 -- pilot_slice_postgres_announcement_placements_migration.sql, so after this
 -- file re-creates the constraint under the same name, re-running that
 -- earlier migration is a no-op rather than a downgrade back to four values.
--- DROP IF EXISTS + ADD is idempotent as a pair, and the re-add revalidates
--- existing rows, all of which carry values from the old set -- a subset of
--- the new one.
+-- The replacement itself is guarded on the constraint's DEFINITION: once the
+-- check already admits 'parent_hub', a replay skips the DROP/ADD entirely,
+-- so `all`-loop dispatches stay catalog no-ops instead of re-validating the
+-- table under an ACCESS EXCLUSIVE lock each time. When the swap does run,
+-- the re-add revalidates existing rows, all of which carry values from the
+-- old set -- a subset of the new one.
 --
 -- DEPENDS ON pilot_slice_postgres_announcement_placements_migration.sql
 --
@@ -29,9 +32,20 @@
 -- (apps/web/scripts/pilot-apply-parent-hub-placement-migration.mjs) opens
 -- the transaction itself, matching the announcement-placements runner.
 
-alter table pilot.announcements
-  drop constraint if exists pilot_announcements_placement_check;
-
-alter table pilot.announcements
-  add constraint pilot_announcements_placement_check
-  check (placement in ('gym_notices', 'athlete_workspace', 'coach_workspace', 'parent_hub', 'everywhere'));
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'pilot_announcements_placement_check'
+      and conrelid = 'pilot.announcements'::regclass
+      and pg_get_constraintdef(oid) like '%parent_hub%'
+  ) then
+    alter table pilot.announcements
+      drop constraint if exists pilot_announcements_placement_check;
+    alter table pilot.announcements
+      add constraint pilot_announcements_placement_check
+      check (placement in ('gym_notices', 'athlete_workspace', 'coach_workspace', 'parent_hub', 'everywhere'));
+  end if;
+end
+$$;
