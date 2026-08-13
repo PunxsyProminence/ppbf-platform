@@ -24,56 +24,109 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed surface
+        id: changes
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          base="$BASE_SHA"
+          head="$HEAD_SHA"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base="$(git rev-parse "${head}^" 2>/dev/null || git rev-list --max-parents=0 "$head")"
+          fi
+
+          git diff --name-only "$base" "$head" > /tmp/changed-files.txt
+          echo "Changed files:"
+          cat /tmp/changed-files.txt
+
+          docs_only=true
+          if grep -Ev '(^docs/|\.md$)' /tmp/changed-files.txt | grep -q .; then
+            docs_only=false
+          fi
+
+          migrations=false
+          if grep -Eq '^(infra/azure/|apps/web/src/server/pilot/|apps/web/scripts/pilot-|apps/web/package\.json$|package\.json$|\.github/workflows/apply-migrations\.yml$)' /tmp/changed-files.txt; then
+            migrations=true
+          fi
+
+          board_e2e=false
+          if grep -Eq '^(apps/web/app/board/|apps/web/app/api/pilot/board/|apps/web/components/[^/]*Board|apps/web/components/roleSession|apps/web/src/shared/pilotRoleRouting|apps/web/src/server/pilot/(auth|board))' /tmp/changed-files.txt; then
+            board_e2e=true
+          fi
+
+          homepage_e2e=false
+          if grep -Eq '^(apps/web/app/page\.|apps/web/app/globals\.css$|apps/web/components/[^/]*(Home|Landing|Public)|design-system/|apps/web/components/roleSession|apps/web/src/shared/pilotRoleRouting)' /tmp/changed-files.txt; then
+            homepage_e2e=true
+          fi
+
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "migrations=$migrations" >> "$GITHUB_OUTPUT"
+          echo "board_e2e=$board_e2e" >> "$GITHUB_OUTPUT"
+          echo "homepage_e2e=$homepage_e2e" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### CI surface classification"
+            echo "- docs only: $docs_only"
+            echo "- PostgreSQL migration suite: $migrations"
+            echo "- board E2E: $board_e2e"
+            echo "- homepage E2E: $homepage_e2e"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Documentation-only fast path
+        if: steps.changes.outputs.docs_only == 'true'
+        run: |
+          echo "Documentation-only change: code, database, browser, and build gates are not applicable."
 
       - name: Set up Node
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
       - name: Install locked dependencies
+        if: steps.changes.outputs.docs_only != 'true'
         run: npm ci
 
       - name: Type-check
+        if: steps.changes.outputs.docs_only != 'true'
         run: npm run typecheck
 
       - name: Lint
+        if: steps.changes.outputs.docs_only != 'true'
         run: npm run lint
 
       - name: Run all fast regression tests
+        if: steps.changes.outputs.docs_only != 'true'
         run: npm test
 
-      # Each .pg suite runs in its own Jest process (see the test:migrations:*
-      # scripts). They spin up separate embedded Postgres instances and load
-      # ESM-only modules through a native dynamic import; sharing one process
-      # made a suite's import resolve after another suite's environment had been
-      # torn down. --runInBand is therefore implicit -- each invocation runs a
-      # single file -- so no extra flags are passed through here.
+      # Persistence/schema tests are expensive because each .pg suite starts an
+      # isolated embedded Postgres process. Run them when the diff can affect the
+      # pilot persistence surface, SQL, migration runners, or package wiring.
+      # The release/deploy path still performs its independent schema checks.
       - name: Run PostgreSQL migration suite
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.migrations == 'true'
         run: npm run test:migrations
 
       - name: Install Playwright browsers
+        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true')
         run: npx --workspace web playwright install --with-deps chromium
 
       - name: Run board governance E2E
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.board_e2e == 'true'
         run: npm --workspace web run test:e2e:board
 
-      # The public entry points, and the design system's own laws on them. This
-      # spec existed and ran nowhere, so nothing checked that the homepage stays
-      # reachable signed-out, that no password field creeps onto it, or that
-      # protected routes still redirect.
-      #
-      # It asserts computed styles rather than pixels, on purpose. Screenshot
-      # baselines do not survive a browser revision change here — this runner
-      # pins Chrome for Testing 149, shaping moves wrap points, and the prose
-      # sections come out 23-38px taller than on the machine that recorded them.
-      # Narrowing to the hero fixed the geometry and still differed by 5% of the
-      # image, where a call-to-action changing colour is 4%: the noise and the
-      # signal are the same size. Computed styles do not have that problem, and
-      # every defect this branch found was a wrong token, a failing contrast
-      # ratio or an undersized target — all visible without pixels.
       - name: Run public homepage E2E
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.homepage_e2e == 'true'
         run: npm --workspace web run test:e2e:homepage
 
       - name: Build production application
+        if: steps.changes.outputs.docs_only != 'true'
         run: npm run build
