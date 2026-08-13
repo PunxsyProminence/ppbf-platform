@@ -1,180 +1,118 @@
-# AI Delivery Pipeline
+# Release Procedure
 
-How missing capabilities get built by any AI and shipped to production through
-one verified path. This is the operating manual for the flow. Three documents
-work together and none of them stand alone:
+This file governs staging and production release work only. Ordinary building follows `AGENT_KERNEL.md` and `docs/AI_COLLABORATION.md`.
 
-- **This file** — roles, lanes, the gate a builder's work passes through.
-- [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md) — the one current
-  queue, its state machine, and the collision rules.
-- [docs/current/PRODUCTION_STATE.json](current/PRODUCTION_STATE.json) — what
-  is actually deployed and runtime-verified, right now, written only by the
-  gatekeeper after observing the live environment.
+## No standing production bot
 
-Rules of conduct live in
-[AI_CONTRIBUTOR_GUARDRAILS.md](AI_CONTRIBUTOR_GUARDRAILS.md) and still bind
-every participant. The role decomposition this extends is
-[MULTI_AI_EXECUTION_PLAN.md](MULTI_AI_EXECUTION_PLAN.md).
+There is no permanent production bot, deploy coordinator, gatekeeper model, or model-specific release owner.
 
-The platform serves youth athletes. Every shortcut in this pipeline was
-removed on purpose.
+- Jason is the sole human production approval authority.
+- Any current repo-capable AI/session may temporarily prepare or operate one release after Jason explicitly requests that release work.
+- That authority is task-scoped and ends when the release is completed, stopped, or handed back.
+- No AI may approve the protected GitHub `production` environment, invent a migration attestation, authorize a rollback, weaken a failed gate, or claim live verification from source reading.
 
-## The central rule
+The deployment workflows are the control plane. The AI is only a temporary operator of those controls.
 
-**Implemented, merged, deployed, and runtime-verified are four different
-claims.** This repo has shipped code that was merged, green in CI, and had
-never worked once (guardrails §1) — CI proves compilation and unit behavior,
-not that the product works. So "done" means production-deployed AND
-production-verified, unless a ticket explicitly defines a documentation-only
-completion rule. A ticket does not advance a state because code exists on a
-branch; it advances because the gatekeeper observed it working at that state.
-See the state machine in [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md).
+## Release states
 
-## The shape
+Keep these claims distinct:
 
+1. `MERGED` — code is on `main`.
+2. `CI_VERIFIED` — required GitHub checks passed for the exact SHA.
+3. `STAGED` — the exact SHA was deployed to staging and an immutable image digest was captured.
+4. `PRODUCTION_DEPLOYED` — the protected production workflow completed for that SHA and digest.
+5. `PRODUCTION_RUNTIME_VERIFIED` — the live environment was read back and the required probes passed.
+
+A later state must not be inferred from an earlier one.
+
+## Prepare a release
+
+A request such as `Prepare current main for production; do not deploy yet` authorizes staging and evidence collection, not final production approval.
+
+For the exact candidate SHA:
+
+1. Confirm it is current on `main` and inspect open PRs and active deployment runs for collisions or stale releases.
+2. Confirm the required CI result is green.
+3. Diff the candidate against the SHA currently observed in production. Determine whether the range includes schema, migration-runner, environment-variable, auth, organization-isolation, safeguarding, or SHADOW safety changes.
+4. Apply required staging migrations through `.github/workflows/apply-migrations.yml`. Never apply them from a laptop or ad hoc AI shell.
+5. Dispatch `.github/workflows/deploy-staging.yml` for the exact SHA and the applicable gates.
+6. Capture the immutable `sha256:` image digest produced by staging.
+7. Verify the staging revision, traffic, smoke checks, and any release-specific acceptance probe.
+8. Return one compact release packet:
+
+```text
+RELEASE READY
+SHA: <40-character main SHA>
+Image: sha256:<64 hex characters>
+CI: PASS
+Staging: PASS
+Migrations required: yes/no
+Staging migrations: PASS/not applicable
+Release-specific probes: PASS/list
+Open production runs: none/list
+Rollback: NO
+Owner action: authorize promotion
 ```
- Owner picks a ticket        Builder AI implements         Gatekeeper verifies
- from intake/tickets/   →    it in one of two lanes   →    merges, stages,      →  production
- and hands it to an AI                                     promotes
+
+Stop instead of producing `RELEASE READY` when any item is unknown or failed.
+
+## Promote to production
+
+Production promotion requires a separate explicit instruction from Jason, such as `Promote that release`.
+
+1. If migrations are required, dispatch the production migration workflow first and verify its result. Do not type `CONFIRMED` from assumption or from a merged SQL file alone.
+2. Dispatch `.github/workflows/deploy-production.yml` from `main` using:
+
+```text
+confirm_sha: <exact prepared SHA>
+release_digest: <exact staging-tested digest>
+migrations_complete: CONFIRMED
+allow_rollback: NO
 ```
 
-Three roles:
+3. GitHub must halt at the protected `production` environment for Jason's approval. No AI approves that checkpoint.
+4. The workflow must verify the production schema, digest availability, rollback direction, deployment, and smoke checks.
 
-| Role | Who | Holds |
-|---|---|---|
-| **Owner** | Jason | Ticket selection, production approval clicks, all final calls |
-| **Builder** | Any AI (Claude, ChatGPT, Grok, Copilot, …) | The ticket it was handed, nothing else |
-| **Gatekeeper** | The person or session assigned to the gatekeeper role | `gh`, `az`, the local test environment, and the only path to merge/deploy |
+The SHA and digest must describe the same staged artifact. If `main` moves after staging, re-validate the release rather than pairing an old digest with a new SHA.
 
-Builders never deploy, never merge, never touch the database. The gatekeeper
-never expands a ticket's scope. The owner never has to read a diff to know
-whether something is safe — that is what the verification ledger is for.
+## Verify production
 
-## Lane A — git-capable builders (Claude Code web, Copilot agents)
+After the workflow completes, read back the live environment rather than relying only on a green badge:
 
-1. Read the ticket file, [AI_CONTRIBUTOR_GUARDRAILS.md](AI_CONTRIBUTOR_GUARDRAILS.md),
-   and the file map in the ticket.
-2. Branch from current `origin/main`, named `ticket/<id>-<slug>`.
-3. Build exactly the ticket. Run locally before pushing:
-   `npm ci && npm run typecheck && npm run lint && npm test`.
-4. **Push once, then open a draft PR immediately** using the PR template.
-   A repository ruleset blocks updating a branch after it is pushed —
-   there are no fixup pushes. If you must revise, open a new branch
-   `ticket/<id>-<slug>-v2` and a new PR, and close the old one yourself.
-5. Fill the Evidence section of the template. Claims without evidence are
-   returned unread (guardrails §1).
-6. Stop. Do not merge, do not dispatch workflows, do not "helpfully" fix
-   adjacent code.
+- `PPBF_RELEASE_SHA`
+- running image digest
+- active revision
+- traffic assignment
+- login empty-payload probe (`400`)
+- session probe (`200`)
+- unauthenticated SHADOW probe (`401`)
+- release-specific acceptance probes
 
-## Lane B — chat-only builders that are permitted to author files
+Only then report `PRODUCTION_RUNTIME_VERIFIED`.
 
-For chat-only AIs that can produce files but do not have a git workflow. The
-**drop zone** is `intake/drops/`.
+## Failure and rollback
 
-1. The owner pastes the ticket file into the AI as its prompt.
-2. The AI produces complete files (never fragments or "…rest unchanged"),
-   plus a `MANIFEST.md` listing: ticket id, every file with its full repo
-   path and whether it is new or replaces an existing file, what was NOT
-   done, and any assumption made.
-3. The owner saves the output under `intake/drops/<ticket-id>/`, mirroring
-   repo paths (e.g. `intake/drops/T-014/apps/web/app/store/page.tsx`), and
-   tells the gatekeeper "drop T-014 is in".
-4. The gatekeeper integrates: applies the files on a fresh branch, reconciles
-   them with current `main`, runs the full gate, authors the PR, and credits
-   the builder in the PR body. If the model family remains audit-only under
-   the repo's guardrails, the gatekeeper returns the drop instead of turning it
-   into a PR. Integration problems go back to the owner as ticket feedback,
-   not silent rewrites.
+A release operator does not repair product code inside the release lane.
 
-`intake/drops/` is gitignored — half-finished drops never reach a commit; the
-only way out of the drop zone is through the gatekeeper's verification.
+- Before deployment: stop at the failed gate and return the exact run, step, input, and evidence.
+- After deployment: read the actual running SHA/digest, preserve failure evidence, and prepare either a retry or rollback packet.
+- A rollback requires Jason's explicit authorization and a known prior SHA/digest. Dispatch with `allow_rollback: YES` only when the rollback is deliberate.
 
-## What the gatekeeper runs on every intake (both lanes)
+## Production-state records
 
-In order, stopping at the first failure:
+Live Azure state and current GitHub workflow evidence outrank `docs/current/PRODUCTION_STATE.json`. That JSON file is an audit snapshot, not a controller and not bot-owned.
 
-1. **Freshness** — branch/drop reconciled against current `origin/main`
-   (this repo merges fast; stale bases are the #1 conflict source).
-2. **Scope check** — diff touches only the ticket's allowed files. Contested
-   files (guardrails §3) touched without the ticket saying so → returned.
-3. **Static gate** — `npm run typecheck` (both projects), `npm run lint`.
-4. **Test gate** — `npm test` (3,600+), plus `npm run test:migrations` when
-   the diff includes SQL or `src/server/pilot/` persistence code.
-5. **Build gate** — `npm run build`.
-6. **Adversarial review** — the gatekeeper attempts to refute the PR's
-   claims, not confirm them: run the changed surface, probe the failure
-   paths, check authorization scoping on every new query
-   (`organization_id` on every organization-owned read/write — see the
-   convention test), check the response validator lists if SHADOW phrasing
-   changed.
-7. **Safety invariants** — guardrails §4 checklist; any weakening is an
-   automatic return regardless of what else passes.
-8. **Merge** — squash, PR number in title (house style), only after CI
-   `validate` is green in GitHub too.
-9. **Apply staging migrations** — if the ticket adds SQL or persistence
-   changes, apply the staging migration before dispatching `deploy-staging`
-   and record the attested schema state.
-10. **Stage** — dispatch `deploy-staging` with the exact SHA; capture the
-    image digest; run the smoke set (login 400 / session 200 / shadow 401)
-    plus whatever probe the ticket's acceptance criteria name. New
-    user-facing behavior extends the SHADOW E2E gate or states why not
-    (guardrails §1).
-11. **Apply production migrations** — if the ticket adds SQL or persistence
-    changes, apply the production migration before dispatching
-    `deploy-production` and record the attested schema state.
-12. **Promote** — dispatch `deploy-production` with that SHA + digest.
-    The GitHub `production` environment rule halts it for the owner's
-    approval — that click is the owner's checkpoint, by design.
-13. **Verify live** — read the container app's `PPBF_RELEASE_SHA` and image
-    digest back and confirm they match what was staged; run the smoke set
-    against production.
-14. **Close the ticket** — move its file to `intake/tickets/done/` with a
-    Shipped section: PR number, production SHA, digest, verification
-    evidence.
+Any authorized release verifier may propose an update only after directly observing the relevant environment. Use `null` or `not_verified` when live evidence is unavailable. Historical references to a named gatekeeper or VS Code Claude session describe an old operating model and grant no current authority.
 
-Every intake gets a verification ledger comment on its PR: what was run,
-what passed, what was returned and why. "Green" is never asserted without
-the command output to show for it.
+## Minimal release path
 
-## Ticket files
-
-Tickets live in `intake/tickets/`, one file each, named
-`T-<nnn>-<slug>.md`, written from the gap register by the gatekeeper and
-approved by the owner before any builder sees them. The format is the
-Standard Ticket Contract from
-[MULTI_AI_EXECUTION_PLAN.md](MULTI_AI_EXECUTION_PLAN.md) plus an embedded
-context block, so a ticket can be pasted into any AI as a complete,
-self-sufficient prompt. See `intake/tickets/T-000-template.md`.
-
-Rules:
-
-- One ticket, one concern, one PR. Tickets sized to land inside a single
-  builder session (roughly ≤ 500 changed lines).
-- `Files allowed` is a hard boundary, not a suggestion.
-- Acceptance criteria are executable: a command, a probe, a test name —
-  never "works correctly".
-- Two builders never hold tickets whose allowed files overlap (collision
-  rule from the work queue, still in force).
-
-## Sequencing
-
-The locked build order from MULTI_AI_EXECUTION_PLAN still governs priority:
-authority → athlete domain → audit → intake → telemetry → analytics →
-everything else. Within a band, tickets are independent by construction
-(disjoint file sets), so any number of builders can run in parallel.
-
-## What can go wrong, and who catches it
-
-| Failure | Caught by |
-|---|---|
-| Builder claims done, never ran it | Evidence section empty → returned at step 0 |
-| Stale base, silent conflict | Freshness (step 1) |
-| Scope creep into contested files | Scope check (step 2) |
-| Compiles, fails in reality | Adversarial review (step 6), staging smoke (step 10) |
-| Cross-org data leak | Authorization sweep in step 6 + convention test |
-| Weakened safety validator | Invariant checklist (step 7) |
-| Wrong image promoted | Digest/SHA match verification (step 13) |
-| Two AIs on one file | Ticket allowed-files disjointness + draft-PR visibility |
-
-The pipeline assumes every builder is competent and none are trusted. That
-is not cynicism; it is how the gate earns the owner a one-click deploy.
+```text
+Jason requests preparation
+→ current AI/session validates and stages exact SHA
+→ AI returns RELEASE READY packet
+→ Jason authorizes promotion
+→ workflow queues protected production deployment
+→ Jason approves GitHub environment
+→ workflow deploys and probes
+→ current AI/session reads back live state
+```
