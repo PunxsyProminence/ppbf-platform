@@ -72,12 +72,13 @@ describe('the boards, from behind the desk', () => {
   it('shows every board a dashboard draws, and one composer each', async () => {
     const { container } = await renderDesk();
 
-    expect(container.querySelectorAll('.chalkboard')).toHaveLength(3);
-    expect(screen.getAllByRole('button', { name: /write on the board/i })).toHaveLength(3);
+    expect(container.querySelectorAll('.chalkboard')).toHaveLength(4);
+    expect(screen.getAllByRole('button', { name: /write on the board/i })).toHaveLength(4);
 
     expect(screen.getByText('Everywhere')).toBeTruthy();
     expect(screen.getByText('The athletes’ board')).toBeTruthy();
     expect(screen.getByText('The coaches’ board')).toBeTruthy();
+    expect(screen.getByText('The parents’ board')).toBeTruthy();
   });
 
   it('reads each board from its own placement', async () => {
@@ -87,7 +88,7 @@ describe('the boards, from behind the desk', () => {
       .filter((args) => String(args[0]).includes('/api/pilot/announcements/get'))
       .map((args) => (JSON.parse(String(args[1]?.body)) as { placement: string }).placement);
 
-    expect(placements.sort()).toEqual(['athlete_workspace', 'coach_workspace', 'everywhere']);
+    expect(placements.sort()).toEqual(['athlete_workspace', 'coach_workspace', 'everywhere', 'parent_hub']);
   });
 
   it('writes one line, as motivation, to the board it was written on', async () => {

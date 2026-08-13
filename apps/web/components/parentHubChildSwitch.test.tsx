@@ -115,9 +115,9 @@ describe('parent hub child selector', () => {
   });
 });
 
-// The placement vocabulary has no parent surface, so 'everywhere' is the only
-// thing this hub can honestly ask for. Asking for anything else would be a
-// placement no author can choose and no migration defines.
+// The hub asks for its own surface. 'parent_hub' is the placement an author
+// chooses to reach guardians specifically, and the server's read includes
+// 'everywhere' with any placement, so gym-wide items still arrive.
 describe('authored announcements on the parent hub', () => {
   function announcementRequests(fetchMock: jest.Mock): Array<Record<string, unknown>> {
     return fetchMock.mock.calls
@@ -125,7 +125,7 @@ describe('authored announcements on the parent hub', () => {
       .map((call) => JSON.parse(String((call[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>);
   }
 
-  test('the hub asks only for gym-wide items', async () => {
+  test('the hub asks for the parent surface', async () => {
     const fetchMock = installFetch();
     await act(async () => {
       render(<ParentHub />);
@@ -134,7 +134,7 @@ describe('authored announcements on the parent hub', () => {
     const requests = announcementRequests(fetchMock);
     expect(requests.length).toBeGreaterThan(0);
     for (const request of requests) {
-      expect(request.placement).toBe('everywhere');
+      expect(request.placement).toBe('parent_hub');
     }
     expect(requests).toEqual(
       expect.arrayContaining([

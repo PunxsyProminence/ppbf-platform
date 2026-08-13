@@ -30,7 +30,7 @@ const BOARDS: ReadonlyArray<{ placement: AnnouncementPlacement; where: string; w
   {
     placement: 'everywhere',
     where: 'Everywhere',
-    who: 'Parents see this one. It is the only placement the parent hub draws, because the vocabulary names no parent surface.',
+    who: 'Every surface at once — the sign-in page, athletes, coaches, and parents alike.',
   },
   {
     placement: 'athlete_workspace',
@@ -41,6 +41,11 @@ const BOARDS: ReadonlyArray<{ placement: AnnouncementPlacement; where: string; w
     placement: 'coach_workspace',
     where: 'The coaches’ board',
     who: 'Coaches only. Nothing written here reaches a member.',
+  },
+  {
+    placement: 'parent_hub',
+    where: 'The parents’ board',
+    who: 'On the parent hub, for guardians. Athletes and coaches never see it.',
   },
 ];
 

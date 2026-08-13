@@ -13,6 +13,7 @@ export const ANNOUNCEMENT_PLACEMENTS = [
   'gym_notices',
   'athlete_workspace',
   'coach_workspace',
+  'parent_hub',
   'everywhere',
 ] as const;
 
@@ -26,6 +27,7 @@ export const PLACEMENT_LABELS: Record<AnnouncementPlacement, string> = {
   gym_notices: 'Gym Notices (sign-in page)',
   athlete_workspace: 'Athlete Workspace',
   coach_workspace: 'Coach Workspace',
+  parent_hub: 'Parent Hub',
   everywhere: 'Everywhere',
 };
 

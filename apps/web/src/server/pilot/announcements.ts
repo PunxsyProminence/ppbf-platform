@@ -28,13 +28,15 @@ const ALLOWED_AUTHOR_ROLES: AnnouncementAuthorRole[] = [
 ];
 
 // Closed vocabularies, mirroring the check constraints in
-// infra/azure/pilot_slice_postgres_announcement_placements_migration.sql. A
+// infra/azure/pilot_slice_postgres_announcement_placements_migration.sql, as
+// widened by pilot_slice_postgres_parent_hub_placement_migration.sql. A
 // placement names a surface that exists; an unrecognized one would render
 // nowhere at all, so the write is refused rather than stored.
 export const ANNOUNCEMENT_PLACEMENTS = [
   'gym_notices',
   'athlete_workspace',
   'coach_workspace',
+  'parent_hub',
   'everywhere',
 ] as const;
 
