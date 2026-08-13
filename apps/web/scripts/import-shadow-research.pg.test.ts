@@ -37,6 +37,7 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-import-shadow-research-pg-test-${D
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, 'test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../infra/azure');
 const EVIDENCE_MIGRATION_FILE = 'pilot_slice_postgres_shadow_evidence_migration.sql';
+const CAPABILITY_FEEDER_TRACKS_MIGRATION_FILE = 'pilot_slice_postgres_capability_feeder_tracks_migration.sql';
 const IMPORTER_PATH = path.resolve(__dirname, 'import-shadow-research.mjs');
 
 const ORG_A = 'org-shadowresearch-a';
@@ -50,6 +51,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let baseSchemaSql: string;
 let evidenceMigrationSql: string;
+let capabilityFeederTracksMigrationSql: string;
 let importerModule: {
   loadSeedPackage: (input: {
     seedDir: string;
@@ -93,6 +95,16 @@ async function freshDatabase(name: string, { withEvidenceMigration }: { withEvid
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
   await client.query(baseSchemaSql);
+
+  // Applied unconditionally, unlike the evidence migration above. The importer's
+  // upsertCapabilityMap writes shadow_library_capability_map.feeder_tracks, and
+  // that column exists only in this migration -- the base schema creates the
+  // table without it. So this is part of the schema the importer REQUIRES, not
+  // an optional increment the suite toggles, and leaving it out failed the
+  // idempotency test with `column "feeder_tracks" ... does not exist` while the
+  // two prerequisite tests either side of it still passed.
+  await client.query(capabilityFeederTracksMigrationSql);
+
   if (withEvidenceMigration) {
     await client.query(evidenceMigrationSql);
   }
@@ -146,6 +158,10 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   evidenceMigrationSql = await fs.readFile(path.join(INFRA_DIR, EVIDENCE_MIGRATION_FILE), 'utf8');
+  capabilityFeederTracksMigrationSql = await fs.readFile(
+    path.join(INFRA_DIR, CAPABILITY_FEEDER_TRACKS_MIGRATION_FILE),
+    'utf8',
+  );
 
   importerModule = (await nativeDynamicImport(pathToFileURL(IMPORTER_PATH).href)) as typeof importerModule;
 });
