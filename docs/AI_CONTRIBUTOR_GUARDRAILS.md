@@ -1,260 +1,93 @@
 # AI Contributor Guardrails
 
-Rules for ANY AI (Claude, ChatGPT, Grok, or other) doing work in this
-repository. These are not style preferences — every rule below exists because
-violating it broke something real, usually silently. If a rule seems to block
-your task, say so in your PR description and stop; do not work around it.
+Conditional safety rules for AI work in this repository. `AGENT_KERNEL.md` is the default execution contract; load this file only when the touched surface makes these rules relevant.
 
-The platform serves **youth athletes**. Mistakes here are not abstract.
+The platform serves youth athletes. Preserve the hard boundaries below, but do not turn incident history into extra approval ceremony.
 
----
+## 1. Claims require evidence
 
-## 1. The prime rule: merged is not working
+- `Fixed`, `works`, `broken`, `deployed`, and `verified` require an executable test, reproduction, measurement, workflow result, or live observation.
+- Code reading is not runtime proof. Mark unexecuted behavioral claims `UNVERIFIED` and name the confirming check.
+- Use the smallest relevant test while iterating. Let the change-aware CI workflow run the required final repository gates.
+- New user-facing SHADOW behavior should extend the applicable staging gate or explicitly state why a deterministic gate is not possible.
 
-This repo has carried features that were merged, green in CI, and had **never
-worked once**: a chat tier whose every request failed on two independent
-defects, a background job system that 400'd on every call, a migration that
-was never parseable, an approval flow that requires a state nothing can
-produce. CI proves compilation and unit behavior; it does not prove the
-product works.
+## 2. Current source, bounded scope, and collisions
 
-Therefore:
+- Start from current `main` and inspect live open PRs before editing.
+- Use one bounded concern per branch/PR.
+- A ticket is optional unless coordination, handoff, scheduling, or a durable decision record adds value.
+- Do not duplicate an implementation already on `main` or in an open PR.
+- Sequence overlapping work on contested surfaces instead of letting multiple AIs silently edit the same contract.
 
-- **Claims require evidence.** "Fixed", "works", "broken" must cite a test, a
-  reproduction, or a measurement. If you cannot execute code, label every
-  such claim `UNVERIFIED — needs CI/gate confirmation`.
-- **Never assert model/API behavior from reading code.** Reasoning-model
-  latency, token spend, parameter support, and filter behavior were all
-  discovered by measurement, and several confident code-reading theories died
-  on contact with evidence.
-- The end-to-end proof is the **SHADOW E2E gate** (`deploy-staging` dispatch
-  with `enable_shadow_gate=true`). New user-facing behavior should add or
-  extend a gate step, or state explicitly why it cannot be gated.
+Contested surfaces include:
 
-## 2. Branch and PR discipline
-
-- Never commit to `main`. One branch, one PR, one concern.
-- **Open your PR as a draft immediately** — drafts are how parallel sessions
-  see each other's intent. Check `gh pr list` (or the PR page) for open work
-  touching your files BEFORE you start.
-- Squash-merge only, PR number in the title line (house style).
-- CI (`validate`) must be green. Full suite (`npm test` from repo root, 1200+
-  tests) and `npx tsc --noEmit -p apps/web` before pushing.
-- Do not modify files owned by another open PR. If you must, say so and
-  sequence with its author.
-
-## 3. Contested files — sequence, never parallelize
-
-Three parties edited these in one night and paid for it in conflicts and
-races. Touching them requires checking open PRs first and saying so in your
-own PR:
-
-- `.github/workflows/*` (deploy-staging, deploy-production, apply-migrations)
-- `apps/web/src/server/pilot/shadowChat.ts` (validator + system prompt)
-- `apps/web/src/server/pilot/shadowRouter.ts` (model registry, timeouts)
-- `apps/web/scripts/pilot-shadow-intake-gate.mjs` and
-  `pilot-provision-gate-fixtures.mjs`
+- `.github/workflows/*`
+- `apps/web/src/server/pilot/shadowChat.ts`
+- `apps/web/src/server/pilot/shadowRouter.ts`
+- `apps/web/scripts/pilot-shadow-intake-gate.mjs`
+- `apps/web/scripts/pilot-provision-gate-fixtures.mjs`
 - `infra/azure/*.sql`
 
-## 4. Safety invariants — never weaken, only extend
+## 3. Hard safety invariants
 
-- **Response validator** (`shadowChat.ts`): its true-positive cases are
-  pinned by tests in BOTH directions (things that must filter, things that
-  must pass). Any change must extend both lists. Never delete a
-  must-still-filter case to make something pass.
-- **Doctrine**: no diagnosis, no prescription, no clearance, no invented
-  numbers or citations. The system prompt's PHRASING section exists because
-  the filter enforces it — do not put phrasing in the prompt that the
-  validator forbids (this happened; it muted the product).
-- **Auth boundaries**: PIN sessions are athlete-only, by design; privileged
-  local sessions are revoked on first use. Privileged accounts are
-  Microsoft-authenticated. Do not add non-interactive privileged auth
-  endpoints for testing convenience — the gate mints sessions via the DB on
-  CI runners instead, deliberately.
-- **The gate provisions nothing** (`gate-session.mjs` stance): fixtures are
-  created only by the explicit, visible provisioning step or by the real
-  APIs under test. Never make a gate silently invent state to pass.
-- **Fail closed.** Guards that refuse (SHA mismatch, migration attestation,
-  fixture-missing errors) are features. Fix the input, never the guard.
+- **SHADOW response validation:** changes must preserve both must-filter and must-pass cases. Do not delete a safety case merely to make output pass.
+- **No invented authority:** no diagnosis, prescription, medical clearance, fabricated numbers, fabricated citations, or autonomous policy decisions.
+- **Authentication:** athlete PIN sessions remain athlete-only. Privileged accounts use the approved privileged authentication path; do not create convenience backdoors for tests.
+- **Organization isolation:** every organization-owned read/write must remain scoped to the correct `organization_id` and actor authority.
+- **Safeguarding/minors:** do not weaken consent, review, quarantine, disclosure, retention, or human-decision boundaries to remove friction.
+- **Visible fixtures:** gates must not silently invent state. Provisioning belongs in explicit setup steps or the real APIs under test.
+- **Fail closed:** SHA, schema, authorization, evidence, and fixture guards are controls. Correct the input or implementation; do not bypass the guard.
 
-## 5. Known landmines (do not "fix" casually)
+## 4. Current SHADOW integration facts
 
-- **CLOSED (2026-07-30) — intake approval was unreachable for months**:
-  documents are born `pending_security_review`, and until the
-  document-review feature existed nothing could produce the scanned+ready
-  state approval requires. The closure is the audited human review pair
-  (`/api/pilot/intake/document-review` + `document-link`) this landmine
-  always prescribed. Two things must stay true: approval on unreviewed
-  documents must still refuse (the gate asserts the refusal BEFORE
-  reviewing — never remove that), and review must stay a human attestation
-  with an audit row, not an auto-pass.
-- **SHADOW job worker is dormant by design**: it starts only when
-  `PPBF_SHADOW_WORKER_ENABLED=true` is set in a deploy workflow. Queued
-  scout reports/board summaries not processing is configuration, not a bug.
-- **Interactive Heavy Bag is synchronous on purpose** (~90s wait); the gate
-  asserts it. `preferAsync` affects background flows only.
+These are measured operating constraints, not general model folklore:
 
-## 6. Model-integration facts (all measured, all cost real debugging)
+- GPT-5-family reasoning deployments reject non-default `temperature`; omit it for reasoning models.
+- Reasoning tokens count against `max_completion_tokens`; too-small budgets can return `finish_reason: length` with empty content.
+- Provider timeout must remain compatible with measured latency and the Container Apps ingress ceiling. The current deployment baseline is 120 seconds; do not reduce it without measurement.
+- The response filter withholds unsupported percentages, `research/data shows`, and `proven` claims unless verified evidence is present.
+- The background SHADOW worker is controlled by deployment configuration. A disabled worker is not automatically an application defect.
+- Interactive Heavy Bag behavior is synchronous unless the current implementation and acceptance criteria explicitly say otherwise.
 
-- gpt-5-family reasoning deployments **reject any non-default `temperature`**
-  (HTTP 400, instantly). Omit the parameter (`isReasoningModel` flag in the
-  router registry).
-- Reasoning tokens count against `max_completion_tokens`. Budgets under
-  ~4096 can yield `finish_reason: length` with EMPTY content.
-- Real latency on our prompts: 33–95s depending on deployment. Never set a
-  provider timeout under 120s; never over 230s (Container Apps ingress cuts
-  requests at 240s). Timeouts are per-model in the router registry.
-- The response filter withholds uncited percentages, "research/data shows",
-  and "proven". Answers must explain via mechanics and coaching experience
-  unless a verified evidence id is supplied in context.
+## 5. Database and schema rules
 
-## 7. Database rules
+- Migrations are additive, idempotent, and applied through `.github/workflows/apply-migrations.yml`, staging first.
+- No HTTP route changes the schema. Schema ownership remains in migration files and approved runners.
+- PostgreSQL has no general `ADD CONSTRAINT IF NOT EXISTS`; use the existing catalog-guarded migration pattern.
+- Migration runners execute parse-first transactions. A syntax error means the transaction does not partially apply.
+- A migration file is not sufficient by itself; confirm an existing runner actually includes it.
+- Local `.env.local` may target production. Any direct database access must first identify the target and remain read-only unless Jason explicitly authorizes the exact write.
+- Do not put production connection strings on a laptop or into chat when a workflow already performs the operation safely.
+- Match existing insert patterns and actual schema defaults rather than assuming timestamps or identifiers are generated automatically.
 
-- **Migrations are additive and idempotent**, applied via the
-  `apply-migrations` workflow (staging first, always). Never from a laptop.
-- PostgreSQL has **no `ADD CONSTRAINT IF NOT EXISTS`** — use
-  catalog-guarded DO blocks (pattern exists in
-  `pilot_slice_postgres_multiorg_migration.sql`).
-- Migration files execute as ONE parse-first transaction: a syntax error
-  anywhere means NOTHING applies, ever. `node --check` is not a SQL check —
-  the staging workflow run is the proof.
-- Local `.env.local` points at **PRODUCTION**. Any local DB access must
-  verify `current_database()` first and be read-only unless a human
-  explicitly approved the specific write. Production writes are executed by
-  the human, never by an AI.
-- Tables may lack column defaults (`athletes.created_at`): match the insert
-  patterns in `entities.ts`, don't assume `default now()`.
+## 6. Release and environment rules
 
-## 8. Deploy and environment rules
+There is no standing production bot, deploy coordinator, gatekeeper model, or model-specific release owner.
 
-- **Only the deploy coordinator dispatches production workflows, and only
-  because GitHub — not this document — enforces the human checkpoint.** The
-  `production` environment carries a `required_reviewers` protection rule, so
-  every production deploy and every production migration halts at `pending`
-  until the owner approves it in GitHub. Dispatching queues the request; it
-  cannot ship anything. Every other AI session dispatches nothing at all, in
-  any environment. Changed 2026-07-30: the rule previously read "production
-  dispatches are the human's", which predated that protection rule and made
-  the owner retype inputs they were reading off the coordinator anyway —
-  a copying step, not an independent check, and it produced its own errors.
-- **The digest and the SHA must describe the same commit.** The production
-  deploy takes only a digest that already passed the gate, and the guard
-  independently re-checks `confirm_sha` against whatever `refs/heads/main`
-  resolves to at dispatch time. So a digest goes stale the moment anything
-  merges: validate, then dispatch immediately, or re-validate. Never pair a
-  digest built from one commit with a `confirm_sha` naming another to satisfy
-  the guard — that deploys an image the SHA does not describe.
-- **`migrations_complete` is an attestation, not a check** — the workflow
-  says so itself. Before typing CONFIRMED, diff `infra/` across the range
-  being deployed. A migration file alone is not the whole story: confirm a
-  runner actually applies it (the per-migration runners in
-  `apps/web/scripts/` list their SQL files explicitly, and a new file may be
-  added to an existing runner rather than getting its own workflow choice).
-- **The deploy coordinator is the workspace (VS Code) Claude instance.**
-  Handed off 2026-07-30 by the remote session that held the role before it.
-  Every other AI session — the remote work-and-merge session included — does
-  not dispatch deploy or migration workflows at all, staging included. It
-  builds, tests, and merges, then hands the coordinator the exact dispatch
-  inputs: expected SHA, a truthful `schema_migrations_complete` attestation,
-  and the gate flag, in the PR body or a handoff issue.
-- `--set-env-vars` cannot UNSET a variable already on an app — state every
-  variable explicitly in the workflow.
-- New features needing env vars must default OFF and be enabled per
-  environment in the deploy workflow, with a comment saying why.
-- `az containerapp update` returns before the new revision serves traffic —
-  anything that tests the deployed app must wait for the revision-readiness
-  step (already in deploy-staging).
+- Jason retains final production approval authority.
+- Any current repo-capable AI/session may temporarily prepare or operate a release only after Jason explicitly requests release work.
+- Preparing a release does not authorize final production promotion.
+- No AI may approve the protected GitHub `production` environment, invent `migrations_complete=CONFIRMED`, authorize a rollback, or weaken a failed deployment guard.
+- Use `docs/AI_DELIVERY_PIPELINE.md` for the exact temporary release procedure.
+- The production SHA and staging-tested image digest must describe the same artifact.
+- If `main` moves after staging, re-validate instead of pairing a stale digest with a newer SHA.
+- Production migrations precede application code that depends on them.
+- `--set-env-vars` cannot unset existing variables; workflows must state required values explicitly.
+- New environment-controlled capabilities default off until staging evidence supports enabling them.
+- Wait for the new revision to serve traffic before running deployed-behavior probes.
+- Live Azure state and current workflow evidence outrank deployment prose or snapshots.
 
-## 9. Scope discipline
+## 7. AI capability is task-scoped, not model-scoped
 
-- Implement the brief. Nothing adjacent, however tempting. If you find an
-  unrelated bug: file/report it (issue or PR description), don't drive-by
-  fix it — especially in contested files.
-- If the brief conflicts with anything in this document, STOP and report
-  the conflict instead of choosing silently.
-- Silent scope-narrowing is worse than asking: if part of a brief is
-  blocked, deliver the rest and state plainly what you left out and why.
+- A repo-capable AI may build, review, audit, integrate, or prepare a release when the current request authorizes that task and the hard boundaries above are preserved.
+- No model family is permanently restricted to `builder`, `auditor`, or `gatekeeper` status.
+- Independent review is useful for auth, organization isolation, minors/safeguarding, destructive data, schema, SHADOW safety, and production work; executable evidence outranks model agreement.
+- An audit finding is a lead until verified. It should include file/location evidence and a falsifiable confirming check.
+- Chat-only AI output is a candidate patch. A repo-capable AI/session must reconcile it with current source and execute the relevant checks before merge.
 
-## 10. For AIs without repo/shell execution (chat-only sessions)
+## 8. Scope and failure handling
 
-Your patches are applied and run by others, so:
-
-- Produce complete files or exact unified diffs — never "add something like
-  this" sketches.
-- Include the tests that prove your change, in the same patch.
-- Mark every behavioral claim `UNVERIFIED` — CI and the gate are the
-  arbiters, not your reasoning.
-- Restate which guardrail sections your change touches so the human can
-  route it (e.g. "touches §4 validator — extends both test lists").
-
-## 11. Division of labor: who builds, who audits
-
-Two roles, and an AI is in exactly one of them for a given piece of work.
-
-**Builders — Claude sessions with repository and shell execution (Lane A),
-or a named model producing file output against a ticket for the gatekeeper
-to integrate (Lane B, see `AI_DELIVERY_PIPELINE.md`).** All application,
-infrastructure, migration, and design code is written by these. A Lane A
-builder must *prove* its work: run the suite, run the affected tests,
-measure the behavior it claims, and say in the PR what it executed. "It
-should now work" is not a deliverable; §1 applies with full force. A Lane B
-builder cannot run anything, so it marks every behavioral claim
-`UNVERIFIED` instead (§10) — the gatekeeper is what turns that into proof,
-not the builder's say-so.
-
-**Auditors — the default mode for other model families (Grok, ChatGPT, and
-any future model) is audit-only.** They read the repository and report
-findings; they never open PRs, commit, or dispatch workflows themselves.
-Findings go to the deploy coordinator, who verifies each one — by
-measurement where possible — before any of it becomes an execution brief
-for a builder.
-
-**Lane B is the one named exception to audit-only, and it does not weaken
-the split below.** A model in Lane B may produce complete file output
-against a ticket, left in `intake/drops/<ticket-id>/` — it still never
-touches git, opens a PR, or dispatches a workflow. That drop is a
-*candidate*, not a merged builder's output: the gatekeeper reconciles it
-onto its own branch and runs the identical full verification gate
-(`AI_DELIVERY_PIPELINE.md`, "What the gatekeeper runs on every intake")
-that any Lane A PR passes through before anything reaches `main`. A drop
-that fails the gate is returned as feedback, never merged with the gap
-patched over silently. The asymmetry this section is built on —
-"survivable in an auditor whose output is verified before use, and not
-survivable in a builder whose output is merged" — is exactly why that gate
-exists: Lane B output is never unverified by the time it merges, so it
-never reaches the failure mode audit-only was written to prevent.
-
-**Why this split, from measured experience (2026-07-30, seven audit
-reports across three model families):**
-
-- Outsider auditors without execution read code *as written* rather than
-  trusting a green suite. The single highest-value finding of that day —
-  four competing schema-ownership paths, and a volunteers feature that had
-  never once worked in production — came from a model that could not run
-  anything and therefore had nothing to be lulled by.
-- Model diversity in audit is real: each family found defects the others
-  missed. Run the same lens across several, and treat agreement between
-  them as a confidence signal, not as a vote.
-- Fabricated evidence is the observed failure mode of a confident auditor:
-  one report cited a test that does not exist and a role permission that
-  the code refuses. That is survivable in an auditor whose output is
-  verified before use, and *not* survivable in a builder whose output is
-  merged. Hence the asymmetry.
-
-**Rules that follow:**
-
-1. An audit finding is a **lead, not a fact**, until the coordinator
-   verifies it. Verify by execution or live query where the claim allows;
-   say plainly which findings could not be verified and why.
-2. Findings must carry file:line, evidence (or an explicit `UNVERIFIED`
-   plus the exact confirming check), and a suggested acceptance criterion.
-   Findings without a falsifiable claim are not actionable.
-3. Auditors are told what is already known, so they spend their pass on new
-   ground rather than re-reporting the KNOWN GAP and other tracked items.
-4. Builders work from briefs, not from raw audit reports. A brief states
-   verified facts, exclusive file territory, tasks, and acceptance criteria
-   — so parallel builders cannot collide (§3) and nobody re-derives what
-   was already measured.
-5. When an audit claim and the code disagree, the code wins and the brief
-   says so explicitly, including "do not fix X — X is not real", so a
-   builder does not go chasing a phantom.
+- Do not drive-by fix unrelated work.
+- When a requested change conflicts with a hard safety boundary, stop that part and report the exact conflict; deliver safe independent work when possible.
+- A failed release is not a feature-development lane. Preserve the run evidence, return the failure to normal development, and retry only after the underlying issue is corrected.
+- Use `null`, `not_verified`, or `UNVERIFIED` instead of filling evidence gaps with inference.
