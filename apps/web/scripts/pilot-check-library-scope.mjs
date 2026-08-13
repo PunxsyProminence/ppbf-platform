@@ -154,11 +154,44 @@ export async function checkLibraryScope(client) {
         order by internal_policy_sources desc`,
     );
 
+    // Library rows that are NOT from the seed files -- `source_<uuid>` keys,
+    // created through the API rather than imported.
+    //
+    // These matter because pilot-approve-library-baseline.mjs filters on
+    // organization_id and approval_state and nothing else. Pointed at a real
+    // tenant it approves whatever is pending there, so a source that predates
+    // this work is stamped approved AND verified by the platform owner alongside
+    // the policy shelf. Production's gym approval reported 22 sources and 7
+    // documents where the re-scope had left 21 and 6, which is one of each -- but
+    // "one of each" was arithmetic on two log lines, and an attestation covering
+    // rows nobody has read deserves better than arithmetic. Named here so the
+    // owner can look at the row and decide whether it belongs.
+    const nonCorpus = await client.query(
+      `select s.organization_id,
+              s.source_id,
+              s.source_type,
+              s.title,
+              s.approval_state,
+              s.verification_state,
+              s.approved_by_account_id,
+              (select count(*)::int from pilot.shadow_library_documents d
+                where d.source_id = s.source_id
+                  and d.organization_id = s.organization_id) as documents,
+              -- chunks carry source_id of their own, so this needs no join
+              (select count(*)::int from pilot.shadow_library_chunks c
+                where c.source_id = s.source_id
+                  and c.organization_id = s.organization_id) as chunks
+         from pilot.shadow_library_sources s
+        where s.source_id not like 'src\\_%'
+        order by s.organization_id, s.source_id`,
+    );
+
     return {
       byOrg: byOrg.rows,
       corpusByOrg: corpusByOrg.rows,
       collision: collision.rows,
       policy: policy.rows,
+      nonCorpus: nonCorpus.rows,
     };
   } finally {
     // Read-only transaction: nothing to commit, and rolling back is the honest
@@ -224,6 +257,26 @@ export async function run() {
   } else {
     for (const r of result.policy) {
       console.log(`  ${pad(r.organization_id, 24)}${r.internal_policy_sources}`);
+    }
+  }
+
+  console.log('');
+  console.log("NON-CORPUS LIBRARY ROWS (source_id NOT like 'src_%' -- created through the API)");
+  if (result.nonCorpus.length === 0) {
+    console.log('  none -- every library source in this database came from the seed files');
+  } else {
+    for (const r of result.nonCorpus) {
+      console.log(`  ${pad(r.organization_id, 24)}${pad(r.source_id, 46)}${pad(r.source_type, 18)}${r.approval_state}/${r.verification_state}`);
+      console.log(`    title: ${r.title ?? '(none)'}`);
+      console.log(`    documents=${r.documents} chunks=${r.chunks} approved_by=${r.approved_by_account_id ?? '(nobody)'}`);
+    }
+    const attested = result.nonCorpus.filter((r) => r.approval_state === 'approved');
+    if (attested.length > 0) {
+      console.log('');
+      console.log(`  NOTE: ${attested.length} of these ${attested.length === 1 ? 'is' : 'are'} approved. The bulk approval tool`);
+      console.log('  scopes by organization, not by corpus, so anything pending in a target');
+      console.log('  organization was approved with it. Review these and reject any that');
+      console.log('  should not be citable evidence.');
     }
   }
 

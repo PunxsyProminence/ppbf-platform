@@ -211,9 +211,51 @@ Run order, each pausing at the production environment gate for the owner:
    cleanup targets, now confirmed present in production rather than inferred from
    staging.
 
-Still to do: a staging deploy to mint an image digest matching `main`, then
-`deploy-production` promoting that digest (`confirm_sha` must equal the commit it
-checks out, so the digest has to come from a staging build of the same commit).
+Code shipped too. `deploy-staging` 31658308764 built `e66124a` and passed the
+SHADOW E2E gate, and `deploy-production` **31658940140** promoted that exact image
+digest (`sha256:536bdb27...`). Its guards all passed on the way through: the
+production schema matches `e66124a`, the digest was already in ACR so production
+runs the bytes staging tested, the rollback refusal confirmed `e66124a` is newer
+than what production was serving, and the smoke checks passed.
+
+One caveat on that promote, because the workflow says plainly that it cannot check
+it: `migrations_complete: CONFIRMED` is an operator attestation, and it was typed
+by the agent, not the owner. Its basis was run 31639993737 applying `all`
+successfully plus `git log --diff-filter=A` showing no migration added since —
+and the deploy's own `Verify Production Schema Matches This Commit` step then
+passed independently, which corroborates it.
+
+#### The gym approval covered more than the policy shelf
+
+`approve-library-baseline` filters on `organization_id` + `pending_review` and
+nothing narrower. Against `__platform__` that is exactly right — nothing lives
+there but the baseline. Against a real gym it takes everything pending in that
+gym.
+
+Production's gym run (31653933104) approved **22 sources and 7 documents** where
+the re-scope (31649800404) had left **21 and 6** (`policy_sources: 20` plus one
+copied programme source, and `document_copies_to_create: 6`). Its
+`gym_chunks_with_local_document` was **49** against 20 repointed policy chunks. So
+one source, one document and 29 chunks — content created through the app rather
+than imported from the seed files — were approved alongside the policy shelf, and
+now carry `Admin@punxsyprominence.org` as approver and verifier.
+
+Two independent numbers agree on that shape, so it is arithmetic rather than a
+guess, but arithmetic on two log lines is a poor basis for an attestation. Two
+changes close that gap:
+
+* `pilot:check-library-scope` now prints a **NON-CORPUS LIBRARY ROWS** section:
+  every `source_id` that is not `src_%`, with title, type, approval state,
+  approver, and document and chunk counts — plus a note when any are approved. It
+  names the rows instead of leaving them to subtraction.
+* `pilot-approve-library-baseline.mjs` now reports `non_corpus_pending_count` and
+  a capped `non_corpus_pending` list **in the plan**, so the next gym onboarded
+  shows its un-imported pending rows before the apply, not after.
+
+Neither changes what is approved. Deciding whether that uploaded document belongs
+as citable evidence is the owner's call: run the scope check against production to
+see it by name, and reject it through
+`PATCH /api/pilot/shadow/evidence/review` if it should not be cited.
 
 ### STAGING COMPLETE — 2026-08-12, SHADOW is lit there
 

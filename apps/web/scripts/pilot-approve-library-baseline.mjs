@@ -56,6 +56,23 @@
  *                   else. A 'rejected' row is somebody's decision, and a bulk
  *                   pass must not silently reverse it.
  *
+ *   WHOLE-ORG       The filter is organization_id + pending, and nothing narrower.
+ *   SCOPE           Against the reserved platform organization that is exactly
+ *                   right: nothing lives there but the baseline. Against a real
+ *                   gym it means anything else pending in that gym is approved
+ *                   too. Production's run on ppbf-default-org approved 22 sources
+ *                   and 7 documents where the re-scope had left 21 and 6 -- one
+ *                   source and one document, with 29 chunks, that a coach had
+ *                   uploaded through the app and that no one had reviewed. They
+ *                   now carry the platform owner as approver and verifier.
+ *                   Nothing here filters them out, because "approve this gym's
+ *                   library" is a defensible thing to mean and guessing which
+ *                   rows the operator did not mean is not. What the plan can do
+ *                   is say so: non_corpus_pending lists every pending row that
+ *                   did not come from the seed files, so the operator sees them
+ *                   before the apply rather than deriving them from two log lines
+ *                   afterwards.
+ *
  *   INDEXED FIRST   shadow_library_documents_review_pair_check additionally
  *                   requires ingest_state='indexed' and index_completed_at set
  *                   before a document may be approved -- a document cannot be
@@ -224,6 +241,31 @@ async function main() {
     const approvableDocuments = counts.documents_pending - counts.documents_without_content;
     const total = counts.sources_pending + approvableDocuments;
 
+    // Pending rows this run will approve that did NOT come from the seed files.
+    // The corpus is keyed `src_<hash>`; anything created through the API is
+    // `source_<uuid>`. See WHOLE-ORG SCOPE above: these are approved either way,
+    // and the point of listing them is that the operator reads the plan first.
+    // Capped, because the list exists to be read -- if a gym has hundreds of
+    // pending uploads, the count is the signal and the sample is the illustration.
+    const nonCorpusPending = await client.query(
+      `select source_id, title, source_type
+         from pilot.shadow_library_sources
+        where organization_id = $1
+          and approval_state = 'pending_review'
+          and source_id not like 'src\\_%'
+        order by source_id
+        limit 25`,
+      [organizationId],
+    );
+    const nonCorpusPendingTotal = await client.query(
+      `select count(*)::int as total
+         from pilot.shadow_library_sources
+        where organization_id = $1
+          and approval_state = 'pending_review'
+          and source_id not like 'src\\_%'`,
+      [organizationId],
+    );
+
     console.log(JSON.stringify({
       event: 'library.approval.plan',
       apply,
@@ -233,6 +275,8 @@ async function main() {
       counts,
       would_index: approvableDocuments,
       would_approve: total,
+      non_corpus_pending_count: nonCorpusPendingTotal.rows[0].total,
+      non_corpus_pending: nonCorpusPending.rows,
       // Said plainly, because the constraint means there is no weaker version of
       // this: one account is recorded as having both approved and verified every
       // row below.
