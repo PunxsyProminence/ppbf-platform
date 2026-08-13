@@ -235,14 +235,29 @@ gym.
 Production's gym run (31653933104) approved **22 sources and 7 documents** where
 the re-scope (31649800404) had left **21 and 6** (`policy_sources: 20` plus one
 copied programme source, and `document_copies_to_create: 6`). Its
-`gym_chunks_with_local_document` was **49** against 20 repointed policy chunks. So
-one source, one document and 29 chunks — content created through the app rather
-than imported from the seed files — were approved alongside the policy shelf, and
-now carry `Admin@punxsyprominence.org` as approver and verifier.
+`gym_chunks_with_local_document` was **49** against 20 repointed policy chunks.
 
-Two independent numbers agree on that shape, so it is arithmetic rather than a
-guess, but arithmetic on two log lines is a poor basis for an attestation. Two
-changes close that gap:
+Read precisely, that says: **exactly one source and one document created through
+the app — not imported from the seed files — were newly approved by that run**, and
+they now carry `Admin@punxsyprominence.org` as approver and verifier. It also says
+the gym holds **29 non-corpus chunks**. It does NOT say those 29 all belong to that
+one document: `sources_pending`/`documents_pending` count only pending rows, so any
+non-corpus row already approved before the run is invisible in those numbers while
+its chunks still land in the 49. Production's full non-corpus composition is
+therefore unknown from the logs alone — one row is confirmed swept in, and the rest
+of the picture needs the scope check.
+
+Staging, checked with the new section (run 31660518747), holds **5** non-corpus
+sources / 5 documents / 44 chunks, all approved by `admin@punxsyprominence.org`,
+and all legitimate PPBF material: the four *Punxsy Coaching System … Source Manual
+v3* documents and *Punxsy Pro Boxing Skill System — Combined Audit and Evidence
+Inventory v2.2*. Its arithmetic closes exactly (21 + 5 = 26 sources, 6 + 5 = 11
+documents, 20 + 44 = 64 chunks). Staging's counts do not match production's 29
+chunks, so the two environments hold different uploads — do not read one as
+evidence for the other.
+
+That is the whole reason for the two changes below. Arithmetic on two log lines was
+enough to know something had been swept in, and not enough to know what:
 
 * `pilot:check-library-scope` now prints a **NON-CORPUS LIBRARY ROWS** section:
   every `source_id` that is not `src_%`, with title, type, approval state,
@@ -252,10 +267,18 @@ changes close that gap:
   a capped `non_corpus_pending` list **in the plan**, so the next gym onboarded
   shows its un-imported pending rows before the apply, not after.
 
-Neither changes what is approved. Deciding whether that uploaded document belongs
-as citable evidence is the owner's call: run the scope check against production to
-see it by name, and reject it through
-`PATCH /api/pilot/shadow/evidence/review` if it should not be cited.
+Neither changes what is approved. Deciding whether an uploaded document belongs as
+citable evidence is the owner's call: run
+`check-database` (`target: production`, `check: library-scope`) to see production's
+rows by name, and reject any that should not be cited through
+`PATCH /api/pilot/shadow/evidence/review`. Note that check declares
+`environment: production`, so it waits on the production reviewer gate even though
+it can only run SELECTs — and it must be dispatched from a ref that carries the
+NON-CORPUS section, or it will report counts without names.
+
+On staging's five, the likely answer is that nothing needs undoing: they are PPBF's
+own coaching manuals, which is exactly what a gym's shelf is for. That is a
+judgement about content, not a verdict this tooling can reach.
 
 ### STAGING COMPLETE — 2026-08-12, SHADOW is lit there
 
