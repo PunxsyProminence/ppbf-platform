@@ -237,15 +237,35 @@ the re-scope (31649800404) had left **21 and 6** (`policy_sources: 20` plus one
 copied programme source, and `document_copies_to_create: 6`). Its
 `gym_chunks_with_local_document` was **49** against 20 repointed policy chunks.
 
-Read precisely, that says: **exactly one source and one document created through
-the app — not imported from the seed files — were newly approved by that run**, and
-they now carry `Admin@punxsyprominence.org` as approver and verifier. It also says
-the gym holds **29 non-corpus chunks**. It does NOT say those 29 all belong to that
-one document: `sources_pending`/`documents_pending` count only pending rows, so any
-non-corpus row already approved before the run is invisible in those numbers while
-its chunks still land in the 49. Production's full non-corpus composition is
-therefore unknown from the logs alone — one row is confirmed swept in, and the rest
-of the picture needs the scope check.
+**RESOLVED — production checked, run 31660739359.** The scope check names exactly
+one non-corpus row, and the arithmetic closes completely:
+
+```
+ppbf-default-org  source_c9e5e579-fe2b-4a02-80fa-f0461c614fb3  internal_policy  approved/verified
+  title: SHADOW Canonical Authority Model
+  documents=1 chunks=29 approved_by=Admin@punxsyprominence.org
+```
+
+21 corpus + 1 non-corpus = 22 sources; 6 policy copies + 1 = 7 documents;
+20 policy + 29 = 49 chunks. So the swept-in row is **PPBF's own SHADOW authority
+model**, typed `internal_policy`, sitting on PPBF's own gym shelf — which is
+precisely where decision Q4-B says a gym's house documents belong. Nothing needs
+undoing. The platform owner attesting to PPBF's own governance document in PPBF's
+own organization is the intended arrangement, not an accident of scope.
+
+Worth keeping the distinction that made this checkable: from the run logs alone,
+`sources_pending`/`documents_pending` count only pending rows, so a non-corpus row
+approved *before* the run would have been invisible there while its chunks still
+landed in the 49. That is why "29 chunks belong to that one document" was an
+inference from the logs and is now a fact from the database. Production happened to
+have exactly one such row; staging has five, so the ambiguity was real, not
+pedantic.
+
+Also visible in the same output, and not a defect: `ppbf-default-org` holds 4
+capability-map rows carrying **no** `feeder_tracks` (`caps=4, caps+tracks=0`). The
+backfill targeted the baseline's 30, which is the set the evidence axis is built
+for. A gym's own capability rows joining to no tracks simply means they retrieve
+nothing through that axis.
 
 Staging, checked with the new section (run 31660518747), holds **5** non-corpus
 sources / 5 documents / 44 chunks, all approved by `admin@punxsyprominence.org`,
