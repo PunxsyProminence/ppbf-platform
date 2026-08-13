@@ -596,3 +596,21 @@ jobs:
           PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
         run: |
           npm --prefix apps/web run gate:pilot:fixtures -- --deactivate-athlete
+
+      # The digest, again, as the last thing this job says.
+      #
+      # It is already captured at step 11 and uploaded as an artifact, and both
+      # are unreachable from an agent shell: artifact bodies live on Azure blob
+      # storage, which the agent proxy refuses (403), and step 11 sits twenty
+      # steps and a few thousand log lines above the end. deploy-production
+      # requires the literal string as an input, so the value that gates the
+      # promote was the one value nobody could read without a browser.
+      #
+      # always(), because a run whose gate failed still built and pushed an image,
+      # and knowing which digest was rejected is worth as much as knowing which
+      # one passed.
+      - name: Report Release Digest Last
+        if: always()
+        run: |
+          echo '--- release digest (for deploy-production release_digest) ---'
+          echo '${{ steps.build-image.outputs.digest }}'
