@@ -125,6 +125,29 @@ class ShadowApiError extends Error {
   }
 }
 
+// Must stay aligned with requireRole on chat / sessions / jobs / feedback.
+// A role outside this set can still pass the page-level auth check; the UI
+// must not offer a live composer that can only 403 and used to force logout.
+const SHADOW_CHAT_ROLES = new Set([
+  'admin',
+  'coach',
+  'athlete',
+  'parent',
+  'organization_admin',
+  'staff',
+  'volunteer',
+  'platform_owner',
+]);
+
+/**
+ * Only 401 means the HttpOnly session is gone. A 403 is "not allowed for
+ * this action/role", not "signed out". Treating them alike forced logout
+ * mid-conversation (e.g. platform_owner thumbs-up before feedback parity).
+ */
+function isSessionDeathStatus(status: number): boolean {
+  return status === 401;
+}
+
 function createMessageId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `m-${crypto.randomUUID()}`;
@@ -180,8 +203,11 @@ async function fetchShadowJobStatus(jobId: string, apiBaseUrl: string): Promise<
   });
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
+    if (isSessionDeathStatus(response.status)) {
       throw new ShadowApiError(response.status, 'Your session is no longer valid. Sign in again.');
+    }
+    if (response.status === 403) {
+      throw new ShadowApiError(response.status, 'SHADOW could not verify that job for this account.');
     }
     return null;
   }
@@ -296,6 +322,7 @@ function ShadowChatPageContent() {
   const router = useRouter();
   const [userRole, setUserRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
   const [authChecked, setAuthChecked] = useState(false);
+  const [chatRoleAllowed, setChatRoleAllowed] = useState(true);
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
   const [mode, setMode] = useState<ShadowChatMode>('scoped');
   // These were hardcoded '' for the page's whole life, which made the
@@ -379,7 +406,11 @@ function ShadowChatPageContent() {
         }
 
         if (!cancelled) {
-          setUserRole(payload.role || '');
+          const role = payload.role || '';
+          setUserRole(role);
+          // Do not force logout for an authenticated but non-chat role (e.g. board).
+          // Show a static denial instead of a composer that can only 403.
+          setChatRoleAllowed(!role || SHADOW_CHAT_ROLES.has(role));
           setAuthChecked(true);
         }
       } catch {
@@ -502,13 +533,17 @@ function ShadowChatPageContent() {
         if (controller.signal.aborted) return;
         if (
           error instanceof ShadowSessionsRequestError
-          && (error.status === 401 || error.status === 403)
+          && isSessionDeathStatus(error.status)
         ) {
           clearRoleSession();
           router.replace('/login');
           return;
         }
-        setSessionNotice('Saved sessions are temporarily unavailable. You can still start a new chat.');
+        setSessionNotice(
+          error instanceof ShadowSessionsRequestError && error.status === 403
+            ? 'Saved sessions are not available for this role. You can still try a new chat if your role is allowed.'
+            : 'Saved sessions are temporarily unavailable. You can still start a new chat.',
+        );
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -608,7 +643,7 @@ function ShadowChatPageContent() {
     } catch (error) {
       if (controller.signal.aborted || restoreRequestIdRef.current !== requestId) return;
       if (error instanceof ShadowSessionsRequestError) {
-        if (error.status === 401 || error.status === 403) {
+        if (isSessionDeathStatus(error.status)) {
           clearRoleSession();
           router.replace('/login');
           return;
@@ -624,6 +659,10 @@ function ShadowChatPageContent() {
             setHeavyBagMode(false);
           }
           setSessionNotice('That saved session is no longer available.');
+          return;
+        }
+        if (error.status === 403) {
+          setSessionNotice('That session cannot be opened for this account. Your current chat was left unchanged.');
           return;
         }
       }
@@ -642,7 +681,7 @@ function ShadowChatPageContent() {
   // was the active conversation) rather than leave a card that can only fail.
   function handleSessionActionError(error: unknown, session: OwnedShadowConversation, fallback: string) {
     if (error instanceof ShadowSessionsRequestError) {
-      if (error.status === 401) {
+      if (isSessionDeathStatus(error.status)) {
         clearRoleSession();
         router.replace('/login');
         return;
@@ -755,7 +794,7 @@ function ShadowChatPageContent() {
       // route admits but the feedback route did not would be ejected to /login
       // by a thumbs-up. A 403 here means "not allowed to rate", not "not
       // signed in", and it should never cost the user their conversation.
-      if (feedbackError instanceof ShadowApiError && feedbackError.status === 401) {
+      if (feedbackError instanceof ShadowApiError && isSessionDeathStatus(feedbackError.status)) {
         clearRoleSession();
         router.replace('/login');
         return;
@@ -861,9 +900,10 @@ function ShadowChatPageContent() {
       try {
         status = await fetchShadowJobStatus(jobId, apiBase());
       } catch (error) {
-        if (error instanceof ShadowApiError && (error.status === 401 || error.status === 403)) {
+        if (error instanceof ShadowApiError && isSessionDeathStatus(error.status)) {
           clearRoleSession();
           router.replace('/login');
+          return;
         }
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
@@ -967,9 +1007,13 @@ function ShadowChatPageContent() {
 
   function handleAIFallback(error: unknown) {
     if (error instanceof ShadowApiError) {
-      if (error.status === 401 || error.status === 403) {
+      // Only a missing session ends the chat. A 403 (role/scope denial) must
+      // stay in-conversation -- same policy as sendFeedback after the
+      // platform_owner thumbs-up fix.
+      if (isSessionDeathStatus(error.status)) {
         clearRoleSession();
         router.replace('/login');
+        return;
       }
       if (error.status === 404 && conversationId) {
         // The server no longer has this conversation, so the id is dead --
@@ -1022,6 +1066,39 @@ function ShadowChatPageContent() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  // Role denial does not need capabilities; show it as soon as auth is known.
+  if (authChecked && !chatRoleAllowed) {
+    return (
+      <main className="min-h-screen bg-[#09090b] font-mono text-slate-300">
+        <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 border border-zinc-800 px-6">
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">SHADOW</p>
+            <h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-slate-200">Not available for this role</h1>
+            <p className="mt-4 max-w-md text-sm text-slate-400">
+              Your signed-in role ({userRole || 'unknown'}) cannot use SHADOW chat.
+              You are still signed in — return to your dashboard or sign out.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href="/dashboard"
+              className="border border-zinc-700 bg-zinc-900 px-4 py-2 text-xs uppercase tracking-[0.1em] text-slate-200"
+            >
+              Dashboard
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="border border-zinc-700 bg-zinc-900 px-4 py-2 text-xs uppercase tracking-[0.1em] text-slate-200"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   if (!authChecked || !capabilitiesLoaded) {
