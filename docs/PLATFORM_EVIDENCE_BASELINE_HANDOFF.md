@@ -107,6 +107,45 @@ deploy sequence and the open decisions below.
 - [x] Exclude `__platform__` from organization enumerations: `platform/organizations`, `platform/overview`, `omegaPlatformContext`, and the two per-org seeding migrations **plus their runners' readiness queries**, which assert that *every* organization is seeded and would have reported NOT READY forever
 - [x] `auth.ts` `createOrganization` refuses `__platform__` — it is `on conflict do update`, so a `platform_owner` POST would have renamed the reserved row and seeded it with compliance rules and safety gates
 - [x] Verified against Postgres 16 and the pg suites
+- [x] `src/server/pilot/platformLibraryScope.pg.test.ts` + `test:migrations:platform-library-scope`, wired into the `test:migrations` chain — **14 tests that execute the migration** instead of reading it
+
+### Why the migration needed a pg suite of its own
+
+`platformLibraryScope.test.ts` binds the reserved id across the TS module, the
+migration SQL and the runner, and every one of those assertions is a **string
+match on a file**. That direction cannot reach the failures this migration is
+actually exposed to:
+
+- The stale library foreign keys are dropped **by shape**, because Postgres
+  auto-named the originals. A regex proves the loop was written, never that it
+  matches a real `pg_constraint` row.
+- `set not null` only succeeds if the backfill reached every pre-existing row, so
+  the column's nullability is evidence about **rows**, not about DDL.
+- A CHECK can be present and still not forbid what its comment claims.
+
+So the suite applies the migration and then tries to break the rules, including
+the one case that must succeed — a gym citing the baseline. Every refusal is
+paired with a control proving the same insert works where it should. Two probes
+worth knowing about: the pre-migration state is tested too (the same citation is
+refused without the migration, which is what makes the fix a fix rather than a
+coincidence), and a gym may still subject-scope its **own** library row, which
+locates the `subject_id` guard on the pair rather than on either column.
+
+Mutation-tested against the migration itself, each failing exactly the right
+test and reverting clean:
+
+| Mutation | Result |
+| --- | --- |
+| drop-by-shape loop matches nothing (`and false`) | **2 fail** — the structural assertion *and* "a gym cites a platform chunk successfully", which is the live consequence |
+| scope CHECK weakened to `check (true)` | 1 fail — a gym citing a third gym is admitted |
+| both `subject_id` guards weakened | 2 fail — a platform row becomes scopeable to one athlete |
+| accounts principal guard weakened | 1 fail — a principal can live in the reserved org |
+
+One caught bug of my own: the `accounts` probe first returned `08P01` (bind
+supplied more parameters than the statement used), not a constraint name.
+Asserting the **constraint name** rather than "it threw" is what surfaced it — a
+malformed statement erroring for the wrong reason otherwise reads as the guard
+working.
 
 Two things I got wrong when scoping this, recorded so the next person prices
 them correctly:
@@ -444,10 +483,23 @@ suite runs will fill the disk, after which every pg test fails with `No space
 left on device`, which looks exactly like a code fault. Clean up with
 `rm -rf /tmp/ppbf-*-pg-test-*` between runs.
 
-Real baseline for the non-pg suite: **10 failing tests across 2 suites**
-(`app/api/pilot/shadow/chat/route.test.ts`, `components/buildingMapCoverage.test.ts`),
-both pre-existing and deliberately untouched. Plus 5 eslint
-`react/no-unescaped-entities` errors in three components, also pre-existing.
+Real baseline for the non-pg suite, re-measured on this branch **2026-08-13**:
+**376 suites / 5020 tests, zero failures**, and `npm run lint` reports **0 errors**
+(11 warnings, all `no-unused-vars` in files this work does not touch).
+
+That corrects what this section used to say. It recorded a baseline of 10 failing
+tests across `app/api/pilot/shadow/chat/route.test.ts` and
+`components/buildingMapCoverage.test.ts` plus 5 eslint
+`react/no-unescaped-entities` errors — true when written, and **no longer true**:
+`f5d4fa4` replaced the crash string those chat tests asserted against, `20543e3`
+gave the eight orphaned pages a stated reason, and `58eb0e6` escaped the five
+entities. Both suites now pass (56/56 together), verified by running them alone.
+
+Left uncorrected this was the more dangerous kind of stale: a documented list of
+expected failures teaches the next session to skip past a real one. **Treat any
+failure or lint error as yours until proven otherwise** — and prove it the way
+this was proven, by stashing and re-running on the pristine base, not by matching
+it against this paragraph.
 
 **Write paths stay org-only.** Do not widen `createShadowLibrarySource/Document/Chunk`,
 `listShadowLibrarySources`, `reviewShadowLibrarySource`,
