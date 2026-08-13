@@ -33,6 +33,9 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Verify critical entrypoint contracts
+        run: node scripts/verify-entrypoint-contracts.mjs
+
       - name: Test CI surface classifier
         shell: bash
         run: |
@@ -47,6 +50,9 @@ jobs:
             homepageE2e: false,
             unknownCode: false,
           });
+
+          assert.equal(classifyPaths(['README.md']).docsOnly, true);
+          assert.equal(classifyPaths(['MASTER_INDEX.md']).docsOnly, true);
 
           assert.equal(
             classifyPaths(['apps/web/src/server/pilot/entities.ts']).migrations,
@@ -105,7 +111,7 @@ jobs:
       - name: Documentation-only fast path
         if: steps.changes.outputs.docs_only == 'true'
         run: |
-          echo "Documentation-only change: dependency, code, database, browser, and build gates are not applicable."
+          echo "Documentation-only change: entrypoint contracts passed; dependency, code, database, browser, and build gates are not applicable."
 
       - name: Install locked dependencies
         if: steps.changes.outputs.docs_only != 'true'
