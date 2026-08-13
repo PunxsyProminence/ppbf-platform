@@ -74,7 +74,7 @@ Dated SHADOW audits are point-in-time evidence only; verify any open finding aga
 - [docs/BACKUP_RUNBOOK.md](docs/BACKUP_RUNBOOK.md)
 - [docs/DATA_RETENTION.md](docs/DATA_RETENTION.md)
 
-Database/schema changes use the controlled migration mechanisms already in the repository. No ordinary application route should mutate schema as a side effect.
+Database/schema changes use the controlled migration mechanisms already in the repository. No HTTP route changes the schema.
 
 ## Code
 
