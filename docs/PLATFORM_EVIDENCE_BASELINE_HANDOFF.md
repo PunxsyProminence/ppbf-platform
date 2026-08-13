@@ -178,6 +178,43 @@ holds in the same query: that coach sees 1,173 chunks and **zero** PPBF policy
 rows, while PPBF sees 1,193 (1,173 platform + its own 20). Capability coverage
 resolves as a join — `injury_head_impact_risk` 267 chunks / 260 sources.
 
+### PRODUCTION — the baseline is live, 2026-08-13
+
+`__platform__` in production holds **1,194 approved sources, 14 approved and
+indexed documents, 1,173 chunks, 30 capabilities carrying feeder_tracks**,
+attested by `Admin@punxsyprominence.org` as approver and verifier. Retrieval's
+gate is satisfied, so a coach in any gym can be answered from peer-reviewed
+evidence, and PPBF's house documents stay scoped to PPBF.
+
+Run order, each pausing at the production environment gate for the owner:
+
+| Step | Run | Result |
+| --- | --- | --- |
+| `apply-migrations` = `all` | 31639993737 | success |
+| `rescope-library-baseline` apply | 31649800404 | 1194 sources / 14 docs / 1173 chunks / 30 caps / 229 reqs moved; 20 policy chunks repointed |
+| `import-shadow-research` `capability_map_only` | 31652990026 | feeder_tracks backfilled |
+| `approve-library-baseline` (`__platform__`) | 31653129529 | 1194 sources, 14 documents |
+| `approve-library-baseline` (`ppbf-default-org`) | 31653933104 | the gym's own policy shelf |
+
+**Two production facts found on the way, both of which cost a run:**
+
+1. **`Admin@punxsyprominence.org` is the ACTIVE account in production; the
+   lowercase `admin@...` row is INACTIVE.** Staging is the opposite way round,
+   which is how a value that worked there failed here with
+   `SEED_ACCOUNT_INACTIVE`. `pilot:check-seed-identity` prints a
+   CASE-DIFFERING DUPLICATES section for exactly this; read it before passing an
+   account id to anything. This is the same hazard the handoff recorded for
+   `Danielle@`, mirrored.
+2. **Production holds 34 privileged accounts, only 6 active**, across 8
+   organizations -- including inactive `platform_owner` rows named
+   `postdeploy_owner_*` and `stress_admin_*`. That is the residue the account
+   cleanup targets, now confirmed present in production rather than inferred from
+   staging.
+
+Still to do: a staging deploy to mint an image digest matching `main`, then
+`deploy-production` promoting that digest (`confirm_sha` must equal the commit it
+checks out, so the digest has to come from a staging build of the same commit).
+
 ### STAGING COMPLETE — 2026-08-12, SHADOW is lit there
 
 The blocker below is resolved and staging is green end to end. Runs, in order:
