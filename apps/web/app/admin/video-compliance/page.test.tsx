@@ -409,3 +409,96 @@ test("a refused draft submit surfaces the server's reason", async () => {
 
   await screen.findByText('Only a draft can be submitted for review.');
 });
+
+const PUBLISHED = [
+  {
+    publication_id: 'pub-live-1',
+    title: 'Live On Shelf',
+    description: 'Published item.',
+    athlete_id: 'ath-4',
+    athlete_name: 'Sample Athlete Four',
+    uploader_account_id: 'acct-coach',
+    uploader_name: 'Coach Alice',
+    created_at: '2026-08-04T12:00:00Z',
+  },
+];
+
+const RETRACTED = [
+  {
+    publication_id: 'pub-gone-1',
+    title: 'Pulled From Shelf',
+    description: 'Retracted item.',
+    athlete_id: 'ath-5',
+    athlete_name: 'Sample Athlete Five',
+    uploader_account_id: 'acct-coach',
+    uploader_name: 'Coach Alice',
+    created_at: '2026-08-05T12:00:00Z',
+  },
+];
+
+test('published items offer a retract lever that requires a stated reason', async () => {
+  window.prompt = jest.fn().mockReturnValue('Guardian asked us to pull it.');
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(body).toEqual({
+        publication_id: 'pub-live-1',
+        decision: 'retract',
+        note: 'Guardian asked us to pull it.',
+      });
+      return jsonResponse({ ok: true, publication_id: 'pub-live-1', status: 'retracted' });
+    }
+    return jsonResponse({ ok: true, items: [], drafts: [], published: PUBLISHED, retracted: [] });
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+  await screen.findByText('Live On Shelf');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Retract from distribution' }));
+
+  await screen.findByText('Publication retracted from distribution.');
+});
+
+test('retract with the reason prompt cancelled sends no request', async () => {
+  window.prompt = jest.fn().mockReturnValue(null);
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    expect(init?.method).not.toBe('POST');
+    return jsonResponse({ ok: true, items: [], drafts: [], published: PUBLISHED, retracted: [] });
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+  await screen.findByText('Live On Shelf');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Retract from distribution' }));
+
+  expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit | undefined)?.method !== 'POST')).toBe(true);
+});
+
+test('retracted items offer reopen into review, and the copy says consent cannot be restored here', async () => {
+  let reopened = false;
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(body.decision).toBe('reopen_review');
+      reopened = true;
+      return jsonResponse({ ok: true, publication_id: 'pub-gone-1', status: 'pending_review' });
+    }
+    return jsonResponse(
+      reopened
+        ? { ok: true, items: PENDING, drafts: [], published: [], retracted: [] }
+        : { ok: true, items: [], drafts: [], published: [], retracted: RETRACTED },
+    );
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+  await screen.findByText('Pulled From Shelf');
+  expect(screen.getByText(/Nothing here can restore a guardian/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Reopen for review' }));
+
+  await screen.findByText('Publication reopened into the review queue.');
+  await waitFor(() => expect(screen.queryByText('Pulled From Shelf')).not.toBeInTheDocument());
+});

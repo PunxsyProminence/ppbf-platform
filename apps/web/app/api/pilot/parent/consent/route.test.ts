@@ -11,9 +11,14 @@ import {
   withdrawMediaConsent,
 } from '@/src/server/pilot/guardianConsent';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { suppressPublishedMediaForAthlete } from '@/src/server/pilot/publication';
 
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/publication', () => ({
+  suppressPublishedMediaForAthlete: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/guardianAccess', () => ({
@@ -51,6 +56,7 @@ const mockGrant = jest.mocked(grantMediaConsent);
 const mockWithdraw = jest.mocked(withdrawMediaConsent);
 const mockGuardianAthleteIds = jest.mocked(guardianAthleteIds);
 const mockAudit = jest.mocked(writePilotAuditEvent);
+const mockSuppress = jest.mocked(suppressPublishedMediaForAthlete);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -79,6 +85,8 @@ beforeEach(() => {
   mockGuardianAthleteIds.mockResolvedValue(['ath-1']);
   mockResolveParent.mockResolvedValue({ parentId: 'p1', fullName: 'Jane Guardian' });
   mockCallerParentIdSet.mockResolvedValue(new Set(['p1']));
+  // No published media unless a test says otherwise.
+  mockSuppress.mockResolvedValue([]);
 });
 
 describe('GET /api/pilot/parent/consent', () => {
@@ -201,6 +209,84 @@ describe('POST /api/pilot/parent/consent', () => {
       expect.objectContaining({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1' }),
     );
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_withdrawn', entity_id: 'ath-1' }));
+  });
+
+  test('withdrawal sweeps the athlete\'s published media and audits each retraction separately', async () => {
+    // One guardian's withdrawal invalidates consent; content already
+    // published must become non-distributable in the same request, and the
+    // withdrawal and each suppression must be independently auditable.
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockWithdraw.mockResolvedValueOnce('waiver-2');
+    mockSuppress.mockReset();
+    mockSuppress.mockResolvedValueOnce(['pub-1', 'pub-2']);
+
+    const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'withdraw' }));
+
+    expect(response.status).toBe(200);
+    expect(mockSuppress).toHaveBeenCalledWith({
+      organizationId: 'org-a',
+      athleteId: 'ath-1',
+      suppressedByAccountId: 'acct-parent',
+      reason: 'guardian_consent_withdrawn',
+    });
+    const body = (await response.json()) as { retracted_publication_ids?: string[] };
+    expect(body.retracted_publication_ids).toEqual(['pub-1', 'pub-2']);
+    const auditedActions = mockAudit.mock.calls.map(([event]) => event);
+    expect(auditedActions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event_type: 'consent_withdrawn', entity_id: 'ath-1' }),
+        expect.objectContaining({
+          entity_type: 'video_publication',
+          entity_id: 'pub-1',
+          details: expect.objectContaining({ action: 'publication_retracted_on_consent_withdrawal' }),
+        }),
+        expect.objectContaining({
+          entity_type: 'video_publication',
+          entity_id: 'pub-2',
+          details: expect.objectContaining({ action: 'publication_retracted_on_consent_withdrawal' }),
+        }),
+      ]),
+    );
+  });
+
+  test('a failed sweep surfaces loudly instead of quietly leaving media distributed', async () => {
+    // A lost audit row is tolerable; a suppression that did not happen is
+    // not. The withdrawal itself already committed, so the response says
+    // exactly that and tells the guardian how to retry.
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockWithdraw.mockResolvedValueOnce('waiver-2');
+    mockSuppress.mockReset();
+    mockSuppress.mockRejectedValueOnce(new Error('deadlock detected'));
+
+    const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'withdraw' }));
+
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { ok?: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/withdrawal was recorded, but suppressing already-published media failed/);
+    // The withdrawal itself still committed and was audited before the sweep.
+    expect(mockWithdraw).toHaveBeenCalled();
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_withdrawn' }));
+    // The failure itself is durably audited -- without this row an auditor
+    // cannot tell a failed sweep apart from an athlete with no published
+    // media.
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity_type: 'guardian_media_consent',
+        entity_id: 'ath-1',
+        details: expect.objectContaining({ action: 'consent_withdrawal_suppression_failed' }),
+      }),
+    );
+  });
+
+  test('granting consent sweeps nothing -- re-consent alone republishes nothing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockGrant.mockResolvedValueOnce('waiver-1');
+
+    const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'grant' }));
+
+    expect(response.status).toBe(200);
+    expect(mockSuppress).not.toHaveBeenCalled();
   });
 
   // The whole reason for this route to check guardianAthleteIds itself:

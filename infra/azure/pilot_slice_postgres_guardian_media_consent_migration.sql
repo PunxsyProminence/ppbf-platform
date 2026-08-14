@@ -36,11 +36,13 @@
 --
 -- WHAT THIS DELIBERATELY DOES NOT DO
 --
--- It does not retroactively touch any already-published video when a
--- guardian later withdraws consent. pilot.video_publications has no
--- 'unpublished'/'retracted' status value, and inventing one is a schema
--- decision this migration does not make. The consent gate this ships
--- alongside (the video-compliance admin route) blocks future approvals only.
+-- This migration itself does not touch already-published video -- at the
+-- time it shipped, no 'retracted' status existed and the consent gate
+-- blocked future approvals only. That gap was closed later by
+-- pilot_slice_postgres_publication_retraction_migration.sql (owner
+-- decision 2026-08-14): a withdrawal now retracts the athlete's published
+-- publications and suppresses their research-library rows in the same
+-- request. See that migration's header for the retraction contract.
 --
 -- No `begin;`/`commit;` here: the runner
 -- (apps/web/scripts/pilot-apply-guardian-media-consent-migration.mjs) opens

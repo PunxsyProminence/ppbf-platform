@@ -251,6 +251,22 @@ describe('assertGuardianMediaConsentWithClient', () => {
     await expect(assertGuardianMediaConsentWithClient(client, 'org-a', 'ath-1')).rejects.toThrow(/no guardians on file/);
   });
 
+  test('the guardian-links read holds FOR SHARE -- the race lock against a withdrawal sweep', async () => {
+    // suppressPublishedMediaForAthlete takes FOR UPDATE on the same rows
+    // before retracting. Dropping this FOR SHARE reopens the interleaving
+    // where a publish commits unseen between a withdrawal and its sweep.
+    const client = fakeClient(
+      [{ parent_id: 'p1' }],
+      [{ parent_id: 'p1', status: 'signed', covers_video: true, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
+    );
+
+    await assertGuardianMediaConsentWithClient(client, 'org-a', 'ath-1');
+
+    const [guardianSql] = client.query.mock.calls[0] as [string];
+    expect(guardianSql).toMatch(/from pilot\.guardian_links/);
+    expect(guardianSql).toMatch(/for share/);
+  });
+
   test('reads through client.query, never the module-level query()', async () => {
     const client = fakeClient(
       [{ parent_id: 'p1' }],

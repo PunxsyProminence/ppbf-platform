@@ -11,6 +11,8 @@ import {
   getLatestPublicationCheck,
   getOrganizationPublications,
   getPublicationForPublish,
+  reopenRetractedPublication,
+  retractPublication,
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
@@ -44,6 +46,8 @@ jest.mock('@/src/server/pilot/publication', () => ({
   getPublicationForPublish: jest.fn(),
   decidePublicationCompliance: jest.fn(),
   getLatestPublicationCheck: jest.fn(),
+  retractPublication: jest.fn(),
+  reopenRetractedPublication: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/profileDb', () => ({
@@ -73,6 +77,8 @@ const mockGetVideoSession = jest.mocked(getVideoSessionById);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 const mockSasUrl = jest.mocked(getPilotVideoSasUrl);
 const mockAssertConsent = jest.mocked(assertGuardianMediaConsent);
+const mockRetract = jest.mocked(retractPublication);
+const mockReopen = jest.mocked(reopenRetractedPublication);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -160,7 +166,32 @@ describe('GET /api/pilot/admin/video-compliance', () => {
         },
       ],
       drafts: [],
+      published: [],
+      retracted: [],
     });
+  });
+
+  test('published and retracted rows are listed for the lifecycle levers, without SAS urls', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockImplementation(async (_org, filters) => {
+      const status = (filters as { status?: string } | undefined)?.status;
+      if (status === 'published') return [publication({ status: 'published', publication_id: 'pub-live' })] as never;
+      if (status === 'retracted') return [publication({ status: 'retracted', publication_id: 'pub-gone' })] as never;
+      return [] as never;
+    });
+    mockGetAthlete.mockResolvedValue({ athlete_id: 'ath-1', full_name: 'Sample Athlete' } as never);
+    mockGetSubjectIdentity.mockResolvedValue({ accountId: 'acct-coach', fullName: 'Coach Alice', athleteId: null } as never);
+
+    const response = await GET(request('/api/pilot/admin/video-compliance'));
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      published: Array<{ publication_id: string }>;
+      retracted: Array<{ publication_id: string }>;
+    };
+    expect(payload.published.map((r) => r.publication_id)).toEqual(['pub-live']);
+    expect(payload.retracted.map((r) => r.publication_id)).toEqual(['pub-gone']);
+    expect(mockSasUrl).not.toHaveBeenCalled();
   });
 
   test('drafts are listed alongside the queue, with the creating coach resolved', async () => {
@@ -505,6 +536,100 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       await POST(jsonRequest({ publication_id: 'pub-1', decision: 'request_changes', note: 'Trim the clip.' }));
 
       expect(mockAssertConsent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('retraction lifecycle levers', () => {
+    test('a retraction without a stated reason is refused before anything is read', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'retract' }));
+
+      expect(response.status).toBe(400);
+      expect(mockGetForPublish).not.toHaveBeenCalled();
+      expect(mockRetract).not.toHaveBeenCalled();
+    });
+
+    test('retract suppresses a published publication with the reason and audits it', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'published' }));
+      mockRetract.mockResolvedValueOnce(true);
+
+      const response = await POST(
+        jsonRequest({ publication_id: 'pub-1', decision: 'retract', note: 'Guardian asked us to pull it.' }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(mockRetract).toHaveBeenCalledWith({
+        organizationId: 'org-a',
+        publicationId: 'pub-1',
+        suppressedByAccountId: 'acct-admin',
+        reason: 'Guardian asked us to pull it.',
+      });
+      const body = (await response.json()) as { status?: string };
+      expect(body.status).toBe('retracted');
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_id: 'pub-1',
+          details: expect.objectContaining({ action: 'publication_retracted' }),
+        }),
+      );
+      // Retracting is not a compliance decision: no check row, no consent
+      // gate -- and nothing here can grant or restore a guardian's consent.
+      expect(mockDecide).not.toHaveBeenCalled();
+      expect(mockAssertConsent).not.toHaveBeenCalled();
+    });
+
+    test('only a published publication can be retracted', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'pending_review' }));
+      mockRetract.mockResolvedValueOnce(false);
+
+      const response = await POST(
+        jsonRequest({ publication_id: 'pub-1', decision: 'retract', note: 'reason' }),
+      );
+
+      expect(response.status).toBe(409);
+    });
+
+    test('reopen sends a retracted publication back into review, never to published', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
+      mockReopen.mockResolvedValueOnce(true);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { status?: string };
+      expect(body.status).toBe('pending_review');
+      expect(mockReopen).toHaveBeenCalledWith('org-a', 'pub-1');
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: expect.objectContaining({ action: 'publication_reopened_for_review' }),
+        }),
+      );
+    });
+
+    test('only a retracted publication can be reopened', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'published' }));
+      mockReopen.mockResolvedValueOnce(false);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+
+      expect(response.status).toBe(409);
+    });
+
+    test('a cross-org publication is indistinguishable from a missing one', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(null as never);
+
+      const response = await POST(
+        jsonRequest({ publication_id: 'pub-other-org', decision: 'retract', note: 'reason' }),
+      );
+
+      expect(response.status).toBe(404);
+      expect(mockRetract).not.toHaveBeenCalled();
     });
   });
 });

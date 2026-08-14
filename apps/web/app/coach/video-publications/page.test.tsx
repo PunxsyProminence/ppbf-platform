@@ -245,3 +245,18 @@ describe('coach publication workflow', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull());
   });
 });
+
+test('a retracted publication says why it is gone and offers no actions', async () => {
+  // compliance stays 'passed' on purpose: this is the exact state a sweep
+  // leaves behind (published -> retracted), and it proves the retracted
+  // status ALONE hides the Publish button -- not the compliance value.
+  global.fetch = mockFetch([
+    publication({ status: 'retracted', compliance_check_status: 'passed' }),
+  ]) as unknown as typeof fetch;
+
+  render(<CoachVideoPublicationsPage />);
+
+  await screen.findByText(/Retracted from distribution/);
+  expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Submit for review' })).toBeNull();
+});
