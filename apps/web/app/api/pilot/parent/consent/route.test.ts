@@ -10,6 +10,7 @@ import {
   resolveActingParent,
   withdrawMediaConsent,
 } from '@/src/server/pilot/guardianConsent';
+import { getAthleteById } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { suppressPublishedMediaForAthlete } from '@/src/server/pilot/publication';
 
@@ -19,6 +20,10 @@ jest.mock('@/src/server/pilot/audit', () => ({
 
 jest.mock('@/src/server/pilot/publication', () => ({
   suppressPublishedMediaForAthlete: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/entities', () => ({
+  getAthleteById: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/guardianAccess', () => ({
@@ -57,6 +62,7 @@ const mockWithdraw = jest.mocked(withdrawMediaConsent);
 const mockGuardianAthleteIds = jest.mocked(guardianAthleteIds);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 const mockSuppress = jest.mocked(suppressPublishedMediaForAthlete);
+const mockGetAthlete = jest.mocked(getAthleteById);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -87,6 +93,7 @@ beforeEach(() => {
   mockCallerParentIdSet.mockResolvedValue(new Set(['p1']));
   // No published media unless a test says otherwise.
   mockSuppress.mockResolvedValue([]);
+  mockGetAthlete.mockResolvedValue({ athlete_id: 'ath-1', full_name: 'Sample Child' } as never);
 });
 
 describe('GET /api/pilot/parent/consent', () => {
@@ -113,6 +120,7 @@ describe('GET /api/pilot/parent/consent', () => {
       items: [
         {
           athlete_id: 'ath-1',
+          athlete_name: 'Sample Child',
           consent_ok: true,
           guardian_count: 1,
           missing_guardian_count: 0,

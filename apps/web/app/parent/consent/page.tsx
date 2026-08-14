@@ -16,10 +16,17 @@ interface GuardianConsentRow {
 
 interface AthleteConsent {
   athlete_id: string;
+  athlete_name: string | null;
   consent_ok: boolean;
   guardian_count: number;
   missing_guardian_count: number;
   per_guardian: GuardianConsentRow[];
+}
+
+// A guardian deciding consent must know WHICH child they are acting on --
+// the raw athlete_id is the fallback for a data gap, never the first choice.
+function childLabel(item: Pick<AthleteConsent, 'athlete_id' | 'athlete_name'>): string {
+  return item.athlete_name ?? item.athlete_id;
 }
 
 export default function GuardianMediaConsentPage() {
@@ -51,10 +58,13 @@ export default function GuardianMediaConsentPage() {
     })();
   }, [load]);
 
-  async function decide(athleteId: string, decision: 'grant' | 'withdraw') {
+  async function decide(athleteId: string, decision: 'grant' | 'withdraw', childName: string) {
     if (decision === 'withdraw') {
+      // Named, not generic: the confirmation is the last moment to catch a
+      // wrong-child mistake, and withdrawal now immediately retracts this
+      // child's published media.
       const confirmed = window.confirm(
-        'Withdraw consent for this child’s photos and videos? Future publications of this child will be blocked until consent is granted again.',
+        `Withdraw consent for ${childName}’s photos and videos? Anything already published of ${childName} will be retracted from distribution immediately, and future publications will be blocked until consent is granted again.`,
       );
       if (!confirmed) return;
     }
@@ -140,7 +150,7 @@ export default function GuardianMediaConsentPage() {
                     className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]"
                   >
                     <div className="flex items-center justify-between gap-[var(--s3)]">
-                      <p className="t-eyebrow">{item.athlete_id}</p>
+                      <p className="t-eyebrow">{childLabel(item)}</p>
                       <span className={`badge ${item.consent_ok ? 'badge--cleared' : 'badge--restricted'}`}>
                         <i>{item.consent_ok ? '✓' : '▲'}</i>
                         {item.consent_ok ? 'Consent on file' : 'Consent needed'}
@@ -176,7 +186,7 @@ export default function GuardianMediaConsentPage() {
                         <button
                           type="button"
                           disabled={pendingIds.has(item.athlete_id)}
-                          onClick={() => void decide(item.athlete_id, 'grant')}
+                          onClick={() => void decide(item.athlete_id, 'grant', childLabel(item))}
                           className="btn--lever min-h-[44px] disabled:opacity-50"
                         >
                           Grant Consent
@@ -185,7 +195,7 @@ export default function GuardianMediaConsentPage() {
                         <button
                           type="button"
                           disabled={pendingIds.has(item.athlete_id)}
-                          onClick={() => void decide(item.athlete_id, 'withdraw')}
+                          onClick={() => void decide(item.athlete_id, 'withdraw', childLabel(item))}
                           className="btn--lever min-h-[44px] disabled:opacity-50"
                         >
                           Withdraw Consent

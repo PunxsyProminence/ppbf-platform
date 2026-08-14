@@ -7,6 +7,7 @@ import {
   resolveActingParent,
   withdrawMediaConsent,
 } from '@/src/server/pilot/guardianConsent';
+import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { suppressPublishedMediaForAthlete } from '@/src/server/pilot/publication';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
@@ -61,10 +62,25 @@ export async function GET(request: NextRequest) {
       callerParentIdSet(principal.organizationId, principal.accountId),
     ]);
 
+    // The child's name, not just the id: a guardian of more than one child
+    // deciding consent against a raw athlete_id is guessing which child
+    // they are acting on -- on the surface whose withdraw now retracts
+    // published media. Their own linked children's names are already shown
+    // to them on the parent hub; this discloses nothing new.
+    const athleteNames = new Map(
+      await Promise.all(
+        items.map(async ({ athleteId }) => {
+          const athlete = await getAthleteById(principal.organizationId, athleteId);
+          return [athleteId, athlete?.full_name ?? null] as const;
+        }),
+      ),
+    );
+
     return NextResponse.json({
       ok: true,
       items: items.map(({ athleteId, consent }) => ({
         athlete_id: athleteId,
+        athlete_name: athleteNames.get(athleteId) ?? null,
         consent_ok: consent.ok,
         guardian_count: consent.guardianIds.length,
         missing_guardian_count: consent.missingParentIds.length,
