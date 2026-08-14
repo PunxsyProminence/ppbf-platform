@@ -272,7 +272,7 @@ describe('announcement placements migration against real Postgres', () => {
     }
   });
 
-  test('every surface and kind the app offers is accepted, and nothing else is', async () => {
+  test('every surface and kind this migration defines is accepted, and nothing else is', async () => {
     const client = await freshDatabase('ppbf_test_placement_vocabulary');
     try {
       await client.query(migrationSql);

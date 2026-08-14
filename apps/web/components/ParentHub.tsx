@@ -411,22 +411,22 @@ export default function ParentHub() {
               restated in --t-xs chrome at the top of every role's dashboard. */}
         </div>
 
-        {/* The placement vocabulary names no parent surface, so this hub asks
-            for 'everywhere' and draws only gym-wide items. An author who wants
-            parents to read something has to post it everywhere; nothing placed
-            on the athlete or coach workspace reaches this page. */}
+        {/* This hub asks for its own surface. 'parent_hub' draws what an
+            author addressed to guardians, and the read includes 'everywhere'
+            by definition, so gym-wide items still arrive; items placed on the
+            athlete or coach workspace still do not. */}
         <AnnouncementBanner
-          placement="everywhere"
+          placement="parent_hub"
           kind="notice"
           heading="Gym Notices"
           className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
         />
 
         {/* The chalkboard REPLACES the paper "From the Gym" card. Same rows,
-            same placement ('everywhere' -- the vocabulary still names no parent
-            surface), same kind ('motivation'). What changed is that a line
-            somebody wrote by hand now looks like one. See Chalkboard.tsx. */}
-        <Chalkboard placement="everywhere" />
+            same placement ('parent_hub', which reads 'everywhere' too), same
+            kind ('motivation'). What changed is that a line somebody wrote by
+            hand now looks like one. See Chalkboard.tsx. */}
+        <Chalkboard placement="parent_hub" />
 
         {/* The gym wall moved to the foot of this page for the same reason it
             moved on the athlete workspace: 421px of empty frames sat third from
