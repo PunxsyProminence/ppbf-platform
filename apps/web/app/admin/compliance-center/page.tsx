@@ -44,6 +44,9 @@ export default function AdminComplianceCenterPage() {
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [selectedViolation, setSelectedViolation] = useState<ComplianceViolation | null>(null);
   const [escalateToRole, setEscalateToRole] = useState('organization_admin');
+  // Per-row, not a single scalar: a transition in flight on one violation
+  // must never disable another row's buttons.
+  const [transitioningIds, setTransitioningIds] = useState<Set<string>>(new Set());
   const [metrics, setMetrics] = useState({
     total: 0,
     critical: 0,
@@ -144,6 +147,64 @@ export default function AdminComplianceCenterPage() {
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to escalate violation');
+    }
+  };
+
+  // The lifecycle levers the register was missing: acknowledge is receipt;
+  // resolve and dismiss close the workflow (never the underlying concern)
+  // and require a stated reason, same as every sibling console's closing
+  // verdicts. The server's CAS is the authority -- a stale click gets the
+  // server's refusal, named, not a silent overwrite.
+  const transitionViolation = async (violation: ComplianceViolation, action: 'acknowledge' | 'resolve' | 'dismiss') => {
+    let note = '';
+    if (action !== 'acknowledge') {
+      const entered = window.prompt(
+        action === 'resolve'
+          ? 'How was this violation resolved (required)? This closes the workflow only -- it does not clear the athlete or lift any restriction.'
+          : 'Why is this violation being dismissed (required)? The record is kept, never deleted.',
+        '',
+      );
+      if (entered === null) return;
+      note = entered.trim();
+      if (!note) {
+        setErrorMessage(`A ${action === 'resolve' ? 'resolution' : 'dismissal'} needs a stated reason -- nothing was recorded.`);
+        return;
+      }
+    }
+
+    setTransitioningIds((prev) => new Set(prev).add(violation.violation_id));
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`, {
+        credentials: 'include',
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ violation_id: violation.violation_id, action, note: note || undefined }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'Unable to update the violation.');
+      }
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to update the violation.');
+    } finally {
+      setTransitioningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(violation.violation_id);
+        return next;
+      });
+      // Reconcile with server truth on every terminal outcome: after a 409
+      // the rendered state is stale by definition.
+      try {
+        const reloadRes = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
+        if (reloadRes.ok) {
+          const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
+          setViolations(data.items ?? []);
+        }
+      } catch {
+        // The action's own outcome message stands; a failed reload must not
+        // overwrite it.
+      }
     }
   };
 
@@ -269,14 +330,48 @@ export default function AdminComplianceCenterPage() {
                       </p>
                       {v.description && <p className="t-body mt-[var(--s3)]">{v.description}</p>}
                     </div>
-                    {v.status === 'new' || v.status === 'acknowledged' ? (
-                      <button
-                        onClick={() => setSelectedViolation(v)}
-                        className="btn--lever min-h-[44px]"
-                      >
-                        Escalate
-                      </button>
-                    ) : null}
+                    {/* Only the actions the server will accept from this
+                        row's current state. resolved and dismissed are
+                        terminal: no buttons. An escalated violation comes
+                        back down by being resolved, never dismissed. */}
+                    <div className="flex flex-col items-end gap-[var(--s2)]">
+                      {v.status === 'new' ? (
+                        <button
+                          onClick={() => void transitionViolation(v, 'acknowledge')}
+                          disabled={transitioningIds.has(v.violation_id)}
+                          className="btn--lever min-h-[44px] disabled:opacity-50"
+                        >
+                          Acknowledge
+                        </button>
+                      ) : null}
+                      {v.status === 'new' || v.status === 'acknowledged' ? (
+                        <button
+                          onClick={() => setSelectedViolation(v)}
+                          disabled={transitioningIds.has(v.violation_id)}
+                          className="btn--lever min-h-[44px] disabled:opacity-50"
+                        >
+                          Escalate
+                        </button>
+                      ) : null}
+                      {v.status === 'acknowledged' || v.status === 'escalated' ? (
+                        <button
+                          onClick={() => void transitionViolation(v, 'resolve')}
+                          disabled={transitioningIds.has(v.violation_id)}
+                          className="btn--lever min-h-[44px] disabled:opacity-50"
+                        >
+                          Resolve
+                        </button>
+                      ) : null}
+                      {v.status === 'new' || v.status === 'acknowledged' ? (
+                        <button
+                          onClick={() => void transitionViolation(v, 'dismiss')}
+                          disabled={transitioningIds.has(v.violation_id)}
+                          className="btn btn--ghost disabled:opacity-50"
+                        >
+                          Dismiss
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               ))

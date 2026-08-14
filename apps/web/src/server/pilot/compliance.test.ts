@@ -15,6 +15,7 @@ import {
   escalateViolation,
   getComplianceRulesByCategory,
   getOrganizationViolationSummary,
+  transitionComplianceViolation,
 } from './compliance';
 import { query, queryOne } from './db';
 import { jsonError } from './http';
@@ -31,7 +32,9 @@ afterEach(() => {
 });
 
 describe('escalateViolation', () => {
-  test('files the escalation and moves the violation in one transaction', async () => {
+  test('claims the violation first, then files the escalation, in one transaction', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ violation_id: 'v1' }] });
+
     await escalateViolation({
       organizationId: 'org-1',
       violationId: 'v1',
@@ -40,15 +43,130 @@ describe('escalateViolation', () => {
       escalationReason: 'Repeat safety violation',
     });
 
-    // Both writes go through the transaction client, so a failure between them
-    // cannot leave an escalation row against a violation still marked 'new'.
+    // Both writes go through the transaction client. The guarded UPDATE runs
+    // FIRST: a violation the org-scoped CAS never matched must not acquire
+    // an escalation row.
     expect(mockQuery).not.toHaveBeenCalled();
     expect(currentClient.query).toHaveBeenCalledTimes(2);
-    expect(currentClient.query.mock.calls[0][0]).toContain('insert into pilot.violation_escalations');
 
-    const [updateSql, updateParams] = currentClient.query.mock.calls[1];
+    const [updateSql, updateParams] = currentClient.query.mock.calls[0];
     expect(updateSql).toContain('update pilot.compliance_violations');
+    expect(updateSql).toContain("status in ('new', 'acknowledged')");
     expect(updateParams).toEqual(['v1', 'org-1']);
+
+    expect(currentClient.query.mock.calls[1][0]).toContain('insert into pilot.violation_escalations');
+  });
+
+  test('a stale, foreign, or missing violation aborts before any escalation row exists', async () => {
+    // A violation already resolved or dismissed, a violation_id from another
+    // organization, and a typo'd id all arrive identically: zero matched
+    // rows. The throw rolls the transaction back, so re-escalating a closed
+    // violation by stale click is structurally impossible.
+    currentClient.query.mockResolvedValue({ rows: [] });
+
+    await expect(
+      escalateViolation({
+        organizationId: 'org-1',
+        violationId: 'v-resolved',
+        escalatedByAccountId: 'acct-1',
+        escalatedToRole: 'board',
+        escalationReason: 'stale click',
+      }),
+    ).rejects.toThrow('not in an escalatable state');
+
+    expect(
+      currentClient.query.mock.calls.filter(([sql]) => sql.includes('violation_escalations')),
+    ).toHaveLength(0);
+  });
+});
+
+// The lifecycle the status vocabulary declares, made reachable. These pins
+// are what fail if someone widens a source-state set, drops the organization
+// from a predicate, or lets 'resolved' leave an escalation reading
+// in_progress.
+describe('transitionComplianceViolation', () => {
+  test('acknowledge is a CAS out of new only, org-scoped, touching nothing else', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ violation_id: 'v1', status: 'acknowledged' }] });
+
+    const applied = await transitionComplianceViolation({
+      organizationId: 'org-1',
+      violationId: 'v1',
+      transition: 'acknowledge',
+    });
+
+    expect(applied).toBe(true);
+    const [sql, params] = currentClient.query.mock.calls[0];
+    expect(sql).toContain('where organization_id = $1 and violation_id = $2');
+    expect(sql).toContain('status = any($4::text[])');
+    expect(params).toEqual(['org-1', 'v1', 'acknowledged', ['new']]);
+    // Workflow state only: severity, rule, athlete, evidence, details are
+    // never in the SET.
+    const setClause = sql.slice(sql.toLowerCase().indexOf('set '), sql.toLowerCase().indexOf('where'));
+    for (const forbidden of ['severity', 'rule_id', 'athlete_id', 'evidence', 'details']) {
+      expect(setClause).not.toContain(forbidden);
+    }
+    // Acknowledgement never stamps escalation records.
+    expect(
+      currentClient.query.mock.calls.filter(([q]) => q.includes('violation_escalations')),
+    ).toHaveLength(0);
+  });
+
+  test('resolve leaves only from acknowledged or escalated, closes the escalation track, and stamps open escalation rows', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ violation_id: 'v1', status: 'resolved' }] });
+
+    const applied = await transitionComplianceViolation({
+      organizationId: 'org-1',
+      violationId: 'v1',
+      transition: 'resolve',
+    });
+
+    expect(applied).toBe(true);
+    const [sql, params] = currentClient.query.mock.calls[0];
+    expect(params).toEqual(['org-1', 'v1', 'resolved', ['acknowledged', 'escalated']]);
+    // status='resolved' with escalation_status still in_progress is the
+    // contradictory state this CASE exists to make unrepresentable.
+    expect(sql).toMatch(/escalation_status = case\s+when \$3 = 'resolved' and status = 'escalated' then 'resolved'/);
+
+    const [stampSql, stampParams] = currentClient.query.mock.calls[1];
+    expect(stampSql).toContain('update pilot.violation_escalations');
+    expect(stampSql).toContain('set resolved_at = now()');
+    expect(stampSql).toContain('where organization_id = $1 and violation_id = $2 and resolved_at is null');
+    expect(stampParams).toEqual(['org-1', 'v1']);
+    // History is stamped, never deleted.
+    expect(stampSql).not.toContain('delete');
+  });
+
+  test('dismiss leaves only from new or acknowledged and never touches escalation records', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ violation_id: 'v1', status: 'dismissed' }] });
+
+    const applied = await transitionComplianceViolation({
+      organizationId: 'org-1',
+      violationId: 'v1',
+      transition: 'dismiss',
+    });
+
+    expect(applied).toBe(true);
+    const [, params] = currentClient.query.mock.calls[0];
+    expect(params).toEqual(['org-1', 'v1', 'dismissed', ['new', 'acknowledged']]);
+    expect(
+      currentClient.query.mock.calls.filter(([q]) => q.includes('violation_escalations')),
+    ).toHaveLength(0);
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
+  });
+
+  test('a stale state, foreign org, or missing row reports false and writes nothing further', async () => {
+    // resolved -> acknowledged, dismissed -> resolved, a second concurrent
+    // click, and a cross-org id all arrive as the same zero-row CAS miss.
+    currentClient.query.mockResolvedValue({ rows: [] });
+
+    const applied = await transitionComplianceViolation({
+      organizationId: 'org-1',
+      violationId: 'v-decided',
+      transition: 'resolve',
+    });
+
+    expect(applied).toBe(false);
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
   });
 });
 

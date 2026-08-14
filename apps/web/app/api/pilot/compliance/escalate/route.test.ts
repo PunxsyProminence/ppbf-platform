@@ -88,14 +88,31 @@ describe('POST /api/pilot/compliance/escalate', () => {
 
   test('escalates a violation that belongs to this organization', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
-    mockQueryOne.mockResolvedValueOnce({ violation_id: 'v1', athlete_id: 'ath-1' });
-    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce({ violation_id: 'v1', athlete_id: 'ath-1', status: 'new' });
+    // The guarded CAS now runs FIRST and must match a row for the
+    // escalation insert to happen at all.
+    mockQuery.mockResolvedValueOnce([{ violation_id: 'v1' }]).mockResolvedValueOnce([]);
     const res = await POST(postRequest({ violation_id: 'v1', escalated_to_role: 'board' }));
     expect(res.status).toBe(200);
     expect(mockQuery).toHaveBeenNthCalledWith(
-      2,
+      1,
       expect.stringContaining('organization_id = $2'),
       expect.arrayContaining(['v1', 'org-1']),
     );
+    expect(mockQuery.mock.calls[1][0]).toContain('insert into pilot.violation_escalations');
+  });
+
+  test('a violation already resolved or dismissed refuses to re-escalate', async () => {
+    // The route's pre-read found the row, but the CAS matched nothing --
+    // a stale click on a closed violation must not yank it back to
+    // 'escalated' or file a fresh escalation record.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne.mockResolvedValueOnce({ violation_id: 'v1', athlete_id: 'ath-1', status: 'resolved' });
+    mockQuery.mockResolvedValueOnce([]);
+    const res = await POST(postRequest({ violation_id: 'v1', escalated_to_role: 'board' }));
+    expect(res.status).toBe(400);
+    expect(
+      mockQuery.mock.calls.filter(([sql]) => String(sql).includes('violation_escalations')),
+    ).toHaveLength(0);
   });
 });
