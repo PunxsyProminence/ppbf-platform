@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
+import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
 import { apiBase } from '@/lib/apiBase';
+import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
 import type {
   SessionScriptBlockRow,
   SessionScriptRow,
@@ -62,6 +64,17 @@ function CoachSessionScripts() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
+  // Live delivery. The FIRST question this page asks the server is "does this
+  // coach already have a session in progress" -- a reload or a locked phone
+  // must restore the running session, never offer to start a second one.
+  // 'unavailable' is its own state: if that read fails, the truthful thing to
+  // say is "a session may be in progress that is not shown", not "no run".
+  const [liveRun, setLiveRun] = useState<LiveSessionScriptRun | null>(null);
+  const [liveRunCheck, setLiveRunCheck] = useState<'loading' | 'checked' | 'unavailable'>('loading');
+  const [liveNotice, setLiveNotice] = useState('');
+  const [startBusyScriptId, setStartBusyScriptId] = useState<string | null>(null);
+  const [startError, setStartError] = useState('');
+
   // No state is set before the first await, matching the drill library: a
   // synchronous setState inside an effect cascades a render before the request
   // has even left.
@@ -88,6 +101,94 @@ function CoachSessionScripts() {
       await load();
     })();
   }, [load]);
+
+  const fetchLiveRun = useCallback(async (): Promise<LiveSessionScriptRun | null> => {
+    const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (!response.ok) throw new Error('live-run');
+    const payload = (await response.json()) as { run?: LiveSessionScriptRun | null };
+    return payload.run ?? null;
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const run = await fetchLiveRun();
+        setLiveRun(run);
+        setLiveRunCheck('checked');
+        if (run) {
+          setLiveNotice('A session already in progress was restored -- the clock kept running on the server.');
+        }
+      } catch {
+        setLiveRunCheck('unavailable');
+      }
+    })();
+  }, [fetchLiveRun]);
+
+  const startDelivery = useCallback(async (scriptId: string) => {
+    if (startBusyScriptId) return;
+    setStartBusyScriptId(scriptId);
+    setStartError('');
+    setLiveNotice('');
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script_id: scriptId }),
+        });
+      } catch {
+        setStartError('Network error -- no session was started.');
+        return;
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        run?: LiveSessionScriptRun;
+        error?: string;
+      };
+
+      if (response.ok && payload.run) {
+        setLiveRun(payload.run);
+        setLiveRunCheck('checked');
+        return;
+      }
+
+      // The one-live-per-coach refusal. The honest recovery is to fetch and
+      // show the session the server says is already running -- not to retry
+      // the start, and not to pretend nothing is live.
+      if (payload.error === 'SESSION_RUN_ALREADY_LIVE') {
+        try {
+          const existing = await fetchLiveRun();
+          if (existing) {
+            setLiveRun(existing);
+            setLiveRunCheck('checked');
+            setLiveNotice('You already had a session in progress. It has been restored, not restarted.');
+            return;
+          }
+        } catch {
+          // Fall through to the message below.
+        }
+        setStartError('The server reports a session already in progress, but it could not be loaded. Reload this page to recover it.');
+        return;
+      }
+
+      if (payload.error === 'SESSION_SCRIPT_HAS_NO_BLOCKS') {
+        setStartError('This script has no blocks, so there is nothing to deliver. It stays start-disabled until blocks exist.');
+        return;
+      }
+      if (payload.error === 'SESSION_SCRIPT_NOT_FOUND') {
+        setStartError('That script could not be found, so no session was started.');
+        return;
+      }
+      setStartError(`The server refused to start the session${payload.error ? `: ${payload.error}` : '.'}`);
+    } finally {
+      setStartBusyScriptId(null);
+    }
+  }, [fetchLiveRun, startBusyScriptId]);
 
   const openScript = useCallback(async (scriptId: string) => {
     // Clearing the previous script's detail and error together: leaving either
@@ -128,6 +229,49 @@ function CoachSessionScripts() {
           </Link>
         </header>
 
+        {liveRunCheck === 'loading' && (
+          <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">
+            Checking for a session in progress...
+          </p>
+        )}
+
+        {liveRunCheck === 'unavailable' && (
+          <div className="mt-[var(--s5)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+            <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+              Whether you have a session in progress could not be checked. A live session may exist
+              that is not shown here -- reload to try again. Starting is disabled until this check
+              succeeds, so a second session cannot be opened over a running one blindly.
+            </p>
+          </div>
+        )}
+
+        {liveNotice && (
+          <p className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.35)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[color:var(--brass-300)]">
+            {liveNotice}
+          </p>
+        )}
+
+        {liveRun && (
+          <div className="mt-[var(--s5)]">
+            <SessionScriptLiveDelivery
+              key={liveRun.run_id}
+              initialRun={liveRun}
+              onSettled={(settled) => {
+                setLiveRun(null);
+                setLiveNotice(
+                  `This session was recorded as ${settled.run_state === 'abandoned' ? 'abandoned' : 'completed'}. `
+                  + 'It is settled and can no longer be changed from this screen.',
+                );
+              }}
+              onRunGone={(message) => {
+                setLiveRun(null);
+                setLiveNotice(message);
+              }}
+            />
+          </div>
+        )}
+
+        {!liveRun && (<>
         <section className="mt-[var(--s6)]">
           <h2 className="t-command text-[length:var(--t-lg)]">Scripts</h2>
 
@@ -210,11 +354,33 @@ function CoachSessionScripts() {
                   </div>
                 )}
 
+                {/* Live delivery starts from the plan the coach is looking at.
+                    The button only exists when the script has blocks -- the
+                    server refuses a blockless start anyway; offering the
+                    button just to show its refusal would be a fake control. */}
+                {detail.blocks.length > 0 && (
+                  <div className="mt-[var(--s4)]">
+                    <button
+                      type="button"
+                      onClick={() => void startDelivery(detail.script_id)}
+                      disabled={startBusyScriptId !== null || liveRunCheck !== 'checked'}
+                      className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {startBusyScriptId === detail.script_id ? 'Starting...' : 'Start live delivery'}
+                    </button>
+                  </div>
+                )}
+                {startError && (
+                  <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                    {startError}
+                  </p>
+                )}
+
                 <h3 className="t-command mt-[var(--s5)] text-[length:var(--t-md)]">The plan</h3>
 
                 {detail.blocks.length === 0 && (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-                    This script has no blocks yet.
+                    This script has no blocks yet. It cannot be delivered live until it has blocks.
                   </p>
                 )}
 
@@ -257,6 +423,7 @@ function CoachSessionScripts() {
             )}
           </section>
         )}
+        </>)}
       </div>
     </main>
   );
