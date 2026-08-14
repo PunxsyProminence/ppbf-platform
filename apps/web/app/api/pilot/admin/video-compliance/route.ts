@@ -38,12 +38,13 @@ export const runtime = 'nodejs';
  * T-006: THE ADMIN CONSOLE FOR AN ALREADY-BUILT COMPLIANCE WORKFLOW.
  *
  * pilot.video_publications already has the full draft -> pending_review ->
- * approved/rejected -> published machine (publication.ts), and
- * POST /api/pilot/publications/check already performs the state transition --
- * but it's a bare JSON API no page drives. This route adds the missing
- * queue view and wraps the same underlying functions with an org-admin-only
- * gate and the audit trail this ticket requires (the sibling check route
- * writes none today).
+ * approved/rejected -> published machine (publication.ts). This route is the
+ * queue view and the decision path, with an org-admin-only gate and the
+ * audit trail this ticket requires. (An earlier sibling,
+ * POST /api/pilot/publications/check, performed the same transition as a
+ * bare JSON API with no page driving it, no consent gate, and no audit --
+ * it was deleted once this console superseded it, so decisions cannot
+ * arrive through a path that skips the gates below.)
  *
  * The ticket describes "reject -> draft" and a general "athlete list" per
  * video; neither matches the real system, and both are corrected here
@@ -124,7 +125,7 @@ type ComplianceDecision = 'approve' | 'reject' | 'request_changes';
 const DECISIONS = new Set<ComplianceDecision>(['approve', 'reject', 'request_changes']);
 
 // Maps the console's vocabulary onto pilot.publication_checks' own
-// check_status CHECK constraint values (recordComplianceCheck/check/route.ts).
+// check_status CHECK constraint values.
 const DECISION_TO_CHECK_STATUS: Record<ComplianceDecision, string> = {
   approve: 'passed',
   reject: 'failed',

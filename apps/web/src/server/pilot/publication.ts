@@ -29,14 +29,6 @@ export interface VideoPublication {
   created_at: string;
 }
 
-export interface PublicationCheck {
-  check_id: string;
-  publication_id: string;
-  check_type: string;
-  check_status: 'passed' | 'failed' | 'warning' | 'manual_review';
-  details: string;
-}
-
 export async function createPublication(params: {
   organizationId: string;
   videoSessionId: string;
@@ -75,39 +67,29 @@ export async function createPublication(params: {
   return result[0];
 }
 
+// The coach-visible half of the review workflow: a draft reaches the admin
+// console's queue only through this transition, because the console's GET
+// lists status='pending_review' and nothing else. The CAS predicate on
+// 'draft' matters for the same reason decidePublicationCompliance guards on
+// its expected status -- a stale submit (a double-click, or a tab left open
+// past an admin's decision) must not yank an already-decided publication
+// back into the queue.
+//
 // publication_id is a caller-supplied value and the table's primary key is
 // the id alone, so the organization must be part of the WHERE: without it a
 // publication_id belonging to another gym is mutated by whoever guesses it.
-// Returns false when no row in this organization matched.
-export async function updatePublicationStatus(
+// Returns false when no draft row in this organization matched.
+export async function submitPublicationForReview(
   organizationId: string,
   publicationId: string,
-  status: string,
-  complianceStatus?: string,
-  approvedByAccountId?: string,
-  // Optional compare-and-swap guard: when provided, the UPDATE only matches a
-  // row whose status is still exactly this value. A single UPDATE statement
-  // takes an implicit row lock and re-evaluates its WHERE clause against
-  // whatever the row holds once that lock is granted, so two admins racing a
-  // compliance decision on the same publication serialize correctly instead
-  // of the second silently overwriting the first's already-committed verdict.
-  expectedCurrentStatus?: string,
 ): Promise<boolean> {
-  const now = new Date().toISOString();
-
   const result = await query<{ publication_id: string }>(
     `update pilot.video_publications
-     set status = $3,
-         updated_at = $4,
-         compliance_check_status = coalesce($5, compliance_check_status),
-         approved_by_account_id = coalesce($6, approved_by_account_id),
-         published_at = case when $3 = 'published' then $4::timestamptz else published_at end
-     where organization_id = $1 and publication_id = $2
-       ${expectedCurrentStatus ? 'and status = $7' : ''}
+     set status = 'pending_review',
+         updated_at = now()
+     where organization_id = $1 and publication_id = $2 and status = 'draft'
      returning publication_id`,
-    expectedCurrentStatus
-      ? [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null, expectedCurrentStatus]
-      : [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null],
+    [organizationId, publicationId],
   );
 
   return result.length > 0;
@@ -142,47 +124,6 @@ export async function getPublicationForPublish(
      where organization_id = $1 and publication_id = $2`,
     [organizationId, publicationId],
   );
-}
-
-export async function recordComplianceCheck(params: {
-  organizationId: string;
-  publicationId: string;
-  checkType: string;
-  checkStatus: string;
-  details: string;
-  checkedByAccountId?: string;
-}): Promise<PublicationCheck | null> {
-  const checkId = `check_${Date.now()}_${randomUUID().split('-')[0]}`;
-  const now = new Date().toISOString();
-
-  // The publication_id only reaches the checks table if it belongs to the
-  // acting organization -- the foreign key alone accepts any gym's id, which
-  // would file a compliance verdict against another gym's publication.
-  // Parameters are cast explicitly because a bare $n in a select list has no
-  // inferable type.
-  const result = await query<PublicationCheck>(
-    `insert into pilot.publication_checks (
-      check_id, organization_id, publication_id, check_type, check_status, details, checked_by_account_id, checked_at
-    )
-    select $1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text, $8::timestamptz
-    where exists (
-      select 1 from pilot.video_publications
-      where organization_id = $2 and publication_id = $3
-    )
-    returning check_id, publication_id, check_type, check_status, details`,
-    [
-      checkId,
-      params.organizationId,
-      params.publicationId,
-      params.checkType,
-      params.checkStatus,
-      params.details,
-      params.checkedByAccountId || null,
-      params.checkedByAccountId ? now : null,
-    ],
-  );
-
-  return result[0] ?? null;
 }
 
 export async function publishToResearchLibrary(params: {
