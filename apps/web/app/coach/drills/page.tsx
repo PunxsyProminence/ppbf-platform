@@ -131,8 +131,8 @@ function CoachDrillLibrary() {
             Drills written here are what athletes see and what assignments point at. Writing one once
             means the same drill means the same thing for every coach and every athlete.
           </p>
-          <Link href="/coach/review-queue" className="btn btn--ghost mt-[var(--s4)]">
-            Back to review queue
+          <Link href="/coach/environment/intake-router" className="btn btn--ghost mt-[var(--s4)]">
+            Back to Coach Workspace
           </Link>
         </header>
 

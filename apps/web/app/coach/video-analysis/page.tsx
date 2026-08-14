@@ -564,7 +564,7 @@ export default function CoachVideoAnalysisPage() {
         </section>
 
         <div className="flex flex-wrap gap-[var(--s3)]">
-          <Link href="/coach/review-queue" className="btn btn--ghost">
+          <Link href="/coach/environment/intake-router" className="btn btn--ghost">
             Back to Coach Workspace
           </Link>
           <Link href="/operations" className="btn btn--ghost">

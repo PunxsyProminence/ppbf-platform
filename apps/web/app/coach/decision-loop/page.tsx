@@ -911,7 +911,7 @@ export default function DecisionLoopReviewPage() {
           )}
 
           <div className="mt-[var(--s6)]">
-            <Link href="/coach/review-queue" className="btn btn--ghost">
+            <Link href="/coach/environment/intake-router" className="btn btn--ghost">
               Back to Coach Workspace
             </Link>
           </div>

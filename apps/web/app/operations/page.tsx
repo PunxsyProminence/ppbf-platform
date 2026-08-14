@@ -6,7 +6,7 @@ import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 
 const roleSelector = [
   { role: 'Athlete', href: '/athlete/dashboard', status: 'Ready' },
-  { role: 'Coach', href: '/coach/review-queue', status: 'Ready' },
+  { role: 'Coach', href: '/coach/environment/intake-router', status: 'Ready' },
   { role: 'Parent', href: '/parent/dashboard', status: 'Ready' },
   { role: 'Board', href: '/board', status: 'Ready' },
   { role: 'Admin', href: '/admin', status: 'Ready' },
@@ -37,7 +37,7 @@ const workspaces = [
   },
   {
     label: 'Coach Workspace',
-    href: '/coach/review-queue',
+    href: '/coach/environment/intake-router',
     note: 'Review queue, floor operations, and athlete management actions.',
   },
   {
@@ -83,7 +83,7 @@ type CapabilityState = 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISSING';
 
 const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: string; notes: string }> = [
   { name: 'Athlete Readiness', state: 'EXISTS', href: '/athlete/dashboard', notes: 'Readiness check-ins, session logs, and goals are active.' },
-  { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/review-queue', notes: 'Coach workspace, review queue, and floor controls are available.' },
+  { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/environment/intake-router', notes: 'Coach workspace, review queue, and floor controls are available.' },
   { name: 'Research Intelligence', state: 'EXISTS', href: '/research', notes: 'Research intake and Q&A workflow are available.' },
   { name: 'Knowledge Graph', state: 'EXISTS', href: '/knowledge-graph', notes: 'Knowledge and relationship view is available.' },
   { name: 'Scenario Simulation', state: 'EXISTS', href: '/simulator', notes: 'What-if simulator and promotion flow links are available.' },

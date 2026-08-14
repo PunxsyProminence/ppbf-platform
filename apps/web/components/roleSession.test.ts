@@ -179,7 +179,7 @@ describe('authoritative server role resolution', () => {
     ['platform_owner', 'platform_owner', '/admin/platform'],
     ['organization_admin', 'admin', '/admin'],
     ['admin', 'admin', '/admin'],
-    ['coach', 'coach', '/coach/review-queue'],
+    ['coach', 'coach', '/coach/environment/intake-router'],
     ['athlete', 'athlete', '/athlete/dashboard'],
     ['parent', 'parent', '/parent/dashboard'],
     ['board', 'board', '/board'],
@@ -371,7 +371,7 @@ describe('the board seat routes a member to their own page', () => {
   );
 
   test('a seat changes nothing for any other role', () => {
-    expect(getPilotRoleDestination('coach', 'treasurer')).toBe('/coach/review-queue');
+    expect(getPilotRoleDestination('coach', 'treasurer')).toBe('/coach/environment/intake-router');
     expect(getPilotRoleDestination('organization_admin', 'president')).toBe('/admin');
     expect(getPilotRoleDestination('athlete', 'president')).toBe('/athlete/dashboard');
   });
@@ -429,7 +429,7 @@ describe('the board seat routes a member to their own page', () => {
       board_seat: 'president',
     });
 
-    expect(resolution).toMatchObject({ ok: true, destination: '/coach/review-queue' });
+    expect(resolution).toMatchObject({ ok: true, destination: '/coach/environment/intake-router' });
     if (resolution.ok) {
       expect(resolution.session.boardSeat).toBeUndefined();
     }

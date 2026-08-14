@@ -78,7 +78,7 @@ test('the platform owner reads the board surface and is given no seat', async ()
 test('a signed-in non-board session goes to its own dashboard, not to /login', async () => {
   await renderGate({ authenticated: true, role: 'coach', auth_provider: 'microsoft' });
 
-  expect(replace).toHaveBeenCalledWith('/coach/review-queue');
+  expect(replace).toHaveBeenCalledWith('/coach/environment/intake-router');
   expect(screen.queryByText(/^role:/)).toBeNull();
 });
 

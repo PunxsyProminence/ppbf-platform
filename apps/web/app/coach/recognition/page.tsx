@@ -56,8 +56,8 @@ function CoachRecognitionRoom() {
             they had done well. This is that, and it is built to be used with taped hands in the
             forty seconds you actually have.
           </p>
-          <Link href="/coach/review-queue" className="btn btn--ghost mt-[var(--s4)]">
-            Back to review queue
+          <Link href="/coach/environment/intake-router" className="btn btn--ghost mt-[var(--s4)]">
+            Back to Coach Workspace
           </Link>
         </header>
 

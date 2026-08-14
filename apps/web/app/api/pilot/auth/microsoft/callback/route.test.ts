@@ -136,7 +136,7 @@ describe('GET /api/pilot/auth/microsoft/callback', () => {
     ['platform_owner', '/admin/platform'],
     ['organization_admin', '/admin'],
     ['admin', '/admin'],
-    ['coach', '/coach/review-queue'],
+    ['coach', '/coach/environment/intake-router'],
     ['athlete', '/athlete/dashboard'],
     ['parent', '/parent/dashboard'],
     ['board', '/board'],

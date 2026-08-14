@@ -41,8 +41,8 @@ export const roleRoutes: RoleRoute[] = [
   {
     role: 'coach',
     label: 'Coach',
-    description: 'Opens the coach review queue and intake workflow.',
-    href: '/coach/review-queue',
+    description: 'Opens the coach workspace: intake review, floor plans, and pain reports.',
+    href: '/coach/environment/intake-router',
   },
   {
     role: 'parent',
