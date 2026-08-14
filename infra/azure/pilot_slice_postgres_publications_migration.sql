@@ -7,7 +7,7 @@
 -- /api/pilot/admin/migrate-multiorg -- a bootstrap-key HTTP route issuing 125
 -- DDL statements. No migration file owned them, so `apply-migrations` could
 -- never create them under ANY choice including `all`. Behind them sit
--- /coach/video-publications and /api/pilot/publications/{library,publish,create,check}.
+-- /coach/video-publications and /api/pilot/publications/{library,publish,create,submit}.
 --
 -- With progression and compliance already migrated, this closes the last of
 -- the nine live tables the schema-ownership audit found.

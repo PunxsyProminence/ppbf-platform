@@ -186,15 +186,16 @@ export async function publishToResearchLibrary(params: {
 
 /**
  * The CAS-guarded status transition and its compliance-check record, in one
- * transaction. T-006's admin console originally called
- * updatePublicationStatus and recordComplianceCheck as two separate,
- * non-transactional writes -- if the status flip committed and the check
- * insert then failed, the row was left in a decided state with no record of
- * who decided it or why, the admin's typed reason was lost, and a retry hit
- * the CAS guard as "already decided by another reviewer" (factually wrong --
- * it was the retry's own prior attempt) with no way back into the queue,
- * since GET only lists status='pending_review' rows. This closes that gap:
- * one transaction, one outcome.
+ * transaction. The two writes were once separate and non-transactional -- a
+ * status flip that committed while the check insert failed left a decided
+ * row with no record of who decided it or why, and the admin's retry hit
+ * the CAS guard as "already decided by another reviewer" (factually wrong)
+ * with no way back into the queue, since GET only lists
+ * status='pending_review' rows. One transaction, one outcome.
+ *
+ * The check-row insert carries no organization guard of its own on purpose:
+ * it only runs after the CAS UPDATE in the same transaction matched a row
+ * scoped by organization_id, so a cross-org publication_id writes nothing.
  *
  * Returns false (and writes nothing) when the CAS predicate does not match
  * -- another reviewer's decision already committed since the caller read the

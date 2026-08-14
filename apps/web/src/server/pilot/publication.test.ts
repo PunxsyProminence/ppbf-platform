@@ -1,5 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
-import { submitPublicationForReview } from './publication';
+import { decidePublicationCompliance, submitPublicationForReview } from './publication';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -68,6 +68,64 @@ describe('submitPublicationForReview', () => {
     const [sql] = mockQuery.mock.calls[0];
     expect(sql).toMatch(/where organization_id = \$1 and publication_id = \$2/);
     expect(applied).toBe(false);
+  });
+});
+
+// The check-row insert deliberately carries no organization guard of its own:
+// it only runs after the CAS UPDATE in the same transaction matched a row
+// scoped by organization_id. These tests pin that ordering -- reordering the
+// two statements, or dropping the org or status predicate from the UPDATE,
+// is exactly the refactor that would silently file a compliance verdict
+// against another gym's publication.
+describe('decidePublicationCompliance', () => {
+  const params = {
+    organizationId: 'org-1',
+    publicationId: 'pub-1',
+    newStatus: 'approved',
+    checkStatus: 'passed',
+    checkType: 'compliance',
+    details: 'ok',
+    decidedByAccountId: 'admin-1',
+    expectedCurrentStatus: 'pending_review',
+  };
+
+  test('the UPDATE is org-scoped and CAS-guarded, and runs before the check insert', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ publication_id: 'pub-1' }])
+      .mockResolvedValueOnce([]);
+
+    const applied = await decidePublicationCompliance(params);
+
+    expect(applied).toBe(true);
+    const [updateSql, updateParams] = mockQuery.mock.calls[0];
+    expect(updateSql).toMatch(/update pilot\.video_publications/);
+    expect(updateSql).toMatch(/where organization_id = \$1 and publication_id = \$2 and status = \$7/);
+    expect(updateParams[0]).toBe('org-1');
+    expect(updateParams[6]).toBe('pending_review');
+    const [insertSql] = mockQuery.mock.calls[1];
+    expect(insertSql).toMatch(/insert into pilot\.publication_checks/);
+  });
+
+  test('a CAS miss writes no check row and reports false', async () => {
+    // A cross-org publication_id and an already-decided row both surface as
+    // zero UPDATE matches; either way the transaction must file nothing.
+    mockQuery.mockResolvedValueOnce([]);
+
+    const applied = await decidePublicationCompliance(params);
+
+    expect(applied).toBe(false);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  test('a verifyBeforeCommit throw aborts before any write', async () => {
+    const gate = jest.fn().mockRejectedValueOnce(new Error('consent withdrawn'));
+
+    await expect(
+      decidePublicationCompliance({ ...params, verifyBeforeCommit: gate }),
+    ).rejects.toThrow('consent withdrawn');
+
+    expect(gate).toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 

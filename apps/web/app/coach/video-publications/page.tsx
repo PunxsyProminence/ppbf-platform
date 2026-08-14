@@ -55,8 +55,11 @@ function complianceTone(check: string): BadgeTone {
 
 // The one place the workflow is described to the coach. Each publication shows
 // where it stands and who has to act next, so an item that cannot be published
-// says why instead of simply omitting the button.
-function nextStep(pub: VideoPublication): string {
+// says why instead of simply omitting the button. isSubmitter is null while
+// the session is still resolving -- ownership is unknown, so the line stays
+// neutral rather than briefly mislabeling the coach's own draft as somebody
+// else's.
+function nextStep(pub: VideoPublication, isSubmitter: boolean | null): string {
   if (pub.status === 'published') {
     return 'Published to the research library.';
   }
@@ -73,7 +76,12 @@ function nextStep(pub: VideoPublication): string {
     return 'Compliance checks passed. Ready for you to publish.';
   }
   if (pub.status === 'draft') {
-    return 'A draft. Submit it for compliance review when it is ready.';
+    if (isSubmitter === null) {
+      return 'A draft.';
+    }
+    return isSubmitter
+      ? 'A draft. Submit it for compliance review when it is ready.'
+      : 'Another coach created this draft, so only they or an organization admin can submit it.';
   }
   return 'Waiting on an organization admin to record a compliance check.';
 }
@@ -190,10 +198,14 @@ export default function CoachVideoPublicationsPage() {
       }
 
       setErrorMessage('');
-      await loadPublications();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to submit for review');
     } finally {
+      // Reload on every terminal outcome, not only success: a 409 means this
+      // row's rendered state is stale, and leaving it would keep a Submit
+      // button live on a publication that is no longer a draft. Best-effort --
+      // a failed reload must not overwrite the submit's own outcome message.
+      await loadPublications().catch(() => {});
       setSubmittingId(null);
     }
   };
@@ -344,6 +356,9 @@ export default function CoachVideoPublicationsPage() {
               publications.map((pub) => {
                 const cleared = pub.status === 'approved' && pub.compliance_check_status === 'passed';
                 const isSubmitter = session.accountId !== null && pub.submitted_by_account_id === session.accountId;
+                // null until the session resolves: ownership-dependent copy
+                // and controls hold back rather than flashing the wrong claim.
+                const ownership = session.loading ? null : isSubmitter;
 
                 return (
                   <div key={pub.publication_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -361,19 +376,14 @@ export default function CoachVideoPublicationsPage() {
                             checks: {pub.compliance_check_status}
                           </span>
                         </div>
-                        <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">{nextStep(pub)}</p>
-                        {cleared && !isSubmitter ? (
+                        <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">{nextStep(pub, ownership)}</p>
+                        {cleared && ownership === false ? (
                           <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                             Another coach submitted this one, so only they or an organization admin can publish it.
                           </p>
                         ) : null}
-                        {pub.status === 'draft' && !isSubmitter ? (
-                          <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
-                            Another coach created this draft, so only they or an organization admin can submit it.
-                          </p>
-                        ) : null}
                       </div>
-                      {pub.status === 'draft' && isSubmitter ? (
+                      {pub.status === 'draft' && ownership === true ? (
                         <button
                           onClick={() => { void handleSubmitForReview(pub.publication_id); }}
                           disabled={submittingId === pub.publication_id}
@@ -382,7 +392,7 @@ export default function CoachVideoPublicationsPage() {
                           {submittingId === pub.publication_id ? 'Submitting...' : 'Submit for review'}
                         </button>
                       ) : null}
-                      {cleared && isSubmitter ? (
+                      {cleared && ownership === true ? (
                         <button
                           onClick={() => { void handlePublish(pub.publication_id, pub.video_session_id); }}
                           disabled={publishingId === pub.publication_id}

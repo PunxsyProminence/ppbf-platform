@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { getPublicationForPublish, submitPublicationForReview } from '@/src/server/pilot/publication';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -20,10 +21,20 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/videoSessions', () => ({
+  getVideoSessionById: jest.fn(),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockGetPublication = getPublicationForPublish as jest.Mock;
 const mockSubmit = submitPublicationForReview as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockGetVideoSession = getVideoSessionById as jest.Mock;
+
+beforeEach(() => {
+  // The underlying video session is released unless a test says otherwise.
+  mockGetVideoSession.mockResolvedValue({ video_session_id: 'vid-1', status: 'ready' });
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -164,7 +175,59 @@ describe('POST /api/pilot/publications/submit', () => {
 
     const res = await POST(postRequest({}));
 
-    expect(res.status).not.toBe(200);
+    expect(res.status).toBe(400);
     expect(mockGetPublication).not.toHaveBeenCalled();
+  });
+
+  test('a malformed body is a 400, not a 500', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+
+    const res = await POST(new NextRequest('http://localhost/api/pilot/publications/submit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'not json {',
+    }));
+
+    expect(res.status).toBe(400);
+    expect(mockGetPublication).not.toHaveBeenCalled();
+  });
+
+  test('a non-string publication_id never reaches the database', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+
+    const res = await POST(postRequest({ publication_id: ['pub-1'] }));
+
+    expect(res.status).toBe(400);
+    expect(mockGetPublication).not.toHaveBeenCalled();
+  });
+
+  test('a draft whose video left the released state cannot enter the queue', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(draftRow());
+    mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vid-1', status: 'quarantined' });
+
+    const res = await POST(postRequest({ publication_id: 'pub-1' }));
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toMatch(/not in a released state/);
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  test('a failed audit write does not fail a submit that already committed', async () => {
+    // The CAS has committed by the time the audit insert runs. A lost audit
+    // row is an operator gap, not a reason to tell the coach their submit
+    // failed -- the retry would then 409 against their own success.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(draftRow());
+    mockSubmit.mockResolvedValueOnce(true);
+    mockAudit.mockRejectedValueOnce(new Error('audit table unavailable'));
+
+    const res = await POST(postRequest({ publication_id: 'pub-1' }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok?: boolean; status?: string };
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe('pending_review');
   });
 });

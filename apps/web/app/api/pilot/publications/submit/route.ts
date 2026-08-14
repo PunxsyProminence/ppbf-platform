@@ -2,10 +2,32 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { getPublicationForPublish, submitPublicationForReview } from '@/src/server/pilot/publication';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 export const runtime = 'nodejs';
+
+// A lost audit row is a gap an operator can close by re-dispatching, not a
+// reason to tell the coach their (already-committed) submit failed -- same
+// doctrine as the compliance console's auditComplianceEvent and
+// training-holds' auditHoldEvent. Without this, an audit-table hiccup after
+// the CAS commit turns into a 500, the coach retries, and the retry's 409
+// blames a phantom concurrent change.
+async function auditSubmitEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try {
+    await writePilotAuditEvent(event);
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({
+      event: 'publication-submit-audit-write-failed',
+      action: event.details && typeof event.details === 'object' ? (event.details as { action?: unknown }).action : undefined,
+      ...(code ? { code } : {}),
+    });
+  }
+}
 
 // The missing middle of the publication workflow: creation leaves a row in
 // 'draft', and the admin compliance console lists only 'pending_review', so
@@ -19,13 +41,17 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['admin', 'organization_admin', 'coach']);
 
-    const body = (await request.json()) as { publication_id?: string };
+    // jsonError maps status by message prefix; a bare request.json() throw
+    // (SyntaxError) matches no prefix and would surface a malformed body as
+    // a 500. Same defensive shape as the compliance console.
+    const body = (await request.json().catch(() => null)) as { publication_id?: unknown } | null;
+    const publicationId = typeof body?.publication_id === 'string' ? body.publication_id.trim() : '';
 
-    if (!body.publication_id) {
+    if (!publicationId) {
       throw new Error('Missing required fields');
     }
 
-    const publication = await getPublicationForPublish(principal.organizationId, body.publication_id);
+    const publication = await getPublicationForPublish(principal.organizationId, publicationId);
 
     // No publication of that id in the caller's organization. Indistinguishable
     // from "does not exist" on purpose: the response must not confirm that
@@ -55,6 +81,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Creation gated on a released ('ready') video session, but the session
+    // can move back out of that state afterwards (scan review can quarantine
+    // or block it). Entering the review queue is this route's act, so it
+    // re-checks: footage the platform is refusing to play has no business
+    // in front of a reviewer.
+    const videoSession = await getVideoSessionById(principal.organizationId, publication.video_session_id);
+    if (!videoSession || videoSession.status !== 'ready') {
+      return NextResponse.json(
+        { error: 'The video behind this publication is not in a released state, so it cannot go to review.' },
+        { status: 409 },
+      );
+    }
+
     // The CAS inside re-checks 'draft', so a submit racing an admin decision
     // (or its own double-click) applies nothing rather than re-queueing a
     // publication somebody already decided.
@@ -69,7 +108,7 @@ export async function POST(request: NextRequest) {
     // Entering the compliance queue is the act that asks an admin to look at
     // a minor's training footage, so it carries the same attribution the
     // decision and the publish steps already do.
-    await writePilotAuditEvent({
+    await auditSubmitEvent({
       event_type: 'update',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
