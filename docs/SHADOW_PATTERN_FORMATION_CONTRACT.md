@@ -163,9 +163,9 @@ Recorded, **not retuned**. Nothing in this branch changes any value below.
 | 4 | High-risk topic match adds **0.6** — alone enough to force Heavy Bag | `shadowClassifier.ts:34-42,72-74` | Comment states intent ("elevated to Heavy Bag baseline"); the value is chosen to exceed the 0.6 gate | **policy** (safety escalation) | None — this is a deliberate fail-safe, not a measurement. Worth re-expressing as an explicit boolean escalation rather than a magic number that happens to clear a threshold |
 | 5 | Role baseline adjustment: coach +0.15, admin/org_admin +0.1, platform_owner/staff +0.05, parent/board 0, athlete/volunteer −0.05 | `shadowClassifier.ts:79-92` | None found | **heuristic** | Per-role distribution of human-rated complexity |
 | 6 | Classification `confidence` = `max(1 − complexity, 0.8)` for Quick, `min(complexity, 1.0)` for Heavy, `0.5` at the boundary | `shadowClassifier.ts:196-206` | None found. This number is *reported to users* | **heuristic** | Calibration study: does reported confidence predict misroute rate? Until then it is a restatement of `complexity`, not a confidence |
-| 7 | Outcome→effectiveness map: thumbs_up 1.0, followed_advice 0.9, asked_followup 0.7, session_ended 0.5, ignored_advice 0.3, thumbs_down 0.1, escalated 0.0 | `shadowLearningLoop.ts:578-589` | None found | **heuristic** | Outcome signals paired with independently-assessed athlete/coach benefit. `asked_followup` as a *positive* signal is particularly unexamined — a follow-up may signal an inadequate first answer |
-| 8 | Library proposal: effectiveness `>= 0.75` → promote, `< 0.4` → demote, else retain | `shadowLearningLoop.ts:388-393` | None found | **heuristic** | Review outcomes of proposals at various cut points; measure human agree/override rate |
-| 9 | Profile fact confidences: `engaged_topic_*` 0.8 (followed_advice) / 0.6, `prefers_deep_analysis` 0.75, `asks_follow_up_questions` 0.7 | `shadowLearningLoop.ts:345-374` | None found | **heuristic** | These are written as truth into `remembered_facts` and never decay. Needs a supersession/decay rule before calibration is meaningful |
+| 7 | Outcome→effectiveness map: thumbs_up 1.0, followed_advice 0.9, asked_followup 0.7, session_ended 0.5, ignored_advice 0.3, thumbs_down 0.1, escalated 0.0 | `shadowLearningLoop.ts:578-589` | None found. No test asserts any value in this map | **heuristic** | See **D6** — five of the seven values are unreachable in production, so most of this map has never run |
+| 8 | Library proposal: effectiveness `>= 0.75` → promote, `< 0.4` → demote, else retain | `shadowLearningLoop.ts:388-393` | None found. **The code disagrees with the spec**: `SHADOW_ML_ARCHITECTURE_SPEC.md:455-458` specifies promote at `> 80` (0.80), demote at `< 30` (0.30), plus a 30–50 "add context markers" band the code has no equivalent for | **heuristic, spec-divergent** | Reconcile code and spec first — one of them is wrong and nobody has said which. Then measure human agree/override rate on proposals. See **D6**: the `retain` band is structurally unreachable |
+| 9 | Profile fact confidences: `engaged_topic_*` 0.8 (followed_advice) / 0.6, `prefers_deep_analysis` 0.75, `asks_follow_up_questions` 0.7 | `shadowLearningLoop.ts:345-374` | None found | **heuristic** | Written as truth into `remembered_facts` and never decayed (**D2**). In production the `engaged_topic_*` ternary **always** yields 0.6 and `asks_follow_up_questions` never fires (**D6**) |
 | 10 | Profile keeps the top **20** facts by confidence, pruning the rest | `shadowUserProfile.ts:93-96` | None found | **heuristic** | Prompt-budget measurement; also: pruning by confidence silently deletes low-confidence *disconfirming* facts |
 | 11 | Effectiveness category→score: improved 1, neutral 0.5, degraded 0, unknown **null** | `shadowMetrics.ts:42-47` | `unknown → null` is correct and deliberate (no fake zero) | **heuristic** (the 0.5) / **sound** (the null) | Same as #7 |
 | 12 | Evidence tier: `VERIFIED EVIDENCE` + `authority_tier <= 2` + boxing-specific → PROVEN; `<= 3` → EMERGING; contested/hypothesis/interpretation → EXPERIMENTAL | `shadowEvidenceTier.ts:64-104` | **Yes** — `EVIDENCE_TIER_SPEC.md`, and the comment records verification against the real 1,193-chunk corpus producing the claimed 115/796/227/55 distribution | **policy, corpus-verified** | Best-evidenced rule in the SHADOW surface. Leave alone |
@@ -200,6 +200,101 @@ users see a number that measures nothing independent.
 follow-up question is at least as plausibly a sign the first answer was
 inadequate.
 
+**D6 — Most of the learning loop is unreachable, and that changes what the
+reachable part means.** The only writer of an outcome signal is
+`app/api/pilot/shadow/feedback/route.ts:152`:
+
+```ts
+const outcomeSignal = body.helpful ? 'thumbs_up' : 'thumbs_down';
+```
+
+The client sends a boolean; the server derives exactly two of the seven
+`OutcomeSignal` values. `followed_advice`, `asked_followup`, `session_ended`,
+`ignored_advice` and `escalated_to_human` appear only in SQL `IN (...)` read
+filters (`shadowUnlocks.ts:178,197`, `shadowFeedback.ts:359-362`) — never as a
+value anything produces. Verified by tracing every non-test occurrence.
+
+Consequences, none of them visible from reading `shadowLearningLoop.ts` alone:
+
+- Effectiveness is only ever **1.0 or 0.1**. The intermediate scores have never run.
+- The `retain` band (`0.4 <= score < 0.75`) is **structurally unreachable** — every library proposal is `promote` or `demote`, so the "leave it alone" outcome cannot occur.
+- `outcomeToCategory` never yields `neutral`, so `positiveOutcomeRate` (`shadowMetrics.ts:145`) is a binary thumbs split, not a three-way effectiveness measure.
+- The `engaged_topic_*` confidence ternary always yields **0.6**; the 0.8 branch is dead.
+- `asks_follow_up_questions` never fires.
+
+The audited thresholds in rows 7–9 are therefore not merely uncalibrated — most
+of them have never executed. Calibrating them is meaningless until the feedback
+surface emits more than a boolean.
+
+**D7 — Three inconsistent definitions of "a positive outcome"** inside one
+file: `shadowLearningLoop.ts:172` (`thumbs_up`, `followed_advice`,
+`asked_followup`), `:592` (`asked_followup` is **neutral**, not improved), and
+`:303` (`thumbs_up` only). The same signal is positive for fact extraction and
+neutral for metrics.
+
+**D8 — `learning-${Date.now()}` defeats idempotency.**
+`shadowLearningLoop.ts:474` falls back to a timestamped source-entity id when
+`messageId` is blank. `createShadowResearchRequirement` is unique on
+`(org, event, entity_type, entity_id)`, so every retry mints a new requirement
+row instead of colliding with the existing one.
+
+**D9 — `human_review_required` is written two different ways for the same
+approval.** `shadowLearningLoop.ts:157` parameterizes it
+(`verificationState !== 'human_reviewed'`, so `false` once approved), while
+`:543` writes the literal `true` into `shadow_learning_events` in the same
+call. No test asserts the column. One of the two is wrong.
+
+**D10 — ESCALATION: the medical gate is armed by the client.**
+`assertMedicalStatusAllowsRecommendation` is the fail-closed guard that blocks
+medically sensitive recommendations and decisions unless the athlete has an
+explicit `cleared` status. It runs only when the caller sets
+`isMedicallySensitive: true`, and that flag is taken **verbatim from the HTTP
+request body** with a type check and nothing else:
+
+- `app/api/pilot/shadow/decisions/route.ts:57,73`
+- `app/api/pilot/shadow/recommendations/route.ts:73,90`
+
+Nothing on the server infers sensitivity from `decisionText` or
+`expectedOutcome`. A client that omits the flag skips the gate entirely, even
+for a decision whose text is about return-to-play or sparring clearance.
+`shadowRecommendations.test.ts:173-187` pins the not-flagged path as
+*intentional*, so this is a deliberate design whose consequence may not have
+been intended.
+
+Worth noting: the repo already contains the detector this would need —
+`HIGH_RISK_MESSAGE_PATTERNS` (`shadowClassifier.ts:34-42`) matches concussion,
+medical clearance, return-to-play, surgery, prescription, weight cut, and
+mental-health vocabulary. It is simply not wired to this gate.
+
+**Not changed in this branch.** Medical/safeguarding policy is explicitly out
+of scope for this sprint. Flagging for owner decision (§7.6).
+
+**D11 — The classifier's stated rationale does not describe its rule.**
+`shadowClassifier.ts:48` says *"Quick queries are typically < 100 chars,
+complex ones > 300"*, but line 47 counts **words**
+(`message.split(/\s+/).length`), and the buckets are 20/50/100 words. Anyone
+tuning the buckets against the comment would be tuning against a unit that
+isn't there.
+
+**D12 — Topic detection is first-match-wins and the order is load-bearing.**
+`shadowClassifier.ts:104-119` tests `recovery` (`/recover|rest|sleep|.../`)
+*before* `medical`, so "concussion recovery protocols" classifies as
+`recovery`, not `medical`. `shadowClassifier.test.ts:27` accommodates this by
+accepting any of `['medical','recovery','safety']` rather than asserting one.
+The ordering has no stated justification.
+
+**D13 — Effectiveness is stored 0–1 and specified 0–100.** The DB column is
+`numeric(4,3)`; `SHADOW_ML_ARCHITECTURE_SPEC.md:467,1545` defines
+`effectiveness_score` as 0–100 with a `> 75` target at :1510;
+`app/api/pilot/shadow/metrics/route.ts:147-150` multiplies by 100 at the API
+boundary to reconcile them. Two scales, one name.
+
+**D14 — `MANUAL_OVERRIDE_ROLES` is duplicated as an inline literal.**
+`shadowRoleSets.ts:64-69` defines the canonical set, and its own header warns
+that copy-pasted role lists are how `platform_owner` previously got locked out
+of routes. `shadowClassifier.ts:155` and `:207` each inline the disjunction
+instead of importing it.
+
 **D5 — Two unrelated meanings of "evidence" in one namespace.**
 `shadowEvidence.ts` is Library/RAG citation evidence; the new module is
 coaching-observation evidence. They are genuinely different things. The new
@@ -217,6 +312,13 @@ a live source of confusion when reading the tree.
    authorization rule for *which* accounts is not modelled here.
 5. **Decide the athlete-overlay write path.** This module proposes; nothing
    currently consumes the proposal, deliberately.
+6. **D10 — decide whether the medical gate should stay client-armed.** Not a
+   pattern-formation question, but it surfaced during this audit and is the
+   highest-severity item found. The options are: keep the current explicit-flag
+   design; add server-side inference using the existing
+   `HIGH_RISK_MESSAGE_PATTERNS`; or require the flag to be present rather than
+   optional. This is a safeguarding decision and was deliberately left
+   untouched.
 
 ## 8. Deterministic vs LLM-proposable
 
