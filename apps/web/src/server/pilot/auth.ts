@@ -1162,17 +1162,36 @@ export async function transferOrganizationAdmin(
   });
 }
 
+// The same structural refusals transferOrganizationAdmin carries, for the
+// same reasons: this used to match on account_id alone, overwrite
+// organization_id, and clear is_platform_owner unconditionally -- so a
+// promotion could silently move an account across organizations, mutate a
+// foreign tenant's account, or strip platform ownership off the owner's own
+// row, and a typo'd account_id succeeded against nothing while still writing
+// a membership row for an account that was never promoted. The WHERE now
+// pins the target to the named organization and excludes the platform owner
+// outright; zero matched rows throws, which rolls the transaction back
+// before any membership write. Moving an account between organizations is a
+// different, explicit operation -- it must never be a side effect of
+// assigning an admin. active_flag is deliberately untouched: promoting a
+// deactivated account must not silently reactivate it.
 export async function promoteAccountToOrganizationAdmin(accountId: string, organizationId: string): Promise<void> {
   await withTransaction(async (client) => {
-    await client.query(
+    const rows = await client.query<{ account_id: string }>(
       `update pilot.accounts
        set role = 'organization_admin',
-           organization_id = $2,
-           is_platform_owner = false,
            updated_at = now()
-       where account_id = $1`,
+       where account_id = $1
+         and organization_id = $2
+         and is_platform_owner = false
+         and role <> 'platform_owner'
+       returning account_id`,
       [accountId, organizationId],
     );
+
+    if (rows.rows.length === 0) {
+      throw new Error('Missing target account in organization');
+    }
 
     await assignOrganizationMembershipTx(client, accountId, organizationId, 'organization_admin');
     await revokeAllSessionsForAccountTx(client, accountId);
