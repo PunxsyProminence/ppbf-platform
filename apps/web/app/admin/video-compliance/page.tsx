@@ -20,6 +20,17 @@ interface PendingPublication {
   stream_url: string | null;
 }
 
+interface DraftPublication {
+  publication_id: string;
+  title: string;
+  description: string;
+  athlete_id: string;
+  athlete_name: string | null;
+  uploader_account_id: string;
+  uploader_name: string | null;
+  created_at: string;
+}
+
 type Decision = 'approve' | 'reject' | 'request_changes';
 
 const DECISION_LABEL: Record<Decision, string> = {
@@ -39,6 +50,7 @@ function formatDate(value: string): string {
 
 export default function VideoCompliancePage() {
   const [items, setItems] = useState<PendingPublication[] | null>(null);
+  const [drafts, setDrafts] = useState<DraftPublication[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   // Per-row, not a single scalar -- deciding on one video must never disable
@@ -54,16 +66,22 @@ export default function VideoCompliancePage() {
     const seq = ++loadSeq.current;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/video-compliance`, { credentials: 'include' });
-      const payload = (await response.json().catch(() => ({}))) as { items?: PendingPublication[]; error?: string };
+      const payload = (await response.json().catch(() => ({}))) as {
+        items?: PendingPublication[];
+        drafts?: DraftPublication[];
+        error?: string;
+      };
       if (seq !== loadSeq.current) return;
       if (!response.ok) {
         throw new Error(payload.error || 'Unable to load the compliance review queue.');
       }
       setItems(payload.items ?? []);
+      setDrafts(payload.drafts ?? []);
       setErrorMessage('');
     } catch (error) {
       if (seq !== loadSeq.current) return;
       setItems([]);
+      setDrafts([]);
       setErrorMessage(error instanceof Error ? error.message : 'Unable to load the compliance review queue.');
     }
   }, []);
@@ -114,6 +132,36 @@ export default function VideoCompliancePage() {
         next.delete(publicationId);
         return next;
       });
+    }
+  }
+
+  // The submit route enforces everything that matters (role, org scope,
+  // draft-only CAS); this is just the console's lever for a draft whose
+  // coach cannot or will not press their own button -- typically one who
+  // left the gym.
+  async function submitDraft(publicationId: string) {
+    setPendingIds((prev) => new Set(prev).add(publicationId));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/publications/submit`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publication_id: publicationId }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'Unable to submit the draft for review.');
+      }
+      setActionMessage('Draft submitted into the review queue.');
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : 'Unable to submit the draft for review.');
+    } finally {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(publicationId);
+        return next;
+      });
+      await load();
     }
   }
 
@@ -230,6 +278,51 @@ export default function VideoCompliancePage() {
               ))}
             </section>
           )}
+
+          {!isLoading && drafts.length > 0 ? (
+            <section className="mt-[var(--s6)]">
+              <header className="border-b-[2px] border-[color:rgba(212,175,74,.22)] pb-[var(--s3)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Drafts not yet submitted</h2>
+                <p className="t-body mt-[var(--s2)] max-w-4xl">
+                  A draft is normally its coach&rsquo;s to submit. Submitting one from here puts it into the
+                  review queue above -- use it when the coach who created it cannot press their own button,
+                  such as after they have left the gym. Submitting is not approving: the video still goes
+                  through the full compliance review.
+                </p>
+              </header>
+              <div className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
+                {drafts.map((draft) => (
+                  <article
+                    key={draft.publication_id}
+                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
+                      <div>
+                        <p className="t-eyebrow">{draft.title || 'Untitled Video'}</p>
+                        <p className="t-body mt-[var(--s2)]">{draft.description}</p>
+                        <dl className="t-body mt-[var(--s3)] grid grid-cols-[auto_1fr] gap-x-[var(--s3)] gap-y-[var(--s1)]">
+                          <dt className="text-[color:var(--brass-300)]">Athlete</dt>
+                          <dd>{draft.athlete_name ?? draft.athlete_id}</dd>
+                          <dt className="text-[color:var(--brass-300)]">Created by</dt>
+                          <dd>{draft.uploader_name ?? draft.uploader_account_id}</dd>
+                          <dt className="text-[color:var(--brass-300)]">Created</dt>
+                          <dd>{formatDate(draft.created_at)}</dd>
+                        </dl>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={pendingIds.has(draft.publication_id)}
+                        onClick={() => void submitDraft(draft.publication_id)}
+                        className="btn--lever min-h-[44px] disabled:opacity-50"
+                      >
+                        Submit for review
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/operations" className="btn btn--ghost">

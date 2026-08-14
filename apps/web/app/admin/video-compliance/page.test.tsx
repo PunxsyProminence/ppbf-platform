@@ -333,3 +333,79 @@ test('a failed decision surfaces the server error rather than silently reloading
 
   await screen.findByText('Unsupported: publication was already decided by another reviewer');
 });
+
+const DRAFTS = [
+  {
+    publication_id: 'pub-draft-1',
+    title: 'Orphaned Draft',
+    description: 'Created by a coach who left.',
+    athlete_id: 'ath-3',
+    athlete_name: 'Sample Athlete Three',
+    uploader_account_id: 'acct-departed',
+    uploader_name: 'Coach Departed',
+    created_at: '2026-08-03T12:00:00Z',
+  },
+];
+
+test('stranded drafts are listed with their creator and a submit-for-review lever', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: [], drafts: DRAFTS })) as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+
+  await screen.findByText('Drafts not yet submitted');
+  expect(screen.getByText('Orphaned Draft')).toBeInTheDocument();
+  expect(screen.getByText('Coach Departed')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Submit for review' })).toBeInTheDocument();
+});
+
+test('no drafts means no drafts section at all', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: PENDING, drafts: [] })) as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+
+  await screen.findByText('Sparring Round 1');
+  expect(screen.queryByText('Drafts not yet submitted')).not.toBeInTheDocument();
+});
+
+test('submitting a draft posts to the submit route and moves it into the queue on reload', async () => {
+  let submitted = false;
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/pilot/publications/submit')) {
+      submitted = true;
+      expect(JSON.parse(String(init?.body))).toEqual({ publication_id: 'pub-draft-1' });
+      return jsonResponse({ ok: true, publication_id: 'pub-draft-1', status: 'pending_review' });
+    }
+    return jsonResponse(
+      submitted
+        ? { ok: true, items: PENDING, drafts: [] }
+        : { ok: true, items: [], drafts: DRAFTS },
+    );
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+  await screen.findByText('Orphaned Draft');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await screen.findByText('Draft submitted into the review queue.');
+  await waitFor(() => expect(screen.queryByText('Drafts not yet submitted')).not.toBeInTheDocument());
+  expect(screen.getByText('Sparring Round 1')).toBeInTheDocument();
+});
+
+test("a refused draft submit surfaces the server's reason", async () => {
+  const fetchMock = jest.fn(async (url: string) => {
+    if (String(url).includes('/api/pilot/publications/submit')) {
+      return jsonResponse({ error: 'Only a draft can be submitted for review.' }, false);
+    }
+    return jsonResponse({ ok: true, items: [], drafts: DRAFTS });
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+  await screen.findByText('Orphaned Draft');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await screen.findByText('Only a draft can be submitted for review.');
+});

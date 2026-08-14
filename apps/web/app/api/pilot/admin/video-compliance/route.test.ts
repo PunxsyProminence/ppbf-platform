@@ -120,12 +120,17 @@ beforeEach(() => {
   mockDecide.mockResolvedValue(true);
   mockGetForPublish.mockResolvedValue(publication());
   mockAssertConsent.mockResolvedValue(undefined);
+  // GET lists twice per request (pending_review queue, then drafts); tests
+  // that only care about one of the two lean on this empty default for the
+  // other.
+  mockList.mockResolvedValue([]);
 });
 
 describe('GET /api/pilot/admin/video-compliance', () => {
   test('an organization admin lists the pending-review queue with resolved names and a stream url', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
-    mockList.mockResolvedValueOnce([publication()]);
+    mockList.mockImplementation(async (_org, filters) =>
+      (filters as { status?: string } | undefined)?.status === 'pending_review' ? [publication()] as never : [] as never);
     mockGetAthlete.mockResolvedValueOnce({ athlete_id: 'ath-1', full_name: 'Sample Athlete' } as never);
     mockGetSubjectIdentity.mockResolvedValueOnce({ accountId: 'acct-coach', fullName: 'Coach Alice', athleteId: null } as never);
     mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: 'ath-1', blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
@@ -154,7 +159,43 @@ describe('GET /api/pilot/admin/video-compliance', () => {
           stream_url: 'https://blob.example/sas',
         },
       ],
+      drafts: [],
     });
+  });
+
+  test('drafts are listed alongside the queue, with the creating coach resolved', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockImplementation(async (_org, filters) =>
+      (filters as { status?: string } | undefined)?.status === 'draft'
+        ? [publication({ status: 'draft', compliance_check_status: 'pending' })] as never
+        : [] as never);
+    mockGetAthlete.mockResolvedValueOnce({ athlete_id: 'ath-1', full_name: 'Sample Athlete' } as never);
+    mockGetSubjectIdentity.mockResolvedValueOnce({ accountId: 'acct-coach', fullName: 'Coach Alice', athleteId: null } as never);
+
+    const response = await GET(request('/api/pilot/admin/video-compliance'));
+
+    expect(response.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('org-a', { status: 'draft' });
+    const payload = (await response.json()) as {
+      items: unknown[];
+      drafts: Array<{ publication_id: string; uploader_name: string | null; athlete_name: string | null }>;
+    };
+    expect(payload.items).toEqual([]);
+    expect(payload.drafts).toEqual([
+      {
+        publication_id: 'pub-1',
+        title: 'Sparring Round 1',
+        description: 'Session footage.',
+        athlete_id: 'ath-1',
+        athlete_name: 'Sample Athlete',
+        uploader_account_id: 'acct-coach',
+        uploader_name: 'Coach Alice',
+        created_at: '2026-08-01T00:00:00Z',
+      },
+    ]);
+    // Routing a draft into review needs no footage on screen -- no SAS url
+    // is minted for drafts.
+    expect(mockSasUrl).not.toHaveBeenCalled();
   });
 
   // T-006 round-6 review finding: a re-queued item (compliance_check_status
