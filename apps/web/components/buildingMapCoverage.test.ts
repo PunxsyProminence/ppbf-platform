@@ -53,7 +53,7 @@ const EXCLUDED: Record<string, string> = {
   '/admin/retro-lab': 'internal QA scaffolding (DevToolsQAConsole) -- a workbench, not a gym surface',
   '/board/dashboard': 'prototype: BoardViewportSwitcher reads no data; a board must not be shown invented figures',
   '/coach/operations': 'prototype: FloorOperationsDesk hardcodes sample athletes (clearanceChecklist, attendanceMonitor, matchmakerBoard) -- fabricated athlete records',
-  '/director/dashboard': 'prototype: IncidentCommandCenter renders a mock escalation queue and mock bag assignments -- a safety surface showing invented incidents',
+  '/director/dashboard': 'signpost only: the mock incident center was deleted; this route now just points at /admin/escalations and /admin/safety-review, which already have their own doors',
   '/guardian/dashboard': 'signpost only: the prototype consent/safety controls that persisted nothing were deleted; this route now just points at /parent/consent and /parent/dashboard, which already have their own doors',
 };
 
