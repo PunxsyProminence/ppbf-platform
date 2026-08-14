@@ -6,7 +6,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
 import { apiBase } from '@/lib/apiBase';
-import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
+import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type {
   SessionScriptBlockRow,
   SessionScriptRow,
@@ -63,6 +63,12 @@ function CoachSessionScripts() {
   const [detail, setDetail] = useState<ScriptDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+
+  // What has actually been delivered from the open plan: the settled runs,
+  // with the summary the coach recorded at finish. 'unavailable' is distinct
+  // from an empty list -- a failed read must never render as "never delivered".
+  const [deliveries, setDeliveries] = useState<SessionScriptRunRow[]>([]);
+  const [deliveriesState, setDeliveriesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
 
   // Live delivery. The FIRST question this page asks the server is "does this
   // coach already have a session in progress" -- a reload or a locked phone
@@ -193,25 +199,49 @@ function CoachSessionScripts() {
   const openScript = useCallback(async (scriptId: string) => {
     // Clearing the previous script's detail and error together: leaving either
     // in place shows one script's blocks -- or one script's failure -- under
-    // another script's name while the new one loads.
+    // another script's name while the new one loads. The delivery history is
+    // cleared on the same principle.
     setOpenScriptId(scriptId);
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
-    try {
-      const response = await fetch(
-        `${apiBase()}/api/pilot/session-scripts?script_id=${encodeURIComponent(scriptId)}`,
-        { method: 'GET', credentials: 'include' },
-      );
-      if (!response.ok) throw new Error('That session script could not be opened.');
-      const payload = (await response.json()) as { script?: ScriptDetail };
-      setDetail(payload.script ?? null);
-    } catch (error) {
-      setDetail(null);
-      setDetailError(error instanceof Error ? error.message : 'That session script could not be opened.');
-    } finally {
-      setDetailLoading(false);
-    }
+    setDeliveries([]);
+    setDeliveriesState('loading');
+
+    const detailRead = (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/session-scripts?script_id=${encodeURIComponent(scriptId)}`,
+          { method: 'GET', credentials: 'include' },
+        );
+        if (!response.ok) throw new Error('That session script could not be opened.');
+        const payload = (await response.json()) as { script?: ScriptDetail };
+        setDetail(payload.script ?? null);
+      } catch (error) {
+        setDetail(null);
+        setDetailError(error instanceof Error ? error.message : 'That session script could not be opened.');
+      } finally {
+        setDetailLoading(false);
+      }
+    })();
+
+    const historyRead = (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/session-scripts/runs?script_id=${encodeURIComponent(scriptId)}`,
+          { method: 'GET', credentials: 'include' },
+        );
+        if (!response.ok) throw new Error('history');
+        const payload = (await response.json()) as { runs?: SessionScriptRunRow[] };
+        setDeliveries(payload.runs ?? []);
+        setDeliveriesState('loaded');
+      } catch {
+        setDeliveries([]);
+        setDeliveriesState('unavailable');
+      }
+    })();
+
+    await Promise.all([detailRead, historyRead]);
   }, []);
 
   return (
@@ -420,6 +450,75 @@ function CoachSessionScripts() {
                   </p>
                 )}
               </>
+            )}
+
+            {/* What actually happened to this plan: the settled runs and the
+                summary the coach recorded at finish. Deliberately outside the
+                detail conditional -- the history read is its own request, and
+                a failed plan read must not hide a history that loaded. */}
+            <h3 className="t-command mt-[var(--s6)] text-[length:var(--t-md)]">Past deliveries</h3>
+
+            {deliveriesState === 'loading' && (
+              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading past deliveries...</p>
+            )}
+
+            {deliveriesState === 'unavailable' && (
+              <p className="t-body mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                The delivery history could not be loaded. Deliveries may exist that are not shown --
+                this is a failed read, not an empty history.
+              </p>
+            )}
+
+            {deliveriesState === 'loaded' && deliveries.length === 0 && (
+              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+                No deliveries recorded for this plan yet. A session delivered live appears here once
+                it is ended.
+              </p>
+            )}
+
+            {deliveriesState === 'loaded' && deliveries.length > 0 && (
+              <ul className="mt-[var(--s3)] flex flex-col gap-[var(--s3)]">
+                {deliveries.map((run) => (
+                  <li
+                    key={run.run_id}
+                    className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
+                  >
+                    <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
+                      <span className="plaque">{typeof run.delivered_on === 'string' ? run.delivered_on.slice(0, 10) : run.delivered_on}</span>
+                      <span className="t-label">
+                        {run.run_state === 'completed' && 'Completed'}
+                        {run.run_state === 'abandoned' && 'Abandoned'}
+                        {run.run_state === null && 'Recorded before live delivery tracking'}
+                      </span>
+                      <span className="t-label text-[color:var(--bone-400)]">Plan version {run.script_version}</span>
+                    </div>
+                    {/* Only what the coach actually recorded. A null count is
+                        "not stated", never rendered as zero. */}
+                    {(run.blocks_completed !== null || run.athletes_present !== null || run.reset_protocol_used) && (
+                      <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
+                        {run.blocks_completed !== null && `${run.blocks_completed} blocks completed. `}
+                        {run.athletes_present !== null && `${run.athletes_present} athletes present. `}
+                        {run.reset_protocol_used && 'Reset protocol used.'}
+                      </p>
+                    )}
+                    {(run.deviation_note ?? '').trim() !== '' && (
+                      <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                        <span className="t-label">Deviation: </span>{run.deviation_note}
+                      </p>
+                    )}
+                    {(run.what_worked ?? '').trim() !== '' && (
+                      <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                        <span className="t-label">Worked: </span>{run.what_worked}
+                      </p>
+                    )}
+                    {(run.what_did_not ?? '').trim() !== '' && (
+                      <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                        <span className="t-label">Did not: </span>{run.what_did_not}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
         )}
