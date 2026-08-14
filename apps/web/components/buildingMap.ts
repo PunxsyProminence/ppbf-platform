@@ -268,6 +268,8 @@ export const BUILDING: readonly Door[] = [
     keywords: 'compliance safeguarding policy certification safety' },
   { href: '/board/compliance-monitoring', label: 'Compliance Register', room: 'clinic',
     roles: ['board'], keywords: 'compliance register hand-filed monitoring governance' },
+  { href: '/board/escalation-monitoring', label: 'Escalation Ladder', room: 'clinic',
+    roles: ['board'], keywords: 'escalation ladder safety open severity counts' },
 
   // ----------------------------------------------------------------- night --
   { href: '/shadow', label: 'Shadow', room: 'night', roles: OPEN,
