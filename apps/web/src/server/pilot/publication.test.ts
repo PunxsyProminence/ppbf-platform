@@ -1,5 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
-import { updatePublicationStatus } from './publication';
+import { decidePublicationCompliance, submitPublicationForReview } from './publication';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -30,57 +30,32 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-describe('updatePublicationStatus', () => {
+describe('submitPublicationForReview', () => {
   test('uses a parameterized query -- caller-supplied values are bound params, not interpolated literals', async () => {
     mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
 
-    await updatePublicationStatus('org-1', 'pub-1', 'published', 'passed');
-
-    const [sql, params] = mockQuery.mock.calls[0];
-    // The caller-supplied complianceStatus value must never appear as a literal
-    // in the SQL text -- it must travel only via the bound params array.
-    expect(sql).not.toContain("'passed'");
-    expect(sql).toMatch(/\$1/);
-    expect(sql).toMatch(/\$2/);
-    expect(sql).toMatch(/\$3/);
-    expect(sql).toMatch(/\$4/);
-    expect(sql).toMatch(/\$5/);
-    expect(params).toEqual(['org-1', 'pub-1', 'published', expect.any(String), 'passed', null]);
-  });
-
-  test('the approving account is recorded, and left untouched when none is supplied', async () => {
-    mockQuery
-      .mockResolvedValueOnce([{ publication_id: 'pub-1' }])
-      .mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
-
-    await updatePublicationStatus('org-1', 'pub-1', 'approved', 'passed', 'admin-1');
-    await updatePublicationStatus('org-1', 'pub-1', 'pending_review', 'manual_review');
-
-    expect(mockQuery.mock.calls[0][1][5]).toBe('admin-1');
-    expect(mockQuery.mock.calls[0][0]).toMatch(/approved_by_account_id = coalesce\(\$6, approved_by_account_id\)/);
-    expect(mockQuery.mock.calls[1][1][5]).toBeNull();
-  });
-
-  test('a status value containing a single quote cannot alter the query structure', async () => {
-    mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
-
-    const maliciousStatus = "published'; drop table pilot.video_publications; --";
-    await updatePublicationStatus('org-1', 'pub-1', maliciousStatus);
+    const maliciousId = "pub-1'; drop table pilot.video_publications; --";
+    await submitPublicationForReview('org-1', maliciousId);
 
     const [sql, params] = mockQuery.mock.calls[0];
     // The malicious string must travel only as a bound parameter value, never
     // concatenated into the SQL text -- so the query text is unaffected by it.
     expect(sql).not.toContain('drop table');
-    expect(params[2]).toBe(maliciousStatus);
+    expect(params).toEqual(['org-1', maliciousId]);
   });
 
-  test('omitting complianceStatus leaves the existing value untouched via coalesce', async () => {
+  test('the transition is a compare-and-swap out of draft only', async () => {
+    // A stale submit -- a double-click, or a tab left open past an admin's
+    // decision -- must not yank an already-decided publication back into the
+    // review queue. The status values are the fixed endpoints of this one
+    // transition, so they appear in the SQL text rather than as parameters.
     mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
 
-    await updatePublicationStatus('org-1', 'pub-1', 'pending_review');
+    await submitPublicationForReview('org-1', 'pub-1');
 
-    const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual(['org-1', 'pub-1', 'pending_review', expect.any(String), null, null]);
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/set status = 'pending_review'/);
+    expect(sql).toMatch(/and status = 'draft'/);
   });
 
   test('the update is scoped to the acting organization and reports a miss', async () => {
@@ -88,37 +63,69 @@ describe('updatePublicationStatus', () => {
     // gym would otherwise be mutated by whoever guesses or is handed it.
     mockQuery.mockResolvedValueOnce([]);
 
-    const updated = await updatePublicationStatus('org-1', 'pub-from-other-org', 'published');
+    const applied = await submitPublicationForReview('org-1', 'pub-from-other-org');
 
     const [sql] = mockQuery.mock.calls[0];
-    expect(sql).toMatch(/where\s+organization_id = \$1\s+and\s+publication_id = \$2/);
-    expect(updated).toBe(false);
+    expect(sql).toMatch(/where organization_id = \$1 and publication_id = \$2/);
+    expect(applied).toBe(false);
   });
 });
 
-describe('recordComplianceCheck', () => {
-  test('records nothing for a publication outside the acting organization', async () => {
-    // The insert is guarded by an exists() over the publication scoped to the
-    // organization -- the checks table's foreign key alone accepts any gym's
-    // publication_id.
+// The check-row insert deliberately carries no organization guard of its own:
+// it only runs after the CAS UPDATE in the same transaction matched a row
+// scoped by organization_id. These tests pin that ordering -- reordering the
+// two statements, or dropping the org or status predicate from the UPDATE,
+// is exactly the refactor that would silently file a compliance verdict
+// against another gym's publication.
+describe('decidePublicationCompliance', () => {
+  const params = {
+    organizationId: 'org-1',
+    publicationId: 'pub-1',
+    newStatus: 'approved',
+    checkStatus: 'passed',
+    checkType: 'compliance',
+    details: 'ok',
+    decidedByAccountId: 'admin-1',
+    expectedCurrentStatus: 'pending_review',
+  };
+
+  test('the UPDATE is org-scoped and CAS-guarded, and runs before the check insert', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ publication_id: 'pub-1' }])
+      .mockResolvedValueOnce([]);
+
+    const applied = await decidePublicationCompliance(params);
+
+    expect(applied).toBe(true);
+    const [updateSql, updateParams] = mockQuery.mock.calls[0];
+    expect(updateSql).toMatch(/update pilot\.video_publications/);
+    expect(updateSql).toMatch(/where organization_id = \$1 and publication_id = \$2 and status = \$7/);
+    expect(updateParams[0]).toBe('org-1');
+    expect(updateParams[6]).toBe('pending_review');
+    const [insertSql] = mockQuery.mock.calls[1];
+    expect(insertSql).toMatch(/insert into pilot\.publication_checks/);
+  });
+
+  test('a CAS miss writes no check row and reports false', async () => {
+    // A cross-org publication_id and an already-decided row both surface as
+    // zero UPDATE matches; either way the transaction must file nothing.
     mockQuery.mockResolvedValueOnce([]);
 
-    const { recordComplianceCheck } = await import('./publication');
-    const check = await recordComplianceCheck({
-      organizationId: 'org-1',
-      publicationId: 'pub-from-other-org',
-      checkType: 'compliance',
-      checkStatus: 'passed',
-      details: '',
-      checkedByAccountId: 'admin-1',
-    });
+    const applied = await decidePublicationCompliance(params);
 
-    const [sql, params] = mockQuery.mock.calls[0];
-    expect(sql).toMatch(/where exists/i);
-    expect(sql).toMatch(/organization_id = \$2 and publication_id = \$3/);
-    expect(params[1]).toBe('org-1');
-    expect(params[2]).toBe('pub-from-other-org');
-    expect(check).toBeNull();
+    expect(applied).toBe(false);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  test('a verifyBeforeCommit throw aborts before any write', async () => {
+    const gate = jest.fn().mockRejectedValueOnce(new Error('consent withdrawn'));
+
+    await expect(
+      decidePublicationCompliance({ ...params, verifyBeforeCommit: gate }),
+    ).rejects.toThrow('consent withdrawn');
+
+    expect(gate).toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 

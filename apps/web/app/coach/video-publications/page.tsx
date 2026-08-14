@@ -55,8 +55,11 @@ function complianceTone(check: string): BadgeTone {
 
 // The one place the workflow is described to the coach. Each publication shows
 // where it stands and who has to act next, so an item that cannot be published
-// says why instead of simply omitting the button.
-function nextStep(pub: VideoPublication): string {
+// says why instead of simply omitting the button. isSubmitter is null while
+// the session is still resolving -- ownership is unknown, so the line stays
+// neutral rather than briefly mislabeling the coach's own draft as somebody
+// else's.
+function nextStep(pub: VideoPublication, isSubmitter: boolean | null): string {
   if (pub.status === 'published') {
     return 'Published to the research library.';
   }
@@ -72,6 +75,14 @@ function nextStep(pub: VideoPublication): string {
   if (pub.status === 'approved' && pub.compliance_check_status === 'passed') {
     return 'Compliance checks passed. Ready for you to publish.';
   }
+  if (pub.status === 'draft') {
+    if (isSubmitter === null) {
+      return 'A draft.';
+    }
+    return isSubmitter
+      ? 'A draft. Submit it for compliance review when it is ready.'
+      : 'Another coach created this draft, so only they or an organization admin can submit it.';
+  }
   return 'Waiting on an organization admin to record a compliance check.';
 }
 
@@ -83,6 +94,7 @@ export default function CoachVideoPublicationsPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState('');
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -167,6 +179,37 @@ export default function CoachVideoPublicationsPage() {
     }
   };
 
+  const handleSubmitForReview = async (publicationId: string) => {
+    setSubmittingId(publicationId);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/publications/submit`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publication_id: publicationId }),
+      });
+
+      // The server names the reason a submit was refused -- ownership or a
+      // status that already moved on -- so the coach learns what actually
+      // happened instead of watching the button do nothing.
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Failed to submit for review (${res.status})`);
+      }
+
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to submit for review');
+    } finally {
+      // Reload on every terminal outcome, not only success: a 409 means this
+      // row's rendered state is stale, and leaving it would keep a Submit
+      // button live on a publication that is no longer a draft. Best-effort --
+      // a failed reload must not overwrite the submit's own outcome message.
+      await loadPublications().catch(() => {});
+      setSubmittingId(null);
+    }
+  };
+
   const handlePublish = async (publicationId: string, videoSessionId: string) => {
     setPublishingId(publicationId);
     try {
@@ -204,14 +247,15 @@ export default function CoachVideoPublicationsPage() {
           <p className="t-eyebrow">Video Management</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Publication Workflow</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-            Publish coaching videos to the research library. You create the publication, an organization admin records a
-            compliance check, and a passing check clears it for you to publish.
+            Publish coaching videos to the research library. You create the publication and submit it for review, an
+            organization admin records a compliance check, and a passing check clears it for you to publish.
           </p>
           <ol className="mt-[var(--s3)] space-y-1 text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
             <li>1. You create the publication from a released video. It starts as a draft.</li>
-            <li>2. An organization admin records a compliance check against it.</li>
-            <li>3. A passing check approves it; a failing check rejects it.</li>
-            <li>4. You publish an approved publication to the research library.</li>
+            <li>2. You submit the draft for review when it is ready.</li>
+            <li>3. An organization admin records a compliance check against it.</li>
+            <li>4. A passing check approves it; a failing check rejects it.</li>
+            <li>5. You publish an approved publication to the research library.</li>
           </ol>
           {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{errorMessage}</p> : null}
         </header>
@@ -312,6 +356,9 @@ export default function CoachVideoPublicationsPage() {
               publications.map((pub) => {
                 const cleared = pub.status === 'approved' && pub.compliance_check_status === 'passed';
                 const isSubmitter = session.accountId !== null && pub.submitted_by_account_id === session.accountId;
+                // null until the session resolves: ownership-dependent copy
+                // and controls hold back rather than flashing the wrong claim.
+                const ownership = session.loading ? null : isSubmitter;
 
                 return (
                   <div key={pub.publication_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -329,14 +376,23 @@ export default function CoachVideoPublicationsPage() {
                             checks: {pub.compliance_check_status}
                           </span>
                         </div>
-                        <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">{nextStep(pub)}</p>
-                        {cleared && !isSubmitter ? (
+                        <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">{nextStep(pub, ownership)}</p>
+                        {cleared && ownership === false ? (
                           <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                             Another coach submitted this one, so only they or an organization admin can publish it.
                           </p>
                         ) : null}
                       </div>
-                      {cleared && isSubmitter ? (
+                      {pub.status === 'draft' && ownership === true ? (
+                        <button
+                          onClick={() => { void handleSubmitForReview(pub.publication_id); }}
+                          disabled={submittingId === pub.publication_id}
+                          className="btn disabled:opacity-50"
+                        >
+                          {submittingId === pub.publication_id ? 'Submitting...' : 'Submit for review'}
+                        </button>
+                      ) : null}
+                      {cleared && ownership === true ? (
                         <button
                           onClick={() => { void handlePublish(pub.publication_id, pub.video_session_id); }}
                           disabled={publishingId === pub.publication_id}
