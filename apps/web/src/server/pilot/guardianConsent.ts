@@ -150,8 +150,17 @@ export async function assertGuardianMediaConsentWithClient(
   organizationId: string,
   athleteId: string,
 ): Promise<void> {
+  // FOR SHARE is the race lock against a concurrent withdrawal sweep: the
+  // sweep (publication.ts suppressPublishedMediaForAthlete) takes FOR UPDATE
+  // on these same rows before retracting. Either this transaction commits
+  // first and the sweep then retracts what it published/approved, or the
+  // sweep's lock wins and this re-check runs after the withdrawal committed
+  // and refuses. In no interleaving does a publish outlive a withdrawal
+  // unsuppressed.
   const guardianResult = await client.query<{ parent_id: string }>(
-    `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2`,
+    `select parent_id from pilot.guardian_links
+     where organization_id = $1 and athlete_id = $2
+     for share`,
     [organizationId, athleteId],
   );
   const guardianIds = guardianResult.rows.map((row) => row.parent_id);

@@ -11,6 +11,8 @@ import {
   getLatestPublicationCheck,
   getOrganizationPublications,
   getPublicationForPublish,
+  reopenRetractedPublication,
+  retractPublication,
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
@@ -72,7 +74,7 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['admin', 'organization_admin']);
 
-    const [publications, draftRows] = await Promise.all([
+    const [publications, draftRows, publishedRows, retractedRows] = await Promise.all([
       getOrganizationPublications(principal.organizationId, { status: 'pending_review' }),
       // Drafts are normally the submitting coach's business, but the submit
       // route deliberately lets an org admin move one into this queue -- the
@@ -80,6 +82,12 @@ export async function GET(request: NextRequest) {
       // else could reach from any screen (owner decision, 2026-08-14). This
       // console is the approved surface for that lever; do not build another.
       getOrganizationPublications(principal.organizationId, { status: 'draft' }),
+      // Published and retracted are the retraction workflow's two sides
+      // (owner decision, 2026-08-14): an org admin may suppress a live
+      // publication from distribution, and may reopen a retracted one back
+      // into this review queue -- never directly back to published.
+      getOrganizationPublications(principal.organizationId, { status: 'published' }),
+      getOrganizationPublications(principal.organizationId, { status: 'retracted' }),
     ]);
 
     const items = await Promise.all(
@@ -122,30 +130,37 @@ export async function GET(request: NextRequest) {
       }),
     );
 
-    // Lighter than the queue items on purpose: an admin submitting a
-    // stranded draft is routing it INTO review, not deciding it, so there is
-    // no stream URL and no prior-review note to surface here.
-    const drafts = await Promise.all(
-      draftRows.map(async (draft) => {
-        const [uploader, athlete] = await Promise.all([
-          getSubjectIdentity(principal.organizationId, draft.submitted_by_account_id),
-          getAthleteById(principal.organizationId, draft.athlete_id),
-        ]);
+    // Lighter than the queue items on purpose: routing or suppressing a
+    // publication is not deciding it, so there is no stream URL and no
+    // prior-review note to surface on these lists.
+    const summarize = async (rows: typeof draftRows) =>
+      Promise.all(
+        rows.map(async (row) => {
+          const [uploader, athlete] = await Promise.all([
+            getSubjectIdentity(principal.organizationId, row.submitted_by_account_id),
+            getAthleteById(principal.organizationId, row.athlete_id),
+          ]);
 
-        return {
-          publication_id: draft.publication_id,
-          title: draft.title,
-          description: draft.description,
-          athlete_id: draft.athlete_id,
-          athlete_name: athlete?.full_name ?? null,
-          uploader_account_id: draft.submitted_by_account_id,
-          uploader_name: uploader?.fullName ?? null,
-          created_at: draft.created_at,
-        };
-      }),
-    );
+          return {
+            publication_id: row.publication_id,
+            title: row.title,
+            description: row.description,
+            athlete_id: row.athlete_id,
+            athlete_name: athlete?.full_name ?? null,
+            uploader_account_id: row.submitted_by_account_id,
+            uploader_name: uploader?.fullName ?? null,
+            created_at: row.created_at,
+          };
+        }),
+      );
 
-    return NextResponse.json({ ok: true, items, drafts });
+    const [drafts, published, retracted] = await Promise.all([
+      summarize(draftRows),
+      summarize(publishedRows),
+      summarize(retractedRows),
+    ]);
+
+    return NextResponse.json({ ok: true, items, drafts, published, retracted });
   } catch (error) {
     return jsonError(error);
   }
@@ -187,8 +202,73 @@ export async function POST(request: NextRequest) {
     if (!publicationId) {
       throw new Error('Missing publication_id');
     }
+
+    // The retraction workflow's two levers (owner decision, 2026-08-14).
+    // They are lifecycle transitions, not compliance decisions: no check row
+    // is filed, and no consent gate runs here -- retracting needs no consent
+    // (it removes distribution), and reopening only re-enters the queue,
+    // where approval and publish each re-run the consent gate themselves.
+    // An org admin can suppress; nothing here can grant or restore a
+    // guardian's consent.
+    if (rawDecision === 'retract' || rawDecision === 'reopen_review') {
+      // A retraction of a minor's published footage without a stated reason
+      // is unauditable; the reason lands on the suppressed shelf row and in
+      // the audit event. Checked before any read.
+      if (rawDecision === 'retract' && !note) {
+        throw new Error('Missing note: a retraction needs a stated reason');
+      }
+
+      const publication = await getPublicationForPublish(principal.organizationId, publicationId);
+      if (!publication) return hiddenNotFound();
+
+      if (rawDecision === 'retract') {
+        const applied = await retractPublication({
+          organizationId: principal.organizationId,
+          publicationId,
+          suppressedByAccountId: principal.accountId,
+          reason: note,
+        });
+        if (!applied) {
+          return NextResponse.json(
+            { error: 'Only a published publication can be retracted.', status: publication.status },
+            { status: 409 },
+          );
+        }
+        await auditComplianceEvent({
+          event_type: 'update',
+          actor_account_id: principal.accountId,
+          actor_role: principal.role,
+          organization_id: principal.organizationId,
+          entity_type: 'video_publication',
+          entity_id: publicationId,
+          details: { action: 'publication_retracted', note, prior_status: publication.status },
+          shadow_mirror: false,
+        });
+        return NextResponse.json({ ok: true, publication_id: publicationId, status: 'retracted' });
+      }
+
+      const applied = await reopenRetractedPublication(principal.organizationId, publicationId);
+      if (!applied) {
+        return NextResponse.json(
+          { error: 'Only a retracted publication can be reopened for review.', status: publication.status },
+          { status: 409 },
+        );
+      }
+      await auditComplianceEvent({
+        event_type: 'update',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'video_publication',
+        entity_id: publicationId,
+        details: { action: 'publication_reopened_for_review', note: note || undefined, prior_status: publication.status },
+        shadow_mirror: false,
+      });
+      return NextResponse.json({ ok: true, publication_id: publicationId, status: 'pending_review' });
+    }
+
     if (!DECISIONS.has(rawDecision as ComplianceDecision)) {
-      throw new Error('Unsupported decision: expected "approve", "reject", or "request_changes"');
+      throw new Error('Unsupported decision: expected "approve", "reject", "request_changes", "retract", or "reopen_review"');
     }
     const decision = rawDecision as ComplianceDecision;
     // A rejection or a request for changes without a stated reason leaves the

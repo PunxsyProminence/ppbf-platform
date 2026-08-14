@@ -118,7 +118,7 @@ export async function checkVideosMissingConsent(client) {
        join athlete_consent_state acs
          on acs.organization_id = p.organization_id
         and acs.athlete_id = p.athlete_id
-       where p.status <> 'archived'
+       where p.status not in ('archived', 'retracted')
          and (acs.has_guardians = false or acs.any_guardian_unsigned = true)
        order by p.organization_id, p.status, p.title`,
     );

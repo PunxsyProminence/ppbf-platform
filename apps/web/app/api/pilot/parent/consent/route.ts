@@ -8,6 +8,7 @@ import {
   withdrawMediaConsent,
 } from '@/src/server/pilot/guardianConsent';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
+import { suppressPublishedMediaForAthlete } from '@/src/server/pilot/publication';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
@@ -163,6 +164,64 @@ export async function POST(request: NextRequest) {
         entity_id: athleteId,
         details: { parent_id: actingParent.parentId },
         shadow_mirror: false,
+      });
+
+      // One guardian's withdrawal invalidates consent, and content already
+      // published must become non-distributable immediately (owner decision
+      // 2026-08-14) -- so the sweep runs here, in the withdrawal request,
+      // not on a timer. Unlike an audit row, a failed sweep is a SAFETY
+      // action that did not happen: it must surface loudly, never be
+      // swallowed. The withdrawal itself is already committed either way;
+      // retrying the withdrawal re-runs the sweep, and the compliance
+      // console's manual Retract lever is the operator fallback.
+      let suppressedPublicationIds: string[];
+      try {
+        suppressedPublicationIds = await suppressPublishedMediaForAthlete({
+          organizationId: principal.organizationId,
+          athleteId,
+          suppressedByAccountId: principal.accountId,
+          reason: 'guardian_consent_withdrawn',
+        });
+      } catch (error) {
+        const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+        const code = sanitizedSqlState(rawCode);
+        console.error({ event: 'consent-withdrawal-suppression-failed', athlete_id: athleteId, ...(code ? { code } : {}) });
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Your consent withdrawal was recorded, but suppressing already-published media failed. Withdraw again to retry, or contact your organization admin.',
+            athlete_id: athleteId,
+            decision,
+          },
+          { status: 500 },
+        );
+      }
+
+      // The withdrawal and each resulting suppression are independently
+      // auditable: one consent_withdrawn event above, one retraction event
+      // per affected publication here.
+      for (const publicationId of suppressedPublicationIds) {
+        await auditConsentEvent({
+          event_type: 'update',
+          actor_account_id: principal.accountId,
+          actor_role: principal.role,
+          organization_id: principal.organizationId,
+          entity_type: 'video_publication',
+          entity_id: publicationId,
+          details: {
+            action: 'publication_retracted_on_consent_withdrawal',
+            athlete_id: athleteId,
+            parent_id: actingParent.parentId,
+          },
+          shadow_mirror: false,
+        });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        athlete_id: athleteId,
+        decision,
+        retracted_publication_ids: suppressedPublicationIds,
       });
     }
 

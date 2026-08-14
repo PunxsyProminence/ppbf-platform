@@ -14,7 +14,7 @@ interface VideoPublication {
   publication_type: string;
   title: string;
   description: string;
-  status: 'draft' | 'pending_review' | 'approved' | 'published' | 'rejected' | 'archived';
+  status: 'draft' | 'pending_review' | 'approved' | 'published' | 'rejected' | 'archived' | 'retracted';
   compliance_check_status: string;
   created_at: string;
 }
@@ -41,7 +41,7 @@ const STATUS_GLYPH: Record<BadgeTone, string> = {
 
 function statusTone(status: VideoPublication['status']): BadgeTone {
   if (status === 'published' || status === 'approved') return 'cleared';
-  if (status === 'rejected') return 'locked';
+  if (status === 'rejected' || status === 'retracted') return 'locked';
   if (status === 'pending_review') return 'restricted';
   return 'monitor'; // draft, archived: in-process / dormant, not an outcome
 }
@@ -62,6 +62,9 @@ function complianceTone(check: string): BadgeTone {
 function nextStep(pub: VideoPublication, isSubmitter: boolean | null): string {
   if (pub.status === 'published') {
     return 'Published to the research library.';
+  }
+  if (pub.status === 'retracted') {
+    return 'Retracted from distribution -- guardian consent was withdrawn or an organization admin suppressed it. An admin can reopen it for a fresh review once consent is back on file.';
   }
   if (pub.status === 'rejected' || pub.compliance_check_status === 'failed') {
     return 'A compliance check failed. This cannot be published; create a new publication once the issue is resolved.';

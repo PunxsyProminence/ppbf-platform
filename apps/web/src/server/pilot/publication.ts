@@ -7,7 +7,8 @@ export type PublicationStatus =
   | 'approved'
   | 'published'
   | 'rejected'
-  | 'archived';
+  | 'archived'
+  | 'retracted';
 
 export type PublicationComplianceStatus = 'pending' | 'passed' | 'failed' | 'manual_review';
 
@@ -285,6 +286,130 @@ export async function decidePublicationCompliance(params: {
   });
 }
 
+/**
+ * Retraction: the controlled non-distributable state (owner decision,
+ * 2026-08-14). One transaction flips the publication off 'published' and
+ * suppresses its research-library rows -- attributed, dated, reasoned, and
+ * never deleted. The CAS on 'published' means a retract racing another
+ * retract (or a reopen) applies nothing rather than double-writing.
+ *
+ * There is deliberately NO transition out of 'retracted' here except
+ * reopenRetractedPublication below, which goes only to 'pending_review'
+ * with the compliance check reset -- republishing structurally requires a
+ * fresh consent-gated approval and a fresh consent-gated publish. A direct
+ * retracted -> published path must never exist.
+ */
+export async function retractPublication(params: {
+  organizationId: string;
+  publicationId: string;
+  suppressedByAccountId: string;
+  reason: string;
+}): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const claimed = await client.query<{ publication_id: string }>(
+      `update pilot.video_publications
+       set status = 'retracted',
+           updated_at = now()
+       where organization_id = $1 and publication_id = $2 and status = 'published'
+       returning publication_id`,
+      [params.organizationId, params.publicationId],
+    );
+
+    if (claimed.rows.length === 0) {
+      return false;
+    }
+
+    await client.query(
+      `update pilot.research_library
+       set suppressed_at = now(),
+           suppressed_by_account_id = $3,
+           suppressed_reason = $4,
+           updated_at = now()
+       where organization_id = $1 and publication_id = $2 and suppressed_at is null`,
+      [params.organizationId, params.publicationId, params.suppressedByAccountId, params.reason],
+    );
+
+    return true;
+  });
+}
+
+/**
+ * The consent-withdrawal sweep: every currently-published publication of
+ * this athlete becomes retracted, and its shelf rows suppressed, in one
+ * transaction. Returns the retracted publication_ids so the caller can
+ * audit each suppression independently of the withdrawal itself.
+ *
+ * The FOR UPDATE on guardian_links is the race lock against an in-flight
+ * publish. The publish claim re-checks consent inside its own transaction
+ * (assertGuardianMediaConsentWithClient), whose guardian_links read holds
+ * FOR SHARE -- so either the publish commits first and this sweep then sees
+ * and retracts it, or this sweep's lock wins and the publish's re-check
+ * runs after the withdrawal committed and refuses. In no interleaving does
+ * a publish survive a withdrawal unsuppressed.
+ */
+export async function suppressPublishedMediaForAthlete(params: {
+  organizationId: string;
+  athleteId: string;
+  suppressedByAccountId: string;
+  reason: string;
+}): Promise<string[]> {
+  return withTransaction(async (client) => {
+    await client.query(
+      `select parent_id from pilot.guardian_links
+       where organization_id = $1 and athlete_id = $2
+       for update`,
+      [params.organizationId, params.athleteId],
+    );
+
+    const retracted = await client.query<{ publication_id: string }>(
+      `update pilot.video_publications
+       set status = 'retracted',
+           updated_at = now()
+       where organization_id = $1 and athlete_id = $2 and status = 'published'
+       returning publication_id`,
+      [params.organizationId, params.athleteId],
+    );
+
+    const publicationIds = retracted.rows.map((row) => row.publication_id);
+    if (publicationIds.length === 0) {
+      return [];
+    }
+
+    await client.query(
+      `update pilot.research_library
+       set suppressed_at = now(),
+           suppressed_by_account_id = $3,
+           suppressed_reason = $4,
+           updated_at = now()
+       where organization_id = $1 and publication_id = any($2) and suppressed_at is null`,
+      [params.organizationId, publicationIds, params.suppressedByAccountId, params.reason],
+    );
+
+    return publicationIds;
+  });
+}
+
+// The only exit from 'retracted', and it goes backwards, not forwards: into
+// the review queue with the compliance check reset to 'pending', so the
+// fresh consent-gated approval and the fresh consent-gated publish are both
+// structurally required. Re-consent alone republishes nothing.
+export async function reopenRetractedPublication(
+  organizationId: string,
+  publicationId: string,
+): Promise<boolean> {
+  const result = await query<{ publication_id: string }>(
+    `update pilot.video_publications
+     set status = 'pending_review',
+         compliance_check_status = 'pending',
+         updated_at = now()
+     where organization_id = $1 and publication_id = $2 and status = 'retracted'
+     returning publication_id`,
+    [organizationId, publicationId],
+  );
+
+  return result.length > 0;
+}
+
 export interface PublicationCheckSummary {
   check_status: string;
   details: string;
@@ -319,7 +444,7 @@ export async function getResearchLibrary(
   let sql = `
     select library_id, publication_id, video_session_id, title, description, tags, view_count, published_at
     from pilot.research_library
-    where organization_id = $1 and archived_at is null
+    where organization_id = $1 and archived_at is null and suppressed_at is null
   `;
   const params: unknown[] = [organizationId];
 
@@ -370,11 +495,17 @@ export async function getOrganizationPublications(
   return query<VideoPublication>(sql, params);
 }
 
-export async function trackLibraryView(libraryId: string): Promise<void> {
+// No callers yet. Org-scoped and suppression-aware anyway, so whoever wires
+// it up cannot count a view against another gym's shelf or against a
+// suppressed/archived row.
+export async function trackLibraryView(organizationId: string, libraryId: string): Promise<void> {
   const now = new Date().toISOString();
 
   await query(
-    `update pilot.research_library set view_count = view_count + 1, last_accessed_at = $1 where library_id = $2`,
-    [now, libraryId],
+    `update pilot.research_library
+     set view_count = view_count + 1, last_accessed_at = $1
+     where organization_id = $2 and library_id = $3
+       and suppressed_at is null and archived_at is null`,
+    [now, organizationId, libraryId],
   );
 }

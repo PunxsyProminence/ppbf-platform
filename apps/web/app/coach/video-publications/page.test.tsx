@@ -245,3 +245,15 @@ describe('coach publication workflow', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull());
   });
 });
+
+test('a retracted publication says why it is gone and offers no actions', async () => {
+  global.fetch = mockFetch([
+    publication({ status: 'retracted', compliance_check_status: 'failed' }),
+  ]) as unknown as typeof fetch;
+
+  render(<CoachVideoPublicationsPage />);
+
+  await screen.findByText(/Retracted from distribution/);
+  expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Submit for review' })).toBeNull();
+});

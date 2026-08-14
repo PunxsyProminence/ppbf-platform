@@ -31,6 +31,12 @@ interface DraftPublication {
   created_at: string;
 }
 
+// Published and retracted rows share the drafts' light shape -- suppressing
+// or reopening a publication is not reviewing it, so no stream or prior
+// note is surfaced.
+type PublishedPublication = DraftPublication;
+type RetractedPublication = DraftPublication;
+
 type Decision = 'approve' | 'reject' | 'request_changes';
 
 const DECISION_LABEL: Record<Decision, string> = {
@@ -51,6 +57,8 @@ function formatDate(value: string): string {
 export default function VideoCompliancePage() {
   const [items, setItems] = useState<PendingPublication[] | null>(null);
   const [drafts, setDrafts] = useState<DraftPublication[]>([]);
+  const [published, setPublished] = useState<PublishedPublication[]>([]);
+  const [retracted, setRetracted] = useState<RetractedPublication[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   // Per-row, not a single scalar -- deciding on one video must never disable
@@ -69,6 +77,8 @@ export default function VideoCompliancePage() {
       const payload = (await response.json().catch(() => ({}))) as {
         items?: PendingPublication[];
         drafts?: DraftPublication[];
+        published?: PublishedPublication[];
+        retracted?: RetractedPublication[];
         error?: string;
       };
       if (seq !== loadSeq.current) return;
@@ -77,11 +87,15 @@ export default function VideoCompliancePage() {
       }
       setItems(payload.items ?? []);
       setDrafts(payload.drafts ?? []);
+      setPublished(payload.published ?? []);
+      setRetracted(payload.retracted ?? []);
       setErrorMessage('');
     } catch (error) {
       if (seq !== loadSeq.current) return;
       setItems([]);
       setDrafts([]);
+      setPublished([]);
+      setRetracted([]);
       setErrorMessage(error instanceof Error ? error.message : 'Unable to load the compliance review queue.');
     }
   }, []);
@@ -155,6 +169,51 @@ export default function VideoCompliancePage() {
       setActionMessage('Draft submitted into the review queue.');
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : 'Unable to submit the draft for review.');
+    } finally {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(publicationId);
+        return next;
+      });
+      await load();
+    }
+  }
+
+  // Retract requires a stated reason (it lands on the shelf row and in the
+  // audit trail); reopen sends a retracted item back into THIS queue, never
+  // directly back to published -- fresh review and fresh publish, each with
+  // its own consent gate, still stand between it and distribution.
+  async function lifecycle(publicationId: string, decision: 'retract' | 'reopen_review') {
+    let note = '';
+    if (decision === 'retract') {
+      const entered = window.prompt('Reason for retracting this publication from distribution (required):', '');
+      if (entered === null) return;
+      note = entered.trim();
+      if (!note) {
+        setActionMessage('Retract needs a stated reason -- nothing was recorded.');
+        return;
+      }
+    }
+
+    setPendingIds((prev) => new Set(prev).add(publicationId));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/video-compliance`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publication_id: publicationId, decision, note: note || undefined }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'Unable to record the change.');
+      }
+      setActionMessage(
+        decision === 'retract'
+          ? 'Publication retracted from distribution.'
+          : 'Publication reopened into the review queue.',
+      );
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : 'Unable to record the change.');
     } finally {
       setPendingIds((prev) => {
         const next = new Set(prev);
@@ -316,6 +375,91 @@ export default function VideoCompliancePage() {
                         className="btn--lever min-h-[44px] disabled:opacity-50"
                       >
                         Submit for review
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {!isLoading && published.length > 0 ? (
+            <section className="mt-[var(--s6)]">
+              <header className="border-b-[2px] border-[color:rgba(212,175,74,.22)] pb-[var(--s3)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Published</h2>
+                <p className="t-body mt-[var(--s2)] max-w-4xl">
+                  Live on the research library shelf. Retracting removes a publication from distribution
+                  immediately -- the record and its history stay intact, and getting it back means a fresh
+                  review and a fresh publish, not an undo.
+                </p>
+              </header>
+              <div className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
+                {published.map((row) => (
+                  <article
+                    key={row.publication_id}
+                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
+                      <div>
+                        <p className="t-eyebrow">{row.title || 'Untitled Video'}</p>
+                        <p className="t-body mt-[var(--s2)]">{row.description}</p>
+                        <dl className="t-body mt-[var(--s3)] grid grid-cols-[auto_1fr] gap-x-[var(--s3)] gap-y-[var(--s1)]">
+                          <dt className="text-[color:var(--brass-300)]">Athlete</dt>
+                          <dd>{row.athlete_name ?? row.athlete_id}</dd>
+                          <dt className="text-[color:var(--brass-300)]">Published by</dt>
+                          <dd>{row.uploader_name ?? row.uploader_account_id}</dd>
+                        </dl>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={pendingIds.has(row.publication_id)}
+                        onClick={() => void lifecycle(row.publication_id, 'retract')}
+                        className="btn--lever min-h-[44px] disabled:opacity-50"
+                      >
+                        Retract from distribution
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {!isLoading && retracted.length > 0 ? (
+            <section className="mt-[var(--s6)]">
+              <header className="border-b-[2px] border-[color:rgba(212,175,74,.22)] pb-[var(--s3)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Retracted</h2>
+                <p className="t-body mt-[var(--s2)] max-w-4xl">
+                  Suppressed from distribution -- by a guardian&rsquo;s consent withdrawal, or by an admin&rsquo;s
+                  retraction. Reopening sends one back into the review queue above; approving and publishing
+                  it again each re-check guardian consent. Nothing here can restore a guardian&rsquo;s consent
+                  on their behalf.
+                </p>
+              </header>
+              <div className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
+                {retracted.map((row) => (
+                  <article
+                    key={row.publication_id}
+                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
+                      <div>
+                        <p className="t-eyebrow">{row.title || 'Untitled Video'}</p>
+                        <p className="t-body mt-[var(--s2)]">{row.description}</p>
+                        <dl className="t-body mt-[var(--s3)] grid grid-cols-[auto_1fr] gap-x-[var(--s3)] gap-y-[var(--s1)]">
+                          <dt className="text-[color:var(--brass-300)]">Athlete</dt>
+                          <dd>{row.athlete_name ?? row.athlete_id}</dd>
+                          <dt className="text-[color:var(--brass-300)]">Created by</dt>
+                          <dd>{row.uploader_name ?? row.uploader_account_id}</dd>
+                        </dl>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={pendingIds.has(row.publication_id)}
+                        onClick={() => void lifecycle(row.publication_id, 'reopen_review')}
+                        className="btn--lever min-h-[44px] disabled:opacity-50"
+                      >
+                        Reopen for review
                       </button>
                     </div>
                   </article>

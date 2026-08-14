@@ -1,5 +1,11 @@
 import { query, queryOne, withTransaction } from './db';
-import { decidePublicationCompliance, submitPublicationForReview } from './publication';
+import {
+  decidePublicationCompliance,
+  reopenRetractedPublication,
+  retractPublication,
+  submitPublicationForReview,
+  suppressPublishedMediaForAthlete,
+} from './publication';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -145,6 +151,109 @@ describe('decidePublicationCompliance', () => {
 
     expect(gate).toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+// Retraction is the safeguarding suppression path: these tests pin the CAS
+// predicates, the org scoping, and the ordering (publication flip first,
+// shelf suppression only after a match) -- the refactors that would
+// silently retract another gym's publication, resurrect a decided one, or
+// suppress a shelf row whose publication never flipped.
+describe('retractPublication', () => {
+  const params = {
+    organizationId: 'org-1',
+    publicationId: 'pub-1',
+    suppressedByAccountId: 'admin-1',
+    reason: 'guardian_consent_withdrawn',
+  };
+
+  test('flips only a published row, org-scoped, then suppresses its shelf rows with attribution', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ publication_id: 'pub-1' }])
+      .mockResolvedValueOnce([]);
+
+    const applied = await retractPublication(params);
+
+    expect(applied).toBe(true);
+    const [flipSql] = mockQuery.mock.calls[0];
+    expect(flipSql).toMatch(/set status = 'retracted'/);
+    expect(flipSql).toMatch(/where organization_id = \$1 and publication_id = \$2 and status = 'published'/);
+    const [shelfSql, shelfParams] = mockQuery.mock.calls[1];
+    expect(shelfSql).toMatch(/update pilot\.research_library/);
+    expect(shelfSql).toMatch(/set suppressed_at = now\(\)/);
+    expect(shelfSql).toMatch(/where organization_id = \$1 and publication_id = \$2 and suppressed_at is null/);
+    expect(shelfParams).toEqual(['org-1', 'pub-1', 'admin-1', 'guardian_consent_withdrawn']);
+  });
+
+  test('a CAS miss suppresses nothing and reports false', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const applied = await retractPublication(params);
+
+    expect(applied).toBe(false);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('suppressPublishedMediaForAthlete', () => {
+  const params = {
+    organizationId: 'org-1',
+    athleteId: 'ath-1',
+    suppressedByAccountId: 'parent-account-1',
+    reason: 'guardian_consent_withdrawn',
+  };
+
+  test('locks the guardian links before sweeping, so a racing publish serializes', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ parent_id: 'parent-1' }])
+      .mockResolvedValueOnce([{ publication_id: 'pub-1' }, { publication_id: 'pub-2' }])
+      .mockResolvedValueOnce([]);
+
+    const retracted = await suppressPublishedMediaForAthlete(params);
+
+    expect(retracted).toEqual(['pub-1', 'pub-2']);
+    const [lockSql] = mockQuery.mock.calls[0];
+    expect(lockSql).toMatch(/from pilot\.guardian_links/);
+    expect(lockSql).toMatch(/for update/);
+    const [sweepSql] = mockQuery.mock.calls[1];
+    expect(sweepSql).toMatch(/set status = 'retracted'/);
+    expect(sweepSql).toMatch(/where organization_id = \$1 and athlete_id = \$2 and status = 'published'/);
+    const [shelfSql, shelfParams] = mockQuery.mock.calls[2];
+    expect(shelfSql).toMatch(/publication_id = any\(\$2\)/);
+    expect(shelfParams[1]).toEqual(['pub-1', 'pub-2']);
+  });
+
+  test('nothing published means nothing touched on the shelf', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ parent_id: 'parent-1' }])
+      .mockResolvedValueOnce([]);
+
+    const retracted = await suppressPublishedMediaForAthlete(params);
+
+    expect(retracted).toEqual([]);
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('reopenRetractedPublication', () => {
+  test('the only exit from retracted goes backwards into review with the check reset', async () => {
+    mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
+
+    const applied = await reopenRetractedPublication('org-1', 'pub-1');
+
+    expect(applied).toBe(true);
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/set status = 'pending_review'/);
+    expect(sql).toMatch(/compliance_check_status = 'pending'/);
+    expect(sql).toMatch(/where organization_id = \$1 and publication_id = \$2 and status = 'retracted'/);
+  });
+
+  test('anything not retracted reports a miss', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const applied = await reopenRetractedPublication('org-1', 'pub-published');
+
+    expect(applied).toBe(false);
   });
 });
 
