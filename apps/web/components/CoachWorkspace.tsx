@@ -8,7 +8,7 @@ import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryP
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymStamp } from '@/src/lib/gymTime';
+import { formatGymDateTimeShort, formatGymStamp } from '@/src/lib/gymTime';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -141,6 +141,21 @@ interface CoachPainReport {
   recordedAt: string | null;
 }
 
+interface CoachBarrierReport {
+  note_id: string;
+  athlete_id: string;
+  athlete_name: string;
+  reporter_role: string;
+  note_type: string;
+  note_text: string;
+  created_at: string;
+}
+
+const BARRIER_TYPE_LABEL: Record<string, string> = {
+  home_barrier: 'Something at home',
+  transportation_barrier: 'Getting to the gym',
+};
+
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
   if (readiness === 'YELLOW') return 'bg-[var(--restricted)]';
@@ -235,6 +250,10 @@ export default function CoachWorkspace() {
   const [intakeActionBusyId, setIntakeActionBusyId] = useState<string | null>(null);
   const [intakeActionErrors, setIntakeActionErrors] = useState<Record<string, string>>({});
   const [painReports, setPainReports] = useState<CoachPainReport[]>([]);
+  const [barrierReports, setBarrierReports] = useState<CoachBarrierReport[]>([]);
+  const [barrierReportsTruncated, setBarrierReportsTruncated] = useState(false);
+  const [barrierReportsLoading, setBarrierReportsLoading] = useState(true);
+  const [barrierReportsError, setBarrierReportsError] = useState('');
   const [painReportWindowDays, setPainReportWindowDays] = useState<number | null>(null);
   const [painReportsTruncated, setPainReportsTruncated] = useState(false);
   const [painReportsLoading, setPainReportsLoading] = useState(true);
@@ -461,10 +480,43 @@ export default function CoachWorkspace() {
     }
   }, []);
 
+  // Guardian barrier reports. The parent form's copy is "Sent to your
+  // child's coach" -- this panel is what makes that true. The server filters
+  // to the athletes this coach is authorized for.
+  const loadBarrierReports = useCallback(async () => {
+    setBarrierReportsLoading(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/barrier-reports`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Unable to load family barrier reports');
+      }
+
+      const payload = (await response.json()) as {
+        barrierReports?: CoachBarrierReport[];
+        truncated?: boolean;
+      };
+      setBarrierReports(payload.barrierReports ?? []);
+      setBarrierReportsTruncated(payload.truncated === true);
+      setBarrierReportsError('');
+    } catch (error) {
+      // Never fall through to the "no reports" line: a coach reading that
+      // after a failed read would believe no family had asked for help.
+      setBarrierReportsError(error instanceof Error ? error.message : 'Unable to load family barrier reports');
+      setBarrierReports([]);
+      setBarrierReportsTruncated(false);
+    } finally {
+      setBarrierReportsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPainReports();
-  }, [loadPainReports]);
+    void loadBarrierReports();
+  }, [loadPainReports, loadBarrierReports]);
 
   const loadFloorPlans = useCallback(async () => {
     try {
@@ -901,6 +953,83 @@ export default function CoachWorkspace() {
                   can remove.
                 </p>
               </div>
+            </div>
+          )}
+        </section>
+
+        {/* FAMILY BARRIER REPORTS -- also outside the tab switch. A guardian
+            who wrote "something at home is in the way of training" was told it
+            was sent to their child's coach; this panel is where that promise
+            is kept. Lower urgency than pain, so brass trim rather than the
+            locked band. */}
+        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.35)] p-[var(--s4)] space-y-[var(--s3)]">
+          <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
+              Family Barrier Reports
+            </h2>
+            <button
+              type="button"
+              onClick={() => void loadBarrierReports()}
+              className="btn btn--ghost"
+              aria-label="Refresh family barrier reports"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {barrierReportsLoading && (
+            <p className="text-xs text-[color:var(--bone-300)]">Checking for family barrier reports...</p>
+          )}
+
+          {!barrierReportsLoading && barrierReportsError && (
+            <div className="border-2 border-[color:rgba(212,175,74,.5)] p-3">
+              <p className="text-sm font-semibold text-[color:var(--brass-300)]">{barrierReportsError}</p>
+              <p className="mt-1 text-xs text-[color:var(--bone-300)]">
+                Reports may exist that are not shown here. Do not read this as &quot;no family asked for
+                help&quot;.
+              </p>
+            </div>
+          )}
+
+          {!barrierReportsLoading && !barrierReportsError && barrierReports.length === 0 && (
+            <p className="text-xs text-[color:var(--bone-400)]">
+              No guardian on your roster has reported a barrier to training. A report appears here as
+              soon as one is sent.
+            </p>
+          )}
+
+          {!barrierReportsLoading && !barrierReportsError && barrierReports.length > 0 && (
+            <div className="space-y-3">
+              {barrierReportsTruncated && (
+                <p className="text-xs text-[color:var(--bone-300)]">
+                  More reports exist than are listed here; the newest are shown first.
+                </p>
+              )}
+
+              {barrierReports.map((report) => (
+                <article key={report.note_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] space-y-[var(--s2)]">
+                  <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
+                    <div>
+                      <p className="text-[length:var(--t-md)] font-black text-[color:var(--bone-100)]">
+                        {report.athlete_name}
+                      </p>
+                      <p className="t-data text-[color:var(--bone-400)]">
+                        {BARRIER_TYPE_LABEL[report.note_type] ?? report.note_type}
+                        {' '}&middot; reported by {report.reporter_role === 'parent' ? 'a guardian' : report.reporter_role}
+                        {' '}&middot; {formatGymDateTimeShort(report.created_at) ?? report.created_at}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-[color:var(--bone-200)]">{report.note_text}</p>
+                  <p className="text-xs text-[color:var(--bone-400)]">
+                    Reply through the Message Home panel on the decision loop.
+                  </p>
+                </article>
+              ))}
+
+              <Link href="/coach/decision-loop" className="btn btn--ghost">
+                Open Decision Loop to Message Home
+              </Link>
             </div>
           )}
         </section>
