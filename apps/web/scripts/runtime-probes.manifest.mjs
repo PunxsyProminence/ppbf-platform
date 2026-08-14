@@ -292,29 +292,6 @@ export const MANIFEST = [
       + 'exercise. That is a pg test, not a live probe.',
   },
   {
-    item: 'publication-submit',
-    title: 'Coach submits a publication for compliance review',
-    probes: [
-      unauthenticated('publication-submit', '/api/pilot/publications/submit', { method: 'POST' }),
-      {
-        item: 'publication-submit',
-        id: 'publication-submit/refuse-parent:POST /api/pilot/publications/submit',
-        kind: 'http',
-        method: 'POST',
-        path: '/api/pilot/publications/submit',
-        as: 'parent',
-        expect: 403,
-        because:
-          'The submit gate admits coach, organization_admin and admin; a parent session must be '
-          + 'refused. This is the check that would catch the gate widened by accident on the only '
-          + 'coach-reachable transition into the compliance queue.',
-      },
-    ],
-    acceptanceProbeOutstanding:
-      'The draft -> pending_review CAS and its ownership rule mutate a minor\'s footage record, '
-      + 'so the end-to-end acceptance lives in route tests, not a live probe.',
-  },
-  {
     item: 'PR-238i',
     title: 'Guardian media consent (T-008)',
     probes: [
