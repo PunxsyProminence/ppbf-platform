@@ -328,6 +328,47 @@ export async function createSchedulerCoachingRequest(organizationId: string, ite
   );
 }
 
+export async function getSchedulerCoachingRequestById(
+  organizationId: string,
+  requestId: string,
+): Promise<SchedulerCoachingRequest | null> {
+  return queryOne<SchedulerCoachingRequest>(
+    `select request_id, athlete_id, requested_by_role, requested_by_account_id,
+            preferred_at::text, goals, status, assigned_coach_account_id,
+            created_at::text, updated_at::text
+     from pilot.scheduler_coaching_requests
+     where organization_id = $1 and request_id = $2`,
+    [organizationId, requestId],
+  );
+}
+
+// The resolution half of the coaching-request workflow: pending -> approved
+// (with the assigned coach recorded) or pending -> declined. The CAS on
+// 'pending' means two admins racing the same request serialize -- the loser
+// matches no row and applies nothing, instead of silently overwriting the
+// committed decision or re-resolving a settled request. Returns false on
+// that miss, and on a cross-organization request_id, which must look the
+// same.
+export async function resolveSchedulerCoachingRequest(params: {
+  organizationId: string;
+  requestId: string;
+  status: 'approved' | 'declined';
+  assignedCoachAccountId: string | null;
+  resolvedAt: string;
+}): Promise<boolean> {
+  const rows = await query<{ request_id: string }>(
+    `update pilot.scheduler_coaching_requests
+     set status = $3,
+         assigned_coach_account_id = $4,
+         updated_at = $5
+     where organization_id = $1 and request_id = $2 and status = 'pending'
+     returning request_id`,
+    [params.organizationId, params.requestId, params.status, params.assignedCoachAccountId, params.resolvedAt],
+  );
+
+  return rows.length > 0;
+}
+
 // One record is the one-element case of the batch: the same atomic
 // ON CONFLICT upsert, so a double-tapped check-in button (two concurrent
 // requests for the same class/athlete) resolves as last-writer-wins instead

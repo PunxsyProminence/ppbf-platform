@@ -44,6 +44,7 @@ type SchedulerCoachingRequest = {
   preferred_at: string;
   goals: string;
   status: 'pending' | 'approved' | 'declined';
+  assigned_coach_account_id?: string | null;
   created_at: string;
 };
 
@@ -81,6 +82,14 @@ function roleCanOverrideAttendance(role: SchedulerRole | null): boolean {
   return role === 'coach' || role === 'admin' || role === 'organization_admin';
 }
 
+// Deliberately narrower than roleCanManageClasses: resolving a 1:1 coaching
+// request is org-admin-only (owner policy, 2026-08-14). A coach may not
+// approve, decline, or claim a request -- the server refuses it too; this
+// just keeps the controls off a screen where they could never work.
+function roleCanResolveCoachingRequests(role: SchedulerRole | null): boolean {
+  return role === 'admin' || role === 'organization_admin';
+}
+
 export default function SchedulerPage() {
   const [role, setRole] = useState<SchedulerRole | null>(null);
   const [athleteId, setAthleteId] = useState<string>('');
@@ -106,6 +115,10 @@ export default function SchedulerPage() {
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
   const [coachingPreferredAt, setCoachingPreferredAt] = useState('');
   const [coachingGoals, setCoachingGoals] = useState('');
+  // Per-request, keyed by request_id: two pending requests must not share
+  // one coach field, or approving the second silently reuses the first's
+  // coach.
+  const [assignCoachInputs, setAssignCoachInputs] = useState<Record<string, string>>({});
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'excused'>('present');
   const [attendanceNote, setAttendanceNote] = useState('');
 
@@ -583,8 +596,72 @@ export default function SchedulerPage() {
                   {coachingRequests.map((item) => (
                     <div key={item.request_id} className="input">
                       <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
-                      <p className="text-[color:var(--bone-300)]">Preferred: {formatGymStamp(item.preferred_at)} | Status: {item.status}</p>
+                      <p className="text-[color:var(--bone-300)]">
+                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {item.status}
+                        {item.status === 'approved' && item.assigned_coach_account_id
+                          ? ` | Coach: ${item.assigned_coach_account_id}`
+                          : ''}
+                      </p>
                       <p className="text-[color:var(--bone-400)]">{item.goals}</p>
+                      {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
+                        <div className="mt-2 space-y-1">
+                          <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">
+                            Coach to assign (their coach of record, or a coach holding active coverage)
+                          </label>
+                          <input
+                            id={`assign-coach-${item.request_id}`}
+                            type="text"
+                            value={assignCoachInputs[item.request_id] ?? ''}
+                            onChange={(e) =>
+                              setAssignCoachInputs((current) => ({ ...current, [item.request_id]: e.target.value }))
+                            }
+                            placeholder="coach account id"
+                            className="input"
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const coachId = (assignCoachInputs[item.request_id] ?? '').trim();
+                                if (!coachId) {
+                                  setErrorMessage('Enter the coach account id to assign first.');
+                                  return;
+                                }
+                                void runAction(
+                                  {
+                                    action: 'review_coaching_request',
+                                    request_id: item.request_id,
+                                    decision: 'approve',
+                                    assigned_coach_account_id: coachId,
+                                  },
+                                  'Coaching request approved.',
+                                );
+                              }}
+                              disabled={actionInFlight}
+                              className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                            >
+                              Approve &amp; Assign
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void runAction(
+                                  {
+                                    action: 'review_coaching_request',
+                                    request_id: item.request_id,
+                                    decision: 'decline',
+                                  },
+                                  'Coaching request declined.',
+                                )
+                              }
+                              disabled={actionInFlight}
+                              className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>

@@ -112,6 +112,31 @@ function resolveCoverageTtlHours(requested?: number): number {
   return requested;
 }
 
+// The account named must be an active coach in the organization before it is
+// handed any coach-level relationship to a minor's record. A typo'd id is
+// not a bad reference -- it is access granted to whatever account the typo
+// names (a parent, an athlete, a deactivated coach). The field name rides
+// the error so each caller's refusal names its own input.
+export async function assertActiveCoachAccount(
+  organizationId: string,
+  accountId: string,
+  field: string,
+): Promise<void> {
+  const coach = await queryOne<{ account_id: string }>(
+    `select account_id
+     from pilot.accounts
+     where account_id = $1
+       and organization_id = $2
+       and role = 'coach'
+       and active_flag = true`,
+    [accountId, organizationId],
+  );
+
+  if (!coach) {
+    throw new Error(`Missing ${field}: must be an active coach account in this organization`);
+  }
+}
+
 export async function grantCoachCoverage(params: {
   organizationId: string;
   athleteId: string;
@@ -123,24 +148,9 @@ export async function grantCoachCoverage(params: {
 
   const ttlHours = resolveCoverageTtlHours(params.ttlHours);
 
-  // The grantee must be an active coach in the granting organization. This
-  // table exists to admit its holder through assertCoachAssignedToAthlete,
-  // so a typo'd account id here is not a bad reference -- it is coach-level
-  // access to a minor's record handed to whatever account the typo names
-  // (a parent, an athlete, a deactivated coach).
-  const grantee = await queryOne<{ account_id: string }>(
-    `select account_id
-     from pilot.accounts
-     where account_id = $1
-       and organization_id = $2
-       and role = 'coach'
-       and active_flag = true`,
-    [params.coveringCoachId, params.organizationId],
-  );
-
-  if (!grantee) {
-    throw new Error('Missing covering_coach_id: must be an active coach account in this organization');
-  }
+  // This table exists to admit its holder through
+  // assertCoachAssignedToAthlete, so the grantee check above all else.
+  await assertActiveCoachAccount(params.organizationId, params.coveringCoachId, 'covering_coach_id');
 
   // At most one live grant per (athlete, coach). Stacked overlapping grants
   // make revocation lie: an admin revokes "the" grant, the hidden second one

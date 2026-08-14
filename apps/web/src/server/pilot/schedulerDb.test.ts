@@ -107,3 +107,42 @@ describe('listRegisteredAthleteIdsForClass', () => {
     expect(params).toEqual(['org-1', 'class-1']);
   });
 });
+
+describe('resolveSchedulerCoachingRequest', () => {
+  test('the UPDATE is org-scoped and CAS-guarded on pending', async () => {
+    mockQuery.mockResolvedValueOnce([{ request_id: 'req-1' }]);
+
+    const { resolveSchedulerCoachingRequest } = await import('./schedulerDb');
+    const applied = await resolveSchedulerCoachingRequest({
+      organizationId: 'org-1',
+      requestId: 'req-1',
+      status: 'approved',
+      assignedCoachAccountId: 'acct-coach-9',
+      resolvedAt: '2026-08-14T00:00:00.000Z',
+    });
+
+    expect(applied).toBe(true);
+    const [sql, params] = mockQuery.mock.calls[0];
+    // The CAS on 'pending' is what stops a second admin's racing decision
+    // (or a replayed click) from silently overwriting a committed one; the
+    // organization_id predicate is what keeps a guessed request_id from
+    // resolving another gym's request.
+    expect(sql).toMatch(/where organization_id = \$1 and request_id = \$2 and status = 'pending'/);
+    expect(params).toEqual(['org-1', 'req-1', 'approved', 'acct-coach-9', '2026-08-14T00:00:00.000Z']);
+  });
+
+  test('a miss -- already resolved or cross-org -- applies nothing and reports false', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const { resolveSchedulerCoachingRequest } = await import('./schedulerDb');
+    const applied = await resolveSchedulerCoachingRequest({
+      organizationId: 'org-1',
+      requestId: 'req-other-org',
+      status: 'declined',
+      assignedCoachAccountId: null,
+      resolvedAt: '2026-08-14T00:00:00.000Z',
+    });
+
+    expect(applied).toBe(false);
+  });
+});
