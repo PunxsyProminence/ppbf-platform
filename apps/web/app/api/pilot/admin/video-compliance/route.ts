@@ -72,7 +72,15 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['admin', 'organization_admin']);
 
-    const publications = await getOrganizationPublications(principal.organizationId, { status: 'pending_review' });
+    const [publications, draftRows] = await Promise.all([
+      getOrganizationPublications(principal.organizationId, { status: 'pending_review' }),
+      // Drafts are normally the submitting coach's business, but the submit
+      // route deliberately lets an org admin move one into this queue -- the
+      // case that needs it is a coach who left the gym with drafts nobody
+      // else could reach from any screen (owner decision, 2026-08-14). This
+      // console is the approved surface for that lever; do not build another.
+      getOrganizationPublications(principal.organizationId, { status: 'draft' }),
+    ]);
 
     const items = await Promise.all(
       publications.map(async (publication) => {
@@ -114,7 +122,30 @@ export async function GET(request: NextRequest) {
       }),
     );
 
-    return NextResponse.json({ ok: true, items });
+    // Lighter than the queue items on purpose: an admin submitting a
+    // stranded draft is routing it INTO review, not deciding it, so there is
+    // no stream URL and no prior-review note to surface here.
+    const drafts = await Promise.all(
+      draftRows.map(async (draft) => {
+        const [uploader, athlete] = await Promise.all([
+          getSubjectIdentity(principal.organizationId, draft.submitted_by_account_id),
+          getAthleteById(principal.organizationId, draft.athlete_id),
+        ]);
+
+        return {
+          publication_id: draft.publication_id,
+          title: draft.title,
+          description: draft.description,
+          athlete_id: draft.athlete_id,
+          athlete_name: athlete?.full_name ?? null,
+          uploader_account_id: draft.submitted_by_account_id,
+          uploader_name: uploader?.fullName ?? null,
+          created_at: draft.created_at,
+        };
+      }),
+    );
+
+    return NextResponse.json({ ok: true, items, drafts });
   } catch (error) {
     return jsonError(error);
   }
