@@ -127,6 +127,25 @@ describe('decidePublicationCompliance', () => {
     expect(gate).toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
   });
+
+  test('publishToResearchLibrary honors the same gate: a throw claims nothing', async () => {
+    const { publishToResearchLibrary } = await import('./publication');
+    const gate = jest.fn().mockRejectedValueOnce(new Error('consent withdrawn'));
+
+    await expect(
+      publishToResearchLibrary({
+        organizationId: 'org-1',
+        publicationId: 'pub-1',
+        videoSessionId: 'vid-1',
+        title: 't',
+        description: 'd',
+        verifyBeforeCommit: gate,
+      }),
+    ).rejects.toThrow('consent withdrawn');
+
+    expect(gate).toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
 });
 
 // tags is `text[] not null default '{}'::text[]`. node-pg passes a bound string

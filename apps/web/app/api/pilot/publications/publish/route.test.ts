@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -20,10 +21,25 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/guardianConsent', () => {
+  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
+  return {
+    ...actual,
+    assertGuardianMediaConsent: jest.fn(),
+    assertGuardianMediaConsentWithClient: jest.fn(),
+  };
+});
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockGetPublication = getPublicationForPublish as jest.Mock;
 const mockPublish = publishToResearchLibrary as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockAssertConsent = assertGuardianMediaConsent as jest.Mock;
+
+beforeEach(() => {
+  // Consent is on file unless a test says otherwise.
+  mockAssertConsent.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -44,6 +60,7 @@ function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
 const publicationRow = (overrides: Record<string, unknown> = {}) => ({
   publication_id: 'pub-1',
   video_session_id: 'vid-1',
+  athlete_id: 'ath-1',
   submitted_by_account_id: 'coach-1',
   title: 'Jab mechanics',
   description: 'Session review',
@@ -230,5 +247,70 @@ describe('POST /api/pilot/publications/publish', () => {
 
     expect(res.status).toBe(409);
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('withdrawn guardian consent blocks the publish and records who tried', async () => {
+    // Approval checked consent, but a guardian withdrew afterwards. The
+    // publish must refuse with the consent reason, put nothing on the shelf,
+    // and log the blocked attempt -- who tried to publish unconsented
+    // footage of this child is itself a safeguarding-relevant fact.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    mockAssertConsent.mockReset();
+    mockAssertConsent.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', ['parent-1']));
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toMatch(/guardian media consent is missing or withdrawn/);
+    expect(mockPublish).not.toHaveBeenCalled();
+    const [event] = mockAudit.mock.calls[0];
+    expect(event.details).toMatchObject({
+      action: 'publication_publish_blocked_by_consent',
+      missing_parent_ids: ['parent-1'],
+    });
+  });
+
+  test('the consent re-check is wired into the claim transaction, not only the pre-check', async () => {
+    // The pre-check alone leaves a gap between "checked" and "committed"; the
+    // claim must carry the same check as verifyBeforeCommit so a withdrawal
+    // cannot outrun the publish.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    mockPublish.mockResolvedValueOnce('lib-1');
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(200);
+    const [publishArgs] = mockPublish.mock.calls[0];
+    expect(typeof publishArgs.verifyBeforeCommit).toBe('function');
+  });
+
+  test('a failed audit write does not fail a publish that already committed', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    mockPublish.mockResolvedValueOnce('lib-1');
+    mockAudit.mockRejectedValueOnce(new Error('audit table unavailable'));
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok?: boolean; library_id?: string };
+    expect(body.ok).toBe(true);
+    expect(body.library_id).toBe('lib-1');
+  });
+
+  test('a malformed body is a 400, not a 500', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+
+    const res = await POST(new NextRequest('http://localhost/api/pilot/publications/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'not json {',
+    }));
+
+    expect(res.status).toBe(400);
+    expect(mockGetPublication).not.toHaveBeenCalled();
   });
 });
