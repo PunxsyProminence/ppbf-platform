@@ -206,6 +206,37 @@ function reviewSessionLabel(session: ReviewableSession): string {
   return `${session.date} - ${status}${rpe}`;
 }
 
+/**
+ * A row of pilot.coach_reviews as GET /api/pilot/coach-reviews/list returns
+ * it, cut to what the panel shows. Rows without a usable review_id are
+ * dropped rather than rendered blank.
+ */
+interface SessionReview {
+  reviewId: string;
+  coachId: string;
+  decision: string;
+  notes: string;
+  createdAt: string;
+}
+
+function normalizeSessionReview(row: unknown): SessionReview | null {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+  const record = row as Record<string, unknown>;
+  const reviewId = typeof record.review_id === 'string' ? record.review_id.trim() : '';
+  if (!reviewId) {
+    return null;
+  }
+  return {
+    reviewId,
+    coachId: typeof record.coach_id === 'string' ? record.coach_id : '',
+    decision: typeof record.decision === 'string' ? record.decision : '',
+    notes: typeof record.notes === 'string' ? record.notes : '',
+    createdAt: typeof record.created_at === 'string' ? record.created_at : '',
+  };
+}
+
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
   if (readiness === 'YELLOW') return 'bg-[var(--restricted)]';
@@ -299,6 +330,13 @@ export default function CoachWorkspace() {
   // for the previously selected athlete must never render under the current
   // one -- that would attach real sessions to the wrong child's name.
   const reviewAthleteRef = useRef('');
+  // The reviews already written on the selected session, read back through
+  // /api/pilot/coach-reviews/list before the coach writes another. Same
+  // four-state honesty as the session list, and the same stale-response guard:
+  // one session's reviews must never render under another session's name.
+  const [sessionReviews, setSessionReviews] = useState<SessionReview[]>([]);
+  const [sessionReviewsState, setSessionReviewsState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
+  const reviewSessionRef = useRef('');
   const [reviewDecision, setReviewDecision] = useState('approved');
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewSyncMessage, setReviewSyncMessage] = useState('');
@@ -866,13 +904,62 @@ export default function CoachWorkspace() {
     }
   }, []);
 
+  // The read-back: what has already been said about this session, fetched
+  // before the coach says more. /api/pilot/coach-reviews/list applies its own
+  // session->athlete access check server-side; a refusal or failure here is
+  // shown as such, never as "no reviews yet".
+  const loadSessionReviews = useCallback(async (sessionId: string) => {
+    setSessionReviewsState('loading');
+    setSessionReviews([]);
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach-reviews/list?session_id=${encodeURIComponent(sessionId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (reviewSessionRef.current !== sessionId) {
+        return;
+      }
+      if (!response.ok) {
+        setSessionReviewsState('unavailable');
+        return;
+      }
+      const payload = (await response.json()) as { items?: unknown[] };
+      setSessionReviews(
+        (payload.items ?? [])
+          .map(normalizeSessionReview)
+          .filter((review): review is SessionReview => review !== null),
+      );
+      setSessionReviewsState('loaded');
+    } catch {
+      if (reviewSessionRef.current !== sessionId) {
+        return;
+      }
+      setSessionReviewsState('unavailable');
+    }
+  }, []);
+
+  function selectReviewSession(sessionId: string) {
+    setReviewSessionId(sessionId);
+    reviewSessionRef.current = sessionId;
+    if (sessionId) {
+      void loadSessionReviews(sessionId);
+    } else {
+      setSessionReviews([]);
+      setSessionReviewsState('idle');
+    }
+  }
+
   function selectReviewAthlete(athleteId: string) {
     setReviewAthleteId(athleteId);
     reviewAthleteRef.current = athleteId;
     // A session belongs to exactly one athlete: switching athletes always
     // clears the selection so a stale session_id can never be submitted
-    // under the newly selected athlete's name.
+    // under the newly selected athlete's name. The read-back panel clears
+    // with it -- it describes the cleared session, not the new athlete.
     setReviewSessionId('');
+    reviewSessionRef.current = '';
+    setSessionReviews([]);
+    setSessionReviewsState('idle');
     setReviewSyncMessage('');
     if (athleteId) {
       void loadReviewSessions(athleteId);
@@ -937,6 +1024,10 @@ export default function CoachWorkspace() {
       }
 
       setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+      // Close the loop: the review just written comes back from the server's
+      // own read, so the panel shows what was actually stored, not what this
+      // tab believes it sent.
+      void loadSessionReviews(reviewSessionId.trim());
     } finally {
       setReviewSubmitting(false);
     }
@@ -2040,7 +2131,7 @@ export default function CoachWorkspace() {
                     <span className="t-label">Session</span>
                     <select
                       value={reviewSessionId}
-                      onChange={(event) => setReviewSessionId(event.target.value)}
+                      onChange={(event) => selectReviewSession(event.target.value)}
                       className="select"
                     >
                       <option value="">Select a session</option>
@@ -2055,6 +2146,44 @@ export default function CoachWorkspace() {
                 {reviewSessionId ? (
                   <p className="t-data text-[color:var(--bone-400)]">Session ID {reviewSessionId}</p>
                 ) : null}
+
+                {/* What has already been said about this session, shown BEFORE
+                    the coach writes more -- the endpoint keeps every review,
+                    so a duplicate is prevented by reading, not by the server. */}
+                {sessionReviewsState === 'loading' && (
+                  <p className="t-data text-[color:var(--bone-400)]">Checking for existing reviews...</p>
+                )}
+                {sessionReviewsState === 'unavailable' && (
+                  <p className="t-data text-[color:var(--locked-ink)]">
+                    Existing reviews could not be loaded. Reviews may exist on this session that are
+                    not shown here.
+                  </p>
+                )}
+                {sessionReviewsState === 'loaded' && sessionReviews.length === 0 && (
+                  <p className="t-data text-[color:var(--bone-400)]">
+                    No reviews on this session yet.
+                  </p>
+                )}
+                {sessionReviewsState === 'loaded' && sessionReviews.length > 0 && (
+                  <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s3)]">
+                    <p className="t-label">Reviews already on this session</p>
+                    {sessionReviews.map((review) => (
+                      <div key={review.reviewId} className="border-t border-[color:rgba(212,175,74,.12)] pt-[var(--s2)] first:border-t-0 first:pt-0">
+                        <p className="t-data text-[color:var(--bone-300)]">
+                          <span className="font-bold">{review.decision}</span>
+                          {' -- '}
+                          {review.coachId === coachAccountId
+                            ? 'your review'
+                            : `another coach (${review.coachId || 'account unknown'})`}
+                          {formatGymDateTimeShort(review.createdAt) ? ` -- ${formatGymDateTimeShort(review.createdAt)}` : ''}
+                        </p>
+                        {review.notes.trim() !== '' && (
+                          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{review.notes}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <label className="field">
                   <span className="t-label">Decision</span>
                   <select

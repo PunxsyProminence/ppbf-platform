@@ -17,6 +17,7 @@ interface RouteResponses {
   barrierReports?: () => Promise<Response>;
   athletesList?: () => Promise<Response> | Response;
   sessionsList?: (athleteId: string) => Promise<Response> | Response;
+  coachReviewsList?: (sessionId: string) => Promise<Response> | Response;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -65,6 +66,10 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/shadow/observation-projection')) {
       return jsonResponse({ items: [] });
+    }
+    if (url.includes('/api/pilot/coach-reviews/list')) {
+      const sessionId = new URL(url, 'http://localhost').searchParams.get('session_id') ?? '';
+      return routes.coachReviewsList ? routes.coachReviewsList(sessionId) : jsonResponse({ items: [] });
     }
     if (url.includes('/api/pilot/coach-reviews')) {
       return routes.coachReviews ? routes.coachReviews() : jsonResponse({ ok: true });
@@ -238,7 +243,8 @@ describe('coach review submission', () => {
     fireEvent.click(screen.getByRole('button', { name: /Saving/i }));
 
     const reviewCalls = () =>
-      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/pilot/coach-reviews')).length;
+      fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes('/api/pilot/coach-reviews') && !String(call[0]).includes('/list')).length;
     expect(reviewCalls()).toBe(1);
 
     await act(async () => {
@@ -253,6 +259,146 @@ describe('coach review submission', () => {
       fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
     });
     expect(reviewCalls()).toBe(2);
+  });
+});
+
+// The read-back: what has already been said about a session, shown before the
+// coach writes more. POST /api/pilot/coach-reviews keeps every review (a new
+// review_id is minted per submit), so the only duplicate protection a coach
+// has is seeing the existing reviews first.
+describe('coach review read-back', () => {
+  function review(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      review_id: 'rev_1',
+      session_id: 'session_1',
+      coach_id: 'acct_coach_1',
+      decision: 'approved',
+      notes: 'Clean angles all night.',
+      approved_flag: true,
+      created_at: '2026-08-13T22:30:00.000Z',
+      updated_at: '2026-08-13T22:30:00.000Z',
+      ...overrides,
+    };
+  }
+
+  const oneAthlete = () =>
+    jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Jordan P.' }] });
+
+  async function pickSession(sessionId: string): Promise<void> {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Session'), { target: { value: sessionId } });
+    });
+  }
+
+  test('selecting a session shows its existing reviews, attributed honestly', async () => {
+    const fetchMock = await renderWorkspace({
+      athletesList: oneAthlete,
+      sessionsList: () => jsonResponse({ items: [sessionRow('session_1')] }),
+      coachReviewsList: () =>
+        jsonResponse({
+          items: [
+            review(),
+            review({ review_id: 'rev_2', coach_id: 'acct_coach_2', decision: 'hold', notes: '' }),
+          ],
+        }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+    await pickSession('session_1');
+
+    const listCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/pilot/coach-reviews/list'));
+    expect(listCalls).toHaveLength(1);
+    expect(String(listCalls[0][0])).toContain('session_id=session_1');
+
+    expect(screen.queryByText('Reviews already on this session')).not.toBeNull();
+    expect(screen.queryByText(/your review/)).not.toBeNull();
+    expect(screen.queryByText('Clean angles all night.')).not.toBeNull();
+    // The other coach's review is attributed to another coach, not to this one.
+    expect(screen.queryByText(/another coach \(acct_coach_2\)/)).not.toBeNull();
+  });
+
+  test('a session with no reviews says so, without the failure warning', async () => {
+    await renderWorkspace({
+      athletesList: oneAthlete,
+      sessionsList: () => jsonResponse({ items: [sessionRow('session_1')] }),
+      coachReviewsList: () => jsonResponse({ items: [] }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+    await pickSession('session_1');
+
+    expect(screen.queryByText('No reviews on this session yet.')).not.toBeNull();
+    expect(screen.queryByText(/Reviews may exist on this session/)).toBeNull();
+  });
+
+  test('a failed review read admits it rather than claiming the session is unreviewed', async () => {
+    await renderWorkspace({
+      athletesList: oneAthlete,
+      sessionsList: () => jsonResponse({ items: [sessionRow('session_1')] }),
+      coachReviewsList: () => jsonResponse({ error: 'Internal error' }, { ok: false, status: 500 }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+    await pickSession('session_1');
+
+    expect(screen.queryByText(/Reviews may exist on this session that are not shown/)).not.toBeNull();
+    expect(screen.queryByText('No reviews on this session yet.')).toBeNull();
+  });
+
+  test('a persisted review appears in the panel from the server\'s own read, not from local echo', async () => {
+    let listCalls = 0;
+    const fetchMock = await renderWorkspace({
+      athletesList: oneAthlete,
+      sessionsList: () => jsonResponse({ items: [sessionRow('session_1')] }),
+      coachReviewsList: () => {
+        listCalls += 1;
+        // Empty before the submit; the server's stored row after it.
+        return listCalls === 1
+          ? jsonResponse({ items: [] })
+          : jsonResponse({ items: [review({ notes: 'Stored by the server.' })] });
+      },
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+    await pickSession('session_1');
+    expect(screen.queryByText('No reviews on this session yet.')).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
+    });
+
+    expect(
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/pilot/coach-reviews/list')),
+    ).toHaveLength(2);
+    expect(screen.queryByText('Stored by the server.')).not.toBeNull();
+  });
+
+  test('switching athletes clears the panel -- one session\'s reviews never sit under another athlete', async () => {
+    await renderWorkspace({
+      athletesList: () =>
+        jsonResponse({
+          items: [
+            { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+            { athlete_id: 'ath_2', full_name: 'Sam R.' },
+          ],
+        }),
+      sessionsList: () => jsonResponse({ items: [sessionRow('session_1')] }),
+      coachReviewsList: () => jsonResponse({ items: [review()] }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+    await pickSession('session_1');
+    expect(screen.queryByText('Reviews already on this session')).not.toBeNull();
+
+    await pickReviewAthlete('ath_2');
+
+    expect(screen.queryByText('Reviews already on this session')).toBeNull();
+    expect(screen.queryByText('Clean angles all night.')).toBeNull();
   });
 });
 
@@ -315,7 +461,8 @@ describe('coach review session picker', () => {
       fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
     });
 
-    const reviewCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/pilot/coach-reviews'));
+    const reviewCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes('/api/pilot/coach-reviews') && !String(call[0]).includes('/list'));
     expect(reviewCall).toBeDefined();
     const body = JSON.parse(String(reviewCall?.[1]?.body)) as Record<string, unknown>;
     expect(body.session_id).toBe('session_b');
