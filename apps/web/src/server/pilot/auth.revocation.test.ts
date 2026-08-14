@@ -179,6 +179,10 @@ describe('session revocation after provider/role/organization changes', () => {
   });
 
   test('promoteAccountToOrganizationAdmin revokes sessions', async () => {
+    // The promotion UPDATE is now guarded (org-pinned, owner-excluded) and
+    // returns the matched row; a fixture returning no rows is a refused
+    // promotion, which the adminTransfer suite covers.
+    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-1' }] });
     await promoteAccountToOrganizationAdmin('acct-1', 'org-1');
     expect(revokeCalls()).toHaveLength(1);
   });
