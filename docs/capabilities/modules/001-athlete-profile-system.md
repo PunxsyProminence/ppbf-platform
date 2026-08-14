@@ -57,6 +57,21 @@ Governance remains inactive pending promotion review. The tracker CSV was not
 updated in this slice because open PR #191 owns that file; it must be sequenced
 after that PR.
 
+## Promotion blocker — parent disclosure reconciliation (owner decision, 2026-08-14)
+
+The owner has ruled that no parent-facing Passbook UI ships in this pilot and
+the parent experience stays on the ParentDigest disclosure model. That leaves
+a standing contradiction to resolve before this module can be declared
+promoted: `GET /api/pilot/passbook` names `parent` in its role allowlist and
+hands a linked guardian the athlete's full session log and coach
+observations, while `ParentDigest` (`apps/web/components/ParentDigest.tsx`)
+documents the session log as deliberately withheld from the parent surface.
+The API is currently consumed by no page, so nothing discloses today — but
+promotion review must either narrow the API's parent access to match
+ParentDigest, or explicitly widen the ParentDigest disclosure decision. Do
+not build a parent Passbook surface, and do not widen parent access, until
+that reconciliation is decided.
+
 ## Audit log
 | Date | Actor | Note |
 |------|-------|------|
