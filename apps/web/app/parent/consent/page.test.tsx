@@ -150,3 +150,29 @@ test('a failed load shows the error state, never a false empty state', async () 
   await screen.findByText('Database unavailable');
   expect(screen.queryByText('No linked children found')).not.toBeInTheDocument();
 });
+
+test('a child is named, not numbered, and the withdraw confirmation names them too', async () => {
+  window.confirm = jest.fn().mockReturnValue(false);
+  const named = [{ ...ALREADY_SIGNED[0], athlete_name: 'Mia Cortez' }];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: named })) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+
+  await screen.findByText('Mia Cortez');
+  expect(screen.queryByText('ath-1')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Withdraw Consent' }));
+
+  await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+  const message = (window.confirm as jest.Mock).mock.calls[0][0] as string;
+  expect(message).toContain('Mia Cortez');
+  expect(message).toMatch(/retracted from distribution immediately/);
+});
+
+test('a missing name falls back to the athlete id rather than a blank card', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: NEEDS_CONSENT })) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+
+  await screen.findByText('ath-1');
+});
