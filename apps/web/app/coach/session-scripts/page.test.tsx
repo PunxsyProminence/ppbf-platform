@@ -123,6 +123,7 @@ function liveRunRow(overrides: Record<string, unknown> = {}) {
  */
 function routedFetch(handlers: {
   runsGet?: () => Response;
+  runsHistory?: (url: string) => Response;
   runsPost?: (body: Record<string, unknown>) => Response;
   runPatch?: (body: Record<string, unknown>) => Response;
   scripts?: (url: string) => Response;
@@ -138,6 +139,9 @@ function routedFetch(handlers: {
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
         if (handlers.runsPost) return handlers.runsPost(body);
         throw new Error(`Unexpected runs POST: ${url}`);
+      }
+      if (url.includes('script_id=')) {
+        return handlers.runsHistory ? handlers.runsHistory(url) : jsonResponse({ runs: [] });
       }
       return handlers.runsGet ? handlers.runsGet() : jsonResponse({ run: null });
     }
@@ -381,6 +385,76 @@ describe('coach session scripts page', () => {
     expect(await screen.findByRole('button', { name: /open plan/i })).toBeInTheDocument();
     expect(screen.queryByText('Delivering now')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pause session' })).not.toBeInTheDocument();
+  });
+
+  it('opening a plan shows its past deliveries with only the recorded fields', async () => {
+    routedFetch({
+      runsGet: () => jsonResponse({ run: null }),
+      runsHistory: () => jsonResponse({
+        runs: [
+          liveRunRow({
+            run_id: 'ssrun_done',
+            run_state: 'completed',
+            delivered_on: '2026-08-12',
+            blocks_completed: 6,
+            athletes_present: 9,
+            reset_protocol_used: true,
+            what_worked: 'Slip line clicked.',
+            what_did_not: '',
+          }),
+          liveRunRow({
+            run_id: 'ssrun_cut',
+            run_state: 'abandoned',
+            delivered_on: '2026-08-13',
+            deviation_note: 'Storm cleared the room.',
+          }),
+          // A row from before live tracking: run_state is honestly null.
+          liveRunRow({ run_id: 'ssrun_old', run_state: null, delivered_on: '2026-07-01', athletes_present: null }),
+        ],
+      }),
+    });
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+
+    expect(await screen.findByText('Completed')).toBeInTheDocument();
+    expect(screen.getByText('Abandoned')).toBeInTheDocument();
+    expect(screen.getByText('Recorded before live delivery tracking')).toBeInTheDocument();
+    expect(screen.getByText('2026-08-12')).toBeInTheDocument();
+    expect(screen.getByText(/6 blocks completed\. 9 athletes present\. Reset protocol used\./)).toBeInTheDocument();
+    expect(screen.getByText('Slip line clicked.')).toBeInTheDocument();
+    expect(screen.getByText('Storm cleared the room.')).toBeInTheDocument();
+    // Empty notes and null counts are omitted, never rendered as blanks or zeroes.
+    expect(screen.queryByText(/Did not:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 athletes present/)).not.toBeInTheDocument();
+  });
+
+  it('an undelivered plan says so, distinctly from a failed history read', async () => {
+    routedFetch({
+      runsGet: () => jsonResponse({ run: null }),
+      runsHistory: () => jsonResponse({ runs: [] }),
+    });
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+
+    expect(await screen.findByText(/No deliveries recorded for this plan yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/Deliveries may exist that are not shown/)).not.toBeInTheDocument();
+  });
+
+  it('a failed history read admits it, and never renders as "never delivered"', async () => {
+    routedFetch({
+      runsGet: () => jsonResponse({ run: null }),
+      runsHistory: () => jsonResponse({}, false),
+    });
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+
+    expect(await screen.findByText(/Deliveries may exist that are not shown/)).toBeInTheDocument();
+    expect(screen.queryByText(/No deliveries recorded for this plan yet/)).not.toBeInTheDocument();
+    // The plan itself still rendered -- the two reads fail independently.
+    expect(screen.getByText('10-25 min')).toBeInTheDocument();
   });
 
   it('requests the script detail with the script id encoded', async () => {
