@@ -364,3 +364,42 @@ regression · retention not yet testable vs tested and absent.
 - Observer-disagreement detection assumes two observers logging the same
   `sessionId` + `taskContextKey`. Whether coaches will actually log that way is
   unknown and is the main real-world risk to the `CONTESTED` path.
+
+## 11. Recommended next algorithm sprint
+
+In priority order. Each is independently shippable.
+
+**N1 — Give D1 a real basis (highest value).** Replace the event-name substring
+match in `getShadowKnowledgeProjection` with the epistemic state from
+`evaluatePatternCandidate`. This is the change that makes the whole ladder
+mean something in the UI. It needs a persistence slice first (N2), or an
+interim read-through that computes on the fly for a small candidate set.
+
+**N2 — Persistence, read-only first.** A `behaviour_observations` table and a
+candidate-evaluation snapshot table, following
+`shadow_formula_baseline_snapshots`' immutable-snapshot-keyed-by-calculation-key
+pattern (`formulas/baseline.ts`). Write observations before anything reads
+them; do not build the writer and the reader in one PR.
+
+**N3 — Capture path.** Observations have to come from somewhere. The natural
+source is the existing session-script run surface plus `data_collection_requests`
+(`assessmentProtocols.ts`), which already models "go and capture this". The
+open design question is how a coach records `taskConstraint`, `fatigueContext`
+and `attribution` without adding four fields to every tap.
+
+**N4 — Fix the feedback surface, then calibrate (D6).** Emitting more than a
+boolean is a precondition for any calibration of rows 7–9. Until then, do not
+tune those numbers — there is nothing to tune against.
+
+**N5 — Athlete overlay supersession (D2).** `remembered_facts` needs decay or
+supersession before "overlays change as evidence changes" is true anywhere in
+the system. The `RETIRED` state in this module is the behavioural half of that
+idea; the profile half does not exist yet.
+
+**N6 — Behaviour vocabulary.** `behaviourKey` is currently free text. A
+controlled vocabulary, ideally derived from the drill library's existing
+taxonomy, would let counterexamples and occurrences reliably meet on the same
+key — which is what the whole counter-evidence path depends on.
+
+Explicitly **not** recommended next: tuning any existing threshold in §6.
+Nothing in the audit produced the data required to move one honestly.
