@@ -35,7 +35,9 @@ interface QueryExecutor {
  *     against a specific publication's media type or visibility. Recorded,
  *     not yet enforced -- a documented MVP cut, not an oversight.
  *   - Does not retroactively touch an already-published video when a
- *     guardian later withdraws. Blocks future approvals only.
+ *     guardian later withdraws. Blocks future approvals and future
+ *     publishes; retraction of a live library row is its own controlled
+ *     workflow, decided by the owner on 2026-08-14 and built separately.
  */
 
 export const MEDIA_CONSENT_WAIVER_TYPE = 'photo_media';

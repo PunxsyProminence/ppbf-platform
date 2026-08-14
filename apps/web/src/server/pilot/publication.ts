@@ -133,6 +133,13 @@ export async function publishToResearchLibrary(params: {
   title: string;
   description: string;
   tags?: string[];
+  // Same contract as decidePublicationCompliance's verifyBeforeCommit: a
+  // precondition re-run on THIS transaction's client immediately before the
+  // claim, so a condition checked before the call (guardian consent) cannot
+  // change in the gap between that check returning and the publish
+  // committing. If it throws, the transaction rolls back and nothing lands
+  // on the shelf.
+  verifyBeforeCommit?: (client: { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> }) => Promise<void>;
 }): Promise<string | null> {
   const libraryId = `lib_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
 
@@ -148,6 +155,10 @@ export async function publishToResearchLibrary(params: {
   // and holding that here rather than only in the caller means a check that
   // fails between the caller's read and this write cannot be outrun.
   return withTransaction(async (client) => {
+    if (params.verifyBeforeCommit) {
+      await params.verifyBeforeCommit(client);
+    }
+
     const claimed = await client.query<{ publication_id: string }>(
       `update pilot.video_publications
        set status = 'published',
