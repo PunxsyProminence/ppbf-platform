@@ -34,7 +34,7 @@ const RULES: Rule[] = [
     tokens: ['coach', 'session', 'training'],
     detectedType: 'Coach Note',
     destination: 'Coach Workspace',
-    route: '/coach/review-queue',
+    route: '/coach/environment/intake-router',
     reason: 'Matched coach and training language',
   },
   {

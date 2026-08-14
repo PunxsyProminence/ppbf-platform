@@ -25,7 +25,13 @@ export function getPilotRoleDestination(role: unknown, seat?: unknown): string |
     return '/admin';
   }
   if (role === 'coach') {
-    return '/coach/review-queue';
+    // The working coach hub: intake review actions, coach reviews, floor
+    // plans, and pain reports all live in CoachWorkspace, mounted here. The
+    // old destination, /coach/review-queue, was a hardcoded mock whose
+    // Approve button discarded everything (owner decision 2026-08-14: the
+    // real review queue gets built later from actual backend records, and
+    // the mock never ships as operational UI).
+    return '/coach/environment/intake-router';
   }
   if (role === 'athlete') {
     return '/athlete/dashboard';

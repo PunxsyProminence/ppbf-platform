@@ -184,9 +184,9 @@ const DESTINATION_OPTIONS: IntakeDestination[] = [
 ];
 
 const QUICK_ADD_OPTIONS: Array<{ label: DataType; source: string; destination: IntakeDestination; route: string }> = [
-  { label: 'Workout', source: 'Coach', destination: 'Coach Workspace', route: '/coach/review-queue' },
+  { label: 'Workout', source: 'Coach', destination: 'Coach Workspace', route: '/coach/environment/intake-router' },
   { label: 'Biometric', source: 'Athlete Device', destination: 'Athlete Workspace', route: '/athlete/dashboard' },
-  { label: 'Coach Note', source: 'Coach', destination: 'Coach Workspace', route: '/coach/review-queue' },
+  { label: 'Coach Note', source: 'Coach', destination: 'Coach Workspace', route: '/coach/environment/intake-router' },
   { label: 'Video', source: 'Media Upload', destination: 'Evidence Library', route: '/evidence' },
   { label: 'Athlete Check-In', source: 'Athlete', destination: 'Athlete Workspace', route: '/athlete/dashboard' },
   { label: 'Parent Observation', source: 'Parent / Guardian', destination: 'Parent Hub', route: '/parent/dashboard' },
@@ -399,7 +399,7 @@ function nowIso(): string {
 
 function routeForDestination(destination: IntakeDestination): string {
   if (destination === 'Athlete Workspace') return '/athlete/dashboard';
-  if (destination === 'Coach Workspace') return '/coach/review-queue';
+  if (destination === 'Coach Workspace') return '/coach/environment/intake-router';
   if (destination === 'Parent Hub') return '/parent/dashboard';
   if (destination === 'Admin Hub') return '/admin';
   if (destination === 'Board Hub') return '/board';
