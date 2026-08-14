@@ -267,6 +267,16 @@ describe('POST /api/pilot/parent/consent', () => {
     // The withdrawal itself still committed and was audited before the sweep.
     expect(mockWithdraw).toHaveBeenCalled();
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_withdrawn' }));
+    // The failure itself is durably audited -- without this row an auditor
+    // cannot tell a failed sweep apart from an athlete with no published
+    // media.
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity_type: 'guardian_media_consent',
+        entity_id: 'ath-1',
+        details: expect.objectContaining({ action: 'consent_withdrawal_suppression_failed' }),
+      }),
+    );
   });
 
   test('granting consent sweeps nothing -- re-consent alone republishes nothing', async () => {

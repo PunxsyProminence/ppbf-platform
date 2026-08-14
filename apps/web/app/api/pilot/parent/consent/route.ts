@@ -186,6 +186,25 @@ export async function POST(request: NextRequest) {
         const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
         const code = sanitizedSqlState(rawCode);
         console.error({ event: 'consent-withdrawal-suppression-failed', athlete_id: athleteId, ...(code ? { code } : {}) });
+        // The failure itself must be durably auditable: without this row, an
+        // auditor cannot distinguish "withdrawal with no published media"
+        // from "withdrawal whose suppression failed". Best-effort like every
+        // audit write -- the 500 below carries the operational signal either
+        // way.
+        await auditConsentEvent({
+          event_type: 'update',
+          actor_account_id: principal.accountId,
+          actor_role: principal.role,
+          organization_id: principal.organizationId,
+          entity_type: 'guardian_media_consent',
+          entity_id: athleteId,
+          details: {
+            action: 'consent_withdrawal_suppression_failed',
+            parent_id: actingParent.parentId,
+            ...(code ? { code } : {}),
+          },
+          shadow_mirror: false,
+        });
         return NextResponse.json(
           {
             ok: false,

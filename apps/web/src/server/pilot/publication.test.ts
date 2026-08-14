@@ -245,6 +245,11 @@ describe('reopenRetractedPublication', () => {
     const [sql] = mockQuery.mock.calls[0];
     expect(sql).toMatch(/set status = 'pending_review'/);
     expect(sql).toMatch(/compliance_check_status = 'pending'/);
+    // The old approval no longer stands: leaving the prior reviewer's name
+    // (or a published_at) on a reopened row would be a false attribution in
+    // a safeguarding table.
+    expect(sql).toMatch(/published_at = null/);
+    expect(sql).toMatch(/approved_by_account_id = null/);
     expect(sql).toMatch(/where organization_id = \$1 and publication_id = \$2 and status = 'retracted'/);
   });
 
@@ -254,6 +259,23 @@ describe('reopenRetractedPublication', () => {
     const applied = await reopenRetractedPublication('org-1', 'pub-published');
 
     expect(applied).toBe(false);
+  });
+});
+
+// M1 from the retraction review: the live-shelf filter IS the leak
+// prevention -- getResearchLibrary is the only distribution read, and this
+// pin is what fails if anyone drops the suppression (or archived) predicate.
+describe('getResearchLibrary serves only the live shelf', () => {
+  test('the read excludes suppressed and archived rows in SQL, not in JS', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const { getResearchLibrary } = await import('./publication');
+    await getResearchLibrary('org-1');
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/from pilot\.research_library/);
+    expect(sql).toMatch(/where organization_id = \$1 and archived_at is null and suppressed_at is null/);
+    expect(params[0]).toBe('org-1');
   });
 });
 
@@ -309,6 +331,7 @@ describe('array-typed tags reach Postgres as arrays', () => {
 
     const { publishToResearchLibrary } = await import('./publication');
     const libraryId = await publishToResearchLibrary({
+      verifyBeforeCommit: async () => {},
       organizationId: 'org-1',
       publicationId: 'pub-1',
       videoSessionId: 'vid-1',
@@ -333,6 +356,7 @@ describe('publishing is refused when the publication belongs to another gym', ()
 
     const { publishToResearchLibrary } = await import('./publication');
     const libraryId = await publishToResearchLibrary({
+      verifyBeforeCommit: async () => {},
       organizationId: 'org-1',
       publicationId: 'pub-from-another-gym',
       videoSessionId: 'vid-1',
@@ -352,6 +376,7 @@ describe('publishing is refused when the publication belongs to another gym', ()
 
     const { publishToResearchLibrary } = await import('./publication');
     await publishToResearchLibrary({
+      verifyBeforeCommit: async () => {},
       organizationId: 'org-1',
       publicationId: 'pub-1',
       videoSessionId: 'vid-1',
@@ -377,6 +402,7 @@ describe('the claim will not publish a publication that is not cleared', () => {
 
     const { publishToResearchLibrary } = await import('./publication');
     await publishToResearchLibrary({
+      verifyBeforeCommit: async () => {},
       organizationId: 'org-1',
       publicationId: 'pub-1',
       videoSessionId: 'vid-1',
@@ -394,6 +420,7 @@ describe('the claim will not publish a publication that is not cleared', () => {
 
     const { publishToResearchLibrary } = await import('./publication');
     const libraryId = await publishToResearchLibrary({
+      verifyBeforeCommit: async () => {},
       organizationId: 'org-1',
       publicationId: 'pub-still-a-draft',
       videoSessionId: 'vid-1',

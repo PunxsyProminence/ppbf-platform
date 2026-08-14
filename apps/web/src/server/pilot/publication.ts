@@ -140,7 +140,13 @@ export async function publishToResearchLibrary(params: {
   // change in the gap between that check returning and the publish
   // committing. If it throws, the transaction rolls back and nothing lands
   // on the shelf.
-  verifyBeforeCommit?: (client: { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> }) => Promise<void>;
+  //
+  // REQUIRED, not optional, on purpose: this hook is where the guardian
+  // consent re-check runs, and its guardian_links FOR SHARE is the race
+  // lock the withdrawal sweep serializes against. A caller that skipped it
+  // would publish with no lock at all -- so the type demands it rather than
+  // trusting every future call site to remember.
+  verifyBeforeCommit: (client: { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> }) => Promise<void>;
 }): Promise<string | null> {
   const libraryId = `lib_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
 
@@ -156,9 +162,7 @@ export async function publishToResearchLibrary(params: {
   // and holding that here rather than only in the caller means a check that
   // fails between the caller's read and this write cannot be outrun.
   return withTransaction(async (client) => {
-    if (params.verifyBeforeCommit) {
-      await params.verifyBeforeCommit(client);
-    }
+    await params.verifyBeforeCommit(client);
 
     const claimed = await client.query<{ publication_id: string }>(
       `update pilot.video_publications
@@ -334,10 +338,13 @@ export async function retractPublication(params: {
 }
 
 /**
- * The consent-withdrawal sweep: every currently-published publication of
- * this athlete becomes retracted, and its shelf rows suppressed, in one
- * transaction. Returns the retracted publication_ids so the caller can
- * audit each suppression independently of the withdrawal itself.
+ * The consent-withdrawal sweep: every currently-published publication FILED
+ * UNDER this athlete_id becomes retracted, and its shelf rows suppressed,
+ * in one transaction. (One publication names one athlete_id -- footage of
+ * this athlete filed under another athlete's publication is outside this
+ * sweep, the same single-athlete boundary the compliance console documents.)
+ * Returns the retracted publication_ids so the caller can audit each
+ * suppression independently of the withdrawal itself.
  *
  * The FOR UPDATE on guardian_links is the race lock against an in-flight
  * publish. The publish claim re-checks consent inside its own transaction
@@ -393,6 +400,11 @@ export async function suppressPublishedMediaForAthlete(params: {
 // the review queue with the compliance check reset to 'pending', so the
 // fresh consent-gated approval and the fresh consent-gated publish are both
 // structurally required. Re-consent alone republishes nothing.
+//
+// published_at and approved_by_account_id are cleared too: a reopened row
+// is not published and its old approval no longer stands -- leaving the
+// prior reviewer's name on a row whose fresh review might reject it would
+// be a false attribution in a safeguarding table.
 export async function reopenRetractedPublication(
   organizationId: string,
   publicationId: string,
@@ -401,6 +413,8 @@ export async function reopenRetractedPublication(
     `update pilot.video_publications
      set status = 'pending_review',
          compliance_check_status = 'pending',
+         published_at = null,
+         approved_by_account_id = null,
          updated_at = now()
      where organization_id = $1 and publication_id = $2 and status = 'retracted'
      returning publication_id`,

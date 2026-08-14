@@ -85,9 +85,13 @@ export async function GET(request: NextRequest) {
       // Published and retracted are the retraction workflow's two sides
       // (owner decision, 2026-08-14): an org admin may suppress a live
       // publication from distribution, and may reopen a retracted one back
-      // into this review queue -- never directly back to published.
-      getOrganizationPublications(principal.organizationId, { status: 'published' }),
-      getOrganizationPublications(principal.organizationId, { status: 'retracted' }),
+      // into this review queue -- never directly back to published. The
+      // raised limit matters: this Retract lever is the operator fallback
+      // when a withdrawal's automatic sweep fails, so it must reach beyond
+      // the default 50 newest rows. Anything older still surfaces through
+      // pilot-check-videos-missing-consent.mjs and the audit trail.
+      getOrganizationPublications(principal.organizationId, { status: 'published', limit: 500 }),
+      getOrganizationPublications(principal.organizationId, { status: 'retracted', limit: 500 }),
     ]);
 
     const items = await Promise.all(

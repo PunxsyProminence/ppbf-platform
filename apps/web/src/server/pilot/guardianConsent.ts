@@ -34,10 +34,11 @@ interface QueryExecutor {
  *   - Does not match consent scope (covers_video / public_use_allowed)
  *     against a specific publication's media type or visibility. Recorded,
  *     not yet enforced -- a documented MVP cut, not an oversight.
- *   - Does not retroactively touch an already-published video when a
- *     guardian later withdraws. Blocks future approvals and future
- *     publishes; retraction of a live library row is its own controlled
- *     workflow, decided by the owner on 2026-08-14 and built separately.
+ *   - Withdrawal DOES retract already-published media: the parent consent
+ *     route sweeps the athlete's published publications into 'retracted'
+ *     and suppresses their research-library rows in the same request
+ *     (publication.ts suppressPublishedMediaForAthlete, owner decision
+ *     2026-08-14). Approvals and publishes are also blocked going forward.
  */
 
 export const MEDIA_CONSENT_WAIVER_TYPE = 'photo_media';
