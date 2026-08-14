@@ -54,7 +54,7 @@ const EXCLUDED: Record<string, string> = {
   '/board/dashboard': 'prototype: BoardViewportSwitcher reads no data; a board must not be shown invented figures',
   '/coach/operations': 'prototype: FloorOperationsDesk hardcodes sample athletes (clearanceChecklist, attendanceMonitor, matchmakerBoard) -- fabricated athlete records',
   '/director/dashboard': 'prototype: IncidentCommandCenter renders a mock escalation queue and mock bag assignments -- a safety surface showing invented incidents',
-  '/guardian/dashboard': 'prototype AND unsafe to advertise: GuardianSafetyControls wires a minor\'s media-consent checkbox to useState with no persistence, so ticking it records nothing',
+  '/guardian/dashboard': 'signpost only: the prototype consent/safety controls that persisted nothing were deleted; this route now just points at /parent/consent and /parent/dashboard, which already have their own doors',
 };
 
 /**
