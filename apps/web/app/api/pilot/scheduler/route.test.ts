@@ -1,13 +1,20 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import {
+  assertActiveCoachAccount,
+  assertActorCanAccessAthlete,
+  assertCoachAssignedToAthlete,
+} from '@/src/server/pilot/access';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
   getSchedulerClassById,
+  getSchedulerCoachingRequestById,
   listRegisteredAthleteIdsForClass,
   registerForClassTransactionally,
+  resolveSchedulerCoachingRequest,
   upsertSchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -18,13 +25,21 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 jest.mock('@/src/server/pilot/access', () => ({
+  assertActiveCoachAccount: jest.fn(),
   assertActorCanAccessAthlete: jest.fn(),
+  assertCoachAssignedToAthlete: jest.fn(),
   isOrganizationAdminRole: jest.fn((role: string) => role === 'organization_admin' || role === 'admin'),
+}));
+
+jest.mock('@/src/server/pilot/audit', () => ({
+  writePilotAuditEvent: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/schedulerDb', () => ({
   registerForClassTransactionally: jest.fn(),
   getSchedulerClassById: jest.fn(),
+  getSchedulerCoachingRequestById: jest.fn(),
+  resolveSchedulerCoachingRequest: jest.fn(),
   upsertSchedulerAttendance: jest.fn(),
   bulkUpsertSchedulerAttendance: jest.fn(),
   listRegisteredAthleteIdsForClass: jest.fn(),
@@ -33,6 +48,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  sanitizedSqlState: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/safetyGateMatrix', () => ({
@@ -450,5 +466,181 @@ describe('attendance requires registration', () => {
 
     expect(response.status).toBe(400);
     expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
+  });
+});
+
+describe('review_coaching_request', () => {
+  const mockGetCoachingRequest = getSchedulerCoachingRequestById as jest.Mock;
+  const mockResolveRequest = resolveSchedulerCoachingRequest as jest.Mock;
+  const mockAssertActiveCoach = assertActiveCoachAccount as jest.Mock;
+  const mockAssertCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
+  const mockAuditEvent = writePilotAuditEvent as jest.Mock;
+
+  const pendingRequest = {
+    request_id: 'req-1',
+    athlete_id: 'ath-1',
+    requested_by_role: 'parent',
+    requested_by_account_id: 'acct-parent',
+    preferred_at: '2026-08-20T17:00:00.000Z',
+    goals: 'Southpaw defense',
+    status: 'pending',
+    assigned_coach_account_id: null,
+    created_at: 'now',
+    updated_at: 'now',
+  };
+
+  function reviewRequest(extra: Record<string, unknown> = {}) {
+    return jsonRequest({
+      action: 'review_coaching_request',
+      request_id: 'req-1',
+      decision: 'approve',
+      assigned_coach_account_id: 'acct-coach-9',
+      ...extra,
+    });
+  }
+
+  beforeEach(() => {
+    mockGetCoachingRequest.mockResolvedValue(pendingRequest);
+    mockResolveRequest.mockResolvedValue(true);
+    mockAssertActiveCoach.mockResolvedValue(undefined);
+    mockAssertCoachAssigned.mockResolvedValue(undefined);
+  });
+
+  // Owner policy 2026-08-14: org-admin-only. A coach must never approve,
+  // decline, self-assign, or claim a request for 1:1 time with a minor.
+  test.each(['coach', 'parent', 'athlete'])('%s cannot resolve a coaching request', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role, role === 'athlete' ? { athleteId: 'ath-1' } : {}));
+
+    const response = await POST(reviewRequest());
+
+    expect(response.status).toBe(403);
+    expect(mockResolveRequest).not.toHaveBeenCalled();
+  });
+
+  test('a coach cannot self-assign by approving with their own account id', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(reviewRequest({ assigned_coach_account_id: 'acct-caller' }));
+
+    expect(response.status).toBe(403);
+    expect(mockResolveRequest).not.toHaveBeenCalled();
+  });
+
+  test('an approval records the assigned coach and audits the resolution', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(reviewRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      request_id: 'req-1',
+      status: 'approved',
+      assigned_coach_account_id: 'acct-coach-9',
+    });
+    expect(mockAssertActiveCoach).toHaveBeenCalledWith('org-1', 'acct-coach-9', 'assigned_coach_account_id');
+    expect(mockAssertCoachAssigned).toHaveBeenCalledWith('acct-coach-9', 'ath-1', 'org-1');
+    expect(mockResolveRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-1',
+        requestId: 'req-1',
+        status: 'approved',
+        assignedCoachAccountId: 'acct-coach-9',
+      }),
+    );
+    const [event] = mockAuditEvent.mock.calls[0];
+    expect(event).toMatchObject({
+      entity_type: 'scheduler_coaching_request',
+      entity_id: 'req-1',
+      organization_id: 'org-1',
+    });
+    expect(event.details).toMatchObject({
+      action: 'coaching_request_approved',
+      athlete_id: 'ath-1',
+      assigned_coach_account_id: 'acct-coach-9',
+    });
+  });
+
+  test('a decline needs no coach checks', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('admin'));
+
+    const response = await POST(jsonRequest({ action: 'review_coaching_request', request_id: 'req-1', decision: 'decline' }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, status: 'declined' });
+    expect(mockAssertActiveCoach).not.toHaveBeenCalled();
+    expect(mockAssertCoachAssigned).not.toHaveBeenCalled();
+    expect(mockResolveRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'declined', assignedCoachAccountId: null }),
+    );
+  });
+
+  test('approving without naming a coach is refused before any check runs', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(jsonRequest({ action: 'review_coaching_request', request_id: 'req-1', decision: 'approve' }));
+
+    expect(response.status).toBe(400);
+    expect(mockResolveRequest).not.toHaveBeenCalled();
+  });
+
+  test('an account that is not an active coach in this organization cannot be assigned', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockAssertActiveCoach.mockRejectedValueOnce(
+      new Error('Missing assigned_coach_account_id: must be an active coach account in this organization'),
+    );
+
+    const response = await POST(reviewRequest({ assigned_coach_account_id: 'acct-parent' }));
+
+    expect(response.status).toBe(400);
+    expect(mockResolveRequest).not.toHaveBeenCalled();
+  });
+
+  test('a coach with no relationship to the athlete is refused, and the refusal names the coverage console', async () => {
+    // The assignment rides the existing coach<->athlete access model:
+    // coach-of-record or active coverage. This workflow validates, it never
+    // grants -- temporary access goes through the coverage console.
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockAssertCoachAssigned.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+
+    const response = await POST(reviewRequest());
+
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toMatch(/coach coverage console/);
+    expect(mockResolveRequest).not.toHaveBeenCalled();
+  });
+
+  test('an already-resolved request is refused without a second write', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetCoachingRequest.mockResolvedValueOnce({ ...pendingRequest, status: 'approved' });
+
+    const response = await POST(reviewRequest());
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toMatch(/already resolved/);
+    expect(mockResolveRequest).not.toHaveBeenCalled();
+  });
+
+  test('losing the CAS race reports already-resolved rather than overwriting', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockResolveRequest.mockResolvedValueOnce(false);
+
+    const response = await POST(reviewRequest());
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toMatch(/already resolved/);
+  });
+
+  test('a request outside the acting organization reads as missing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetCoachingRequest.mockResolvedValueOnce(null);
+
+    const response = await POST(reviewRequest());
+
+    expect(response.status).toBe(400);
+    expect(mockResolveRequest).not.toHaveBeenCalled();
   });
 });

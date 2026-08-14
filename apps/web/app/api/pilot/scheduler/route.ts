@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/server/pilot/access';
+import {
+  assertActiveCoachAccount,
+  assertActorCanAccessAthlete,
+  assertCoachAssignedToAthlete,
+  isOrganizationAdminRole,
+} from '@/src/server/pilot/access';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -11,11 +18,13 @@ import {
   createSchedulerClass,
   createSchedulerCoachingRequest,
   getSchedulerClassById,
+  getSchedulerCoachingRequestById,
   getSchedulerRegistrationById,
   listRegisteredAthleteIdsForClass,
   listSchedulerStore,
   markSchedulerRegistrationReviewed,
   registerForClassTransactionally,
+  resolveSchedulerCoachingRequest,
   setSchedulerClassCover,
   type SchedulerAttendance,
   type SchedulerClass,
@@ -33,8 +42,27 @@ type SchedulerAction =
   | 'register_class'
   | 'parent_review_registration'
   | 'request_coaching'
+  | 'review_coaching_request'
   | 'attendance_checkin'
   | 'bulk_attendance_checkin';
+
+// A lost audit row is a gap an operator can close by re-dispatching, not a
+// reason to tell the admin their (already-committed) resolution failed --
+// same doctrine as the compliance console's auditComplianceEvent and
+// training-holds' auditHoldEvent.
+async function auditSchedulerEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try {
+    await writePilotAuditEvent(event);
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({
+      event: 'scheduler-audit-write-failed',
+      action: event.details && typeof event.details === 'object' ? (event.details as { action?: unknown }).action : undefined,
+      ...(code ? { code } : {}),
+    });
+  }
+}
 
 type SchedulerActorRole = SchedulerRole | 'platform_owner' | 'volunteer' | 'staff';
 
@@ -276,6 +304,9 @@ export async function POST(request: NextRequest) {
       preferred_at?: string;
       goals?: string;
       registration_id?: string;
+      request_id?: string;
+      decision?: string;
+      assigned_coach_account_id?: string;
       status?: 'present' | 'absent' | 'excused';
       note?: string;
       entries?: Array<{
@@ -498,6 +529,101 @@ export async function POST(request: NextRequest) {
       await createSchedulerCoachingRequest(actor.organizationId, coachingRequest);
 
       return NextResponse.json({ ok: true, request_id: coachingRequest.request_id });
+    }
+
+    if (action === 'review_coaching_request') {
+      // Owner policy (2026-08-14): resolving a 1:1 coaching request is
+      // org-admin-only. Coaches may not approve, decline, self-assign, or
+      // claim -- so this deliberately does NOT reuse the wider
+      // coach-inclusive management checks the class actions carry. A
+      // request creates a private adult-to-minor coaching arrangement, and
+      // that call sits with the organization, not the coach who would
+      // benefit from it.
+      if (!canManageAll(actor)) {
+        throw new Error('Forbidden: only an organization admin can resolve coaching requests');
+      }
+
+      const requestId = typeof body.request_id === 'string' ? body.request_id.trim() : '';
+      if (!requestId) {
+        throw new Error('Missing request_id');
+      }
+      const decision = body.decision;
+      if (decision !== 'approve' && decision !== 'decline') {
+        throw new Error('Unsupported decision: expected "approve" or "decline"');
+      }
+
+      const coachingRequest = await getSchedulerCoachingRequestById(actor.organizationId, requestId);
+      if (!coachingRequest) {
+        throw new Error('Missing coaching request record');
+      }
+      if (coachingRequest.status !== 'pending') {
+        throw new Error('Unsupported: coaching request was already resolved');
+      }
+
+      let assignedCoachAccountId: string | null = null;
+      if (decision === 'approve') {
+        const named = typeof body.assigned_coach_account_id === 'string' ? body.assigned_coach_account_id.trim() : '';
+        if (!named) {
+          throw new Error('Missing assigned_coach_account_id: an approval must name the coach to assign');
+        }
+        assignedCoachAccountId = named;
+        await assertActiveCoachAccount(actor.organizationId, assignedCoachAccountId, 'assigned_coach_account_id');
+
+        // The assignment must ride the existing coach<->athlete access
+        // model: the athlete's coach of record, or an active bounded
+        // coverage grant. This workflow validates rather than grants -- a
+        // temporary coach gets access through the coach-coverage console
+        // (expiring, revocable, audited), never through a parallel grant
+        // created here, and the permanent coach_id is never changed by an
+        // approval.
+        try {
+          await assertCoachAssignedToAthlete(assignedCoachAccountId, coachingRequest.athlete_id, actor.organizationId);
+        } catch {
+          throw new Error(
+            'Forbidden: the selected coach has no active relationship with this athlete. '
+            + 'Assign the coach of record, or grant temporary coverage from the coach coverage console first.',
+          );
+        }
+      }
+
+      const resolvedAt = new Date().toISOString();
+      const applied = await resolveSchedulerCoachingRequest({
+        organizationId: actor.organizationId,
+        requestId,
+        status: decision === 'approve' ? 'approved' : 'declined',
+        assignedCoachAccountId,
+        resolvedAt,
+      });
+      // The CAS re-checks 'pending', so two admins racing the same request
+      // serialize -- the loser is told it was already resolved rather than
+      // silently overwriting the committed decision.
+      if (!applied) {
+        throw new Error('Unsupported: coaching request was already resolved');
+      }
+
+      // Resolving who may coach a minor 1:1 is a safeguarding-relevant
+      // decision; it carries the same attribution the coverage grants do.
+      await auditSchedulerEvent({
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: actor.role,
+        organization_id: actor.organizationId,
+        entity_type: 'scheduler_coaching_request',
+        entity_id: requestId,
+        details: {
+          action: decision === 'approve' ? 'coaching_request_approved' : 'coaching_request_declined',
+          athlete_id: coachingRequest.athlete_id,
+          ...(assignedCoachAccountId ? { assigned_coach_account_id: assignedCoachAccountId } : {}),
+        },
+        shadow_mirror: false,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        request_id: requestId,
+        status: decision === 'approve' ? 'approved' : 'declined',
+        ...(assignedCoachAccountId ? { assigned_coach_account_id: assignedCoachAccountId } : {}),
+      });
     }
 
     if (action === 'attendance_checkin') {
