@@ -638,6 +638,76 @@ export async function listParentMessages(organizationId: string, athleteIds: str
   return rows;
 }
 
+// The two note_types the parent barrier-report route writes. A closed set,
+// for the same reason listParentMessages filters to exactly one: a coach's
+// barrier inbox must never surface a behavior note or a parent message
+// filed under the same table.
+export const BARRIER_NOTE_TYPES = ['home_barrier', 'transportation_barrier'] as const;
+
+export interface BarrierReportRow {
+  note_id: string;
+  athlete_id: string;
+  athlete_name: string;
+  // The author's role from pilot.accounts, never assumed: the write path
+  // stores the REPORTING GUARDIAN's account id in coach_account_id (the
+  // column predates guardian-authored rows), so labeling by the stored
+  // role is what keeps a guardian's report from reading as a coach's note.
+  reporter_role: string;
+  note_type: string;
+  note_text: string;
+  created_at: string;
+}
+
+// Which athletes have a barrier report on file at all -- the candidate list
+// the coach route filters through assertActorCanAccessAthlete before any
+// report content is read.
+export async function listAthletesWithBarrierReports(organizationId: string): Promise<string[]> {
+  const rows = await query<{ athlete_id: string }>(
+    `select distinct athlete_id
+     from pilot.coach_observations
+     where organization_id = $1
+       and note_type = any($2::text[])`,
+    [organizationId, [...BARRIER_NOTE_TYPES]],
+  );
+  return rows.map((row) => row.athlete_id);
+}
+
+/**
+ * The read side of the parent barrier report -- the surface that makes
+ * ParentHub's "Sent to your child's coach" true. Guardians file these
+ * through POST /api/pilot/parent/barrier-report; until this reader existed
+ * the rows were write-only. Newest first, capped by the caller; one row
+ * more than `limit` is fetched so the caller can say "more exist" instead
+ * of silently truncating.
+ */
+export async function listBarrierReports(
+  organizationId: string,
+  athleteIds: string[],
+  limit: number,
+): Promise<{ reports: BarrierReportRow[]; truncated: boolean }> {
+  if (athleteIds.length === 0) return { reports: [], truncated: false };
+
+  const rows = await query<BarrierReportRow>(
+    `select co.note_id, co.athlete_id, ath.full_name as athlete_name,
+            acc.role as reporter_role, co.note_type, co.note_text, co.created_at::text
+     from pilot.coach_observations co
+     join pilot.accounts acc on acc.account_id = co.coach_account_id
+     join pilot.athletes ath
+       on ath.organization_id = co.organization_id and ath.athlete_id = co.athlete_id
+     where co.organization_id = $1
+       and co.athlete_id = any($2::text[])
+       and co.note_type = any($3::text[])
+     order by co.created_at desc
+     limit $4`,
+    [organizationId, athleteIds, [...BARRIER_NOTE_TYPES], limit + 1],
+  );
+
+  return {
+    reports: rows.slice(0, limit),
+    truncated: rows.length > limit,
+  };
+}
+
 export async function upsertGuardian(params: {
   organizationId: string;
   parentId: string;

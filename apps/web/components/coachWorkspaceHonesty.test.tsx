@@ -13,6 +13,8 @@ interface RouteResponses {
   coachReviews?: () => Promise<Response>;
   announcements?: () => Promise<Response>;
   intakeReviewAction?: (body: { intake_case_id?: string; action?: string }) => Promise<Response>;
+  painReports?: () => Promise<Response>;
+  barrierReports?: () => Promise<Response>;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -63,6 +65,12 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/announcements/get')) {
       return routes.announcements ? routes.announcements() : jsonResponse({ ok: true, announcements: [] });
+    }
+    if (url.includes('/api/pilot/coach/pain-reports')) {
+      return routes.painReports ? routes.painReports() : jsonResponse({ ok: true, painReports: [], windowDays: 14, truncated: false });
+    }
+    if (url.includes('/api/pilot/coach/barrier-reports')) {
+      return routes.barrierReports ? routes.barrierReports() : jsonResponse({ ok: true, barrierReports: [], truncated: false });
     }
     if (url.includes('/api/pilot/intake/review-action')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as { intake_case_id?: string; action?: string };
@@ -436,5 +444,49 @@ describe('authored announcements on the coach workspace', () => {
 
     openTab('Floor');
     expect(screen.queryByText(/Session Workout Plan/i)).not.toBeNull();
+  });
+});
+
+// The read side of ParentHub's "Sent to your child's coach": the barrier
+// panel is where that promise is kept, so its two hazards are pinned -- a
+// report rendering as a coach's note, and a failed read rendering as an
+// empty inbox.
+describe('family barrier reports', () => {
+  test('a report is attributed to a guardian, named for the child, and shown in full', async () => {
+    await renderWorkspace({
+      barrierReports: async () => jsonResponse({
+        ok: true,
+        truncated: false,
+        barrierReports: [{
+          note_id: 'note-1',
+          athlete_id: 'ath-1',
+          athlete_name: 'Rosa Delgado',
+          reporter_role: 'parent',
+          note_type: 'transportation_barrier',
+          note_text: 'We lost our ride on Tuesdays.',
+          created_at: '2026-08-10T10:00:00.000Z',
+        }],
+      }),
+    });
+
+    expect(screen.getByText('Rosa Delgado')).not.toBeNull();
+    expect(screen.getByText(/Getting to the gym/)).not.toBeNull();
+    expect(screen.getByText(/reported by a guardian/)).not.toBeNull();
+    expect(screen.getByText('We lost our ride on Tuesdays.')).not.toBeNull();
+  });
+
+  test('a failed read never renders as "no family asked for help"', async () => {
+    await renderWorkspace({
+      barrierReports: async () => jsonResponse({ error: 'offline' }, { ok: false, status: 500 }),
+    });
+
+    expect(screen.getByText(/Do not read this as .no family asked for/)).not.toBeNull();
+    expect(screen.queryByText(/No guardian on your roster has reported a barrier/)).toBeNull();
+  });
+
+  test('an empty inbox says a report would appear here, not that none was ever sent', async () => {
+    await renderWorkspace();
+
+    expect(screen.getByText(/No guardian on your roster has reported a barrier/)).not.toBeNull();
   });
 });
