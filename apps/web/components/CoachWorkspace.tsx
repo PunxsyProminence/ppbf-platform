@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import ProfilePortrait from './ProfilePortrait';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
@@ -156,6 +156,56 @@ const BARRIER_TYPE_LABEL: Record<string, string> = {
   transportation_barrier: 'Getting to the gym',
 };
 
+/**
+ * A row of pilot.sessions as GET /api/pilot/sessions/list returns it, cut to
+ * the fields the review picker labels an option with. Every field is a real
+ * stored value; a row missing a usable session_id or date is dropped rather
+ * than rendered as a blank or guessed-at option.
+ */
+interface ReviewableSession {
+  sessionId: string;
+  date: string;
+  rpe: number | null;
+  completed: boolean;
+  createdAt: string;
+}
+
+function normalizeReviewableSession(row: unknown): ReviewableSession | null {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+
+  const record = row as Record<string, unknown>;
+  const sessionId = typeof record.session_id === 'string' ? record.session_id.trim() : '';
+  // Sliced to the day and shown verbatim, matching the athlete workspace's
+  // treatment of the same column: pilot.sessions.date can be date-only, and
+  // pushing a date-only value through a timezone formatter invents a time of
+  // day (and sometimes the wrong day) that the record does not contain.
+  const date = typeof record.date === 'string' ? record.date.slice(0, 10) : '';
+  const createdAt = typeof record.created_at === 'string' ? record.created_at : '';
+  if (!sessionId || !date) {
+    return null;
+  }
+
+  const rpe = Number(record.rpe);
+  return {
+    sessionId,
+    date,
+    // null, not 0: an unreadable RPE is omitted from the label rather than
+    // shown as a fabricated zero-effort session.
+    rpe: Number.isFinite(rpe) ? rpe : null,
+    completed: Boolean(record.completed_flag),
+    createdAt,
+  };
+}
+
+/** Real stored fields only: the day, whether it was completed, its RPE. */
+function reviewSessionLabel(session: ReviewableSession): string {
+  const status = session.completed ? 'completed' : 'open';
+  const rpe = session.rpe === null ? '' : ` - RPE ${session.rpe}`;
+  return `${session.date} - ${status}${rpe}`;
+}
+
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
   if (readiness === 'YELLOW') return 'bg-[var(--restricted)]';
@@ -236,6 +286,19 @@ export default function CoachWorkspace() {
   const [floorPlansError, setFloorPlansError] = useState<string | null>(null);
   const [coachAccountId, setCoachAccountId] = useState('');
   const [reviewSessionId, setReviewSessionId] = useState('');
+  // The review picker: which athlete's sessions are listed, and the list
+  // itself. 'idle' (no athlete chosen), 'loading', 'loaded' (possibly empty),
+  // and 'unavailable' (the read failed) are distinct states on purpose -- an
+  // error rendered as an empty list would read as "this athlete has no
+  // sessions", which is the fabrication this workspace's tests exist to catch.
+  const [reviewAthleteId, setReviewAthleteId] = useState('');
+  const [reviewSessions, setReviewSessions] = useState<ReviewableSession[]>([]);
+  const [reviewSessionsState, setReviewSessionsState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
+  const [reviewSessionsError, setReviewSessionsError] = useState('');
+  // Guards the async session load against athlete switches: a slow response
+  // for the previously selected athlete must never render under the current
+  // one -- that would attach real sessions to the wrong child's name.
+  const reviewAthleteRef = useRef('');
   const [reviewDecision, setReviewDecision] = useState('approved');
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewSyncMessage, setReviewSyncMessage] = useState('');
@@ -756,6 +819,70 @@ export default function CoachWorkspace() {
     }
   }
 
+  // The review picker's session read. GET /api/pilot/sessions/list is the
+  // existing per-athlete session read; its own requireRole +
+  // assertActorCanAccessAthlete decide, server-side, whether this coach may
+  // see this athlete's sessions at all. The roster select below deliberately
+  // offers the whole gym (that is what /api/pilot/athletes/list returns to a
+  // coach, by design), so a refusal here is an expected outcome, not an edge
+  // case: it is surfaced verbatim rather than softened into an empty list.
+  const loadReviewSessions = useCallback(async (athleteId: string) => {
+    setReviewSessionsState('loading');
+    setReviewSessionsError('');
+    setReviewSessions([]);
+
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (reviewAthleteRef.current !== athleteId) {
+        return;
+      }
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        setReviewSessionsError(payload.error || 'Sessions could not be loaded.');
+        setReviewSessionsState('unavailable');
+        return;
+      }
+
+      const payload = (await response.json()) as { items?: unknown[] };
+      // The list route orders by date alone, which cannot separate two
+      // sessions on the same day; the athlete workspace re-orders the same
+      // read on created_at for the same reason.
+      const sessions = (payload.items ?? [])
+        .map(normalizeReviewableSession)
+        .filter((session): session is ReviewableSession => session !== null)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      setReviewSessions(sessions);
+      setReviewSessionsState('loaded');
+    } catch {
+      if (reviewAthleteRef.current !== athleteId) {
+        return;
+      }
+      setReviewSessionsError('Network error -- sessions could not be loaded.');
+      setReviewSessionsState('unavailable');
+    }
+  }, []);
+
+  function selectReviewAthlete(athleteId: string) {
+    setReviewAthleteId(athleteId);
+    reviewAthleteRef.current = athleteId;
+    // A session belongs to exactly one athlete: switching athletes always
+    // clears the selection so a stale session_id can never be submitted
+    // under the newly selected athlete's name.
+    setReviewSessionId('');
+    setReviewSyncMessage('');
+    if (athleteId) {
+      void loadReviewSessions(athleteId);
+    } else {
+      setReviewSessions([]);
+      setReviewSessionsState('idle');
+      setReviewSessionsError('');
+    }
+  }
+
   async function submitCoachReview() {
     // The endpoint writes a new row per review_id and review_id is minted here
     // per call, so a second submit while the first is in flight persists a
@@ -767,7 +894,7 @@ export default function CoachWorkspace() {
     setReviewSyncMessage('');
 
     if (!reviewSessionId.trim()) {
-      setReviewSyncMessage('Session ID is required.');
+      setReviewSyncMessage('Select a session to review.');
       return;
     }
 
@@ -1862,14 +1989,72 @@ export default function CoachWorkspace() {
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
                 <p className="t-label">Persist Coach Review</p>
                 <label className="field">
-                  <span className="t-label">Session ID</span>
-                  <input
-                    value={reviewSessionId}
-                    onChange={(event) => setReviewSessionId(event.target.value)}
-                    placeholder="Session ID (from persisted session)"
-                    className="input"
-                  />
+                  <span className="t-label">Athlete</span>
+                  <select
+                    value={reviewAthleteId}
+                    onChange={(event) => selectReviewAthlete(event.target.value)}
+                    disabled={athletesLoading}
+                    className="select"
+                  >
+                    <option value="">Select an athlete</option>
+                    {athletes.map((athlete) => (
+                      <option key={athlete.id} value={athlete.id}>
+                        {athlete.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
+                {athletesLoading && (
+                  <p className="t-data text-[color:var(--bone-400)]">Loading your athlete roster...</p>
+                )}
+                {!athletesLoading && athletesError && (
+                  <p className="t-data text-[color:var(--locked-ink)]">
+                    The athlete roster could not be loaded, so sessions cannot be picked. Athletes and
+                    sessions may exist that are not shown here.
+                  </p>
+                )}
+                {!athletesLoading && !athletesError && athletes.length === 0 && (
+                  <p className="t-data text-[color:var(--bone-400)]">
+                    No athletes are on the roster yet. A session to review appears here once an athlete
+                    has one recorded.
+                  </p>
+                )}
+
+                {reviewSessionsState === 'loading' && (
+                  <p className="t-data text-[color:var(--bone-400)]">Loading sessions...</p>
+                )}
+                {reviewSessionsState === 'unavailable' && (
+                  <p className="t-data text-[color:var(--locked-ink)]">
+                    {reviewSessionsError} Sessions may exist that are not listed here -- do not read
+                    this as &quot;no sessions&quot;.
+                  </p>
+                )}
+                {reviewSessionsState === 'loaded' && reviewSessions.length === 0 && (
+                  <p className="t-data text-[color:var(--bone-400)]">
+                    No sessions are recorded for this athlete yet. One appears here as soon as a
+                    session is persisted.
+                  </p>
+                )}
+                {reviewSessionsState === 'loaded' && reviewSessions.length > 0 && (
+                  <label className="field">
+                    <span className="t-label">Session</span>
+                    <select
+                      value={reviewSessionId}
+                      onChange={(event) => setReviewSessionId(event.target.value)}
+                      className="select"
+                    >
+                      <option value="">Select a session</option>
+                      {reviewSessions.map((session) => (
+                        <option key={session.sessionId} value={session.sessionId}>
+                          {reviewSessionLabel(session)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {reviewSessionId ? (
+                  <p className="t-data text-[color:var(--bone-400)]">Session ID {reviewSessionId}</p>
+                ) : null}
                 <label className="field">
                   <span className="t-label">Decision</span>
                   <select

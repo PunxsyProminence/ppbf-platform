@@ -15,6 +15,8 @@ interface RouteResponses {
   intakeReviewAction?: (body: { intake_case_id?: string; action?: string }) => Promise<Response>;
   painReports?: () => Promise<Response>;
   barrierReports?: () => Promise<Response>;
+  athletesList?: () => Promise<Response> | Response;
+  sessionsList?: (athleteId: string) => Promise<Response> | Response;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -49,7 +51,11 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
       return jsonResponse({ authenticated: true, account_id: 'acct_coach_1' });
     }
     if (url.includes('/api/pilot/athletes/list')) {
-      return jsonResponse({ items: [] });
+      return routes.athletesList ? routes.athletesList() : jsonResponse({ items: [] });
+    }
+    if (url.includes('/api/pilot/sessions/list')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+      return routes.sessionsList ? routes.sessionsList(athleteId) : jsonResponse({ items: [] });
     }
     if (url.includes('/api/pilot/floor-plans')) {
       return routes.floorPlans ? routes.floorPlans() : jsonResponse({ items: [] });
@@ -105,6 +111,28 @@ function openTab(label: string): void {
 afterEach(() => {
   jest.restoreAllMocks();
 });
+
+/** A pilot.sessions row as GET /api/pilot/sessions/list returns it. */
+function sessionRow(sessionId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    session_id: sessionId,
+    athlete_id: 'ath_1',
+    date: '2026-08-10',
+    rpe: 6,
+    notes: 'Worked angles off the jab.',
+    completed_flag: true,
+    created_at: '2026-08-10T18:00:00.000Z',
+    updated_at: '2026-08-10T19:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** Selects an athlete on the review picker and waits for the session list. */
+async function pickReviewAthlete(athleteId: string): Promise<void> {
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: athleteId } });
+  });
+}
 
 describe('coach workspace does not fabricate the coach\'s own records', () => {
   test('Development shows no certification or expiry date, because none are stored', async () => {
@@ -190,6 +218,8 @@ describe('coach review submission', () => {
   test('a double-click persists exactly one review', async () => {
     let releaseReview: (() => void) | undefined;
     const fetchMock = await renderWorkspace({
+      athletesList: () => jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Jordan P.' }] }),
+      sessionsList: () => jsonResponse({ items: [sessionRow('session_1')] }),
       coachReviews: () =>
         new Promise<Response>((resolve) => {
           releaseReview = () => resolve(jsonResponse({ ok: true }));
@@ -197,7 +227,8 @@ describe('coach review submission', () => {
     });
 
     openTab('Athlete Reviews');
-    fireEvent.change(screen.getByPlaceholderText(/Session ID/i), {
+    await pickReviewAthlete('ath_1');
+    fireEvent.change(screen.getByLabelText('Session'), {
       target: { value: 'session_1' },
     });
 
@@ -222,6 +253,198 @@ describe('coach review submission', () => {
       fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
     });
     expect(reviewCalls()).toBe(2);
+  });
+});
+
+// The session picker replaced a free-text Session ID input: a coach selects a
+// real, server-listed session instead of transcribing an opaque id. The
+// athlete list is the roster the coach already reads (which, by design, names
+// the whole gym), and GET /api/pilot/sessions/list stays the sole authority
+// on whether this coach may see this athlete's sessions -- its refusal is
+// shown, never smoothed into an empty list.
+describe('coach review session picker', () => {
+  const twoAthletes = () =>
+    jsonResponse({
+      items: [
+        { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+        { athlete_id: 'ath_2', full_name: 'Sam R.' },
+      ],
+    });
+
+  test('selecting an athlete lists exactly the sessions the server returned, labelled from real fields', async () => {
+    const fetchMock = await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: () =>
+        jsonResponse({
+          items: [
+            sessionRow('session_a', { date: '2026-08-10', rpe: 6, completed_flag: true, created_at: '2026-08-10T18:00:00.000Z' }),
+            sessionRow('session_b', { date: '2026-08-12', rpe: 4, completed_flag: false, created_at: '2026-08-12T18:00:00.000Z' }),
+          ],
+        }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+
+    const listCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/pilot/sessions/list'));
+    expect(listCalls).toHaveLength(1);
+    expect(String(listCalls[0][0])).toContain('athlete_id=ath_1');
+
+    const options = Array.from(
+      (screen.getByLabelText('Session') as HTMLSelectElement).options,
+    ).map((option) => ({ value: option.value, label: option.textContent }));
+    // Newest first (created_at), one option per returned row plus the empty
+    // prompt -- nothing invented, nothing dropped.
+    expect(options).toEqual([
+      { value: '', label: 'Select a session' },
+      { value: 'session_b', label: '2026-08-12 - open - RPE 4' },
+      { value: 'session_a', label: '2026-08-10 - completed - RPE 6' },
+    ]);
+  });
+
+  test('a valid selection submits that real session id on the unchanged contract', async () => {
+    const fetchMock = await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: () => jsonResponse({ items: [sessionRow('session_a'), sessionRow('session_b')] }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+    fireEvent.change(screen.getByLabelText('Session'), { target: { value: 'session_b' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
+    });
+
+    const reviewCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/pilot/coach-reviews'));
+    expect(reviewCall).toBeDefined();
+    const body = JSON.parse(String(reviewCall?.[1]?.body)) as Record<string, unknown>;
+    expect(body.session_id).toBe('session_b');
+    expect(body.coach_id).toBe('acct_coach_1');
+    expect(body.decision).toBe('approved');
+  });
+
+  test('no selection blocks submission -- no request leaves with a blank session id', async () => {
+    const fetchMock = await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: () => jsonResponse({ items: [sessionRow('session_a')] }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
+    });
+
+    expect(screen.queryByText('Select a session to review.')).not.toBeNull();
+    expect(
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/pilot/coach-reviews')),
+    ).toHaveLength(0);
+  });
+
+  test('the server\'s refusal for an athlete outside this coach\'s scope is shown verbatim, not as an empty list', async () => {
+    await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: () =>
+        jsonResponse({ error: 'Forbidden: coach not assigned to athlete' }, { ok: false, status: 403 }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_2');
+
+    expect(screen.queryByText(/Forbidden: coach not assigned to athlete/)).not.toBeNull();
+    expect(screen.queryByText(/Sessions may exist that are not listed here/)).not.toBeNull();
+    // The refusal must not be dressed as "this athlete has no sessions".
+    expect(screen.queryByText(/No sessions are recorded for this athlete yet/)).toBeNull();
+    expect(screen.queryByLabelText('Session')).toBeNull();
+  });
+
+  test('a failed session read is distinct from an empty one', async () => {
+    await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: () => jsonResponse({ error: 'Internal error' }, { ok: false, status: 500 }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+
+    expect(screen.queryByText(/Sessions may exist that are not listed here/)).not.toBeNull();
+    expect(screen.queryByText(/No sessions are recorded for this athlete yet/)).toBeNull();
+  });
+
+  test('an athlete with no sessions says so, without the failure warning', async () => {
+    await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: () => jsonResponse({ items: [] }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+
+    expect(screen.queryByText(/No sessions are recorded for this athlete yet/)).not.toBeNull();
+    expect(screen.queryByText(/Sessions may exist that are not listed here/)).toBeNull();
+    expect(screen.queryByLabelText('Session')).toBeNull();
+  });
+
+  test('rows without a usable session_id or date are dropped, never rendered as blank options', async () => {
+    await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: () =>
+        jsonResponse({
+          items: [
+            sessionRow('session_ok'),
+            sessionRow('', {}),
+            { ...sessionRow('session_no_date'), date: null },
+            'not-an-object',
+          ],
+        }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+
+    const options = Array.from((screen.getByLabelText('Session') as HTMLSelectElement).options);
+    expect(options.map((option) => option.value)).toEqual(['', 'session_ok']);
+  });
+
+  test('switching athletes clears the selection and a late response for the old athlete never renders under the new one', async () => {
+    let releaseFirst: (() => void) | undefined;
+    await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: (athleteId) => {
+        if (athleteId === 'ath_1') {
+          return new Promise<Response>((resolve) => {
+            releaseFirst = () => resolve(jsonResponse({ items: [sessionRow('session_of_ath_1')] }));
+          });
+        }
+        return jsonResponse({ items: [sessionRow('session_of_ath_2', { athlete_id: 'ath_2' })] });
+      },
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+    // ath_1's read is still in flight; the coach moves on to ath_2.
+    await pickReviewAthlete('ath_2');
+    fireEvent.change(screen.getByLabelText('Session'), { target: { value: 'session_of_ath_2' } });
+
+    // The slow response for ath_1 lands now -- it must be discarded.
+    await act(async () => {
+      releaseFirst?.();
+    });
+
+    const options = Array.from((screen.getByLabelText('Session') as HTMLSelectElement).options);
+    expect(options.map((option) => option.value)).toEqual(['', 'session_of_ath_2']);
+    expect((screen.getByLabelText('Session') as HTMLSelectElement).value).toBe('session_of_ath_2');
+  });
+
+  test('a failed roster read says the roster is unavailable, not that there are no athletes', async () => {
+    await renderWorkspace({
+      athletesList: () => jsonResponse({ error: 'Internal error' }, { ok: false, status: 500 }),
+    });
+
+    openTab('Athlete Reviews');
+
+    await waitFor(() => expect(screen.queryByText(/The athlete roster could not be loaded/)).not.toBeNull());
+    expect(screen.queryByText(/No athletes are on the roster yet/)).toBeNull();
   });
 });
 
