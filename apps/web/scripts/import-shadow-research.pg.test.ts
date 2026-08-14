@@ -37,6 +37,10 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-import-shadow-research-pg-test-${D
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, 'test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../infra/azure');
 const EVIDENCE_MIGRATION_FILE = 'pilot_slice_postgres_shadow_evidence_migration.sql';
+// The importer writes feeder_tracks, which this migration adds to the
+// capability map the evidence migration creates. The `all` loop applies both
+// in that order, so a fixture claiming "migrated" must too.
+const FEEDER_TRACKS_MIGRATION_FILE = 'pilot_slice_postgres_capability_feeder_tracks_migration.sql';
 const IMPORTER_PATH = path.resolve(__dirname, 'import-shadow-research.mjs');
 
 const ORG_A = 'org-shadowresearch-a';
@@ -50,6 +54,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let baseSchemaSql: string;
 let evidenceMigrationSql: string;
+let feederTracksMigrationSql: string;
 let importerModule: {
   loadSeedPackage: (input: {
     seedDir: string;
@@ -87,7 +92,11 @@ async function freshDatabase(name: string, { withEvidenceMigration }: { withEvid
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
   await admin.query(`drop database if exists ${name}`);
-  await admin.query(`create database ${name}`);
+  // The seed package carries non-ASCII characters (e.g. U+2010 in source
+  // titles), and a Windows-locale embedded Postgres defaults new databases to
+  // WIN1252, which cannot store them. Production, staging, and CI are all
+  // UTF8, so pin the fixture to what the importer actually targets.
+  await admin.query(`create database ${name} encoding 'UTF8' template template0`);
   await admin.end();
 
   const client = new Client({ connectionString: connectionStringFor(name) });
@@ -95,6 +104,7 @@ async function freshDatabase(name: string, { withEvidenceMigration }: { withEvid
   await client.query(baseSchemaSql);
   if (withEvidenceMigration) {
     await client.query(evidenceMigrationSql);
+    await client.query(feederTracksMigrationSql);
   }
 
   await client.query(
@@ -146,6 +156,7 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   evidenceMigrationSql = await fs.readFile(path.join(INFRA_DIR, EVIDENCE_MIGRATION_FILE), 'utf8');
+  feederTracksMigrationSql = await fs.readFile(path.join(INFRA_DIR, FEEDER_TRACKS_MIGRATION_FILE), 'utf8');
 
   importerModule = (await nativeDynamicImport(pathToFileURL(IMPORTER_PATH).href)) as typeof importerModule;
 });
