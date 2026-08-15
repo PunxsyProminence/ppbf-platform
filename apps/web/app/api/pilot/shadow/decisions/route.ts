@@ -40,7 +40,6 @@ interface DecisionRequestBody {
   recommendationId?: unknown;
   decisionText?: unknown;
   expectedOutcome?: unknown;
-  isMedicallySensitive?: unknown;
 }
 
 export async function POST(request: NextRequest) {
@@ -54,7 +53,6 @@ export async function POST(request: NextRequest) {
       || !boundedString(body.decisionText, 4000)
       || !boundedString(body.expectedOutcome, 2000)
       || (body.recommendationId !== undefined && body.recommendationId !== null && !boundedString(body.recommendationId, 300))
-      || (body.isMedicallySensitive !== undefined && typeof body.isMedicallySensitive !== 'boolean')
     ) {
       return NextResponse.json({ ok: false, error: 'Decision payload is invalid.' }, { status: 400 });
     }
@@ -70,7 +68,6 @@ export async function POST(request: NextRequest) {
       expectedOutcome: body.expectedOutcome,
       decidedByAccountId: principal.accountId,
       decidedByRole: principal.role,
-      isMedicallySensitive: body.isMedicallySensitive as boolean | undefined,
     });
 
     return NextResponse.json({ ok: true, decision });

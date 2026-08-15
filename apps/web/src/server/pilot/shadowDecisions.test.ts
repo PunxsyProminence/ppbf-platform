@@ -51,7 +51,10 @@ beforeEach(() => {
 });
 
 describe('recordDecision', () => {
-  test('checks the medical status guard only when isMedicallySensitive is set', async () => {
+  // Replaces a test asserting the guard ran ONLY when isMedicallySensitive was
+  // set. That flag came off the HTTP body, so the assertion pinned the hole:
+  // omit the field, skip the clearance check.
+  test('checks the medical status guard on every decision, whatever the topic', async () => {
     const clientQuery = jest.fn().mockResolvedValue({ rows: [decisionRow()] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
@@ -64,7 +67,25 @@ describe('recordDecision', () => {
       decidedByRole: 'coach',
     });
 
-    expect(mockAssertMedicalStatusAllows).not.toHaveBeenCalled();
+    expect(mockAssertMedicalStatusAllows).toHaveBeenCalledWith('org-1', 'athlete-1');
+  });
+
+  // The guard runs before the transaction opens, so a blocked athlete leaves no
+  // partial write behind -- true for an ordinary decision, not only a
+  // medically-worded one.
+  test('an ordinary decision is blocked, and written, only per the clearance record', async () => {
+    mockAssertMedicalStatusAllows.mockRejectedValueOnce(new MedicalStatusBlockedError('no_record'));
+
+    await expect(recordDecision({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      decisionText: 'Add 10 minutes of footwork drills.',
+      expectedOutcome: 'Work-rate consistency improves next session.',
+      decidedByAccountId: 'coach-1',
+      decidedByRole: 'coach',
+    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
+
+    expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 
   test('propagates MedicalStatusBlockedError before any write when medically sensitive and blocked', async () => {
@@ -77,7 +98,6 @@ describe('recordDecision', () => {
       expectedOutcome: 'Athlete returns to full sparring load.',
       decidedByAccountId: 'coach-1',
       decidedByRole: 'coach',
-      isMedicallySensitive: true,
     })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
 
     expect(mockWithTransaction).not.toHaveBeenCalled();

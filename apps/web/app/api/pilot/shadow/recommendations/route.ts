@@ -55,7 +55,6 @@ interface RecommendationRequestBody {
   recommendationText?: unknown;
   expectedOutcome?: unknown;
   expiresInHours?: unknown;
-  isMedicallySensitive?: unknown;
 }
 
 export async function POST(request: NextRequest) {
@@ -70,7 +69,6 @@ export async function POST(request: NextRequest) {
       || !boundedString(body.expectedOutcome, 2000)
       || (body.sourceFormulaResultId !== undefined && body.sourceFormulaResultId !== null && !boundedString(body.sourceFormulaResultId, 300))
       || (body.expiresInHours !== undefined && (typeof body.expiresInHours !== 'number' || !Number.isFinite(body.expiresInHours) || body.expiresInHours <= 0))
-      || (body.isMedicallySensitive !== undefined && typeof body.isMedicallySensitive !== 'boolean')
     ) {
       return NextResponse.json({ ok: false, error: 'Recommendation payload is invalid.' }, { status: 400 });
     }
@@ -87,7 +85,6 @@ export async function POST(request: NextRequest) {
       createdByAccountId: principal.accountId,
       createdByRole: principal.role,
       expiresInHours: body.expiresInHours as number | undefined,
-      isMedicallySensitive: body.isMedicallySensitive as boolean | undefined,
     });
 
     return NextResponse.json({ ok: true, recommendation });
