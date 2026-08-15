@@ -63,12 +63,27 @@ test('no invented safety or governance alert is presented as live data', async (
   expect(screen.queryByText(/capture rate remains at 100%/i)).toBeNull();
 });
 
-test('the alert panel is marked planned rather than left looking clear', async () => {
+// The command node's stamp is gone because the feed behind it is real. The
+// doctrine the stamp carried is the part that must survive: whatever state the
+// feed is in — and under this harness's generic fetch mock it settles on the
+// honest-empty state — the panel must say an empty feed is not a clear floor,
+// and must never claim to be planned-only again.
+test('the alert panel reads the record and never lets empty look clear', async () => {
   await renderPage();
 
   const panel = screen.getByRole('heading', { name: 'SHADOW COMMAND NODE' }).parentElement as HTMLElement;
-  expect(panel.textContent).toContain('PLANNED | NOT YET IMPLEMENTED');
+  await screen.findByText(/nothing has been recorded/i);
   expect(panel.textContent).toMatch(/not that the floor is clear/i);
+  expect(panel.textContent).not.toContain('PLANNED | NOT YET IMPLEMENTED');
+});
+
+test('SHADOW Monitoring reads as shipped with the human-alarm boundary stated', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'SHADOW Monitoring' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('EXISTS');
+  expect(card.textContent).toMatch(/remains a human decision/i);
 });
 
 test('the notices authoring surface is reachable from the hub', async () => {
