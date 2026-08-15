@@ -123,11 +123,14 @@ export function deriveSuggestions(
 
   // Rule 3: assignments stalled past their due date. Grouped per athlete so a
   // kid with three overdue drills gets one suggestion, not three.
+  const athletesWithMentalSuggestion = new Set(
+    suggestions.filter((s) => s.gap_type === 'mental').map((s) => s.athlete_id),
+  );
   for (const row of stalled) {
     if (openTypes(row.athlete_id).has('mental')) continue;
     // One 'mental' suggestion per athlete: if rule 2 already spoke for this
     // athlete, fold the stalled evidence into silence rather than doubling up.
-    if (suggestions.some((s) => s.athlete_id === row.athlete_id && s.gap_type === 'mental')) continue;
+    if (athletesWithMentalSuggestion.has(row.athlete_id)) continue;
 
     suggestions.push({
       athlete_id: row.athlete_id,

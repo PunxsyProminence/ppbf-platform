@@ -162,16 +162,22 @@ export default function CoachProgressionIntelligencePage() {
   // Load deterministic suggestions once per visit. Best-effort: a coach with
   // no suggestions endpoint sees the same page they always did.
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/progression/suggestions`, { credentials: 'include' });
+        const response = await fetch(`${apiBase()}/api/pilot/progression/suggestions`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
         if (!response.ok) return;
         const payload = (await response.json()) as { items?: GapSuggestionItem[] };
-        setSuggestions(payload.items ?? []);
+        if (!controller.signal.aborted) setSuggestions(payload.items ?? []);
       } catch {
-        // Best-effort: no suggestions is a smaller loss than a broken page.
+        // Best-effort (and aborted-on-unmount lands here too): no suggestions
+        // is a smaller loss than a broken page.
       }
     })();
+    return () => controller.abort();
   }, []);
 
   const handleConfirmSuggestion = async (item: GapSuggestionItem) => {
