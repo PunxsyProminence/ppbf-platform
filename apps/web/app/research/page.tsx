@@ -89,7 +89,9 @@ export default function ResearchIntakePage() {
   const [answeringId, setAnsweringId] = useState<number | null>(null);
   const [answerDraft, setAnswerDraft] = useState({ sourceId: '', doi: '', provider: '', note: '' });
   const [answerBusy, setAnswerBusy] = useState(false);
-  const [answerMessage, setAnswerMessage] = useState('');
+  // Scoped to one requirement so a message from card A never renders under
+  // card B when several gaps are open at once.
+  const [answerMessage, setAnswerMessage] = useState<{ forId: number; text: string } | null>(null);
 
   const refreshAnswerStates = async (requirementIds: number[]) => {
     if (requirementIds.length === 0) {
@@ -156,21 +158,26 @@ export default function ResearchIntakePage() {
   // by the same roles as the submission POST, so a 403 here means the panel
   // would be refused anyway and is not rendered at all.
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources?limit=200`, { credentials: 'include' });
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources?limit=200`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
         if (!response.ok) return;
         const payload = (await response.json()) as { sources?: LibrarySourceOption[]; items?: LibrarySourceOption[] };
-        setCuratorSources(payload.sources ?? payload.items ?? []);
+        if (!controller.signal.aborted) setCuratorSources(payload.sources ?? payload.items ?? []);
       } catch {
-        // Not a curator (or offline): the read-only workspace stands.
+        // Not a curator (or offline, or unmounted): the read-only workspace stands.
       }
     })();
+    return () => controller.abort();
   }, []);
 
   async function handleAnswerGap(requirementId: number) {
     if (!answerDraft.sourceId) {
-      setAnswerMessage('Pick the library source that answers this requirement.');
+      setAnswerMessage({ forId: requirementId, text: 'Pick the library source that answers this requirement.' });
       return;
     }
     setAnswerBusy(true);
@@ -196,10 +203,10 @@ export default function ResearchIntakePage() {
       }
       setAnsweringId(null);
       setAnswerDraft({ sourceId: '', doi: '', provider: '', note: '' });
-      setAnswerMessage('Source submitted. It answers nothing until evidence review says so.');
+      setAnswerMessage({ forId: requirementId, text: 'Source submitted. It answers nothing until evidence review says so.' });
       await refreshAnswerStates(requirements.map((item) => item.research_requirement_id));
     } catch (error) {
-      setAnswerMessage(error instanceof Error ? error.message : 'Unable to submit the source.');
+      setAnswerMessage({ forId: requirementId, text: error instanceof Error ? error.message : 'Unable to submit the source.' });
     } finally {
       setAnswerBusy(false);
     }
@@ -584,19 +591,25 @@ export default function ResearchIntakePage() {
                             {answerBusy ? 'Submitting…' : 'Submit source'}
                           </button>
                           <button type="button" className="btn btn--ghost"
-                            onClick={() => { setAnsweringId(null); setAnswerMessage(''); }}>
+                            onClick={() => { setAnsweringId(null); setAnswerMessage(null); }}>
                             Cancel
                           </button>
-                          {answerMessage ? <p className="t-typed text-[length:var(--t-xs)]" role="status">{answerMessage}</p> : null}
+                          {answerMessage && answerMessage.forId === requirement.research_requirement_id
+                            ? <p className="t-typed text-[length:var(--t-xs)]" role="status">{answerMessage.text}</p> : null}
                         </div>
                       </div>
                     ) : (
                       <div className="flex flex-wrap items-center gap-[var(--s3)]">
                         <button type="button" className="btn btn--ghost"
-                          onClick={() => { setAnsweringId(requirement.research_requirement_id); setAnswerMessage(''); }}>
+                          onClick={() => {
+                            setAnsweringId(requirement.research_requirement_id);
+                            setAnswerDraft({ sourceId: '', doi: '', provider: '', note: '' });
+                            setAnswerMessage(null);
+                          }}>
                           Answer this gap
                         </button>
-                        {answerMessage ? <p className="t-muted" role="status">{answerMessage}</p> : null}
+                        {answerMessage && answerMessage.forId === requirement.research_requirement_id
+                          ? <p className="t-muted" role="status">{answerMessage.text}</p> : null}
                       </div>
                     )}
                   </div>

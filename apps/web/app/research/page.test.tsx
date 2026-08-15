@@ -31,7 +31,13 @@ const REQUIREMENT = {
 
 const SOURCE = { source_id: 'src-1', title: 'RPE reliability in adolescents', source_type: 'peer_reviewed' };
 
-function mockFetch(options: { curator: boolean; capture?: { posts: unknown[] } }) {
+const SECOND_REQUIREMENT = {
+  ...REQUIREMENT,
+  research_requirement_id: 8,
+  research_requirement: 'Does footwork drill order matter?',
+};
+
+function mockFetch(options: { curator: boolean; capture?: { posts: unknown[] }; requirements?: Array<Record<string, unknown>> }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/research-submissions') && init?.method === 'POST') {
@@ -47,7 +53,7 @@ function mockFetch(options: { curator: boolean; capture?: { posts: unknown[] } }
         : ({ ok: false, status: 403, json: async () => ({}) } as Response);
     }
     if (url.includes('/research-requirements')) {
-      return { ok: true, json: async () => ({ items: [REQUIREMENT] }) } as Response;
+      return { ok: true, json: async () => ({ items: options.requirements ?? [REQUIREMENT] }) } as Response;
     }
     if (url.includes('/research-projection')) {
       return { ok: true, json: async () => ({ items: [] }) } as Response;
@@ -112,4 +118,28 @@ test('a curator files the link with provenance and is told review decides, not t
   expect(posted.source_id).toBe('src-1');
   expect(posted.provenance).toEqual({ doi_or_pmid: '10.1000/x', provider: 'Penn State Library' });
   expect(screen.getByText(/answers nothing until evidence review says so/i)).toBeTruthy();
+});
+
+// Review catch on the shared message string: with several gaps open, a
+// message produced under one card must never render under another.
+test('the submission message renders only under the requirement it belongs to', async () => {
+  const capture = { posts: [] as unknown[] };
+  global.fetch = mockFetch({ curator: true, capture, requirements: [REQUIREMENT, SECOND_REQUIREMENT] });
+
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  await screen.findByText('Does footwork drill order matter?');
+  await act(async () => {
+    fireEvent.click(screen.getAllByRole('button', { name: 'Answer this gap' })[0]);
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'src-1' } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Submit source' }));
+  });
+
+  expect(screen.getAllByText(/answers nothing until evidence review says so/i)).toHaveLength(1);
 });
