@@ -58,6 +58,13 @@ Older retro/design briefs remain useful as rationale/reference but do not overri
 - [docs/SHADOW_ML_ARCHITECTURE_SPEC.md](docs/SHADOW_ML_ARCHITECTURE_SPEC.md)
 - [docs/RESEARCH_EVIDENCE_REGISTRY.md](docs/RESEARCH_EVIDENCE_REGISTRY.md)
 - [docs/SHADOW_RESEARCH_INTAKE_IMPORT.md](docs/SHADOW_RESEARCH_INTAKE_IMPORT.md)
+- [docs/SHADOW_ML_ALGORITHM_STACK.md](docs/SHADOW_ML_ALGORITHM_STACK.md) — algorithm authority (v1.1): stack by pipeline stage, Azure grant-fit map, seed-data/prior rules, acceptance harness
+- [docs/SHADOW_PATTERN_FORMATION_CONTRACT.md](docs/SHADOW_PATTERN_FORMATION_CONTRACT.md) — pattern-formation contract + heuristic audit (PR #337)
+- [docs/SHADOW_OBSERVATION_CAPTURE_VOCABULARY_SPEC_v0.md](docs/SHADOW_OBSERVATION_CAPTURE_VOCABULARY_SPEC_v0.md) — FROZEN v0 capture vocabulary; owner ratifications pending (§15)
+- [docs/SHADOW_PAPER_PILOT_PACKAGE.md](docs/SHADOW_PAPER_PILOT_PACKAGE.md) — one-week paper capture pilot over v0 (protocol test only)
+- [docs/SHADOW_PROMOTION_POLICY_SHEET_v0.md](docs/SHADOW_PROMOTION_POLICY_SHEET_v0.md) — UNSIGNED promotion policy sheet; unsigned = observe-only abstention
+- [docs/SHADOW_GATE_ACTIVATION_LEDGER_v0.md](docs/SHADOW_GATE_ACTIVATION_LEDGER_v0.md) — armed-automatically / active-by-signature gate ledger through Phase D
+- [docs/work-orders/](docs/work-orders/) — phase work orders (A executed as #358; B/C/D DRAFT·HOLD) and the Phase A cross-review checklist
 
 Dated SHADOW audits are point-in-time evidence only; verify any open finding against current source before building from it.
 
