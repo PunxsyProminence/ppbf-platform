@@ -171,6 +171,18 @@ test('Wrestling League Management reads as partial with the skeleton boundary st
   expect(card.textContent).toMatch(/until a real league defines them/i);
 });
 
+// The external-competition skeleton shipped under the same deliberate-
+// minimalism decision, pinned the same two directions as the league row.
+test('External Competition Platform reads as partial with the skeleton boundary stated', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'External Competition Platform' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('PARTIAL');
+  expect(card.textContent).not.toContain('PLACEHOLDER');
+  expect(card.textContent).toMatch(/until real competitions define them/i);
+});
+
 // The radar is hand-maintained and had gone stale in both directions: it
 // missed capabilities that ship with persistent records and route tests, and
 // it still advertised the removed "BREAK MY 40% RULE" override token.
