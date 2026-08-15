@@ -1,11 +1,16 @@
 # Payment Service — Reserved Slot (CAP-012 / capability #19)
 
-**Status: RESERVED, NOT BUILT.** This document defines the shape of the payment
-capability so a later integration drops into a named slot instead of being
-designed under deadline. Nothing in this document is implemented. No payment
-code, routes, tables, or processor accounts exist in this repository, and none
-should be inferred from this file. The capability stays `BLOCKED` in the admin
-console until the owner's compliance sign-off — that gate is the point.
+**Status: RESERVED — LEDGER TABLES BUILT, EVERYTHING ELSE NOT.** This document
+defines the shape of the payment capability so a later integration drops into
+a named slot instead of being designed under deadline. As of 2026-08-15 (owner
+decision: "ledger tables land first"), the three reserved tables exist —
+`pilot_slice_postgres_payments_migration.sql` creates `pilot.payment_accounts`,
+`pilot.payment_transactions`, and `pilot.payment_subscriptions`, empty and with
+the lane/one-account-per-lane/no-card-data posture below enforced as
+constraints. NO payment code, routes, webhooks, or processor accounts exist in
+this repository, and none should be inferred from this file. The capability
+stays `BLOCKED` in the admin console until the owner's compliance sign-off —
+that gate is the point.
 
 Owner decisions recorded 2026-07-31: the slot must cover four revenue lanes;
 those lanes settle into **two separate Stripe accounts**, giving and program;
