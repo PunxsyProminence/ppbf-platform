@@ -31,6 +31,30 @@ import {
   toProvenance,
 } from './evidence';
 import { assertPatternFormationPolicy, policyParameters, type PatternFormationPolicy } from './policy';
+import { assessStratifiedAttribution, type StratifiedAttributionAssessment } from './inference/attribution';
+import { assessDrift, type DriftAssessment } from './inference/drift';
+import { assessRecurrence, type RecurrenceAssessment } from './inference/recurrence';
+import type { PatternInferencePolicy } from './inference/policy';
+import { inferencePolicyParameters } from './inference/policy';
+
+/**
+ * Phase A output, attached to an evaluation when an inference policy is given.
+ *
+ * INFERENCE CAN ONLY EVER SUBTRACT. Every code it contributes lands in
+ * `blockers`; there is no path by which a posterior, a sequential verdict, or
+ * a control chart clears a blocker the rules raised. A candidate the §337
+ * rules refused stays refused no matter what the statistics say. That
+ * asymmetry is deliberate: the rules encode stated methodology, and a model
+ * fitted to a gym's own history has no standing to overrule it.
+ */
+export interface PatternInferenceReport {
+  readonly policyVersion: string;
+  readonly ratifiedByAccountId: string;
+  readonly parameters: Readonly<Record<string, unknown>>;
+  readonly recurrence: RecurrenceAssessment;
+  readonly attribution: StratifiedAttributionAssessment;
+  readonly drift: DriftAssessment;
+}
 import type {
   BehaviourObservation,
   PatternCandidateEvaluation,
@@ -63,6 +87,11 @@ export interface EvaluatePatternCandidateInput {
    * already outgrown.
    */
   readonly previouslyEstablished?: boolean;
+  /**
+   * Optional Phase A inference bar. Omit and the rules decide alone; supply
+   * it and the statistics may add blockers, never remove them.
+   */
+  readonly inferencePolicy?: PatternInferencePolicy;
 }
 
 class ReasonLedger {
@@ -234,19 +263,56 @@ export function evaluatePatternCandidate(
     ledger.add('OBSERVATION_SPAN_TOO_SHORT', true);
   }
 
+  // ── Phase A inference (optional; additive blockers only) ─────────────────
+  let inference: PatternInferenceReport | null = null;
+  if (input.inferencePolicy) {
+    const inferencePolicy = input.inferencePolicy;
+    // Trials are OPPORTUNITIES: occurrences plus counterexamples. Sessions
+    // where nobody recorded anything are not failures -- see recurrence.ts.
+    const recurrence = assessRecurrence(
+      { trials: admitted.length, occurrences: evidence.occurrenceCount },
+      inferencePolicy,
+    );
+    const stratified = assessStratifiedAttribution(admitted, inferencePolicy);
+    const drift = assessDrift(admitted, inferencePolicy);
+
+    if (recurrence.posteriorTooWide) ledger.add('POSTERIOR_TOO_WIDE', true);
+    if (recurrence.verdict === 'reject') ledger.add('SEQUENTIAL_TEST_REJECTED', true);
+    if (recurrence.verdict === 'continue_observing') ledger.add('SEQUENTIAL_TEST_CONTINUE', true);
+    if (stratified.disagreement) ledger.add('STRATA_DISAGREEMENT', true);
+    if (stratified.loadImplicated) ledger.add('LOAD_STRATUM_IMPLICATED', true);
+    if (drift.fading) ledger.add('PATTERN_FADING', true);
+
+    inference = Object.freeze({
+      policyVersion: inferencePolicy.policyVersion,
+      ratifiedByAccountId: inferencePolicy.ratifiedByAccountId,
+      parameters: inferencePolicyParameters(inferencePolicy),
+      recurrence,
+      attribution: stratified,
+      drift,
+    });
+  }
+
   const state = resolveState({
     hasAdmitted: admitted.length > 0,
     occurrenceCount: evidence.occurrenceCount,
     distinctTaskContexts: evidence.distinctTaskContexts,
     previouslyEstablished: input.previouslyEstablished === true,
-    noRecentEvidence: ledger.has('NO_RECENT_EVIDENCE'),
+    // A charted decline retires an established pattern the same way silence
+    // does -- the difference is only that we watched it happen.
+    noRecentEvidence: ledger.has('NO_RECENT_EVIDENCE') || ledger.has('PATTERN_FADING'),
     contested:
       ledger.has('OBSERVER_DISAGREEMENT')
       || ledger.has('VIDEO_CONTRADICTS_OBSERVER')
       || ledger.has('COUNTEREVIDENCE_DOMINATES')
       || ledger.has('COUNTEREVIDENCE_RIVALS_OCCURRENCE'),
     attributionUnresolved:
-      ledger.has('ATTRIBUTION_NOT_ATHLETE') || ledger.has('ATTRIBUTION_SPLIT'),
+      ledger.has('ATTRIBUTION_NOT_ATHLETE')
+      || ledger.has('ATTRIBUTION_SPLIT')
+      // Strata naming different culprits, or the load stratum carrying the
+      // occurrences, are both "we cannot say this is the athlete's".
+      || ledger.has('STRATA_DISAGREEMENT')
+      || ledger.has('LOAD_STRATUM_IMPLICATED'),
     blockerCount: ledger.blockers.length,
   });
 
@@ -287,6 +353,7 @@ export function evaluatePatternCandidate(
       ? buildProposal(input.behaviourKey, evidence.occurrenceCount, evidence.distinctTaskContexts, ledger.warnings)
       : null,
     evaluatedAt: asOf,
+    inference,
   });
 }
 
