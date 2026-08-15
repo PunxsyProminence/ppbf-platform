@@ -217,7 +217,7 @@
     "next": "16.3.1",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
-    "pg": "^8.16.3",
+    "pg": "^8.23.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -230,7 +230,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/pdfkit": "^0.17.6",
-    "@types/pg": "^8.15.5",
+    "@types/pg": "^8.21.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "embedded-postgres": "18.4.0-beta.17",
