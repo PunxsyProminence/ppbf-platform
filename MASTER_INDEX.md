@@ -65,6 +65,7 @@ Older retro/design briefs remain useful as rationale/reference but do not overri
 - [docs/SHADOW_PROMOTION_POLICY_SHEET_v0.md](docs/SHADOW_PROMOTION_POLICY_SHEET_v0.md) — UNSIGNED promotion policy sheet; unsigned = observe-only abstention
 - [docs/SHADOW_GATE_ACTIVATION_LEDGER_v0.md](docs/SHADOW_GATE_ACTIVATION_LEDGER_v0.md) — armed-automatically / active-by-signature gate ledger through Phase D
 - [docs/work-orders/](docs/work-orders/) — phase work orders (A executed as #358; B/C/D DRAFT·HOLD) and the Phase A cross-review checklist
+- [docs/research/](docs/research/) — Library research cargo (banner-marked research input only; never an implementation input; #345 boundary applies)
 
 Dated SHADOW audits are point-in-time evidence only; verify any open finding against current source before building from it.
 
