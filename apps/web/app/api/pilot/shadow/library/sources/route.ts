@@ -69,6 +69,11 @@ export async function GET(request: NextRequest) {
     const params = new URL(request.url).searchParams;
     const sourceType = params.get('source_type');
     const status = params.get('status');
+    const generalResearch = params.get('general_research');
+
+    if (generalResearch !== null && generalResearch !== 'true' && generalResearch !== 'false') {
+      return NextResponse.json({ ok: false, error: "general_research must be 'true' or 'false'" }, { status: 400 });
+    }
     const rawLimit = params.get('limit');
     const rawOffset = params.get('offset');
 
@@ -94,6 +99,7 @@ export async function GET(request: NextRequest) {
       organizationId: principal.organizationId,
       sourceType: sourceType ?? undefined,
       status: status ?? undefined,
+      generalResearch: generalResearch === null ? undefined : generalResearch === 'true',
       limit,
       offset,
     });
@@ -164,6 +170,14 @@ export async function POST(request: NextRequest) {
       && (typeof body.metadata !== 'object' || body.metadata === null || Array.isArray(body.metadata))
     ) {
       return NextResponse.json({ ok: false, error: 'metadata must be an object' }, { status: 400 });
+    }
+
+    // The classification taxonomy is a shared contract (issue #345): a label
+    // arriving through registration is held to the same 14 domains the
+    // correction PATCH enforces, so no route can file a source outside it.
+    const classificationDomain = (body.metadata as Record<string, unknown> | undefined)?.classification_domain;
+    if (classificationDomain !== undefined && !isResearchClassificationDomain(classificationDomain)) {
+      return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
     }
 
     const source = await createShadowLibrarySource({

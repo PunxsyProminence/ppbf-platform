@@ -110,6 +110,12 @@ export default function ResearchIntakePage() {
   const [generalBusy, setGeneralBusy] = useState(false);
   const [generalMessage, setGeneralMessage] = useState('');
   const [reclassifyingId, setReclassifyingId] = useState<string | null>(null);
+  // The correction list reads a SERVER-FILTERED general-research page, not a
+  // client-side sift of the newest-200 overall list -- in a corpus of
+  // thousands, a general source would otherwise fall out of the window and
+  // become uncorrectable from the workspace. The 200 cap now bounds general
+  // registrations only, which are curator-entered and few.
+  const [generalSources, setGeneralSources] = useState<LibrarySourceOption[]>([]);
 
   const refreshAnswerStates = async (requirementIds: number[]) => {
     if (requirementIds.length === 0) {
@@ -175,8 +181,9 @@ export default function ResearchIntakePage() {
   // One probe decides whether this viewer curates: the sources list is gated
   // by the same roles as the submission POST, so a 403 here means the panel
   // would be refused anyway and is not rendered at all.
-  const fetchSources = async (signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources?limit=200`, {
+  const fetchSources = async (signal?: AbortSignal, generalOnly = false) => {
+    const filter = generalOnly ? '&general_research=true' : '';
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources?limit=200${filter}`, {
       credentials: 'include',
       signal,
     });
@@ -185,12 +192,21 @@ export default function ResearchIntakePage() {
     return payload.sources ?? payload.items ?? [];
   };
 
+  const refreshGeneralSources = async () => {
+    const general = await fetchSources(undefined, true);
+    if (general !== null) setGeneralSources(general);
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
       try {
         const sources = await fetchSources(controller.signal);
-        if (sources !== null && !controller.signal.aborted) setCuratorSources(sources);
+        if (sources !== null && !controller.signal.aborted) {
+          setCuratorSources(sources);
+          const general = await fetchSources(controller.signal, true);
+          if (general !== null && !controller.signal.aborted) setGeneralSources(general);
+        }
       } catch {
         // Not a curator (or offline, or unmounted): the read-only workspace stands.
       }
@@ -233,6 +249,7 @@ export default function ResearchIntakePage() {
       setGeneralMessage('Source registered and classified. Evidence review still decides what becomes citable.');
       const sources = await fetchSources();
       if (sources !== null) setCuratorSources(sources);
+      await refreshGeneralSources();
     } catch (error) {
       setGeneralMessage(error instanceof Error ? error.message : 'Unable to register the source.');
     } finally {
@@ -253,8 +270,7 @@ export default function ResearchIntakePage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `Reclassification failed (${response.status})`);
       }
-      const sources = await fetchSources();
-      if (sources !== null) setCuratorSources(sources);
+      await refreshGeneralSources();
       setGeneralMessage('Classification corrected.');
     } catch (error) {
       setGeneralMessage(error instanceof Error ? error.message : 'Unable to correct the classification.');
@@ -770,10 +786,10 @@ export default function ResearchIntakePage() {
               {generalMessage ? <p className="t-muted" role="status">{generalMessage}</p> : null}
             </div>
 
-            {curatorSources.some((source) => source.metadata?.general_research) ? (
+            {generalSources.length > 0 ? (
               <div className="space-y-[var(--s3)]">
                 <h3 className="t-label">Registered general research</h3>
-                {curatorSources.filter((source) => source.metadata?.general_research).map((source) => (
+                {generalSources.map((source) => (
                   <article key={source.source_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                     <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
                       <p className="t-body font-bold text-[color:var(--bone-100)]">{source.title}</p>

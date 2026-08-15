@@ -531,6 +531,8 @@ export async function listShadowLibrarySources(input: {
   organizationId: string;
   sourceType?: string;
   status?: string;
+  /** true filters to general-research registrations (metadata.general_research). */
+  generalResearch?: boolean;
   limit?: number;
   offset?: number;
 }): Promise<ShadowLibrarySourceRow[]> {
@@ -543,10 +545,18 @@ export async function listShadowLibrarySources(input: {
      where organization_id = $1
        and ($2::text is null or source_type = $2)
        and ($3::text is null or status = $3)
+       and ($4::boolean is null or coalesce((metadata->>'general_research')::boolean, false) = $4)
      order by created_at desc
-     limit $4
-     offset $5`,
-    [input.organizationId, input.sourceType?.trim() || null, input.status?.trim() || null, limit, offset],
+     limit $5
+     offset $6`,
+    [
+      input.organizationId,
+      input.sourceType?.trim() || null,
+      input.status?.trim() || null,
+      input.generalResearch ?? null,
+      limit,
+      offset,
+    ],
   );
 }
 
