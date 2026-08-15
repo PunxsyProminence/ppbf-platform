@@ -22,6 +22,18 @@ function formatDate(value: string): string {
   return formatGymDateTimeShort(value) ?? value;
 }
 
+/** One option in the athlete picker, from /api/pilot/athletes/list. */
+interface RosterAthleteOption {
+  athlete_id: string;
+  full_name: string;
+}
+
+/** One option in the coach picker, from /api/pilot/admin/staff's member roster. */
+interface CoachOption {
+  account_id: string;
+  login_email: string;
+}
+
 export default function CoachCoveragePage() {
   const [items, setItems] = useState<ActiveCoverageRow[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -33,6 +45,16 @@ export default function CoachCoveragePage() {
   const [ttlHours, setTtlHours] = useState('');
   const [granting, setGranting] = useState(false);
   const [grantError, setGrantError] = useState('');
+
+  // The pickers' feeds. Both reads answer to the same organization-admin
+  // session this console already requires, and both are existing routes.
+  // 'unavailable' disables granting: with no list to pick from, the honest
+  // states are "here is who exists" or "the list could not be loaded" --
+  // never a blank field inviting a transcribed id.
+  const [roster, setRoster] = useState<RosterAthleteOption[]>([]);
+  const [rosterState, setRosterState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [coaches, setCoaches] = useState<CoachOption[]>([]);
+  const [coachesState, setCoachesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
 
   const load = useCallback(async () => {
     try {
@@ -49,11 +71,61 @@ export default function CoachCoveragePage() {
     }
   }, []);
 
+  const loadRoster = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+      if (!response.ok) throw new Error('roster');
+      const payload = (await response.json()) as { items?: Array<{ athlete_id?: unknown; full_name?: unknown }> };
+      setRoster(
+        (payload.items ?? [])
+          .filter((row): row is { athlete_id: string; full_name?: unknown } => typeof row.athlete_id === 'string' && row.athlete_id !== '')
+          .map((row) => ({
+            athlete_id: row.athlete_id,
+            full_name: typeof row.full_name === 'string' && row.full_name.trim() !== '' ? row.full_name : row.athlete_id,
+          })),
+      );
+      setRosterState('loaded');
+    } catch {
+      setRoster([]);
+      setRosterState('unavailable');
+    }
+  }, []);
+
+  const loadCoaches = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/staff`, { credentials: 'include' });
+      if (!response.ok) throw new Error('members');
+      const payload = (await response.json()) as {
+        members?: Array<{ account_id?: unknown; login_email?: unknown; role?: unknown; active_flag?: unknown; membership_active?: unknown }>;
+      };
+      // Only what the server itself would accept: grantCoachCoverage requires
+      // an ACTIVE coach account in this organization, so the picker offers
+      // exactly that set rather than every member.
+      setCoaches(
+        (payload.members ?? [])
+          .filter((member) =>
+            member.role === 'coach'
+            && member.active_flag !== false
+            && member.membership_active !== false
+            && typeof member.account_id === 'string'
+            && member.account_id !== '')
+          .map((member) => ({
+            account_id: member.account_id as string,
+            login_email: typeof member.login_email === 'string' && member.login_email !== '' ? member.login_email : (member.account_id as string),
+          })),
+      );
+      setCoachesState('loaded');
+    } catch {
+      setCoaches([]);
+      setCoachesState('unavailable');
+    }
+  }, []);
+
   useEffect(() => {
     void (async () => {
-      await load();
+      await Promise.all([load(), loadRoster(), loadCoaches()]);
     })();
-  }, [load]);
+  }, [load, loadRoster, loadCoaches]);
 
   async function grant(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -148,24 +220,42 @@ export default function CoachCoveragePage() {
             <h2 className="t-eyebrow">Grant coverage</h2>
             <form onSubmit={(event) => void grant(event)} className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
               <label className="flex flex-col gap-[var(--s1)]">
-                <span className="t-eyebrow">Athlete ID</span>
-                <input
-                  type="text"
+                <span className="t-eyebrow">Athlete</span>
+                <select
                   required
                   value={athleteId}
                   onChange={(event) => setAthleteId(event.target.value)}
-                  className="input min-h-[44px]"
-                />
+                  disabled={rosterState !== 'loaded'}
+                  className="select min-h-[44px]"
+                >
+                  <option value="">
+                    {rosterState === 'loading' ? 'Loading athletes...' : 'Select an athlete'}
+                  </option>
+                  {roster.map((athlete) => (
+                    <option key={athlete.athlete_id} value={athlete.athlete_id}>
+                      {athlete.full_name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="flex flex-col gap-[var(--s1)]">
-                <span className="t-eyebrow">Covering coach account ID</span>
-                <input
-                  type="text"
+                <span className="t-eyebrow">Covering coach</span>
+                <select
                   required
                   value={coveringCoachId}
                   onChange={(event) => setCoveringCoachId(event.target.value)}
-                  className="input min-h-[44px]"
-                />
+                  disabled={coachesState !== 'loaded'}
+                  className="select min-h-[44px]"
+                >
+                  <option value="">
+                    {coachesState === 'loading' ? 'Loading coaches...' : 'Select a coach'}
+                  </option>
+                  {coaches.map((coach) => (
+                    <option key={coach.account_id} value={coach.account_id}>
+                      {coach.login_email}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="flex flex-col gap-[var(--s1)]">
                 <span className="t-eyebrow">Hours (default 24, max 336)</span>
@@ -178,10 +268,30 @@ export default function CoachCoveragePage() {
                   className="input min-h-[44px] w-32"
                 />
               </label>
-              <button type="submit" disabled={granting} className="btn--lever min-h-[44px] disabled:opacity-50">
+              <button
+                type="submit"
+                disabled={granting || rosterState !== 'loaded' || coachesState !== 'loaded'}
+                className="btn--lever min-h-[44px] disabled:opacity-50"
+              >
                 Grant
               </button>
             </form>
+            {(rosterState === 'unavailable' || coachesState === 'unavailable') && (
+              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
+                <span className="alert-icon">✕</span>
+                <span className="alert-msg">
+                  {rosterState === 'unavailable' && 'The athlete roster could not be loaded. '}
+                  {coachesState === 'unavailable' && 'The coach list could not be loaded. '}
+                  Granting is disabled until the lists load -- reload to retry.
+                </span>
+              </p>
+            )}
+            {coachesState === 'loaded' && coaches.length === 0 && (
+              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+                No active coach accounts exist in this organization, so there is nobody to grant
+                coverage to.
+              </p>
+            )}
             {grantError ? (
               <p role="alert" className="alert alert--critical mt-[var(--s3)]">
                 <span className="alert-icon">✕</span>
