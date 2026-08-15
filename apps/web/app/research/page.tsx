@@ -196,8 +196,6 @@ export default function ResearchIntakePage() {
       }
     })();
     return () => controller.abort();
-    // fetchSources is a stable closure over apiBase only.
-     
   }, []);
 
   async function handleRegisterGeneral() {

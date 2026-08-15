@@ -10,6 +10,7 @@ import {
   updateShadowLibrarySourceClassification,
 } from '@/src/server/pilot/shadowLibrary';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
+import { isResearchClassificationDomain } from '@/src/shared/researchClassification';
 
 export const runtime = 'nodejs';
 
@@ -59,8 +60,6 @@ function isSourceStatus(value: unknown): value is ShadowLibrarySourceStatus {
 // Postgres stores publication_date as `date`; an unparseable string would reach
 // the driver as a cast error and surface as a 500. Reject it here as a 400.
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-import { isResearchClassificationDomain } from '@/src/shared/researchClassification';
 
 export async function GET(request: NextRequest) {
   try {
