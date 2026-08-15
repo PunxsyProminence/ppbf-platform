@@ -157,6 +157,20 @@ test('Performance Analytics reads as shipped, not a placeholder', async () => {
   expect(link?.getAttribute('href')).toBe('/coach/performance-analytics');
 });
 
+// The wrestling-league skeleton shipped with the owner's deliberate-minimalism
+// constraint as its defining note. Pinned in both directions: the row can't
+// slide back to placeholder, and it can't quietly claim more than the
+// skeleton actually is.
+test('Wrestling League Management reads as partial with the skeleton boundary stated', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'Wrestling League Management' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('PARTIAL');
+  expect(card.textContent).not.toContain('PLACEHOLDER');
+  expect(card.textContent).toMatch(/until a real league defines them/i);
+});
+
 // The radar is hand-maintained and had gone stale in both directions: it
 // missed capabilities that ship with persistent records and route tests, and
 // it still advertised the removed "BREAK MY 40% RULE" override token.
