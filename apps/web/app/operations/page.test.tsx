@@ -115,6 +115,20 @@ test('Closed-Loop Progression Intelligence reads as partial (real records), not 
   expect(card.textContent).not.toContain('PLACEHOLDER');
 });
 
+// Performance Analytics shipped as a read-only rollup over existing records
+// (sessions, readiness, activity log, progression) with a route and page of
+// its own. Pinned the same way as the other shipped rows.
+test('Performance Analytics reads as shipped, not a placeholder', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'Performance Analytics' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('EXISTS');
+  expect(card.textContent).not.toContain('PLACEHOLDER');
+  const link = card.querySelector('a') as HTMLAnchorElement | null;
+  expect(link?.getAttribute('href')).toBe('/coach/performance-analytics');
+});
+
 // The radar is hand-maintained and had gone stale in both directions: it
 // missed capabilities that ship with persistent records and route tests, and
 // it still advertised the removed "BREAK MY 40% RULE" override token.
