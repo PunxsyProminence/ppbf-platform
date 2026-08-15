@@ -1,6 +1,6 @@
 "ModuleId","Name","CategoryKey","CategoryLabel","Status","Active","PromotionRequired","SourceVersion","Parent25Hint","ManualVerification"
 "1","Athlete Profile System","coreAthleteSystem","Core Athlete System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
-"2","Raw Observation Intake System","coreAthleteSystem","Core Athlete System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
+"2","Raw Observation Intake System","coreAthleteSystem","Core Athlete System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
 "3","Safety Gate System","coreAthleteSystem","Core Athlete System","DONE","False","True","2.0.0-draft-merged","11 Safety Gate","PASSED"
 "4","Performance Tracking System","coreAthleteSystem","Core Athlete System","DONE","False","True","2.0.0-draft-merged","8 Session Logging","PENDING_SIGN_OFF"
 "5","Progression Decision System","coreAthleteSystem","Core Athlete System","DONE","False","True","2.0.0-draft-merged","5 Route Factory","PENDING_SIGN_OFF"
