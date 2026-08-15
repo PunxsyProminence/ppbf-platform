@@ -70,6 +70,26 @@ export async function getRequirementStatusInOrg(
   return row?.status ?? null;
 }
 
+/** Org-scoped statuses for a batch of requirement ids; ids outside the
+ * organization are simply absent from the result, indistinguishable from
+ * ids that do not exist. */
+export async function getRequirementStatusesInOrg(
+  organizationId: string,
+  requirementIds: readonly number[],
+): Promise<Array<{ research_requirement_id: number; status: 'open' | 'resolved' }>> {
+  if (requirementIds.length === 0) return [];
+  const rows = await query<{ research_requirement_id: string | number; status: 'open' | 'resolved' }>(
+    `select research_requirement_id, status
+     from pilot.shadow_research_requirements
+     where organization_id = $1 and research_requirement_id = any($2::bigint[])`,
+    [organizationId, [...requirementIds]],
+  );
+  return rows.map((row) => ({
+    research_requirement_id: Number(row.research_requirement_id),
+    status: row.status,
+  }));
+}
+
 export async function sourceExistsInOrg(organizationId: string, sourceId: string): Promise<boolean> {
   const row = await queryOne<{ source_id: string }>(
     'select source_id from pilot.shadow_library_sources where organization_id = $1 and source_id = $2',

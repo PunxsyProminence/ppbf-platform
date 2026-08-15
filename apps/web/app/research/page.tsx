@@ -48,6 +48,25 @@ const REVIEW_STATE_BADGES: Record<ShadowResearchItem['review_state'], { classNam
    (bone ink); on paper the same caption needs dark ink. */
 const PAPER_LABEL = 'font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.13em] text-[color:var(--hide-600)]';
 
+/* Issue #345's answer-state ladder, computed server-side from the submission
+   links. Deliberately incapable of 'resolved' on its own: that rung reads
+   the requirement's own status, which only the human Mark Resolved changes. */
+type AnswerState = 'needs_evidence' | 'sources_submitted' | 'evidence_under_review' | 'partially_answered' | 'resolved';
+
+const ANSWER_STATE_BADGES: Record<AnswerState, { className: string; glyph: string; label: string }> = {
+  needs_evidence: { className: 'badge badge--restricted', glyph: '▲', label: 'Needs Evidence' },
+  sources_submitted: { className: 'badge badge--monitor', glyph: '◉', label: 'Sources Submitted' },
+  evidence_under_review: { className: 'badge badge--monitor', glyph: '◉', label: 'Evidence Under Review' },
+  partially_answered: { className: 'badge badge--restricted', glyph: '▲', label: 'Partially Answered' },
+  resolved: { className: 'badge badge--cleared', glyph: '✓', label: 'Resolved' },
+};
+
+interface LibrarySourceOption {
+  source_id: string;
+  title: string;
+  source_type: string;
+}
+
 export default function ResearchIntakePage() {
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
@@ -61,6 +80,34 @@ export default function ResearchIntakePage() {
   });
   const [submitMessage, setSubmitMessage] = useState('');
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  // Issue #345 slice 2: the computed ladder per requirement, the curator's
+  // source list (null until the sources read succeeds -- a 403 simply leaves
+  // the Answer-a-Gap panel unrendered, matching the POST's own gate), and
+  // the per-requirement answer draft.
+  const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
+  const [curatorSources, setCuratorSources] = useState<LibrarySourceOption[] | null>(null);
+  const [answeringId, setAnsweringId] = useState<number | null>(null);
+  const [answerDraft, setAnswerDraft] = useState({ sourceId: '', doi: '', provider: '', note: '' });
+  const [answerBusy, setAnswerBusy] = useState(false);
+  const [answerMessage, setAnswerMessage] = useState('');
+
+  const refreshAnswerStates = async (requirementIds: number[]) => {
+    if (requirementIds.length === 0) {
+      setAnswerStates({});
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/shadow/research-submissions?research_requirement_ids=${requirementIds.join(',')}`,
+        { credentials: 'include' },
+      );
+      if (!response.ok) return;
+      const payload = (await response.json()) as { answer_states?: Record<string, AnswerState> };
+      setAnswerStates(payload.answer_states ?? {});
+    } catch {
+      // The ladder is enrichment; the inbox stays useful without it.
+    }
+  };
 
   useEffect(() => {
     void (async () => {
@@ -96,12 +143,67 @@ export default function ResearchIntakePage() {
         }
 
         const payload = (await response.json()) as { items?: ShadowResearchRequirement[] };
-        setRequirements(payload.items ?? []);
+        const loaded = payload.items ?? [];
+        setRequirements(loaded);
+        await refreshAnswerStates(loaded.map((item) => item.research_requirement_id));
       } catch {
         setRequirements([]);
       }
     })();
   }, []);
+
+  // One probe decides whether this viewer curates: the sources list is gated
+  // by the same roles as the submission POST, so a 403 here means the panel
+  // would be refused anyway and is not rendered at all.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources?limit=200`, { credentials: 'include' });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { sources?: LibrarySourceOption[]; items?: LibrarySourceOption[] };
+        setCuratorSources(payload.sources ?? payload.items ?? []);
+      } catch {
+        // Not a curator (or offline): the read-only workspace stands.
+      }
+    })();
+  }, []);
+
+  async function handleAnswerGap(requirementId: number) {
+    if (!answerDraft.sourceId) {
+      setAnswerMessage('Pick the library source that answers this requirement.');
+      return;
+    }
+    setAnswerBusy(true);
+    try {
+      const provenance: Record<string, string> = {};
+      if (answerDraft.doi.trim()) provenance.doi_or_pmid = answerDraft.doi.trim();
+      if (answerDraft.provider.trim()) provenance.provider = answerDraft.provider.trim();
+
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-submissions`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          research_requirement_id: requirementId,
+          source_id: answerDraft.sourceId,
+          provenance,
+          submission_note: answerDraft.note.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Submission failed (${response.status})`);
+      }
+      setAnsweringId(null);
+      setAnswerDraft({ sourceId: '', doi: '', provider: '', note: '' });
+      setAnswerMessage('Source submitted. It answers nothing until evidence review says so.');
+      await refreshAnswerStates(requirements.map((item) => item.research_requirement_id));
+    } catch (error) {
+      setAnswerMessage(error instanceof Error ? error.message : 'Unable to submit the source.');
+    } finally {
+      setAnswerBusy(false);
+    }
+  }
 
   const counts = useMemo(() => {
     return {
@@ -419,6 +521,16 @@ export default function ResearchIntakePage() {
                 <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                   Source: {requirement.source_status} | Confidence: {requirement.source_confidence_tier} | Verification: {requirement.source_verification_state}
                 </p>
+                {requirement.status === 'open' && answerStates[String(requirement.research_requirement_id)] ? (
+                  (() => {
+                    const ladder = ANSWER_STATE_BADGES[answerStates[String(requirement.research_requirement_id)]];
+                    return (
+                      <p className="mt-[var(--s3)]">
+                        <span className={ladder.className}><i aria-hidden="true">{ladder.glyph}</i>{ladder.label}</span>
+                      </p>
+                    );
+                  })()
+                ) : null}
                 {requirement.status === 'open' ? (
                   <button
                     type="button"
@@ -428,6 +540,66 @@ export default function ResearchIntakePage() {
                   >
                     {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Mark Resolved'}
                   </button>
+                ) : null}
+                {requirement.status === 'open' && curatorSources && curatorSources.length > 0 ? (
+                  <div className="mt-[var(--s3)]">
+                    {answeringId === requirement.research_requirement_id ? (
+                      <div className="mat-paper rounded-[var(--r-sm)] p-[var(--s4)] space-y-[var(--s3)]">
+                        <p className={PAPER_LABEL}>Answer this gap — submission is not an answer until review says so</p>
+                        <label className="field">
+                          <span className={PAPER_LABEL}>Library source</span>
+                          <select
+                            className="select"
+                            value={answerDraft.sourceId}
+                            onChange={(event) => setAnswerDraft((current) => ({ ...current, sourceId: event.target.value }))}
+                          >
+                            <option value="">Choose a registered source…</option>
+                            {curatorSources.map((source) => (
+                              <option key={source.source_id} value={source.source_id}>
+                                {source.title} ({source.source_type})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="grid gap-[var(--s3)] md:grid-cols-2">
+                          <label className="field">
+                            <span className={PAPER_LABEL}>DOI / PMID</span>
+                            <input className="input" value={answerDraft.doi}
+                              onChange={(event) => setAnswerDraft((current) => ({ ...current, doi: event.target.value }))} />
+                          </label>
+                          <label className="field">
+                            <span className={PAPER_LABEL}>Provider (e.g. Penn State Library)</span>
+                            <input className="input" value={answerDraft.provider}
+                              onChange={(event) => setAnswerDraft((current) => ({ ...current, provider: event.target.value }))} />
+                          </label>
+                        </div>
+                        <label className="field">
+                          <span className={PAPER_LABEL}>Why this source answers it</span>
+                          <textarea className="textarea h-[55px]" value={answerDraft.note}
+                            onChange={(event) => setAnswerDraft((current) => ({ ...current, note: event.target.value }))} />
+                        </label>
+                        <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                          <button type="button" className="btn" disabled={answerBusy}
+                            onClick={() => void handleAnswerGap(requirement.research_requirement_id)}>
+                            {answerBusy ? 'Submitting…' : 'Submit source'}
+                          </button>
+                          <button type="button" className="btn btn--ghost"
+                            onClick={() => { setAnsweringId(null); setAnswerMessage(''); }}>
+                            Cancel
+                          </button>
+                          {answerMessage ? <p className="t-typed text-[length:var(--t-xs)]" role="status">{answerMessage}</p> : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                        <button type="button" className="btn btn--ghost"
+                          onClick={() => { setAnsweringId(requirement.research_requirement_id); setAnswerMessage(''); }}>
+                          Answer this gap
+                        </button>
+                        {answerMessage ? <p className="t-muted" role="status">{answerMessage}</p> : null}
+                      </div>
+                    )}
+                  </div>
                 ) : null}
               </article>
             ))}

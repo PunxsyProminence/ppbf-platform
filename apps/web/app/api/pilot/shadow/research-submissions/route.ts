@@ -11,7 +11,9 @@ import {
   createResearchSubmission,
   deriveAnswerState,
   documentExistsInOrg,
+  getAnswerStates,
   getRequirementStatusInOrg,
+  getRequirementStatusesInOrg,
   isApplicabilityState,
   listSubmissionsForRequirement,
   reviewResearchSubmission,
@@ -36,6 +38,23 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_PROJECTION_READ_ROLES]);
+
+    // Batch mode: ?research_requirement_ids=1,2,3 answers only the computed
+    // ladder for each id, so the workspace list needs one request, not N.
+    // Ids outside the organization are silently absent -- indistinguishable
+    // from ids that do not exist.
+    const rawIds = request.nextUrl.searchParams.get('research_requirement_ids');
+    if (rawIds !== null) {
+      const ids = rawIds.split(',').map((value) => Number(value.trim()));
+      if (ids.length === 0 || ids.length > 200 || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+        throw new ValidationError('research_requirement_ids must be 1-200 comma-separated positive integers.');
+      }
+      const statuses = await getRequirementStatusesInOrg(principal.organizationId, ids);
+      const states = await getAnswerStates(principal.organizationId, statuses);
+      return NextResponse.json({
+        answer_states: Object.fromEntries([...states.entries()].map(([id, state]) => [String(id), state])),
+      });
+    }
 
     const rawId = request.nextUrl.searchParams.get('research_requirement_id');
     const requirementId = Number(rawId);
