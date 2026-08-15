@@ -25,6 +25,8 @@ jest.mock('@/src/server/pilot/shadowResearchSubmissions', () => {
     listSubmissionsForRequirement: jest.fn(),
     reviewResearchSubmission: jest.fn(),
     getRequirementStatusInOrg: jest.fn(),
+    getRequirementStatusesInOrg: jest.fn(),
+    getAnswerStates: jest.fn(),
     sourceExistsInOrg: jest.fn(),
     documentExistsInOrg: jest.fn(),
   };
@@ -197,4 +199,31 @@ test('a blank document_id means no document, not an empty-string FK value', asyn
     sourceId: 'src-1',
     documentId: null,
   }));
+});
+
+// Batch mode: the workspace list asks for every requirement's ladder in one
+// request. Ids outside the organization are silently absent -- the same
+// hidden-not-found doctrine as the single read, in map form.
+describe('GET batch answer states', () => {
+  test('returns a state per in-org id and omits the rest', async () => {
+    const { getRequirementStatusesInOrg, getAnswerStates } = jest.requireMock('@/src/server/pilot/shadowResearchSubmissions');
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    (getRequirementStatusesInOrg as jest.Mock).mockResolvedValue([
+      { research_requirement_id: 7, status: 'open' },
+    ]);
+    (getAnswerStates as jest.Mock).mockResolvedValue(new Map([[7, 'needs_evidence']]));
+
+    const payload = await (await GET(getRequest('research_requirement_ids=7,999'))).json();
+
+    expect(getRequirementStatusesInOrg).toHaveBeenCalledWith('org-1', [7, 999]);
+    expect(payload.answer_states).toEqual({ '7': 'needs_evidence' });
+  });
+
+  test('a malformed id list is a 400, not a query', async () => {
+    const { getRequirementStatusesInOrg } = jest.requireMock('@/src/server/pilot/shadowResearchSubmissions');
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+
+    expect((await GET(getRequest('research_requirement_ids=7,soon'))).status).toBeGreaterThanOrEqual(400);
+    expect(getRequirementStatusesInOrg).not.toHaveBeenCalled();
+  });
 });
