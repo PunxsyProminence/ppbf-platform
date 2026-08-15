@@ -102,6 +102,19 @@ test('AI Video Analysis reads as partial (real upload/playback), not mock-only',
   expect(card.textContent).not.toContain('mock-only');
 });
 
+// The progression loop's three role surfaces (athlete, coach, parent) all
+// read the real pilot progression records now; only automated gap detection
+// is still planned. Pinned so the row can't quietly slide back to claiming
+// the whole capability is a placeholder.
+test('Closed-Loop Progression Intelligence reads as partial (real records), not a placeholder', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'Closed-Loop Progression Intelligence' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('PARTIAL');
+  expect(card.textContent).not.toContain('PLACEHOLDER');
+});
+
 // The radar is hand-maintained and had gone stale in both directions: it
 // missed capabilities that ship with persistent records and route tests, and
 // it still advertised the removed "BREAK MY 40% RULE" override token.

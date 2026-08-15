@@ -100,7 +100,7 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Drill Library', state: 'EXISTS', href: '/coach/drills', notes: 'Versioned drill library backed by persistent records.' },
   { name: 'Performance Analytics', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
   { name: 'Grant Compliance Intelligence', state: 'PARTIAL', href: '/board/compliance-monitoring', notes: 'The board compliance-monitoring view now reads the real safety/compliance violation register. Grant-specific compliance automation remains planned.' },
-  { name: 'Closed-Loop Progression Intelligence', state: 'PLACEHOLDER', href: '/athlete/progression-intelligence', notes: 'Planned progression intelligence surfaces for athlete/coach/parent visibility.' },
+  { name: 'Closed-Loop Progression Intelligence', state: 'PARTIAL', href: '/athlete/progression-intelligence', notes: 'Athlete, coach, and parent surfaces read the real gap / drill-assignment / completion records behind the pilot progression routes. Gaps are coach-identified today; automated gap detection remains planned.' },
   { name: 'Sports Medicine', state: 'PLACEHOLDER', href: '/coach/sports-medicine', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
   { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'Volunteer roster, status, and availability are backed by persistent records.' },
   { name: 'Wrestling League Management', state: 'PLACEHOLDER', href: '/operations/wrestling-league', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
