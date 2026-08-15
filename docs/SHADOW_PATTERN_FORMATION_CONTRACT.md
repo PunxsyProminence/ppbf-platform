@@ -403,3 +403,20 @@ key — which is what the whole counter-evidence path depends on.
 
 Explicitly **not** recommended next: tuning any existing threshold in §6.
 Nothing in the audit produced the data required to move one honestly.
+
+## 12. Audit coverage limit
+
+The §6 audit is **partial and honest about it**. Twelve SHADOW areas were
+mapped; seven completed. Five did not run to completion (session limit), so
+these areas are **not** covered by §6 and may hold further heuristics:
+
+- `shadowProfiling` / `shadowUserProfile` fact-confidence constants
+- `shadowLibrary` promote/demote pipeline thresholds
+- `assessmentProtocols` / `sessionScripts` / `sessionScriptRuns` (the observation substrate)
+- `shadowFeedback` / `shadowNearMisses` / `shadowFilmStudy` (observation sources)
+- `pilot.shadow_*` schema and the guardrails/authority documents
+
+Everything asserted in §6 and D1–D14 was verified first-hand against current
+source before being written down. Nothing was accepted on an agent's report
+alone. The gap above is a coverage gap, not an accuracy claim — re-running the
+audit over those five areas is cheap and is the honest completion of §6.
