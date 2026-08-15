@@ -39,17 +39,12 @@ Phase 1 build queue, sequenced by the owner's decisions of 2026-08-15 (asked and
 
 | # | Item | Owner decision constraining it |
 |---|---|---|
-| 2 | SHADOW Monitoring radar row: wire a read-only operational alert feed from existing SHADOW event/telemetry routes into the operations hub; correct the row to what is true | — (read-only; no model-behavior change) |
-| 3 | Gap detection v1 | Deterministic rules only (readiness falling, training days dropping, assignments stalled) producing SUGGESTED gaps a coach confirms or dismisses. Nothing reaches an athlete unconfirmed. No ML. |
-| 4 | Sports-medicine coach surface | Clearance status + active training holds with athlete-safe explanations ONLY. No diagnoses, no clinical notes, nothing beyond what the athlete themselves sees. Sequenced behind the medical-gate PR landing. |
-| 5 | Grant compliance, internal half | Obligation tracking (deadlines, deliverables, reporting periods) as internal admin records. The external-disclosure question stays parked (see `BACKLOG-grant-packet`). |
-| 5.5 | SHADOW Research Workspace (issue #345), in three slices | Owner-authored product contract; slotted here by owner approval 2026-08-15 ("all my approvals to go with your recommendations"). Slice 1: the `shadow_research_submissions` link record + computed answer-state ladder — a submission NEVER resolves a requirement, structurally. Slice 2: the three-tab `/research` workspace. Slice 3: general-research intake. Issue #345 stays the durable spec; do not collapse it into one upload button. |
 | 6 | Wrestling League minimal skeleton | Owner chose to build both skeletons knowing requirements are guessed until a real league exists — keep them deliberately skeletal. |
 | 7 | External Competition minimal skeleton | Same constraint as #6. |
 | 8 | Revenue backend | Full payment integration on the existing two-Stripe-account design (Giving + Program lanes, `paymentSetup.ts`). Ledger tables land first; processor wiring waits on owner's Stripe onboarding, and switch-on waits on the owner compliance sign-off the payment slot already requires. |
 | 9 | Publication Workflow Automation | Assess build-vs-park on arrival. |
 
-Item 1 (Performance Analytics) shipped. Numbering is the build order; the sports-medicine item may float later if the medical-gate PR has not landed when its turn comes.
+Items 1–5.5 shipped and were promoted to production in the 2026-08-15 release wave (sha `3d2308ed`, digest `sha256:be7c516d…` — see `PRODUCTION_STATE.json`): performance analytics, the SHADOW operational feed, deterministic gap suggestions (coach confirms or dismisses; nothing reaches an athlete unconfirmed), the sports-medicine clearance board (clearance + holds only), the internal grant-obligations ledger, and all three slices of the issue #345 research workspace (submission never resolves a requirement, structurally). Their owner-decision constraints above are retired from this queue but remain binding on any change to those surfaces. Numbering is the build order.
 
 ## BLOCKED
 
