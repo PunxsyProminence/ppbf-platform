@@ -138,3 +138,14 @@ export {
   type SingleCaseDesignPolicy,
   type SingleCaseVerdict,
 } from './inference/singleCase';
+
+// ── Observer reliability (measurement validity) ─────────────────────────────
+export {
+  assertObserverReliabilityPolicy,
+  assessObserverReliability,
+  type CoRatedItem,
+  type ObserverDeviation,
+  type ObserverReliabilityAssessment,
+  type ObserverReliabilityPolicy,
+  type ReliabilityVerdict,
+} from './inference/reliability';

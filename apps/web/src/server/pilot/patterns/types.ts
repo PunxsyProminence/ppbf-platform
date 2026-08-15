@@ -249,6 +249,11 @@ export type PatternReasonCode =
   | 'SCD_PHASE_TOO_SHORT'
   | 'SCD_BASELINE_UNSTABLE'
   | 'SCD_NO_EFFECT_DETECTED'
+  // --- observer reliability (see ./inference/reliability) ------------------
+  | 'RELIABILITY_POLICY_MISSING'
+  | 'MEASUREMENT_UNRELIABLE'
+  | 'MEASUREMENT_RELIABILITY_UNKNOWN'
+  | 'OBSERVER_SYSTEMATICALLY_DEVIANT'
   // --- intervention / lesson ----------------------------------------------
   | 'NO_INTERVENTION'
   | 'INTERVENTION_NOT_HUMAN_AUTHORIZED'
@@ -421,6 +426,13 @@ export interface PatternCandidateEvaluation {
    * `./inference`; the concrete shape is `PatternInferenceReport`.
    */
   readonly inference: unknown | null;
+
+  /**
+   * Observer reliability, present only when a reliability policy was supplied.
+   * Concrete shape is `ObserverReliabilityAssessment`; typed loosely for the
+   * same layering reason as `inference`.
+   */
+  readonly reliability: unknown | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

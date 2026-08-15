@@ -36,6 +36,11 @@ import { assessDrift, type DriftAssessment } from './inference/drift';
 import { assessRecurrence, type RecurrenceAssessment } from './inference/recurrence';
 import type { PatternInferencePolicy } from './inference/policy';
 import { inferencePolicyParameters } from './inference/policy';
+import {
+  assessObserverReliability,
+  type ObserverReliabilityAssessment,
+  type ObserverReliabilityPolicy,
+} from './inference/reliability';
 
 /**
  * Phase A output, attached to an evaluation when an inference policy is given.
@@ -92,6 +97,11 @@ export interface EvaluatePatternCandidateInput {
    * it and the statistics may add blockers, never remove them.
    */
   readonly inferencePolicy?: PatternInferencePolicy;
+  /**
+   * Optional measurement-validity bar. Requiring two observers buys nothing if
+   * the two do not agree with each other; this checks whether they do.
+   */
+  readonly observerReliabilityPolicy?: ObserverReliabilityPolicy;
 }
 
 class ReasonLedger {
@@ -293,6 +303,24 @@ export function evaluatePatternCandidate(
     });
   }
 
+  // ── observer reliability (optional; additive blockers only) ──────────────
+  let reliability: ObserverReliabilityAssessment | null = null;
+  if (input.observerReliabilityPolicy) {
+    reliability = assessObserverReliability(admitted, input.observerReliabilityPolicy);
+
+    if (reliability.verdict === 'below_policy') ledger.add('MEASUREMENT_UNRELIABLE', true);
+    // Unknown is blocked as firmly as bad. An unmeasured instrument and a bad
+    // one produce the same claim about the athlete: one nobody can stand
+    // behind. This is the module's own rule about never defaulting a missing
+    // value, applied to itself.
+    if (reliability.verdict === 'insufficient_overlap' || reliability.verdict === 'degenerate_no_variance') {
+      ledger.add('MEASUREMENT_RELIABILITY_UNKNOWN', true);
+    }
+    if (reliability.observerDeviations.some((observer) => observer.systematicallyDeviant)) {
+      ledger.add('OBSERVER_SYSTEMATICALLY_DEVIANT', true);
+    }
+  }
+
   const state = resolveState({
     hasAdmitted: admitted.length > 0,
     occurrenceCount: evidence.occurrenceCount,
@@ -354,6 +382,7 @@ export function evaluatePatternCandidate(
       : null,
     evaluatedAt: asOf,
     inference,
+    reliability,
   });
 }
 
