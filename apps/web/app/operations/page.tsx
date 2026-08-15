@@ -89,7 +89,7 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Knowledge Graph', state: 'EXISTS', href: '/knowledge-graph', notes: 'Knowledge and relationship view is available.' },
   { name: 'Scenario Simulation', state: 'EXISTS', href: '/simulator', notes: 'What-if simulator and promotion flow links are available.' },
   { name: 'Source Governance', state: 'EXISTS', href: '/source-control', notes: 'Audit-to-source-control publication flow is visible.' },
-  { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Revenue center exists as front-end workflow without backend integration.' },
+  { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Revenue center front-end plus the payment ledger schema and the Stripe Connect onboarding flow (/admin/payments: connect button, OAuth round trip, deauthorization webhook). No charging exists — CAP-012 stays BLOCKED behind owner platform-account registration and compliance sign-off.' },
   { name: 'Scholarship Tracking', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Scholarship support status is visible in front-end lanes.' },
   { name: 'Membership Tracking', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Program membership lanes are present in planning mode.' },
   { name: 'SHADOW Monitoring', state: 'EXISTS', href: '/shadow', notes: 'SHADOW consoles are wired to live routes, and the operations hub command node reads the real event/telemetry record, read-only and newest-first. Which recorded facts deserve an alarm remains a human decision; the feed reports what is recorded and claims nothing more.' },
