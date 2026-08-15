@@ -8,7 +8,7 @@ Do **not** preload `docs/current/WORK_QUEUE.md` for ordinary implementation. Tha
 
 A direct owner/user request may go straight to a bounded branch/PR after checking current source and open PRs. A ticket is optional unless the work needs coordination, handoff, scheduling, or a durable decision record.
 
-Owner authorization (2026-08-15): ordinary bounded PRs may be merged by the authoring session once the CI gate is green — "i give permission for all merges." This does not extend to production deployment, migrations against protected environments, or anything the guardrails place behind a separate human gate; those still require an explicit release task from the owner.
+Owner authorization (2026-08-15): ordinary bounded PRs may be merged by the authoring session once every required check and branch-protection requirement on the repository passes — "i give permission for all merges." Repo enforcement always wins over this note. The authorization does not extend to production deployment, migrations against protected environments, or anything the guardrails place behind a separate human gate; those still require an explicit release task from the owner.
 
 Use only these working states here:
 
