@@ -8,6 +8,8 @@ Do **not** preload `docs/current/WORK_QUEUE.md` for ordinary implementation. Tha
 
 A direct owner/user request may go straight to a bounded branch/PR after checking current source and open PRs. A ticket is optional unless the work needs coordination, handoff, scheduling, or a durable decision record.
 
+Owner authorization (2026-08-15): ordinary bounded PRs may be merged by the authoring session once every required check and branch-protection requirement on the repository passes — "i give permission for all merges." Repo enforcement always wins over this note. The authorization does not extend to production deployment, migrations against protected environments, or anything the guardrails place behind a separate human gate; those still require an explicit release task from the owner.
+
 Use only these working states here:
 
 - `NOW` — buildable current work
@@ -33,7 +35,20 @@ Parking rule: a radar row parked during Phase 1 must gain a PARKED row below wit
 
 ## NOW
 
-No standing queue item currently has to be completed before user-directed platform work can proceed.
+Phase 1 build queue, sequenced by the owner's decisions of 2026-08-15 (asked and answered one at a time; each row below that needed a decision carries it):
+
+| # | Item | Owner decision constraining it |
+|---|---|---|
+| 2 | SHADOW Monitoring radar row: wire a read-only operational alert feed from existing SHADOW event/telemetry routes into the operations hub; correct the row to what is true | — (read-only; no model-behavior change) |
+| 3 | Gap detection v1 | Deterministic rules only (readiness falling, training days dropping, assignments stalled) producing SUGGESTED gaps a coach confirms or dismisses. Nothing reaches an athlete unconfirmed. No ML. |
+| 4 | Sports-medicine coach surface | Clearance status + active training holds with athlete-safe explanations ONLY. No diagnoses, no clinical notes, nothing beyond what the athlete themselves sees. Sequenced behind the medical-gate PR landing. |
+| 5 | Grant compliance, internal half | Obligation tracking (deadlines, deliverables, reporting periods) as internal admin records. The external-disclosure question stays parked (see `BACKLOG-grant-packet`). |
+| 6 | Wrestling League minimal skeleton | Owner chose to build both skeletons knowing requirements are guessed until a real league exists — keep them deliberately skeletal. |
+| 7 | External Competition minimal skeleton | Same constraint as #6. |
+| 8 | Revenue backend | Full payment integration on the existing two-Stripe-account design (Giving + Program lanes, `paymentSetup.ts`). Ledger tables land first; processor wiring waits on owner's Stripe onboarding, and switch-on waits on the owner compliance sign-off the payment slot already requires. |
+| 9 | Publication Workflow Automation | Assess build-vs-park on arrival. |
+
+Item 1 (Performance Analytics) shipped. Numbering is the build order; the sports-medicine item may float later if the medical-gate PR has not landed when its turn comes.
 
 ## BLOCKED
 
@@ -48,6 +63,7 @@ None. A blocked item should only live here when it is genuinely on the critical 
 | `BACKLOG-offline-write-queue` | Persisting minors' check-ins on a shared tablet creates identity, attribution, and data-at-rest problems. | A concrete identity-scoped encrypted/offline storage design is selected. |
 | `BACKLOG-grant-packet` | The rendering foundation exists; the unresolved question is what aggregate minor-related data may be disclosed externally. | A real grant/export request defines the disclosure set and privacy threshold. |
 | `BACKLOG-open-route-gates` | Route visibility and authorization are not the same thing; changing `buildingMap.ts` alone protects nothing. | A route is shown to expose a real unintended surface, then fix that route's own guard directly. |
+| `BACKLOG-video-skill-scoring` | Owner decision 2026-08-15: per-skill AI video scoring (punch detection, footwork, etc.) is parked for Phase 2+. Human Film Study IS the analysis pathway; shipping machine scores about minors' athletic ability without proven accuracy is the risk being refused. | Phase 1 is complete AND a scoring approach with explicit evidence standards has been selected by the owner. |
 
 ## Verification debt
 
