@@ -244,6 +244,11 @@ export type PatternReasonCode =
   | 'STRATA_DISAGREEMENT'
   | 'LOAD_STRATUM_IMPLICATED'
   | 'PATTERN_FADING'
+  // --- single-case design (see ./inference/singleCase) ---------------------
+  | 'SCD_POLICY_MISSING'
+  | 'SCD_PHASE_TOO_SHORT'
+  | 'SCD_BASELINE_UNSTABLE'
+  | 'SCD_NO_EFFECT_DETECTED'
   // --- intervention / lesson ----------------------------------------------
   | 'NO_INTERVENTION'
   | 'INTERVENTION_NOT_HUMAN_AUTHORIZED'
@@ -511,4 +516,15 @@ export interface ValidatedAthleteLessonEvaluation {
   readonly policyVersion: string;
   readonly policyRatifiedByAccountId: string;
   readonly evaluatedAt: string;
+
+  /**
+   * Single-case design comparison, present only when an SCD policy was
+   * supplied. Null means the counting rules decided alone -- not that the
+   * comparison ran and found nothing.
+   *
+   * Typed loosely for the same layering reason as
+   * `PatternCandidateEvaluation.inference`; the concrete shape is
+   * `SingleCaseAssessment`.
+   */
+  readonly singleCase: unknown | null;
 }

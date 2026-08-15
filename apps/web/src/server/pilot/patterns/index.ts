@@ -123,3 +123,18 @@ export {
 } from './inference/drift';
 
 export type { PatternInferenceReport } from './promotion';
+
+// ── Single-case design (n=1 intervention evaluation) ────────────────────────
+export {
+  assertSingleCaseDesignPolicy,
+  assessSingleCaseDesign,
+  exactMannWhitneyP,
+  kendallTau,
+  nonoverlapOfAllPairs,
+  tauU,
+  type ImprovementDirection,
+  type NonoverlapResult,
+  type SingleCaseAssessment,
+  type SingleCaseDesignPolicy,
+  type SingleCaseVerdict,
+} from './inference/singleCase';

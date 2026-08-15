@@ -26,6 +26,14 @@ import type {
   TransferEvidenceSummary,
   ValidatedAthleteLessonEvaluation,
 } from './types';
+import { buildSessionRateSeries } from './inference/drift';
+import {
+  assessSingleCaseDesign,
+  type ImprovementDirection,
+  type SingleCaseAssessment,
+  type SingleCaseDesignPolicy,
+} from './inference/singleCase';
+
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 
@@ -178,6 +186,22 @@ export interface EvaluateAthleteLessonInput {
   readonly policy: AthleteLessonPolicy;
   /** Required for the same reason as `EvaluatePatternCandidateInput.asOf`. */
   readonly asOf: string;
+
+  /**
+   * Optional single-case design comparison. Supply all three or none.
+   *
+   * Counting post-intervention occurrences cannot distinguish an intervention
+   * that worked from a kid who was already improving before anyone intervened.
+   * These three inputs let the baseline speak for itself.
+   */
+  readonly preObservations?: readonly BehaviourObservation[];
+  readonly singleCaseDesignPolicy?: SingleCaseDesignPolicy;
+  /**
+   * Which way is better. Required alongside the policy rather than assumed:
+   * every behaviour on this ladder happens to be a fault, but encoding that
+   * assumption silently is how it survives the first exception.
+   */
+  readonly improvementDirection?: ImprovementDirection;
 }
 
 export function evaluateValidatedAthleteLesson(
@@ -283,6 +307,31 @@ export function evaluateValidatedAthleteLesson(
     policyVersion: policy.policyVersion,
   });
 
+  // ── single-case design (optional; additive blockers only) ────────────────
+  //
+  // Same asymmetry as the pattern ladder: this can only ever add a blocker.
+  // A lesson the counting rules refused stays refused, and no p-value clears
+  // a human-review or authorization gate.
+  let singleCase: SingleCaseAssessment | null = null;
+  if (input.singleCaseDesignPolicy) {
+    if (!input.preObservations || !input.improvementDirection) {
+      throw new TypeError(
+        'SCD_POLICY_MISSING: a single-case design policy requires preObservations and improvementDirection. '
+        + 'A post-intervention series with no baseline is not a comparison.',
+      );
+    }
+    const baseline = buildSessionRateSeries(input.preObservations).map((point) => point.rate);
+    const treatment = buildSessionRateSeries(input.postObservations).map((point) => point.rate);
+    singleCase = assessSingleCaseDesign(
+      { baseline, treatment, direction: input.improvementDirection },
+      input.singleCaseDesignPolicy,
+    );
+
+    if (singleCase.verdict === 'insufficient_evidence') blockers.push('SCD_PHASE_TOO_SHORT');
+    if (singleCase.verdict === 'baseline_unstable') blockers.push('SCD_BASELINE_UNSTABLE');
+    if (singleCase.verdict === 'no_effect_detected') blockers.push('SCD_NO_EFFECT_DETECTED');
+  }
+
   return Object.freeze({
     lessonKey,
     organizationId: input.organizationId,
@@ -305,6 +354,7 @@ export function evaluateValidatedAthleteLesson(
     policyVersion: policy.policyVersion,
     policyRatifiedByAccountId: policy.ratifiedByAccountId,
     evaluatedAt: asOf,
+    singleCase,
   });
 }
 
