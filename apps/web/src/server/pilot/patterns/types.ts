@@ -233,6 +233,17 @@ export type PatternReasonCode =
   | 'INVALID_TIMESTAMP'
   | 'DUPLICATE_OBSERVATION_ID'
   | 'SUPERSEDED_OBSERVATION'
+  // --- Phase A inference (see ./inference) --------------------------------
+  // These sit alongside the rule-based codes above and feed the SAME
+  // PatternEpistemicState. There is no parallel verdict vocabulary.
+  | 'INFERENCE_POLICY_MISSING'
+  | 'POSTERIOR_TOO_WIDE'
+  | 'RECURRENCE_RATE_BELOW_POLICY'
+  | 'SEQUENTIAL_TEST_REJECTED'
+  | 'SEQUENTIAL_TEST_CONTINUE'
+  | 'STRATA_DISAGREEMENT'
+  | 'LOAD_STRATUM_IMPLICATED'
+  | 'PATTERN_FADING'
   // --- intervention / lesson ----------------------------------------------
   | 'NO_INTERVENTION'
   | 'INTERVENTION_NOT_HUMAN_AUTHORIZED'
