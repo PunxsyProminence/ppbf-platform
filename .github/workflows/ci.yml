@@ -12,7 +12,12 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs only for pull requests. On main, every push's run
+  # must complete: cancelling an in-flight main run when the next merge lands
+  # leaves the earlier merge commit with a cancelled required check, and a
+  # cancelled check reads as "never validated" -- the exact gap the branch
+  # protection's required `validate` context exists to close.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:

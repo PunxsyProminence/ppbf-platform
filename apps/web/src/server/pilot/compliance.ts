@@ -163,7 +163,29 @@ export async function escalateViolation(params: {
   // One transaction: an escalation row whose violation is still sitting at
   // status 'new' reads as an unescalated violation everywhere the compliance
   // centre looks, so the pair must commit together or not at all.
+  //
+  // The guarded UPDATE runs FIRST and is a compare-and-set out of the two
+  // escalatable states. This used to update by id alone with no row-count
+  // check, which had two failure shapes: an escalation row could be filed
+  // against a violation the org-scoped update never matched (foreign or
+  // missing id), and a violation already resolved or dismissed could be
+  // silently yanked back to 'escalated' by a stale click. Zero matched rows
+  // now throws, which rolls the whole transaction back before the
+  // escalation row exists.
   await withTransaction(async (client) => {
+    const updated = await client.query<{ violation_id: string }>(
+      `update pilot.compliance_violations
+       set status = 'escalated', escalation_status = 'in_progress', updated_at = now()
+       where violation_id = $1 and organization_id = $2
+         and status in ('new', 'acknowledged')
+       returning violation_id`,
+      [params.violationId, params.organizationId],
+    );
+
+    if (updated.rows.length === 0) {
+      throw new Error('Unsupported: violation is not in an escalatable state');
+    }
+
     await client.query(
       `insert into pilot.violation_escalations (
         escalation_id, organization_id, violation_id, escalated_by_account_id,
@@ -179,15 +201,86 @@ export async function escalateViolation(params: {
         params.actionRequired || null,
       ],
     );
+  });
+}
 
-    // Update violation status. Scoped by organization_id so a violation_id
-    // from another organization can never be mutated by this call.
-    await client.query(
+export type ComplianceViolationTransition = 'acknowledge' | 'resolve' | 'dismiss';
+
+// The lifecycle the status vocabulary already declares, made reachable. Each
+// transition names its allowed source states explicitly; everything else is a
+// refusal, so 'resolved' and 'dismissed' are terminal and a stale click can
+// never re-open or overwrite a decided violation.
+//
+//   acknowledge: new -> acknowledged            (an admin has seen it)
+//   escalate:    new|acknowledged -> escalated  (escalateViolation above)
+//   resolve:     acknowledged|escalated -> resolved
+//   dismiss:     new|acknowledged -> dismissed  (an escalated violation went
+//                up the ladder; it comes back down by being resolved, never
+//                by being dismissed)
+//
+// Resolution and dismissal close the WORKFLOW only. They do not clear an
+// athlete medically, disprove a safeguarding concern, lift any restriction
+// or hold, or erase the violation, its rule, its evidence, or its history.
+const TRANSITION_CONTRACT: Record<ComplianceViolationTransition, {
+  target: ComplianceViolation['status'];
+  allowedSources: ReadonlyArray<ComplianceViolation['status']>;
+}> = {
+  acknowledge: { target: 'acknowledged', allowedSources: ['new'] },
+  resolve: { target: 'resolved', allowedSources: ['acknowledged', 'escalated'] },
+  dismiss: { target: 'dismissed', allowedSources: ['new', 'acknowledged'] },
+};
+
+/**
+ * Move a violation through its existing lifecycle. Compare-and-set on the
+ * allowed source states, organization-scoped in the predicate, one
+ * transaction. Returns false (and writes nothing) when no row matched --
+ * a foreign or missing violation_id and a stale state arrive identically,
+ * so two operators cannot silently overwrite one another.
+ *
+ * Resolving an escalated violation also closes its escalation track in the
+ * same transaction: escalation_status moves to 'resolved' (whatever leg it
+ * was on -- in_progress or escalated_to_board), and the escalation records'
+ * open resolved_at stamps are filled. status = 'resolved' with an
+ * escalation still reading in_progress is exactly the contradictory state
+ * the transaction exists to make unrepresentable. The escalation rows
+ * themselves are history and are never deleted.
+ */
+export async function transitionComplianceViolation(params: {
+  organizationId: string;
+  violationId: string;
+  transition: ComplianceViolationTransition;
+}): Promise<boolean> {
+  const contract = TRANSITION_CONTRACT[params.transition];
+
+  return withTransaction(async (client) => {
+    const updated = await client.query<{ violation_id: string; status: string }>(
       `update pilot.compliance_violations
-       set status = 'escalated', escalation_status = 'in_progress'
-       where violation_id = $1 and organization_id = $2`,
-      [params.violationId, params.organizationId],
+       set status = $3,
+           escalation_status = case
+             when $3 = 'resolved' and status = 'escalated' then 'resolved'
+             else escalation_status
+           end,
+           updated_at = now()
+       where organization_id = $1 and violation_id = $2
+         and status = any($4::text[])
+       returning violation_id, status`,
+      [params.organizationId, params.violationId, contract.target, [...contract.allowedSources]],
     );
+
+    if (updated.rows.length === 0) {
+      return false;
+    }
+
+    if (params.transition === 'resolve') {
+      await client.query(
+        `update pilot.violation_escalations
+         set resolved_at = now(), updated_at = now()
+         where organization_id = $1 and violation_id = $2 and resolved_at is null`,
+        [params.organizationId, params.violationId],
+      );
+    }
+
+    return true;
   });
 }
 

@@ -3,9 +3,9 @@
 /**
  * Reports on, and optionally retires, accounts in pilot.accounts.
  *
- * The owner asked for the account table to be cleaned up: keep
- * Admin@punxsyprominence.org (platform owner), ppbf@ (gym 1), Danielle@ (gym 2)
- * and coach@; clear out what is left. What is left is not uniform -- see
+ * The owner asked for the account table to be cleaned up: keep the four
+ * operational logins named in scripts/lib/account-cleanup-plan.mjs (the
+ * platform owner and the gym admins); clear out what is left. What is left is not uniform -- see
  * docs/PLATFORM_EVIDENCE_BASELINE_HANDOFF.md open question 7 -- so this script
  * separates the part that is safe to automate (28 inactive rows left by the July
  * 2026 gate runs) from the part that needs a person (the owner's own login, an
@@ -49,7 +49,7 @@
  *   PPBF_ACCOUNT_CLEANUP_APPLY=true npm run pilot:cleanup-accounts
  *       Retires the accounts the report listed as `retire`.
  *
- *   PPBF_ACCOUNT_CLEANUP_ALSO='jason.c.neale@outlook.com,admin-local-probe'
+ *   PPBF_ACCOUNT_CLEANUP_ALSO='held-login@example.org,held-account-id'
  *       Confirms held accounts by login email or account id. This is the
  *       "confirming each one" step; there is no flag that confirms them all.
  *

@@ -94,8 +94,12 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'SHADOW Monitoring', state: 'PARTIAL', href: '/shadow', notes: 'SHADOW interaction exists with front-end role surfaces.' },
   { name: 'AI Video Analysis', state: 'PARTIAL', href: '/coach/video-analysis', notes: 'Upload, release, and playback are real and backed by persistent records; a released video can be sent to Film Study for human-reviewed observation. Per-skill scoring (punch detection, footwork, and the rest) remains planned and is not yet active.' },
   { name: 'Video Review Intelligence', state: 'EXISTS', href: '/admin/video-review', notes: 'Org-admin console for the automated content-scan quarantine escalation: watch the clip, approve or block. A downstream compliance-review step (appropriateness, consent, audio privacy) is separately available at /admin/video-compliance.' },
+  { name: 'Session Script Delivery', state: 'EXISTS', href: '/coach/session-scripts', notes: 'Script browse, live floor delivery with a server-owned clock, and settled delivery history are backed by pilot.session_script_runs.' },
+  { name: 'Safety Compliance Center', state: 'EXISTS', href: '/admin/compliance-center', notes: 'Violation register with acknowledge / escalate / resolve / dismiss lifecycle; org-scoped, audited, backed by pilot.compliance_violations.' },
+  { name: 'Coach Coverage', state: 'EXISTS', href: '/admin/coach-coverage', notes: 'Temporary athlete-record access for a covering coach, with expiry and immediate revocation, backed by pilot.coach_coverage.' },
+  { name: 'Drill Library', state: 'EXISTS', href: '/coach/drills', notes: 'Versioned drill library backed by persistent records.' },
   { name: 'Performance Analytics', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
-  { name: 'Grant Compliance Intelligence', state: 'PLACEHOLDER', href: '/board/compliance-monitoring', notes: 'Planned board/admin compliance watch surfaces. FRONT-END PLACEHOLDER, NOT YET AUTOMATED, BACKEND REQUIRED.' },
+  { name: 'Grant Compliance Intelligence', state: 'PARTIAL', href: '/board/compliance-monitoring', notes: 'The board compliance-monitoring view now reads the real safety/compliance violation register. Grant-specific compliance automation remains planned.' },
   { name: 'Closed-Loop Progression Intelligence', state: 'PLACEHOLDER', href: '/athlete/progression-intelligence', notes: 'Planned progression intelligence surfaces for athlete/coach/parent visibility.' },
   { name: 'Sports Medicine', state: 'PLACEHOLDER', href: '/coach/sports-medicine', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
   { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'Volunteer roster, status, and availability are backed by persistent records.' },
@@ -113,12 +117,16 @@ const shadowCertificationSignals = [
   'Aesthetic Preset: ULTRA-DENSE WINTER GRIT',
 ];
 
+// The "BREAK MY 40% RULE" override line is gone from this list by owner
+// decision: the concept was removed from the platform (see the coach landing
+// rework), and any future override must be explicit, auditable, and
+// rationale-required -- never a magic token, and never advertised on a status
+// page as if it existed.
 const shadowBoundaryChecks = [
   'Readiness upper bound test resolves to 10.0 and remains stable at clamp.',
   'Readiness lower bound test resolves to 1.0 and remains stable at clamp.',
   'Any readiness score below 5.0 triggers protective route and drill constraints.',
   'Delta RPE lockout engages when discrepancy is 2 or greater until rationale is provided.',
-  'Override token BREAK MY 40% RULE emits GRIND STATE ENGAGED in JSON audit logs.',
 ];
 
 const shadowArchitectureNodes = [

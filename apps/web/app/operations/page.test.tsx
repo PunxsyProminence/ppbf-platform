@@ -101,3 +101,24 @@ test('AI Video Analysis reads as partial (real upload/playback), not mock-only',
   expect(card.textContent).toContain('PARTIAL');
   expect(card.textContent).not.toContain('mock-only');
 });
+
+// The radar is hand-maintained and had gone stale in both directions: it
+// missed capabilities that ship with persistent records and route tests, and
+// it still advertised the removed "BREAK MY 40% RULE" override token.
+test('the radar lists the shipped coach-floor capabilities as existing', async () => {
+  await renderPage();
+
+  expect(await screen.findByText('Session Script Delivery')).toBeTruthy();
+  expect(screen.getByText('Safety Compliance Center')).toBeTruthy();
+  expect(screen.getByText('Coach Coverage')).toBeTruthy();
+  expect(screen.getByText('Drill Library')).toBeTruthy();
+  expect(screen.getByText(/backed by pilot.session_script_runs/)).toBeTruthy();
+});
+
+test('the removed override token is not advertised anywhere on the hub', async () => {
+  await renderPage();
+
+  await screen.findByText('Session Script Delivery');
+  expect(screen.queryByText(/BREAK MY 40% RULE/)).toBeNull();
+  expect(screen.queryByText(/GRIND STATE ENGAGED/)).toBeNull();
+});

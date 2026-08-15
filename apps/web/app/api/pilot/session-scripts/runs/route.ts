@@ -4,6 +4,7 @@ import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/htt
 import {
   SessionScriptRunError,
   getLiveRunForCoach,
+  listSettledRunsForScript,
   startSessionScriptRun,
 } from '@/src/server/pilot/sessionScriptRuns';
 
@@ -19,10 +20,21 @@ export const runtime = 'nodejs';
 //
 // Returns { run: null } rather than 404 when there is no live session: "you have nothing running"
 // is a successful answer to that question, not a missing resource.
+// With ?script_id= it instead answers "what has been delivered from this plan": the settled
+// (completed/abandoned/legacy) runs, via the module's own history read, which already excludes
+// live runs -- a session still on the floor is not yet a record of what happened. Same role gate
+// as the live lookup: both response shapes are delivery records and carry who was on the floor.
+// Mirrors the sibling browse route's convention of one GET switching on script_id.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['coach', 'admin', 'organization_admin', 'platform_owner']);
+
+    const scriptId = request.nextUrl.searchParams.get('script_id')?.trim();
+    if (scriptId) {
+      const runs = await listSettledRunsForScript(principal.organizationId, scriptId);
+      return NextResponse.json({ runs });
+    }
 
     const run = await getLiveRunForCoach(principal.organizationId, principal.accountId);
     return NextResponse.json({ run });
