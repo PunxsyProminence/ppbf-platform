@@ -93,6 +93,33 @@ export async function POST(request: NextRequest) {
       return hiddenNotFound();
     }
 
+    const requirementId = Number(body.research_requirement_id);
+    if (!Number.isInteger(requirementId) || requirementId <= 0) {
+      throw new ValidationError('research_requirement_id must be a positive integer.');
+    }
+
+    const sourceId = body.source_id?.trim();
+    if (!sourceId) {
+      throw new ValidationError('Missing source_id.');
+    }
+
+    const documentId =
+      typeof body.document_id === 'string' && body.document_id.trim() !== ''
+        ? body.document_id.trim()
+        : null;
+
+    // Org isolation: FKs prove existence, not tenancy. "Doesn't exist" and
+    // "exists in another organization" collapse into one hidden not-found.
+    if ((await getRequirementStatusInOrg(principal.organizationId, requirementId)) === null) {
+      return hiddenNotFound();
+    }
+    if (!(await sourceExistsInOrg(principal.organizationId, sourceId))) {
+      return hiddenNotFound();
+    }
+    if (documentId && !(await documentExistsInOrg(principal.organizationId, documentId))) {
+      return hiddenNotFound();
+    }
+
     const item = await createResearchSubmission({
       organizationId: principal.organizationId,
       researchRequirementId: requirementId,
