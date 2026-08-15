@@ -380,3 +380,64 @@ describe('Messages tab (#90)', () => {
     expect(screen.getByRole('button', { name: 'Send Message (unavailable)' })).toBeDisabled();
   });
 });
+
+// The summary tiles' honesty rule: null means "no feed answered", and it must
+// never render as a number. The distinction matters most at zero -- "0 tasks
+// due" tells a parent nothing is expected of them, which is a claim, not a
+// default.
+describe('summary tile honesty', () => {
+  function tileValue(label: string): string {
+    // 'Messages' is also a tab button; the tile's label is the <p>.
+    const labelElement = screen.getAllByText(label).find((element) => element.tagName === 'P');
+    const tile = labelElement?.parentElement;
+    return tile?.textContent?.replace(label, '').trim() ?? '';
+  }
+
+  test('Home Tasks and Upcoming say Unavailable -- they have no backend feed to count from', async () => {
+    installFetch();
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(tileValue('Home Tasks')).toBe('Unavailable');
+    expect(tileValue('Upcoming')).toBe('Unavailable');
+  });
+
+  test('a failed messages read renders the Messages tile as Unavailable, not as 0', async () => {
+    installFetch(undefined, undefined, undefined, async () => {
+      throw new Error('messages offline');
+    });
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(tileValue('Messages')).toBe('Unavailable');
+  });
+
+  test('a messages read that answered keeps its real count -- including a real zero', async () => {
+    installFetch();
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    // The default mock answers with zero messages; that zero is an
+    // observation, not a fabrication, and stays a number.
+    expect(tileValue('Messages')).toBe('0');
+  });
+
+  test('a message that arrived is counted on the tile', async () => {
+    installFetch(undefined, undefined, undefined, async () =>
+      jsonResponse({
+        ok: true,
+        items: [
+          { note_id: 'n1', note_text: 'Great week.', created_at: '2026-08-10T12:00:00.000Z', reporter_role: 'coach', athlete_name: 'First Child' },
+          { note_id: 'n2', note_text: 'See you Friday.', created_at: '2026-08-11T12:00:00.000Z', reporter_role: 'coach', athlete_name: 'First Child' },
+        ],
+      }));
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(tileValue('Messages')).toBe('2');
+  });
+});

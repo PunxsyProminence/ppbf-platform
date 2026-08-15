@@ -32,10 +32,15 @@ interface CoachSummaryPanelProps {
 
 interface ParentSummaryPanelProps {
   childProgress: string;
-  tasksDue: number;
-  upcomingEvents: number;
+  // null on every count means "no backend feed answered this" and renders as
+  // Unavailable. A number -- including 0 -- is a real observation. The
+  // distinction matters most at zero: "0 tasks due" tells a parent nothing is
+  // expected of them, which must never be the rendering of a feed that does
+  // not exist or did not load.
+  tasksDue: number | null;
+  upcomingEvents: number | null;
   attendancePercent: number | null;
-  unreadMessages: number;
+  unreadMessages: number | null;
 }
 
 interface AdminSummaryPanelProps {
@@ -236,10 +241,12 @@ export function ParentSummaryPanel({
   attendancePercent,
   unreadMessages
 }: Readonly<ParentSummaryPanelProps>) {
-  // null means no attendance data has been tracked yet -- must render as a
-  // neutral "no data" state, not a colored/numeric band. Feeding null
-  // through as 0 would color-code an absence of data as the same red
-  // "bad attendance" band a genuinely low percentage gets.
+  // null means no data has been tracked or the read failed -- every such
+  // cell must render as a neutral "no data" state, not as a number. Feeding
+  // null through as 0 would tell a parent "nothing due / nothing upcoming /
+  // no messages" when the truth is "nobody knows"; on attendance it would
+  // additionally color-code the absence of data as the same red band a
+  // genuinely low percentage gets.
   return (
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Progress */}
@@ -249,16 +256,30 @@ export function ParentSummaryPanel({
       </div>
 
       {/* Tasks */}
-      <div className={STAT_TILE}>
-        <p className="stat-label">Home Tasks</p>
-        <p className="stat-val">{tasksDue}</p>
-      </div>
+      {tasksDue === null ? (
+        <div className={KPI_TILE}>
+          <p className="t-label">Home Tasks</p>
+          <p className="t-body mt-[var(--s3)]">Unavailable</p>
+        </div>
+      ) : (
+        <div className={STAT_TILE}>
+          <p className="stat-label">Home Tasks</p>
+          <p className="stat-val">{tasksDue}</p>
+        </div>
+      )}
 
       {/* Events */}
-      <div className={STAT_TILE}>
-        <p className="stat-label">Upcoming</p>
-        <p className="stat-val">{upcomingEvents}</p>
-      </div>
+      {upcomingEvents === null ? (
+        <div className={KPI_TILE}>
+          <p className="t-label">Upcoming</p>
+          <p className="t-body mt-[var(--s3)]">Unavailable</p>
+        </div>
+      ) : (
+        <div className={STAT_TILE}>
+          <p className="stat-label">Upcoming</p>
+          <p className="stat-val">{upcomingEvents}</p>
+        </div>
+      )}
 
       {/* Attendance */}
       {attendancePercent === null ? (
@@ -277,10 +298,17 @@ export function ParentSummaryPanel({
       )}
 
       {/* Messages */}
-      <div className={STAT_TILE}>
-        <p className="stat-label">Messages</p>
-        <p className="stat-val">{unreadMessages}</p>
-      </div>
+      {unreadMessages === null ? (
+        <div className={KPI_TILE}>
+          <p className="t-label">Messages</p>
+          <p className="t-body mt-[var(--s3)]">Unavailable</p>
+        </div>
+      ) : (
+        <div className={STAT_TILE}>
+          <p className="stat-label">Messages</p>
+          <p className="stat-val">{unreadMessages}</p>
+        </div>
+      )}
     </div>
   );
 }
