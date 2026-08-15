@@ -1,0 +1,189 @@
+import { randomUUID } from 'node:crypto';
+
+import { query, queryOne } from './db';
+
+// External competition minimal skeleton (owner decision 2026-08-15: build
+// both competition skeletons deliberately skeletal). A competition someone
+// else runs, and entries linking athletes to it. Nothing else: no federation
+// integration, result sync, brackets, travel, or compliance checklists until
+// real competitions define them.
+//
+// Safeguarding boundary inherited from the migration: entry rows hold the
+// athlete LINK only. Reads that need a name join through pilot.athletes
+// inside the same organization; nothing about a child is copied here.
+
+// Staff read; admin write. platform_owner is deliberately absent from the
+// read set: the entries read joins athlete names, and access.ts refuses
+// Omega every athlete-scoped record, so the whole surface keeps one
+// consistent audience rather than a per-route exception.
+export const COMPETITION_READ_ROLES = ['coach', 'organization_admin', 'admin'] as const;
+export const COMPETITION_WRITE_ROLES = ['organization_admin', 'admin'] as const;
+
+export type CompetitionStatus = 'planned' | 'completed' | 'cancelled';
+export type CompetitionEntryStatus = 'entered' | 'withdrawn';
+
+export const COMPETITION_STATUSES: readonly CompetitionStatus[] = ['planned', 'completed', 'cancelled'];
+
+// Forward progress plus reopening: a competition settled too early can
+// come back to planned.
+const COMPETITION_TRANSITIONS: Record<CompetitionStatus, readonly CompetitionStatus[]> = {
+  planned: ['completed', 'cancelled'],
+  completed: ['planned'],
+  cancelled: ['planned'],
+};
+
+export interface CompetitionRow {
+  organization_id: string;
+  competition_id: string;
+  competition_name: string;
+  competition_date: string;
+  location: string;
+  sanctioning_body: string;
+  status: CompetitionStatus;
+  notes: string;
+  created_by_account_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompetitionEntryRow {
+  organization_id: string;
+  entry_id: string;
+  competition_id: string;
+  athlete_id: string;
+  status: CompetitionEntryStatus;
+  athlete_name: string;
+  created_at: string;
+}
+
+const COMPETITION_FIELDS = `organization_id, competition_id, competition_name,
+  competition_date::text as competition_date, location, sanctioning_body, status, notes,
+  created_by_account_id, created_at, updated_at`;
+
+export function isCompetitionStatus(value: unknown): value is CompetitionStatus {
+  return typeof value === 'string' && (COMPETITION_STATUSES as readonly string[]).includes(value);
+}
+
+export async function createCompetition(input: {
+  organizationId: string;
+  competitionName: string;
+  competitionDate: string;
+  location?: string;
+  sanctioningBody?: string;
+  notes?: string;
+  createdByAccountId: string;
+}): Promise<CompetitionRow> {
+  const row = await queryOne<CompetitionRow>(
+    `insert into pilot.external_competitions
+       (organization_id, competition_id, competition_name, competition_date, location, sanctioning_body, notes, created_by_account_id)
+     values ($1, $2, $3, $4::date, $5, $6, $7, $8)
+     returning ${COMPETITION_FIELDS}`,
+    [
+      input.organizationId,
+      randomUUID(),
+      input.competitionName,
+      input.competitionDate,
+      input.location ?? '',
+      input.sanctioningBody ?? '',
+      input.notes ?? '',
+      input.createdByAccountId,
+    ],
+  );
+  if (!row) throw new Error('Unable to create the competition.');
+  return row;
+}
+
+/** Upcoming work first: settled rows sink, then soonest date leads. */
+export async function listCompetitions(organizationId: string): Promise<CompetitionRow[]> {
+  return query<CompetitionRow>(
+    `select ${COMPETITION_FIELDS}
+     from pilot.external_competitions
+     where organization_id = $1
+     order by (status <> 'planned') asc, competition_date asc, created_at asc`,
+    [organizationId],
+  );
+}
+
+export async function setCompetitionStatus(input: {
+  organizationId: string;
+  competitionId: string;
+  status: CompetitionStatus;
+}): Promise<CompetitionRow | null> {
+  const current = await queryOne<CompetitionRow>(
+    `select ${COMPETITION_FIELDS} from pilot.external_competitions
+     where organization_id = $1 and competition_id = $2`,
+    [input.organizationId, input.competitionId],
+  );
+  if (!current) return null;
+
+  if (current.status !== input.status && !COMPETITION_TRANSITIONS[current.status].includes(input.status)) {
+    throw new Error(`Invalid status transition: ${current.status} -> ${input.status}`);
+  }
+
+  const row = await queryOne<CompetitionRow>(
+    `update pilot.external_competitions
+     set status = $3, updated_at = now()
+     where organization_id = $1 and competition_id = $2
+     returning ${COMPETITION_FIELDS}`,
+    [input.organizationId, input.competitionId, input.status],
+  );
+  return row;
+}
+
+export async function addCompetitionEntry(input: {
+  organizationId: string;
+  competitionId: string;
+  athleteId: string;
+  createdByAccountId: string;
+}): Promise<CompetitionEntryRow | null> {
+  // The competition lookup doubles as the tenancy check: an id from another
+  // organization reads as "no such competition" here, so the caller answers
+  // with a hidden not-found rather than leaking that the id exists.
+  const competition = await queryOne<{ competition_id: string }>(
+    `select competition_id from pilot.external_competitions
+     where organization_id = $1 and competition_id = $2`,
+    [input.organizationId, input.competitionId],
+  );
+  if (!competition) return null;
+
+  const athlete = await queryOne<{ athlete_id: string }>(
+    `select athlete_id from pilot.athletes
+     where organization_id = $1 and athlete_id = $2`,
+    [input.organizationId, input.athleteId],
+  );
+  if (!athlete) return null;
+
+  try {
+    const row = await queryOne<{ entry_id: string }>(
+      `insert into pilot.external_competition_entries
+         (organization_id, entry_id, competition_id, athlete_id, created_by_account_id)
+       values ($1, $2, $3, $4, $5)
+       returning entry_id`,
+      [input.organizationId, randomUUID(), input.competitionId, input.athleteId, input.createdByAccountId],
+    );
+    if (!row) throw new Error('Unable to add the entry.');
+  } catch (error) {
+    if (error instanceof Error && /pilot_external_competition_entries_unique/.test(error.message)) {
+      throw new Error('COMPETITION_DUPLICATE_ENTRY: athlete already entered in this competition');
+    }
+    throw error;
+  }
+
+  const listed = await listCompetitionEntries(input.organizationId, input.competitionId);
+  return listed.find((entry) => entry.athlete_id === input.athleteId) ?? null;
+}
+
+/** Entries with the athlete's name joined from the org-scoped athlete record
+ * -- the name is read through its governed home, never copied. */
+export async function listCompetitionEntries(organizationId: string, competitionId: string): Promise<CompetitionEntryRow[]> {
+  return query<CompetitionEntryRow>(
+    `select e.organization_id, e.entry_id, e.competition_id, e.athlete_id, e.status,
+            a.full_name as athlete_name, e.created_at
+     from pilot.external_competition_entries e
+     join pilot.athletes a
+       on a.organization_id = e.organization_id and a.athlete_id = e.athlete_id
+     where e.organization_id = $1 and e.competition_id = $2
+     order by a.full_name asc`,
+    [organizationId, competitionId],
+  );
+}
