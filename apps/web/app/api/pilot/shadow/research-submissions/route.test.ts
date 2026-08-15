@@ -181,3 +181,20 @@ describe('PATCH review', () => {
     }));
   });
 });
+
+// The blank-string trap the review caught: '' is falsy for the tenancy check
+// but survives `?? null` into an FK insert. Normalization must catch it.
+test('a blank document_id means no document, not an empty-string FK value', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockRequirementStatus.mockResolvedValue('open');
+  mockSourceExists.mockResolvedValue(true);
+  mockCreate.mockResolvedValue({ submission_id: 's-1' });
+
+  await POST(postRequest({ research_requirement_id: 7, source_id: '  src-1  ', document_id: '   ' }));
+
+  expect(mockDocumentExists).not.toHaveBeenCalled();
+  expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+    sourceId: 'src-1',
+    documentId: null,
+  }));
+});

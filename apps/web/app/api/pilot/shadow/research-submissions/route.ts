@@ -72,7 +72,11 @@ export async function POST(request: NextRequest) {
     if (!Number.isInteger(body.research_requirement_id) || (body.research_requirement_id as number) <= 0) {
       throw new ValidationError('research_requirement_id must be a positive integer.');
     }
-    if (!body.source_id?.trim()) {
+    // Normalized once, used everywhere below: a blank document_id means "no
+    // document", never an empty-string FK value headed for a 500.
+    const sourceId = body.source_id?.trim() ?? '';
+    const documentId = body.document_id?.trim() || null;
+    if (!sourceId) {
       throw new ValidationError('Missing source_id.');
     }
 
@@ -82,18 +86,18 @@ export async function POST(request: NextRequest) {
     if ((await getRequirementStatusInOrg(principal.organizationId, requirementId)) === null) {
       return hiddenNotFound();
     }
-    if (!(await sourceExistsInOrg(principal.organizationId, body.source_id))) {
+    if (!(await sourceExistsInOrg(principal.organizationId, sourceId))) {
       return hiddenNotFound();
     }
-    if (body.document_id && !(await documentExistsInOrg(principal.organizationId, body.document_id))) {
+    if (documentId !== null && !(await documentExistsInOrg(principal.organizationId, documentId))) {
       return hiddenNotFound();
     }
 
     const item = await createResearchSubmission({
       organizationId: principal.organizationId,
       researchRequirementId: requirementId,
-      sourceId: body.source_id,
-      documentId: body.document_id ?? null,
+      sourceId,
+      documentId,
       provenance: body.provenance,
       submissionNote: body.submission_note,
       submittedByAccountId: principal.accountId,
