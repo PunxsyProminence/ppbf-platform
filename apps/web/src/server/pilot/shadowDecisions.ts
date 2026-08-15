@@ -38,11 +38,14 @@ export async function recordDecision(input: {
   expectedOutcome: string;
   decidedByAccountId: string;
   decidedByRole: string;
-  isMedicallySensitive?: boolean;
 }): Promise<ShadowDecisionRow> {
-  if (input.isMedicallySensitive) {
-    await assertMedicalStatusAllowsRecommendation(input.organizationId, input.athleteId);
-  }
+  // Unconditional. See createProvisionalRecommendation for the full reasoning:
+  // this guard used to be armed by an isMedicallySensitive boolean read
+  // verbatim off the HTTP body, so omitting one JSON field skipped the
+  // clearance check on a return-to-play decision. A decision is the record of
+  // an action taken about an athlete, so it carries at least the weight of the
+  // recommendation that preceded it.
+  await assertMedicalStatusAllowsRecommendation(input.organizationId, input.athleteId);
 
   return withTransaction(async (client) => {
     if (input.recommendationId) {

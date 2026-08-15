@@ -11,6 +11,7 @@ jest.mock('./shadowAuditEntries', () => ({
 
 import { query, withTransaction } from './db';
 import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
+import type { ShadowMedicalAdministrativeStatusRow } from './shadowMedicalStatus';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 import {
   createProvisionalRecommendation,
@@ -42,6 +43,31 @@ function recommendationRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * An explicitly cleared status.
+ *
+ * Needed by every write test now, not only the medically-worded ones: the guard
+ * is unconditional, so a test that does not stub a cleared record is asserting
+ * the blocked path whether it meant to or not.
+ */
+function clearedStatus(
+  overrides: Partial<ShadowMedicalAdministrativeStatusRow> = {},
+): ShadowMedicalAdministrativeStatusRow {
+  return {
+    status_id: 'status-cleared',
+    organization_id: 'org-1',
+    athlete_id: 'athlete-1',
+    status: 'cleared',
+    restriction_flags: {},
+    source_reference: 'physician-note-123',
+    set_by_account_id: 'coach-1',
+    set_by_role: 'coach',
+    effective_at: '2026-07-27T10:00:00.000Z',
+    created_at: '2026-07-27T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockWriteAudit.mockResolvedValue(undefined);
@@ -49,6 +75,9 @@ beforeEach(() => {
 
 describe('createProvisionalRecommendation', () => {
   test('always creates the row with the literal status "provisional"', async () => {
+    // Cleared record required to reach the write at all: the medical guard is
+    // unconditional now, so an unstubbed status asserts the blocked path.
+    mockGetMedicalStatus.mockResolvedValueOnce(clearedStatus());
     const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
@@ -90,7 +119,6 @@ describe('createProvisionalRecommendation', () => {
       expectedOutcome: 'Athlete returns to full sparring load.',
       createdByAccountId: 'coach-1',
       createdByRole: 'coach',
-      isMedicallySensitive: true,
     })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
 
     expect(mockWithTransaction).not.toHaveBeenCalled();
@@ -109,7 +137,6 @@ describe('createProvisionalRecommendation', () => {
       expectedOutcome: 'Athlete returns to full sparring load.',
       createdByAccountId: 'coach-1',
       createdByRole: 'coach',
-      isMedicallySensitive: true,
     })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
 
     expect(mockWithTransaction).not.toHaveBeenCalled();
@@ -136,7 +163,6 @@ describe('createProvisionalRecommendation', () => {
       expectedOutcome: 'Athlete returns to full sparring load.',
       createdByAccountId: 'coach-1',
       createdByRole: 'coach',
-      isMedicallySensitive: true,
     })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
 
     expect(mockWithTransaction).not.toHaveBeenCalled();
@@ -166,11 +192,14 @@ describe('createProvisionalRecommendation', () => {
       expectedOutcome: 'Athlete returns to full sparring load.',
       createdByAccountId: 'coach-1',
       createdByRole: 'coach',
-      isMedicallySensitive: true,
     })).resolves.toBeDefined();
   });
 
-  test('does not consult medical status at all when the topic is not flagged sensitive', async () => {
+  // Replaces a test that asserted the opposite -- that an unflagged topic did
+  // not consult medical status at all. That was the hole: the caller decided
+  // whether the gate ran, so omitting one JSON field skipped it.
+  test('consults medical status even for an obviously non-medical recommendation', async () => {
+    mockGetMedicalStatus.mockResolvedValueOnce(clearedStatus());
     const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
@@ -183,7 +212,24 @@ describe('createProvisionalRecommendation', () => {
       createdByRole: 'coach',
     });
 
-    expect(mockGetMedicalStatus).not.toHaveBeenCalled();
+    expect(mockGetMedicalStatus).toHaveBeenCalledWith('org-1', 'athlete-1');
+  });
+
+  // The forgery path, stated as a test. There is no longer any input a caller
+  // can supply, or omit, that skips the guard.
+  test('a footwork note is blocked when the athlete has no clearance record', async () => {
+    mockGetMedicalStatus.mockResolvedValueOnce(null);
+
+    await expect(createProvisionalRecommendation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      recommendationText: 'Add 10 minutes of footwork drills.',
+      expectedOutcome: 'Work-rate consistency improves next session.',
+      createdByAccountId: 'coach-1',
+      createdByRole: 'coach',
+    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
+
+    expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 });
 
