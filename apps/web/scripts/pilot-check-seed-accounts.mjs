@@ -27,8 +27,12 @@ import { Client } from 'pg';
  * to notice.
  *
  * `active_flag` alone is not the whole answer. An account can be active and
- * still be the wrong seeder if it cannot act -- so `auth_provider` and
- * whether a session could ever resolve are reported next to it.
+ * still be the wrong seeder if it cannot act -- so `auth_provider` is
+ * reported next to it, which is the signal that most often explains a
+ * surprising row (a `ppbf_local` admin, say). Whether a session would
+ * actually resolve for the account is deliberately NOT computed here: that
+ * would mean replaying the PIN/Microsoft/revocation login rules, and this
+ * stays a lookup rather than an auth simulator.
  *
  * Emails are masked to first character plus domain, as in the stranded
  * guardians check: enough to recognise the person in a CI summary, not
@@ -108,7 +112,16 @@ export function maskEmail(email) {
 export function groupByEmailFold(accounts) {
   const groups = new Map();
   for (const account of accounts) {
-    const key = (account.login_email ?? '').toLowerCase();
+    const rawEmail = account.login_email;
+    const hasAddress = typeof rawEmail === 'string' && rawEmail.includes('@');
+    // Case-folding is only meaningful BETWEEN TWO REAL ADDRESSES. An account
+    // with no login_email gets a key unique to its own row, so two such rows
+    // never fold together into a phantom "collision" -- the whole report
+    // exists to flag the capital-A/lowercase pair, and a group of address-less
+    // rows would be noise pointing at nothing to decide.
+    const key = hasAddress
+      ? rawEmail.toLowerCase()
+      : `no-address:${account.account_id}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(account);
   }

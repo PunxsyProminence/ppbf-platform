@@ -60,6 +60,26 @@ describe('seeder-account case-collision grouping', () => {
     const groups = evaluate(`m.groupByEmailFold([${nullEmail}, ${real}])`);
     expect(groups).toHaveLength(2);
   });
+
+  test('two accounts with no email are NOT folded into a phantom collision', () => {
+    // Regression for the review note: folding a missing email to '' put every
+    // address-less row in one bucket, which then surfaced as a bogus
+    // "collision" the operator would have to dismiss. Each gets its own group.
+    const a = '{account_id:"na",login_email:null,active_flag:true}';
+    const b = '{account_id:"nb",login_email:null,active_flag:false}';
+    const groups = evaluate(`m.groupByEmailFold([${a}, ${b}])`);
+    expect(groups).toHaveLength(2);
+    expect(groups.every((g: { members: unknown[] }) => g.members.length === 1)).toBe(true);
+  });
+
+  test('a value with no @ is treated as address-less, not folded with real ones', () => {
+    // login_email that is a non-empty string but not an address must not merge
+    // with a genuine address that happens to lowercase to something similar.
+    const junk = '{account_id:"j",login_email:"not-an-address",active_flag:true}';
+    const junk2 = '{account_id:"j2",login_email:"also-not-one",active_flag:false}';
+    const groups = evaluate(`m.groupByEmailFold([${junk}, ${junk2}])`);
+    expect(groups).toHaveLength(2);
+  });
 });
 
 describe('email masking', () => {
