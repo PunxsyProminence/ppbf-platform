@@ -114,10 +114,12 @@ export default function WrestlingLeagueManagementPage() {
     setRoster(rosterPayload.items ?? []);
   }, []);
 
+  // The loading flag is raised in the click handler that selects the season,
+  // not here: setState synchronously inside an effect body cascades renders
+  // (react-hooks/set-state-in-effect). The effect only loads and lowers it.
   useEffect(() => {
     if (!selectedSeasonId) return;
     const controller = new AbortController();
-    setDetailLoading(true);
     void (async () => {
       try {
         await reloadDetail(selectedSeasonId, controller.signal);
@@ -331,7 +333,10 @@ export default function WrestlingLeagueManagementPage() {
                           {formatGymDateNumeric(season.starts_on)}
                           {season.ends_on ? ` – ${formatGymDateNumeric(season.ends_on)}` : ''}
                         </span>
-                        <button type="button" className="btn btn--ghost" onClick={() => setSelectedSeasonId(selected ? null : season.season_id)}>
+                        <button type="button" className="btn btn--ghost" onClick={() => {
+                          setDetailLoading(!selected);
+                          setSelectedSeasonId(selected ? null : season.season_id);
+                        }}>
                           {selected ? 'Close detail' : 'Open detail'}
                         </button>
                         {(SEASON_ACTIONS[season.status] ?? []).map((action) => (
