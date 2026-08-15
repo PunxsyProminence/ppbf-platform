@@ -96,6 +96,28 @@ become an athlete overlay.
 **Nothing here claims 2 is the right bar.** It is the lowest bar that is not
 self-evidently wrong. Choosing the real one is owner authority (§7).
 
+**Owner sign-off still required on the floors themselves.** Under the Phase A
+review bar ("no unapproved thresholds; any proposed value ships as a named,
+versioned policy entry awaiting signature, not as live behavior"), these three
+`2`s are the one place this module ships a number as live behavior. They only
+ever make the system *more* conservative — they constrain which policies may be
+ratified and can never promote anything — but they are still a number nobody
+signed. Jason should either bless them explicitly or strike them, in which case
+the floor becomes whatever the ratified policy says. Recorded as **§7.7**.
+
+### Determinism: `asOf` is required, deliberately breaking idiom
+
+`evaluatePatternCandidate` and `evaluateValidatedAthleteLesson` both **require**
+a caller-supplied `asOf` and throw without one. This diverges from
+`formulas/engine.ts`, whose `computedAt` defaults to `new Date()`.
+
+The divergence is intentional. Recency is load-bearing here —
+`NO_RECENT_EVIDENCE` is what retires a pattern about a child — so a verdict
+stamped with a clock the caller never chose is one nobody can reproduce, and
+re-running the same evidence tomorrow could silently retire a pattern that was
+live today. Same inputs, same output, no exceptions. There is no clock, no
+randomness and no I/O anywhere in this module's logic paths.
+
 ## 4. Epistemic states and precedence
 
 | State | Meaning | Abstains |
@@ -312,6 +334,8 @@ a live source of confusion when reading the tree.
    authorization rule for *which* accounts is not modelled here.
 5. **Decide the athlete-overlay write path.** This module proposes; nothing
    currently consumes the proposal, deliberately.
+7. **Bless or strike the three `2` floors** in `assertPatternFormationPolicy`
+   (§3). They are the only number this module ships as live behavior.
 6. **D10 — decide whether the medical gate should stay client-armed.** Not a
    pattern-formation question, but it surfaced during this audit and is the
    highest-severity item found. The options are: keep the current explicit-flag

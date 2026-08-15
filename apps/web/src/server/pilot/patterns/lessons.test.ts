@@ -229,6 +229,23 @@ describe('validated athlete lesson evaluation', () => {
     expect(testedAndAbsent.blockers).not.toContain('RETENTION_WINDOW_NOT_ELAPSED');
   });
 
+  test('refuses to evaluate without a caller-supplied instant', () => {
+    const base = {
+      organizationId: ORG,
+      athleteId: ATHLETE,
+      behaviourKey: BEHAVIOUR,
+      patternState: 'ESTABLISHED_IN_CONTEXT' as const,
+      intervention,
+      outcome: reviewedOutcome,
+      postObservations: [],
+      policy,
+    } as unknown as Parameters<typeof evaluateValidatedAthleteLesson>[0];
+
+    expect(() => evaluateValidatedAthleteLesson(base)).toThrow(/valid asOf timestamp/);
+    expect(() => evaluateValidatedAthleteLesson({ ...base, asOf: 'whenever' }))
+      .toThrow(/valid asOf timestamp/);
+  });
+
   test('absence of observations is not improvement', () => {
     // Nobody recorded anything after the intervention. That is silence, and
     // silence must not read as success.

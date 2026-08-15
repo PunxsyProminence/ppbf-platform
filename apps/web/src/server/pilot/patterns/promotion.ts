@@ -45,8 +45,16 @@ export interface EvaluatePatternCandidateInput {
   readonly behaviourKey: string;
   readonly observations: readonly BehaviourObservation[];
   readonly policy: PatternFormationPolicy;
-  /** Evaluation instant. Supplied by tests for determinism; defaults to now. */
-  readonly asOf?: string;
+  /**
+   * Evaluation instant. REQUIRED, and deliberately so.
+   *
+   * This diverges from `formulas/engine.ts`, whose `computedAt` defaults to
+   * `new Date()`. Recency and staleness are load-bearing inputs here --
+   * `NO_RECENT_EVIDENCE` is what retires a pattern about a child -- so a
+   * result stamped with a clock the caller never chose would be a verdict
+   * nobody can reproduce. Same inputs, same output, no exceptions.
+   */
+  readonly asOf: string;
   /**
    * True when a human has previously authorized this behaviour as a pattern.
    * Drives RETIRED: an overlay that was fair last season and has not been
@@ -89,7 +97,10 @@ export function evaluatePatternCandidate(
   assertPatternFormationPolicy(input.policy);
 
   const { policy } = input;
-  const asOf = input.asOf ?? new Date().toISOString();
+  const { asOf } = input;
+  if (typeof asOf !== 'string' || !Number.isFinite(Date.parse(asOf))) {
+    throw new TypeError('evaluatePatternCandidate requires a valid asOf timestamp.');
+  }
   const scope = {
     organizationId: input.organizationId,
     athleteId: input.athleteId,

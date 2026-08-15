@@ -367,6 +367,22 @@ describe('SHADOW pattern candidate evaluation', () => {
     expect(result.provenance.map((entry) => entry.observationId)).not.toContain('obs-1');
   });
 
+  test('refuses to evaluate without a caller-supplied instant', () => {
+    // Recency retires patterns about children. A verdict stamped with a clock
+    // the caller never chose is one nobody can reproduce.
+    const withoutAsOf = {
+      organizationId: ORG,
+      athleteId: ATHLETE,
+      behaviourKey: BEHAVIOUR,
+      observations: strongEvidence(),
+      policy,
+    } as unknown as Parameters<typeof evaluatePatternCandidate>[0];
+
+    expect(() => evaluatePatternCandidate(withoutAsOf)).toThrow(/valid asOf timestamp/);
+    expect(() => evaluatePatternCandidate({ ...withoutAsOf, asOf: 'whenever' }))
+      .toThrow(/valid asOf timestamp/);
+  });
+
   test('is order-independent and yields a stable candidate key', () => {
     const forward = evaluatePatternCandidate({
       organizationId: ORG,

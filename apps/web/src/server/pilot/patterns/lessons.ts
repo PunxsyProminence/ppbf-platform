@@ -176,7 +176,8 @@ export interface EvaluateAthleteLessonInput {
   /** Every observation of this behaviour recorded at or after the intervention. */
   readonly postObservations: readonly BehaviourObservation[];
   readonly policy: AthleteLessonPolicy;
-  readonly asOf?: string;
+  /** Required for the same reason as `EvaluatePatternCandidateInput.asOf`. */
+  readonly asOf: string;
 }
 
 export function evaluateValidatedAthleteLesson(
@@ -185,7 +186,10 @@ export function evaluateValidatedAthleteLesson(
   assertAthleteLessonPolicy(input.policy);
 
   const { policy } = input;
-  const asOf = input.asOf ?? new Date().toISOString();
+  const { asOf } = input;
+  if (typeof asOf !== 'string' || !Number.isFinite(Date.parse(asOf))) {
+    throw new TypeError('evaluateValidatedAthleteLesson requires a valid asOf timestamp.');
+  }
   const blockers: PatternReasonCode[] = [];
   const warnings: PatternReasonCode[] = [];
 
