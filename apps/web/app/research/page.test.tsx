@@ -104,9 +104,9 @@ test('a curator files the link with provenance and is told review decides, not t
     fireEvent.click(screen.getByRole('button', { name: 'Answer this gap' }));
   });
   await act(async () => {
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'src-1' } });
-    fireEvent.change(screen.getByLabelText(/DOI \/ PMID/i), { target: { value: '10.1000/x' } });
-    fireEvent.change(screen.getByLabelText(/Provider/i), { target: { value: 'Penn State Library' } });
+    fireEvent.change(screen.getByLabelText('Library source'), { target: { value: 'src-1' } });
+    fireEvent.change(screen.getAllByLabelText(/DOI \/ PMID/i)[0], { target: { value: '10.1000/x' } });
+    fireEvent.change(screen.getAllByLabelText(/Provider/i)[0], { target: { value: 'Penn State Library' } });
   });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit source' }));
@@ -135,11 +135,105 @@ test('the submission message renders only under the requirement it belongs to', 
     fireEvent.click(screen.getAllByRole('button', { name: 'Answer this gap' })[0]);
   });
   await act(async () => {
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'src-1' } });
+    fireEvent.change(screen.getByLabelText('Library source'), { target: { value: 'src-1' } });
   });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit source' }));
   });
 
   expect(screen.getAllByText(/answers nothing until evidence review says so/i)).toHaveLength(1);
+});
+
+// Issue #345 workflow 3: general-research intake. Classification is a
+// human-picked, human-correctable filing label in source metadata. These pin
+// that registration posts the taxonomy key with provenance under
+// general_research, that correction PATCHes the narrow endpoint, and that a
+// non-curator sees none of it.
+describe('general research intake', () => {
+  const GENERAL_SOURCE = {
+    source_id: 'src-gen',
+    title: 'Nonprofit board best practices',
+    source_type: 'textbook',
+    metadata: { general_research: true, classification_domain: 'fundraising_donor_development' },
+  };
+
+  function mockFetchGeneral(options: { curator: boolean; capture: { posts: unknown[]; patches: unknown[] } }) {
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/library/sources') && init?.method === 'POST') {
+        options.capture.posts.push(JSON.parse(String(init.body)));
+        return { ok: true, json: async () => ({ ok: true, source: {} }) } as Response;
+      }
+      if (url.includes('/library/sources') && init?.method === 'PATCH') {
+        options.capture.patches.push(JSON.parse(String(init.body)));
+        return { ok: true, json: async () => ({ ok: true, source: {} }) } as Response;
+      }
+      if (url.includes('/library/sources')) {
+        return options.curator
+          ? ({ ok: true, json: async () => ({ items: [GENERAL_SOURCE] }) } as Response)
+          : ({ ok: false, status: 403, json: async () => ({}) } as Response);
+      }
+      if (url.includes('/research-requirements')) {
+        return { ok: true, json: async () => ({ items: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  test('a non-curator sees no general research section', async () => {
+    global.fetch = mockFetchGeneral({ curator: false, capture: { posts: [], patches: [] } });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    expect(screen.queryByText('General Research Intake')).toBeNull();
+  });
+
+  test('registration posts the taxonomy key and provenance under general_research', async () => {
+    const capture = { posts: [] as unknown[], patches: [] as unknown[] };
+    global.fetch = mockFetchGeneral({ curator: true, capture });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('General Research Intake');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Youth safeguarding review' } });
+      fireEvent.change(screen.getByLabelText('Classification domain'), { target: { value: 'youth_development_safeguarding' } });
+      fireEvent.change(screen.getByLabelText('DOI / PMID'), { target: { value: 'PMID: 123' } });
+      fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'Penn State Library' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
+    });
+
+    expect(capture.posts).toHaveLength(1);
+    const posted = capture.posts[0] as { metadata: Record<string, unknown> };
+    expect(posted.metadata.general_research).toBe(true);
+    expect(posted.metadata.classification_domain).toBe('youth_development_safeguarding');
+    expect(posted.metadata.provenance).toEqual({ doi_or_pmid: 'PMID: 123', provider: 'Penn State Library' });
+    expect(screen.getByText(/Evidence review still decides what becomes citable/)).toBeTruthy();
+  });
+
+  test('correcting a classification PATCHes the narrow endpoint', async () => {
+    const capture = { posts: [] as unknown[], patches: [] as unknown[] };
+    global.fetch = mockFetchGeneral({ curator: true, capture });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Nonprofit board best practices');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Correct classification for Nonprofit board best practices'), {
+        target: { value: 'nonprofit_management_governance' },
+      });
+    });
+
+    expect(capture.patches).toEqual([
+      { source_id: 'src-gen', classification_domain: 'nonprofit_management_governance' },
+    ]);
+  });
 });

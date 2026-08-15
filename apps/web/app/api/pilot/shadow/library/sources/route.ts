@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   createShadowLibrarySource,
   listShadowLibrarySources,
   type ShadowLibrarySourceStatus,
   type ShadowLibrarySourceType,
+  updateShadowLibrarySourceClassification,
 } from '@/src/server/pilot/shadowLibrary';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
@@ -58,6 +59,8 @@ function isSourceStatus(value: unknown): value is ShadowLibrarySourceStatus {
 // Postgres stores publication_date as `date`; an unparseable string would reach
 // the driver as a cast error and surface as a 500. Reject it here as a 400.
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+import { isResearchClassificationDomain } from '@/src/shared/researchClassification';
 
 export async function GET(request: NextRequest) {
   try {
@@ -188,6 +191,39 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+    return jsonError(error);
+  }
+}
+
+// Classification correction (issue #345 workflow 3). Curator-gated like every
+// other write here, and narrower than all of them: one metadata key, human-
+// picked from the shared taxonomy, nothing else about the source reachable.
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+
+    const body = (await request.json().catch(() => ({}))) as {
+      source_id?: unknown;
+      classification_domain?: unknown;
+    };
+
+    if (typeof body.source_id !== 'string' || !body.source_id.trim()) {
+      return NextResponse.json({ ok: false, error: 'Missing source_id' }, { status: 400 });
+    }
+    if (!isResearchClassificationDomain(body.classification_domain)) {
+      return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
+    }
+
+    const source = await updateShadowLibrarySourceClassification(
+      principal.organizationId,
+      body.source_id.trim(),
+      body.classification_domain,
+    );
+
+    if (!source) return hiddenNotFound();
+    return NextResponse.json({ ok: true, source });
+  } catch (error) {
     return jsonError(error);
   }
 }
