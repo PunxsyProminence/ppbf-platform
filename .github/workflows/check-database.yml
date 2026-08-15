@@ -37,6 +37,25 @@
 #   different finding -- which is the reason this belongs here rather than
 #   staying a command someone runs from a laptop pointed at production.
 #
+#   seed-accounts: which accounts may be recorded as the seeder in
+#   seed-reference-data's `seed_account_id` input. That input had no pipeline
+#   answer at all: the runbook told an operator to "read it from the database",
+#   which meant a production connection string on a laptop or an id copied out
+#   of Azure by hand -- the exact shape the same runbook criticises for
+#   `organization_id`, where a value the operator cannot see from the Actions
+#   form invites a typo that writes real rows against something that does not
+#   exist. This closes that gap for seed_account_id the way the pipeline
+#   closes everything else.
+#   The specific trap: production's active platform owner is
+#   Admin@punxsyprominence.org with a CAPITAL A, and a lowercase row for the
+#   same human is retired. Reusing staging's lowercase string against
+#   production stamps a retired account onto all 119 drills as their seeder,
+#   silently, because nothing about that is an error. So the report groups
+#   accounts whose emails differ only by case and says which is live, rather
+#   than printing a flat list and leaving the reader to spot it. Emails are
+#   masked; account_ids print verbatim, because the id is the value being
+#   looked up.
+#
 #   stranded-guardians: which non-athlete accounts sit on auth_provider
 #   'ppbf_local' and therefore have no working login path (PIN login is
 #   athlete-only, Microsoft login only matches provider 'microsoft', and any
@@ -67,6 +86,7 @@ on:
           - multiorg-orphans
           - stranded-guardians
           - orphan-chat-audit
+          - seed-accounts
 
 permissions:
   id-token: write
@@ -131,6 +151,9 @@ jobs:
               ;;
             orphan-chat-audit)
               npm run pilot:check-orphan-chat-audit | tee /tmp/check-output.txt
+              ;;
+            seed-accounts)
+              npm run pilot:check-seed-accounts | tee /tmp/check-output.txt
               ;;
             *)
               echo "::error::Unknown check '$CHECK'"
