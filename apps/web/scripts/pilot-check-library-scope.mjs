@@ -154,11 +154,46 @@ export async function checkLibraryScope(client) {
         order by internal_policy_sources desc`,
     );
 
+    // Everything the research corpus did NOT create -- uploads, API-created
+    // sources, anything keyed `source_<uuid>` rather than `src_<hash>`.
+    //
+    // Every other section here counts. Counting was enough to know that a bulk
+    // approval had swept something in and not enough to know what: the approval
+    // run reports only pending rows, so a non-corpus row approved BEFORE the run
+    // is invisible in its output while its chunks still land in the totals. That
+    // gap had to be closed by querying the database by hand. Naming the rows
+    // here means the next operator reads the answer instead of deriving it by
+    // subtraction across two log lines.
+    //
+    // approved_by_account_id is included deliberately. These are staff
+    // governance actions on citable evidence, and "who attested to this" is the
+    // point of the record -- unlike the guardian sweeps, which mask contact
+    // details because those identify families rather than decisions.
+    const nonCorpus = await client.query(
+      `select s.organization_id,
+              s.source_id,
+              s.title,
+              s.source_type,
+              s.approval_state,
+              s.verification_state,
+              s.approved_by_account_id,
+              (select count(*)::int from pilot.shadow_library_documents d
+                where d.source_id = s.source_id
+                  and d.organization_id = s.organization_id) as documents,
+              (select count(*)::int from pilot.shadow_library_chunks c
+                where c.source_id = s.source_id
+                  and c.organization_id = s.organization_id) as chunks
+         from pilot.shadow_library_sources s
+        where s.source_id not like 'src\\_%'
+        order by s.organization_id, s.source_id`,
+    );
+
     return {
       byOrg: byOrg.rows,
       corpusByOrg: corpusByOrg.rows,
       collision: collision.rows,
       policy: policy.rows,
+      nonCorpus: nonCorpus.rows,
     };
   } finally {
     // Read-only transaction: nothing to commit, and rolling back is the honest
@@ -224,6 +259,41 @@ export async function run() {
   } else {
     for (const r of result.policy) {
       console.log(`  ${pad(r.organization_id, 24)}${r.internal_policy_sources}`);
+    }
+  }
+
+  console.log('');
+  console.log("NON-CORPUS LIBRARY ROWS (source_id NOT like 'src_%' -- uploads and API-created sources)");
+  if (result.nonCorpus.length === 0) {
+    console.log('  none -- every library source in this database came from the research corpus');
+  } else {
+    for (const r of result.nonCorpus) {
+      console.log(
+        `  ${pad(r.organization_id, 24)}${r.source_id}  ${r.source_type}  `
+        + `${r.approval_state}/${r.verification_state}`,
+      );
+      console.log(`      title: ${r.title}`);
+      console.log(
+        `      documents=${r.documents} chunks=${r.chunks}`
+        + `${r.approved_by_account_id ? ` approved_by=${r.approved_by_account_id}` : ''}`,
+      );
+    }
+    const approved = result.nonCorpus.filter((r) => r.approval_state === 'approved');
+    if (approved.length > 0) {
+      console.log('');
+      console.log(
+        `  NOTE: ${approved.length} of these ${result.nonCorpus.length} row(s) are APPROVED and therefore citable.`,
+      );
+      console.log(
+        '  A bulk approval takes every pending row in the organization it targets, so an uploaded',
+      );
+      console.log(
+        '  document can become citable evidence without anyone deciding it should be. Whether each',
+      );
+      console.log(
+        '  belongs is a judgement about content this check cannot make; reject any that do not',
+      );
+      console.log('  through PATCH /api/pilot/shadow/evidence/review.');
     }
   }
 
