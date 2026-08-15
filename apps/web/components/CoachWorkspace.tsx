@@ -157,6 +157,34 @@ const BARRIER_TYPE_LABEL: Record<string, string> = {
 };
 
 /**
+ * A row of pilot.safety_escalations as GET /api/pilot/escalations returns it
+ * to a coach: already scoped server-side to their assigned and covered
+ * athletes, with athlete_voice rows excluded entirely (a disclosure-driven
+ * escalation may be about the coach). This pull surface is the platform's
+ * only notification mechanism -- nothing emails a coach -- so it has to
+ * reach them on the workspace they already have open.
+ */
+interface CoachEscalation {
+  escalation_id: string;
+  athlete_id: string;
+  source_type: string;
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+  reason: string;
+  status: 'open' | 'acknowledged' | 'resolved';
+  created_at: string;
+}
+
+// athlete_voice is deliberately absent: the server never sends it to a coach.
+const ESCALATION_SOURCE_LABEL: Record<string, string> = {
+  near_miss: 'Near miss',
+  pain_report: 'Pain report',
+  safety_gate_evaluation: 'Safety gate',
+  repeated_pattern: 'Repeated pattern',
+  training_hold: 'Training hold',
+  incident: 'Incident',
+};
+
+/**
  * A row of pilot.sessions as GET /api/pilot/sessions/list returns it, cut to
  * the fields the review picker labels an option with. Every field is a real
  * stored value; a row missing a usable session_id or date is dropped rather
@@ -351,6 +379,14 @@ export default function CoachWorkspace() {
   const [intakeActionBusyId, setIntakeActionBusyId] = useState<string | null>(null);
   const [intakeActionErrors, setIntakeActionErrors] = useState<Record<string, string>>({});
   const [painReports, setPainReports] = useState<CoachPainReport[]>([]);
+  // The escalation inbox. Loading, failed, and empty are distinct: a failed
+  // read rendered as "no escalations" would tell a coach their athletes are
+  // clear when nobody knows.
+  const [escalations, setEscalations] = useState<CoachEscalation[]>([]);
+  const [escalationsLoading, setEscalationsLoading] = useState(true);
+  const [escalationsError, setEscalationsError] = useState('');
+  const [escalationAckBusyId, setEscalationAckBusyId] = useState<string | null>(null);
+  const [escalationAckErrors, setEscalationAckErrors] = useState<Record<string, string>>({});
   const [barrierReports, setBarrierReports] = useState<CoachBarrierReport[]>([]);
   const [barrierReportsTruncated, setBarrierReportsTruncated] = useState(false);
   const [barrierReportsLoading, setBarrierReportsLoading] = useState(true);
@@ -821,6 +857,78 @@ export default function CoachWorkspace() {
   // wiring gap, not a new capability. The route's own assertActorCanAccessAthlete
   // scopes a coach to their assigned athletes server-side -- a case outside
   // that scope returns 403, surfaced below rather than silently retried.
+  // The escalation inbox read. /api/pilot/escalations already authorizes the
+  // coach role and scopes rows server-side (assigned + actively covered
+  // athletes, athlete_voice excluded) -- this is UI wiring over an existing
+  // capability, exactly like the intake review-action before it.
+  const loadEscalations = useCallback(async () => {
+    setEscalationsLoading(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/escalations?status=open`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Safety escalations could not be loaded.');
+      }
+      const payload = (await response.json()) as { escalations?: CoachEscalation[] };
+      setEscalations(payload.escalations ?? []);
+      setEscalationsError('');
+    } catch (error) {
+      setEscalations([]);
+      setEscalationsError(error instanceof Error ? error.message : 'Safety escalations could not be loaded.');
+    } finally {
+      setEscalationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadEscalations();
+  }, [loadEscalations]);
+
+  // Acknowledging is the coach action the server already grants ("I have seen
+  // this"); resolving stays admin-only server-side and is not offered here.
+  // The row swaps to whatever the SERVER returns -- never to a local guess.
+  async function acknowledgeCoachEscalation(escalationId: string) {
+    if (escalationAckBusyId) {
+      return;
+    }
+    setEscalationAckBusyId(escalationId);
+    setEscalationAckErrors((prev) => ({ ...prev, [escalationId]: '' }));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/escalations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'acknowledge', escalation_id: escalationId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        escalation?: CoachEscalation;
+        error?: string;
+      };
+      if (!response.ok || !payload.ok || !payload.escalation) {
+        setEscalationAckErrors((prev) => ({
+          ...prev,
+          [escalationId]: payload.error || 'The escalation could not be acknowledged.',
+        }));
+        return;
+      }
+      const acknowledged = payload.escalation;
+      setEscalations((prev) => prev.map((item) => (
+        item.escalation_id === escalationId ? acknowledged : item
+      )));
+    } catch {
+      setEscalationAckErrors((prev) => ({
+        ...prev,
+        [escalationId]: 'Network error -- the escalation was not acknowledged. Please try again.',
+      }));
+    } finally {
+      setEscalationAckBusyId(null);
+    }
+  }
+
   async function actOnIntakeCase(intakeCaseId: string, action: 'approve' | 'reject') {
     if (intakeActionBusyId) {
       return;
@@ -1171,6 +1279,100 @@ export default function CoachWorkspace() {
                   can remove.
                 </p>
               </div>
+            </div>
+          )}
+        </section>
+
+        {/* SAFETY ESCALATIONS -- also outside the tab switch, directly under
+            the pain reports and wearing the same locked band: an escalation is
+            what a near miss, pain report, or safety-gate flag becomes when it
+            is severe enough to auto-escalate, and this pull surface is the
+            platform's only alarm. The coach acknowledges ("I have seen this");
+            resolving stays an admin call server-side and is not offered. */}
+        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
+          <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
+              Safety Escalations
+            </h2>
+            <button
+              type="button"
+              onClick={() => void loadEscalations()}
+              className="btn btn--ghost"
+              aria-label="Refresh safety escalations"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {escalationsLoading && (
+            <p className="text-xs text-[color:var(--bone-300)]">Checking for open escalations...</p>
+          )}
+
+          {!escalationsLoading && escalationsError && (
+            <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3">
+              <p className="text-sm font-semibold text-[color:var(--locked-ink)]">{escalationsError}</p>
+              <p className="mt-1 text-xs text-[color:var(--locked-ink)]">
+                Escalations may exist that are not shown here. Do not read this as &quot;all clear&quot;.
+              </p>
+            </div>
+          )}
+
+          {!escalationsLoading && !escalationsError && escalations.length === 0 && (
+            <p className="text-xs text-[color:var(--bone-400)]">
+              No open escalations for your athletes. One appears here the moment a near miss, pain
+              report, or safety-gate flag escalates.
+            </p>
+          )}
+
+          {!escalationsLoading && !escalationsError && escalations.length > 0 && (
+            <div className="space-y-3">
+              {escalations.map((escalation) => {
+                const athleteName = athletes.find((athlete) => athlete.id === escalation.athlete_id)?.name;
+                return (
+                  <article
+                    key={escalation.escalation_id}
+                    className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s3)] space-y-[var(--s2)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
+                      <div>
+                        <p className="text-[length:var(--t-md)] font-black text-[color:var(--bone-100)]">
+                          {athleteName ?? `Athlete ID ${escalation.athlete_id}`}
+                        </p>
+                        <p className="t-data text-[color:var(--bone-400)]">
+                          {ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type}
+                          {' -- '}
+                          {painReportTime(escalation.created_at)}
+                        </p>
+                      </div>
+                      <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalation.severity} />
+                    </div>
+
+                    <p className="t-body text-[color:var(--bone-200)]">{escalation.reason}</p>
+
+                    {escalation.status === 'open' ? (
+                      <button
+                        type="button"
+                        onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
+                        disabled={escalationAckBusyId !== null}
+                        className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {escalationAckBusyId === escalation.escalation_id ? 'Acknowledging...' : 'Acknowledge'}
+                      </button>
+                    ) : (
+                      <p className="t-data text-[color:var(--bone-400)]">
+                        Acknowledged. Closing it out is an admin decision and happens on the admin
+                        escalations console.
+                      </p>
+                    )}
+
+                    {escalationAckErrors[escalation.escalation_id] && (
+                      <p role="alert" className="t-data text-[var(--locked-ink)]">
+                        {escalationAckErrors[escalation.escalation_id]}
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
