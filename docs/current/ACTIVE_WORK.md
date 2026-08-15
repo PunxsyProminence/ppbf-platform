@@ -37,18 +37,15 @@ Parking rule: a radar row parked during Phase 1 must gain a PARKED row below wit
 
 Phase 1 build queue, sequenced by the owner's decisions of 2026-08-15 (asked and answered one at a time; each row below that needed a decision carries it):
 
-| # | Item | Owner decision constraining it |
-|---|---|---|
-| 6 | Wrestling League minimal skeleton | Owner chose to build both skeletons knowing requirements are guessed until a real league exists — keep them deliberately skeletal. |
-| 7 | External Competition minimal skeleton | Same constraint as #6. |
-| 8 | Revenue backend | Full payment integration on the existing two-Stripe-account design (Giving + Program lanes, `paymentSetup.ts`). Ledger tables land first; processor wiring waits on owner's Stripe onboarding, and switch-on waits on the owner compliance sign-off the payment slot already requires. |
-| 9 | Publication Workflow Automation | Assess build-vs-park on arrival. |
+The 2026-08-15 queue is built through its buildable end. Items 1–5.5 shipped and were promoted to production in the 2026-08-15 release wave (sha `3d2308ed`, digest `sha256:be7c516d…` — see `PRODUCTION_STATE.json`): performance analytics, the SHADOW operational feed, deterministic gap suggestions (coach confirms or dismisses; nothing reaches an athlete unconfirmed), the sports-medicine clearance board (clearance + holds only), the internal grant-obligations ledger, and all three slices of the issue #345 research workspace (submission never resolves a requirement, structurally). Items 6–7 (both competition skeletons, deliberately skeletal by owner decision) merged as PRs #376/#377. Item 8's ledger tables merged as PR #378 (the payment slot's three reserved names, empty; CAP-012 stays BLOCKED). Item 9 was assessed and PARKED (see below). Retired owner-decision constraints remain binding on any change to those surfaces.
 
-Items 1–5.5 shipped and were promoted to production in the 2026-08-15 release wave (sha `3d2308ed`, digest `sha256:be7c516d…` — see `PRODUCTION_STATE.json`): performance analytics, the SHADOW operational feed, deterministic gap suggestions (coach confirms or dismisses; nothing reaches an athlete unconfirmed), the sports-medicine clearance board (clearance + holds only), the internal grant-obligations ledger, and all three slices of the issue #345 research workspace (submission never resolves a requirement, structurally). Their owner-decision constraints above are retired from this queue but remain binding on any change to those surfaces. Numbering is the build order.
+Merch note (owner, 2026-08-15): merchandise sales are Program-lane revenue when payments go live — earned income like class fees, settling to the Program account. The gear catalog/vendor records that exist already carry the inventory half; no new lane and no schema change needed.
 
 ## BLOCKED
 
-None. A blocked item should only live here when it is genuinely on the critical path for current work.
+| Item | Blocked on | Unblocks |
+|---|---|---|
+| Stripe connect flow (item 8, remaining half) | Owner registering PPBF's Stripe **platform** account and its Connect OAuth client (`PAYMENT_CONNECT_CLIENT_ID`), per `docs/PAYMENT_SERVICE_SLOT.md` step 1; the Giving account's 501(c)(3) verification should start in parallel (it is the slow step). | The connect round trip (`connect/start`/`connect/callback`), the webhook with deauthorization handling, and the checkout/receipt lane — built staging-first behind `PPBF_PAYMENTS_ENABLED`, with CAP-012 flipping only after the slot's step-5 evidence and the owner's compliance sign-off. |
 
 ## PARKED
 
@@ -60,6 +57,8 @@ None. A blocked item should only live here when it is genuinely on the critical 
 | `BACKLOG-grant-packet` | The rendering foundation exists; the unresolved question is what aggregate minor-related data may be disclosed externally. | A real grant/export request defines the disclosure set and privacy threshold. |
 | `BACKLOG-open-route-gates` | Route visibility and authorization are not the same thing; changing `buildingMap.ts` alone protects nothing. | A route is shown to expose a real unintended surface, then fix that route's own guard directly. |
 | `BACKLOG-video-skill-scoring` | Owner decision 2026-08-15: per-skill AI video scoring (punch detection, footwork, etc.) is parked for Phase 2+. Human Film Study IS the analysis pathway; shipping machine scores about minors' athletic ability without proven accuracy is the risk being refused. | Phase 1 is complete AND a scoring approach with explicit evidence standards has been selected by the owner. |
+| `BACKLOG-publication-automation` | Queue item 9, assessed 2026-08-15 under the owner's standing approval for recommendations: the internal publication machinery that exists (video compliance console + consent gating, research evidence review, retraction surveillance) is human-gated on purpose — there is no automatable step left that does not cross a gate deliberately. What automation would add is outward publication to a "destination registry", and no destination, content set, or disclosure rules exist. Automating external disclosure of content about or derived from minors ahead of those decisions is the same risk `BACKLOG-grant-packet` refuses. | The owner names a real destination and content type (e.g. "approved research summaries to the public site") with an explicit disclosure set. Automation then means moving already-approved items — never approving them. |
+| `BACKLOG-quickbooks-sync` | Owner request 2026-08-15 ("Treasurer also needs the QuickBooks login"): the treasurer's QuickBooks access itself is an Intuit-side action (invite as accountant user), not platform work. The platform half — pushing the payment mirror ledger into QuickBooks so nobody keys in donations by hand — is the Revenue Center's "QuickBooks Placeholder | Future Integration" row and stays parked until money actually flows. | The payment lanes are live (CAP-012 flipped) and real transactions exist in `pilot.payment_transactions` to sync; the integration then gets its own compliance review per the placeholder's own label. |
 
 ## Verification debt
 

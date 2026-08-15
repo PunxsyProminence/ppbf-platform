@@ -183,6 +183,18 @@ test('External Competition Platform reads as partial with the skeleton boundary 
   expect(card.textContent).toMatch(/until real competitions define them/i);
 });
 
+// Item 9 was assessed and parked, not silently skipped. The row must say so
+// and must carry the PARKED-table id, so the radar and ACTIVE_WORK.md cannot
+// drift apart about whether this work is remembered.
+test('Publication Workflow Automation reads as parked with its backlog id', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'Publication Workflow Automation' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('BACKLOG-publication-automation');
+  expect(card.textContent).toMatch(/human-gated on purpose/i);
+});
+
 // The radar is hand-maintained and had gone stale in both directions: it
 // missed capabilities that ship with persistent records and route tests, and
 // it still advertised the removed "BREAK MY 40% RULE" override token.
