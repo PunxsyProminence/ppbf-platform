@@ -163,6 +163,11 @@ export default function ParentHub() {
   // Safety & Consent card above: a failed read leaves the rest of the hub
   // working, it just shows no messages.
   const [messages, setMessages] = useState<ParentMessage[]>([]);
+  // Whether the messages read actually answered. The tab's own empty state is
+  // fine either way, but the SUMMARY TILE must not render a failed read as
+  // "0 messages" -- that zero reads as "the gym has said nothing", which
+  // nobody verified.
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -174,8 +179,10 @@ export default function ParentHub() {
         if (!response.ok) return;
         const payload = (await response.json()) as { items?: ParentMessage[] };
         setMessages(payload.items ?? []);
+        setMessagesLoaded(true);
       } catch {
-        // Messages tab falls back to its empty state.
+        // Messages tab falls back to its empty state; the summary tile shows
+        // Unavailable because messagesLoaded stays false.
       }
     })();
   }, []);
@@ -357,8 +364,6 @@ export default function ParentHub() {
   }, [activeChildId]);
 
   const activeChild = children.find(c => c.id === activeChildId);
-  const tasksDue = homeAssignments.filter(a => a.status !== 'Completed').length;
-  const upcomingEvents = upcomingSessions.length;
   const hasLiveChildMetrics = activeChild?.attendancePercent !== null && Boolean(activeChild?.currentProgress);
   const activeAttendanceEntries = attendanceEntries.filter((entry) => entry.childId === activeChildId);
   const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
@@ -439,13 +444,18 @@ export default function ParentHub() {
           <p className="t-body mt-[var(--s2)]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
         </div>
 
-        {/* ROLE SUMMARY PANEL */}
+        {/* ROLE SUMMARY PANEL. Home tasks and upcoming sessions have NO
+            backend feed yet (their arrays above are hardcoded empty), so
+            those tiles pass null and render Unavailable -- a derived 0 from a
+            feed that does not exist would tell a parent "nothing is due" and
+            "nothing is scheduled", which nobody verified. The messages count
+            is real only after its read answered. */}
         <ParentSummaryPanel
           childProgress={activeChild?.currentProgress || 'Unavailable - awaiting backend progression feed'}
-          tasksDue={tasksDue}
-          upcomingEvents={upcomingEvents}
+          tasksDue={null}
+          upcomingEvents={null}
           attendancePercent={activeChild?.attendancePercent ?? null}
-          unreadMessages={messages.length}
+          unreadMessages={messagesLoaded ? messages.length : null}
         />
 
         {!hasLiveChildMetrics && activeChild ? (
