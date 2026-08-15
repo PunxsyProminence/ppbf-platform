@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, GYM_TIME_ZONE } from '@/src/lib/gymTime';
 
 // The grant-obligation ledger (owner decision 2026-08-15: internal half
 // only). Deadlines first: the soonest-due open work leads, overdue is
@@ -44,9 +44,17 @@ const NEXT_ACTIONS: Record<string, Array<{ status: string; label: string }>> = {
   waived: [{ status: 'open', label: 'Reopen' }],
 };
 
+/** Today as YYYY-MM-DD on the gym's wall clock, not UTC's. */
+function gymToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: GYM_TIME_ZONE }).format(new Date());
+}
+
 function isOverdue(row: ObligationRow): boolean {
-  if (row.status === 'complete' || row.status === 'waived') return false;
-  return row.due_date < new Date().toISOString().slice(0, 10);
+  // 'submitted' counts as settled here for the same reason the server stamps
+  // completed_at on it: the work left the building; the funder's clock is
+  // running now, not ours.
+  if (row.status === 'submitted' || row.status === 'complete' || row.status === 'waived') return false;
+  return row.due_date < gymToday();
 }
 
 export default function GrantObligationsPage() {
@@ -64,10 +72,11 @@ export default function GrantObligationsPage() {
     notes: '',
   });
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/admin/grant-obligations`, {
       method: 'GET',
       credentials: 'include',
+      signal,
     });
     if (!response.ok) throw new Error('Unable to load grant obligations.');
     const payload = (await response.json()) as { items?: ObligationRow[] };
@@ -75,16 +84,20 @@ export default function GrantObligationsPage() {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       try {
-        await reload();
+        await reload(controller.signal);
         setErrorMessage(null);
+        setLoading(false);
       } catch (error) {
+        // An aborted load is the page unmounting, not a failure to report.
+        if (controller.signal.aborted) return;
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load grant obligations.');
-      } finally {
         setLoading(false);
       }
     })();
+    return () => controller.abort();
   }, [reload]);
 
   const handleCreate = async () => {

@@ -94,7 +94,8 @@ export async function createGrantObligation(input: {
   return row;
 }
 
-/** Soonest due first; settled rows sink below open work regardless of date. */
+/** Soonest due first; settled rows (submitted/complete/waived -- the same
+ * set the status update stamps completed_at for) sink below open work. */
 export async function listGrantObligations(
   organizationId: string,
   filter: { status?: GrantObligationStatus } = {},
@@ -104,7 +105,7 @@ export async function listGrantObligations(
      from pilot.grant_obligations
      where organization_id = $1
        and ($2::text is null or status = $2)
-     order by (status in ('complete', 'waived')) asc, due_date asc, created_at asc`,
+     order by (status in ('submitted', 'complete', 'waived')) asc, due_date asc, created_at asc`,
     [organizationId, filter.status ?? null],
   );
 }

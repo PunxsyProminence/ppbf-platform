@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   createGrantObligation,
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     const status = request.nextUrl.searchParams.get('status');
     if (status !== null && !isGrantObligationStatus(status)) {
-      throw new Error('Unknown status filter');
+      throw new ValidationError('Unknown status filter.');
     }
 
     const items = await listGrantObligations(
@@ -54,13 +55,13 @@ export async function POST(request: NextRequest) {
     };
 
     if (!body.grant_name?.trim() || !body.description?.trim()) {
-      throw new Error('Missing grant_name or description');
+      throw new ValidationError('Missing grant_name or description.');
     }
     if (!isGrantObligationType(body.obligation_type)) {
-      throw new Error('Unknown obligation_type');
+      throw new ValidationError('Unknown obligation_type.');
     }
     if (!body.due_date || !/^\d{4}-\d{2}-\d{2}$/.test(body.due_date)) {
-      throw new Error('due_date must be YYYY-MM-DD');
+      throw new ValidationError('due_date must be YYYY-MM-DD.');
     }
 
     const item = await createGrantObligation({
@@ -91,8 +92,8 @@ export async function PATCH(request: NextRequest) {
       notes?: string;
     };
 
-    if (!body.obligation_id) throw new Error('Missing obligation_id');
-    if (!isGrantObligationStatus(body.status)) throw new Error('Unknown status');
+    if (!body.obligation_id) throw new ValidationError('Missing obligation_id.');
+    if (!isGrantObligationStatus(body.status)) throw new ValidationError('Unknown status.');
 
     const item = await updateGrantObligationStatus({
       organizationId: principal.organizationId,
