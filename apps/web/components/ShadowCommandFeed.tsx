@@ -44,6 +44,7 @@ export default function ShadowCommandFeed() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       try {
         const [eventsResponse, telemetryResponse] = await Promise.all([
@@ -52,12 +53,14 @@ export default function ShadowCommandFeed() {
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ limit: FEED_LIMIT }),
+            signal: controller.signal,
           }),
           fetch(`${apiBase()}/api/pilot/shadow/telemetry`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ limit: FEED_LIMIT }),
+            signal: controller.signal,
           }),
         ]);
 
@@ -84,18 +87,22 @@ export default function ShadowCommandFeed() {
             created_at: metric.created_at,
           })),
         ]
-          .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))
           .slice(0, FEED_LIMIT);
 
         setRows(combined);
         setErrorMessage(null);
+        setLoading(false);
       } catch (error) {
+        // An aborted read is the component unmounting, not a failed panel;
+        // updating state for it would be exactly the leak the abort prevents.
+        if (controller.signal.aborted) return;
         setRows([]);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to read the operational record.');
-      } finally {
         setLoading(false);
       }
     })();
+    return () => controller.abort();
   }, []);
 
   if (loading) {
@@ -128,7 +135,7 @@ export default function ShadowCommandFeed() {
       {rows.map((row) => (
         <li key={row.key} className="flex flex-wrap items-baseline gap-x-[var(--s3)] gap-y-[var(--s1)]">
           <span className={row.kind === 'event' ? 'badge badge--monitor' : 'badge badge--cleared'}>
-            <i>{row.kind === 'event' ? '◉' : '▣'}</i>
+            <i aria-hidden="true">{row.kind === 'event' ? '◉' : '▣'}</i>
             {row.kind}
           </span>
           <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{row.label}</span>
