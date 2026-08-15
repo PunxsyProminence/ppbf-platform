@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — athlete/coach punch logging (Deep-Track form) + tested MVP punch-output/accuracy/connect-differential/offensiv. Missing: A real, tested formula engine computes punch output, accuracy, connect differential, and offensive efficiency from athlete-submitted observations, wit. Evidence: apps/web/src/server/pilot/formulas/registry.ts; apps/web/src/server/pilot/formulas/engine.ts. Status stays DRAFT. |

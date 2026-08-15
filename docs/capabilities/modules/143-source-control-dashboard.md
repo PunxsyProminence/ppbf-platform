@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — The page literally named for this module is explicitly self-labeled 'PLANNED / FRONT-END PLACEHOLDER / NOT YET. Missing: The /source-control (and /publication-workflow) pages are not wired to any backend, org-scoped or otherwise; they render hardcoded sample arrays and e. Evidence: apps/web/app/source-control/page.tsx; apps/web/app/source-control/publication-workflow/page.tsx. Status stays DRAFT. |

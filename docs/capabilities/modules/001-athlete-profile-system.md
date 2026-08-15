@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | athlete Passbook read model (identity, attendance, sessions, readiness, goals, observations, progression gaps) plus coach open-gap queue |
 | Active | false |
 | Promotion required | true |
 | Category | Core Athlete System (`coreAthleteSystem`) |
@@ -77,3 +78,4 @@ that reconciliation is decided.
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-04 | Codex | Added issue #156 Passbook read-model and API-only slice; governance remains inactive. |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/passbook.ts; apps/web/app/api/pilot/passbook/route.ts; apps/web/app/api/pilot/passbook/gaps/route.ts. Test: apps/web/app/api/pilot/passbook/route.test.ts pins 403 for board and unlinked parent, and 200 with observations+gaps for |

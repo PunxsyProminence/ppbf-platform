@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — coach/admin free-text athlete observation write via POST /api/pilot/intake/domain-upsert (entity_type=coach_no. Missing: A real write path exists (domain-upsert -> createCoachObservation) with a role gate and organization_id scoping on both insert and audit event, but th. Evidence: apps/web/src/server/pilot/intake.ts; apps/web/app/api/pilot/intake/domain-upsert/route.ts. Status stays DRAFT. |

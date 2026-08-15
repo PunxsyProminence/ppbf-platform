@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | coach progression-intelligence page: deterministic gap suggestions + confirmed gaps + assignment completion, coach/admin only |
 | Active | false |
 | Promotion required | true |
 | Category | Dashboards / Reporting (`dashboardsReporting`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/app/coach/progression-intelligence/page.tsx; apps/web/app/api/pilot/progression/suggestions/route.ts; apps/web/src/server/pilot/progressionSuggestions.ts. Test: apps/web/src/server/pilot/progressionSuggestions.test.ts pins suggestion rule thresholds; apps/web/app/api/pilot/progres |

@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | Central requireRole()/isOrganizationAdminRole() primitives used by essentially every API route in the platform |
 | Active | false |
 | Promotion required | true |
 | Category | Governance / Admin / Nonprofit (`governanceAdminNonprofit`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/access.ts; apps/web/src/server/pilot/staffProvisioning.ts; apps/web/app/admin/people/page.tsx. Test: apps/web/src/server/pilot/access.test.ts ('requireRole', 'isOrganizationAdminRole' describe blocks); apps/web/app/api/pi |

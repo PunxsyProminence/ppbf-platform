@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | GET/POST milestone awards, role-gated (MILESTONE_READER_ROLES/MILESTONE_WRITER_ROLES), assertActorCanAccessAthlete guardian scoping, writes  |
 | Active | false |
 | Promotion required | true |
 | Category | Class / Program Management (`classProgramManagement`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/app/api/pilot/achievements/milestones/route.ts; apps/web/src/server/pilot/achievements.ts; infra/azure/pilot_slice_postgres_achievements_migration.sql. Test: apps/web/src/server/pilot/achievements.test.ts and achievementsNoRanking.test.ts pin award/list behavior and the no-comp |

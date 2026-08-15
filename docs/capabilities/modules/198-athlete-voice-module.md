@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | fileAthleteVoiceEscalation files a pilot.safety_escalations row with source_type='athlete_voice', pointing at the feedback submission id, or |
 | Active | false |
 | Promotion required | true |
 | Category | Strongest Additions Now (`strongestAdditionsNow`) |
@@ -53,3 +54,4 @@ submission is the record.
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-06 | session B (remote) | Implemented on PR #238: athlete_voice source_type, athleteVoice.ts, submit-route wiring, coach-scope exclusion. Status stays DRAFT pending promotion review. |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/athleteVoice.ts; apps/web/app/api/pilot/feedback/submit/route.ts; apps/web/app/api/pilot/escalations/route.ts. Test: apps/web/src/server/pilot/athleteVoice.test.ts (severity triage + scanner cue-vocabulary drift alarm); apps/web/app/api/ |
