@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — AttributionCertainty = 'stated'/'probable'/'uncertain'; ledger reason code ATTRIBUTION_UNCERTAIN. Missing: A real, tested uncertainty-tagging mechanism exists (AttributionCertainty on research-pattern occurrences feeding a promotion gate), but nothing under. Evidence: apps/web/src/server/pilot/patterns/types.ts; apps/web/src/server/pilot/patterns/evidence.ts. Status stays DRAFT. |

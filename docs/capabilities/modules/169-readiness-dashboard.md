@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — Blank DRAFT stub, Active=false, no defined intent/tables/roles. Missing: A tested readiness-score formula exists and UI scaffolding to display it exists, but they are not wired together: no API route persists or serves per-. Evidence: docs/capabilities/modules/169-readiness-dashboard.md; apps/web/src/server/pilot/readinessMath.ts. Status stays DRAFT. |

@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — sparring form optional body-weight field -> generic formula-observations intake -> MVP-12 7-day weight-change . Missing: A real intake path (sparring form), storage, org-scoped/role-gated API, and a tested 7-day weight-change calculation all exist and are exercised by te. Evidence: apps/web/app/athlete/dashboard/sparring/page.tsx; apps/web/app/api/pilot/shadow/formulas/observations/route.ts. Status stays DRAFT. |

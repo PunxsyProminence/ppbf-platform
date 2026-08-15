@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — drill cues stored/read as part of the drill library (pilot.drill_cues), no standalone cue-library UI. Missing: no dedicated cue-library browsing/search surface independent of individual drill records. Evidence: infra/azure/pilot_slice_postgres_drill_library_v3_migration.sql; apps/web/src/server/pilot/drillLibraryV3.ts. Status stays DRAFT. |

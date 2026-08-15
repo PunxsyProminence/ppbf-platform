@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — protocol retest_interval config + due-assessment queue + one-tap capture/decline API. Missing: Real, tested, role-gated, org-scoped code implements retest-interval scheduling and a due-assessment/capture workflow, matching the testing/retest con. Evidence: apps/web/src/server/pilot/assessmentProtocols.ts; infra/azure/pilot_slice_postgres_assessment_protocols_migration.sql. Status stays DRAFT. |

@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — tested work-rate-consistency and round-to-round-change formula backend, reachable via role/org-gated API, no d. Missing: Round output consistency and round-to-round change are real, tested formulas served through the same role/org-gated API as the punch formulas, but as . Evidence: apps/web/src/server/pilot/formulas/registry.ts; apps/web/src/server/pilot/formulas/engine.ts. Status stays DRAFT. |

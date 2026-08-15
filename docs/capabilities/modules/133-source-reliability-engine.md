@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — PATCH/POST sets authority_tier (1-5) on shadow_library_sources, requireRole(SHADOW_LIBRARY_CURATOR_ROLES), uni. Missing: A genuine source-reliability classification (authority_tier) exists with a curator-role-gated write API, org isolation, and tests, but it is scoped en. Evidence: apps/web/app/api/pilot/shadow/library/sources/route.ts; apps/web/src/server/pilot/shadowEvidenceTier.ts. Status stays DRAFT. |

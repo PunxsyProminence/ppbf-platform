@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — Blank DRAFT stub, Active=false, no defined intent/tables/roles. Missing: A genuinely working, role-gated, org-scoped, tested safety-flags queue exists (raise/list/resolve), and a guardian-facing per-family safety status pag. Evidence: docs/capabilities/modules/170-safety-dashboard.md; apps/web/app/api/pilot/safety-flags/route.ts. Status stays DRAFT. |

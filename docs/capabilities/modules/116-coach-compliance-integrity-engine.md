@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | compliance rule/violation tracking with severity, escalation ladder, coach/admin role gates, org- and athlete-scoped access |
 | Active | false |
 | Promotion required | true |
 | Category | Coach System (`coachSystem`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/compliance.ts; apps/web/app/api/pilot/compliance/violations/route.ts; apps/web/app/api/pilot/compliance/violations/route.test.ts. Test: apps/web/app/api/pilot/compliance/violations/route.test.ts: '403 for a role that cannot view violations', '403 when coac |

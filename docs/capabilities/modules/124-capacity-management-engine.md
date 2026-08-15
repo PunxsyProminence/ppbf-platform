@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — POST class-creation validates capacity (1-200); role-gated writes; registration path checks capacity/waitlist. Missing: Real capacity-enforcement and waitlisting exists for class scheduling with role gates and org isolation, but this is a narrow per-class seat cap embed. Evidence: apps/web/app/api/pilot/scheduler/route.ts; apps/web/src/server/pilot/schedulerDb.ts. Status stays DRAFT. |

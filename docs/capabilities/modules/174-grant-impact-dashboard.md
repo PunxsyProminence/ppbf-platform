@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — admin/grants page: internal grant-obligation ledger (deadlines, funders, status workflow), no athlete/impact d. Missing: A real, tested, role-gated, org-scoped grant-obligation tracker exists, but it is explicitly documented (in-code) as only the internal deadline/delive. Evidence: apps/web/app/admin/grants/page.tsx; apps/web/app/api/pilot/admin/grant-obligations/route.ts. Status stays DRAFT. |

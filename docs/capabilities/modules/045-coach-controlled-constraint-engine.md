@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | coach/org-admin STOP-HOLD-REGRESS training constraint system with transactional escalation, role-gated and org-scoped, fully tested |
 | Active | false |
 | Promotion required | true |
 | Category | Combat / Boxing System (`combatBoxingSystem`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/trainingHolds.ts; apps/web/app/api/pilot/training-holds/route.ts; apps/web/app/api/pilot/training-holds/route.test.ts. Test: apps/web/app/api/pilot/training-holds/route.test.ts pins 403 behavior per role and coach-assignment enforcement for plac |
