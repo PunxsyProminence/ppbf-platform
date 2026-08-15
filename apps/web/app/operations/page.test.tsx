@@ -183,6 +183,22 @@ test('External Competition Platform reads as partial with the skeleton boundary 
   expect(card.textContent).toMatch(/until real competitions define them/i);
 });
 
+// Membership and scholarship tracking shipped as real records with the
+// scholarship-as-discount rule as the defining constraint. Pinned so neither
+// row can slide back to planning mode nor quietly drop the never-a-bypass
+// statement.
+test('Membership and Scholarship Tracking read as shipped with the discount rule stated', async () => {
+  await renderPage();
+
+  const membership = screen.getByRole('heading', { name: 'Membership Tracking' }).closest('article') as HTMLElement;
+  expect(membership.textContent).toContain('EXISTS');
+  expect(membership.textContent).toMatch(/Billing is not built/i);
+
+  const scholarship = screen.getByRole('heading', { name: 'Scholarship Tracking' }).closest('article') as HTMLElement;
+  expect(scholarship.textContent).toContain('EXISTS');
+  expect(scholarship.textContent).toMatch(/never bypasses/i);
+});
+
 // Item 9 was assessed and parked, not silently skipped. The row must say so
 // and must carry the PARKED-table id, so the radar and ACTIVE_WORK.md cannot
 // drift apart about whether this work is remembered.
