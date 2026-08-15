@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 
-import { GET, POST } from './route';
+import { GET, PATCH, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
   createShadowLibrarySource,
   listShadowLibrarySources,
+  updateShadowLibrarySourceClassification,
 } from '@/src/server/pilot/shadowLibrary';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -16,11 +17,13 @@ jest.mock('@/src/server/pilot/http', () => {
 jest.mock('@/src/server/pilot/shadowLibrary', () => ({
   createShadowLibrarySource: jest.fn(),
   listShadowLibrarySources: jest.fn(),
+  updateShadowLibrarySourceClassification: jest.fn(),
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
 const mockCreate = createShadowLibrarySource as jest.MockedFunction<typeof createShadowLibrarySource>;
 const mockList = listShadowLibrarySources as jest.MockedFunction<typeof listShadowLibrarySources>;
+const mockReclassify = updateShadowLibrarySourceClassification as jest.MockedFunction<typeof updateShadowLibrarySourceClassification>;
 
 function principal(role: PilotPrincipal['role'] = 'organization_admin'): PilotPrincipal {
   return {
@@ -209,5 +212,48 @@ describe('GET /api/pilot/shadow/library/sources', () => {
     expect(mockList).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: 'org-real' }),
     );
+  });
+});
+
+// Classification correction (issue #345 workflow 3): curator-gated, taxonomy-
+// validated, and narrower than every other write on this route.
+describe('PATCH /api/pilot/shadow/library/sources', () => {
+  function patchRequest(body: Record<string, unknown>) {
+    return new NextRequest('http://localhost/api/pilot/shadow/library/sources', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('a coach cannot reclassify', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const response = await PATCH(patchRequest({ source_id: 'src-1', classification_domain: 'ai_ml_data_science' }));
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(mockReclassify).not.toHaveBeenCalled();
+  });
+
+  test('a label outside the shared taxonomy is refused', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+
+    const response = await PATCH(patchRequest({ source_id: 'src-1', classification_domain: 'astrology' }));
+
+    expect(response.status).toBe(400);
+    expect(mockReclassify).not.toHaveBeenCalled();
+  });
+
+  test('a valid correction is org-scoped, and a missing source hides as not-found', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockReclassify.mockResolvedValueOnce({ source_id: 'src-1' } as never);
+
+    const ok = await PATCH(patchRequest({ source_id: 'src-1', classification_domain: 'youth_development_safeguarding' }));
+    expect(ok.status).toBe(200);
+    expect(mockReclassify).toHaveBeenCalledWith('org-real', 'src-1', 'youth_development_safeguarding');
+
+    mockReclassify.mockResolvedValueOnce(null);
+    const missing = await PATCH(patchRequest({ source_id: 'src-x', classification_domain: 'youth_development_safeguarding' }));
+    expect(missing.status).toBe(404);
   });
 });
