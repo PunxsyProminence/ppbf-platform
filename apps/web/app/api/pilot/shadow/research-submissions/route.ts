@@ -69,30 +69,8 @@ export async function POST(request: NextRequest) {
       submission_note?: string;
     };
 
-    if (!Number.isInteger(body.research_requirement_id) || (body.research_requirement_id as number) <= 0) {
-      throw new ValidationError('research_requirement_id must be a positive integer.');
-    }
     // Normalized once, used everywhere below: a blank document_id means "no
     // document", never an empty-string FK value headed for a 500.
-    const sourceId = body.source_id?.trim() ?? '';
-    const documentId = body.document_id?.trim() || null;
-    if (!sourceId) {
-      throw new ValidationError('Missing source_id.');
-    }
-
-    // Org isolation: FKs prove existence, not tenancy. "Doesn't exist" and
-    // "exists in another organization" collapse into one hidden not-found.
-    const requirementId = body.research_requirement_id as number;
-    if ((await getRequirementStatusInOrg(principal.organizationId, requirementId)) === null) {
-      return hiddenNotFound();
-    }
-    if (!(await sourceExistsInOrg(principal.organizationId, sourceId))) {
-      return hiddenNotFound();
-    }
-    if (documentId !== null && !(await documentExistsInOrg(principal.organizationId, documentId))) {
-      return hiddenNotFound();
-    }
-
     const requirementId = Number(body.research_requirement_id);
     if (!Number.isInteger(requirementId) || requirementId <= 0) {
       throw new ValidationError('research_requirement_id must be a positive integer.');
