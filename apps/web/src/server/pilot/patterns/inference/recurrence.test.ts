@@ -148,7 +148,7 @@ describe('inference policy refusal', () => {
   });
 
   test('ships no default policy', async () => {
-    const module = await import('./policy');
-    expect(Object.keys(module).some((name) => /DEFAULT|STANDARD|RECOMMENDED/i.test(name))).toBe(false);
+    const policyModule = await import('./policy');
+    expect(Object.keys(policyModule).some((name) => /DEFAULT|STANDARD|RECOMMENDED/i.test(name))).toBe(false);
   });
 });

@@ -406,6 +406,16 @@ export interface PatternCandidateEvaluation {
   readonly humanReviewRequired: true;
   readonly promotion: PatternPromotionProposal | null;
   readonly evaluatedAt: string;
+
+  /**
+   * Phase A inference output, present only when an inference policy was
+   * supplied. Null means the rules alone decided -- not that inference ran
+   * and found nothing.
+   *
+   * Typed loosely here to keep `types.ts` free of a dependency on
+   * `./inference`; the concrete shape is `PatternInferenceReport`.
+   */
+  readonly inference: unknown | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

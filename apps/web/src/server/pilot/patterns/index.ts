@@ -77,3 +77,49 @@ export {
   type AthleteLessonPolicy,
   type EvaluateAthleteLessonInput,
 } from './lessons';
+
+// ── Phase A inference (Stack v1.1 §2.2-§2.5) ────────────────────────────────
+// Closed-form only: no service, no training, no runtime math dependency.
+export {
+  betaCredibleInterval,
+  betaQuantile,
+  betaTailAbove,
+  logBeta,
+  logGamma,
+  regularizedIncompleteBeta,
+  type CredibleInterval,
+} from './inference/beta';
+
+export {
+  assertPatternInferencePolicy,
+  inferencePolicyParameters,
+  type DriftPolicy,
+  type PatternInferencePolicy,
+  type PosteriorWidthPolicy,
+  type RecurrencePriorPolicy,
+  type SequentialTestPolicy,
+  type StratifiedAttributionPolicy,
+} from './inference/policy';
+
+export {
+  assessRecurrence,
+  type RecurrenceAssessment,
+  type RecurrenceObservationCounts,
+  type SequentialVerdict,
+} from './inference/recurrence';
+
+export {
+  assessStratifiedAttribution,
+  type StratifiedAttributionAssessment,
+  type StratumAxis,
+  type StratumSummary,
+} from './inference/attribution';
+
+export {
+  assessDrift,
+  buildSessionRateSeries,
+  type DriftAssessment,
+  type SessionRatePoint,
+} from './inference/drift';
+
+export type { PatternInferenceReport } from './promotion';
