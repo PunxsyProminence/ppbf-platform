@@ -9,6 +9,13 @@ import { apiBase } from '@/lib/apiBase';
 // A plain constant with no server dependencies, so a client component can
 // import it and the admin copy can never drift from what the server sets.
 import { DEFAULT_FIRST_LOGIN_PIN } from '@/src/server/pilot/pinPolicy';
+// Same reasoning: credentialPolicy is the single source of truth for which
+// door each role signs in through, is dependency-free, and exists precisely
+// because sign-in copy drifted from the server's rule. This page carried that
+// drift: it told admins every invited adult needs the Microsoft tenant, while
+// the server signs coaches, staff, volunteers and parents in by emailed link.
+import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
+import type { PilotRole } from '@/src/server/pilot/contracts';
 
 interface Member {
   account_id: string;
@@ -142,7 +149,27 @@ function signInStatus(
     }
   }
 
-  if (member.auth_provider === 'microsoft') {
+  // The door is decided by ROLE (credentialPolicy), not by the stored
+  // auth_provider: the magic-link issue and consume paths both key on the
+  // role, so a parent row that happens to carry provider 'microsoft' still
+  // signs in with the emailed link. Labelling by provider here was this
+  // page's own copy drift.
+  let credential: ReturnType<typeof requiredCredentialFor> | null = null;
+  try {
+    credential = requiredCredentialFor({ role: member.role as PilotRole });
+  } catch {
+    // A legacy row with a role outside the vocabulary: fall through to the
+    // provider-based labels below rather than crashing the roster.
+  }
+
+  if (credential === 'magic_link') {
+    if (!member.login_email) {
+      return { label: 'No email on file — cannot receive a sign-in link', tone: 'blocked' };
+    }
+    return { label: 'Signs in with an email link', tone: 'ok' };
+  }
+
+  if (credential === 'microsoft' || member.auth_provider === 'microsoft') {
     return { label: 'Signs in with Microsoft', tone: 'ok' };
   }
 
@@ -550,10 +577,18 @@ function PeopleConsoleContent() {
       // Naming the child back is the check on the one mistake this form can
       // make that nobody else would catch: linking a guardian to the wrong
       // athlete.
+      // The sign-in sentence comes from the credential policy, not from this
+      // page's memory of it. Every role this form can invite signs in with an
+      // emailed link today; the Microsoft branch survives so the sentence
+      // stays right if a Microsoft-credential role ever becomes invitable.
+      const signInSentence =
+        requiredCredentialFor({ role: inviteRole as PilotRole }) === 'magic_link'
+          ? `They sign in with an email link: on the login page they enter ${email} and the link arrives in their inbox. No Microsoft account is needed.`
+          : 'They must also be a guest in the PPBF Microsoft tenant before they can sign in.';
       setNotice(
         inviteRole === 'parent'
-          ? `${email} is now a guardian of ${linkedAthleteName} and will see that athlete and no one else. They must also be a guest in the PPBF Microsoft tenant before they can sign in.`
-          : `${email} is now a ${roleLabel(inviteRole)} in your gym. They must also be a guest in the PPBF Microsoft tenant before they can sign in.`,
+          ? `${email} is now a guardian of ${linkedAthleteName} and will see that athlete and no one else. ${signInSentence}`
+          : `${email} is now a ${roleLabel(inviteRole)} in your gym. ${signInSentence}`,
       );
       setInviteEmail('');
       setGuardianFullName('');
@@ -1083,21 +1118,23 @@ function PeopleConsoleContent() {
             <div>
               <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add a coach, staff member, or guardian</h2>
               <p className="t-body mt-[var(--s3)]">
-                Adults sign in with Microsoft, not a PIN. Enter the Microsoft email address they will use.
+                Coaches, staff, volunteers and guardians sign in with an emailed link — no password and no
+                Microsoft account. Enter the email address the link should reach.
               </p>
             </div>
 
             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="t-eyebrow">Two steps, not one</p>
+              <p className="t-eyebrow">One step</p>
               <p className="t-body mt-[var(--s2)]">
-                This form gives them a role in PPBF. If they are outside your Microsoft organization, someone also has to
-                invite them as a guest in Entra ID — until that is done, their sign-in will be rejected.
+                This form gives them their role. As soon as it is saved, they can go to the login page,
+                choose Email Link, enter this address, and sign in from their inbox. No Entra ID guest
+                invite is involved for any role on this form.
               </p>
             </div>
 
             <div className="field">
               <label htmlFor="invite-email" className="t-label">
-                Microsoft email address
+                Email address
               </label>
               <input
                 id="invite-email"

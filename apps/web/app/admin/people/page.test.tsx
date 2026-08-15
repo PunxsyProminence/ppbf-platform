@@ -136,7 +136,11 @@ describe('a guardian who resolves no children', () => {
     render(<PeopleConsolePage />);
 
     expect(await screen.findByText('Alex Johnson')).toBeTruthy();
-    expect(screen.getByText('Signs in with Microsoft')).toBeTruthy();
+    // The door is decided by role, not by the stored auth_provider: this
+    // guardian row carries provider 'microsoft', and still signs in with the
+    // emailed link because the magic-link paths key on the parent role.
+    expect(screen.getByText('Signs in with an email link')).toBeTruthy();
+    expect(screen.queryByText('Signs in with Microsoft')).toBeNull();
     expect(screen.queryByText(/linked to no athlete/i)).toBeNull();
   });
 
@@ -163,7 +167,7 @@ describe('the invite form', () => {
   test('will not submit a parent invite until an athlete is chosen', async () => {
     await openInviteTab({ roster: ROSTER });
 
-    fireEvent.change(screen.getByLabelText(/Microsoft email address/i), {
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), {
       target: { value: 'dana@example.com' },
     });
     fireEvent.click(screen.getByRole('radio', { name: /Parent \/ Guardian/i }));
@@ -188,7 +192,7 @@ describe('the invite form', () => {
       },
     });
 
-    fireEvent.change(screen.getByLabelText(/Microsoft email address/i), {
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), {
       target: { value: 'dana@example.com' },
     });
     fireEvent.click(screen.getByRole('radio', { name: /Parent \/ Guardian/i }));
@@ -215,7 +219,7 @@ describe('the invite form', () => {
       },
     });
 
-    fireEvent.change(screen.getByLabelText(/Microsoft email address/i), {
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), {
       target: { value: 'coach@example.com' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Add To My Gym/i }));
@@ -238,6 +242,57 @@ describe('the invite form', () => {
 
     expect((screen.getByRole('radio', { name: /Parent \/ Guardian/i }) as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText(/no athlete records in your gym yet/i)).toBeTruthy();
+  });
+
+  // credentialPolicy is the single source of truth: every role this form can
+  // invite signs in with an emailed link. The form used to claim the opposite
+  // -- a Microsoft address, an Entra guest invite, "sign-in will be rejected"
+  // -- which sent admins to arrange tenant guesting no parent needs.
+  test('the form says invitees sign in by emailed link, with no Entra step', async () => {
+    await openInviteTab({ roster: ROSTER });
+
+    expect(screen.getByText(/sign in with an emailed link/i)).toBeTruthy();
+    expect(screen.getByText(/No Entra ID guest invite is involved/i)).toBeTruthy();
+    expect(screen.queryByText(/Two steps, not one/i)).toBeNull();
+    expect(screen.queryByText(/their sign-in will be rejected/i)).toBeNull();
+  });
+
+  test('a guardian invite\'s success notice explains the email link, not the Microsoft tenant', async () => {
+    await openInviteTab({ roster: ROSTER, onPost: () => ({ ok: true }) });
+
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), {
+      target: { value: 'dana@example.com' },
+    });
+    fireEvent.click(screen.getByRole('radio', { name: /Parent \/ Guardian/i }));
+    fireEvent.change(screen.getByLabelText(/Guardian's full name/i), { target: { value: 'Dana Johnson' } });
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add To My Gym/i }));
+
+    const notice = await screen.findByText(/is now a guardian of Alex Johnson/i);
+    expect(notice.textContent).toContain('They sign in with an email link');
+    expect(notice.textContent).toContain('No Microsoft account is needed');
+    expect(notice.textContent).not.toContain('Microsoft tenant');
+  });
+});
+
+describe('sign-in status labels follow the credential policy', () => {
+  test('an org admin shows Microsoft; a parent with no email on file is flagged, not labelled a link user', async () => {
+    global.fetch = fetchMock({
+      members: [
+        guardianMember({ account_id: 'admin-2', login_email: 'admin2@example.org', role: 'organization_admin' }),
+        guardianMember({ account_id: 'no-mail', login_email: null }),
+      ],
+      guardianLinks: [
+        { account_id: 'no-mail', parent_id: 'par-9', athlete_id: 'ath-1', athlete_full_name: 'Alex Johnson', relationship_to_athlete: 'father' },
+      ],
+      roster: ROSTER,
+    }) as never;
+
+    render(<PeopleConsolePage />);
+
+    expect(await screen.findByText('Signs in with Microsoft')).toBeTruthy();
+    expect(screen.getByText(/No email on file/i)).toBeTruthy();
+    expect(screen.queryByText('Signs in with an email link')).toBeNull();
   });
 });
 
