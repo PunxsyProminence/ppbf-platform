@@ -58,6 +58,23 @@ interface RosterAthlete {
   status?: string;
 }
 
+interface GapSuggestionItem {
+  athlete_id: string;
+  full_name: string;
+  rule: string;
+  gap_type: string;
+  suggested_description: string;
+  evidence: Record<string, number | string>;
+}
+
+const SUGGESTION_RULE_LABEL: Record<string, string> = {
+  readiness_falling: 'Readiness falling',
+  training_days_dropping: 'Training days dropping',
+  assignments_stalled: 'Assignments stalled',
+};
+
+const suggestionKey = (item: GapSuggestionItem) => `${item.athlete_id}:${item.rule}`;
+
 interface DrillLibraryItem {
   drill_id: string;
   name: string;
@@ -110,6 +127,15 @@ export default function CoachProgressionIntelligencePage() {
     due_date: '',
   });
   const [busy, setBusy] = useState(false);
+  // Deterministic gap suggestions (owner decision 2026-08-15): computed
+  // server-side from transparent arithmetic rules, never stored, and shown to
+  // staff only. A suggestion becomes a real gap only through the confirm
+  // button below, which files it through the ordinary gaps POST under this
+  // coach's name. Dismissal is this-visit-only by design: nothing about an
+  // unconfirmed machine observation deserves a database row.
+  const [suggestions, setSuggestions] = useState<GapSuggestionItem[]>([]);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<ReadonlySet<string>>(new Set());
+  const [confirmingSuggestion, setConfirmingSuggestion] = useState<string | null>(null);
 
   // Load roster + drill library once.
   useEffect(() => {
@@ -132,6 +158,53 @@ export default function CoachProgressionIntelligencePage() {
       }
     })();
   }, []);
+
+  // Load deterministic suggestions once per visit. Best-effort: a coach with
+  // no suggestions endpoint sees the same page they always did.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/progression/suggestions`, { credentials: 'include' });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items?: GapSuggestionItem[] };
+        setSuggestions(payload.items ?? []);
+      } catch {
+        // Best-effort: no suggestions is a smaller loss than a broken page.
+      }
+    })();
+  }, []);
+
+  const handleConfirmSuggestion = async (item: GapSuggestionItem) => {
+    const key = suggestionKey(item);
+    setConfirmingSuggestion(key);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/progression/gaps`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athlete_id: item.athlete_id,
+          gap_type: item.gap_type,
+          gap_description: item.suggested_description,
+          severity: 'medium',
+          detected_from: `deterministic_rule:${item.rule}`,
+          detection_data: item.evidence,
+        }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Confirm failed (${response.status})`);
+      }
+      setSuggestions((current) => current.filter((s) => suggestionKey(s) !== key));
+      if (selectedAthlete === item.athlete_id) {
+        await reloadAthleteData(item.athlete_id);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to confirm the suggestion.');
+    } finally {
+      setConfirmingSuggestion(null);
+    }
+  };
 
   const reloadAthleteData = useCallback(async (athleteId: string) => {
     // Clearing lives here rather than in the effect below: setState called
@@ -372,6 +445,51 @@ export default function CoachProgressionIntelligencePage() {
             )}
           </div>
         </div>
+
+        {suggestions.filter((item) => !dismissedSuggestions.has(suggestionKey(item))).length > 0 && (
+          <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+            <h2 className="t-command text-[length:var(--t-lg)]">Suggested Gaps</h2>
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
+              Deterministic rules over records the gym already keeps — readiness check-ins, training days, and
+              overdue assignments. Nothing here reaches an athlete unless you confirm it as a gap. Dismissing
+              hides a suggestion for this visit only.
+            </p>
+            <ul className="mt-[var(--s4)] space-y-[var(--s3)]">
+              {suggestions
+                .filter((item) => !dismissedSuggestions.has(suggestionKey(item)))
+                .map((item) => {
+                  const key = suggestionKey(item);
+                  return (
+                    <li key={key} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+                      <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                        <span className="badge badge--monitor"><i aria-hidden="true">◉</i>suggested</span>
+                        <span className="t-body font-semibold">{item.full_name}</span>
+                        <span className="t-label">{SUGGESTION_RULE_LABEL[item.rule] ?? item.rule}</span>
+                      </div>
+                      <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{item.suggested_description}</p>
+                      <div className="mt-[var(--s3)] flex gap-[var(--s2)]">
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={confirmingSuggestion === key}
+                          onClick={() => void handleConfirmSuggestion(item)}
+                        >
+                          {confirmingSuggestion === key ? 'Confirming…' : 'Confirm as gap'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => setDismissedSuggestions((current) => new Set([...current, key]))}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
+          </section>
+        )}
 
         {selectedAthlete && (
           <>

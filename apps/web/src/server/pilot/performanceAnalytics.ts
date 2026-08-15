@@ -23,12 +23,20 @@ export interface AthletePerformanceRow {
   sessions_completed: number;
   avg_rpe: number | null;
   training_days: number;
+  // Distinct training days in the older half vs the newer half of the window,
+  // for the deterministic consistency rule in progressionSuggestions.ts.
+  training_days_early: number;
+  training_days_late: number;
   readiness_count: number;
   avg_readiness: number | null;
   // Mean readiness in the older half vs the newer half of the window, so the
   // page can show direction without pretending to be a statistical claim.
+  // The per-half counts exist so a rule can refuse to read a direction into
+  // halves that are too thin to carry one.
   readiness_early_avg: number | null;
   readiness_late_avg: number | null;
+  readiness_early_count: number;
+  readiness_late_count: number;
   open_gaps: number;
   active_assignments: number;
   avg_assignment_completion: number | null;
@@ -47,11 +55,15 @@ interface ReadinessAgg {
   avg_readiness: number | null;
   readiness_early_avg: number | null;
   readiness_late_avg: number | null;
+  readiness_early_count: number;
+  readiness_late_count: number;
 }
 
 interface TrainingDaysAgg {
   athlete_id: string;
   training_days: number;
+  training_days_early: number;
+  training_days_late: number;
 }
 
 interface GapsAgg {
@@ -108,7 +120,9 @@ export async function getPerformanceRollup(
               count(*)::int as readiness_count,
               avg(score)::float8 as avg_readiness,
               (avg(score) filter (where measured_at < $4::timestamptz))::float8 as readiness_early_avg,
-              (avg(score) filter (where measured_at >= $4::timestamptz))::float8 as readiness_late_avg
+              (avg(score) filter (where measured_at >= $4::timestamptz))::float8 as readiness_late_avg,
+              (count(*) filter (where measured_at < $4::timestamptz))::int as readiness_early_count,
+              (count(*) filter (where measured_at >= $4::timestamptz))::int as readiness_late_count
        from pilot.readiness
        where organization_id = $1 and athlete_id = any($2::text[]) and measured_at >= $3::timestamptz
        group by athlete_id`,
@@ -116,13 +130,15 @@ export async function getPerformanceRollup(
     ),
     query<TrainingDaysAgg>(
       `select athlete_id,
-              count(distinct occurred_on)::int as training_days
+              count(distinct occurred_on)::int as training_days,
+              (count(distinct occurred_on) filter (where occurred_on < $4::date))::int as training_days_early,
+              (count(distinct occurred_on) filter (where occurred_on >= $4::date))::int as training_days_late
        from pilot.activity_log
        where organization_id = $1 and athlete_id = any($2::text[])
          and activity_domain = 'boxing_training' and attendance_status = 'present'
          and occurred_on >= $3::date
        group by athlete_id`,
-      [organizationId, ids, cutoffDate],
+      [organizationId, ids, cutoffDate, midpointIso.slice(0, 10)],
     ),
     query<GapsAgg>(
       `select athlete_id,
@@ -158,10 +174,14 @@ export async function getPerformanceRollup(
     sessions_completed: bySessions.get(athleteId)?.sessions_completed ?? 0,
     avg_rpe: bySessions.get(athleteId)?.avg_rpe ?? null,
     training_days: byTraining.get(athleteId)?.training_days ?? 0,
+    training_days_early: byTraining.get(athleteId)?.training_days_early ?? 0,
+    training_days_late: byTraining.get(athleteId)?.training_days_late ?? 0,
     readiness_count: byReadiness.get(athleteId)?.readiness_count ?? 0,
     avg_readiness: byReadiness.get(athleteId)?.avg_readiness ?? null,
     readiness_early_avg: byReadiness.get(athleteId)?.readiness_early_avg ?? null,
     readiness_late_avg: byReadiness.get(athleteId)?.readiness_late_avg ?? null,
+    readiness_early_count: byReadiness.get(athleteId)?.readiness_early_count ?? 0,
+    readiness_late_count: byReadiness.get(athleteId)?.readiness_late_count ?? 0,
     open_gaps: byGaps.get(athleteId)?.open_gaps ?? 0,
     active_assignments: byAssignments.get(athleteId)?.active_assignments ?? 0,
     avg_assignment_completion: byAssignments.get(athleteId)?.avg_assignment_completion ?? null,
