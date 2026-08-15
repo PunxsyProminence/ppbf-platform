@@ -18,6 +18,8 @@ interface RouteResponses {
   athletesList?: () => Promise<Response> | Response;
   sessionsList?: (athleteId: string) => Promise<Response> | Response;
   coachReviewsList?: (sessionId: string) => Promise<Response> | Response;
+  escalationsGet?: () => Promise<Response> | Response;
+  escalationsPost?: (body: { action?: string; escalation_id?: string }) => Promise<Response> | Response;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -82,6 +84,14 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/coach/barrier-reports')) {
       return routes.barrierReports ? routes.barrierReports() : jsonResponse({ ok: true, barrierReports: [], truncated: false });
+    }
+    if (url.includes('/api/pilot/escalations')) {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { action?: string; escalation_id?: string };
+        if (routes.escalationsPost) return routes.escalationsPost(body);
+        return jsonResponse({ ok: true, escalation: { escalation_id: body.escalation_id, status: 'acknowledged' } });
+      }
+      return routes.escalationsGet ? routes.escalationsGet() : jsonResponse({ ok: true, escalations: [] });
     }
     if (url.includes('/api/pilot/intake/review-action')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as { intake_case_id?: string; action?: string };
@@ -259,6 +269,128 @@ describe('coach review submission', () => {
       fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
     });
     expect(reviewCalls()).toBe(2);
+  });
+});
+
+// The escalation inbox: /api/pilot/escalations already authorizes coaches
+// (roster + coverage scoped, athlete_voice excluded) and lets them
+// acknowledge -- and no coach surface consumed it, so the platform's only
+// safety-alarm mechanism had no bell on the coach side.
+describe('safety escalations inbox', () => {
+  function escalation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      escalation_id: 'esc_1',
+      athlete_id: 'ath_1',
+      source_type: 'pain_report',
+      severity: 'high',
+      reason: 'Pain score 8 reported after sparring round.',
+      status: 'open',
+      created_at: '2026-08-14T18:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  const rosterWithNames = () =>
+    jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Jordan P.' }] });
+
+  test('open escalations reach the coach with the athlete named and the reason in full', async () => {
+    await renderWorkspace({
+      athletesList: rosterWithNames,
+      escalationsGet: () =>
+        jsonResponse({
+          ok: true,
+          escalations: [
+            escalation(),
+            escalation({ escalation_id: 'esc_2', source_type: 'near_miss', severity: 'critical', athlete_id: 'ath_unknown' }),
+          ],
+        }),
+    });
+
+    expect(screen.queryByText('Safety Escalations')).not.toBeNull();
+    // The name also renders on the roster tab, so assert presence, not
+    // uniqueness.
+    expect(screen.queryAllByText('Jordan P.').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/Pain score 8 reported after sparring round/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/Pain report/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/Near miss/).length).toBeGreaterThan(0);
+    // An athlete the roster read could not name is shown by id, not dropped.
+    expect(screen.queryByText('Athlete ID ath_unknown')).not.toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(2);
+  });
+
+  test('acknowledge posts the escalation id and shows the state the server returned', async () => {
+    const posted: Array<{ action?: string; escalation_id?: string }> = [];
+    await renderWorkspace({
+      athletesList: rosterWithNames,
+      escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
+      escalationsPost: (body) => {
+        posted.push(body);
+        return jsonResponse({ ok: true, escalation: escalation({ status: 'acknowledged' }) });
+      },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    });
+
+    expect(posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc_1' }]);
+    expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull();
+    expect(screen.queryByText(/Closing it out is an admin decision/)).not.toBeNull();
+  });
+
+  test('a double-click sends exactly one acknowledge request', async () => {
+    let release: (() => void) | undefined;
+    const posted: unknown[] = [];
+    await renderWorkspace({
+      athletesList: rosterWithNames,
+      escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
+      escalationsPost: (body) => {
+        posted.push(body);
+        return new Promise<Response>((resolve) => {
+          release = () => resolve(jsonResponse({ ok: true, escalation: escalation({ status: 'acknowledged' }) }));
+        });
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    fireEvent.click(screen.getByRole('button', { name: /Acknowledg/ }));
+    expect(posted).toHaveLength(1);
+
+    await act(async () => {
+      release?.();
+    });
+    expect(screen.queryByText(/Closing it out is an admin decision/)).not.toBeNull();
+  });
+
+  test('the server\'s refusal is surfaced, and the row stays open rather than pretending', async () => {
+    await renderWorkspace({
+      athletesList: rosterWithNames,
+      escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
+      escalationsPost: () => jsonResponse({ error: 'Missing escalation record' }, { ok: false, status: 400 }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    });
+
+    expect(screen.queryByText('Missing escalation record')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Acknowledge' })).not.toBeNull();
+  });
+
+  test('a failed read never renders as "no escalations"', async () => {
+    await renderWorkspace({
+      escalationsGet: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }),
+    });
+
+    expect(screen.queryByText(/Escalations may exist that are not shown here/)).not.toBeNull();
+    expect(screen.queryByText(/No open escalations for your athletes/)).toBeNull();
+  });
+
+  test('a healthy empty inbox says an escalation would appear here', async () => {
+    await renderWorkspace({});
+
+    expect(screen.queryByText(/No open escalations for your athletes/)).not.toBeNull();
+    expect(screen.queryByText(/Escalations may exist that are not shown here/)).toBeNull();
   });
 });
 
