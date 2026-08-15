@@ -45,7 +45,7 @@ Merch note (owner, 2026-08-15): merchandise sales are Program-lane revenue when 
 
 | Item | Blocked on | Unblocks |
 |---|---|---|
-| Stripe connect flow (item 8, remaining half) | Owner registering PPBF's Stripe **platform** account and its Connect OAuth client (`PAYMENT_CONNECT_CLIENT_ID`), per `docs/PAYMENT_SERVICE_SLOT.md` step 1; the Giving account's 501(c)(3) verification should start in parallel (it is the slow step). | The connect round trip (`connect/start`/`connect/callback`), the webhook with deauthorization handling, and the checkout/receipt lane — built staging-first behind `PPBF_PAYMENTS_ENABLED`, with CAP-012 flipping only after the slot's step-5 evidence and the owner's compliance sign-off. |
+| Stripe onboarding round-trip test + checkout slice (item 8, remaining half) | The connect flow is BUILT (owner instruction 2026-08-15: build ahead so onboarding can be tested "as if I'm a new gym") — `connect/start`/`connect/callback`, the deauthorization webhook, and `/admin/payments`. What blocks is the owner registering PPBF's Stripe **platform** account and Connect OAuth client (`PAYMENT_CONNECT_CLIENT_ID` + `PAYMENT_PLATFORM_SECRET_KEY` + `PAYMENT_PLATFORM_WEBHOOK_SECRET` as Container App secrets); the Giving account's 501(c)(3) verification should start in parallel (it is the slow step). | The live end-to-end onboarding test on staging, then the checkout/receipt/mirror-writing slice — staging-first behind `PPBF_PAYMENTS_ENABLED`, with CAP-012 flipping only after the slot's step-5 evidence and the owner's compliance sign-off. |
 
 ## PARKED
 

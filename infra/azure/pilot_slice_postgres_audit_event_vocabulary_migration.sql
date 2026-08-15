@@ -64,7 +64,9 @@ alter table pilot.audit_events
     'consent_granted',
     'consent_withdrawn',
     'data_deletion_initiated',
-    'data_purged'
+    'data_purged',
+    'payment_account_connected',
+    'payment_account_disconnected'
   ));
 
 comment on column pilot.audit_events.event_type is

@@ -1,10 +1,10 @@
 // Payment setup status.
 //
 // Payments are a RESERVED slot (docs/PAYMENT_SERVICE_SLOT.md): no charging, no
-// checkout, no webhook, and CAP-012 stays BLOCKED until the owner's compliance
-// sign-off. What exists here is only the question "how far along is setup?",
-// asked so the admin console can show the remaining steps and stop showing
-// them the moment they are done.
+// checkout, and CAP-012 stays BLOCKED until the owner's compliance sign-off.
+// What exists here is only the question "how far along is setup?", asked so
+// the admin console can show the remaining steps and stop showing them the
+// moment they are done.
 //
 // The lanes are separate Stripe accounts on purpose. Giving (donations,
 // recurring) and program (class fees, B2B wholesale) are contribution revenue
@@ -12,9 +12,12 @@
 // and on a Form 990 -- so each connects on its own and each reports its own
 // status. A gym is not "set up" until both are connected.
 //
-// This reads configuration only. When the connect flow is built, the connected
-// lanes come from pilot.payment_accounts instead and every caller of
-// resolvePaymentSetupStatus keeps working unchanged.
+// As promised when this module was configuration-only: the connected lanes
+// now come from pilot.payment_accounts (written by the connect flow in
+// paymentConnect.ts), and every caller keeps working unchanged apart from
+// awaiting the answer.
+
+import { getConnectedLanes, readPaymentPlatformConfig } from './paymentConnect';
 
 export type PaymentLane = 'giving' | 'program';
 
@@ -45,19 +48,22 @@ function paymentsEnabled(): boolean {
   return process.env.PPBF_PAYMENTS_ENABLED === 'true';
 }
 
-// A lane counts as connected only once an account id has been stored for it.
-// Until the connect flow exists there is nowhere for one to come from, so both
-// lanes read not_connected -- which is the truth, not a placeholder.
-function laneStatus(lane: PaymentLane): PaymentLaneStatus {
-  const configured = lane === 'giving'
-    ? process.env.PAYMENT_GIVING_ACCOUNT_ID?.trim()
-    : process.env.PAYMENT_PROGRAM_ACCOUNT_ID?.trim();
-  return configured ? 'connected' : 'not_connected';
-}
-
-function buildRemainingSteps(enabled: boolean, lanes: Record<PaymentLane, PaymentLaneStatus>): string[] {
+function buildRemainingSteps(
+  enabled: boolean,
+  platformRegistered: boolean,
+  lanes: Record<PaymentLane, PaymentLaneStatus>,
+): string[] {
   const steps: string[] = [];
   const unconnected = PAYMENT_LANES.filter((lane) => lanes[lane] === 'not_connected');
+
+  if (!platformRegistered) {
+    // Step zero, once for the whole platform: without the Connect OAuth
+    // client the connect button has nowhere to send anyone.
+    steps.push(
+      "Register the platform's Stripe account and Connect OAuth client"
+      + ' (PAYMENT_CONNECT_CLIENT_ID) — done once, for every organization.',
+    );
+  }
 
   if (unconnected.length > 0) {
     // Giving first on purpose: its 501(c)(3) verification is the slow half, and
@@ -80,13 +86,15 @@ function buildRemainingSteps(enabled: boolean, lanes: Record<PaymentLane, Paymen
   return steps;
 }
 
-export function resolvePaymentSetupStatus(): PaymentSetupStatus {
+export async function resolvePaymentSetupStatus(organizationId: string): Promise<PaymentSetupStatus> {
   const enabled = paymentsEnabled();
+  const platformRegistered = readPaymentPlatformConfig().connectClientId !== null;
+  const connected = new Set(await getConnectedLanes(organizationId));
   const lanes: Record<PaymentLane, PaymentLaneStatus> = {
-    giving: laneStatus('giving'),
-    program: laneStatus('program'),
+    giving: connected.has('giving') ? 'connected' : 'not_connected',
+    program: connected.has('program') ? 'connected' : 'not_connected',
   };
-  const remainingSteps = buildRemainingSteps(enabled, lanes);
+  const remainingSteps = buildRemainingSteps(enabled, platformRegistered, lanes);
 
   return {
     ready: enabled && PAYMENT_LANES.every((lane) => lanes[lane] === 'connected'),
