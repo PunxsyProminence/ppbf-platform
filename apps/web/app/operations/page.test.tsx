@@ -133,6 +133,19 @@ test('Closed-Loop Progression Intelligence reads as partial (real records), not 
 // Performance Analytics shipped as a read-only rollup over existing records
 // (sessions, readiness, activity log, progression) with a route and page of
 // its own. Pinned the same way as the other shipped rows.
+// The clearance board shipped with the owner's visibility boundary as its
+// defining constraint. Pinned so the row can neither slide back to
+// placeholder nor quietly drop the no-clinical-detail statement.
+test('Sports Medicine reads as partial with the no-clinical-detail boundary stated', async () => {
+  await renderPage();
+
+  const heading = screen.getByRole('heading', { name: 'Sports Medicine' });
+  const card = heading.closest('article') as HTMLElement;
+  expect(card.textContent).toContain('PARTIAL');
+  expect(card.textContent).not.toContain('PLACEHOLDER');
+  expect(card.textContent).toMatch(/no diagnoses or clinical detail/i);
+});
+
 test('Performance Analytics reads as shipped, not a placeholder', async () => {
   await renderPage();
 

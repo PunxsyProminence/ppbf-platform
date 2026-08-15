@@ -175,8 +175,11 @@ describe('searchDoors', () => {
   it('matches on keywords, not just the label', () => {
     // "layer 10" appears only in the queue's keywords.
     expect(searchDoors('coach', 'layer 10')[0].href).toBe('/coach/review-queue');
-    // "concussion" appears only in sports medicine's keywords.
-    expect(searchDoors(null, 'concussion')[0].href).toBe('/coach/sports-medicine');
+    // "concussion" appears only in sports medicine's keywords. Searched as a
+    // coach: the door was OPEN when this test was written, but the clearance
+    // board now carries a coach/admin guard and the map's visibility hint
+    // follows the guard.
+    expect(searchDoors('coach', 'concussion')[0].href).toBe('/coach/sports-medicine');
   });
 
   it('matches a subsequence, so an abbreviation finds the surface', () => {

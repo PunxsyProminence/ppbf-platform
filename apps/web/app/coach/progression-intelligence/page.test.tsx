@@ -180,3 +180,92 @@ describe('active training hold visibility (#5)', () => {
     expect(screen.queryByText('Active Training Hold')).toBeNull();
   });
 });
+
+// Deterministic gap suggestions (owner decision 2026-08-15). A suggestion is
+// a machine's unconfirmed observation: it must render on the coach's board,
+// become a real gap only through the coach's confirm (filed with the rule
+// recorded as its detection source), and vanish for the visit on dismiss.
+// No suggestions means no section at all -- not an empty frame.
+describe('deterministic gap suggestions', () => {
+  const SUGGESTION = {
+    athlete_id: 'athlete-001',
+    full_name: 'Jordan Doe',
+    rule: 'readiness_falling',
+    gap_type: 'endurance',
+    suggested_description: 'Readiness check-ins fell from an average of 7.0 to 5.5 across the recent window.',
+    evidence: { readiness_early_avg: 7, readiness_late_avg: 5.5 },
+  };
+
+  function mockFetchWithSuggestions(items: Array<Record<string, unknown>>, capture: { gapPosts: unknown[] }) {
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/progression/suggestions')) {
+        return { ok: true, json: async () => ({ items }) } as Response;
+      }
+      if (url.includes('/progression/gaps') && init?.method === 'POST') {
+        capture.gapPosts.push(JSON.parse(String(init.body)));
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+  }
+
+  test('a suggestion renders with its rule and confirm files it as a real gap with the rule recorded', async () => {
+    const capture = { gapPosts: [] as unknown[] };
+    global.fetch = mockFetchWithSuggestions([SUGGESTION], capture) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+
+    await screen.findByText('Suggested Gaps');
+    expect(screen.getByText('Readiness falling')).toBeTruthy();
+    expect(screen.getByText(/fell from an average of 7.0 to 5.5/)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm as gap' }));
+    });
+
+    expect(capture.gapPosts).toHaveLength(1);
+    const posted = capture.gapPosts[0] as Record<string, unknown>;
+    expect(posted.athlete_id).toBe('athlete-001');
+    expect(posted.gap_type).toBe('endurance');
+    expect(posted.detected_from).toBe('deterministic_rule:readiness_falling');
+    expect(posted.detection_data).toEqual({ readiness_early_avg: 7, readiness_late_avg: 5.5 });
+
+    // Confirmed, so it leaves the suggestion board.
+    expect(screen.queryByText('Suggested Gaps')).toBeNull();
+  });
+
+  test('dismiss hides the suggestion for this visit without filing anything', async () => {
+    const capture = { gapPosts: [] as unknown[] };
+    global.fetch = mockFetchWithSuggestions([SUGGESTION], capture) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+
+    await screen.findByText('Suggested Gaps');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    });
+
+    expect(screen.queryByText('Suggested Gaps')).toBeNull();
+    expect(capture.gapPosts).toHaveLength(0);
+  });
+
+  test('no suggestions means no section, not an empty frame', async () => {
+    const capture = { gapPosts: [] as unknown[] };
+    global.fetch = mockFetchWithSuggestions([], capture) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+
+    await screen.findByText(/Progression Gaps → Drills → Verification/);
+    expect(screen.queryByText('Suggested Gaps')).toBeNull();
+  });
+});

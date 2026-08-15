@@ -264,9 +264,9 @@ export const BUILDING: readonly Door[] = [
     hint: 'The continuity ledger — what happened and who did it.' },
 
   // ---------------------------------------------------------------- clinic --
-  { href: '/coach/sports-medicine', label: 'Sports Medicine', room: 'clinic', roles: OPEN,
-    keywords: 'medical injury concussion clearance return-to-training physio',
-    hint: 'Medical clearance and return-to-training.' },
+  { href: '/coach/sports-medicine', label: 'Sports Medicine', room: 'clinic', roles: ['coach', 'admin'],
+    keywords: 'medical injury concussion clearance return-to-training physio holds cleared restricted board clinic',
+    hint: 'Clearance status and active holds for your roster — what the athlete reads, nothing more.' },
   { href: '/admin/compliance-center', label: 'Compliance Center', room: 'clinic', roles: ['admin'],
     keywords: 'compliance safeguarding policy certification safety' },
   { href: '/board/compliance-monitoring', label: 'Compliance Register', room: 'clinic',
