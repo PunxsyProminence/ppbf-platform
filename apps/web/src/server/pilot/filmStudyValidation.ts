@@ -50,6 +50,12 @@ export interface FilmStudyAcceptanceMetric {
   pendingCount: number;
   /** accepted / reviewed, rounded to 3 places. Null below the sample floor. */
   acceptRate: number | null;
+  /** The rate as a percentage string, ready to render. Null wherever
+   * `acceptRate` is null.
+   *
+   * Computed here rather than in the UI so there is exactly one implementation
+   * of the rule below, and so a client component never has to recompute it. */
+  acceptRateDisplay: string | null;
 }
 
 export interface FilmStudyDeploymentAcceptance extends FilmStudyAcceptanceMetric {
@@ -86,6 +92,38 @@ function toInt(value: string | null): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * The accept rate as a percentage, where 0% and 100% are reserved.
+ *
+ * `Math.round(rate * 100)` is wrong in both directions at the ends, and the
+ * error is categorical rather than cosmetic. 199 accepted of 200 rounds to
+ * "100% accepted" -- a claim the model was never once wrong, contradicted by
+ * the rejection sitting in the same table. 1 accepted of 300 rounds to "0%" --
+ * a claim the model was never once right, contradicted by the acceptance.
+ * Those two readings are the only ones a coach will act on without reading the
+ * counts beside them, so they are spent only on the exact cases:
+ *
+ * * `0%`   -- nothing was accepted.
+ * * `100%` -- nothing was rejected.
+ * * `<1%`  -- something was accepted, too little to round up to 1%.
+ * * `>99%` -- something was rejected, too little to round down to 99%.
+ *
+ * Null when nothing has been reviewed; there is no rate to describe.
+ */
+export function formatAcceptRatePercent(
+  acceptedCount: number,
+  reviewedCount: number,
+): string | null {
+  if (reviewedCount <= 0) return null;
+  if (acceptedCount <= 0) return '0%';
+  if (acceptedCount >= reviewedCount) return '100%';
+
+  const rounded = Math.round((acceptedCount / reviewedCount) * 100);
+  if (rounded <= 0) return '<1%';
+  if (rounded >= 100) return '>99%';
+  return `${rounded}%`;
+}
+
 /** Builds one metric, withholding the rate below the sample floor. */
 function toMetric(row: AcceptanceRow): FilmStudyAcceptanceMetric {
   const reviewedCount = toInt(row.reviewed_count);
@@ -104,6 +142,9 @@ function toMetric(row: AcceptanceRow): FilmStudyAcceptanceMetric {
     acceptRate: belowFloor
       ? null
       : Math.round((acceptedCount / reviewedCount) * 1000) / 1000,
+    acceptRateDisplay: belowFloor
+      ? null
+      : formatAcceptRatePercent(acceptedCount, reviewedCount),
   };
 }
 
@@ -189,17 +230,20 @@ export function describeFilmStudyValidation(report: FilmStudyValidationReport): 
 
   if (overall.reviewedCount === 0) {
     return overall.pendingCount > 0
-      ? `No Film Study proposal has been reviewed yet (${overall.pendingCount} waiting). `
-        + 'Nothing can be said about the model until coaches clear the queue.'
+      ? `No Film Study proposal has been reviewed yet (${overall.pendingCount} waiting).`
+        + ' Nothing can be said about the model until coaches clear the queue.'
       : 'No Film Study proposals exist yet -- the model has not been asked for anything.';
   }
 
   if (overall.status === 'insufficient_data') {
-    return `Only ${overall.reviewedCount} proposal(s) reviewed, below the ${report.minimumReviewed} needed `
-      + 'to report a rate. The accept rate is withheld rather than computed from a sample this thin.';
+    return `Only ${overall.reviewedCount} proposal(s) reviewed, below the ${report.minimumReviewed} needed`
+      + ' to report a rate. The accept rate is withheld rather than computed from a sample this thin.';
   }
 
-  const percent = Math.round((overall.acceptRate ?? 0) * 100);
-  return `Coaches accepted ${overall.acceptedCount} of ${overall.reviewedCount} reviewed proposals (${percent}%)`
+  // `available` means the sample cleared the floor, so a display string always
+  // exists here. The fallback drops the parenthetical rather than printing an
+  // empty one -- the counts alone are still true.
+  const percent = overall.acceptRateDisplay === null ? '' : ` (${overall.acceptRateDisplay})`;
+  return `Coaches accepted ${overall.acceptedCount} of ${overall.reviewedCount} reviewed proposals${percent}`
     + `${overall.pendingCount > 0 ? `, ${overall.pendingCount} still waiting` : ''}.`;
 }

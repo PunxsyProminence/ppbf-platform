@@ -66,6 +66,14 @@ interface FilmStudyProposal {
  * `minimumReviewed` -- the server withholds it rather than computing a
  * percentage from a handful of reviews, and the UI must render that absence as
  * an absence.
+ *
+ * `acceptRateDisplay` is the percentage already formatted by the server, and
+ * this page renders it verbatim. It is NOT `Math.round(acceptRate * 100)`:
+ * that formula turns 199-of-200 into "100%" and 1-of-300 into "0%", both of
+ * which claim more than the counts support. Re-deriving the percentage here
+ * would reintroduce exactly that bug on the one surface a coach actually
+ * reads, so the rule lives server-side in formatAcceptRatePercent() and this
+ * component does no arithmetic on it.
  */
 interface FilmStudyDeploymentAcceptance {
   modelDeployment: string;
@@ -75,6 +83,7 @@ interface FilmStudyDeploymentAcceptance {
   rejectedCount: number;
   pendingCount: number;
   acceptRate: number | null;
+  acceptRateDisplay: string | null;
   meanFramesAnalyzed: number | null;
 }
 
@@ -88,6 +97,7 @@ interface FilmStudyValidationReport {
     rejectedCount: number;
     pendingCount: number;
     acceptRate: number | null;
+    acceptRateDisplay: string | null;
   };
   byDeployment: FilmStudyDeploymentAcceptance[];
 }
@@ -112,6 +122,14 @@ const FILM_STUDY_STILL_PROCESSING_MESSAGE =
   'Still processing. This page stopped checking, but the job continues -- '
   + 'reopen this page to see the result, or check the review queue below once it lands. '
   + 'If this never resolves, background jobs may not be enabled for this environment.';
+
+// "accept rate", never "accuracy". What this panel reports is how often a
+// coach agreed with the model, which is not the same claim as the model being
+// correct -- a coach can accept a proposal that was wrong, or reject one that
+// was right. Calling it accuracy would promote an agreement rate into a
+// correctness rate, which is the exact overclaim this whole panel exists to
+// avoid.
+const VALIDATION_LOAD_ERROR = 'Unable to load the coach accept rate for this model.';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -155,18 +173,18 @@ export default function CoachVideoAnalysisPage() {
         const res = await fetch(`${apiBase()}/api/pilot/shadow/film-study/validation`, {
           credentials: 'include',
         });
-        if (!res.ok) throw new Error('Unable to load the model accuracy measurement');
+        if (!res.ok) throw new Error(VALIDATION_LOAD_ERROR);
         const data = (await res.json()) as {
           validation?: FilmStudyValidationReport;
           summary?: string;
         };
-        if (!data.validation) throw new Error('Unable to load the model accuracy measurement');
+        if (!data.validation) throw new Error(VALIDATION_LOAD_ERROR);
         setValidation(data.validation);
         setValidationSummary(data.summary ?? '');
         setValidationError('');
       } catch (err) {
         setValidation(null);
-        setValidationError(err instanceof Error ? err.message : 'Unable to load the model accuracy measurement');
+        setValidationError(err instanceof Error ? err.message : VALIDATION_LOAD_ERROR);
       }
     })();
   };
@@ -590,7 +608,12 @@ export default function CoachVideoAnalysisPage() {
             somebody else's gym, and nothing here says anything about an
             athlete. It measures the model. */}
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-          <h2 className="t-eyebrow">How Often This Model Is Right</h2>
+          {/* Named for what is actually measured. "How often this model is
+              right" would be a correctness claim, and no verdict in this table
+              establishes correctness -- a coach can accept a wrong proposal or
+              reject a right one. Agreement is what was recorded, so agreement
+              is what the heading says. */}
+          <h2 className="t-eyebrow">How Often Coaches Accept This Model</h2>
           {validationError ? (
             <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{validationError}</p>
           ) : validation === null ? (
@@ -617,9 +640,9 @@ export default function CoachVideoAnalysisPage() {
                         {/* The rate never appears without the sample it came
                             from, and is withheld entirely below the floor
                             rather than computed from a handful of reviews. */}
-                        {d.acceptRate === null
+                        {d.acceptRateDisplay === null
                           ? `${d.acceptedCount} accepted of ${d.reviewedCount} reviewed — too few to state a rate (${validation.minimumReviewed} needed).`
-                          : `${Math.round(d.acceptRate * 100)}% accepted (${d.acceptedCount} of ${d.reviewedCount} reviewed)`}
+                          : `${d.acceptRateDisplay} accepted (${d.acceptedCount} of ${d.reviewedCount} reviewed)`}
                         {d.meanFramesAnalyzed === null ? '' : ` · ${d.meanFramesAnalyzed} frames avg`}
                       </p>
                       {d.pendingCount > 0 && (

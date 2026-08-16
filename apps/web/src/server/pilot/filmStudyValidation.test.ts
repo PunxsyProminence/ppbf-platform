@@ -8,6 +8,7 @@
 import {
   FILM_STUDY_MINIMUM_REVIEWED,
   describeFilmStudyValidation,
+  formatAcceptRatePercent,
   getFilmStudyValidation,
   type FilmStudyValidationReport,
 } from './filmStudyValidation';
@@ -81,6 +82,69 @@ describe('a rate is withheld until the sample can support it', () => {
 
     // 3/7 = 0.428571...
     expect(report.overall.acceptRate).toBe(0.429);
+  });
+});
+
+describe('0% and 100% are reserved for the cases that earned them', () => {
+  // Both readings are categorical -- "never right" and "never wrong" -- and a
+  // coach acts on them without reading the counts beside them. Rounding hands
+  // them out to samples that contradict them, which is the same overclaim this
+  // module refuses everywhere else.
+
+  test('one rejection in two hundred is not a perfect record', () => {
+    // Math.round(0.995 * 100) === 100.
+    expect(formatAcceptRatePercent(199, 200)).toBe('>99%');
+  });
+
+  test('one acceptance in three hundred is not a blank record', () => {
+    // Math.round(0.00333 * 100) === 0.
+    expect(formatAcceptRatePercent(1, 300)).toBe('<1%');
+  });
+
+  test('100% is reported only when nothing was rejected', () => {
+    expect(formatAcceptRatePercent(200, 200)).toBe('100%');
+  });
+
+  test('0% is reported only when nothing was accepted', () => {
+    expect(formatAcceptRatePercent(0, 300)).toBe('0%');
+  });
+
+  test('ordinary rates round normally', () => {
+    expect(formatAcceptRatePercent(26, 40)).toBe('65%');
+    expect(formatAcceptRatePercent(3, 7)).toBe('43%');
+  });
+
+  test('nothing reviewed has no rate to describe', () => {
+    expect(formatAcceptRatePercent(0, 0)).toBeNull();
+  });
+
+  test('the display string travels on the report, so the UI never recomputes it', async () => {
+    mockRows(row({ reviewed_count: '200', accepted_count: '199', rejected_count: '1' }));
+
+    const report = await getFilmStudyValidation('org-1');
+
+    expect(report.overall.acceptRateDisplay).toBe('>99%');
+    // The unrounded rate is still there for anyone doing arithmetic; it is the
+    // rendered string that must not claim perfection.
+    expect(report.overall.acceptRate).toBe(0.995);
+  });
+
+  test('the summary line inherits the same reservation', async () => {
+    mockRows(row({ reviewed_count: '200', accepted_count: '199', rejected_count: '1' }));
+
+    const summary = describeFilmStudyValidation(await getFilmStudyValidation('org-1'));
+
+    expect(summary).toContain('>99%');
+    expect(summary).not.toMatch(/\(100%\)/);
+    expect(summary).toContain('199 of 200');
+  });
+
+  test('a withheld rate carries no display string either', async () => {
+    mockRows(row({ reviewed_count: '3', accepted_count: '3' }));
+
+    const report = await getFilmStudyValidation('org-1');
+
+    expect(report.overall.acceptRateDisplay).toBeNull();
   });
 });
 
