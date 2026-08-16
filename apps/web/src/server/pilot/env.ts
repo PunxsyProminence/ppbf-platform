@@ -56,3 +56,21 @@ export function getWallTimeZone(): string {
 export function getPilotProfileContainerName(): string {
   return process.env.PPBF_PILOT_PROFILE_CONTAINER?.trim() || 'ppbf-pilot-profile';
 }
+
+/**
+ * Where staff credential documents live (SafeSport, coach certs, background
+ * checks, CPR/First Aid, ...). A container of its own, for the same reason
+ * the profile container is not the SHADOW or video one: these documents can
+ * carry sensitive personal data (an SSN on a background-check scan is a
+ * realistic example), and nothing here ever mints a SAS against it. The
+ * bytes are read server-side by an authorized request only -- see
+ * downloadPilotCredentialFile in blob.ts.
+ *
+ * The credential STATUS (current/expiring/expired/missing) is deliberately
+ * broadly visible across the platform for public-trust reasons; the document
+ * itself never is. Keeping this container distinct from the profile one
+ * keeps that boundary a property of storage layout, not just of route code.
+ */
+export function getPilotCredentialsContainerName(): string {
+  return process.env.PPBF_PILOT_CREDENTIALS_CONTAINER?.trim() || 'ppbf-pilot-credentials';
+}

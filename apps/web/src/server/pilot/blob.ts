@@ -2,6 +2,7 @@ import { BlobServiceClient, StorageSharedKeyCredential, generateBlobSASQueryPara
 
 import {
   getAzureStorageConnectionString,
+  getPilotCredentialsContainerName,
   getPilotProfileContainerName,
   getPilotShadowContainerName,
   getPilotVideoContainerName,
@@ -278,6 +279,81 @@ export async function deletePilotGymWallPhoto(organizationId: string, slotKey: s
   const serviceClient = getBlobServiceClient();
   const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
   await containerClient.getBlockBlobClient(gymWallBlobPath(organizationId, slotKey)).deleteIfExists();
+}
+
+/* ---------------------------------------------------------- CREDENTIALS ----
+ * Staff credential documents (SafeSport, USA Boxing coach certs, background
+ * checks, CPR/First Aid, ...), uploaded by the coach/staff member the
+ * document is about, through /api/pilot/coach/credentials.
+ *
+ * Same stance as portraits, for a stronger reason: a background-check scan
+ * routinely carries an SSN or a date of birth, so 'private, no SAS, ever' is
+ * not a caution here -- it is the baseline. The credential STATUS
+ * (current/expiring/expired/missing) is what the rest of the platform shows
+ * broadly; the bytes leave this container only through an authenticated
+ * download route that checks the requester is the document's own owner or an
+ * organization admin (see /api/pilot/credentials/document).
+ *
+ * The path is derived from the organization, the account and the clearance
+ * type -- never from client input -- so one person holds at most one
+ * document per clearance type and a replacement overwrites rather than
+ * accumulating a history of old submissions in the container.
+ */
+
+export async function uploadPilotCredentialFile(
+  path: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotCredentialsContainerName());
+  // 'container' access is never requested; the default is private. Nothing
+  // in this feature ever mints a SAS against this container -- see the
+  // module header.
+  await containerClient.createIfNotExists();
+  const blockBlobClient = containerClient.getBlockBlobClient(path);
+  await blockBlobClient.uploadData(Buffer.from(bytes), {
+    blobHTTPHeaders: {
+      blobContentType: contentType,
+      blobCacheControl: 'private, no-store',
+    },
+  });
+}
+
+/**
+ * Read one credential document, server-side. Capped an order of magnitude
+ * above the upload limit, the same relationship downloadPilotProfilePhoto
+ * keeps to its own upload cap: the ceiling here stops an unbounded read from
+ * blowing a request handler's memory, it does not re-litigate the upload
+ * policy.
+ */
+export async function downloadPilotCredentialFile(
+  blobPath: string,
+  maxBytes = 64 * 1024 * 1024,
+): Promise<Buffer> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotCredentialsContainerName());
+  const blobClientForPath = containerClient.getBlockBlobClient(blobPath);
+
+  const properties = await blobClientForPath.getProperties();
+  if (typeof properties.contentLength === 'number' && properties.contentLength > maxBytes) {
+    throw new Error('CREDENTIAL_FILE_TOO_LARGE');
+  }
+
+  return blobClientForPath.downloadToBuffer(0, undefined, { maxRetryRequestsPerBlock: 2 });
+}
+
+/**
+ * Delete a credential document outright.
+ *
+ * A replacement upload deletes the prior document rather than leaving it
+ * orphaned in the container -- missing is success, matching every other
+ * delete in this file.
+ */
+export async function deletePilotCredentialFile(blobPath: string): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotCredentialsContainerName());
+  await containerClient.getBlockBlobClient(blobPath).deleteIfExists();
 }
 
 /** Which slots hold an uploaded photograph for this organization. */
