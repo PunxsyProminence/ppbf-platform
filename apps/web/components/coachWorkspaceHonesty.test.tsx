@@ -16,6 +16,7 @@ interface RouteResponses {
   painReports?: () => Promise<Response>;
   barrierReports?: () => Promise<Response>;
   athletesList?: () => Promise<Response> | Response;
+  readinessBoard?: () => Promise<Response> | Response;
   sessionsList?: (athleteId: string) => Promise<Response> | Response;
   coachReviewsList?: (sessionId: string) => Promise<Response> | Response;
   escalationsGet?: () => Promise<Response> | Response;
@@ -55,6 +56,10 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/athletes/list')) {
       return routes.athletesList ? routes.athletesList() : jsonResponse({ items: [] });
+    }
+    if (url.includes('/api/pilot/coach/readiness-board')) {
+      // Default: a healthy feed with no fresh check-ins -- everyone UNKNOWN.
+      return routes.readinessBoard ? routes.readinessBoard() : jsonResponse({ items: [] });
     }
     if (url.includes('/api/pilot/sessions/list')) {
       const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
@@ -946,6 +951,54 @@ describe('authored announcements on the coach workspace', () => {
 
     openTab('Floor');
     expect(screen.queryByText(/Session Workout Plan/i)).not.toBeNull();
+  });
+});
+
+// The readiness feed (register module 169): real statuses from fresh
+// check-ins color the roster; everyone else stays UNKNOWN, and unknown is
+// never presented as clear. A failed feed must look like "no signal", never
+// like "zero flags".
+describe('roster readiness comes from the board feed, honestly', () => {
+  const threeAthletes = () =>
+    jsonResponse({
+      items: [
+        { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+        { athlete_id: 'ath_2', full_name: 'Sam R.' },
+        { athlete_id: 'ath_3', full_name: 'Rosa D.' },
+      ],
+    });
+
+  test('fresh statuses color the tile and the absent athlete stays unknown, said out loud', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [
+          { athlete_id: 'ath_1', status: 'GREEN', score: 8, measured_at: '2026-08-15T12:00:00.000Z' },
+          { athlete_id: 'ath_2', status: 'RED', score: 2, measured_at: '2026-08-15T12:00:00.000Z' },
+        ],
+      }),
+    });
+
+    // One RED, zero YELLOW; ath_3 has no fresh check-in and is counted as
+    // unknown rather than silently folded into "no alerts".
+    expect(screen.getByText(/1 RED, 0 YELLOW, 1 unknown — unknown is not clear/)).toBeTruthy();
+    expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
+  });
+
+  test('a failed feed reads as no signal, never as zero flags', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({}, { ok: false, status: 500 }),
+    });
+
+    expect(screen.getByText('No signal')).toBeTruthy();
+    expect(screen.getByText(/do not read this as .zero flags./)).toBeTruthy();
+  });
+
+  test('a healthy feed with no fresh check-ins reads the same as no signal', async () => {
+    await renderWorkspace({ athletesList: threeAthletes });
+
+    expect(screen.getByText('No signal')).toBeTruthy();
   });
 });
 
