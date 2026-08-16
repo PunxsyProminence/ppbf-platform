@@ -132,7 +132,7 @@
 "131","Confidence Score Engine","dataQualityTrust","Data Quality / Trust","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "132","Missing Data Engine","dataQualityTrust","Data Quality / Trust","DONE","False","True","2.0.0-draft-merged","Data Quality","PENDING_SIGN_OFF"
 "133","Source Reliability Engine","dataQualityTrust","Data Quality / Trust","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
-"134","Duplicate Detection Engine","dataQualityTrust","Data Quality / Trust","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
+"134","Duplicate Detection Engine","dataQualityTrust","Data Quality / Trust","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
 "135","Uncertainty Tagging Engine","dataQualityTrust","Data Quality / Trust","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "136","Version / Source Status Engine","dataQualityTrust","Data Quality / Trust","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
 "137","Audit Trail / Decision History","dataQualityTrust","Data Quality / Trust","DONE","False","True","2.0.0-draft-merged","Data Quality / Audit","PENDING_SIGN_OFF"
