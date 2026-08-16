@@ -29,6 +29,46 @@ interface CoachOption {
 type RosterLoadState = 'loading' | 'loaded' | 'unavailable';
 
 /**
+ * CT-15: a row of pilot.emergency_contacts, as POST /api/pilot/intake/domain-get
+ * returns it under `emergency_contacts`. This is the AUTHORITATIVE emergency
+ * contact record -- structured, with a verified relationship and phone --
+ * unlike RosterAthlete.emergency_contact, which is a free-text note.
+ */
+interface StructuredEmergencyContact {
+  contact_id: string;
+  full_name: string;
+  relationship_to_athlete: string;
+  phone: string;
+  email: string | null;
+  is_primary: boolean;
+}
+
+type EmergencyContactsLoadState = 'idle' | 'loading' | 'loaded' | 'unavailable';
+
+function normalizeStructuredContact(row: unknown): StructuredEmergencyContact | null {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+
+  const record = row as Record<string, unknown>;
+  const contactId = readString(record.contact_id).trim();
+  const fullName = readString(record.full_name).trim();
+  const phone = readString(record.phone).trim();
+  if (!contactId || !fullName || !phone) {
+    return null;
+  }
+
+  return {
+    contact_id: contactId,
+    full_name: fullName,
+    relationship_to_athlete: readString(record.relationship_to_athlete),
+    phone,
+    email: typeof record.email === 'string' && record.email.trim() ? record.email : null,
+    is_primary: record.is_primary === true,
+  };
+}
+
+/**
  * pilot.athletes.gym_status is plain `text` with no database constraint, so
  * the vocabulary is only held together by convention: these are the values the
  * seed importer documents, the gate scripts write, and the roster-create form
@@ -151,6 +191,15 @@ function AthleteRecordsConsoleContent() {
   const [draftEmergencyContact, setDraftEmergencyContact] = useState('');
   const [draftCoachId, setDraftCoachId] = useState('');
 
+  // CT-15: the structured, authoritative emergency contacts for whichever
+  // athlete is open -- a SEPARATE read from the roster row above, because
+  // pilot.emergency_contacts is a separate table from the free-text note this
+  // form corrects. Independent of `selected` so opening one athlete's record
+  // does not show a stale list carried over from the last one while this
+  // fetch is still in flight.
+  const [emergencyContacts, setEmergencyContacts] = useState<StructuredEmergencyContact[]>([]);
+  const [emergencyContactsLoad, setEmergencyContactsLoad] = useState<EmergencyContactsLoadState>('idle');
+
   const load = useCallback(async () => {
     setError('');
 
@@ -230,6 +279,60 @@ function AthleteRecordsConsoleContent() {
       }
     })();
   }, []);
+
+  // CT-15: fetches the authoritative structured contacts for whichever
+  // athlete is open, the same route /admin/consent already calls for a
+  // different domain (POST with { athlete_id }, response keyed by domain
+  // name). Cleared, not left stale, the moment no athlete is selected or a
+  // different one opens -- otherwise closing a record and opening the next
+  // one could show the PREVIOUS athlete's contacts for one render.
+  useEffect(() => {
+    if (!selectedId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEmergencyContacts([]);
+      setEmergencyContactsLoad('idle');
+      return;
+    }
+
+    let cancelled = false;
+    setEmergencyContacts([]);
+    setEmergencyContactsLoad('loading');
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/intake/domain-get`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ athlete_id: selectedId }),
+        });
+        if (cancelled) return;
+
+        if (!response.ok) {
+          setEmergencyContacts([]);
+          setEmergencyContactsLoad('unavailable');
+          return;
+        }
+
+        const payload = (await response.json().catch(() => ({}))) as { emergency_contacts?: unknown[] };
+        const contacts = (payload.emergency_contacts ?? [])
+          .map(normalizeStructuredContact)
+          .filter((contact): contact is StructuredEmergencyContact => contact !== null);
+
+        setEmergencyContacts(contacts);
+        setEmergencyContactsLoad('loaded');
+      } catch {
+        if (!cancelled) {
+          setEmergencyContacts([]);
+          setEmergencyContactsLoad('unavailable');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
 
   const selected = useMemo(
     () => roster.find((athlete) => athlete.athlete_id === selectedId) ?? null,
@@ -503,6 +606,84 @@ function AthleteRecordsConsoleContent() {
 
         {selected && (
           <>
+            {/* CT-15: the authoritative emergency contact record, shown
+                separately from -- and above -- the free-text note this form
+                corrects below. Structured contacts are the record; the note
+                is a note. This section is read-only: adding or correcting a
+                structured contact happens through intake review, not here --
+                a full CRUD surface for pilot.emergency_contacts is a larger
+                change than relabeling this page, and is not built by this
+                fix. */}
+            <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+              <div>
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Emergency Contacts on File</h2>
+                <p className="t-body mt-[var(--s3)]">
+                  The verified, structured record — name, relationship, and phone number, entered through intake
+                  review. This is what an emergency read should trust, not the note below.
+                </p>
+              </div>
+
+              {emergencyContactsLoad === 'loading' && (
+                <p className="t-muted">Loading...</p>
+              )}
+
+              {/* role="status" (polite), not role="alert" (assertive): the
+                  banners above the form report a transient result of an
+                  action just taken and interrupt correctly. These describe a
+                  standing fact about the record itself, present for as long
+                  as it is true rather than as a one-time announcement, so an
+                  assistive-tech user should be able to read it without a
+                  save-error alert competing with it for the same live
+                  region. */}
+              {emergencyContactsLoad === 'unavailable' && (
+                <div role="status" className="alert alert--warning">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
+                  <div className="alert-body">
+                    <p className="alert-msg">
+                      The structured emergency contact record could not be read right now. This does not mean none
+                      exists — try again before treating the note below as the only information on file.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {emergencyContactsLoad === 'loaded' && emergencyContacts.length === 0 && (
+                <div role="status" className="alert alert--warning">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
+                  <div className="alert-body">
+                    <p className="alert-title">No structured emergency contact on file</p>
+                    <p className="alert-msg">
+                      The free-text note below is the only emergency contact information recorded for{' '}
+                      {selected.full_name}. Treat it with the same urgency, but it has not been entered as a
+                      verified record.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {emergencyContactsLoad === 'loaded' && emergencyContacts.length > 0 && (
+                <ul className="space-y-[var(--s3)]">
+                  {emergencyContacts.map((contact) => (
+                    <li
+                      key={contact.contact_id}
+                      className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]"
+                    >
+                      <p className="t-label">
+                        {contact.full_name}
+                        {contact.is_primary && (
+                          <span className="text-[color:var(--bone-400)]"> — Primary</span>
+                        )}
+                      </p>
+                      <p className="t-body mt-[var(--s2)]">
+                        {contact.relationship_to_athlete || 'Relationship not recorded'} · {contact.phone}
+                        {contact.email ? ` · ${contact.email}` : ''}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
             <form onSubmit={saveCorrection} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
               <div>
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>{selected.full_name}</h2>
@@ -585,9 +766,12 @@ function AthleteRecordsConsoleContent() {
 
               <div className="field">
                 <label htmlFor="correct-emergency-contact" className="t-label">
-                  Emergency contact
+                  Emergency contact note
                 </label>
-                <p className="t-muted mb-[var(--s2)]">Who to call, and the number.</p>
+                <p className="t-muted mb-[var(--s2)]">
+                  A free-text note, not the emergency contact record — see &quot;Emergency Contacts on File&quot;
+                  above for the verified name, relationship and phone number.
+                </p>
                 <input
                   id="correct-emergency-contact"
                   type="text"
