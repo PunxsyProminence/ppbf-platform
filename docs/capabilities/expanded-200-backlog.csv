@@ -109,7 +109,7 @@
 "108","Body-Composition Safety Router","bodyComposition","Body Composition","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "109","Growth / Maturation Context Layer","bodyComposition","Body Composition","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "110","Coaching Doctrine Engine","coachSystem","Coach System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
-"111","Coach Intelligence Engine","coachSystem","Coach System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
+"111","Coach Intelligence Engine","coachSystem","Coach System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
 "112","Coach Training Module","coachSystem","Coach System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "113","Coach Dashboard","coachSystem","Coach System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
 "114","Coach Cue Library","coachSystem","Coach System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
