@@ -2693,21 +2693,34 @@ export default function AthleteWorkspace() {
           </div>
         </div>
 
+        {/* This panel was headed "What's Coming" and described both pages below
+            as "Not Built Yet", one of them as "The screens are drawn. Nothing
+            behind them works yet." Both shipped since that copy was written:
+            /athlete/video-analysis reads pilot.video via /api/pilot/video/list
+            and the SHADOW observation projection, and
+            /athlete/progression-intelligence reads real gaps and drill
+            assignments and writes completions back.
+
+            Telling an athlete a working feature does not exist is the same
+            class of error as claiming one that does not -- it just fails in the
+            direction that hides their own record from them. What stays "not
+            built" is narrower and named: automatic scoring, which is PARKED by
+            owner decision and which those pages already label for themselves. */}
         <details className={PANEL}>
-          <summary className="t-label cursor-pointer">What&apos;s Coming</summary>
+          <summary className="t-label cursor-pointer">More in your workspace</summary>
           <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Video Analysis - Not Built Yet</p>
-              <p className="t-muted mt-[var(--s2)]">The screens are drawn. Nothing behind them works yet.</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Athlete Film Lane</p>
+              <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
               <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Video Analysis
+                Open Film Lane
               </Link>
             </article>
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Automatic Progress Tracking - Not Built Yet</p>
-              <p className="t-muted mt-[var(--s2)]">Your coach still decides what comes next. Nothing here scores you on its own.</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Your Progression</p>
+              <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
               <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Progress Tracking
+                Open Your Progression
               </Link>
             </article>
           </div>

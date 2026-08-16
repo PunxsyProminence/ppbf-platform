@@ -891,6 +891,29 @@ describe('Today states the day back rather than offering a row of buttons', () =
   });
 });
 
+describe('shipped features are not described to the athlete as unbuilt', () => {
+  test('the film lane and progression are offered as working, not as coming', async () => {
+    // Both pages read real routes -- /api/pilot/video/list and
+    // /api/pilot/progression/gaps -- and were being advertised as "Not Built
+    // Yet", one of them as "Nothing behind them works yet".
+    await renderWorkspace();
+
+    expect(screen.queryByText(/Video Analysis - Not Built Yet/)).toBeNull();
+    expect(screen.queryByText(/Automatic Progress Tracking - Not Built Yet/)).toBeNull();
+    expect(screen.queryByText(/Nothing behind them works yet/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Film Lane' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Your Progression' })).toBeTruthy();
+  });
+
+  test('the part that genuinely is not built is still said plainly', async () => {
+    // Automatic technique scoring is PARKED by owner decision. Correcting the
+    // stale copy must not quietly promise it.
+    await renderWorkspace();
+
+    expect(screen.getByText(/Nothing scores your technique automatically -- that part is not built/)).toBeTruthy();
+  });
+});
+
 describe('the athlete question box does not imply a coach reads it', () => {
   test('it is named for what answers it, and offers no coach to pick', async () => {
     await renderWorkspace();
