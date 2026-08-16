@@ -1,0 +1,346 @@
+# Engine Unlock Proposal — Module 036: Periodization / Block Planning Engine
+
+| Field | Value |
+|-------|-------|
+| Status | PROPOSAL (owner approval requested) — no code changes made |
+| Module stub | `docs/capabilities/modules/036-periodization-block-planning-engine.md` |
+| Category | Physical Training System (`physicalTrainingSystem`) |
+| Prepared against | current `infra/azure/*.sql` schema, read-only |
+
+This document proposes the honesty gate that must be satisfied before Module 036
+is allowed to compute or display anything to a user. It does not propose an
+implementation, a UI, a new table, or an API. Nothing here is authorization to
+build; it is the basis for an owner decision on what the module may and may
+not do.
+
+---
+
+## Schema reality check (read first)
+
+**The single largest finding of this review: no table in `infra/azure/*.sql`
+currently stores a coach-authored training plan — a block, mesocycle,
+macrocycle, or taper with a name, a date range, and a stated training intent.
+This does not exist today, anywhere in the schema, and this proposal does not
+create it.** What exists instead, and what is adjacent enough to be
+mistaken for it:
+
+- `pilot.session_scripts.phase` — a **nullable free-text** field on a
+  single delivered session ("accumulation, sharpening, taper, etc." per the
+  column comment) with **no enumerated vocabulary, no date range, and no
+  linkage between sessions that share a phase**. It labels one session, not
+  a multi-week block. Two sessions three weeks apart with `phase =
+  'accumulation'` are not structurally connected by anything in this table —
+  the connection would have to be inferred by matching a text string, which
+  is not a defensible basis for a "block."
+- `pilot.session_script_runs` — planned-vs-actual, but at the scale of one
+  session's delivery (`blocks_completed`, `deviation_note`,
+  `what_worked`/`what_did_not`), not a training block spanning weeks.
+- `pilot.intervention_protocols` / `intervention_executions` /
+  `intervention_evidence_links` / `intervention_outcome_reviews` — **the
+  vocabulary this module must reuse, not the table it can write into.**
+  This ledger's planned-snapshot/actual/adherence/evidence/review pattern
+  (protocol states intent → execution snapshots `planned_exposure` and
+  never rewrites it → `adherence` is an explicit enumerated state, never a
+  percentage → evidence links are typed and role-tagged → outcome review is
+  human-authored, three separate columns, never one score) is exactly the
+  shape a defensible periodization record needs. But `intervention_*` rows
+  are scoped to one hypothesis about one problem, sized in
+  `intended_exposure` dimension units (rounds, cue exposures...) — not to a
+  multi-week block of an athlete's whole training plan. Reusing these
+  *tables* for periodization would misuse a hypothesis-testing ledger as a
+  training-calendar; reusing their *vocabulary* in a new, purpose-built
+  table is the defensible path (see Open Question 1).
+- `pilot.training_attempts`, `pilot.activity_log`, `pilot.assessments`,
+  `pilot.athlete_check_ins`, `pilot.readiness` — the real recorded events
+  a plan could eventually be compared against, once a plan exists to
+  compare against them. None of these carries a `block_id`, a phase, or any
+  forward-looking target.
+- `pilot.external_competitions` / `pilot.external_competition_entries` and
+  `pilot.wrestling_league_seasons` / `_events` / `_roster_entries` — the two
+  competition surfaces, and both are **deliberately minimal by owner
+  decision** ("build both skeletons knowing requirements are guessed until
+  a real league exists"). `external_competitions` carries only
+  `competition_date`, `location`, `sanctioning_body`, `status`; wrestling
+  league events carry only `event_date`, `location`, `status`. Neither
+  table has brackets, weight classes, results, or anything a taper
+  calculation could read. A block plan could *optionally* point at a
+  `competition_id` or `event_id` as a target date, but that is a new
+  foreign key this proposal does not create, and the target itself would
+  still only ever be a date and a name — never a source of loading
+  guidance.
+
+**Conclusion: Module 036 cannot compute a periodization model, a loading
+progression, or a taper today, because there is nothing to compute from.**
+The stub's acceptance criterion "Data model / tables named" cannot be
+checked off by pointing at an existing table — one does not exist. The
+defensible version of this module, per the assignment brief, is: (1) a new,
+narrowly-scoped table where a coach records their own plan in their own
+words — block name, stated training emphasis, start/end dates, optional
+target-date link — modeled on `intervention_protocols`' "stated intent,
+never computed" shape; and (2) a comparison surface, modeled on
+`intervention_executions`' planned-vs-actual/adherence pattern, that shows
+what the plan said against what `training_attempts`/`activity_log`/
+`assessments`/`intervention_executions` rows actually happened inside the
+plan's date window — using the *same* adherence vocabulary
+(`delivered_as_planned` / `delivered_with_deviations` / `under_delivered` /
+`not_delivered` / `unknown`) rather than inventing a parallel one. This
+proposal describes the unlock gate for that future surface; it does not
+build it.
+
+---
+
+## (a) What it computes / shows
+
+Nothing in this module may be a derived training-science number. No load
+score, no acute:chronic workload ratio, no readiness-adjusted volume
+recommendation, no auto-generated taper curve, no fatigue index — none of
+these are stored anywhere and none should be invented to feed this module.
+Everything here is either (i) a coach's own words, recorded verbatim and
+never algorithmically altered, or (ii) a plain count/date comparison
+against real recorded rows.
+
+**Shown, unlocked (assuming the plan-recording table in the schema-reality
+section above is approved and built in a separate ticket):**
+- The coach-authored plan exactly as written: block name, stated training
+  emphasis (free text, the coach's own vocabulary — never coerced into a
+  fixed taxonomy like "linear" or "block" or "conjugate"), start date, end
+  date, and — only if the coach explicitly linked one — the target
+  `external_competitions.competition_date` or
+  `wrestling_league_events.event_date` it was built toward, shown with the
+  competition/event's own `status` (`planned`/`completed`/`cancelled`) so a
+  cancelled target is never silently treated as still live.
+- For the plan's date window: real counts from real tables —
+  `training_attempts` rows by `metric_kind` with their real `made`/failed
+  split, `activity_log` hours by `activity_domain` with real
+  `duration_minutes` sums, `assessments` administered
+  (`administered_on` within window), and any `intervention_executions`
+  that ran with `actual_start`/`actual_end` overlapping the window — each
+  labeled with its own real column values, never combined into one
+  "compliance" or "adherence percentage."
+- An explicit adherence *state* for the block as a whole, chosen by a
+  human (a coach), from the same enumerated vocabulary
+  `intervention_executions.adherence` already uses
+  (`delivered_as_planned`/`delivered_with_deviations`/`under_delivered`/
+  `not_delivered`/`unknown`) — never computed by the platform from the
+  counts above. The counts are shown *beside* the human's stated adherence
+  as its supporting evidence, exactly as `intervention_evidence_links`
+  exists to let a human-authored judgment point at typed source rows
+  without the platform pretending to derive the judgment itself.
+- Deviations and why, in the coach's own words — mirroring
+  `intervention_executions.deviations` / `.deviation_reason`, never
+  auto-classified.
+
+**Never shown, at any unlock state:**
+- Any invented periodization doctrine: no auto-generated block structure,
+  no "you are in your accumulation phase, reduce load by X%," no
+  volume/intensity progression curve, no taper percentage. Block
+  structures and loading progressions are coaching doctrine this platform
+  does not possess and must not fabricate.
+- A single "plan adherence score," percentage, grade, or index.
+- Any cross-athlete comparison, cohort average, or leaderboard of who is
+  "on plan" — forbidden at every unlock tier, not a later phase.
+- Any claim that a phase label (e.g. "taper") describes a physiological
+  state — it is shown strictly as the coach's own chosen word, with no
+  platform-asserted meaning attached.
+
+**Explicit UNKNOWN states:**
+- No plan recorded for an athlete/date range: shown as "No training block
+  recorded for this period" — never a blank chart implying zero training
+  happened, since `training_attempts`/`activity_log` may still have rows
+  with no plan to compare them against.
+- A plan with no adherence judgment yet recorded by a coach: shown as
+  `unknown` (the same honest default `intervention_executions.adherence`
+  already uses), never inferred from the raw counts.
+- A plan linked to a competition/event whose `status` is `cancelled`:
+  shown with a visible "target event cancelled" flag, never silently
+  treated as still active.
+- A block window with zero `training_attempts`/`activity_log` rows at
+  all: shown as "no recorded training activity in this window" — distinct
+  from "delivered as planned" and distinct from "not delivered," because
+  the schema cannot distinguish "athlete did not attend" from "attendance
+  was not logged" without an `activity_log` row either way.
+
+---
+
+## (b) Data prerequisites
+
+Layer 0 is structural and precedes every per-athlete/per-org count below:
+**a coach-authored plan-recording table, built per Open Question 1, must
+exist and contain rows before any prerequisite in this section can be
+evaluated at all.** Until the owner approves that table, Module 036's
+correct state for every athlete and every org is fully locked with zero
+progress to show — not "0 of N," because N cannot be counted against a
+table that does not exist.
+
+The counts below assume that table exists, is named (illustratively)
+`pilot.periodization_blocks` with at least `organization_id`, `block_id`,
+`athlete_id`, `title`, `training_emphasis`, `starts_on`, `ends_on`,
+`target_competition_id` (nullable), `target_event_id` (nullable),
+`created_by_account_id`, following the FK/tenancy pattern every other
+table in this schema uses — and that its comparison surface reads
+existing tables' real columns only, per (a). None of this is a proposal to
+finalize that shape; it is the minimum needed to make the thresholds below
+concrete and checkable.
+
+### Per athlete (unlocks that athlete's own plan-vs-actual view)
+
+| # | Requirement | Real source |
+|---|---|---|
+| 1 | ≥ 1 `periodization_blocks` row for the athlete with both `starts_on` and `ends_on` set and `ends_on >= starts_on` | `periodization_blocks.starts_on`, `.ends_on` |
+| 2 | The block's date window has fully elapsed (`ends_on < current_date`) — a plan cannot be compared to actuals it has not yet had the chance to accumulate | `periodization_blocks.ends_on` |
+| 3 | ≥ 1 `pilot.training_attempts` row OR ≥ 1 `pilot.activity_log` row for the athlete with a date falling inside `[starts_on, ends_on]` — some real recorded event to compare against, or there is nothing to show but the plan itself | `training_attempts.attempted_at`, `activity_log.occurred_on` |
+| 4 | A human-recorded adherence judgment exists for the block (the coach equivalent of `intervention_executions.adherence`, not the platform's inference) — until this is recorded, the block shows real counts only, no adherence state beyond `unknown` | new column on `periodization_blocks`'s execution/comparison row, human-authored only |
+
+Requirement 2 is the one most orgs will underestimate: a block's
+plan-vs-actual view has nothing honest to show until its own window has
+closed. A coach who plans a 6-week block on day one has planned a block,
+not yet lived one — showing "adherence" mid-block against a still-unfolding
+window would encourage exactly the metric-gaming this platform's honesty
+doctrine forbids (a coach adjusting behavior to make a live number look
+good, rather than the plan simply running and being judged afterward).
+
+### Per organization (unlocks org-level aggregate view)
+
+| # | Requirement | Real source |
+|---|---|---|
+| 1 | The plan-recording table from Layer 0 is approved and deployed for the org at all — an org with zero plans has nothing to aggregate | `periodization_blocks` existence |
+| 2 | ≥ 5 distinct `athlete_id` values in the org each independently satisfy the full per-athlete gate above (deliberately a minimum-N of athletes, not of blocks, so one heavily-planned athlete cannot unlock an org view built on N=1 — see Module 017's proposal for the same reasoning, applied here identically) | `periodization_blocks.athlete_id` grouped by `organization_id`, joined against each athlete's own gate |
+| 3 | Of the qualifying blocks in (2), more than one distinct `training_emphasis` string is represented — otherwise an "org periodization view" would just be restating one coach's single template as if it were organizational practice | `periodization_blocks.training_emphasis` |
+
+---
+
+## (c) Locked state
+
+Before Layer 0 exists at all, the module shows nothing but its own
+inactive status — there is no partial progress to report against a
+prerequisite the schema does not yet have a table for:
+
+> Periodization / Block Planning — not yet available.
+> This module requires a coach-authored training-plan record that does not
+> exist in the platform yet. No progress to show.
+
+Once Layer 0 exists and a coach has started recording blocks, locked state
+for a given athlete shows the same honest, real-count style as every other
+module's locked state — no gamified "almost there" framing aimed at a
+minor:
+
+> Periodization / Block Planning — locked for this athlete.
+> Blocks recorded: 1 ("Fall strength block," Sep 2 – Oct 14, ends in 12
+> days). Comparison view unlocks once this block's window has closed and
+> at least one training attempt or activity-log entry has been recorded
+> inside it. There is nothing to do differently to "unlock" it faster, and
+> no reward for reaching it sooner.
+
+At org level, locked state shows the same kind of factual counts as
+Module 017's proposal establishes: how many athletes have at least one
+completed, comparable block on record, never which athletes and never a
+ranked list of "most compliant" coaches or athletes.
+
+---
+
+## (d) What unlocks
+
+**At athlete level** (visible only to the athlete, their guardian, and
+staff with existing access to that athlete's record — never to any other
+athlete or guardian, and never aggregated into a cohort comparison):
+- The coach's own plan text and dates, exactly as authored.
+- The real counts from `training_attempts`/`activity_log`/`assessments`/
+  `intervention_executions` falling inside the block's window, per (a).
+- The human-recorded adherence state for the block, once a coach has
+  entered one — never a platform-computed percentage standing in for it.
+- **Anything shown to the athlete or guardian must pass the same
+  human-review gate `intervention_outcome_reviews` already enforces
+  structurally** (`reviewed_by_account_id` required; the schema computes
+  no verdict on its own) — a block's adherence judgment and any narrative
+  summary of "how the block went" must be authored or explicitly confirmed
+  by a coach before an athlete/guardian sees it, not generated and shown
+  automatically the moment the window closes.
+- No comparison to any other athlete's block, no cohort average adherence
+  rate, no leaderboard of "most on-plan athlete." Permanently out of
+  scope, not a later tier.
+
+**At org level** (visible only to roles already permitted org-wide views —
+`organization_admin`/`admin`/`coach`, per the `role` vocabulary in
+`pilot.organization_memberships`):
+- Aggregate counts only, suppressed below the owner-decided minimum-N
+  (Open Question 3): e.g., "X of Y active athletes have at least one
+  completed, comparable training block on record," "Z distinct block
+  emphases in use across the org" — never a per-athlete breakdown inside
+  the aggregate and never a per-coach "compliance" ranking.
+- Which competition/event dates (from `external_competitions` /
+  `wrestling_league_events`) currently have at least one linked block
+  targeting them, as a fact about scheduling, not a readiness claim.
+- An org's aggregate unlocking is never itself a basis for pushing
+  individual athletes or coaches to "catch up." This module has no
+  target-setting, nudge, or notification surface, and this proposal does
+  not create one.
+
+---
+
+## (e) Open questions for the owner
+
+**1. Should the plan-recording table this module needs be built as its
+own new table (e.g. `periodization_blocks`), or does periodization belong
+inside an extension of the existing `intervention_protocols` /
+`intervention_executions` ledger instead of a parallel table?**
+- (a) New, purpose-built table reusing the ledger's vocabulary
+  (planned snapshot / actual / adherence / human-only review) but scoped
+  to a training block rather than a single hypothesis — keeps the
+  hypothesis-testing ledger's meaning intact and gives a block its own
+  natural shape (date range, target event link).
+- (b) Extend `intervention_protocols`/`intervention_executions` directly
+  with an optional "this is a periodization block" flag and a date range —
+  avoids a new table but risks conflating "we tested a coaching hypothesis"
+  with "we planned a training calendar," which are different claims with
+  different audiences.
+- (c) Do not build a dedicated periodization table at all; treat
+  `session_scripts.phase` (already free text) as sufficient and build only
+  a reporting view across sessions sharing a phase string — cheapest, but
+  inherits that field's lack of date range or cross-session linkage and
+  would likely undercount or misgroup blocks.
+
+**2. Should a block be allowed to target a competition/event at all,
+given both competition surfaces are deliberately skeletal by prior owner
+decision?**
+- (a) Yes — allow an optional FK to `external_competitions.competition_id`
+  or `wrestling_league_events.event_id` as a target date only (name and
+  date, nothing else), leaving both competition tables exactly as
+  skeletal as they are today.
+- (b) Yes, but only once a real league/competition program exists with
+  more than a placeholder date — defer the FK until the competition
+  modules themselves are promoted past skeleton status.
+- (c) No — keep blocks entirely date-range-based with no competition
+  linkage, so periodization never implicitly depends on the competition
+  modules' future shape.
+
+**3. What minimum-N suppression floor applies to org-level aggregate
+views, to avoid re-identifying individual minors or individual coaches in
+a small gym (the same question Module 017's proposal raises, asked again
+here because this module additionally risks identifying a specific
+*coach's* plans by comparing few blocks with distinct `training_emphasis`
+text)?**
+- (a) Fixed floor (e.g., 5 athletes and/or 3 distinct coaches
+  represented) below which no org-level aggregate is shown at all.
+- (b) No fixed floor, but aggregates are always counts/ratios and
+  `training_emphasis` text is never shown verbatim at org level, only
+  counted as "N distinct emphases in use."
+- (c) Defer org-level aggregation entirely until legal/safeguarding
+  review of minor-data and staff-performance aggregation is complete;
+  ship athlete-level-only for now.
+
+**4. Should a coach be allowed to mark a block's phase using free-text
+vocabulary (mirroring `session_scripts.phase`'s "accumulation, sharpening,
+taper, etc." pattern), or should the platform offer a fixed picklist of
+phase names?**
+- (a) Free text only, consistent with `session_scripts.phase` and with
+  the honesty doctrine that periodization vocabulary is coaching doctrine
+  the platform does not own — never auto-complete or suggest phase names
+  the platform has not been told to.
+- (b) A coach-editable, org-scoped picklist (each org defines its own
+  phase names once, then reuses them) — reduces free-text drift across a
+  coaching staff while still not baking in a platform-wide doctrine.
+- (c) A fixed platform-wide picklist of standard periodization phase
+  names — explicitly rejected by the assignment brief's framing
+  ("block structures... are NOT derivable from this platform's data and
+  must not be invented"), included here only so the owner can see it named
+  and declined, not silently omitted.

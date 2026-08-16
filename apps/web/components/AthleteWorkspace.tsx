@@ -21,6 +21,56 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
+type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
+
+/**
+ * The six task-oriented groups the eleven surfaces sit under, approved by the
+ * owner on 2026-08-16 (see docs/design/ATHLETE_WORKSPACE_IA_MOCKUP.md).
+ *
+ * Grouping is the whole change: every panel below still renders off its own
+ * TabID exactly as before, so no surface moved, gained, or lost content. What
+ * moved is how an athlete reaches it -- eleven equal-weight buttons asked a kid
+ * to know the whole app before choosing, which is the opposite of task-oriented.
+ *
+ * The order is the order of a visit: check in, do the work, look at your own
+ * record, study, then the things that are not about today at all.
+ */
+const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string }[] }[] = [
+  {
+    id: 'today',
+    label: 'Today',
+    tabs: [
+      { id: 'bio-checkin', label: 'Bio Check-In' },
+      { id: 'my-dashboard', label: 'Dashboard' },
+      { id: 'athlete-floor', label: 'Floor' },
+    ],
+  },
+  {
+    id: 'development',
+    label: 'Development',
+    tabs: [
+      { id: 'smart-goals', label: 'Goals' },
+      { id: 'tracks', label: 'Tracks' },
+      { id: 'assessments', label: 'Assessments' },
+    ],
+  },
+  {
+    id: 'learn',
+    label: 'Learn',
+    tabs: [
+      { id: 'drill-library', label: 'Drills' },
+      { id: 'rabbit-holes', label: 'Rabbit Holes' },
+    ],
+  },
+  { id: 'schedule', label: 'Schedule', tabs: [{ id: 'schedule-session', label: 'Schedule' }] },
+  { id: 'messages', label: 'Messages', tabs: [{ id: 'message-coach', label: 'Messages' }] },
+  { id: 'shadow', label: 'SHADOW', tabs: [{ id: 'shadow', label: 'SHADOW Intel' }] },
+];
+
+/** Which group owns a surface. Derived, never stored -- the tab stays the truth. */
+function groupForTab(tab: TabID): GroupID {
+  return TAB_GROUPS.find((group) => group.tabs.some((entry) => entry.id === tab))?.id ?? 'today';
+}
 type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
 /**
  * The categories a goal can be filed under, and the mirror of GOAL_CATEGORIES
@@ -568,7 +618,6 @@ export default function AthleteWorkspace() {
   // Shadow State
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowObservationError, setShadowObservationError] = useState('');
-  const [selectedCoach, setSelectedCoach] = useState('Coach Jason (Head Coach)');
   const [coachMessageBody, setCoachMessageBody] = useState('');
   const [isSendingCoachMessage, setIsSendingCoachMessage] = useState(false);
   const [coachMessageStatus, setCoachMessageStatus] = useState('');
@@ -595,6 +644,28 @@ export default function AthleteWorkspace() {
 
   const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
   const checkInTime = activeSessionRecord ? formatGymStamp(activeSessionRecord.createdAt) : null;
+
+  /* Which group is open is DERIVED from the open tab, never stored alongside
+     it. Two sources of truth for one selection is how a nav starts lying: the
+     tab is the truth, the group is a read of it. */
+  const floorTasksRemaining = floorTasks.filter((task) => !task.completed).length;
+  const activeGroup = groupForTab(activeTab);
+  const activeGroupTabs = TAB_GROUPS.find((group) => group.id === activeGroup)?.tabs ?? [];
+
+  /* Where a group opens when its button is pressed. Only Today varies: it
+     opens on check-in until the athlete has checked in, then on their
+     dashboard, because the useful surface changes once that fact is recorded.
+     Every other group opens on its first surface. */
+  const openingTabFor = (group: GroupID): TabID => {
+    /* Today always opens on the dashboard, checked in or not, because that is
+       where the real check-in lives: the Session Log's button calls
+       handleCheckIn, which opens the session AND generates the day's floor
+       plan. The Bio Check-In tab is a separate surface whose fields are local
+       state only -- nothing in this app calls /api/pilot/athlete/check-in --
+       so opening there would put an athlete in front of controls that record
+       nothing and tell them they had checked in. */
+    return TAB_GROUPS.find((entry) => entry.id === group)?.tabs[0]?.id ?? 'my-dashboard';
+  };
   const notesDraft = checkInNotes.trim();
   const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
   const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);
@@ -1406,7 +1477,7 @@ export default function AthleteWorkspace() {
         // question for SHADOW.") on every submission and the success message
         // below was unreachable. Omitting it lets the request classify normally.
         body: JSON.stringify({
-          message: `Coach message for ${selectedCoach}: ${message}`,
+          message,
         }),
       });
 
@@ -1420,8 +1491,12 @@ export default function AthleteWorkspace() {
       // person: it is recorded in the athlete's own conversation and answered
       // by SHADOW. No coach is notified and none ever sees it, so saying so
       // would be a promise the system does not keep.
+      //
+      // The coach's name is gone from this string along with the picker that
+      // produced it. Naming a person beside "saved" invited exactly the reading
+      // the rest of this copy spends its time denying.
       setCoachMessageStatus(
-        `Saved to your SHADOW conversation for ${selectedCoach}. SHADOW answers there -- open SHADOW Chat to read it. ${selectedCoach} is not notified.`,
+        'Saved to your SHADOW conversation. SHADOW answers there -- open SHADOW Chat to read it. No coach is notified.',
       );
     } catch (error) {
       setCoachMessageStatus(error instanceof Error ? error.message : 'That message did not send. Try it again.');
@@ -1498,34 +1573,59 @@ export default function AthleteWorkspace() {
             and they used to sit between the header and Quick Actions, pushing
             Quick Actions -- including Check-In -- below the fold. */}
 
-        {/* TAB NAVIGATION — floor-sized targets (Law 5). */}
+        {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels.
+            Six groups an athlete can hold in their head, each opening onto the
+            surfaces it owns. A group with one surface has no second row: there
+            is nothing to choose between, so nothing is drawn. */}
         <div className="mat-leather rounded-[var(--r-md)]">
           <div className="flex flex-wrap gap-[var(--s2)] p-[var(--s3)]">
-            {[
-              { id: 'my-dashboard', label: 'Dashboard' },
-              { id: 'athlete-floor', label: 'Floor' },
-              { id: 'smart-goals', label: 'Goals' },
-              { id: 'tracks', label: 'Tracks' },
-              { id: 'assessments', label: 'Assessments' },
-              { id: 'bio-checkin', label: 'Bio Check-In' },
-              { id: 'drill-library', label: 'Drills' },
-              { id: 'rabbit-holes', label: 'Rabbit Holes' },
-              { id: 'message-coach', label: 'Messages' },
-              { id: 'schedule-session', label: 'Schedule' },
-              { id: 'shadow', label: 'SHADOW Intel' }
-            ].map(tab => (
+            {TAB_GROUPS.map(group => (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabID)}
+                key={group.id}
+                onClick={() => setActiveTab(openingTabFor(group.id))}
+                aria-current={activeGroup === group.id ? 'page' : undefined}
                 className={cx(
                   KIOSK_TAB_BASE,
-                  activeTab === tab.id ? KIOSK_TAB_ACTIVE : KIOSK_TAB_INACTIVE,
+                  activeGroup === group.id ? KIOSK_TAB_ACTIVE : KIOSK_TAB_INACTIVE,
                 )}
               >
-                {tab.label}
+                {group.label}
               </button>
             ))}
           </div>
+
+          {/* Second row: the surfaces inside the open group. */}
+          {activeGroupTabs.length > 1 && (
+            <div className="flex flex-wrap items-center gap-[var(--s2)] border-t border-[color:var(--hide-800)] px-[var(--s3)] pb-[var(--s3)] pt-[var(--s2)]">
+              {activeGroupTabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  className={cx(
+                    KIOSK_TAB_BASE,
+                    activeTab === tab.id ? KIOSK_TAB_ACTIVE : KIOSK_TAB_INACTIVE,
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+
+              {/* The check-in gateway, and the reason Today leads with it.
+                  This is a statement of fact about the athlete's own record,
+                  not a lock: every group above stays reachable whether or not
+                  they have checked in. Gating a minor's access to their own
+                  data behind a daily action would be compulsion, which the
+                  engagement direction forbids outright. So Today OPENS on
+                  check-in until it is done, and says so plainly -- nothing
+                  more. */}
+              {activeGroup === 'today' && (
+                <p className="t-label ml-[var(--s2)] text-[color:var(--bone-400)]">
+                  {checkInTime ? `Checked in ${checkInTime}` : 'Not checked in yet'}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* TAB CONTENT */}
@@ -1539,33 +1639,92 @@ export default function AthleteWorkspace() {
                   the athlete's identity resolves and history exists. */}
               <ThenAndNow athleteId={backendAthleteId} />
 
+              {/* TODAY.
+                  This was a flat row of five identical buttons, which asked the
+                  athlete to already know what needed doing. It states the day
+                  back to them instead: what is true right now, and the one
+                  action each fact implies.
+
+                  Every line here is a read of state this component already
+                  holds. Nothing is counted that was not recorded, and an empty
+                  collection says so in words rather than showing a 0 -- "none
+                  recorded" and "zero" are different claims, and only one of
+                  them is true before anything has happened. */}
               <section className={PANEL}>
-                <h3 className="t-label">Quick Actions</h3>
-                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  <Link href="/schedule" className="btn btn--kiosk">
+                <h3 className="t-label">Today</h3>
+                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-3">
+                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                    <p className="t-label">Check in</p>
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {checkInTime ? `Checked in ${checkInTime}.` : 'You have not checked in today.'}
+                    </p>
+                    {/* This calls the same handler as the Session Log's own
+                        button rather than navigating somewhere -- checking in
+                        is one tap from the first thing an athlete sees, and
+                        both controls stay one behaviour because they are one
+                        handler. */}
+                    {activeSessionRecord ? null : (
+                      <button
+                        type="button"
+                        onClick={() => void handleCheckIn()}
+                        disabled={isCheckingIn}
+                        className="btn btn--kiosk w-full disabled:opacity-50 disabled:grayscale"
+                      >
+                        {isCheckingIn ? 'Checking in...' : 'Start check-in'}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                    <p className="t-label">Your floor plan</p>
+                    {/* The plan is built at check-in from the athlete's own
+                        readiness and active goal (buildWorkoutFloorTasks), not
+                        handed down by a coach -- so this must never be worded
+                        as "assignments from your coach". Saying where it comes
+                        from is also the honest answer to why checking in is
+                        first: before check-in there is genuinely nothing here
+                        yet, rather than something being withheld. */}
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {floorTasks.length === 0
+                        ? 'Built for you when you check in.'
+                        : `${floorTasksRemaining} of ${floorTasks.length} left.`}
+                    </p>
+                    {floorTasks.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('athlete-floor')}
+                        className="btn btn--kiosk btn--ghost w-full"
+                      >
+                        Open the floor
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                    <p className="t-label">Your goals</p>
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {goalsError
+                        ? 'Not available right now.'
+                        : goalsLoading
+                          ? 'Checking...'
+                          : goalsActive === 0
+                            ? 'No active goals recorded.'
+                            : `${goalsActive} active.`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('smart-goals')}
+                      className="btn btn--kiosk btn--ghost w-full"
+                    >
+                      Open goals
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+                  <Link href="/schedule" className="btn btn--kiosk btn--ghost">
                     Open Scheduler
                   </Link>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('bio-checkin')}
-                    className="btn btn--kiosk"
-                  >
-                    Complete Check-In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('athlete-floor')}
-                    className="btn btn--kiosk btn--ghost"
-                  >
-                    Open Floor Tasks
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('smart-goals')}
-                    className="btn btn--kiosk btn--ghost"
-                  >
-                    Update Goals
-                  </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('shadow')}
@@ -2298,12 +2457,19 @@ export default function AthleteWorkspace() {
             </div>
           )}
 
-          {/* MESSAGE COACH */}
+          {/* ASK SHADOW.
+              Named for what it does. The copy here has been accurate for a
+              while -- it already said SHADOW answers and no coach is notified
+              -- but the surface around the copy said something else: it was
+              titled "Message Coach", its form said "Send Message to Coach",
+              and it opened with a coach picker. Structure outranks body text,
+              so an athlete reasonably read all that as "a coach will see this".
+              The naming now matches the behaviour, and the picker is gone. */}
           {activeTab === 'message-coach' && (
             <div className="space-y-6 panel-settle">
               <HelpPanel
-                title="Message Coach"
-                description="Write a question for your coach. It is recorded in your own SHADOW conversation and answered by SHADOW -- it is not delivered to the coach."
+                title="Ask SHADOW"
+                description="Write a question. It is recorded in your own SHADOW conversation and answered by SHADOW -- it does not reach a coach."
                 usage={[
                   'Be clear and specific in questions',
                   'Everything you send here is kept',
@@ -2330,27 +2496,23 @@ export default function AthleteWorkspace() {
               </div>
 
               <div className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
-                <h3 className="t-label">Send Message to Coach</h3>
+                <h3 className="t-label">Ask SHADOW</h3>
+                {/* The coach picker that stood here offered two hardcoded names
+                    ("Coach Jason (Head Coach)", "Coach Danielle (Fitness
+                    Director)") -- invented data on an athlete surface, and a
+                    control that changed nothing, since every message goes to
+                    the same place regardless of who was chosen. It is removed
+                    rather than wired to the real roster: no athlete-scoped
+                    coach roster endpoint exists yet, and a picker only earns
+                    its place once choosing actually does something. */}
                 <form onSubmit={handleSendCoachMessage} className="space-y-[var(--s4)]">
                   <div className="field">
-                    <label className="t-label" htmlFor="message-coach-select">Coach</label>
-                    <select
-                      id="message-coach-select"
-                      value={selectedCoach}
-                      onChange={(event) => setSelectedCoach(event.target.value)}
-                      className="select input--kiosk"
-                    >
-                      <option>Coach Jason (Head Coach)</option>
-                      <option>Coach Danielle (Fitness Director)</option>
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label className="t-label" htmlFor="message-coach-body">Your Message</label>
+                    <label className="t-label" htmlFor="message-coach-body">Your Question</label>
                     <textarea
                       id="message-coach-body"
                       value={coachMessageBody}
                       onChange={(event) => setCoachMessageBody(event.target.value)}
-                      placeholder="Type your message..."
+                      placeholder="Type your question..."
                       className="textarea input--kiosk h-24 resize-none"
                     />
                   </div>
@@ -2360,7 +2522,7 @@ export default function AthleteWorkspace() {
                     disabled={isSendingCoachMessage}
                     className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
                   >
-                    {isSendingCoachMessage ? 'Sending...' : 'Send Message'}
+                    {isSendingCoachMessage ? 'Sending...' : 'Ask SHADOW'}
                   </button>
                 </form>
               </div>
@@ -2531,21 +2693,34 @@ export default function AthleteWorkspace() {
           </div>
         </div>
 
+        {/* This panel was headed "What's Coming" and described both pages below
+            as "Not Built Yet", one of them as "The screens are drawn. Nothing
+            behind them works yet." Both shipped since that copy was written:
+            /athlete/video-analysis reads pilot.video via /api/pilot/video/list
+            and the SHADOW observation projection, and
+            /athlete/progression-intelligence reads real gaps and drill
+            assignments and writes completions back.
+
+            Telling an athlete a working feature does not exist is the same
+            class of error as claiming one that does not -- it just fails in the
+            direction that hides their own record from them. What stays "not
+            built" is narrower and named: automatic scoring, which is PARKED by
+            owner decision and which those pages already label for themselves. */}
         <details className={PANEL}>
-          <summary className="t-label cursor-pointer">What&apos;s Coming</summary>
+          <summary className="t-label cursor-pointer">More in your workspace</summary>
           <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Video Analysis - Not Built Yet</p>
-              <p className="t-muted mt-[var(--s2)]">The screens are drawn. Nothing behind them works yet.</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Athlete Film Lane</p>
+              <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
               <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Video Analysis
+                Open Film Lane
               </Link>
             </article>
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Automatic Progress Tracking - Not Built Yet</p>
-              <p className="t-muted mt-[var(--s2)]">Your coach still decides what comes next. Nothing here scores you on its own.</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Your Progression</p>
+              <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
               <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Progress Tracking
+                Open Your Progression
               </Link>
             </article>
           </div>

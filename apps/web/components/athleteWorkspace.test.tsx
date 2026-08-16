@@ -174,8 +174,45 @@ async function renderWorkspace() {
   });
 }
 
+/**
+ * Which of the six groups owns each surface, mirroring TAB_GROUPS in
+ * AthleteWorkspace.tsx. Kept as a literal rather than imported so that moving
+ * a surface between groups has to be a deliberate edit in both places -- a
+ * test that silently follows the component wherever it goes cannot catch a
+ * surface being filed somewhere an athlete would not look for it.
+ */
+const GROUP_FOR_SURFACE: Record<string, string> = {
+  'Bio Check-In': 'Today',
+  Dashboard: 'Today',
+  Floor: 'Today',
+  Goals: 'Development',
+  Tracks: 'Development',
+  Assessments: 'Development',
+  Drills: 'Learn',
+  'Rabbit Holes': 'Learn',
+  Schedule: 'Schedule',
+  Messages: 'Messages',
+  'SHADOW Intel': 'SHADOW',
+};
+
+/**
+ * Reach a surface through the two-level nav: press its group, then the surface.
+ * A group holding one surface draws no second row -- pressing the group has
+ * already opened the only thing in it -- so there is nothing further to press.
+ */
 function openTab(label: string) {
-  fireEvent.click(screen.getByRole('button', { name: label }));
+  const group = GROUP_FOR_SURFACE[label];
+  if (!group) {
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    return;
+  }
+
+  fireEvent.click(screen.getByRole('button', { name: group }));
+
+  const surface = group === label ? null : screen.queryByRole('button', { name: label });
+  if (surface) {
+    fireEvent.click(surface);
+  }
 }
 
 describe('athlete workspace honesty', () => {
@@ -508,8 +545,14 @@ describe('the rabbit holes tab', () => {
 
   async function openRabbitHoles() {
     await renderWorkspace();
+    // Opening a surface is now two presses -- the group, then the surface --
+    // and the second one can only find its button after the first has
+    // rendered. Nested inside an outer act() the group press would not have
+    // flushed yet, so the presses happen here and the act() that follows only
+    // settles the effects they kick off.
+    openTab('Rabbit Holes');
     await act(async () => {
-      openTab('Rabbit Holes');
+      await Promise.resolve();
     });
   }
 
@@ -737,5 +780,159 @@ describe('reporting progress writes it', () => {
       expect(screen.getByTestId('goal-progress-value-goal_1').textContent).toContain('20%');
     });
     expect(screen.getByTestId('goal-progress-value-goal_1').textContent).not.toContain('90%');
+  });
+});
+
+describe('the workspace nav groups its surfaces instead of listing them flat', () => {
+  test('six groups are offered, and a surface inside one is not loose in the top row', async () => {
+    await renderWorkspace();
+
+    for (const group of ['Today', 'Development', 'Learn', 'Schedule', 'Messages', 'SHADOW']) {
+      expect(screen.getByRole('button', { name: group })).toBeTruthy();
+    }
+
+    // Goals belongs to Development. Until that group is open there is no Goals
+    // button at all -- that is the difference between grouping the nav and
+    // merely captioning it.
+    expect(screen.queryByRole('button', { name: 'Goals' })).toBeNull();
+  });
+
+  test('a surface is reachable through the group that owns it', async () => {
+    await renderWorkspace();
+
+    openTab('Goals');
+
+    expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
+  });
+
+  test('Today reports an un-checked-in athlete as not checked in', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(screen.getByText('Not checked in yet')).toBeTruthy();
+  });
+
+  test('once the check-in is recorded Today stops saying it is missing', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Not checked in yet')).toBeNull();
+    });
+  });
+
+  test('every group stays reachable without checking in first', async () => {
+    // The gateway is an opening position, never a lock. An athlete who has not
+    // checked in can still reach their own record, their schedule, and every
+    // other group -- gating a minor's access to their own data behind a daily
+    // action would be compulsion, which the engagement direction forbids.
+    await renderWorkspace();
+
+    openTab('Goals');
+    expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
+
+    openTab('Rabbit Holes');
+    expect(screen.getByRole('button', { name: 'Learn' })).toBeTruthy();
+  });
+});
+
+describe('Today states the day back rather than offering a row of buttons', () => {
+  test('an athlete who has not checked in is told so, and offered the one action', async () => {
+    await renderWorkspace();
+
+    expect(screen.getByText('You have not checked in today.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start check-in' })).toBeTruthy();
+  });
+
+  test('the floor plan says where it comes from instead of showing a count of nothing', async () => {
+    // The plan is generated at check-in from the athlete's own readiness, so
+    // before check-in there is genuinely nothing yet. "0 tasks" would be a
+    // claim about an empty plan; there is no plan.
+    await renderWorkspace();
+
+    expect(screen.getByText('Built for you when you check in.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open the floor' })).toBeNull();
+  });
+
+  test('no recorded goals reads as none recorded, not as zero', async () => {
+    storedGoals = [];
+    await renderWorkspace();
+
+    expect(await screen.findByText('No active goals recorded.')).toBeTruthy();
+  });
+
+  test('Start check-in performs the check-in instead of only navigating to it', async () => {
+    // The Bio Check-In tab's fields are local state and persist nothing -- no
+    // caller of /api/pilot/athlete/check-in exists in this app -- so a Today
+    // action that merely navigated there would leave the athlete believing
+    // they had checked in when no record was written. It calls the real
+    // handler, the same one the Session Log's button calls.
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start check-in' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(postedTo('/api/pilot/sessions').length).toBeGreaterThan(0);
+  });
+
+  test('a checked-in athlete is told when, and is not asked to check in again', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Start check-in' })).toBeNull();
+    });
+    expect(screen.queryByText('You have not checked in today.')).toBeNull();
+  });
+});
+
+describe('shipped features are not described to the athlete as unbuilt', () => {
+  test('the film lane and progression are offered as working, not as coming', async () => {
+    // Both pages read real routes -- /api/pilot/video/list and
+    // /api/pilot/progression/gaps -- and were being advertised as "Not Built
+    // Yet", one of them as "Nothing behind them works yet".
+    await renderWorkspace();
+
+    expect(screen.queryByText(/Video Analysis - Not Built Yet/)).toBeNull();
+    expect(screen.queryByText(/Automatic Progress Tracking - Not Built Yet/)).toBeNull();
+    expect(screen.queryByText(/Nothing behind them works yet/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Film Lane' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Your Progression' })).toBeTruthy();
+  });
+
+  test('the part that genuinely is not built is still said plainly', async () => {
+    // Automatic technique scoring is PARKED by owner decision. Correcting the
+    // stale copy must not quietly promise it.
+    await renderWorkspace();
+
+    expect(screen.getByText(/Nothing scores your technique automatically -- that part is not built/)).toBeTruthy();
+  });
+});
+
+describe('the athlete question box does not imply a coach reads it', () => {
+  test('it is named for what answers it, and offers no coach to pick', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+
+    expect(screen.getByRole('heading', { name: 'Ask SHADOW' })).toBeTruthy();
+    // The picker offered two hardcoded names and changed nothing about where
+    // the message went.
+    expect(screen.queryByLabelText('Coach')).toBeNull();
+    expect(screen.queryByText(/Coach Jason \(Head Coach\)/)).toBeNull();
+    expect(screen.queryByText(/Coach Danielle/)).toBeNull();
+  });
+
+  test('the SafeSport warning still states that no parent is copied', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+
+    expect(screen.getByText(/your parent is not automatically copied and no coach is notified/)).toBeTruthy();
   });
 });
