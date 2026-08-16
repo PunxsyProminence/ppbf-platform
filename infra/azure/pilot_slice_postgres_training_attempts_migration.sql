@@ -29,7 +29,7 @@ create table if not exists pilot.training_attempts (
   attempt_id             text not null,
   athlete_id             text not null,
   context_type           text not null default 'open_floor'
-                         check (context_type in ('session', 'drill_assignment', 'assessment', 'open_floor')),
+                         check (context_type in ('session', 'drill_assignment', 'assessment', 'film_study', 'open_floor')),
   context_id             text null,
   metric_kind            text not null
                          check (metric_kind in ('reps', 'time_seconds', 'distance_m', 'load_kg', 'rounds', 'hold_seconds')),

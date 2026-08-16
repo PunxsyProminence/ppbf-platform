@@ -19,14 +19,14 @@ import { query, queryOne } from './db';
 
 export type AttemptMetricKind = 'reps' | 'time_seconds' | 'distance_m' | 'load_kg' | 'rounds' | 'hold_seconds';
 export type AttemptDirection = 'at_least' | 'at_most';
-export type AttemptContextType = 'session' | 'drill_assignment' | 'assessment' | 'open_floor';
+export type AttemptContextType = 'session' | 'drill_assignment' | 'assessment' | 'film_study' | 'open_floor';
 
 export const ATTEMPT_METRIC_KINDS: readonly AttemptMetricKind[] = [
   'reps', 'time_seconds', 'distance_m', 'load_kg', 'rounds', 'hold_seconds',
 ];
 
 export const ATTEMPT_CONTEXT_TYPES: readonly AttemptContextType[] = [
-  'session', 'drill_assignment', 'assessment', 'open_floor',
+  'session', 'drill_assignment', 'assessment', 'film_study', 'open_floor',
 ];
 
 /** Times are better lower; everything else is better higher. The default
