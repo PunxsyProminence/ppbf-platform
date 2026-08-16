@@ -39,7 +39,13 @@ const ROSTER_QUERY = `
     ath.active_flag as active,
     ath.coach_id as coach_account_id,
     coach.login_email as coach_email,
-    ath.emergency_contact as emergency_contact_note,
+    -- CT-15: emergency_contact_note is the correctly-named column
+    -- (pilot_slice_postgres_emergency_contact_note_migration.sql).
+    -- entities.ts#upsertAthlete/#insertAthleteIfAbsent write it identically to
+    -- the legacy emergency_contact on every write, so this reads the same
+    -- value either column would give -- reading the well-named one is what
+    -- finishes the rename this export's own column alias already assumed.
+    ath.emergency_contact_note as emergency_contact_note,
     contact.full_name as emergency_contact_name,
     contact.relationship_to_athlete as emergency_contact_relationship,
     contact.phone as emergency_contact_phone,

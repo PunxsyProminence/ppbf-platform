@@ -517,7 +517,7 @@ function PeopleConsoleContent() {
       if (!athleteDob.trim()) missing.push('Date of birth');
       if (!athleteWeightClass.trim()) missing.push('Weight class');
       if (!athleteGymStatus) missing.push('Gym status');
-      if (!athleteEmergencyContact.trim()) missing.push('Emergency contact');
+      if (!athleteEmergencyContact.trim()) missing.push('Emergency contact note');
       if (!athleteCoachId) missing.push('Coach');
     }
     if (!trimmedAthleteId) missing.push('Athlete record ID');
@@ -1462,11 +1462,21 @@ function PeopleConsoleContent() {
                 </div>
 
                 <div className="field">
+                  {/* CT-15: this is a free-text NOTE, not the authoritative
+                      emergency contact record -- pilot.emergency_contacts
+                      (structured: name, relationship, phone, email) is, and it
+                      is entered separately through intake review. There is no
+                      existing athlete yet at this point in the form, so there
+                      is nothing structured to show here the way
+                      /admin/athletes shows it for an existing one; the fix on
+                      this screen is stating plainly what this field is. */}
                   <label htmlFor="athlete-emergency-contact" className="t-label">
-                    Emergency contact
+                    Emergency contact note
                   </label>
                   <p className="t-muted mb-[var(--s2)]">
-                    Who to call, and the number. Required — an athlete cannot train without one on file.
+                    Who to call, and the number. Required — an athlete cannot train without one on file. This is a
+                    note, not the verified contact record; add a structured emergency contact through intake review
+                    when one exists.
                   </p>
                   <input
                     id="athlete-emergency-contact"
