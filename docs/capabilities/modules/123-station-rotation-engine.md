@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (slice shipped 2026-08-16) |
+| Vertical slice | Circuit stations on the same daily floor plan as module 121: a group with a station name and rotation order is a circuit stop; a group without one is a small group. Plan-level rotation_minutes (1-120, optional). The UI labels the day from what is actually there rather than assuming a shape. `/coach/floor-groups`. |
 | Active | false |
 | Promotion required | true |
 | Category | Class / Program Management (`classProgramManagement`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-16 | claude-session | Slice shipped: stations are OPTIONAL by owner answer 2026-08-16 ("some groups work in small groups and we do do circuits") -- neither shape is the default, and a day with no stations reads as a small-group day rather than a broken circuit. Promoted per playbook rule with ManualVerification PENDING_SIGN_OFF. |
