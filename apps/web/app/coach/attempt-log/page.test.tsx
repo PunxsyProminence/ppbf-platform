@@ -19,6 +19,7 @@ jest.mock('@/components/RoleSessionGate', () => ({
 const MISSED_ATTEMPT = {
   attempt_id: 'att-1',
   athlete_name: 'Jordan P.',
+  context_type: 'open_sparring',
   metric_kind: 'time_seconds',
   direction: 'at_most',
   target_value: '90',
@@ -87,6 +88,30 @@ test('recording posts raw facts only; an empty target posts null (a measurement)
   expect(posted).toMatchObject({ athlete_id: 'ath-1', metric_kind: 'reps', target_value: null, achieved_value: 12 });
   // The verdict is the server's to compute.
   expect(posted).not.toHaveProperty('made');
+});
+
+test('a sparring-context miss posts its context and renders it -- where it failed is part of the fact', async () => {
+  const capture = { posts: [] as unknown[] };
+  global.fetch = mockFetch(capture);
+
+  await act(async () => {
+    render(<AttemptLogPage />);
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Context (where it happened)'), { target: { value: 'sparring_drills' } });
+    fireEvent.change(screen.getByLabelText(/Achieved/), { target: { value: '3' } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Record attempt' }));
+  });
+
+  expect(capture.posts).toHaveLength(1);
+  expect(capture.posts[0]).toMatchObject({ context_type: 'sparring_drills' });
+  // The listed miss shows where it happened.
+  expect(screen.getByText(/open sparring/)).toBeTruthy();
 });
 
 test('a non-numeric achieved never leaves the page', async () => {

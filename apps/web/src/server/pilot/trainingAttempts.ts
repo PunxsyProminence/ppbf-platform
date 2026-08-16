@@ -19,14 +19,20 @@ import { query, queryOne } from './db';
 
 export type AttemptMetricKind = 'reps' | 'time_seconds' | 'distance_m' | 'load_kg' | 'rounds' | 'hold_seconds';
 export type AttemptDirection = 'at_least' | 'at_most';
-export type AttemptContextType = 'session' | 'drill_assignment' | 'assessment' | 'film_study' | 'open_floor';
+export type AttemptContextType =
+  | 'session' | 'drill_assignment' | 'assessment' | 'film_study' | 'open_floor'
+  | 'technical_sparring' | 'sparring_games' | 'sparring_drills' | 'open_sparring';
 
 export const ATTEMPT_METRIC_KINDS: readonly AttemptMetricKind[] = [
   'reps', 'time_seconds', 'distance_m', 'load_kg', 'rounds', 'hold_seconds',
 ];
 
+// Sparring contexts are first-class (owner decision 2026-08-16): where an
+// attempt fails matters as much as that it failed. A defense that holds in
+// sparring drills and breaks in open sparring is a transfer fact.
 export const ATTEMPT_CONTEXT_TYPES: readonly AttemptContextType[] = [
   'session', 'drill_assignment', 'assessment', 'film_study', 'open_floor',
+  'technical_sparring', 'sparring_games', 'sparring_drills', 'open_sparring',
 ];
 
 /** Times are better lower; everything else is better higher. The default
