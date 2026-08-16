@@ -33,6 +33,8 @@ const ENTRY = {
   athlete_id: 'ath-1',
   athlete_name: 'Jordan Little',
   status: 'entered',
+  result: null,
+  lesson_note: '',
 };
 
 function mockFetch(options: {
@@ -42,6 +44,10 @@ function mockFetch(options: {
 }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (init?.method === 'PATCH') {
+      options.capture?.posts.push({ url, body: JSON.parse(String(init.body)) });
+      return { ok: true, json: async () => ({ item: {} }) } as Response;
+    }
     if (init?.method === 'POST') {
       options.capture?.posts.push({ url, body: JSON.parse(String(init.body)) });
       if (url.includes('/entries') && options.entryPostStatus) {
@@ -167,4 +173,38 @@ test('a duplicate entry surfaces the server message', async () => {
   });
 
   expect(await screen.findByText('This athlete is already entered in this competition.')).toBeTruthy();
+});
+
+test('a loss cannot leave the page without its lesson; with one it posts the result', async () => {
+  const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+  global.fetch = mockFetch({ capture });
+
+  await act(async () => {
+    render(<ExternalCompetitionPlatformPage />);
+  });
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Open entries' }));
+  });
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Record result' }));
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Result'), { target: { value: 'lost' } });
+  });
+  // The lesson label announces the rule before it fires.
+  expect(screen.getByText(/required — a loss without a lesson is refused/)).toBeTruthy();
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+  });
+  expect(capture.posts.filter((entry) => entry.url.includes('/entries'))).toHaveLength(0);
+  expect(screen.getByText(/A loss cannot be recorded without its lesson/)).toBeTruthy();
+
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText(/Lesson/), { target: { value: 'kept dropping the right hand' } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+  });
+  const patch = capture.posts.find((entry) => entry.url.includes('/entries'));
+  expect(patch?.body).toMatchObject({ entry_id: 'entry-1', result: 'lost', lesson_note: 'kept dropping the right hand' });
 });
