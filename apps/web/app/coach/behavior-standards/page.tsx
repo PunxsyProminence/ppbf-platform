@@ -149,7 +149,7 @@ export default function BehaviorStandardsPage() {
           )}
 
           {notice && (
-            <div className="alert alert--ready" role="status">
+            <div className="alert alert--success" role="status">
               <span className="alert-icon" aria-hidden="true">✓</span>
               <div className="alert-body">
                 <p className="alert-title">Recorded</p>
