@@ -146,6 +146,31 @@ describe('partial configuration is loud, and no configuration is refused', () =>
     expect(status.dataverse.reason).toMatch(/not configured/i);
   });
 
+  test('values are trimmed, so a ready destination cannot ship whitespace credentials', () => {
+    // Readiness is decided on the trimmed form. If the config passed raw
+    // values through, a secret with a trailing newline -- what a file-loaded
+    // or pasted deployment setting routinely carries -- would report ready and
+    // then fail at token acquisition with an opaque auth error.
+    const config = getPipelineConfig({
+      DATAVERSE_ORG_URL: '  https://example.crm.dynamics.com\n',
+      DATAVERSE_TENANT_ID: 't\n',
+      DATAVERSE_CLIENT_ID: ' c ',
+      DATAVERSE_CLIENT_SECRET: 's\t',
+      GOOGLE_SERVICE_ACCOUNT_JSON: ' {} ',
+      GOOGLE_DRIVE_FOLDER_ID: ' folder-abc\n',
+    });
+
+    expect(config.dataverse).toEqual({
+      orgUrl: 'https://example.crm.dynamics.com',
+      tableName: 'annotations',
+      tenantId: 't',
+      clientId: 'c',
+      clientSecret: 's',
+    });
+    expect(config.googleDrive?.folderId).toBe('folder-abc');
+    expect(config.googleDrive?.serviceAccountJson).toBe('{}');
+  });
+
   test('an optional setting alone still counts as intent to enable', () => {
     // Setting only SHAREPOINT_FOLDER_PATH is meaningless on its own, but it
     // says somebody meant to use SharePoint. Reporting that as "off" would

@@ -55,8 +55,14 @@ export interface DocumentIngestResult {
   status: 'ok'
   fileName: string
   classification: IntakeClassification
-  /** Destinations this document was actually written to. Never empty -- an
-   * ingest with nowhere to write is refused before the file is read. */
+  /**
+   * Destinations this document was actually written to.
+   *
+   * Never empty on a returned result: getPipelineConfig() refuses a pipeline
+   * with no ready destination, so the request fails before any destination
+   * write is attempted. Note the route reads and parses the PDF first, so the
+   * refusal happens after the upload is read, not before it.
+   */
   writtenTo: string[]
   dataverse: DataverseWriteResult | null
   sharepoint: SharePointWriteResult | null

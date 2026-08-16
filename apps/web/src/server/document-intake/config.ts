@@ -205,32 +205,43 @@ export function getPipelineConfig(env: Env = process.env): PipelineConfig {
     )
   }
 
+  // Every value is TRIMMED, because readiness was decided on the trimmed form
+  // (see present()). Passing the raw value through would let a destination
+  // report ready on a credential the pipeline then sends with surrounding
+  // whitespace -- and a trailing newline is exactly what a secret loaded from
+  // a file or pasted into a deployment setting carries. That fails at token
+  // acquisition with an opaque auth error, which is the same "reports ready,
+  // does not work" shape this file exists to remove.
+  const value = (name: string): string => env[name]?.trim() ?? ''
+
   return {
     dataverse: status.dataverse.ready
       ? {
-        orgUrl: env.DATAVERSE_ORG_URL as string,
-        tableName: env.DATAVERSE_TABLE_LOGICAL_NAME?.trim() || 'annotations',
-        tenantId: env.DATAVERSE_TENANT_ID as string,
-        clientId: env.DATAVERSE_CLIENT_ID as string,
-        clientSecret: env.DATAVERSE_CLIENT_SECRET as string,
+        orgUrl: value('DATAVERSE_ORG_URL'),
+        tableName: value('DATAVERSE_TABLE_LOGICAL_NAME') || 'annotations',
+        tenantId: value('DATAVERSE_TENANT_ID'),
+        clientId: value('DATAVERSE_CLIENT_ID'),
+        clientSecret: value('DATAVERSE_CLIENT_SECRET'),
       }
       : null,
     sharepoint: status.sharepoint.ready
       ? {
-        tenantId: env.GRAPH_TENANT_ID as string,
-        clientId: env.GRAPH_CLIENT_ID as string,
-        clientSecret: env.GRAPH_CLIENT_SECRET as string,
-        siteId: env.SHAREPOINT_SITE_ID as string,
-        driveId: env.SHAREPOINT_DRIVE_ID as string,
-        folderPath: env.SHAREPOINT_FOLDER_PATH?.trim() || 'PPBF/Intake',
+        tenantId: value('GRAPH_TENANT_ID'),
+        clientId: value('GRAPH_CLIENT_ID'),
+        clientSecret: value('GRAPH_CLIENT_SECRET'),
+        siteId: value('SHAREPOINT_SITE_ID'),
+        driveId: value('SHAREPOINT_DRIVE_ID'),
+        folderPath: value('SHAREPOINT_FOLDER_PATH') || 'PPBF/Intake',
       }
       : null,
     googleDrive: status.googleDrive.ready
       ? {
-        serviceAccountJson: env.GOOGLE_SERVICE_ACCOUNT_JSON as string,
+        // NOT trimmed away to nothing by accident: readiness already refused
+        // a whitespace-only service account, so this is a real value.
+        serviceAccountJson: value('GOOGLE_SERVICE_ACCOUNT_JSON'),
         // Non-optional now. See googleDrive.ts, which also refuses a blank one
         // at the point of upload rather than trusting this to have checked.
-        folderId: env.GOOGLE_DRIVE_FOLDER_ID as string,
+        folderId: value('GOOGLE_DRIVE_FOLDER_ID'),
       }
       : null,
   }

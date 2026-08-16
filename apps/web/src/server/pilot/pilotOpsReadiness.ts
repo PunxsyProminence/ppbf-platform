@@ -41,10 +41,13 @@ export interface PilotOpsReadinessReport {
   durableRateLimit: OpsReadinessFlag;
   azureChatConfigured: OpsReadinessFlag;
   semanticLibrarySearch: OpsReadinessFlag;
-  // `enabled` answers "will a real ingest request write a document
-  // ANYWHERE" -- true when at least one destination is ready, or when mock
-  // mode is on. `destinations` answers the question that actually matters
-  // operationally, which the old single boolean could not: WHICH ones.
+  // `enabled` answers "will a real ingest request write a document ANYWHERE".
+  // That needs at least one READY destination AND no enabled-but-incomplete
+  // one: a single broken destination makes getPipelineConfig() throw for the
+  // whole pipeline, so every request fails no matter how many others are
+  // ready. Mock mode is also `enabled`, and says so in `mockMode`.
+  // `destinations` answers the question that actually matters operationally,
+  // which the old single boolean could not: WHICH ones.
   ingest: OpsReadinessFlag & {
     mockMode: boolean;
     destinations: DocumentIngestDestinationReport;
@@ -109,7 +112,14 @@ export function buildPilotOpsReadinessReport(
   const brokenDestinations = destinationEntries
     .filter(([, value]) => value.enabled && !value.ready)
     .map(([name]) => name);
-  const ingestConfigured = ingestMockMode || readyDestinations.length > 0;
+  // A ready destination is NOT sufficient on its own. getPipelineConfig()
+  // throws when any destination is enabled-but-incomplete, and it throws for
+  // the whole pipeline -- so one broken destination means no request writes
+  // anywhere, however many others are ready. Reporting `enabled: true` in that
+  // state would be this PR's own defect one level up: a readiness flag that
+  // says yes while every real request fails.
+  const ingestConfigured = ingestMockMode
+    || (readyDestinations.length > 0 && brokenDestinations.length === 0);
 
   return {
     shadowWorker: {

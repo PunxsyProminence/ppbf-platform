@@ -129,7 +129,13 @@ describe('buildPilotOpsReadinessReport', () => {
     expect(report.ingest.destinations.googleDrive.ready).toBe(false);
     expect(report.ingest.destinations.googleDrive.missing).toContain('GOOGLE_DRIVE_FOLDER_ID');
     // Dataverse and SharePoint ARE ready, but the incomplete Drive config
-    // makes getPipelineConfig throw, so no ingest request would succeed.
+    // makes getPipelineConfig throw for the WHOLE pipeline, so no ingest
+    // request would succeed. `enabled` has to say so.
+    //
+    // This assertion is the one that matters and the one this test originally
+    // lacked: it checked only `reason`, so the flag could -- and did -- report
+    // enabled:true while every request failed.
+    expect(report.ingest.enabled).toBe(false);
     expect(report.ingest.reason).toMatch(/refuse to start/i);
   });
 
