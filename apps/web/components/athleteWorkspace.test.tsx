@@ -839,6 +839,58 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
   });
 });
 
+describe('Today states the day back rather than offering a row of buttons', () => {
+  test('an athlete who has not checked in is told so, and offered the one action', async () => {
+    await renderWorkspace();
+
+    expect(screen.getByText('You have not checked in today.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start check-in' })).toBeTruthy();
+  });
+
+  test('the floor plan says where it comes from instead of showing a count of nothing', async () => {
+    // The plan is generated at check-in from the athlete's own readiness, so
+    // before check-in there is genuinely nothing yet. "0 tasks" would be a
+    // claim about an empty plan; there is no plan.
+    await renderWorkspace();
+
+    expect(screen.getByText('Built for you when you check in.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open the floor' })).toBeNull();
+  });
+
+  test('no recorded goals reads as none recorded, not as zero', async () => {
+    storedGoals = [];
+    await renderWorkspace();
+
+    expect(await screen.findByText('No active goals recorded.')).toBeTruthy();
+  });
+
+  test('Start check-in performs the check-in instead of only navigating to it', async () => {
+    // The Bio Check-In tab's fields are local state and persist nothing -- no
+    // caller of /api/pilot/athlete/check-in exists in this app -- so a Today
+    // action that merely navigated there would leave the athlete believing
+    // they had checked in when no record was written. It calls the real
+    // handler, the same one the Session Log's button calls.
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start check-in' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(postedTo('/api/pilot/sessions').length).toBeGreaterThan(0);
+  });
+
+  test('a checked-in athlete is told when, and is not asked to check in again', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Start check-in' })).toBeNull();
+    });
+    expect(screen.queryByText('You have not checked in today.')).toBeNull();
+  });
+});
+
 describe('the athlete question box does not imply a coach reads it', () => {
   test('it is named for what answers it, and offers no coach to pick', async () => {
     await renderWorkspace();

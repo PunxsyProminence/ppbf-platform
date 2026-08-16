@@ -648,6 +648,7 @@ export default function AthleteWorkspace() {
   /* Which group is open is DERIVED from the open tab, never stored alongside
      it. Two sources of truth for one selection is how a nav starts lying: the
      tab is the truth, the group is a read of it. */
+  const floorTasksRemaining = floorTasks.filter((task) => !task.completed).length;
   const activeGroup = groupForTab(activeTab);
   const activeGroupTabs = TAB_GROUPS.find((group) => group.id === activeGroup)?.tabs ?? [];
 
@@ -656,7 +657,13 @@ export default function AthleteWorkspace() {
      dashboard, because the useful surface changes once that fact is recorded.
      Every other group opens on its first surface. */
   const openingTabFor = (group: GroupID): TabID => {
-    if (group === 'today') return activeSessionRecord ? 'my-dashboard' : 'bio-checkin';
+    /* Today always opens on the dashboard, checked in or not, because that is
+       where the real check-in lives: the Session Log's button calls
+       handleCheckIn, which opens the session AND generates the day's floor
+       plan. The Bio Check-In tab is a separate surface whose fields are local
+       state only -- nothing in this app calls /api/pilot/athlete/check-in --
+       so opening there would put an athlete in front of controls that record
+       nothing and tell them they had checked in. */
     return TAB_GROUPS.find((entry) => entry.id === group)?.tabs[0]?.id ?? 'my-dashboard';
   };
   const notesDraft = checkInNotes.trim();
@@ -1632,33 +1639,92 @@ export default function AthleteWorkspace() {
                   the athlete's identity resolves and history exists. */}
               <ThenAndNow athleteId={backendAthleteId} />
 
+              {/* TODAY.
+                  This was a flat row of five identical buttons, which asked the
+                  athlete to already know what needed doing. It states the day
+                  back to them instead: what is true right now, and the one
+                  action each fact implies.
+
+                  Every line here is a read of state this component already
+                  holds. Nothing is counted that was not recorded, and an empty
+                  collection says so in words rather than showing a 0 -- "none
+                  recorded" and "zero" are different claims, and only one of
+                  them is true before anything has happened. */}
               <section className={PANEL}>
-                <h3 className="t-label">Quick Actions</h3>
-                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  <Link href="/schedule" className="btn btn--kiosk">
+                <h3 className="t-label">Today</h3>
+                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-3">
+                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                    <p className="t-label">Check in</p>
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {checkInTime ? `Checked in ${checkInTime}.` : 'You have not checked in today.'}
+                    </p>
+                    {/* This calls the same handler as the Session Log's own
+                        button rather than navigating somewhere -- checking in
+                        is one tap from the first thing an athlete sees, and
+                        both controls stay one behaviour because they are one
+                        handler. */}
+                    {activeSessionRecord ? null : (
+                      <button
+                        type="button"
+                        onClick={() => void handleCheckIn()}
+                        disabled={isCheckingIn}
+                        className="btn btn--kiosk w-full disabled:opacity-50 disabled:grayscale"
+                      >
+                        {isCheckingIn ? 'Checking in...' : 'Start check-in'}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                    <p className="t-label">Your floor plan</p>
+                    {/* The plan is built at check-in from the athlete's own
+                        readiness and active goal (buildWorkoutFloorTasks), not
+                        handed down by a coach -- so this must never be worded
+                        as "assignments from your coach". Saying where it comes
+                        from is also the honest answer to why checking in is
+                        first: before check-in there is genuinely nothing here
+                        yet, rather than something being withheld. */}
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {floorTasks.length === 0
+                        ? 'Built for you when you check in.'
+                        : `${floorTasksRemaining} of ${floorTasks.length} left.`}
+                    </p>
+                    {floorTasks.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('athlete-floor')}
+                        className="btn btn--kiosk btn--ghost w-full"
+                      >
+                        Open the floor
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                    <p className="t-label">Your goals</p>
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {goalsError
+                        ? 'Not available right now.'
+                        : goalsLoading
+                          ? 'Checking...'
+                          : goalsActive === 0
+                            ? 'No active goals recorded.'
+                            : `${goalsActive} active.`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('smart-goals')}
+                      className="btn btn--kiosk btn--ghost w-full"
+                    >
+                      Open goals
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+                  <Link href="/schedule" className="btn btn--kiosk btn--ghost">
                     Open Scheduler
                   </Link>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('bio-checkin')}
-                    className="btn btn--kiosk"
-                  >
-                    Complete Check-In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('athlete-floor')}
-                    className="btn btn--kiosk btn--ghost"
-                  >
-                    Open Floor Tasks
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('smart-goals')}
-                    className="btn btn--kiosk btn--ghost"
-                  >
-                    Update Goals
-                  </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('shadow')}
