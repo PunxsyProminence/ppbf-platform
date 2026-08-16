@@ -17,6 +17,7 @@ import { apiBase } from '@/lib/apiBase';
 interface AttemptRow {
   attempt_id: string;
   athlete_name: string;
+  context_type: string;
   metric_kind: string;
   direction: string;
   target_value: string | null;
@@ -40,6 +41,21 @@ const METRICS: Array<{ kind: string; label: string; unit: string }> = [
   { kind: 'hold_seconds', label: 'Hold', unit: 's' },
 ];
 
+// Where the attempt happened -- sparring contexts are distinct on purpose:
+// holding in sparring drills and breaking in open sparring is a transfer
+// fact worth recording.
+const CONTEXTS: Array<{ value: string; label: string }> = [
+  { value: 'open_floor', label: 'Open floor' },
+  { value: 'session', label: 'Session' },
+  { value: 'drill_assignment', label: 'Drill assignment' },
+  { value: 'assessment', label: 'Assessment' },
+  { value: 'film_study', label: 'Film study' },
+  { value: 'technical_sparring', label: 'Technical sparring' },
+  { value: 'sparring_games', label: 'Sparring games' },
+  { value: 'sparring_drills', label: 'Sparring drills' },
+  { value: 'open_sparring', label: 'Open sparring' },
+];
+
 export default function AttemptLogPage() {
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
   const [athleteId, setAthleteId] = useState('');
@@ -47,7 +63,7 @@ export default function AttemptLogPage() {
   const [listLoading, setListLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ metric_kind: 'reps', target_value: '', achieved_value: '', note: '' });
+  const [form, setForm] = useState({ metric_kind: 'reps', context_type: 'open_floor', target_value: '', achieved_value: '', note: '' });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -118,6 +134,7 @@ export default function AttemptLogPage() {
         body: JSON.stringify({
           athlete_id: athleteId,
           metric_kind: form.metric_kind,
+          context_type: form.context_type,
           target_value: form.target_value.trim() === '' ? null : Number(form.target_value),
           achieved_value: achieved,
           note: form.note,
@@ -185,6 +202,15 @@ export default function AttemptLogPage() {
                 </select>
               </div>
               <div className="field">
+                <label className="t-label" htmlFor="attempt-context">Context (where it happened)</label>
+                <select id="attempt-context" className="select" value={form.context_type}
+                  onChange={(e) => setForm((f) => ({ ...f, context_type: e.target.value }))}>
+                  {CONTEXTS.map((context) => (
+                    <option key={context.value} value={context.value}>{context.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
                 <label className="t-label" htmlFor="attempt-target">Target (optional — no target means a measurement)</label>
                 <input id="attempt-target" className="input" inputMode="decimal" value={form.target_value}
                   onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value }))} />
@@ -236,7 +262,7 @@ export default function AttemptLogPage() {
                         {attempt.target_value ? ` / target ${attempt.target_value}${unitFor(attempt.metric_kind)}` : ''}
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {attempt.metric_kind.replaceAll('_', ' ')} · {attempt.attempted_at.slice(0, 10)}
+                        {attempt.metric_kind.replaceAll('_', ' ')} · {attempt.context_type.replaceAll('_', ' ')} · {attempt.attempted_at.slice(0, 10)}
                       </span>
                     </div>
                     {attempt.note ? (
