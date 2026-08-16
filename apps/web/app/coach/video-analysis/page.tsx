@@ -54,6 +54,44 @@ interface FilmStudyProposal {
   created_at: string;
 }
 
+/**
+ * The shape GET /api/pilot/shadow/film-study/validation returns.
+ *
+ * Declared here rather than imported from filmStudyValidation.ts, matching the
+ * other interfaces on this page: that module imports ./db, and importing it as
+ * a VALUE from a 'use client' component would pull the Postgres driver into
+ * the browser bundle.
+ *
+ * `acceptRate` is null on purpose whenever the sample is below
+ * `minimumReviewed` -- the server withholds it rather than computing a
+ * percentage from a handful of reviews, and the UI must render that absence as
+ * an absence.
+ */
+interface FilmStudyDeploymentAcceptance {
+  modelDeployment: string;
+  status: 'available' | 'insufficient_data';
+  reviewedCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  pendingCount: number;
+  acceptRate: number | null;
+  meanFramesAnalyzed: number | null;
+}
+
+interface FilmStudyValidationReport {
+  organizationId: string;
+  minimumReviewed: number;
+  overall: {
+    status: 'available' | 'insufficient_data';
+    reviewedCount: number;
+    acceptedCount: number;
+    rejectedCount: number;
+    pendingCount: number;
+    acceptRate: number | null;
+  };
+  byDeployment: FilmStudyDeploymentAcceptance[];
+}
+
 const mlPanels = [
   { title: 'Skill Recognition', detail: ML_PLACEHOLDER },
   { title: 'Punch Detection', detail: ML_PLACEHOLDER },
@@ -103,6 +141,35 @@ export default function CoachVideoAnalysisPage() {
   const [proposals, setProposals] = useState<FilmStudyProposal[]>([]);
   const [proposalsError, setProposalsError] = useState('');
   const [resolvingProposalId, setResolvingProposalId] = useState<string | null>(null);
+
+  const [validation, setValidation] = useState<FilmStudyValidationReport | null>(null);
+  const [validationSummary, setValidationSummary] = useState('');
+  const [validationError, setValidationError] = useState('');
+
+  // Reloaded alongside the queue, and again after every verdict: settling a
+  // proposal changes the very number this panel reports, so a stale figure
+  // above a queue the coach just worked would be the wrong kind of wrong.
+  const loadValidation = () => {
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/shadow/film-study/validation`, {
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error('Unable to load the model accuracy measurement');
+        const data = (await res.json()) as {
+          validation?: FilmStudyValidationReport;
+          summary?: string;
+        };
+        if (!data.validation) throw new Error('Unable to load the model accuracy measurement');
+        setValidation(data.validation);
+        setValidationSummary(data.summary ?? '');
+        setValidationError('');
+      } catch (err) {
+        setValidation(null);
+        setValidationError(err instanceof Error ? err.message : 'Unable to load the model accuracy measurement');
+      }
+    })();
+  };
 
   const loadProposals = () => {
     void (async () => {
@@ -226,6 +293,10 @@ export default function CoachVideoAnalysisPage() {
       // and rejecting are both an exit, not just accepting.
       setProposals((current) => current.filter((p) => p.proposal_id !== proposal.proposal_id));
       setProposalsError('');
+      // This verdict IS one more data point in the measurement above, so the
+      // panel is re-read rather than left showing the figure from before the
+      // coach acted.
+      loadValidation();
     } catch (err) {
       setProposalsError(err instanceof Error ? err.message : 'Could not record verdict.');
     } finally {
@@ -250,6 +321,7 @@ export default function CoachVideoAnalysisPage() {
   useEffect(() => {
     loadVideos();
     loadProposals();
+    loadValidation();
     void (async () => {
       try {
         const res = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
@@ -507,6 +579,59 @@ export default function CoachVideoAnalysisPage() {
                 </div>
               ))}
             </div>
+          )}
+        </section>
+
+        {/* How often this gym's coaches have accepted what the model proposed.
+            Sits ABOVE the queue on purpose: a coach about to spend twenty
+            minutes clearing proposals should know first whether the last
+            hundred were worth clearing. Every figure comes from verdicts
+            coaches already gave -- nothing here is a benchmark borrowed from
+            somebody else's gym, and nothing here says anything about an
+            athlete. It measures the model. */}
+        <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+          <h2 className="t-eyebrow">How Often This Model Is Right</h2>
+          {validationError ? (
+            <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{validationError}</p>
+          ) : validation === null ? (
+            <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>
+          ) : (
+            <>
+              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-100)]" data-testid="film-study-validation-summary">
+                {validationSummary}
+              </p>
+              <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-400)]">
+                Measured from this gym&apos;s own accept/reject verdicts, not from a published benchmark. It rates the
+                model, never an athlete.
+              </p>
+
+              {validation.byDeployment.length > 0 && (
+                <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
+                  {validation.byDeployment.map((d) => (
+                    <li
+                      key={d.modelDeployment}
+                      className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]"
+                    >
+                      <p className="t-data text-[color:var(--bone-300)]">{d.modelDeployment}</p>
+                      <p className="mt-[var(--s1)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
+                        {/* The rate never appears without the sample it came
+                            from, and is withheld entirely below the floor
+                            rather than computed from a handful of reviews. */}
+                        {d.acceptRate === null
+                          ? `${d.acceptedCount} accepted of ${d.reviewedCount} reviewed — too few to state a rate (${validation.minimumReviewed} needed).`
+                          : `${Math.round(d.acceptRate * 100)}% accepted (${d.acceptedCount} of ${d.reviewedCount} reviewed)`}
+                        {d.meanFramesAnalyzed === null ? '' : ` · ${d.meanFramesAnalyzed} frames avg`}
+                      </p>
+                      {d.pendingCount > 0 && (
+                        <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
+                          {d.pendingCount} still waiting on a coach
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </section>
 
