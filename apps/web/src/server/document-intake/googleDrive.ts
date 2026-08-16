@@ -6,7 +6,18 @@ import type { GoogleDriveWriteResult } from './types'
 
 export interface GoogleDriveConfig {
   serviceAccountJson: string
-  folderId?: string
+  /**
+   * REQUIRED, and not optional as it once was.
+   *
+   * With no folder id the create call passed `parents: undefined`, which does
+   * not fail -- it uploads into the SERVICE ACCOUNT's own Drive. No human on
+   * this project has access to that storage, so the request returned 200, the
+   * audit row recorded a success, and the document was gone. config.ts refuses
+   * to start without this value; the guard in uploadToGoogleDrive is a second
+   * lock on the same door, because this config object can also be built by a
+   * caller that never went through config.ts.
+   */
+  folderId: string
 }
 
 interface ServiceAccount {
@@ -27,6 +38,14 @@ export async function uploadToGoogleDrive(
   fileName: string,
   fileBuffer: Buffer,
 ): Promise<GoogleDriveWriteResult> {
+  const folderId = config.folderId?.trim()
+  if (!folderId) {
+    throw new Error(
+      'GOOGLE_DRIVE_FOLDER_ID is required: without a destination folder the upload '
+      + 'would land in the service account\'s own Drive, where nobody can retrieve it.',
+    )
+  }
+
   const account = parseServiceAccount(config.serviceAccountJson)
 
   const auth = new google.auth.JWT({
@@ -41,7 +60,7 @@ export async function uploadToGoogleDrive(
     requestBody: {
       name: fileName,
       mimeType: 'application/pdf',
-      parents: config.folderId ? [config.folderId] : undefined,
+      parents: [folderId],
     },
     media: {
       mimeType: 'application/pdf',

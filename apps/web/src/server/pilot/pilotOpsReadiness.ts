@@ -17,6 +17,10 @@
 // so it cannot silently drift from the real constant, and it must never be
 // used to change them -- an ops-readiness report is a mirror, not a dial.
 
+import {
+  describeDocumentIngestDestinations,
+  type DocumentIngestDestinationReport,
+} from '../document-intake/config';
 import { BOARD_MINIMUM_COHORT_SIZE } from './boardSummary';
 import { getAzureAiRuntimeConfig } from './azureAiRuntime';
 import { HEAVY_BAG_COMPLEXITY_THRESHOLD, QUICK_ROUND_COMPLEXITY_THRESHOLD } from './shadowClassifier';
@@ -37,7 +41,14 @@ export interface PilotOpsReadinessReport {
   durableRateLimit: OpsReadinessFlag;
   azureChatConfigured: OpsReadinessFlag;
   semanticLibrarySearch: OpsReadinessFlag;
-  ingest: OpsReadinessFlag & { mockMode: boolean };
+  // `enabled` answers "will a real ingest request write a document
+  // ANYWHERE" -- true when at least one destination is ready, or when mock
+  // mode is on. `destinations` answers the question that actually matters
+  // operationally, which the old single boolean could not: WHICH ones.
+  ingest: OpsReadinessFlag & {
+    mockMode: boolean;
+    destinations: DocumentIngestDestinationReport;
+  };
   postgresConnectionConfigured: OpsReadinessFlag;
   floors: {
     boardMinimumCohortSize: number;
@@ -47,30 +58,18 @@ export interface PilotOpsReadinessReport {
   };
 }
 
-// Mirrors the exact set getPipelineConfig() (document-intake/config.ts)
-// requires -- deliberately all-or-nothing, no partial pipeline. That function
-// reads real process.env directly rather than accepting an env parameter, so
-// calling it here would silently ignore whatever env this report was asked
-// to evaluate; checking presence against the SAME env this function received
-// keeps buildPilotOpsReadinessReport's env parameter honest for tests and for
-// any future non-default caller. Names only, never values -- if
-// document-intake/config.ts adds a required variable, add it here too.
-const REQUIRED_DOCUMENT_INGEST_VARS = [
-  'DATAVERSE_ORG_URL',
-  'DATAVERSE_TENANT_ID',
-  'DATAVERSE_CLIENT_ID',
-  'DATAVERSE_CLIENT_SECRET',
-  'GRAPH_TENANT_ID',
-  'GRAPH_CLIENT_ID',
-  'GRAPH_CLIENT_SECRET',
-  'SHAREPOINT_SITE_ID',
-  'SHAREPOINT_DRIVE_ID',
-  'GOOGLE_SERVICE_ACCOUNT_JSON',
-] as const;
-
-function isDocumentIngestConfigured(env: Record<string, string | undefined>): boolean {
-  return REQUIRED_DOCUMENT_INGEST_VARS.every((name) => Boolean(env[name]?.trim()));
-}
+// This module used to keep its OWN copy of document-intake's required
+// variable list, with a comment admitting the hazard: "if
+// document-intake/config.ts adds a required variable, add it here too". That
+// is a readiness report that can drift from the thing it reports on, and it
+// had already drifted -- the list checked ten credentials and neither folder
+// id, so it answered "document ingest: configured" for a pipeline whose Google
+// Drive destination was blank and whose uploads would land in unreachable
+// storage.
+//
+// It now asks document-intake/config.ts directly, through a pure function that
+// takes the same env this report was handed. One list, in the file that owns
+// it, used by both.
 
 export function buildPilotOpsReadinessReport(
   env: Record<string, string | undefined> = process.env,
@@ -98,7 +97,19 @@ export function buildPilotOpsReadinessReport(
   // than folded into `enabled`, so "mock mode is on" and "real pipeline is
   // configured" are never confused with each other in the same field.
   const ingestMockMode = env.PPBF_INGEST_MOCK_MODE === 'true';
-  const ingestConfigured = ingestMockMode || isDocumentIngestConfigured(env);
+  const ingestDestinations = describeDocumentIngestDestinations(env);
+  const destinationEntries = Object.entries(ingestDestinations) as Array<
+    [keyof DocumentIngestDestinationReport, DocumentIngestDestinationReport[keyof DocumentIngestDestinationReport]]
+  >;
+  const readyDestinations = destinationEntries.filter(([, value]) => value.ready).map(([name]) => name);
+  // Enabled-but-not-ready is the state that used to be invisible and is the
+  // one worth shouting about: somebody set a destination's variables and the
+  // pipeline will refuse to start, rather than the destination merely being
+  // off on purpose.
+  const brokenDestinations = destinationEntries
+    .filter(([, value]) => value.enabled && !value.ready)
+    .map(([name]) => name);
+  const ingestConfigured = ingestMockMode || readyDestinations.length > 0;
 
   return {
     shadowWorker: {
@@ -143,11 +154,15 @@ export function buildPilotOpsReadinessReport(
     ingest: {
       enabled: ingestConfigured,
       mockMode: ingestMockMode,
+      destinations: ingestDestinations,
       reason: ingestMockMode
         ? 'PPBF_INGEST_MOCK_MODE=true -- document ingest returns mock results and writes nothing to SharePoint, Dataverse, or Drive.'
-        : ingestConfigured
-          ? 'Dataverse, SharePoint/Graph, and Google Drive credentials are all present -- document ingest can run for real.'
-          : 'Document ingest is not in mock mode and at least one required credential (Dataverse, SharePoint/Graph, or Google Drive) is missing -- every real ingest request will fail.',
+        : brokenDestinations.length > 0
+          ? `Document ingest will refuse to start: ${brokenDestinations.join(', ')} configured but incomplete. `
+            + 'See destinations for the missing variable names.'
+          : readyDestinations.length > 0
+            ? `Document ingest writes to: ${readyDestinations.join(', ')}. Destinations not listed are off and receive nothing.`
+            : 'No document ingest destination is configured -- every real ingest request will fail.',
     },
     postgresConnectionConfigured: {
       enabled: hasPostgresConnection,
