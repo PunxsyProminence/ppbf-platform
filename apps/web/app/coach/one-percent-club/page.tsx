@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateShort } from '@/src/lib/gymTime';
 
 // 1% Club (module 127). Owner design, verbatim: "1,2,3 with the majority of
 // coach and admin on the list vote to confirm".
@@ -43,7 +44,7 @@ const SOURCE_LABEL: Record<NominationRow['source'], string> = {
 };
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString();
+  return formatGymDateShort(value) ?? '';
 }
 
 export default function OnePercentClubPage() {
