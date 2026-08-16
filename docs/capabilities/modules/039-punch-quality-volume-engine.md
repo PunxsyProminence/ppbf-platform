@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 slice promotion) |
+| Vertical slice | athlete/coach punch logging (Deep-Track form) + tested MVP punch-output/accuracy/connect-differential/offensive-efficiency formulas; results display UI is future work |
 | Active | false |
 | Promotion required | true |
 | Category | Combat / Boxing System (`combatBoxingSystem`) |
@@ -38,3 +39,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — athlete/coach punch logging (Deep-Track form) + tested MVP punch-output/accuracy/connect-differential/offensiv. Missing: A real, tested formula engine computes punch output, accuracy, connect differential, and offensive efficiency from athlete-submitted observations, wit. Evidence: apps/web/src/server/pilot/formulas/registry.ts; apps/web/src/server/pilot/formulas/engine.ts. Status stays DRAFT. |
+| 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: narrow-but-real slices promote per the playbook rule (DONE means slice shipped in code), with the slice line naming exactly what exists. Evidence: apps/web/src/server/pilot/formulas/registry.ts; apps/web/src/server/pilot/formulas/engine.ts. Test: apps/web/src/server/pilot/formulas/mvpFormulaEngine.test.ts pins golden values for MVP-02/03/04/05; apps/web/a |

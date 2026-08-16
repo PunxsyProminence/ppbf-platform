@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 slice promotion) |
+| Vertical slice | tested work-rate-consistency and round-to-round-change formulas behind the role/org-gated formula API; display UI is future work |
 | Active | false |
 | Promotion required | true |
 | Category | Combat / Boxing System (`combatBoxingSystem`) |
@@ -38,3 +39,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — tested work-rate-consistency and round-to-round-change formula backend, reachable via role/org-gated API, no d. Missing: Round output consistency and round-to-round change are real, tested formulas served through the same role/org-gated API as the punch formulas, but as . Evidence: apps/web/src/server/pilot/formulas/registry.ts; apps/web/src/server/pilot/formulas/engine.ts. Status stays DRAFT. |
+| 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: narrow-but-real slices promote per the playbook rule (DONE means slice shipped in code), with the slice line naming exactly what exists. Evidence: apps/web/src/server/pilot/formulas/registry.ts; apps/web/src/server/pilot/formulas/engine.ts. Test: apps/web/src/server/pilot/formulas/mvpFormulaEngine.test.ts pins MVP-07/MVP-08 golden values; apps/web/app/api |

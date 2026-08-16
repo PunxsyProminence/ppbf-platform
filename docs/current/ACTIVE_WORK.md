@@ -41,6 +41,12 @@ The 2026-08-15 queue is built through its buildable end. Items 1–5.5 shipped a
 
 Merch note (owner, 2026-08-15): merchandise sales are Program-lane revenue when payments go live — earned income like class fees, settling to the Program account. The gear catalog/vendor records that exist already carry the inventory half; no new lane and no schema change needed.
 
+Owner decisions 2026-08-16 (asked as a batch, answered individually):
+1. **Register bar** — narrow-but-real slices promote to DONE per the playbook rule ("DONE means slice shipped in code"), each with a slice line naming exactly what exists and what is future work. Applied to modules 27, 39, 42, 104, 124, 131, 133, 135.
+2. **Coach Cue Library (114)** — build the read-only browse/search over cues already stored in drill records. No invented content; authoring is a later decision.
+3. **Coach Intelligence Engine (111)** — owner chose "define minimal v1 now": a concrete minimal definition goes to the owner for approval BEFORE any build. Nothing builds on a guess.
+4. **Phase 2 thin clients** — the goal is every role (coach, athlete, admin, parent, board members, staff), not one favored role. Build order is the builder's sequencing call; current sequence: athlete check-in first (it generates the data the other views read), then parent, coach, admin, board, staff.
+
 ## BLOCKED
 
 | Item | Blocked on | Unblocks |
