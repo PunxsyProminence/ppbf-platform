@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-16 | external-research-ingestion | Owner-run external research reconciliation (Round 5, 2026-08-16): intervention execution/tracking is ranked the central missing learning primitive for the platform's evidence loop -- without a record of what intervention was actually run, outcomes cannot be attributed to anything. Raises this module's priority when its build turn comes; the Wave 9 audit confirmed no covering code exists today. |
