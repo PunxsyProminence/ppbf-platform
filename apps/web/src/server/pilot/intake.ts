@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import type { ReadinessMethod } from './readinessProvenance';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
 
 export type IntakeDocumentType =
@@ -558,22 +559,16 @@ export async function createAttendance(params: {
   return attendanceId;
 }
 
-/**
- * What produced a readiness score. Mirrors the CHECK constraint added by
- * pilot_slice_postgres_readiness_provenance_migration.sql, and is deliberately
- * narrow: these are the only two honest values today.
- *
- * 'staff_entered_intake' is what both live write paths actually do -- a person
- * typed the number during intake review. 'UNKNOWN' exists because every row
- * written before provenance was recorded carries it; nothing should write it
- * going forward, but the value has to remain expressible to describe what is
- * already stored.
- *
- * A future computed method belongs here AND in the database constraint, in its
- * own migration. That coupling is the point: it makes adding a method a
- * recorded decision rather than a silently-absorbed one.
- */
-export type ReadinessMethod = 'UNKNOWN' | 'staff_entered_intake';
+// ReadinessMethod is defined ONCE, in readinessProvenance.ts, and re-exported
+// here for callers already importing from this module. It was briefly declared
+// in both files, which is the drift hazard this whole change exists to remove:
+// two hand-kept copies of the method vocabulary would eventually disagree with
+// each other and with the database CHECK constraint, and the copy that drifted
+// would be the one describing a score nobody could audit.
+//
+// Imported as well as re-exported because `export type { X } from` publishes
+// the name without binding it locally, and createReadiness below uses it.
+export type { ReadinessMethod };
 
 /**
  * Writes one readiness reading, and REQUIRES the caller to say what produced
