@@ -617,6 +617,74 @@ async function run() {
   ]);
   assertShadowReadModels({ events, telemetry, observation, knowledge, research, intakeCaseId, athleteId });
 
+  console.log('7b) Verify research workspace: general intake, reclassification, gap linking (issue #345)');
+  // Register a general-research source with a classification from the shared
+  // taxonomy, correct the classification, and confirm the server-filtered
+  // list reflects the correction. URL carries the intake case id so re-runs
+  // against the same environment register distinct rows.
+  const generalRegistered = await admin.call('/api/pilot/shadow/library/sources', {
+    method: 'POST',
+    body: {
+      title: `Gate general research ${intakeCaseId}`,
+      source_type: 'other',
+      url: `https://gate.invalid/general-research/${intakeCaseId}`,
+      metadata: {
+        general_research: true,
+        classification_domain: 'program_evaluation_outcomes',
+        provenance: { provider: 'shadow-intake-gate' },
+      },
+    },
+  });
+  const generalSourceId = generalRegistered.source?.source_id;
+  if (!generalSourceId) {
+    throw new Error('General-research registration returned no source_id');
+  }
+
+  await admin.call('/api/pilot/shadow/library/sources', {
+    method: 'PATCH',
+    body: { source_id: generalSourceId, classification_domain: 'ai_ml_data_science' },
+  });
+
+  const generalList = await admin.call('/api/pilot/shadow/library/sources?general_research=true&limit=200');
+  const generalRow = (generalList.items || []).find((item) => item.source_id === generalSourceId);
+  if (!generalRow) {
+    throw new Error('Registered general-research source missing from the filtered list');
+  }
+  if (generalRow.metadata?.classification_domain !== 'ai_ml_data_science') {
+    throw new Error(`Classification correction did not persist: ${JSON.stringify(generalRow.metadata)}`);
+  }
+
+  // Link the source to the requirement this very intake run promoted, and
+  // confirm the computed ladder moves to sources_submitted -- and no further:
+  // a submission must never resolve a requirement.
+  const requirementsList = await admin.call('/api/pilot/shadow/research-requirements');
+  const promotedRequirement = (requirementsList.items || []).find(
+    (item) => item.source_event_name === 'SHADOW_INTAKE_CASE_PROMOTED' && item.source_entity_id === intakeCaseId,
+  );
+  if (!promotedRequirement) {
+    throw new Error('Promoted research requirement for this intake case not found');
+  }
+
+  await admin.call('/api/pilot/shadow/research-submissions', {
+    method: 'POST',
+    body: {
+      research_requirement_id: promotedRequirement.research_requirement_id,
+      source_id: generalSourceId,
+      provenance: { provider: 'shadow-intake-gate' },
+      submission_note: 'Gate probe: linking general research to the promoted requirement.',
+    },
+  });
+
+  const ladder = await admin.call(
+    `/api/pilot/shadow/research-submissions?research_requirement_id=${promotedRequirement.research_requirement_id}`,
+  );
+  if (ladder.answer_state !== 'sources_submitted') {
+    throw new Error(`Expected answer_state sources_submitted, got ${ladder.answer_state}`);
+  }
+  if (promotedRequirement.status !== 'open') {
+    throw new Error('Requirement should still be open; submission must never resolve it');
+  }
+
   console.log('8) Verify domain retrieval endpoint');
   const domain = await admin.call('/api/pilot/intake/domain-get', {
     method: 'POST',

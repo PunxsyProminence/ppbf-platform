@@ -154,5 +154,5 @@ Status Key:
 - run `29414990400` => SUCCESS
 - `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io npm --prefix apps/web run gate:pilot:shadow-e2e` => PASS
 - `npm --prefix apps/web run lint` => PASS
-- `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io PILOT_ADMIN_ACCOUNT_ID=org_admin_shadow PILOT_ADMIN_PIN=15715 PPBF_PILOT_BOOTSTRAP_KEY=<set> npm --prefix apps/web run gate:pilot` => PASS
+- `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io PILOT_ADMIN_ACCOUNT_ID=<set> PILOT_ADMIN_PIN=<set> PPBF_PILOT_BOOTSTRAP_KEY=<set> npm --prefix apps/web run gate:pilot` => PASS
 - `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io PPBF_PILOT_BOOTSTRAP_KEY=<set> npm --prefix apps/web run gate:pilot:multiorg` => PASS

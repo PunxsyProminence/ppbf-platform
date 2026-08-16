@@ -2,6 +2,7 @@ import Link from 'next/link';
 import AnnouncementBanner from '@/components/AnnouncementBanner';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
+import ShadowCommandFeed from '@/components/ShadowCommandFeed';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 
 const roleSelector = [
@@ -88,20 +89,24 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Knowledge Graph', state: 'EXISTS', href: '/knowledge-graph', notes: 'Knowledge and relationship view is available.' },
   { name: 'Scenario Simulation', state: 'EXISTS', href: '/simulator', notes: 'What-if simulator and promotion flow links are available.' },
   { name: 'Source Governance', state: 'EXISTS', href: '/source-control', notes: 'Audit-to-source-control publication flow is visible.' },
-  { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Revenue center exists as front-end workflow without backend integration.' },
-  { name: 'Scholarship Tracking', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Scholarship support status is visible in front-end lanes.' },
-  { name: 'Membership Tracking', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Program membership lanes are present in planning mode.' },
-  { name: 'SHADOW Monitoring', state: 'PARTIAL', href: '/shadow', notes: 'SHADOW interaction exists with front-end role surfaces.' },
-  { name: 'AI Video Analysis', state: 'PARTIAL', href: '/coach/video-analysis', notes: 'Upload, release, and playback are real and backed by persistent records; a released video can be sent to Film Study for human-reviewed observation. Per-skill scoring (punch detection, footwork, and the rest) remains planned and is not yet active.' },
+  { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Revenue center front-end plus the payment ledger schema and the Stripe Connect onboarding flow (/admin/payments: connect button, OAuth round trip, deauthorization webhook). No charging exists — CAP-012 stays BLOCKED behind owner platform-account registration and compliance sign-off.' },
+  { name: 'Scholarship Tracking', state: 'EXISTS', href: '/admin/memberships', notes: 'Scholarships are stored discounts on real membership rows (100% = full scholarship), never bypasses — backed by pilot.program_memberships. Fee computation from these records arrives with the payment lanes.' },
+  { name: 'Membership Tracking', state: 'EXISTS', href: '/admin/memberships', notes: 'Program enrollment records with an active/lapsed/ended lifecycle and one-active-per-program enforcement, backed by pilot.program_memberships. Billing is not built — fees arrive with the payment lanes and will read these records.' },
+  { name: 'SHADOW Monitoring', state: 'EXISTS', href: '/shadow', notes: 'SHADOW consoles are wired to live routes, and the operations hub command node reads the real event/telemetry record, read-only and newest-first. Which recorded facts deserve an alarm remains a human decision; the feed reports what is recorded and claims nothing more.' },
+  { name: 'AI Video Analysis', state: 'PARTIAL', href: '/coach/video-analysis', notes: 'Upload, release, and playback are real and backed by persistent records; a released video can be sent to Film Study for human-reviewed observation — Film Study is the analysis pathway. Per-skill scoring is PARKED for Phase 2+ by owner decision (2026-08-15, BACKLOG-video-skill-scoring): partial by design, not by neglect.' },
   { name: 'Video Review Intelligence', state: 'EXISTS', href: '/admin/video-review', notes: 'Org-admin console for the automated content-scan quarantine escalation: watch the clip, approve or block. A downstream compliance-review step (appropriateness, consent, audio privacy) is separately available at /admin/video-compliance.' },
-  { name: 'Performance Analytics', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
-  { name: 'Grant Compliance Intelligence', state: 'PLACEHOLDER', href: '/board/compliance-monitoring', notes: 'Planned board/admin compliance watch surfaces. FRONT-END PLACEHOLDER, NOT YET AUTOMATED, BACKEND REQUIRED.' },
-  { name: 'Closed-Loop Progression Intelligence', state: 'PLACEHOLDER', href: '/athlete/progression-intelligence', notes: 'Planned progression intelligence surfaces for athlete/coach/parent visibility.' },
-  { name: 'Sports Medicine', state: 'PLACEHOLDER', href: '/coach/sports-medicine', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
+  { name: 'Session Script Delivery', state: 'EXISTS', href: '/coach/session-scripts', notes: 'Script browse, live floor delivery with a server-owned clock, and settled delivery history are backed by pilot.session_script_runs.' },
+  { name: 'Safety Compliance Center', state: 'EXISTS', href: '/admin/compliance-center', notes: 'Violation register with acknowledge / escalate / resolve / dismiss lifecycle; org-scoped, audited, backed by pilot.compliance_violations.' },
+  { name: 'Coach Coverage', state: 'EXISTS', href: '/admin/coach-coverage', notes: 'Temporary athlete-record access for a covering coach, with expiry and immediate revocation, backed by pilot.coach_coverage.' },
+  { name: 'Drill Library', state: 'EXISTS', href: '/coach/drills', notes: 'Versioned drill library backed by persistent records.' },
+  { name: 'Performance Analytics', state: 'EXISTS', href: '/coach/performance-analytics', notes: 'Read-only roster rollup for coach/admin: sessions and RPE, readiness check-ins with a glanceable trend, activity-log training days, and progression work over a selectable window. Aggregates existing records only; no new data collection.' },
+  { name: 'Grant Compliance Intelligence', state: 'PARTIAL', href: '/admin/grants', notes: 'The internal grant-obligation ledger is real: deadlines, deliverables, renewals, and filings with a status lifecycle, backed by pilot.grant_obligations — which structurally carries no athlete data, keeping the parked external-disclosure question parked. Grant-packet generation for funders remains parked until a real grant defines its disclosure set.' },
+  { name: 'Closed-Loop Progression Intelligence', state: 'PARTIAL', href: '/athlete/progression-intelligence', notes: 'Athlete, coach, and parent surfaces read the real gap / drill-assignment / completion records behind the pilot progression routes. Gaps are coach-identified today; automated gap detection remains planned.' },
+  { name: 'Sports Medicine', state: 'PARTIAL', href: '/coach/sports-medicine', notes: 'The clearance board is real: per-athlete clearance status and active training holds with athlete-safe explanations only — no diagnoses or clinical detail, by owner decision (2026-08-15). Broader sports-medicine workflow (injury tracking, treatment records) remains planned.' },
   { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'Volunteer roster, status, and availability are backed by persistent records.' },
-  { name: 'Wrestling League Management', state: 'PLACEHOLDER', href: '/operations/wrestling-league', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
-  { name: 'External Competition Platform', state: 'PLACEHOLDER', href: '/operations/external-competition', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
-  { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', notes: 'Planned publication workflow surface is now visible as front-end placeholder. Not yet automated.' },
+  { name: 'Wrestling League Management', state: 'PARTIAL', href: '/operations/wrestling-league', notes: 'Season, event, and roster records are real, backed by pilot.wrestling_league_* tables — deliberately skeletal by owner decision (2026-08-15). Match cards, brackets, weigh-ins, scoring, and scheduling stay unbuilt until a real league defines them.' },
+  { name: 'External Competition Platform', state: 'PARTIAL', href: '/operations/external-competition', notes: 'Competition and entry records are real, backed by pilot.external_competition* tables — deliberately skeletal by owner decision (2026-08-15). Federation integration, result sync, brackets, travel, and compliance checklists stay unbuilt until real competitions define them.' },
+  { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', notes: 'Parked by owner-approved assessment (2026-08-15, BACKLOG-publication-automation): the internal publication machinery that exists — video compliance, research evidence review, retraction — is human-gated on purpose, and outward automation has no defined destination or disclosure set yet. Front-end placeholder remains visible.' },
 ];
 
 const shadowReadinessEquation = 'Readiness = max(1, min(10, (Sleep x 1.25) - (Soreness x 0.45) + (Discipline x 0.3)))';
@@ -113,12 +118,16 @@ const shadowCertificationSignals = [
   'Aesthetic Preset: ULTRA-DENSE WINTER GRIT',
 ];
 
+// The "BREAK MY 40% RULE" override line is gone from this list by owner
+// decision: the concept was removed from the platform (see the coach landing
+// rework), and any future override must be explicit, auditable, and
+// rationale-required -- never a magic token, and never advertised on a status
+// page as if it existed.
 const shadowBoundaryChecks = [
   'Readiness upper bound test resolves to 10.0 and remains stable at clamp.',
   'Readiness lower bound test resolves to 1.0 and remains stable at clamp.',
   'Any readiness score below 5.0 triggers protective route and drill constraints.',
   'Delta RPE lockout engages when discrepancy is 2 or greater until rationale is provided.',
-  'Override token BREAK MY 40% RULE emits GRIND STATE ENGAGED in JSON audit logs.',
 ];
 
 const shadowArchitectureNodes = [
@@ -415,19 +424,18 @@ export default function OperationsHubPage() {
                   explicitly telling you it is not. Law 7: the unbuilt state is
                   stamped, in brass so the ladder keeps its colour. */}
               <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
-                {/* Heading case and the stamp's wording are both load-bearing:
-                    app/operations/page.test.tsx asserts this panel says
-                    "PLANNED | NOT YET IMPLEMENTED" in as many words, so an
-                    empty alert panel can never be mistaken for a quiet floor.
-                    The restyle carries the exact string rather than paraphrase
-                    it — the guarantee is the point, the stamp is just how it
-                    is now said. */}
+                {/* The stamp is gone because the feed is real: ShadowCommandFeed
+                    reads the same org-scoped, role-projected record the SHADOW
+                    consoles read. The doctrine the old stamp carried survives in
+                    the feed's own copy — every state (loading, failed, empty)
+                    says in as many words that it does not mean the floor is
+                    clear, and app/operations/page.test.tsx pins that. What this
+                    panel still does NOT do is rank or alarm: which recorded
+                    facts deserve an alarm is a human decision nobody has made,
+                    and inventing one here would put fabricated urgency on a
+                    safety-adjacent surface. */}
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>SHADOW COMMAND NODE</h2>
-                <span className="stamp stamp--brass">PLANNED | NOT YET IMPLEMENTED</span>
-                <p className="t-body">
-                  No operational alert feed reaches this panel. An empty panel here means nothing is being watched
-                  from this screen, not that the floor is clear. Open SHADOW Ops for what the system can report today.
-                </p>
+                <ShadowCommandFeed />
                 <Link
                   href="/admin/shadow"
                   className="btn btn--ghost"

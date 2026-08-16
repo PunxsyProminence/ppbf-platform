@@ -173,3 +173,44 @@ export async function getDrillLibraryLineage(organizationId: string, lineageId: 
     [organizationId, lineageId],
   );
 }
+
+// ---------------------------------------------------------------------------
+// The cue library (register module 114, owner decision 2026-08-16): a
+// read-only browse over the cues coaches already wrote into drill records.
+// No invented content and no separate store -- pilot.drill_cues remains
+// owned by its drills; this is the library view of that craft, searchable
+// across the whole active library instead of locked inside one drill at a
+// time. Cues on inactive (superseded) drill versions are excluded so a
+// reworded cue never appears twice.
+// ---------------------------------------------------------------------------
+
+export interface CueLibraryRow {
+  cue_id: string;
+  cue_text: string;
+  cue_family: string;
+  focus_type: string;
+  evidence_note: string;
+  drill_id: string;
+  drill_name: string;
+  discipline: string;
+  category: string;
+}
+
+export async function listCueLibrary(
+  organizationId: string,
+  filter: { focusType?: string; search?: string } = {},
+): Promise<CueLibraryRow[]> {
+  return query<CueLibraryRow>(
+    `select c.cue_id, c.cue_text, c.cue_family, c.focus_type, c.evidence_note,
+            d.drill_id, d.name as drill_name, d.discipline, d.category
+     from pilot.drill_cues c
+     join pilot.drill_library d
+       on d.organization_id = c.organization_id and d.drill_id = c.drill_id
+     where c.organization_id = $1
+       and d.active = true
+       and ($2::text is null or c.focus_type = $2)
+       and ($3::text is null or c.cue_text ilike '%' || $3 || '%' or c.cue_family ilike '%' || $3 || '%' or d.name ilike '%' || $3 || '%')
+     order by c.cue_family asc, c.cue_text asc`,
+    [organizationId, filter.focusType ?? null, filter.search?.trim() || null],
+  );
+}

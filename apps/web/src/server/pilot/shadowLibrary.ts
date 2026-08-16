@@ -503,10 +503,36 @@ export async function createShadowLibrarySource(input: {
   return row;
 }
 
+/**
+ * Narrow metadata update: the general-research classification label only
+ * (issue #345 workflow 3 -- "human correction/confirmation of classification
+ * must remain possible"). Deliberately NOT a general metadata editor: the
+ * domain is validated by the caller against the shared taxonomy, jsonb_set
+ * touches that one key, and nothing else about the source -- title, tier,
+ * status, review state -- is reachable from here.
+ */
+export async function updateShadowLibrarySourceClassification(
+  organizationId: string,
+  sourceId: string,
+  classificationDomain: string,
+): Promise<ShadowLibrarySourceRow | null> {
+  const row = await queryOne<ShadowLibrarySourceRow>(
+    `update pilot.shadow_library_sources
+     set metadata = jsonb_set(metadata, '{classification_domain}', to_jsonb($3::text), true),
+         updated_at = now()
+     where organization_id = $1 and source_id = $2
+     returning *`,
+    [organizationId, sourceId, classificationDomain],
+  );
+  return row;
+}
+
 export async function listShadowLibrarySources(input: {
   organizationId: string;
   sourceType?: string;
   status?: string;
+  /** true filters to general-research registrations (metadata.general_research). */
+  generalResearch?: boolean;
   limit?: number;
   offset?: number;
 }): Promise<ShadowLibrarySourceRow[]> {
@@ -519,10 +545,18 @@ export async function listShadowLibrarySources(input: {
      where organization_id = $1
        and ($2::text is null or source_type = $2)
        and ($3::text is null or status = $3)
+       and ($4::boolean is null or coalesce((metadata->>'general_research')::boolean, false) = $4)
      order by created_at desc
-     limit $4
-     offset $5`,
-    [input.organizationId, input.sourceType?.trim() || null, input.status?.trim() || null, limit, offset],
+     limit $5
+     offset $6`,
+    [
+      input.organizationId,
+      input.sourceType?.trim() || null,
+      input.status?.trim() || null,
+      input.generalResearch ?? null,
+      limit,
+      offset,
+    ],
   );
 }
 

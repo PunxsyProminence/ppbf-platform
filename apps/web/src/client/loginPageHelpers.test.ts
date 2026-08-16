@@ -26,7 +26,7 @@ describe('login page helpers', () => {
       writable: true,
     });
 
-    expect(getMicrosoftStartUrl('https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io')).toBe(
+    expect(getMicrosoftStartUrl('https://app-example.example-env.eastus.azurecontainerapps.io')).toBe(
       '/api/pilot/auth/microsoft/start',
     );
 

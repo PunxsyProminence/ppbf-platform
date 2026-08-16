@@ -1,11 +1,27 @@
 # Payment Service — Reserved Slot (CAP-012 / capability #19)
 
-**Status: RESERVED, NOT BUILT.** This document defines the shape of the payment
-capability so a later integration drops into a named slot instead of being
-designed under deadline. Nothing in this document is implemented. No payment
-code, routes, tables, or processor accounts exist in this repository, and none
-should be inferred from this file. The capability stays `BLOCKED` in the admin
-console until the owner's compliance sign-off — that gate is the point.
+**Status: RESERVED — ONBOARDING BUILT, CHARGING NOT.** This document defines
+the shape of the payment capability so a later integration drops into a named
+slot instead of being designed under deadline. What exists as of 2026-08-15
+(owner decisions: "ledger tables land first", then "build the connect flow
+now so I can test onboarding as a new gym"):
+
+- The three reserved tables (`pilot_slice_postgres_payments_migration.sql`):
+  `pilot.payment_accounts`, `pilot.payment_transactions`,
+  `pilot.payment_subscriptions` — empty, constraints enforcing the posture
+  below.
+- The connect flow (`paymentConnect.ts`): `connect/start` and
+  `connect/callback` (the OAuth round trip with an org-bound signed state),
+  the ONE `webhook` route (signature-verified; handles
+  `account.application.deauthorized` by marking the row disconnected and
+  rejects events naming accounts not on file), the accounts read, and the
+  `/admin/payments` settings page with the connect button. All of it idles
+  honestly until the platform env vars exist.
+
+NO charging, checkout, receipts, or processor accounts exist — `checkout-session`
+and `portal` remain reserved names, the mirror tables have no writer, and no
+money can move. The capability stays `BLOCKED` in the admin console until the
+owner's compliance sign-off — that gate is the point.
 
 Owner decisions recorded 2026-07-31: the slot must cover four revenue lanes;
 those lanes settle into **two separate Stripe accounts**, giving and program;

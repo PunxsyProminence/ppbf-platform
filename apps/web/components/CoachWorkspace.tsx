@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import ProfilePortrait from './ProfilePortrait';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
@@ -51,13 +51,16 @@ interface Athlete {
   id: string;
   name: string;
   track: string;
-  // 'UNKNOWN' / null / 'Unknown' below are real states, not placeholders --
-  // there is no backend feed for per-athlete readiness, injury status, or
-  // today's attendance yet. A prior version fabricated these (round-robin
+  // 'UNKNOWN' / null / 'Unknown' below are real states, not placeholders.
+  // Readiness now has a backend feed (/api/pilot/coach/readiness-board:
+  // latest fresh check-in only), but injury status and today's attendance
+  // still do not. A prior version fabricated these (round-robin
   // GREEN/YELLOW/RED, injuryFlag always false, attendance always 'Present')
   // and attached them to real athlete names, which is a false-reassurance
   // safety bug, not a cosmetic one -- a coach could read "no injury flag" as
-  // a real clearance signal. Never default these to a reassuring value.
+  // a real clearance signal. Never default these to a reassuring value: an
+  // athlete absent from the readiness feed stays UNKNOWN, and a failed feed
+  // leaves everyone UNKNOWN.
   readiness: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
   injuryFlag: boolean | null;
   attendance: 'Present' | 'Late' | 'Excused' | 'Absent' | 'Unknown';
@@ -156,6 +159,115 @@ const BARRIER_TYPE_LABEL: Record<string, string> = {
   transportation_barrier: 'Getting to the gym',
 };
 
+/**
+ * A row of pilot.safety_escalations as GET /api/pilot/escalations returns it
+ * to a coach: already scoped server-side to their assigned and covered
+ * athletes, with athlete_voice rows excluded entirely (a disclosure-driven
+ * escalation may be about the coach). This pull surface is the platform's
+ * only notification mechanism -- nothing emails a coach -- so it has to
+ * reach them on the workspace they already have open.
+ */
+interface CoachEscalation {
+  escalation_id: string;
+  athlete_id: string;
+  source_type: string;
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+  reason: string;
+  status: 'open' | 'acknowledged' | 'resolved';
+  created_at: string;
+}
+
+// athlete_voice is deliberately absent: the server never sends it to a coach.
+const ESCALATION_SOURCE_LABEL: Record<string, string> = {
+  near_miss: 'Near miss',
+  pain_report: 'Pain report',
+  safety_gate_evaluation: 'Safety gate',
+  repeated_pattern: 'Repeated pattern',
+  training_hold: 'Training hold',
+  incident: 'Incident',
+};
+
+/**
+ * A row of pilot.sessions as GET /api/pilot/sessions/list returns it, cut to
+ * the fields the review picker labels an option with. Every field is a real
+ * stored value; a row missing a usable session_id or date is dropped rather
+ * than rendered as a blank or guessed-at option.
+ */
+interface ReviewableSession {
+  sessionId: string;
+  date: string;
+  rpe: number | null;
+  completed: boolean;
+  createdAt: string;
+}
+
+function normalizeReviewableSession(row: unknown): ReviewableSession | null {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+
+  const record = row as Record<string, unknown>;
+  const sessionId = typeof record.session_id === 'string' ? record.session_id.trim() : '';
+  // Sliced to the day and shown verbatim, matching the athlete workspace's
+  // treatment of the same column: pilot.sessions.date can be date-only, and
+  // pushing a date-only value through a timezone formatter invents a time of
+  // day (and sometimes the wrong day) that the record does not contain.
+  const date = typeof record.date === 'string' ? record.date.slice(0, 10) : '';
+  const createdAt = typeof record.created_at === 'string' ? record.created_at : '';
+  if (!sessionId || !date) {
+    return null;
+  }
+
+  const rpe = Number(record.rpe);
+  return {
+    sessionId,
+    date,
+    // null, not 0: an unreadable RPE is omitted from the label rather than
+    // shown as a fabricated zero-effort session.
+    rpe: Number.isFinite(rpe) ? rpe : null,
+    completed: Boolean(record.completed_flag),
+    createdAt,
+  };
+}
+
+/** Real stored fields only: the day, whether it was completed, its RPE. */
+function reviewSessionLabel(session: ReviewableSession): string {
+  const status = session.completed ? 'completed' : 'open';
+  const rpe = session.rpe === null ? '' : ` - RPE ${session.rpe}`;
+  return `${session.date} - ${status}${rpe}`;
+}
+
+/**
+ * A row of pilot.coach_reviews as GET /api/pilot/coach-reviews/list returns
+ * it, cut to what the panel shows. Rows without a usable review_id are
+ * dropped rather than rendered blank.
+ */
+interface SessionReview {
+  reviewId: string;
+  coachId: string;
+  decision: string;
+  notes: string;
+  createdAt: string;
+}
+
+function normalizeSessionReview(row: unknown): SessionReview | null {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+  const record = row as Record<string, unknown>;
+  const reviewId = typeof record.review_id === 'string' ? record.review_id.trim() : '';
+  if (!reviewId) {
+    return null;
+  }
+  return {
+    reviewId,
+    coachId: typeof record.coach_id === 'string' ? record.coach_id : '',
+    decision: typeof record.decision === 'string' ? record.decision : '',
+    notes: typeof record.notes === 'string' ? record.notes : '',
+    createdAt: typeof record.created_at === 'string' ? record.created_at : '',
+  };
+}
+
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
   if (readiness === 'YELLOW') return 'bg-[var(--restricted)]';
@@ -236,6 +348,26 @@ export default function CoachWorkspace() {
   const [floorPlansError, setFloorPlansError] = useState<string | null>(null);
   const [coachAccountId, setCoachAccountId] = useState('');
   const [reviewSessionId, setReviewSessionId] = useState('');
+  // The review picker: which athlete's sessions are listed, and the list
+  // itself. 'idle' (no athlete chosen), 'loading', 'loaded' (possibly empty),
+  // and 'unavailable' (the read failed) are distinct states on purpose -- an
+  // error rendered as an empty list would read as "this athlete has no
+  // sessions", which is the fabrication this workspace's tests exist to catch.
+  const [reviewAthleteId, setReviewAthleteId] = useState('');
+  const [reviewSessions, setReviewSessions] = useState<ReviewableSession[]>([]);
+  const [reviewSessionsState, setReviewSessionsState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
+  const [reviewSessionsError, setReviewSessionsError] = useState('');
+  // Guards the async session load against athlete switches: a slow response
+  // for the previously selected athlete must never render under the current
+  // one -- that would attach real sessions to the wrong child's name.
+  const reviewAthleteRef = useRef('');
+  // The reviews already written on the selected session, read back through
+  // /api/pilot/coach-reviews/list before the coach writes another. Same
+  // four-state honesty as the session list, and the same stale-response guard:
+  // one session's reviews must never render under another session's name.
+  const [sessionReviews, setSessionReviews] = useState<SessionReview[]>([]);
+  const [sessionReviewsState, setSessionReviewsState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
+  const reviewSessionRef = useRef('');
   const [reviewDecision, setReviewDecision] = useState('approved');
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewSyncMessage, setReviewSyncMessage] = useState('');
@@ -250,6 +382,14 @@ export default function CoachWorkspace() {
   const [intakeActionBusyId, setIntakeActionBusyId] = useState<string | null>(null);
   const [intakeActionErrors, setIntakeActionErrors] = useState<Record<string, string>>({});
   const [painReports, setPainReports] = useState<CoachPainReport[]>([]);
+  // The escalation inbox. Loading, failed, and empty are distinct: a failed
+  // read rendered as "no escalations" would tell a coach their athletes are
+  // clear when nobody knows.
+  const [escalations, setEscalations] = useState<CoachEscalation[]>([]);
+  const [escalationsLoading, setEscalationsLoading] = useState(true);
+  const [escalationsError, setEscalationsError] = useState('');
+  const [escalationAckBusyId, setEscalationAckBusyId] = useState<string | null>(null);
+  const [escalationAckErrors, setEscalationAckErrors] = useState<Record<string, string>>({});
   const [barrierReports, setBarrierReports] = useState<CoachBarrierReport[]>([]);
   const [barrierReportsTruncated, setBarrierReportsTruncated] = useState(false);
   const [barrierReportsLoading, setBarrierReportsLoading] = useState(true);
@@ -412,6 +552,7 @@ export default function CoachWorkspace() {
   const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
   const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
+  const unknownReadinessCount = athletes.filter((athlete) => athlete.readiness === 'UNKNOWN').length;
   const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN');
   // The task list is DERIVED from real pending work, not stored: the platform
   // has no coach-task store, and the fabricated five-item list this replaced
@@ -621,6 +762,30 @@ export default function CoachWorkspace() {
         // Plates for everyone. Nothing about the roster is degraded by it.
       }
 
+      // Readiness, from the board feed. Best-effort and separate like the
+      // faces read: the server returns only athletes with a FRESH check-in,
+      // so everyone else stays UNKNOWN -- and a failed feed leaves the whole
+      // roster UNKNOWN rather than inventing a color (see the Athlete
+      // interface comment: unknown is never clear).
+      try {
+        const readinessResponse = await fetch(`${apiBase()}/api/pilot/coach/readiness-board`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (readinessResponse.ok) {
+          const board = (await readinessResponse.json()) as {
+            items?: Array<{ athlete_id: string; status: 'GREEN' | 'YELLOW' | 'RED' }>;
+          };
+          const statusByAthlete = new Map((board.items ?? []).map((entry) => [entry.athlete_id, entry.status]));
+          for (const athlete of athleteList) {
+            const status = statusByAthlete.get(athlete.id);
+            if (status) athlete.readiness = status;
+          }
+        }
+      } catch {
+        // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
+      }
+
       setAthletes(athleteList);
       setSelectedAthleteId((current) => current || athleteList[0]?.id || current);
     } catch (error) {
@@ -720,6 +885,78 @@ export default function CoachWorkspace() {
   // wiring gap, not a new capability. The route's own assertActorCanAccessAthlete
   // scopes a coach to their assigned athletes server-side -- a case outside
   // that scope returns 403, surfaced below rather than silently retried.
+  // The escalation inbox read. /api/pilot/escalations already authorizes the
+  // coach role and scopes rows server-side (assigned + actively covered
+  // athletes, athlete_voice excluded) -- this is UI wiring over an existing
+  // capability, exactly like the intake review-action before it.
+  const loadEscalations = useCallback(async () => {
+    setEscalationsLoading(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/escalations?status=open`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Safety escalations could not be loaded.');
+      }
+      const payload = (await response.json()) as { escalations?: CoachEscalation[] };
+      setEscalations(payload.escalations ?? []);
+      setEscalationsError('');
+    } catch (error) {
+      setEscalations([]);
+      setEscalationsError(error instanceof Error ? error.message : 'Safety escalations could not be loaded.');
+    } finally {
+      setEscalationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadEscalations();
+  }, [loadEscalations]);
+
+  // Acknowledging is the coach action the server already grants ("I have seen
+  // this"); resolving stays admin-only server-side and is not offered here.
+  // The row swaps to whatever the SERVER returns -- never to a local guess.
+  async function acknowledgeCoachEscalation(escalationId: string) {
+    if (escalationAckBusyId) {
+      return;
+    }
+    setEscalationAckBusyId(escalationId);
+    setEscalationAckErrors((prev) => ({ ...prev, [escalationId]: '' }));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/escalations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'acknowledge', escalation_id: escalationId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        escalation?: CoachEscalation;
+        error?: string;
+      };
+      if (!response.ok || !payload.ok || !payload.escalation) {
+        setEscalationAckErrors((prev) => ({
+          ...prev,
+          [escalationId]: payload.error || 'The escalation could not be acknowledged.',
+        }));
+        return;
+      }
+      const acknowledged = payload.escalation;
+      setEscalations((prev) => prev.map((item) => (
+        item.escalation_id === escalationId ? acknowledged : item
+      )));
+    } catch {
+      setEscalationAckErrors((prev) => ({
+        ...prev,
+        [escalationId]: 'Network error -- the escalation was not acknowledged. Please try again.',
+      }));
+    } finally {
+      setEscalationAckBusyId(null);
+    }
+  }
+
   async function actOnIntakeCase(intakeCaseId: string, action: 'approve' | 'reject') {
     if (intakeActionBusyId) {
       return;
@@ -756,6 +993,119 @@ export default function CoachWorkspace() {
     }
   }
 
+  // The review picker's session read. GET /api/pilot/sessions/list is the
+  // existing per-athlete session read; its own requireRole +
+  // assertActorCanAccessAthlete decide, server-side, whether this coach may
+  // see this athlete's sessions at all. The roster select below deliberately
+  // offers the whole gym (that is what /api/pilot/athletes/list returns to a
+  // coach, by design), so a refusal here is an expected outcome, not an edge
+  // case: it is surfaced verbatim rather than softened into an empty list.
+  const loadReviewSessions = useCallback(async (athleteId: string) => {
+    setReviewSessionsState('loading');
+    setReviewSessionsError('');
+    setReviewSessions([]);
+
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (reviewAthleteRef.current !== athleteId) {
+        return;
+      }
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        setReviewSessionsError(payload.error || 'Sessions could not be loaded.');
+        setReviewSessionsState('unavailable');
+        return;
+      }
+
+      const payload = (await response.json()) as { items?: unknown[] };
+      // The list route orders by date alone, which cannot separate two
+      // sessions on the same day; the athlete workspace re-orders the same
+      // read on created_at for the same reason.
+      const sessions = (payload.items ?? [])
+        .map(normalizeReviewableSession)
+        .filter((session): session is ReviewableSession => session !== null)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      setReviewSessions(sessions);
+      setReviewSessionsState('loaded');
+    } catch {
+      if (reviewAthleteRef.current !== athleteId) {
+        return;
+      }
+      setReviewSessionsError('Network error -- sessions could not be loaded.');
+      setReviewSessionsState('unavailable');
+    }
+  }, []);
+
+  // The read-back: what has already been said about this session, fetched
+  // before the coach says more. /api/pilot/coach-reviews/list applies its own
+  // session->athlete access check server-side; a refusal or failure here is
+  // shown as such, never as "no reviews yet".
+  const loadSessionReviews = useCallback(async (sessionId: string) => {
+    setSessionReviewsState('loading');
+    setSessionReviews([]);
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach-reviews/list?session_id=${encodeURIComponent(sessionId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (reviewSessionRef.current !== sessionId) {
+        return;
+      }
+      if (!response.ok) {
+        setSessionReviewsState('unavailable');
+        return;
+      }
+      const payload = (await response.json()) as { items?: unknown[] };
+      setSessionReviews(
+        (payload.items ?? [])
+          .map(normalizeSessionReview)
+          .filter((review): review is SessionReview => review !== null),
+      );
+      setSessionReviewsState('loaded');
+    } catch {
+      if (reviewSessionRef.current !== sessionId) {
+        return;
+      }
+      setSessionReviewsState('unavailable');
+    }
+  }, []);
+
+  function selectReviewSession(sessionId: string) {
+    setReviewSessionId(sessionId);
+    reviewSessionRef.current = sessionId;
+    if (sessionId) {
+      void loadSessionReviews(sessionId);
+    } else {
+      setSessionReviews([]);
+      setSessionReviewsState('idle');
+    }
+  }
+
+  function selectReviewAthlete(athleteId: string) {
+    setReviewAthleteId(athleteId);
+    reviewAthleteRef.current = athleteId;
+    // A session belongs to exactly one athlete: switching athletes always
+    // clears the selection so a stale session_id can never be submitted
+    // under the newly selected athlete's name. The read-back panel clears
+    // with it -- it describes the cleared session, not the new athlete.
+    setReviewSessionId('');
+    reviewSessionRef.current = '';
+    setSessionReviews([]);
+    setSessionReviewsState('idle');
+    setReviewSyncMessage('');
+    if (athleteId) {
+      void loadReviewSessions(athleteId);
+    } else {
+      setReviewSessions([]);
+      setReviewSessionsState('idle');
+      setReviewSessionsError('');
+    }
+  }
+
   async function submitCoachReview() {
     // The endpoint writes a new row per review_id and review_id is minted here
     // per call, so a second submit while the first is in flight persists a
@@ -767,7 +1117,7 @@ export default function CoachWorkspace() {
     setReviewSyncMessage('');
 
     if (!reviewSessionId.trim()) {
-      setReviewSyncMessage('Session ID is required.');
+      setReviewSyncMessage('Select a session to review.');
       return;
     }
 
@@ -810,6 +1160,10 @@ export default function CoachWorkspace() {
       }
 
       setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+      // Close the loop: the review just written comes back from the server's
+      // own read, so the panel shows what was actually stored, not what this
+      // tab believes it sent.
+      void loadSessionReviews(reviewSessionId.trim());
     } finally {
       setReviewSubmitting(false);
     }
@@ -953,6 +1307,100 @@ export default function CoachWorkspace() {
                   can remove.
                 </p>
               </div>
+            </div>
+          )}
+        </section>
+
+        {/* SAFETY ESCALATIONS -- also outside the tab switch, directly under
+            the pain reports and wearing the same locked band: an escalation is
+            what a near miss, pain report, or safety-gate flag becomes when it
+            is severe enough to auto-escalate, and this pull surface is the
+            platform's only alarm. The coach acknowledges ("I have seen this");
+            resolving stays an admin call server-side and is not offered. */}
+        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
+          <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
+              Safety Escalations
+            </h2>
+            <button
+              type="button"
+              onClick={() => void loadEscalations()}
+              className="btn btn--ghost"
+              aria-label="Refresh safety escalations"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {escalationsLoading && (
+            <p className="text-xs text-[color:var(--bone-300)]">Checking for open escalations...</p>
+          )}
+
+          {!escalationsLoading && escalationsError && (
+            <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3">
+              <p className="text-sm font-semibold text-[color:var(--locked-ink)]">{escalationsError}</p>
+              <p className="mt-1 text-xs text-[color:var(--locked-ink)]">
+                Escalations may exist that are not shown here. Do not read this as &quot;all clear&quot;.
+              </p>
+            </div>
+          )}
+
+          {!escalationsLoading && !escalationsError && escalations.length === 0 && (
+            <p className="text-xs text-[color:var(--bone-400)]">
+              No open escalations for your athletes. One appears here the moment a near miss, pain
+              report, or safety-gate flag escalates.
+            </p>
+          )}
+
+          {!escalationsLoading && !escalationsError && escalations.length > 0 && (
+            <div className="space-y-3">
+              {escalations.map((escalation) => {
+                const athleteName = athletes.find((athlete) => athlete.id === escalation.athlete_id)?.name;
+                return (
+                  <article
+                    key={escalation.escalation_id}
+                    className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s3)] space-y-[var(--s2)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
+                      <div>
+                        <p className="text-[length:var(--t-md)] font-black text-[color:var(--bone-100)]">
+                          {athleteName ?? `Athlete ID ${escalation.athlete_id}`}
+                        </p>
+                        <p className="t-data text-[color:var(--bone-400)]">
+                          {ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type}
+                          {' -- '}
+                          {painReportTime(escalation.created_at)}
+                        </p>
+                      </div>
+                      <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalation.severity} />
+                    </div>
+
+                    <p className="t-body text-[color:var(--bone-200)]">{escalation.reason}</p>
+
+                    {escalation.status === 'open' ? (
+                      <button
+                        type="button"
+                        onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
+                        disabled={escalationAckBusyId !== null}
+                        className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {escalationAckBusyId === escalation.escalation_id ? 'Acknowledging...' : 'Acknowledge'}
+                      </button>
+                    ) : (
+                      <p className="t-data text-[color:var(--bone-400)]">
+                        Acknowledged. Closing it out is an admin decision and happens on the admin
+                        escalations console.
+                      </p>
+                    )}
+
+                    {escalationAckErrors[escalation.escalation_id] && (
+                      <p role="alert" className="t-data text-[var(--locked-ink)]">
+                        {escalationAckErrors[escalation.escalation_id]}
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
@@ -1179,12 +1627,12 @@ export default function CoachWorkspace() {
                   {readinessTrackingAvailable ? (
                     <>
                       <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
-                      <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
+                      <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} unknown — unknown is not clear` : ''}</p>
                     </>
                   ) : (
                     <>
-                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Not tracked</p>
-                      <p className="t-muted">No backend readiness feed yet -- do not read this as &quot;zero flags&quot;</p>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">No signal</p>
+                      <p className="t-muted">No fresh readiness check-ins -- do not read this as &quot;zero flags&quot;</p>
                     </>
                   )}
                 </article>
@@ -1862,14 +2310,110 @@ export default function CoachWorkspace() {
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
                 <p className="t-label">Persist Coach Review</p>
                 <label className="field">
-                  <span className="t-label">Session ID</span>
-                  <input
-                    value={reviewSessionId}
-                    onChange={(event) => setReviewSessionId(event.target.value)}
-                    placeholder="Session ID (from persisted session)"
-                    className="input"
-                  />
+                  <span className="t-label">Athlete</span>
+                  <select
+                    value={reviewAthleteId}
+                    onChange={(event) => selectReviewAthlete(event.target.value)}
+                    disabled={athletesLoading}
+                    className="select"
+                  >
+                    <option value="">Select an athlete</option>
+                    {athletes.map((athlete) => (
+                      <option key={athlete.id} value={athlete.id}>
+                        {athlete.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
+                {athletesLoading && (
+                  <p className="t-data text-[color:var(--bone-400)]">Loading your athlete roster...</p>
+                )}
+                {!athletesLoading && athletesError && (
+                  <p className="t-data text-[color:var(--locked-ink)]">
+                    The athlete roster could not be loaded, so sessions cannot be picked. Athletes and
+                    sessions may exist that are not shown here.
+                  </p>
+                )}
+                {!athletesLoading && !athletesError && athletes.length === 0 && (
+                  <p className="t-data text-[color:var(--bone-400)]">
+                    No athletes are on the roster yet. A session to review appears here once an athlete
+                    has one recorded.
+                  </p>
+                )}
+
+                {reviewSessionsState === 'loading' && (
+                  <p className="t-data text-[color:var(--bone-400)]">Loading sessions...</p>
+                )}
+                {reviewSessionsState === 'unavailable' && (
+                  <p className="t-data text-[color:var(--locked-ink)]">
+                    {reviewSessionsError} Sessions may exist that are not listed here -- do not read
+                    this as &quot;no sessions&quot;.
+                  </p>
+                )}
+                {reviewSessionsState === 'loaded' && reviewSessions.length === 0 && (
+                  <p className="t-data text-[color:var(--bone-400)]">
+                    No sessions are recorded for this athlete yet. One appears here as soon as a
+                    session is persisted.
+                  </p>
+                )}
+                {reviewSessionsState === 'loaded' && reviewSessions.length > 0 && (
+                  <label className="field">
+                    <span className="t-label">Session</span>
+                    <select
+                      value={reviewSessionId}
+                      onChange={(event) => selectReviewSession(event.target.value)}
+                      className="select"
+                    >
+                      <option value="">Select a session</option>
+                      {reviewSessions.map((session) => (
+                        <option key={session.sessionId} value={session.sessionId}>
+                          {reviewSessionLabel(session)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {reviewSessionId ? (
+                  <p className="t-data text-[color:var(--bone-400)]">Session ID {reviewSessionId}</p>
+                ) : null}
+
+                {/* What has already been said about this session, shown BEFORE
+                    the coach writes more -- the endpoint keeps every review,
+                    so a duplicate is prevented by reading, not by the server. */}
+                {sessionReviewsState === 'loading' && (
+                  <p className="t-data text-[color:var(--bone-400)]">Checking for existing reviews...</p>
+                )}
+                {sessionReviewsState === 'unavailable' && (
+                  <p className="t-data text-[color:var(--locked-ink)]">
+                    Existing reviews could not be loaded. Reviews may exist on this session that are
+                    not shown here.
+                  </p>
+                )}
+                {sessionReviewsState === 'loaded' && sessionReviews.length === 0 && (
+                  <p className="t-data text-[color:var(--bone-400)]">
+                    No reviews on this session yet.
+                  </p>
+                )}
+                {sessionReviewsState === 'loaded' && sessionReviews.length > 0 && (
+                  <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s3)]">
+                    <p className="t-label">Reviews already on this session</p>
+                    {sessionReviews.map((review) => (
+                      <div key={review.reviewId} className="border-t border-[color:rgba(212,175,74,.12)] pt-[var(--s2)] first:border-t-0 first:pt-0">
+                        <p className="t-data text-[color:var(--bone-300)]">
+                          <span className="font-bold">{review.decision}</span>
+                          {' -- '}
+                          {review.coachId === coachAccountId
+                            ? 'your review'
+                            : `another coach (${review.coachId || 'account unknown'})`}
+                          {formatGymDateTimeShort(review.createdAt) ? ` -- ${formatGymDateTimeShort(review.createdAt)}` : ''}
+                        </p>
+                        {review.notes.trim() !== '' && (
+                          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{review.notes}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <label className="field">
                   <span className="t-label">Decision</span>
                   <select

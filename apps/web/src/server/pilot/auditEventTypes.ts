@@ -46,6 +46,12 @@ export const AUDIT_EVENT_TYPES = [
   // transactional so nothing was half-deleted, but the feature never worked.
   'data_deletion_initiated',
   'data_purged',
+  // Payment slot (docs/PAYMENT_SERVICE_SLOT.md): connecting or losing a
+  // Stripe account changes where an organization's money settles. Recorded
+  // as bare 'update' it would be indistinguishable from bookkeeping; each
+  // event records which account it concerns, per the slot's audit rule.
+  'payment_account_connected',
+  'payment_account_disconnected',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

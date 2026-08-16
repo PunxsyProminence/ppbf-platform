@@ -12,12 +12,11 @@ export const boundedContexts: BoundedContext[] = [
     allowedData: ['athlete_data', 'sessions', 'governance'],
     isolated: true,
   },
-  {
-    name: 'personal_projects',
-    owner: 'punxsy.prominence.boxing@gmail.com',
-    allowedData: ['camper', 'danielle_consulting', 'neeko_3d', 'henry_military'],
-    isolated: true,
-  },
+  // A personal-projects context used to be declared here with a personal
+  // email and a list of the owner's unrelated private ventures -- data about
+  // non-platform matters in a public nonprofit repo, consumed by nothing.
+  // Unknown contexts already fail closed in enforceBoundedContext, which is
+  // the correct answer for anything that is not the nonprofit.
 ];
 
 export function enforceBoundedContext(contextName: string, dataType: string) {

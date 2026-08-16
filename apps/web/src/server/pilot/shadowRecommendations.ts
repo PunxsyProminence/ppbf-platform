@@ -60,14 +60,27 @@ export async function createProvisionalRecommendation(input: {
   createdByAccountId: string;
   createdByRole: string;
   expiresInHours?: number;
-  // Set true when the recommendation's subject matter touches medical
-  // clearance, sparring/contact clearance, or weight-cut guidance -- forces
-  // the medical-status guard above before the row is created.
-  isMedicallySensitive?: boolean;
 }): Promise<ShadowRecommendationRow> {
-  if (input.isMedicallySensitive) {
-    await assertMedicalStatusAllowsRecommendation(input.organizationId, input.athleteId);
-  }
+  // Unconditional, and deliberately not a parameter.
+  //
+  // This guard used to run only when the caller passed isMedicallySensitive.
+  // That flag arrived verbatim off the HTTP body behind a `typeof` check, with
+  // `undefined` permitted -- so omitting one field from the JSON skipped the
+  // clearance check entirely, on a return-to-play recommendation, in a youth
+  // contact sport. A safety gate the caller decides to arm is not a gate.
+  //
+  // The alternative considered was deriving sensitivity server-side from the
+  // recommendation text (shadowClassifier.ts already carries the vocabulary).
+  // It was rejected as the primary control: a denylist decides by phrasing, and
+  // "he took a bad shot Tuesday, is he good to spar?" matches none of those
+  // patterns. Consulting the athlete's clearance record on every recommendation
+  // depends on no vocabulary at all.
+  //
+  // The cost is that a recommendation cannot be written for an athlete with no
+  // clearance record on file. That is the intended reading of the guard's own
+  // rule -- absence of a decision is not a decision -- and setting a status is
+  // ordinary onboarding, not a workaround.
+  await assertMedicalStatusAllowsRecommendation(input.organizationId, input.athleteId);
 
   const expiresInHours = input.expiresInHours && input.expiresInHours > 0
     ? input.expiresInHours

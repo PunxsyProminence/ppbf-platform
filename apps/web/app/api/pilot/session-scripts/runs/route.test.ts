@@ -5,6 +5,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   SessionScriptRunError,
   getLiveRunForCoach,
+  listSettledRunsForScript,
   startSessionScriptRun,
 } from '@/src/server/pilot/sessionScriptRuns';
 
@@ -17,11 +18,13 @@ jest.mock('@/src/server/pilot/http', () => ({
 jest.mock('@/src/server/pilot/sessionScriptRuns', () => ({
   ...jest.requireActual('@/src/server/pilot/sessionScriptRuns'),
   getLiveRunForCoach: jest.fn(),
+  listSettledRunsForScript: jest.fn(),
   startSessionScriptRun: jest.fn(),
 }));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
 const mockGetLive = jest.mocked(getLiveRunForCoach);
+const mockListSettled = jest.mocked(listSettledRunsForScript);
 const mockStart = jest.mocked(startSessionScriptRun);
 
 const liveRun = {
@@ -118,6 +121,66 @@ describe('GET runs — resume', () => {
       expect((await GET(get())).status).toBe(200);
     },
   );
+});
+
+describe('GET runs?script_id — delivery history', () => {
+  const settledRun = {
+    ...liveRun,
+    run_id: 'ssrun_done',
+    run_state: 'completed' as const,
+    ended_at: '2026-08-09T17:00:00.000Z',
+    current_block_id: null,
+  };
+  // A row written before live-run tracking existed: run_state is honestly
+  // null and must pass through as null, not be dressed as an outcome.
+  const legacyRun = {
+    ...liveRun,
+    run_id: 'ssrun_legacy',
+    run_state: null,
+    started_at: null,
+    ended_at: null,
+    current_block_id: null,
+    paused_at: null,
+    paused_seconds: null,
+  };
+
+  it('returns the settled runs for the script, scoped to the caller\'s organization', async () => {
+    mockListSettled.mockResolvedValue([settledRun, legacyRun]);
+    const response = await GET(new NextRequest('http://localhost/api/pilot/session-scripts/runs?script_id=scr-1'));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.runs.map((r: { run_id: string }) => r.run_id)).toEqual(['ssrun_done', 'ssrun_legacy']);
+    expect(body.runs[1].run_state).toBeNull();
+    // Organization comes from the principal, never from the request.
+    expect(mockListSettled).toHaveBeenCalledWith('org-1', 'scr-1');
+    // The history branch does not touch the live-run lookup.
+    expect(mockGetLive).not.toHaveBeenCalled();
+  });
+
+  it('an empty script_id is the live-run lookup, not a history read of nothing', async () => {
+    mockGetLive.mockResolvedValue(null);
+    const response = await GET(new NextRequest('http://localhost/api/pilot/session-scripts/runs?script_id='));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ run: null });
+    expect(mockListSettled).not.toHaveBeenCalled();
+  });
+
+  it('a script with no settled runs answers an empty list, not an error', async () => {
+    mockListSettled.mockResolvedValue([]);
+    const response = await GET(new NextRequest('http://localhost/api/pilot/session-scripts/runs?script_id=scr-unrun'));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ runs: [] });
+  });
+
+  // Same gate as the live lookup: both shapes are delivery records and carry
+  // who was on the floor -- browsing the plan and reading its deliveries are
+  // different permissions even though they concern the same script.
+  it.each(['athlete', 'parent', 'board', 'volunteer'])('refuses role %s', async (role) => {
+    asCoach(role);
+    const response = await GET(new NextRequest('http://localhost/api/pilot/session-scripts/runs?script_id=scr-1'));
+    expect(response.status).toBe(403);
+    expect(mockListSettled).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST runs — start', () => {

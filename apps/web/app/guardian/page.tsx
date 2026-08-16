@@ -24,10 +24,12 @@ const STATS = [
   { label: 'Mode', value: 'Family' },
 ] as const;
 
+// 'Guardian Snapshot' used to be in this list pointing at /guardian -- this
+// very page, a circle. The working surface is the Parent Dashboard, which is
+// the primary signpost above the fold now, so the list holds the REST of the
+// family side.
 const QUICK_LINKS = [
-  { label: 'Parent Dashboard', href: '/parent/dashboard' },
   { label: 'Progress Visibility', href: '/parent/progression-visibility' },
-  { label: 'Guardian Snapshot', href: '/guardian' },
   { label: 'SHADOW Intel', href: '/shadow' },
   { label: 'The Ring', href: '/operations' },
   { label: 'Member Access', href: '/login' },
@@ -60,9 +62,15 @@ function GuardianPortalContent() {
               Guardian Portal
             </h1>
             <p className="t-body m-0">
-              A secure, easy-to-read snapshot for parents or guardians to monitor attendance, progress, and safety
-              notes. View-only family progress surface.
+              This page describes the family side of the platform. The place you actually see your
+              child&apos;s attendance, safety notes, and messages is the Family Dashboard.
             </p>
+            {/* The one action a guardian landing here actually wants: the
+                working surface. This page renders no data of its own, and
+                without this signpost it read as if it were supposed to. */}
+            <Link href="/parent/dashboard" className="btn mt-[var(--s4)]">
+              Open your Family Dashboard
+            </Link>
           </div>
           <ShadowChatButton context="Guardian Portal View-only family progress surface" />
         </div>
@@ -91,9 +99,10 @@ function GuardianPortalContent() {
         <div className="grid items-start gap-[var(--s6)] md:grid-cols-[var(--split-major)_var(--split-minor)]">
           {/* What this surface reports on. */}
           <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
-            <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>What You Can See Here</h2>
+            <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>What the Family Dashboard Covers</h2>
             <p className="t-muted mt-[var(--s2)] mb-[var(--s5)]">
-              Each of these reads from the participant&apos;s own record — nothing here is editable from the family side.
+              Each of these lives on the Family Dashboard and reads from the participant&apos;s own
+              record — nothing is editable from the family side.
             </p>
             <div className="space-y-[var(--s4)]">
               {EXPLAINERS.map((item) => (

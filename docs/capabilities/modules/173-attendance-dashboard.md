@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | admin/attendance page: org-wide + coach-scoped attendance summary and 8-week trend strip with gap-aware rendering |
 | Active | false |
 | Promotion required | true |
 | Category | Dashboards / Reporting (`dashboardsReporting`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/app/admin/attendance/page.tsx; apps/web/app/api/pilot/scheduler/attendance-summary/route.ts; apps/web/src/server/pilot/attendanceReporting.ts. Test: apps/web/src/server/pilot/attendanceReporting.pg.test.ts (real Postgres, npm run test:migrations:attendance-trend) pins  |

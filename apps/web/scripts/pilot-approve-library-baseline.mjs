@@ -121,6 +121,17 @@ if (!Number.isFinite(maxRows) || maxRows < 0) {
   process.exit(1);
 }
 
+// How many non-corpus pending rows the plan lists BY NAME. A cap on the sample,
+// not a filter: non_corpus_pending_count beside it is uncapped, so a truncated
+// list can never make the scale look smaller than it is. An unparseable value
+// falls back rather than exiting -- this controls how much a diagnostic prints,
+// and refusing to run at all over it would be a worse answer than printing the
+// default.
+const parsedSampleLimit = Number.parseInt(process.env.PPBF_LIBRARY_APPROVAL_SAMPLE ?? '25', 10);
+const NON_CORPUS_SAMPLE_LIMIT = Number.isFinite(parsedSampleLimit) && parsedSampleLimit >= 0
+  ? parsedSampleLimit
+  : 25;
+
 const pool = new Pool({ connectionString });
 
 /**
@@ -224,6 +235,34 @@ async function main() {
     const approvableDocuments = counts.documents_pending - counts.documents_without_content;
     const total = counts.sources_pending + approvableDocuments;
 
+    // What this run would approve that the research corpus did not create.
+    //
+    // The filter is organization + pending_review and nothing narrower. Against
+    // `__platform__` that is exactly right, because nothing lives there but the
+    // baseline. Against a real gym it takes everything pending in that gym --
+    // including anything an operator uploaded through the API, which then
+    // becomes citable evidence without a separate decision. Naming those rows in
+    // the PLAN puts them in front of the operator before the apply; the counts
+    // above only ever showed it afterwards, as arithmetic that did not add up.
+    const nonCorpusPending = await client.query(
+      `select source_id, title, source_type
+         from pilot.shadow_library_sources
+        where organization_id = $1
+          and approval_state = 'pending_review'
+          and source_id not like 'src\\_%'
+        order by source_id
+        limit $2`,
+      [organizationId, NON_CORPUS_SAMPLE_LIMIT],
+    );
+    const nonCorpusPendingCount = await client.query(
+      `select count(*)::int as n
+         from pilot.shadow_library_sources
+        where organization_id = $1
+          and approval_state = 'pending_review'
+          and source_id not like 'src\\_%'`,
+      [organizationId],
+    );
+
     console.log(JSON.stringify({
       event: 'library.approval.plan',
       apply,
@@ -233,6 +272,11 @@ async function main() {
       counts,
       would_index: approvableDocuments,
       would_approve: total,
+      // Capped: the list is here to be read by a person before they decide, not
+      // to be exhaustive. The count beside it is not capped, so a truncated list
+      // can never understate the scale.
+      non_corpus_pending_count: nonCorpusPendingCount.rows[0].n,
+      non_corpus_pending: nonCorpusPending.rows,
       // Said plainly, because the constraint means there is no weaker version of
       // this: one account is recorded as having both approved and verified every
       // row below.

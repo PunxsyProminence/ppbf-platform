@@ -174,7 +174,13 @@ instead of carrying its own copy of the schema.
 
 ---
 
-## 7. Owner bootstrap hardcodes an email address — HIGH
+## 7. Owner bootstrap hardcodes an email address — HIGH — RESOLVED
+
+**Resolved (annotation, 2026-08-15):** both paths now resolve through the
+single `getPrimaryOwnerEmail()` in `apps/web/src/server/pilot/auth.ts` --
+the bootstrap route and the sign-in callback read the same function, so the
+drift this finding describes is structurally closed. The text below is the
+original finding, kept as written.
 
 **Today:** The platform-owner bootstrap route hardcodes
 `Admin@punxsyprominence.org` while the sign-in callback enforces

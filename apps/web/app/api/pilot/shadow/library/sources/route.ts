@@ -1,14 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   createShadowLibrarySource,
   listShadowLibrarySources,
   type ShadowLibrarySourceStatus,
   type ShadowLibrarySourceType,
+  updateShadowLibrarySourceClassification,
 } from '@/src/server/pilot/shadowLibrary';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
+import { isResearchClassificationDomain } from '@/src/shared/researchClassification';
 
 export const runtime = 'nodejs';
 
@@ -67,6 +69,11 @@ export async function GET(request: NextRequest) {
     const params = new URL(request.url).searchParams;
     const sourceType = params.get('source_type');
     const status = params.get('status');
+    const generalResearch = params.get('general_research');
+
+    if (generalResearch !== null && generalResearch !== 'true' && generalResearch !== 'false') {
+      return NextResponse.json({ ok: false, error: "general_research must be 'true' or 'false'" }, { status: 400 });
+    }
     const rawLimit = params.get('limit');
     const rawOffset = params.get('offset');
 
@@ -92,6 +99,7 @@ export async function GET(request: NextRequest) {
       organizationId: principal.organizationId,
       sourceType: sourceType ?? undefined,
       status: status ?? undefined,
+      generalResearch: generalResearch === null ? undefined : generalResearch === 'true',
       limit,
       offset,
     });
@@ -164,6 +172,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'metadata must be an object' }, { status: 400 });
     }
 
+    // The classification taxonomy is a shared contract (issue #345): a label
+    // arriving through registration is held to the same 14 domains the
+    // correction PATCH enforces, so no route can file a source outside it.
+    const classificationDomain = (body.metadata as Record<string, unknown> | undefined)?.classification_domain;
+    if (classificationDomain !== undefined && !isResearchClassificationDomain(classificationDomain)) {
+      return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
+    }
+
     const source = await createShadowLibrarySource({
       organizationId: principal.organizationId,
       actorAccountId: principal.accountId,
@@ -188,6 +204,39 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+    return jsonError(error);
+  }
+}
+
+// Classification correction (issue #345 workflow 3). Curator-gated like every
+// other write here, and narrower than all of them: one metadata key, human-
+// picked from the shared taxonomy, nothing else about the source reachable.
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+
+    const body = (await request.json().catch(() => ({}))) as {
+      source_id?: unknown;
+      classification_domain?: unknown;
+    };
+
+    if (typeof body.source_id !== 'string' || !body.source_id.trim()) {
+      return NextResponse.json({ ok: false, error: 'Missing source_id' }, { status: 400 });
+    }
+    if (!isResearchClassificationDomain(body.classification_domain)) {
+      return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
+    }
+
+    const source = await updateShadowLibrarySourceClassification(
+      principal.organizationId,
+      body.source_id.trim(),
+      body.classification_domain,
+    );
+
+    if (!source) return hiddenNotFound();
+    return NextResponse.json({ ok: true, source });
+  } catch (error) {
     return jsonError(error);
   }
 }

@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 slice promotion) |
+| Vertical slice | confidenceFor() confidence-state attribute on formula evaluations; a general confidence framework is future work |
 | Active | false |
 | Promotion required | true |
 | Category | Data Quality / Trust (`dataQualityTrust`) |
@@ -37,3 +38,5 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — ConfidenceState = 'HIGH'/'MODERATE'/'LOW'/'INSUFFICIENT', a per-formula-result confidence field. Missing: A real confidence-state mechanism exists with role gates, org isolation, and tests, but it is a narrow attribute attached to the separate formula-eval. Evidence: apps/web/src/server/pilot/formulas/types.ts; apps/web/src/server/pilot/formulas/engine.ts. Status stays DRAFT. |
+| 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: narrow-but-real slices promote per the playbook rule (DONE means slice shipped in code), with the slice line naming exactly what exists. Evidence: apps/web/src/server/pilot/formulas/types.ts; apps/web/src/server/pilot/formulas/engine.ts. Test: apps/web/src/server/pilot/formulas/formulaEngine.test.ts and mvpFormulaEngine.test.ts pin confidenceFor() beha |

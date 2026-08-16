@@ -30,9 +30,9 @@ const MODULE_URL = pathToFileURL(
 ).href;
 
 const STAGING = 'postgres://u:p@ppbf-pg-staging.postgres.database.azure.com:5432/postgres';
-const PRODUCTION = 'postgres://u:p@ppbf-pg-195892.postgres.database.azure.com:5432/postgres';
+const PRODUCTION = 'postgres://u:p@ppbf-pg-example.postgres.database.azure.com:5432/postgres';
 const STAGING_HOST = 'ppbf-pg-staging.postgres.database.azure.com';
-const PRODUCTION_HOST = 'ppbf-pg-195892.postgres.database.azure.com';
+const PRODUCTION_HOST = 'ppbf-pg-example.postgres.database.azure.com';
 
 type Outcome = { ok: true; value: unknown } | { ok: false; message: string };
 

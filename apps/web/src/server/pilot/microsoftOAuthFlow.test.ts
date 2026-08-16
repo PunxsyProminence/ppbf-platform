@@ -168,7 +168,7 @@ describe('microsoftOAuthFlow', () => {
 
   test('azure or production canonical-domain behavior enforces callback-origin start route', () => {
     const redirect = resolveCanonicalAuthStartRedirect({
-      requestUrl: 'https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io/api/pilot/auth/microsoft/start',
+      requestUrl: 'https://app-example.example-env.eastus.azurecontainerapps.io/api/pilot/auth/microsoft/start',
       callbackUrl: 'https://www.punxsyprominence.org/api/pilot/auth/microsoft/callback',
       startPathname: '/api/pilot/auth/microsoft/start',
     });
@@ -190,10 +190,10 @@ describe('microsoftOAuthFlow', () => {
     expect(
       resolvePublicOrigin({
         requestUrl: 'http://0.0.0.0:3000/api/pilot/auth/microsoft/callback',
-        forwardedHostHeader: 'app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io',
+        forwardedHostHeader: 'app-example.example-env.eastus.azurecontainerapps.io',
         forwardedProtoHeader: 'https',
         fallbackOrigin: 'https://www.punxsyprominence.org',
       }),
-    ).toBe('https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io');
+    ).toBe('https://app-example.example-env.eastus.azurecontainerapps.io');
   });
 });

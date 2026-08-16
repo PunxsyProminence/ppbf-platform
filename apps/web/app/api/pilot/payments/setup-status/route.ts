@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'platform_owner']);
 
-    return NextResponse.json(resolvePaymentSetupStatus(), {
+    return NextResponse.json(await resolvePaymentSetupStatus(principal.organizationId), {
       headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (error) {

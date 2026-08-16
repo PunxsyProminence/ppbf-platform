@@ -5,6 +5,10 @@ import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
+import {
+  RESEARCH_CLASSIFICATION_DOMAINS,
+  researchClassificationLabel,
+} from '@/src/shared/researchClassification';
 
 interface ShadowResearchItem {
   event_id: number;
@@ -48,6 +52,30 @@ const REVIEW_STATE_BADGES: Record<ShadowResearchItem['review_state'], { classNam
    (bone ink); on paper the same caption needs dark ink. */
 const PAPER_LABEL = 'font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.13em] text-[color:var(--hide-600)]';
 
+/* Issue #345's answer-state ladder, computed server-side from the submission
+   links. Deliberately incapable of 'resolved' on its own: that rung reads
+   the requirement's own status, which only the human Mark Resolved changes. */
+type AnswerState = 'needs_evidence' | 'sources_submitted' | 'evidence_under_review' | 'partially_answered' | 'resolved';
+
+const ANSWER_STATE_BADGES: Record<AnswerState, { className: string; glyph: string; label: string }> = {
+  needs_evidence: { className: 'badge badge--restricted', glyph: '▲', label: 'Needs Evidence' },
+  sources_submitted: { className: 'badge badge--monitor', glyph: '◉', label: 'Sources Submitted' },
+  evidence_under_review: { className: 'badge badge--monitor', glyph: '◉', label: 'Evidence Under Review' },
+  partially_answered: { className: 'badge badge--restricted', glyph: '▲', label: 'Partially Answered' },
+  resolved: { className: 'badge badge--cleared', glyph: '✓', label: 'Resolved' },
+};
+
+interface LibrarySourceOption {
+  source_id: string;
+  title: string;
+  source_type: string;
+  metadata?: { general_research?: boolean; classification_domain?: string };
+}
+
+const GENERAL_SOURCE_TYPES = [
+  'peer_reviewed', 'clinical_guideline', 'governing_body', 'textbook', 'media', 'other',
+] as const;
+
 export default function ResearchIntakePage() {
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
@@ -61,6 +89,51 @@ export default function ResearchIntakePage() {
   });
   const [submitMessage, setSubmitMessage] = useState('');
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  // Issue #345 slice 2: the computed ladder per requirement, the curator's
+  // source list (null until the sources read succeeds -- a 403 simply leaves
+  // the Answer-a-Gap panel unrendered, matching the POST's own gate), and
+  // the per-requirement answer draft.
+  const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
+  const [curatorSources, setCuratorSources] = useState<LibrarySourceOption[] | null>(null);
+  const [answeringId, setAnsweringId] = useState<number | null>(null);
+  const [answerDraft, setAnswerDraft] = useState({ sourceId: '', doi: '', provider: '', note: '' });
+  const [answerBusy, setAnswerBusy] = useState(false);
+  // Scoped to one requirement so a message from card A never renders under
+  // card B when several gaps are open at once.
+  const [answerMessage, setAnswerMessage] = useState<{ forId: number; text: string } | null>(null);
+  // Issue #345 workflow 3: general research intake. Classification is a
+  // human-picked filing label in source metadata -- no gate, tier, or review
+  // state is touched by anything in this section.
+  const [generalDraft, setGeneralDraft] = useState({
+    title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '',
+  });
+  const [generalBusy, setGeneralBusy] = useState(false);
+  const [generalMessage, setGeneralMessage] = useState('');
+  const [reclassifyingId, setReclassifyingId] = useState<string | null>(null);
+  // The correction list reads a SERVER-FILTERED general-research page, not a
+  // client-side sift of the newest-200 overall list -- in a corpus of
+  // thousands, a general source would otherwise fall out of the window and
+  // become uncorrectable from the workspace. The 200 cap now bounds general
+  // registrations only, which are curator-entered and few.
+  const [generalSources, setGeneralSources] = useState<LibrarySourceOption[]>([]);
+
+  const refreshAnswerStates = async (requirementIds: number[]) => {
+    if (requirementIds.length === 0) {
+      setAnswerStates({});
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/shadow/research-submissions?research_requirement_ids=${requirementIds.join(',')}`,
+        { credentials: 'include' },
+      );
+      if (!response.ok) return;
+      const payload = (await response.json()) as { answer_states?: Record<string, AnswerState> };
+      setAnswerStates(payload.answer_states ?? {});
+    } catch {
+      // The ladder is enrichment; the inbox stays useful without it.
+    }
+  };
 
   useEffect(() => {
     void (async () => {
@@ -96,12 +169,152 @@ export default function ResearchIntakePage() {
         }
 
         const payload = (await response.json()) as { items?: ShadowResearchRequirement[] };
-        setRequirements(payload.items ?? []);
+        const loaded = payload.items ?? [];
+        setRequirements(loaded);
+        await refreshAnswerStates(loaded.map((item) => item.research_requirement_id));
       } catch {
         setRequirements([]);
       }
     })();
   }, []);
+
+  // One probe decides whether this viewer curates: the sources list is gated
+  // by the same roles as the submission POST, so a 403 here means the panel
+  // would be refused anyway and is not rendered at all.
+  const fetchSources = async (signal?: AbortSignal, generalOnly = false) => {
+    const filter = generalOnly ? '&general_research=true' : '';
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources?limit=200${filter}`, {
+      credentials: 'include',
+      signal,
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { sources?: LibrarySourceOption[]; items?: LibrarySourceOption[] };
+    return payload.sources ?? payload.items ?? [];
+  };
+
+  const refreshGeneralSources = async () => {
+    const general = await fetchSources(undefined, true);
+    if (general !== null) setGeneralSources(general);
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const sources = await fetchSources(controller.signal);
+        if (sources !== null && !controller.signal.aborted) {
+          setCuratorSources(sources);
+          const general = await fetchSources(controller.signal, true);
+          if (general !== null && !controller.signal.aborted) setGeneralSources(general);
+        }
+      } catch {
+        // Not a curator (or offline, or unmounted): the read-only workspace stands.
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  async function handleRegisterGeneral() {
+    if (!generalDraft.title.trim() || !generalDraft.classification) {
+      setGeneralMessage('A title and a classification domain are required.');
+      return;
+    }
+    setGeneralBusy(true);
+    try {
+      const provenance: Record<string, string> = {};
+      if (generalDraft.doi.trim()) provenance.doi_or_pmid = generalDraft.doi.trim();
+      if (generalDraft.provider.trim()) provenance.provider = generalDraft.provider.trim();
+      if (generalDraft.filename.trim()) provenance.original_filename = generalDraft.filename.trim();
+
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: generalDraft.title.trim(),
+          source_type: generalDraft.sourceType,
+          url: generalDraft.url.trim() || null,
+          metadata: {
+            general_research: true,
+            classification_domain: generalDraft.classification,
+            provenance,
+          },
+        }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Registration failed (${response.status})`);
+      }
+      setGeneralDraft({ title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '' });
+      setGeneralMessage('Source registered and classified. Evidence review still decides what becomes citable.');
+      const sources = await fetchSources();
+      if (sources !== null) setCuratorSources(sources);
+      await refreshGeneralSources();
+    } catch (error) {
+      setGeneralMessage(error instanceof Error ? error.message : 'Unable to register the source.');
+    } finally {
+      setGeneralBusy(false);
+    }
+  }
+
+  async function handleReclassify(sourceId: string, classificationDomain: string) {
+    setReclassifyingId(sourceId);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources`, {
+        credentials: 'include',
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_id: sourceId, classification_domain: classificationDomain }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Reclassification failed (${response.status})`);
+      }
+      await refreshGeneralSources();
+      setGeneralMessage('Classification corrected.');
+    } catch (error) {
+      setGeneralMessage(error instanceof Error ? error.message : 'Unable to correct the classification.');
+    } finally {
+      setReclassifyingId(null);
+    }
+  }
+
+  async function handleAnswerGap(requirementId: number) {
+    if (!answerDraft.sourceId) {
+      setAnswerMessage({ forId: requirementId, text: 'Pick the library source that answers this requirement.' });
+      return;
+    }
+    setAnswerBusy(true);
+    try {
+      const provenance: Record<string, string> = {};
+      if (answerDraft.doi.trim()) provenance.doi_or_pmid = answerDraft.doi.trim();
+      if (answerDraft.provider.trim()) provenance.provider = answerDraft.provider.trim();
+
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-submissions`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          research_requirement_id: requirementId,
+          source_id: answerDraft.sourceId,
+          provenance,
+          submission_note: answerDraft.note.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Submission failed (${response.status})`);
+      }
+      setAnsweringId(null);
+      setAnswerDraft({ sourceId: '', doi: '', provider: '', note: '' });
+      setAnswerMessage({ forId: requirementId, text: 'Source submitted. It answers nothing until evidence review says so.' });
+      await refreshAnswerStates(requirements.map((item) => item.research_requirement_id));
+    } catch (error) {
+      setAnswerMessage({ forId: requirementId, text: error instanceof Error ? error.message : 'Unable to submit the source.' });
+    } finally {
+      setAnswerBusy(false);
+    }
+  }
 
   const counts = useMemo(() => {
     return {
@@ -419,6 +632,16 @@ export default function ResearchIntakePage() {
                 <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                   Source: {requirement.source_status} | Confidence: {requirement.source_confidence_tier} | Verification: {requirement.source_verification_state}
                 </p>
+                {requirement.status === 'open' && answerStates[String(requirement.research_requirement_id)] ? (
+                  (() => {
+                    const ladder = ANSWER_STATE_BADGES[answerStates[String(requirement.research_requirement_id)]];
+                    return (
+                      <p className="mt-[var(--s3)]">
+                        <span className={ladder.className}><i aria-hidden="true">{ladder.glyph}</i>{ladder.label}</span>
+                      </p>
+                    );
+                  })()
+                ) : null}
                 {requirement.status === 'open' ? (
                   <button
                     type="button"
@@ -429,10 +652,174 @@ export default function ResearchIntakePage() {
                     {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Mark Resolved'}
                   </button>
                 ) : null}
+                {requirement.status === 'open' && curatorSources && curatorSources.length > 0 ? (
+                  <div className="mt-[var(--s3)]">
+                    {answeringId === requirement.research_requirement_id ? (
+                      <div className="mat-paper rounded-[var(--r-sm)] p-[var(--s4)] space-y-[var(--s3)]">
+                        <p className={PAPER_LABEL}>Answer this gap — submission is not an answer until review says so</p>
+                        <label className="field">
+                          <span className={PAPER_LABEL}>Library source</span>
+                          <select
+                            className="select"
+                            value={answerDraft.sourceId}
+                            onChange={(event) => setAnswerDraft((current) => ({ ...current, sourceId: event.target.value }))}
+                          >
+                            <option value="">Choose a registered source…</option>
+                            {curatorSources.map((source) => (
+                              <option key={source.source_id} value={source.source_id}>
+                                {source.title} ({source.source_type})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="grid gap-[var(--s3)] md:grid-cols-2">
+                          <label className="field">
+                            <span className={PAPER_LABEL}>DOI / PMID</span>
+                            <input className="input" value={answerDraft.doi}
+                              onChange={(event) => setAnswerDraft((current) => ({ ...current, doi: event.target.value }))} />
+                          </label>
+                          <label className="field">
+                            <span className={PAPER_LABEL}>Provider (e.g. Penn State Library)</span>
+                            <input className="input" value={answerDraft.provider}
+                              onChange={(event) => setAnswerDraft((current) => ({ ...current, provider: event.target.value }))} />
+                          </label>
+                        </div>
+                        <label className="field">
+                          <span className={PAPER_LABEL}>Why this source answers it</span>
+                          <textarea className="textarea h-[55px]" value={answerDraft.note}
+                            onChange={(event) => setAnswerDraft((current) => ({ ...current, note: event.target.value }))} />
+                        </label>
+                        <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                          <button type="button" className="btn" disabled={answerBusy}
+                            onClick={() => void handleAnswerGap(requirement.research_requirement_id)}>
+                            {answerBusy ? 'Submitting…' : 'Submit source'}
+                          </button>
+                          <button type="button" className="btn btn--ghost"
+                            onClick={() => { setAnsweringId(null); setAnswerMessage(null); }}>
+                            Cancel
+                          </button>
+                          {answerMessage && answerMessage.forId === requirement.research_requirement_id
+                            ? <p className="t-typed text-[length:var(--t-xs)]" role="status">{answerMessage.text}</p> : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                        <button type="button" className="btn btn--ghost"
+                          onClick={() => {
+                            setAnsweringId(requirement.research_requirement_id);
+                            setAnswerDraft({ sourceId: '', doi: '', provider: '', note: '' });
+                            setAnswerMessage(null);
+                          }}>
+                          Answer this gap
+                        </button>
+                        {answerMessage && answerMessage.forId === requirement.research_requirement_id
+                          ? <p className="t-muted" role="status">{answerMessage.text}</p> : null}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </article>
             ))}
           </div>
         </section>
+
+        {curatorSources !== null ? (
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+              General Research Intake
+            </h2>
+            <p className="t-body text-[color:var(--bone-300)]">
+              Register useful research nobody asked for yet. Classification is a filing label you pick and can
+              correct — it changes no gate, no tier, no review state. A general source becomes linkable to a
+              requirement later through Answer a Gap, and citable only through evidence review.
+            </p>
+            <div className="grid gap-[var(--s3)] md:grid-cols-2">
+              <label className="field md:col-span-2">
+                <span className="t-label">Title</span>
+                <input className="input" value={generalDraft.title}
+                  onChange={(event) => setGeneralDraft((current) => ({ ...current, title: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span className="t-label">Source type</span>
+                <select className="select" value={generalDraft.sourceType}
+                  onChange={(event) => setGeneralDraft((current) => ({ ...current, sourceType: event.target.value }))}>
+                  {GENERAL_SOURCE_TYPES.map((type) => (
+                    <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="t-label">Classification domain</span>
+                <select aria-label="Classification domain" className="select" value={generalDraft.classification}
+                  onChange={(event) => setGeneralDraft((current) => ({ ...current, classification: event.target.value }))}>
+                  <option value="">Choose a domain…</option>
+                  {RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => (
+                    <option key={domain.key} value={domain.key}>{domain.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field md:col-span-2">
+                <span className="t-label">URL (optional)</span>
+                <input className="input" value={generalDraft.url}
+                  onChange={(event) => setGeneralDraft((current) => ({ ...current, url: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span className="t-label">DOI / PMID</span>
+                <input className="input" value={generalDraft.doi}
+                  onChange={(event) => setGeneralDraft((current) => ({ ...current, doi: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span className="t-label">Provider</span>
+                <input className="input" value={generalDraft.provider}
+                  onChange={(event) => setGeneralDraft((current) => ({ ...current, provider: event.target.value }))} />
+              </label>
+              <label className="field md:col-span-2">
+                <span className="t-label">Original filename</span>
+                <input className="input" value={generalDraft.filename}
+                  onChange={(event) => setGeneralDraft((current) => ({ ...current, filename: event.target.value }))} />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-[var(--s4)]">
+              <button type="button" className="btn" disabled={generalBusy} onClick={() => void handleRegisterGeneral()}>
+                {generalBusy ? 'Registering…' : 'Register general research'}
+              </button>
+              {generalMessage ? <p className="t-muted" role="status">{generalMessage}</p> : null}
+            </div>
+
+            {generalSources.length > 0 ? (
+              <div className="space-y-[var(--s3)]">
+                <h3 className="t-label">Registered general research</h3>
+                {generalSources.map((source) => (
+                  <article key={source.source_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                    <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+                      <p className="t-body font-bold text-[color:var(--bone-100)]">{source.title}</p>
+                      <span className="badge badge--filed"><i aria-hidden="true">◌</i>
+                        {researchClassificationLabel(source.metadata?.classification_domain ?? '')}
+                      </span>
+                    </div>
+                    <label className="field mt-[var(--s3)]">
+                      <span className="t-label">Correct classification</span>
+                      <select
+                        aria-label={`Correct classification for ${source.title}`}
+                        className="select"
+                        value={source.metadata?.classification_domain ?? ''}
+                        disabled={reclassifyingId === source.source_id}
+                        onChange={(event) => {
+                          if (event.target.value) void handleReclassify(source.source_id, event.target.value);
+                        }}
+                      >
+                        <option value="">Choose a domain…</option>
+                        {RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => (
+                          <option key={domain.key} value={domain.key}>{domain.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
       </div>
     </main>
   );

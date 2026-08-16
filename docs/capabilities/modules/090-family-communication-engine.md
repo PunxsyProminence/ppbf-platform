@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation) |
+| Vertical slice | parent-facing one-directional coach/admin -> parent message feed, scoped to guardian's own children |
 | Active | false |
 | Promotion required | true |
 | Category | At-Home / Parent / Guardian (`atHomeParentGuardian`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/app/api/pilot/parent/messages/route.ts; apps/web/src/server/pilot/intake.ts; apps/web/app/api/pilot/parent/messages/route.test.ts. Test: apps/web/app/api/pilot/parent/messages/route.test.ts: 'returns messages scoped to the guardian's own children' |
