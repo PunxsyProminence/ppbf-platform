@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 9 reconciliation follow-up) |
+| Vertical slice | per-athlete readiness feed (latest fresh check-in only, 24h window) via GET /api/pilot/coach/readiness-board coloring the CoachWorkspace roster dots and Readiness Alerts tile; unknown stays unknown |
 | Active | false |
 | Promotion required | true |
 | Category | Dashboards / Reporting (`dashboardsReporting`) |
@@ -38,3 +39,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — Blank DRAFT stub, Active=false, no defined intent/tables/roles. Missing: A tested readiness-score formula exists and UI scaffolding to display it exists, but they are not wired together: no API route persists or serves per-. Evidence: docs/capabilities/modules/169-readiness-dashboard.md; apps/web/src/server/pilot/readinessMath.ts. Status stays DRAFT. |
+| 2026-08-15 | wave9-reconciliation | The audit's missing wiring built: readinessBoard.ts (fresh-only, bands GREEN>=7 / YELLOW>=4 / RED below, athletes without a fresh reading OMITTED), coach/admin-gated route on the analytics roster derivation, CoachWorkspace merge with UNKNOWN preserved on absence or feed failure. Tests pin bands, freshness SQL, role refusals, and the no-signal/never-zero-flags tile states. Promoted DRAFT -> DONE. |
