@@ -94,9 +94,14 @@ function SignInOverlay({ onClose }: { onClose: () => void }) {
           unlike the old handler on the outer flex container, which this
           div fully covers, so its own e.target could never equal
           e.currentTarget and a backdrop click silently did nothing
-          (Codex + Copilot review, PR #417). */}
+          (Codex + Copilot review, PR #417).
+
+          Warm wash, not black: rgba(31,20,9) is --wood-900 ("frame shadow,
+          deepest recess") rather than a generic near-black scrim, so the
+          page dims toward the same warm register as the ground behind it
+          instead of reading as a different, colder surface stacked on top. */}
       <div
-        className="absolute inset-0 bg-[rgba(8,6,4,.72)]"
+        className="absolute inset-0 bg-[rgba(31,20,9,.6)]"
         onMouseDown={onClose}
       />
       <div
@@ -663,15 +668,29 @@ export default function PublicPortalPage() {
               // landed at 1.43:1 and its title at 1.68:1, so selecting a
               // pathway made the card unreadable. --paper-2 is the actual
               // "canvas, one shade down" and keeps the copy at ink contrast.
+              //
+              // Selected also takes .lift-1 ("paper on a wall") so picking a
+              // pathway reads as physically choosing a card off the board,
+              // not just recoloring a border.
               const selected = selectedPath === path.visitorType;
               return (
-                <article key={path.title} className={`border-2 p-4 ${selected ? 'border-[color:var(--brass-600)] mat-paper' : 'border-[color:rgba(107,78,18,.28)] mat-paper'}`}>
+                <article
+                  key={path.title}
+                  className={`border-2 p-4 ${selected ? 'lift-1 border-[color:var(--brass-600)] mat-paper' : 'border-[color:rgba(107,78,18,.28)] mat-paper'}`}
+                >
                   <p className="text-[length:var(--t-md)] font-bold text-[color:var(--hide-950)]">{path.title}</p>
                   <p className="mt-2 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]">{path.description}</p>
                   <button
                     type="button"
                     onClick={() => selectPath(path.visitorType)}
-                    className="mt-3 min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-3 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--red-highlight)]"
+                    /* --red-highlight resolves to --restricted (design-system/ppbf.css),
+                       the color reserved for a gate refusing something -- Law 2's whole
+                       point is that a saturated status color never means anything else.
+                       Choosing "this is me" is the opposite of a refusal, so the hover
+                       had been borrowing the wrong law. --brass-600 is a real hover
+                       state -- a face two shades lighter than the button's rest state --
+                       not a status color at all. */
+                    className="mt-3 min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-3 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--brass-600)]"
                   >
                     That is me
                   </button>
@@ -805,7 +824,10 @@ export default function PublicPortalPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-60"
+              // Same fix as the pathway buttons above: --red-highlight is the
+              // safety-gate refusal color, not a hover state for sending an
+              // ordinary, welcome form.
+              className="min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--brass-600)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? 'Sending...' : 'Send this to a coach'}
             </button>
