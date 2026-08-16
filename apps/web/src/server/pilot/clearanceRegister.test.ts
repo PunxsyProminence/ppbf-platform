@@ -1,4 +1,5 @@
 import {
+  computeClearanceExpiry,
   deriveCredentialBand,
   getPersonClearanceForOrganization,
   listPersonClearancesForVerification,
@@ -49,6 +50,21 @@ describe('deriveCredentialBand', () => {
 
   it('treats the stored expired status as expired even with no expiry date recorded', () => {
     expect(deriveCredentialBand('expired', null, today)).toBe('expired');
+  });
+});
+
+describe('computeClearanceExpiry', () => {
+  it('adds the validity in calendar months', () => {
+    expect(computeClearanceExpiry('2026-01-15', 12)).toBe('2027-01-15');
+    expect(computeClearanceExpiry('2026-08-16', 24)).toBe('2028-08-16');
+  });
+
+  it('returns null when the clearance type has no validity_months (does not expire)', () => {
+    expect(computeClearanceExpiry('2026-01-15', null)).toBeNull();
+  });
+
+  it('returns null for an unparseable issued_on', () => {
+    expect(computeClearanceExpiry('not-a-date', 12)).toBeNull();
   });
 });
 

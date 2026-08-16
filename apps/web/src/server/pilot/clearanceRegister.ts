@@ -252,6 +252,28 @@ export function deriveCredentialBand(
   return status === 'expired' ? 'expired' : 'current';
 }
 
+/**
+ * A SUGGESTED expiry, from an issue date and the clearance type's own
+ * validity_months -- not an automatic one. The admin route below only uses
+ * this to fill in expires_on when the admin submitted issued_on but left
+ * expires_on blank; the admin's own explicit value, when given, always
+ * wins over this. Returns null when there is nothing to compute from (no
+ * validity_months on the type, meaning the type does not expire), which the
+ * caller must then treat as "no expiry", not as a failure.
+ *
+ * Calendar-month arithmetic (not a fixed day count), so a 12-month
+ * SafeSport cert issued on the 31st lands on the nearest valid date the
+ * following year rather than drifting by a few days the way `+365 days`
+ * would.
+ */
+export function computeClearanceExpiry(issuedOn: string, validityMonths: number | null): string | null {
+  if (!validityMonths) return null;
+  const issued = new Date(`${issuedOn}T00:00:00Z`);
+  if (Number.isNaN(issued.getTime())) return null;
+  const expiry = new Date(Date.UTC(issued.getUTCFullYear(), issued.getUTCMonth() + validityMonths, issued.getUTCDate()));
+  return expiry.toISOString().slice(0, 10);
+}
+
 export interface CredentialQueueRow {
   organization_id: string;
   clearance_id: string;
