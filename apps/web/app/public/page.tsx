@@ -20,14 +20,61 @@ import { apiBase } from '@/lib/apiBase';
 function SignInOverlay({ onClose }: { onClose: () => void }) {
   const restoreRef = useRef<HTMLElement | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  // Read inside the effect via a ref rather than adding `onClose` to the
+  // dependency array: this codebase's one caller passes a useCallback'd,
+  // referentially stable close function, so behavior is identical either
+  // way today, but the ref form stays correct even if a future caller
+  // doesn't memoize -- the mount/focus-restore logic below runs exactly
+  // once regardless, and Escape/Tab always call the latest onClose rather
+  // than a version closed over one render ago (review comment, PR #417).
+  const onCloseRef = useRef(onClose);
+  // Ref writes during render are unsafe under concurrent rendering (a
+  // component can render more than once without committing), so the sync
+  // runs in its own no-deps effect -- after every commit -- rather than
+  // inline in the function body.
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     restoreRef.current = document.activeElement as HTMLElement;
     panelRef.current?.focus();
+
+    function focusableElements(): HTMLElement[] {
+      const panel = panelRef.current;
+      if (!panel) return [];
+      return Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
+    }
+
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
+        return;
+      }
+      // Without this, Tab past the last control (or Shift+Tab past the
+      // first) lands focus on the still-interactive page underneath --
+      // visually hidden by the backdrop, so a keyboard user operates
+      // controls they cannot see (Codex review, PR #417). Queried live on
+      // every Tab rather than once on mount: which fields exist changes
+      // with the selected sign-in method (Microsoft / email link / PIN).
+      if (e.key === 'Tab') {
+        const focusable = focusableElements();
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     }
     window.addEventListener('keydown', onKey);
@@ -35,16 +82,23 @@ function SignInOverlay({ onClose }: { onClose: () => void }) {
       window.removeEventListener('keydown', onKey);
       restoreRef.current?.focus?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div
       className="ppbf fixed inset-0 z-[210] flex items-start justify-center overflow-y-auto px-4 py-8 sm:items-center"
       role="presentation"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="absolute inset-0 bg-[rgba(8,6,4,.72)]" />
+      {/* The actual close-on-backdrop-click target. This div has no
+          children, so any mousedown that lands on it IS the backdrop --
+          unlike the old handler on the outer flex container, which this
+          div fully covers, so its own e.target could never equal
+          e.currentTarget and a backdrop click silently did nothing
+          (Codex + Copilot review, PR #417). */}
+      <div
+        className="absolute inset-0 bg-[rgba(8,6,4,.72)]"
+        onMouseDown={onClose}
+      />
       <div
         ref={panelRef}
         role="dialog"
