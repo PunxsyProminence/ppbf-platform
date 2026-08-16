@@ -16,8 +16,11 @@ export default async function GuardianDashboardPage() {
   // 'parent' is the canonical guardian-family role in this codebase.
   await requirePageRole(['parent']);
 
+  // T7 (Plate Set v1): family surfaces take the warm ground or none. See the
+  // note on parent/safety for why the room is dropped rather than swapped to
+  // .on-canvas.
   return (
-    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)]">
         <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Guardian</p>
