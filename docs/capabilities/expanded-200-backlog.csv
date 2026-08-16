@@ -51,7 +51,7 @@
 "50","Military Readiness Transfer Module","transferSystem","Transfer System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "51","Life-Skill Transfer Module","transferSystem","Transfer System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "52","Transfer Evidence Engine","transferSystem","Transfer System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
-"53","False Progress Detection Engine","transferSystem","Transfer System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
+"53","False Progress Detection Engine","transferSystem","Transfer System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
 "54","Skill Acquisition Engine","learningSkillAcquisition","Learning / Skill Acquisition","DONE","False","True","2.0.0-draft-merged","6 Assignment / Skill","PENDING_SIGN_OFF"
 "55","Retention Tracking Engine","learningSkillAcquisition","Learning / Skill Acquisition","DONE","False","True","2.0.0-draft-merged","6 Skill","PENDING_SIGN_OFF"
 "56","Mastery Verification Engine","learningSkillAcquisition","Learning / Skill Acquisition","DONE","False","True","2.0.0-draft-merged","6 Skill","PENDING_SIGN_OFF"
