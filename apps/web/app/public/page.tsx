@@ -1,12 +1,65 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import PhotoSlot from '@/components/PhotoSlot';
 import ShadowChatButton from '@/components/ShadowChatButton';
+import SignInPanel from '@/components/SignInPanel';
 import { readRoleSession, subscribeRoleSession } from '@/components/roleSession';
 import { GYM_STAFF_CARDS, gymPhotoSlotsFor, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
+
+/**
+ * THE SIGN-IN POPOVER -- owner decision 2026-08-16: /public stays the front
+ * door (story first, sign-in secondary) and signing in becomes a panel on
+ * this same page rather than a trip to another one. Structurally identical to
+ * CommandsOverlay (components/CommandsOverlay.tsx): full-screen backdrop,
+ * Escape closes, focus returns to whatever opened it. That pattern already
+ * exists and works, so it is reused rather than a new one invented.
+ */
+function SignInOverlay({ onClose }: { onClose: () => void }) {
+  const restoreRef = useRef<HTMLElement | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    restoreRef.current = document.activeElement as HTMLElement;
+    panelRef.current?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      restoreRef.current?.focus?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      className="ppbf fixed inset-0 z-[210] flex items-start justify-center overflow-y-auto px-4 py-8 sm:items-center"
+      role="presentation"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="absolute inset-0 bg-[rgba(8,6,4,.72)]" />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Sign in"
+        tabIndex={-1}
+        className="relative w-full max-w-[720px]"
+      >
+        <Suspense fallback={null}>
+          <SignInPanel embedded onClose={onClose} />
+        </Suspense>
+      </div>
+    </div>
+  );
+}
 
 type VisitorType =
   | 'Athlete / Participant'
@@ -262,6 +315,8 @@ export default function PublicPortalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
   const [telemetryTraces, setTelemetryTraces] = useState<TelemetryTrace[]>([]);
+  const [showSignIn, setShowSignIn] = useState(false);
+  const closeSignIn = useCallback(() => setShowSignIn(false), []);
 
   useEffect(() => {
     const syncRole = () => {
@@ -334,7 +389,7 @@ export default function PublicPortalPage() {
         setConfirmation(
           payload.error
           || 'Something went wrong sending this and it did not go through. Try again, or just come by: '
-          + '204 Pennsylvania Ave, Big Run, PA 15715.',
+          + '220 N Jefferson St, Punxsutawney, PA 15767.',
         );
         return;
       }
@@ -349,7 +404,7 @@ export default function PublicPortalPage() {
     } catch {
       setConfirmation(
         'The connection dropped and this was not sent. Try again, or just come by: '
-        + '204 Pennsylvania Ave, Big Run, PA 15715.',
+        + '220 N Jefferson St, Punxsutawney, PA 15767.',
       );
     } finally {
       setSubmitting(false);
@@ -364,9 +419,9 @@ export default function PublicPortalPage() {
             <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">PUNXSY PROMINENCE BOXING &amp; FITNESS</p>
             <h1 className="font-display text-4xl tracking-tight text-[color:var(--hide-950)] md:text-5xl">A boxing gym for kids, for adults, and for anyone who just wants to get in shape.</h1>
             <p className="max-w-4xl text-sm leading-7 text-[color:var(--hide-800)] md:text-base">
-              We are a nonprofit gym in Big Run, Pennsylvania. Some people here are training to compete. Most are not.
-              Kids come for coaching and for adults who notice how their week is going, and kids train free. Adults come
-              to learn to box, or to work the bags hard and never get hit once. All of it counts as training here.
+              We are a nonprofit gym in Punxsutawney, Pennsylvania. Some people here are training to compete. Most are
+              not. Kids come for coaching and for adults who notice how their week is going, and kids train free. Adults
+              come to learn to box, or to work the bags hard and never get hit once. All of it counts as training here.
             </p>
             <p className="max-w-4xl text-sm leading-7 text-[color:var(--hide-800)] md:text-base">
               Nothing on this page signs you up for anything. Read what we run, and if something sounds like you, tell us
@@ -374,12 +429,19 @@ export default function PublicPortalPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/login"
+            {/* Opens the sign-in popover in place -- owner decision
+                2026-08-16: signing in is a panel on this page, not a trip
+                to another one. /login still exists as its own address for
+                anyone who bookmarked it or was redirected there with an
+                error to explain, so nothing else depends on this button
+                navigating anywhere. */}
+            <button
+              type="button"
+              onClick={() => setShowSignIn(true)}
               className="btn"
             >
               Member Login
-            </Link>
+            </button>
             {/* Members only: SHADOW requires an authenticated session, and this
                 button sends signed-out visitors to /login. The label says so
                 rather than advertising a public chat surface that does not exist. */}
@@ -394,7 +456,7 @@ export default function PublicPortalPage() {
                 not prose. It also replaces a "Status: ready" chip that told a
                 nervous parent nothing and told them it in machine language. */}
             <div className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper px-4 py-3 text-xs font-mono text-[color:var(--hide-950)] shadow-[var(--shadow-sm)]">
-              204 Pennsylvania Ave, Big Run, PA 15715
+              220 N Jefferson St, Punxsutawney, PA 15767
             </div>
           </div>
         </header>
@@ -423,8 +485,11 @@ export default function PublicPortalPage() {
               >
                 Open Admin Workspace
               </Link>
+              {/* Was pointed at /login, which cannot manage anything --
+                  /notices is the real announcement read/write/update
+                  surface, already gated to admin/coach/platform_owner/board. */}
               <Link
-                href="/login"
+                href="/notices"
                 className="btn btn--ghost"
               >
                 Manage Announcements
@@ -525,8 +590,8 @@ export default function PublicPortalPage() {
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT THIS PAGE IS</h2>
           <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             This is the front door: what we run, who it is for, and a way to reach a person. It does not log you into
-            anything and it does not put you in a system. If you would rather do this in person, the gym is at 204
-            Pennsylvania Ave in Big Run and you are welcome to come watch a session before you decide anything.
+            anything and it does not put you in a system. If you would rather do this in person, the gym is at 220 N
+            Jefferson St in Punxsutawney and you are welcome to come watch a session before you decide anything.
           </p>
         </section>
 
@@ -818,6 +883,7 @@ export default function PublicPortalPage() {
         </section>
         </div>
       </div>
+      {showSignIn && <SignInOverlay onClose={closeSignIn} />}
     </main>
   );
 }
