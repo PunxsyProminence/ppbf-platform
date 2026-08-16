@@ -1,9 +1,23 @@
 import { query } from './db';
 
 // The per-athlete readiness feed for the coach floor (register module 169).
-// Wires two things that already existed separately: the tested check-in
-// formula whose scores land in pilot.readiness, and the CoachWorkspace
-// roster that could only ever render UNKNOWN.
+// Wires the scores stored in pilot.readiness to the CoachWorkspace roster,
+// which could otherwise only ever render UNKNOWN.
+//
+// WHAT THESE SCORES ARE, CORRECTED. This comment used to say the feed carried
+// "the tested check-in formula whose scores land in pilot.readiness". That was
+// false in both halves. No formula writes to pilot.readiness: the only
+// production write path is intake.ts#createReadiness, and every score it
+// stores was typed by a member of staff during intake review.
+// readinessMath.ts#calculateReadinessL14 exists, carries uncited coefficients,
+// and is dead code -- its only caller is its own unit test.
+//
+// So a score reaching this board is a staff judgement, not a measurement, and
+// the band it maps to is a triage colour over a human's opinion. Each entry
+// therefore carries its own provenance (see ReadinessBoardEntry.method and the
+// measurement-property fields) so a surface can say so rather than presenting
+// an unvalidated number as a reading. See
+// docs/capabilities/READINESS_PROVENANCE_FACTS.md.
 //
 // The honesty rules this module inherits from the workspace's own safety
 // comment ("never default these to a reassuring value"):
@@ -31,7 +45,20 @@ export interface ReadinessBoardEntry {
   status: ReadinessBoardStatus;
   score: number;
   measured_at: string;
+  /** What produced this score. 'UNKNOWN' means provenance was never recorded. */
+  method: string;
+  /** The METHOD's measurement properties, not this reading's. Carried so a
+   * surface can never show the colour without being able to show what stands
+   * behind it. */
+  reliability_status: string;
+  validity_status: string;
+  evidence_class: string;
 }
+
+// The provenance predicate lives in readinessProvenance.ts, which imports
+// nothing, so the coach workspace can use the same rule without pulling this
+// module's database import into the browser bundle.
+export { isReadinessMethodValidated } from './readinessProvenance';
 
 export function readinessStatusForScore(score: number): ReadinessBoardStatus {
   if (score >= READINESS_GREEN_MIN) return 'GREEN';
@@ -47,9 +74,18 @@ export async function getReadinessBoard(
 ): Promise<ReadinessBoardEntry[]> {
   if (athleteIds.length === 0) return [];
 
-  const rows = await query<{ athlete_id: string; score: string; measured_at: string }>(
+  const rows = await query<{
+    athlete_id: string;
+    score: string;
+    measured_at: string;
+    method: string;
+    reliability_status: string;
+    validity_status: string;
+    evidence_class: string;
+  }>(
     `select distinct on (athlete_id)
-       athlete_id, score::text as score, measured_at
+       athlete_id, score::text as score, measured_at,
+       method, reliability_status, validity_status, evidence_class
      from pilot.readiness
      where organization_id = $1
        and athlete_id = any($2)
@@ -65,6 +101,10 @@ export async function getReadinessBoard(
       status: readinessStatusForScore(score),
       score,
       measured_at: row.measured_at,
+      method: row.method,
+      reliability_status: row.reliability_status,
+      validity_status: row.validity_status,
+      evidence_class: row.evidence_class,
     };
   });
 }

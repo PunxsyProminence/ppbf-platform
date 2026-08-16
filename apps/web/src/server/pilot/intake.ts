@@ -558,20 +558,71 @@ export async function createAttendance(params: {
   return attendanceId;
 }
 
+/**
+ * What produced a readiness score. Mirrors the CHECK constraint added by
+ * pilot_slice_postgres_readiness_provenance_migration.sql, and is deliberately
+ * narrow: these are the only two honest values today.
+ *
+ * 'staff_entered_intake' is what both live write paths actually do -- a person
+ * typed the number during intake review. 'UNKNOWN' exists because every row
+ * written before provenance was recorded carries it; nothing should write it
+ * going forward, but the value has to remain expressible to describe what is
+ * already stored.
+ *
+ * A future computed method belongs here AND in the database constraint, in its
+ * own migration. That coupling is the point: it makes adding a method a
+ * recorded decision rather than a silently-absorbed one.
+ */
+export type ReadinessMethod = 'UNKNOWN' | 'staff_entered_intake';
+
+/**
+ * Writes one readiness reading, and REQUIRES the caller to say what produced
+ * it.
+ *
+ * `method` is not optional and has no default, here or in the column. Three
+ * engine proposals (modules 021, 029, 033) independently refused to consume
+ * this table because a score arrived with no way to audit where it came from;
+ * a defaulted parameter here would reintroduce exactly that, one layer up from
+ * the database. See docs/capabilities/READINESS_PROVENANCE_FACTS.md.
+ *
+ * The measurement-property arguments default toward "not established", the
+ * same direction pilot.assessment_protocols defaults them. Nothing that writes
+ * here today has a validated method, so nothing today passes them -- they are
+ * parameters rather than constants only so that a future validated method can
+ * state its own status without this function needing to know about it.
+ */
 export async function createReadiness(params: {
   organizationId: string;
   athleteId: string;
   score: number;
   category: string;
   measuredAt: string;
+  method: ReadinessMethod;
+  recordedByAccountId?: string | null;
+  reliabilityStatus?: string;
+  validityStatus?: string;
+  evidenceClass?: string;
 }): Promise<string> {
   const readinessId = randomUUID();
 
   await query(
     `insert into pilot.readiness
-     (organization_id, readiness_id, athlete_id, score, category, measured_at)
-     values ($1,$2,$3,$4,$5,$6)`,
-    [params.organizationId, readinessId, params.athleteId, params.score, params.category, params.measuredAt],
+     (organization_id, readiness_id, athlete_id, score, category, measured_at,
+      method, recorded_by_account_id, reliability_status, validity_status, evidence_class)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      params.organizationId,
+      readinessId,
+      params.athleteId,
+      params.score,
+      params.category,
+      params.measuredAt,
+      params.method,
+      params.recordedByAccountId ?? null,
+      params.reliabilityStatus ?? 'UNVALIDATED - PPBF MUST ESTABLISH',
+      params.validityStatus ?? 'UNKNOWN',
+      params.evidenceClass ?? 'INSUFFICIENT EVIDENCE',
+    ],
   );
 
   return readinessId;
