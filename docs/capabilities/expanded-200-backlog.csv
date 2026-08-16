@@ -112,7 +112,7 @@
 "111","Coach Intelligence Engine","coachSystem","Coach System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "112","Coach Training Module","coachSystem","Coach System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "113","Coach Dashboard","coachSystem","Coach System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
-"114","Coach Cue Library","coachSystem","Coach System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
+"114","Coach Cue Library","coachSystem","Coach System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
 "115","Coach Intervention Library","coachSystem","Coach System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "116","Coach Compliance / Integrity Engine","coachSystem","Coach System","DONE","False","True","2.0.0-draft-merged","","PENDING_SIGN_OFF"
 "117","Coach Scenario Training","coachSystem","Coach System","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
