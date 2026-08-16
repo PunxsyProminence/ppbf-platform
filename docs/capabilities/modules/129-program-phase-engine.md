@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (slice shipped 2026-08-16) |
+| Vertical slice | `pilot.program_phases`: human-declared blocks per program (name, focus, start, optional end) with ONE OPEN PHASE per program enforced by partial unique index; starting a new phase closes the previous the day before, keeping history intact. Staff read, admin declares; audited. `/admin/program-phases`. Phases carry no athlete ids and change nothing about any athlete. Future work: surfacing the active phase as context on session and planning surfaces. |
 | Active | false |
 | Promotion required | true |
 | Category | Class / Program Management (`classProgramManagement`) |
@@ -37,3 +38,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-16 | claude-session | Slice shipped: a phase is a STATED intent, never computed or recommended -- nothing here infers a block from data or applies one to an athlete. One open phase per program is a database fact; closed phases keep their dates so past sessions retain the context they actually happened in; a new phase cannot begin before the phase it replaces. Promoted per playbook rule with ManualVerification PENDING_SIGN_OFF. |
