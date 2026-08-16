@@ -110,3 +110,21 @@ test('the remaining-steps checklist renders and the page states the no-charging 
   expect(screen.getByText(/Record compliance sign-off/)).toBeTruthy();
   expect(screen.getByText(/Nothing charges until\s+compliance sign-off/)).toBeTruthy();
 });
+
+test('while the platform account is unregistered, the slot shows the owner the exact setup walkthrough', async () => {
+  global.fetch = mockFetch({ remainingSteps: ['Register the platform Stripe account.'] });
+
+  await act(async () => {
+    render(<PaymentsSettingsPage />);
+  });
+
+  expect(screen.getByText(/How to register the platform account/)).toBeTruthy();
+  // The three secret names are stated verbatim -- the owner should never
+  // have to guess what Azure wants.
+  expect(screen.getByText('PAYMENT_CONNECT_CLIENT_ID')).toBeTruthy();
+  expect(screen.getByText('PAYMENT_PLATFORM_SECRET_KEY')).toBeTruthy();
+  expect(screen.getByText('PAYMENT_PLATFORM_WEBHOOK_SECRET')).toBeTruthy();
+  expect(screen.getByText('account.application.deauthorized')).toBeTruthy();
+  // And the boundary holds even here: configuration opens onboarding, not charging.
+  expect(screen.getByText(/Configuration only opens onboarding/)).toBeTruthy();
+});

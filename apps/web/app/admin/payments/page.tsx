@@ -179,6 +179,53 @@ function PaymentsSettings() {
                 </section>
               )}
 
+              {setup && !setup.ready && (
+                <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>How to register the platform account (one-time, owner)</h2>
+                  <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
+                    This is the slot Stripe drops into. Everything below happens on Stripe&rsquo;s and
+                    Azure&rsquo;s side — no code changes, and no key is ever pasted into this app.
+                  </p>
+                  <ol className="t-body mt-[var(--s3)] list-decimal space-y-[var(--s2)] pl-[var(--s5)]" style={{ fontSize: 'var(--t-sm)' }}>
+                    <li>
+                      Create PPBF&rsquo;s own Stripe account at dashboard.stripe.com using the
+                      foundation&rsquo;s legal details and the admin email. This is the <em>platform</em>
+                      account — gyms&rsquo; accounts connect to it later via the buttons above.
+                    </li>
+                    <li>
+                      In that dashboard, enable <strong>Connect</strong> (Settings → Connect settings),
+                      choose Standard accounts with OAuth, and copy the <strong>Connect client ID</strong>{' '}
+                      (starts <code>ca_</code>).
+                    </li>
+                    <li>
+                      Copy the <strong>secret key</strong> from Developers → API keys (starts{' '}
+                      <code>sk_test_</code> for the staging trial, <code>sk_live_</code> for production).
+                    </li>
+                    <li>
+                      Add a webhook endpoint (Developers → Webhooks) pointing at this app&rsquo;s host at{' '}
+                      <code>/api/pilot/payments/webhook</code>, subscribed to{' '}
+                      <code>account.application.deauthorized</code>, and copy its{' '}
+                      <strong>signing secret</strong> (starts <code>whsec_</code>).
+                    </li>
+                    <li>
+                      Set the three values as Container App secrets —{' '}
+                      <code>PAYMENT_CONNECT_CLIENT_ID</code>, <code>PAYMENT_PLATFORM_SECRET_KEY</code>,{' '}
+                      <code>PAYMENT_PLATFORM_WEBHOOK_SECRET</code> — staging first, production after the
+                      onboarding test passes.
+                    </li>
+                    <li>
+                      Reload this page: the lane buttons above go live. Connect the <strong>Giving</strong>{' '}
+                      lane first and start its 501(c)(3) verification — it is the slow step and unlocks
+                      the nonprofit rate.
+                    </li>
+                  </ol>
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
+                    Even fully configured, nothing charges: checkout stays feature-flagged behind the
+                    compliance sign-off. Configuration only opens onboarding.
+                  </p>
+                </section>
+              )}
+
               <p className="t-body mt-[var(--s4)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
                 To disconnect, use the gym&rsquo;s own Stripe dashboard; the platform is notified and
                 stops using the account immediately. Reconnecting or swapping is this page&rsquo;s button.
