@@ -96,6 +96,11 @@ function consoleFetch(handler?: (url: string, init?: RequestInit) => Response | 
     if (String(url).includes('/api/pilot/scheduler/attendance-summary')) {
       return jsonResponse({ ok: true, athletes: [] });
     }
+    // CT-15's default: no structured emergency contact on file, unless a test
+    // overrides this branch via `handler` to exercise the populated case.
+    if (String(url).includes('/api/pilot/intake/domain-get')) {
+      return jsonResponse({ ok: true, athlete_id: 'ath-001', emergency_contacts: [] });
+    }
 
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -291,5 +296,133 @@ describe('/admin/athletes', () => {
 
     expect(await screen.findByText(/athlete records are managed per gym/i)).toBeDefined();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// CT-15: pilot.athletes.emergency_contact is a free-text note; pilot.emergency_contacts
+// (structured: name, relationship, phone, email, is_primary) is the authoritative
+// record. This console used to show and edit only the note, with nothing on
+// screen distinguishing it from the verified record -- an admin correcting a
+// phone number here was editing a note nothing treats as authoritative. These
+// pin the fix: the structured record is shown as authoritative when it exists,
+// its absence is stated rather than left silent, and the note field says
+// plainly what it is.
+describe('CT-15: the structured emergency contact record is shown as authoritative, not the note', () => {
+  test('a structured contact renders with its verified details, marked primary', async () => {
+    const fetchMock = consoleFetch((url) =>
+      url.includes('/api/pilot/intake/domain-get')
+        ? jsonResponse({
+          ok: true,
+          athlete_id: 'ath-001',
+          emergency_contacts: [
+            {
+              contact_id: 'contact-1',
+              organization_id: 'org-ppbf',
+              athlete_id: 'ath-001',
+              full_name: 'Rosa Quinteros',
+              relationship_to_athlete: 'aunt',
+              phone: '814-555-0142',
+              email: 'rosa@example.org',
+              is_primary: true,
+              notes: '',
+              created_at: '2026-06-01T00:00:00.000Z',
+              updated_at: '2026-06-01T00:00:00.000Z',
+            },
+          ],
+        })
+        : undefined);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+
+    expect(await screen.findByText('Rosa Quinteros')).toBeDefined();
+    expect(screen.getByText(/814-555-0142/)).toBeDefined();
+    expect(screen.getByText(/Primary/)).toBeDefined();
+    expect(screen.queryByText(/No structured emergency contact on file/i)).toBeNull();
+  });
+
+  test('no structured contact on file is stated as a warning, not left blank', async () => {
+    // consoleFetch's default already returns an empty emergency_contacts list;
+    // the point under test is that the empty case is a stated warning rather
+    // than a silently absent section.
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+
+    const warning = await screen.findByText(/No structured emergency contact on file/i);
+    expect(warning).toBeDefined();
+    // Names the athlete, and says the note is the only thing on file --
+    // exactly the state a reader must not mistake for "verified and fine".
+    expect(screen.getByText(/is the only emergency contact information recorded for/i)).toBeDefined();
+  });
+
+  test('a domain-get failure is reported rather than read as "no contact on file"', async () => {
+    const fetchMock = consoleFetch((url) =>
+      url.includes('/api/pilot/intake/domain-get') ? jsonResponse({ error: 'Forbidden' }, false, 403) : undefined);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+
+    expect(await screen.findByText(/could not be read right now/i)).toBeDefined();
+    // The distinct "none on file" copy must not also appear -- a reader must
+    // not confuse "we could not check" with "we checked and there is none".
+    expect(screen.queryByText(/No structured emergency contact on file/i)).toBeNull();
+  });
+
+  test('the free-text field is labeled and captioned as a note, not the contact record', async () => {
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+
+    expect(screen.getByLabelText(/emergency contact note/i)).toBeDefined();
+    expect(screen.getByText(/not the emergency contact record/i)).toBeDefined();
+  });
+
+  test('closing a record and opening a different one does not carry over the first athlete\'s contacts', async () => {
+    const secondAthlete = {
+      ...rosterBody.items[0],
+      athlete_id: 'ath-002',
+      full_name: 'Second Athlete',
+    };
+    const fetchMock = consoleFetch((url, init) => {
+      if (url.includes('/api/pilot/athletes/list')) {
+        return jsonResponse({ items: [rosterBody.items[0], secondAthlete] });
+      }
+      if (url.includes('/api/pilot/intake/domain-get')) {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { athlete_id?: string };
+        return body.athlete_id === 'ath-001'
+          ? jsonResponse({
+            ok: true,
+            emergency_contacts: [
+              {
+                contact_id: 'contact-1',
+                full_name: 'Rosa Quinteros',
+                relationship_to_athlete: 'aunt',
+                phone: '814-555-0142',
+                is_primary: true,
+              },
+            ],
+          })
+          : jsonResponse({ ok: true, emergency_contacts: [] });
+      }
+      return undefined;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    const openButtons = await screen.findAllByRole('button', { name: /correct record/i });
+    fireEvent.click(openButtons[0]);
+    await screen.findByText('Rosa Quinteros');
+
+    fireEvent.click(openButtons[1]);
+    await screen.findByText(/No structured emergency contact on file/i);
+    expect(screen.queryByText('Rosa Quinteros')).toBeNull();
   });
 });

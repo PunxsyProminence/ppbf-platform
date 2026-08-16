@@ -5,16 +5,29 @@ export async function getAthleteById(organizationId: string, athleteId: string):
   return queryOne<PilotAthlete>('select * from pilot.athletes where organization_id = $1 and athlete_id = $2', [organizationId, athleteId]);
 }
 
+/**
+ * CT-15: pilot.athletes.emergency_contact_note is the correctly-named twin of
+ * emergency_contact, added by pilot_slice_postgres_emergency_contact_note_migration.sql.
+ * There is exactly one free-text field on every athlete form for this, so
+ * both columns are written the SAME value on every insert and update, right
+ * here, at the one place either column is ever written from application
+ * code. That is what "two sources of truth" stops meaning: neither column can
+ * drift from the other, because nothing writes one without the other. The
+ * old column is not read by anything new -- it stays only because a required,
+ * `not null` column cannot be dropped out from under existing rows in an
+ * additive migration.
+ */
 export async function upsertAthlete(organizationId: string, payload: PilotAthlete): Promise<void> {
   await query(
-    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, emergency_contact_note, active_flag, coach_id, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11)
      on conflict (organization_id, athlete_id) do update set
        full_name = excluded.full_name,
        dob = excluded.dob,
        weight_class = excluded.weight_class,
        gym_status = excluded.gym_status,
        emergency_contact = excluded.emergency_contact,
+       emergency_contact_note = excluded.emergency_contact_note,
        active_flag = excluded.active_flag,
        coach_id = excluded.coach_id,
        updated_at = excluded.updated_at`,
@@ -47,8 +60,8 @@ export async function upsertAthlete(organizationId: string, payload: PilotAthlet
  */
 export async function insertAthleteIfAbsent(organizationId: string, payload: PilotAthlete): Promise<boolean> {
   const inserted = await query<{ athlete_id: string }>(
-    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, emergency_contact_note, active_flag, coach_id, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11)
      on conflict (organization_id, athlete_id) do nothing
      returning athlete_id`,
     [
@@ -267,6 +280,17 @@ const COACH_RELATED_RECORD_ONLY = '(a.coach_id = $2)';
  * copies of a redaction predicate drift, and the drift leaks exactly one
  * field. The alias is computed in an inner select because Postgres cannot
  * reference a select-list alias from a sibling item in the same list.
+ *
+ * CT-15: the `emergency_contact` this returns is the free-text NOTE, not the
+ * authoritative record -- pilot.emergency_contacts (structured: name,
+ * relationship, phone, email, is_primary), read separately through
+ * /api/pilot/intake/domain-get, is. No page in apps/web/app/coach currently
+ * renders this field, so nothing today shows a coach an unlabeled note as if
+ * it were the verified contact -- but a future coach surface that does
+ * `athlete.emergency_contact` and prints it as "the emergency contact" would
+ * repeat the exact mistake CT-15 fixed on /admin/athletes and /admin/people.
+ * Read this field's real shape, and reach for pilot.emergency_contacts, before
+ * building one.
  */
 function coachRosterQuery(relationship: string): string {
   return `select athlete_id,
