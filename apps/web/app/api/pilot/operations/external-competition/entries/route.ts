@@ -3,11 +3,14 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
   COMPETITION_READ_ROLES,
   COMPETITION_WRITE_ROLES,
   addCompetitionEntry,
+  isCompetitionEntryResult,
   listCompetitionEntries,
+  recordEntryResult,
 } from '@/src/server/pilot/externalCompetition';
 
 export const runtime = 'nodejs';
@@ -59,6 +62,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { ok: false, error: 'This athlete is already entered in this competition.' },
         { status: 409 },
+      );
+    }
+    return jsonError(error);
+  }
+}
+
+// Result capture (owner decision 2026-08-16): won / lost / draw /
+// no_contest per entry, and a LOSS REQUIRES A LESSON -- refused here with
+// the reason, and refused by the database constraint beneath. The lesson
+// is the point: "one hard-fought loss is worth a thousand easy victories."
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...COMPETITION_WRITE_ROLES]);
+
+    const body = (await request.json()) as {
+      entry_id?: string;
+      result?: string;
+      lesson_note?: string;
+    };
+    if (!body.entry_id?.trim()) throw new ValidationError('Missing entry_id.');
+    if (!isCompetitionEntryResult(body.result)) {
+      throw new ValidationError("result must be 'won', 'lost', 'draw', or 'no_contest'.");
+    }
+
+    const item = await recordEntryResult({
+      organizationId: principal.organizationId,
+      entryId: body.entry_id.trim(),
+      result: body.result,
+      lessonNote: body.lesson_note,
+    });
+    if (!item) return hiddenNotFound();
+
+    await writePilotAuditEvent({
+      event_type: 'update',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: 'external_competition_entry',
+      entity_id: item.entry_id,
+      details: { action: 'record_result', result: item.result, has_lesson: item.lesson_note.length > 0 },
+    });
+    return NextResponse.json({ item });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('COMPETITION_LOSS_NEEDS_LESSON')) {
+      return NextResponse.json(
+        { ok: false, error: 'A loss cannot be recorded without its lesson. What did it teach?' },
+        { status: 400 },
       );
     }
     return jsonError(error);

@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 
-import { GET, POST } from './route';
+import { GET, PATCH, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { addCompetitionEntry, listCompetitionEntries } from '@/src/server/pilot/externalCompetition';
+import { addCompetitionEntry, listCompetitionEntries, recordEntryResult } from '@/src/server/pilot/externalCompetition';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -10,18 +11,23 @@ jest.mock('@/src/server/pilot/http', () => {
   return { ...actual, requirePrincipal: jest.fn() };
 });
 
+jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
+
 jest.mock('@/src/server/pilot/externalCompetition', () => {
   const actual = jest.requireActual('@/src/server/pilot/externalCompetition');
   return {
     ...actual,
     addCompetitionEntry: jest.fn(),
     listCompetitionEntries: jest.fn(),
+    recordEntryResult: jest.fn(),
   };
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAdd = addCompetitionEntry as jest.Mock;
 const mockList = listCompetitionEntries as jest.Mock;
+const mockRecord = recordEntryResult as jest.Mock;
+const mockAudit = writePilotAuditEvent as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -98,4 +104,45 @@ test('a valid entry files the link under the caller', async () => {
     athleteId: 'ath-1',
     createdByAccountId: 'acct-1',
   });
+});
+
+const patchRequest = (body: Record<string, unknown>) =>
+  new NextRequest('http://localhost/api/pilot/operations/external-competition/entries', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+test('a loss cannot be recorded without its lesson -- refused with the reason, and coaches cannot record at all', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+  expect((await PATCH(patchRequest({ entry_id: 'e-1', result: 'won' }))).status).toBeGreaterThanOrEqual(400);
+  expect(mockRecord).not.toHaveBeenCalled();
+
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockRecord.mockRejectedValue(new Error('COMPETITION_LOSS_NEEDS_LESSON: a loss cannot be recorded without its lesson'));
+  const refused = await PATCH(patchRequest({ entry_id: 'e-1', result: 'lost' }));
+  expect(refused.status).toBe(400);
+  const payload = await refused.json();
+  expect(payload.error).toMatch(/What did it teach/);
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('an invented result is a 400; a real result records and audits with its lesson flag', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+
+  expect((await PATCH(patchRequest({ entry_id: 'e-1', result: 'crushed_it' }))).status).toBe(400);
+  expect(mockRecord).not.toHaveBeenCalled();
+
+  mockRecord.mockResolvedValue({ entry_id: 'e-1', result: 'lost', lesson_note: 'kept dropping the right hand in round 2' });
+  const response = await PATCH(patchRequest({
+    entry_id: 'e-1', result: 'lost', lesson_note: 'kept dropping the right hand in round 2',
+  }));
+  expect(response.status).toBe(200);
+  expect(mockRecord).toHaveBeenCalledWith(expect.objectContaining({
+    result: 'lost', lessonNote: 'kept dropping the right hand in round 2',
+  }));
+  expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+    entity_type: 'external_competition_entry',
+    details: expect.objectContaining({ action: 'record_result', result: 'lost', has_lesson: true }),
+  }));
 });

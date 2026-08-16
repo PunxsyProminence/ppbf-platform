@@ -21,8 +21,13 @@ export const COMPETITION_WRITE_ROLES = ['organization_admin', 'admin'] as const;
 
 export type CompetitionStatus = 'planned' | 'completed' | 'cancelled';
 export type CompetitionEntryStatus = 'entered' | 'withdrawn';
+export type CompetitionEntryResult = 'won' | 'lost' | 'draw' | 'no_contest';
 
 export const COMPETITION_STATUSES: readonly CompetitionStatus[] = ['planned', 'completed', 'cancelled'];
+
+// Per-entry results (owner decision 2026-08-16). A loss REQUIRES a lesson
+// note -- the database refuses an unexamined loss, and so does this module.
+export const COMPETITION_ENTRY_RESULTS: readonly CompetitionEntryResult[] = ['won', 'lost', 'draw', 'no_contest'];
 
 // Forward progress plus reopening: a competition settled too early can
 // come back to planned.
@@ -52,6 +57,8 @@ export interface CompetitionEntryRow {
   competition_id: string;
   athlete_id: string;
   status: CompetitionEntryStatus;
+  result: CompetitionEntryResult | null;
+  lesson_note: string;
   athlete_name: string;
   created_at: string;
 }
@@ -62,6 +69,10 @@ const COMPETITION_FIELDS = `organization_id, competition_id, competition_name,
 
 export function isCompetitionStatus(value: unknown): value is CompetitionStatus {
   return typeof value === 'string' && (COMPETITION_STATUSES as readonly string[]).includes(value);
+}
+
+export function isCompetitionEntryResult(value: unknown): value is CompetitionEntryResult {
+  return typeof value === 'string' && (COMPETITION_ENTRY_RESULTS as readonly string[]).includes(value);
 }
 
 export async function createCompetition(input: {
@@ -173,12 +184,40 @@ export async function addCompetitionEntry(input: {
   return listed.find((entry) => entry.athlete_id === input.athleteId) ?? null;
 }
 
+/** Records an entry's result. The loss-requires-lesson rule is enforced
+ * here for a readable refusal AND by the database constraint beneath --
+ * an unexamined loss has no write path. Only entered (not withdrawn)
+ * athletes can carry a result; a withdrawn entry reads as not-found. */
+export async function recordEntryResult(input: {
+  organizationId: string;
+  entryId: string;
+  result: CompetitionEntryResult;
+  lessonNote?: string;
+}): Promise<CompetitionEntryRow | null> {
+  const lessonNote = input.lessonNote?.trim() ?? '';
+  if (input.result === 'lost' && !lessonNote) {
+    throw new Error('COMPETITION_LOSS_NEEDS_LESSON: a loss cannot be recorded without its lesson');
+  }
+
+  const row = await queryOne<{ entry_id: string; competition_id: string }>(
+    `update pilot.external_competition_entries
+     set result = $3, lesson_note = $4, updated_at = now()
+     where organization_id = $1 and entry_id = $2 and status = 'entered'
+     returning entry_id, competition_id`,
+    [input.organizationId, input.entryId, input.result, lessonNote],
+  );
+  if (!row) return null;
+
+  const listed = await listCompetitionEntries(input.organizationId, row.competition_id);
+  return listed.find((entry) => entry.entry_id === input.entryId) ?? null;
+}
+
 /** Entries with the athlete's name joined from the org-scoped athlete record
  * -- the name is read through its governed home, never copied. */
 export async function listCompetitionEntries(organizationId: string, competitionId: string): Promise<CompetitionEntryRow[]> {
   return query<CompetitionEntryRow>(
     `select e.organization_id, e.entry_id, e.competition_id, e.athlete_id, e.status,
-            a.full_name as athlete_name, e.created_at
+            e.result, e.lesson_note, a.full_name as athlete_name, e.created_at
      from pilot.external_competition_entries e
      join pilot.athletes a
        on a.organization_id = e.organization_id and a.athlete_id = e.athlete_id

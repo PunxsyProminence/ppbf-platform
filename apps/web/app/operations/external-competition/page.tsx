@@ -32,7 +32,26 @@ interface EntryRow {
   athlete_id: string;
   athlete_name: string;
   status: string;
+  result: string | null;
+  lesson_note: string;
 }
+
+// A loss requires a lesson (owner doctrine 2026-08-16). The lesson field
+// only becomes mandatory when 'lost' is selected -- and the record refuses
+// an unexamined loss at the route and the database too.
+const RESULT_OPTIONS = [
+  { value: 'won', label: 'Won' },
+  { value: 'lost', label: 'Lost' },
+  { value: 'draw', label: 'Draw' },
+  { value: 'no_contest', label: 'No contest' },
+];
+
+const RESULT_BADGE: Record<string, { className: string; glyph: string }> = {
+  won: { className: 'badge badge--cleared', glyph: '✓' },
+  lost: { className: 'badge badge--locked', glyph: '✕' },
+  draw: { className: 'badge badge--monitor', glyph: '◉' },
+  no_contest: { className: 'badge badge--filed', glyph: '▣' },
+};
 
 interface AthleteOption {
   athlete_id: string;
@@ -64,6 +83,8 @@ export default function ExternalCompetitionPlatformPage() {
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
   const [entryAthleteId, setEntryAthleteId] = useState('');
+  const [resultFor, setResultFor] = useState<string | null>(null);
+  const [resultForm, setResultForm] = useState({ result: 'won', lesson_note: '' });
 
   const reloadCompetitions = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/operations/external-competition/competitions`, {
@@ -217,6 +238,35 @@ export default function ExternalCompetitionPlatformPage() {
     }
   };
 
+  const handleRecordResult = async (entryId: string) => {
+    if (resultForm.result === 'lost' && !resultForm.lesson_note.trim()) {
+      setErrorMessage('A loss cannot be recorded without its lesson. What did it teach?');
+      return;
+    }
+    if (!selectedCompetitionId) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/operations/external-competition/entries`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entry_id: entryId, result: resultForm.result, lesson_note: resultForm.lesson_note }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Result failed (${response.status})`);
+      }
+      setResultFor(null);
+      setResultForm({ result: 'won', lesson_note: '' });
+      await reloadEntries(selectedCompetitionId);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to record the result.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
       <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
@@ -334,7 +384,56 @@ export default function ExternalCompetitionPlatformPage() {
                               <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
                                 {entries.map((entry) => (
                                   <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                                    {entry.athlete_name} · {entry.status}
+                                    <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">
+                                      {entry.athlete_name} · {entry.status}
+                                      {entry.result && (
+                                        <span className={RESULT_BADGE[entry.result]?.className ?? 'badge badge--filed'}>
+                                          <i aria-hidden="true">{RESULT_BADGE[entry.result]?.glyph ?? '▣'}</i>
+                                          {entry.result.replaceAll('_', ' ')}
+                                        </span>
+                                      )}
+                                      {entry.status === 'entered' && resultFor !== entry.entry_id && (
+                                        <button type="button" className="btn btn--ghost" disabled={busy}
+                                          onClick={() => setResultFor(entry.entry_id)}>
+                                          {entry.result ? 'Correct result' : 'Record result'}
+                                        </button>
+                                      )}
+                                    </span>
+                                    {entry.lesson_note ? (
+                                      <span className="block text-[color:var(--bone-300)]">
+                                        Lesson: {entry.lesson_note}
+                                      </span>
+                                    ) : null}
+                                    {resultFor === entry.entry_id && (
+                                      <span className="mt-[var(--s2)] grid gap-[var(--s2)] md:max-w-md">
+                                        <span className="field">
+                                          <label className="t-label" htmlFor={`result-${entry.entry_id}`}>Result</label>
+                                          <select id={`result-${entry.entry_id}`} className="select" value={resultForm.result}
+                                            onChange={(e) => setResultForm((f) => ({ ...f, result: e.target.value }))}>
+                                            {RESULT_OPTIONS.map((option) => (
+                                              <option key={option.value} value={option.value}>{option.label}</option>
+                                            ))}
+                                          </select>
+                                        </span>
+                                        <span className="field">
+                                          <label className="t-label" htmlFor={`lesson-${entry.entry_id}`}>
+                                            Lesson {resultForm.result === 'lost' ? '(required — a loss without a lesson is refused)' : '(optional)'}
+                                          </label>
+                                          <input id={`lesson-${entry.entry_id}`} className="input" value={resultForm.lesson_note}
+                                            onChange={(e) => setResultForm((f) => ({ ...f, lesson_note: e.target.value }))} />
+                                        </span>
+                                        <span className="flex gap-[var(--s2)]">
+                                          <button type="button" className="btn" disabled={busy}
+                                            onClick={() => void handleRecordResult(entry.entry_id)}>
+                                            Record
+                                          </button>
+                                          <button type="button" className="btn btn--ghost" disabled={busy}
+                                            onClick={() => setResultFor(null)}>
+                                            Cancel
+                                          </button>
+                                        </span>
+                                      </span>
+                                    )}
                                   </li>
                                 ))}
                               </ul>
