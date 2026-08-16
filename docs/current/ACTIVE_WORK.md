@@ -46,6 +46,9 @@ Owner decisions 2026-08-16 (asked as a batch, answered individually):
 2. **Coach Cue Library (114)** — build the read-only browse/search over cues already stored in drill records. No invented content; authoring is a later decision.
 3. **Coach Intelligence Engine (111)** — owner chose "define minimal v1 now": a concrete minimal definition goes to the owner for approval BEFORE any build. Nothing builds on a guess.
 4. **Phase 2 thin clients** — the goal is every role (coach, athlete, admin, parent, board members, staff), not one favored role. Build order is the builder's sequencing call; current sequence: athlete check-in first (it generates the data the other views read), then parent, coach, admin, board, staff.
+5. **Sparring failure contexts** — failure capture covers the kinds of sparring distinctly: `technical_sparring`, `sparring_games`, `sparring_drills`, `open_sparring` are first-class attempt contexts (widening migration; where an attempt fails is part of the fact).
+6. **Stripe slot instructions** — `/admin/payments` shows the owner the exact one-time platform-account walkthrough (Stripe account → Connect client id → secret key → webhook signing secret → the three Container App secret names) whenever the platform is unregistered. The slot documents itself; no code work remains on the platform side of onboarding.
+7. **Engines unlock as data gathers** (direction, physical training engines and similar): build the remaining "engine" modules so each states explicit DATA PREREQUISITES and stays visibly locked until the org's/athlete's own records satisfy them — an unlock is an honesty gate, not a gamification score. Athlete-facing "rank up" means unlocking richer views of their OWN record (never cross-athlete comparison); org-level unlocks mean an organization earns engine activation by accumulating real data. Design to be proposed per-engine as slices come up.
 
 ## BLOCKED
 
