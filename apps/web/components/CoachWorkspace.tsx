@@ -51,13 +51,16 @@ interface Athlete {
   id: string;
   name: string;
   track: string;
-  // 'UNKNOWN' / null / 'Unknown' below are real states, not placeholders --
-  // there is no backend feed for per-athlete readiness, injury status, or
-  // today's attendance yet. A prior version fabricated these (round-robin
+  // 'UNKNOWN' / null / 'Unknown' below are real states, not placeholders.
+  // Readiness now has a backend feed (/api/pilot/coach/readiness-board:
+  // latest fresh check-in only), but injury status and today's attendance
+  // still do not. A prior version fabricated these (round-robin
   // GREEN/YELLOW/RED, injuryFlag always false, attendance always 'Present')
   // and attached them to real athlete names, which is a false-reassurance
   // safety bug, not a cosmetic one -- a coach could read "no injury flag" as
-  // a real clearance signal. Never default these to a reassuring value.
+  // a real clearance signal. Never default these to a reassuring value: an
+  // athlete absent from the readiness feed stays UNKNOWN, and a failed feed
+  // leaves everyone UNKNOWN.
   readiness: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
   injuryFlag: boolean | null;
   attendance: 'Present' | 'Late' | 'Excused' | 'Absent' | 'Unknown';
@@ -549,6 +552,7 @@ export default function CoachWorkspace() {
   const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
   const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
+  const unknownReadinessCount = athletes.filter((athlete) => athlete.readiness === 'UNKNOWN').length;
   const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN');
   // The task list is DERIVED from real pending work, not stored: the platform
   // has no coach-task store, and the fabricated five-item list this replaced
@@ -756,6 +760,30 @@ export default function CoachWorkspace() {
         }
       } catch {
         // Plates for everyone. Nothing about the roster is degraded by it.
+      }
+
+      // Readiness, from the board feed. Best-effort and separate like the
+      // faces read: the server returns only athletes with a FRESH check-in,
+      // so everyone else stays UNKNOWN -- and a failed feed leaves the whole
+      // roster UNKNOWN rather than inventing a color (see the Athlete
+      // interface comment: unknown is never clear).
+      try {
+        const readinessResponse = await fetch(`${apiBase()}/api/pilot/coach/readiness-board`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (readinessResponse.ok) {
+          const board = (await readinessResponse.json()) as {
+            items?: Array<{ athlete_id: string; status: 'GREEN' | 'YELLOW' | 'RED' }>;
+          };
+          const statusByAthlete = new Map((board.items ?? []).map((entry) => [entry.athlete_id, entry.status]));
+          for (const athlete of athleteList) {
+            const status = statusByAthlete.get(athlete.id);
+            if (status) athlete.readiness = status;
+          }
+        }
+      } catch {
+        // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
       }
 
       setAthletes(athleteList);
@@ -1599,12 +1627,12 @@ export default function CoachWorkspace() {
                   {readinessTrackingAvailable ? (
                     <>
                       <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
-                      <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
+                      <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} unknown — unknown is not clear` : ''}</p>
                     </>
                   ) : (
                     <>
-                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Not tracked</p>
-                      <p className="t-muted">No backend readiness feed yet -- do not read this as &quot;zero flags&quot;</p>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">No signal</p>
+                      <p className="t-muted">No fresh readiness check-ins -- do not read this as &quot;zero flags&quot;</p>
                     </>
                   )}
                 </article>
