@@ -459,6 +459,30 @@ reads it.** `findRegistrationBlockingHold` narrows to `all_training`;
 A coach who places a `conditioning_only` hold has recorded an intention and
 notified an admin. Nothing in the platform will stop the conditioning.
 
+**Context that makes this fairer, and the finding sharper.** `trainingHolds.ts`'s
+header records an owner decision (2026-08-06) splitting the scopes into two
+different jobs: `all_training` is **STOP/HOLD** (training pauses until a person
+lifts it), while `contact_only` and `conditioning_only` are **REGRESS** --
+"training CONTINUES at reduced scope". So a scoped hold was never meant to stop
+a session outright, and reading this row as "a gate someone forgot to write"
+would be unfair to the design.
+
+The finding survives that context as an **asymmetry**, which is the honest
+version: `contact_only` did get an enforcement path -- it is in
+`flagContactDuringHold`'s scope set, and PR #452 adds it to competition entry --
+while `conditioning_only` got none anywhere. Both are REGRESS scopes; only one
+of them regresses anything.
+
+It matters because the reduced scope is stated to a guardian as fact.
+`/parent/safety` renders `conditioning_only` as **"Conditioning is paused right
+now"**, which is the correct reading of the scope and is exactly what is not
+true. A parent is told a restriction is in force that no code enforces.
+
+The honest close is one of two decisions, not a patch: either give
+`conditioning_only` an enforcement surface (there is no conditioning-activity
+gate in the platform today to hang it on), or stop offering the scope until
+there is one. Both are owner calls.
+
 ### GAP-7 -- the manual escalation target is unvalidated free text
 
 `compliance.ts:escalateViolation` takes `escalatedToRole: string`;
