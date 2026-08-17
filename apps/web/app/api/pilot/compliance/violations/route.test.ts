@@ -168,7 +168,13 @@ describe('POST /api/pilot/compliance/violations', () => {
     mockQueryOne
       .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
       .mockResolvedValueOnce({ rule_id: 'r1' }); // getComplianceRuleById
-    mockQuery.mockResolvedValueOnce([{ violation_id: 'v1' }]);
+    // createComplianceViolation now inserts inside withTransaction (so the
+    // insert and its escalation check commit together), so the insert
+    // result comes back through the transaction client, not the bare query
+    // mock. The rule-lookup that follows falls through to the mockTxQuery
+    // default of { rows: [] }, which is fine -- this test doesn't assert on
+    // escalation-filing, only on the violation itself landing.
+    mockTxQuery.mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] });
     const res = await POST(postRequest({ rule_id: 'r1', athlete_id: 'ath-1' }));
     expect(res.status).toBe(201);
   });
@@ -221,7 +227,9 @@ describe('POST /api/pilot/compliance/violations', () => {
       .mockResolvedValueOnce({ athlete_id: 'ath-1' })
       .mockResolvedValueOnce({ rule_id: 'r1' })
       .mockResolvedValueOnce({ video_session_id: 'vid-1', organization_id: 'org-1', athlete_id: 'ath-1' });
-    mockQuery.mockResolvedValueOnce([{ violation_id: 'v1' }]);
+    // Insert now runs through the transaction client -- see the equivalent
+    // comment on the '201 when coach logs a violation' test above.
+    mockTxQuery.mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] });
     const res = await POST(
       postRequest({ rule_id: 'r1', athlete_id: 'ath-1', video_session_id: 'vid-1' }),
     );

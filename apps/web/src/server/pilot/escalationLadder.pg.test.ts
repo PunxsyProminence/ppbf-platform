@@ -581,6 +581,40 @@ describe('safety escalations against real Postgres', () => {
       await client.end();
     }
   });
+
+  // compliance.ts:createComplianceViolation is the newest producer: the same
+  // repair mechanism proven above for athlete_voice/incident must also cover
+  // 'compliance_violation' -- a database stuck on any earlier revision must
+  // widen straight to the current full vocabulary in one pass.
+  test('re-running the migration widens a stale pre-compliance_violation CHECK in place', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_stale_compliance_violation_check', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    try {
+      await client.query('alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check');
+      await client.query(
+        `alter table pilot.safety_escalations
+         add constraint safety_escalations_source_type_check
+         check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident'))`,
+      );
+      await expect(insertEscalation(client, { source_type: 'compliance_violation' })).rejects.toThrow(
+        /violates check constraint/i,
+      );
+
+      await client.query(migrationSql);
+      await insertEscalation(client, {
+        escalation_id: 'esc-compliance-violation-repaired',
+        source_type: 'compliance_violation',
+      });
+      const { rows } = await client.query(
+        `select source_type from pilot.safety_escalations where escalation_id = 'esc-compliance-violation-repaired'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'compliance_violation' });
+    } finally {
+      await client.end();
+    }
+  });
 });
 
 // ─── the real listEscalations against real rows (#198 coach exclusion) ───────

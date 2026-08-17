@@ -22,6 +22,16 @@
 -- real product question this migration does not answer -- see the capability
 -- build plan's note on #194 for the reasoning.
 --
+-- 'compliance_violation' (added later) does not contradict the paragraph
+-- above: it is compliance.ts:createComplianceViolation additionally filing
+-- a PULL-SURFACE NOTIFICATION here, the same relationship training_hold has
+-- with pilot.training_holds -- pilot.violation_escalations stays the
+-- workflow/history table the manual "Escalate" action owns; nothing here
+-- reads or writes it, and it is not weakened. See escalationLadder.ts's
+-- SafetyEscalationSourceType doc for the full reasoning, including why
+-- escalation_level 'board'/'parent' rules deliberately do NOT auto-file
+-- (no safe escalated_to_role target exists for either).
+--
 -- SEVERITY IS THE NEAR-MISS VOCABULARY, NOT COMPLIANCE'S
 --
 -- pilot.shadow_near_misses already uses ('low','moderate','high','critical').
@@ -108,7 +118,7 @@
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan')),
+  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
@@ -135,15 +145,17 @@ create table if not exists pilot.safety_escalations (
 -- Idempotent repair for a database where an earlier revision of this
 -- migration created the table with a narrower source_type vocabulary
 -- (pre-athlete_voice/#198, pre-training_hold/#82, pre-incident/#152, or
--- pre-video_scan): the create-if-not-exists above no-ops there, which would
--- leave every newer source_type's escalation violating the stale CHECK --
--- and the filing code deliberately swallows that failure (oracle safety),
--- so the loss would be silent. Re-running this migration must therefore
--- widen the CHECK in place, straight to the current full vocabulary
--- regardless of which earlier revision is on disk. The runner's readiness
--- probe also refuses to PASS until 'video_scan' is in the constraint, so a
--- stale database fails loudly instead of dropping disclosures, incident
--- reports, or blocked/infected video verdicts.
+-- pre-video_scan, or pre-compliance_violation): the create-if-not-exists
+-- above no-ops there, which would leave every newer source_type's
+-- escalation violating the stale CHECK -- and the filing code deliberately
+-- swallows that failure (oracle safety), so the loss would be silent.
+-- Re-running this migration must therefore widen the CHECK in place,
+-- straight to the current full vocabulary regardless of which earlier
+-- revision is on disk. The runner's readiness probe also refuses to PASS
+-- until both 'video_scan' and 'compliance_violation' are in the constraint,
+-- so a stale database fails loudly instead of dropping disclosures,
+-- incident reports, blocked/infected video verdicts, or compliance
+-- escalations.
 do $$
 declare
   stale_constraint text;
@@ -154,13 +166,14 @@ begin
     and contype = 'c'
     and pg_get_constraintdef(oid) like '%source_type%'
     and pg_get_constraintdef(oid) like '%''near_miss''%'
-    and pg_get_constraintdef(oid) not like '%''video_scan''%';
+    and (pg_get_constraintdef(oid) not like '%''video_scan''%'
+      or pg_get_constraintdef(oid) not like '%''compliance_violation''%');
 
   if stale_constraint is not null then
     execute format('alter table pilot.safety_escalations drop constraint %I', stale_constraint);
     alter table pilot.safety_escalations
       add constraint safety_escalations_source_type_check
-      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan'));
+      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation'));
   end if;
 end $$;
 

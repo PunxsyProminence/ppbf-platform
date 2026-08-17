@@ -13,16 +13,41 @@ import { query, queryOne, withTransaction } from './db';
  * the /admin/escalations page that reads it ARE the escalation mechanism.
  *
  * Deliberately NOT unified with pilot.compliance_violations /
- * violation_escalations -- that system already works and has its own UI.
- * This module owns near-miss-shaped signal only (near_miss, pain_report,
- * safety_gate_evaluation, repeated_pattern); whether to eventually merge
- * the two is a real product question left open.
+ * violation_escalations as systems -- violation_escalations (the manual
+ * "Escalate" action's own history table) already works and has its own UI,
+ * and stays exactly as it is. 'video_scan' and 'compliance_violation' below
+ * are this ladder accepting two new signal sources the same way
+ * training_hold/incident/athlete_voice each did: videoScanSweep.ts's
+ * sweepQuarantinedVideos files one for a terminal negative scan verdict, and
+ * compliance.ts's createComplianceViolation files one alongside a violation
+ * whose rule's escalation_level maps to a supported target role, so the
+ * pull-based surface actually surfaces both. Whether to ever merge the two
+ * TABLES into one remains the real, still-open product question.
  */
 
 export type SafetyEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
-export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold' | 'incident' | 'video_scan';
+export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold' | 'incident' | 'video_scan' | 'compliance_violation';
 export type SafetyEscalationStatus = 'open' | 'acknowledged' | 'resolved';
-/** Who an escalation is filed against. Deliberately excludes 'board' -- see the migration header for why. */
+/**
+ * Who an escalation is filed against. Deliberately excludes 'board' and
+ * 'parent' -- see the migration header for why.
+ *
+ * pilot.compliance_rules.escalation_level allows 'board' and 'parent' in
+ * addition to 'coach'/'admin' (compliance.ts), but neither has a safe
+ * target here: 'board' would put an individually-identifiable athlete
+ * record in front of board, which ORGANIZATION_ROLE_MODEL.md and
+ * boardRoleBoundaries.test.ts both hold to aggregate/k-anonymity-gated
+ * reads only (getBoardEscalationSummary below is the one legal board-facing
+ * view of this data), and 'parent' would let a guardian learn an
+ * escalation exists at all, which parent/safety/route.ts's own doc
+ * explicitly refuses for the same disclosure-safety reason athlete_voice
+ * rows are hidden from a coach. A compliance rule seeded/authored with
+ * escalation_level 'board' or 'parent' therefore does not auto-file here
+ * (compliance.ts's createComplianceViolation skips it) until a real
+ * product/safety decision creates a safe board- or parent-facing surface
+ * for individual safety records -- this is reported as a known gap, not
+ * silently widened.
+ */
 export type SafetyEscalationTargetRole = 'coach' | 'organization_admin' | 'admin';
 
 export interface SafetyEscalationRow {

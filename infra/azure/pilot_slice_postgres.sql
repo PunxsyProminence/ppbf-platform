@@ -726,7 +726,7 @@ create index if not exists idx_safety_gate_evaluations_org_gate
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan')),
+  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
