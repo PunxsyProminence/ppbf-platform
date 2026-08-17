@@ -11,6 +11,7 @@ import {
   isCompetitionEntryResult,
   listCompetitionEntries,
   recordEntryResult,
+  withdrawCompetitionEntry,
 } from '@/src/server/pilot/externalCompetition';
 
 export const runtime = 'nodejs';
@@ -68,10 +69,15 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Result capture (owner decision 2026-08-16): won / lost / draw /
-// no_contest per entry, and a LOSS REQUIRES A LESSON -- refused here with
-// the reason, and refused by the database constraint beneath. The lesson
-// is the point: "one hard-fought loss is worth a thousand easy victories."
+// Two distinct PATCH shapes on one route, same field name (`status`) the
+// sibling competitions/seasons routes already use for their own status
+// transitions: `status: 'withdrawn'` withdraws the entry; `result` records
+// its outcome (owner decision 2026-08-16: won / lost / draw / no_contest,
+// and a LOSS REQUIRES A LESSON -- refused here with the reason, and refused
+// by the database constraint beneath. The lesson is the point: "one
+// hard-fought loss is worth a thousand easy victories."). The two never
+// overlap: withdrawal touches status only, result recording never touches
+// status.
 export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -79,17 +85,47 @@ export async function PATCH(request: NextRequest) {
 
     const body = (await request.json()) as {
       entry_id?: string;
+      status?: string;
       result?: string;
       lesson_note?: string;
     };
     if (!body.entry_id?.trim()) throw new ValidationError('Missing entry_id.');
+    const entryId = body.entry_id.trim();
+
+    if (body.status !== undefined) {
+      if (body.status !== 'withdrawn') {
+        throw new ValidationError("status must be 'withdrawn'.");
+      }
+
+      const withdrawn = await withdrawCompetitionEntry({
+        organizationId: principal.organizationId,
+        entryId,
+      });
+      // A missing/foreign entry_id and an already-withdrawn entry are the
+      // same CAS miss (see withdrawCompetitionEntry) -- reported alike as
+      // hidden-not-found, the same collapse recordEntryResult below already
+      // makes for its own CAS miss.
+      if (!withdrawn) return hiddenNotFound();
+
+      await writePilotAuditEvent({
+        event_type: 'update',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'external_competition_entry',
+        entity_id: entryId,
+        details: { action: 'withdraw' },
+      });
+      return NextResponse.json({ item: { entry_id: entryId, status: 'withdrawn' } });
+    }
+
     if (!isCompetitionEntryResult(body.result)) {
       throw new ValidationError("result must be 'won', 'lost', 'draw', or 'no_contest'.");
     }
 
     const item = await recordEntryResult({
       organizationId: principal.organizationId,
-      entryId: body.entry_id.trim(),
+      entryId,
       result: body.result,
       lessonNote: body.lesson_note,
     });

@@ -8,6 +8,7 @@ import {
   LEAGUE_WRITE_ROLES,
   addLeagueRosterEntry,
   listLeagueRoster,
+  withdrawLeagueRosterEntry,
 } from '@/src/server/pilot/wrestlingLeague';
 
 export const runtime = 'nodejs';
@@ -60,6 +61,41 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+    return jsonError(error);
+  }
+}
+
+// Withdrawal: the same `{ <id>, status }` PATCH shape the sibling
+// seasons/competitions routes use for their own status transitions. The
+// roster vocabulary has no dedicated 'withdrawn' value -- 'inactive' is the
+// only non-active state a roster row can hold (see wrestlingLeague.ts), so
+// it is the value this route accepts.
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...LEAGUE_WRITE_ROLES]);
+
+    const body = (await request.json()) as {
+      entry_id?: string;
+      status?: string;
+    };
+    if (!body.entry_id?.trim()) throw new ValidationError('Missing entry_id.');
+    if (body.status !== 'inactive') {
+      throw new ValidationError("status must be 'inactive'.");
+    }
+
+    const withdrawn = await withdrawLeagueRosterEntry({
+      organizationId: principal.organizationId,
+      entryId: body.entry_id.trim(),
+    });
+    // A missing/foreign entry_id and an already-inactive entry are the same
+    // CAS miss (see withdrawLeagueRosterEntry) -- reported alike as
+    // hidden-not-found, the same collapse this route already makes for a
+    // cross-organization add.
+    if (!withdrawn) return hiddenNotFound();
+
+    return NextResponse.json({ item: { entry_id: body.entry_id.trim(), status: 'inactive' } });
+  } catch (error) {
     return jsonError(error);
   }
 }

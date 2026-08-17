@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 
 // External competition minimal skeleton (owner decision 2026-08-15: build
 // both competition skeletons deliberately skeletal). A competition someone
@@ -210,6 +210,30 @@ export async function recordEntryResult(input: {
 
   const listed = await listCompetitionEntries(input.organizationId, row.competition_id);
   return listed.find((entry) => entry.entry_id === input.entryId) ?? null;
+}
+
+/** Withdraw an entry: compare-and-set out of 'entered' only, org-scoped, one
+ * transaction -- same shape as compliance.ts's transitionComplianceViolation.
+ * Returns false (writes nothing) when no row matched: a foreign or missing
+ * entry_id and an already-withdrawn entry arrive identically, so a stale
+ * click can never re-withdraw or race another operator's withdrawal.
+ * Withdrawal touches status only; a result already recorded (and its
+ * lesson) stands untouched -- that is the separate, already-shipped
+ * feature this change does not revisit. */
+export async function withdrawCompetitionEntry(input: {
+  organizationId: string;
+  entryId: string;
+}): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const updated = await client.query<{ entry_id: string }>(
+      `update pilot.external_competition_entries
+       set status = 'withdrawn', updated_at = now()
+       where organization_id = $1 and entry_id = $2 and status = 'entered'
+       returning entry_id`,
+      [input.organizationId, input.entryId],
+    );
+    return updated.rows.length > 0;
+  });
 }
 
 /** Entries with the athlete's name joined from the org-scoped athlete record

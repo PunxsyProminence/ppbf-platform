@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 
 // Wrestling league minimal skeleton (owner decision 2026-08-15: build both
 // competition skeletons deliberately skeletal -- requirements are guessed
@@ -21,6 +21,7 @@ export const LEAGUE_WRITE_ROLES = ['organization_admin', 'admin'] as const;
 
 export type LeagueSeasonStatus = 'planned' | 'active' | 'completed';
 export type LeagueEventStatus = 'planned' | 'completed' | 'cancelled';
+export type LeagueRosterStatus = 'active' | 'inactive';
 
 export const LEAGUE_SEASON_STATUSES: readonly LeagueSeasonStatus[] = ['planned', 'active', 'completed'];
 export const LEAGUE_EVENT_STATUSES: readonly LeagueEventStatus[] = ['planned', 'completed', 'cancelled'];
@@ -64,7 +65,7 @@ export interface LeagueRosterRow {
   entry_id: string;
   season_id: string;
   athlete_id: string;
-  status: 'active' | 'inactive';
+  status: LeagueRosterStatus;
   athlete_name: string;
   created_at: string;
 }
@@ -236,6 +237,30 @@ export async function addLeagueRosterEntry(input: {
 
   const listed = await listLeagueRoster(input.organizationId, input.seasonId);
   return listed.find((entry) => entry.athlete_id === input.athleteId) ?? null;
+}
+
+/** Withdraw a roster entry: compare-and-set out of 'active' only,
+ * org-scoped, one transaction -- same shape as compliance.ts's
+ * transitionComplianceViolation. Returns false (writes nothing) when no row
+ * matched: a foreign or missing entry_id and an already-inactive entry
+ * arrive identically, so a stale click can never re-withdraw or race
+ * another operator's withdrawal. The roster vocabulary has no dedicated
+ * 'withdrawn' value -- 'inactive' is the only non-active state a roster row
+ * can hold, so it is the withdrawal target. */
+export async function withdrawLeagueRosterEntry(input: {
+  organizationId: string;
+  entryId: string;
+}): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const updated = await client.query<{ entry_id: string }>(
+      `update pilot.wrestling_league_roster_entries
+       set status = 'inactive', updated_at = now()
+       where organization_id = $1 and entry_id = $2 and status = 'active'
+       returning entry_id`,
+      [input.organizationId, input.entryId],
+    );
+    return updated.rows.length > 0;
+  });
 }
 
 /** Roster with the athlete's name joined from the org-scoped athlete record

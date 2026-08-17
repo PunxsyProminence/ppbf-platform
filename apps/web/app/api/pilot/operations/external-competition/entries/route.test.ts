@@ -2,7 +2,12 @@ import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { addCompetitionEntry, listCompetitionEntries, recordEntryResult } from '@/src/server/pilot/externalCompetition';
+import {
+  addCompetitionEntry,
+  listCompetitionEntries,
+  recordEntryResult,
+  withdrawCompetitionEntry,
+} from '@/src/server/pilot/externalCompetition';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -20,6 +25,7 @@ jest.mock('@/src/server/pilot/externalCompetition', () => {
     addCompetitionEntry: jest.fn(),
     listCompetitionEntries: jest.fn(),
     recordEntryResult: jest.fn(),
+    withdrawCompetitionEntry: jest.fn(),
   };
 });
 
@@ -27,6 +33,7 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAdd = addCompetitionEntry as jest.Mock;
 const mockList = listCompetitionEntries as jest.Mock;
 const mockRecord = recordEntryResult as jest.Mock;
+const mockWithdraw = withdrawCompetitionEntry as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 
 afterEach(() => {
@@ -144,5 +151,41 @@ test('an invented result is a 400; a real result records and audits with its les
   expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
     entity_type: 'external_competition_entry',
     details: expect.objectContaining({ action: 'record_result', result: 'lost', has_lesson: true }),
+  }));
+});
+
+test('a coach cannot withdraw an entry; an unknown status value is a 400', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+  expect((await PATCH(patchRequest({ entry_id: 'e-1', status: 'withdrawn' }))).status).toBeGreaterThanOrEqual(400);
+  expect(mockWithdraw).not.toHaveBeenCalled();
+
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  expect((await PATCH(patchRequest({ entry_id: 'e-1', status: 'entered' }))).status).toBe(400);
+  expect(mockWithdraw).not.toHaveBeenCalled();
+});
+
+test('withdrawing a foreign, missing, or already-withdrawn entry is a hidden not-found', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockWithdraw.mockResolvedValue(false);
+
+  const response = await PATCH(patchRequest({ entry_id: 'e-1', status: 'withdrawn' }));
+
+  expect(response.status).toBe(404);
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('a valid withdrawal audits the action and never touches result or lesson_note', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockWithdraw.mockResolvedValue(true);
+
+  const response = await PATCH(patchRequest({ entry_id: 'e-1', status: 'withdrawn' }));
+
+  expect(response.status).toBe(200);
+  expect(mockWithdraw).toHaveBeenCalledWith({ organizationId: 'org-1', entryId: 'e-1' });
+  expect(mockRecord).not.toHaveBeenCalled();
+  expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+    entity_type: 'external_competition_entry',
+    entity_id: 'e-1',
+    details: { action: 'withdraw' },
   }));
 });
