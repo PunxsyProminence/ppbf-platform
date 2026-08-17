@@ -39,6 +39,21 @@ function requireString(value: unknown, field: string): string {
   return value.trim();
 }
 
+// promotion.readiness.score is typed as `number` in IntakePromotionPayload,
+// but that type comes from an `as` cast on the request body -- nothing
+// checks the actual JSON value before it reaches pilot.readiness, a NOT
+// NULL column a coach-facing triage board reads as ground truth.
+function requireFiniteNumber(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    // "Unsupported" is jsonError's recognized prefix for a present-but-invalid
+    // value (see "Unsupported guardian.pin" below) -- anything else falls
+    // into the generic 500 branch, which scrubs the message and would hide a
+    // legitimate validation refusal behind an opaque server error.
+    throw new Error(`Unsupported ${field}: must be a number`);
+  }
+  return value;
+}
+
 export async function POST(request: NextRequest) { // NOSONAR
   try {
     const principal = await requirePrincipal(request);
@@ -440,7 +455,7 @@ export async function POST(request: NextRequest) { // NOSONAR
       await createReadiness({
         organizationId: principal.organizationId,
         athleteId: promotion.athlete.athlete_id,
-        score: promotion.readiness.score,
+        score: requireFiniteNumber(promotion.readiness.score, 'promotion.readiness.score'),
         category: promotion.readiness.category,
         measuredAt: promotion.readiness.measured_at,
         method: 'staff_entered_intake',

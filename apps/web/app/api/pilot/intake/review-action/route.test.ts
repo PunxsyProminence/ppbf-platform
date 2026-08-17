@@ -5,7 +5,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
-import { getIntakeCaseById } from '@/src/server/pilot/intake';
+import { createReadiness, getIntakeCaseById } from '@/src/server/pilot/intake';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -63,6 +63,7 @@ const mockGetIntakeCase = getIntakeCaseById as jest.MockedFunction<typeof getInt
 const mockCreateResearchRequirement = createShadowResearchRequirement as jest.MockedFunction<
   typeof createShadowResearchRequirement
 >;
+const mockCreateReadiness = createReadiness as jest.MockedFunction<typeof createReadiness>;
 
 function principal(): PilotPrincipal {
   return {
@@ -245,5 +246,62 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     expect(mockCreateResearchRequirement).toHaveBeenCalledWith(
       expect.objectContaining({ subjectId: 'ath-1' }),
     );
+  });
+});
+
+// promotion.readiness.score is typed `number` in IntakePromotionPayload, but
+// that type is only an `as` cast on the parsed JSON body -- nothing checked
+// the actual value before it reached pilot.readiness, a NOT NULL column a
+// coach-facing triage board (readinessBoard.ts) reads as ground truth.
+describe('promotion readiness is validated before it reaches pilot.readiness', () => {
+  function readinessPromoteRequest(readiness: Record<string, unknown>) {
+    return new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        intake_case_id: 'case-1',
+        action: 'promote',
+        promotion: {
+          athlete: {
+            athlete_id: 'ath-1',
+            full_name: 'Gate Athlete',
+            dob: '2011-02-10',
+            weight_class: '119',
+            gym_status: 'active',
+            emergency_contact: 'Guardian 555-0102',
+            coach_id: 'acct-admin',
+          },
+          readiness,
+        },
+      }),
+    });
+  }
+
+  test('a valid readiness score promotes through unchanged', async () => {
+    const response = await POST(
+      readinessPromoteRequest({ score: 7.2, category: 'general', measured_at: '2026-08-17T12:00:00Z' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockCreateReadiness).toHaveBeenCalledWith({
+      organizationId: 'org-real',
+      athleteId: 'ath-1',
+      score: 7.2,
+      category: 'general',
+      measuredAt: '2026-08-17T12:00:00Z',
+      method: 'staff_entered_intake',
+      recordedByAccountId: 'acct-admin',
+    });
+  });
+
+  test('a non-numeric readiness score is refused before it ever reaches pilot.readiness', async () => {
+    const response = await POST(
+      readinessPromoteRequest({ score: 'high', category: 'general', measured_at: '2026-08-17T12:00:00Z' }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(String(payload.error)).toMatch(/Unsupported promotion\.readiness\.score/);
+    expect(mockCreateReadiness).not.toHaveBeenCalled();
   });
 });
