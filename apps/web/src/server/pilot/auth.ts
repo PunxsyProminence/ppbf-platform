@@ -1193,6 +1193,72 @@ export async function transferOrganizationAdmin(
 // different, explicit operation -- it must never be a side effect of
 // assigning an admin. active_flag is deliberately untouched: promoting a
 // deactivated account must not silently reactivate it.
+/**
+ * Grants or revokes `has_master_shadow_access` -- the standing
+ * cross-organization privilege flag on `pilot.accounts`.
+ *
+ * Before this function existed, the column had no product provisioning path
+ * at all. It is read by both login paths (loginWithAccountIdAndPin and
+ * loginWithMicrosoftEmail) and by resolvePrincipal on every request, and the
+ * PIN login route echoes it in the JSON response body -- but nothing in the
+ * application ever set it. The only way an account ever held it was a direct
+ * database write against a column that defaults to false.
+ *
+ * This is a platform-wide attribute of the account, not a per-organization
+ * one -- pilot.organization_memberships has nothing comparable, and neither
+ * does pilot.accounts.role -- so unlike setAccountActiveStatus this does not
+ * take an organization_id to scope the match. account_id alone is the primary
+ * key of pilot.accounts.
+ *
+ * Callers are NOT re-checked here. Gating who may call this lives at the
+ * route layer via requireRole(['platform_owner']), matching every other
+ * platform-level cross-org grant already in this codebase (see
+ * promoteAccountToOrganizationAdmin, transferOrganizationAdmin, and
+ * setOrganizationStatus, all gated the same way, all one layer up from their
+ * own db function).
+ *
+ * Athlete and parent targets are refused outright, at this layer, so no
+ * future caller of this function can skip the check by forgetting to repeat
+ * it. Those two roles are minor-linked and scoped to self/family by design;
+ * there is no legitimate reason for a child's or guardian's account to carry
+ * a platform-wide cross-organization export privilege.
+ *
+ * No session revocation on revoke: resolvePrincipal reads
+ * has_master_shadow_access live from the database on every request rather
+ * than caching it on the session token, so a revoke here takes effect on the
+ * very next request without needing to invalidate anything.
+ */
+export async function setAccountMasterShadowAccess(
+  accountId: string,
+  granted: boolean,
+): Promise<{ accountId: string; role: PilotRole; organizationId: string | null; hasMasterShadowAccess: boolean }> {
+  const result = await queryOne<{
+    account_id: string;
+    role: PilotRole;
+    organization_id: string | null;
+    has_master_shadow_access: boolean;
+  }>(
+    `update pilot.accounts
+     set has_master_shadow_access = $2,
+         updated_at = now()
+     where account_id = $1
+       and role not in ('athlete', 'parent')
+     returning account_id, role, organization_id, has_master_shadow_access`,
+    [accountId, granted],
+  );
+
+  if (!result) {
+    throw new Error('Not found: no such account, or its role cannot hold cross-organization access');
+  }
+
+  return {
+    accountId: result.account_id,
+    role: result.role,
+    organizationId: result.organization_id,
+    hasMasterShadowAccess: result.has_master_shadow_access,
+  };
+}
+
 export async function promoteAccountToOrganizationAdmin(accountId: string, organizationId: string): Promise<void> {
   await withTransaction(async (client) => {
     const rows = await client.query<{ account_id: string }>(
