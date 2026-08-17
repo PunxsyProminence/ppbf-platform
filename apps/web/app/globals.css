@@ -1532,6 +1532,27 @@ h6 {
   object-fit: cover;
 }
 
+/* The print, brought into the room.
+   ppbf.css already states this treatment twice -- .photo > img at sepia(.55)
+   and .plate > img at sepia(.42) -- and the reason is written beside the
+   second one: "a colour snapshot dropped into this building is the one object
+   in the room that came from a phone." The gym wall slots were the one photo
+   surface with no treatment at all, so the seven photographs Coach Neale takes
+   on a handset would have landed as the only untreated objects on the page.
+
+   Matched to .plate's .42 rather than .photo's .55: .plate is the value chosen
+   for actual camera photographs, where .55 was chosen for a print sitting on
+   its own leather backing. The frame here already supplies paper and moulding.
+
+   Only the img. The empty mount is a flat card ground, not a photograph, and
+   the placeholder illustrations behind these slots are already drawn in the
+   system's palette -- the filter costs them nothing and is not aimed at them.
+   Nothing here touches the caption or title, which are siblings of the mount
+   rather than children of it. */
+.photo-slot-mount > img {
+  filter: sepia(.42) contrast(1.05) brightness(.96);
+}
+
 .photo-slot--wide .photo-slot-mount > img,
 .photo-slot--wide .photo-slot-mount > .photo-slot-mount-empty {
   aspect-ratio: 3 / 2;
