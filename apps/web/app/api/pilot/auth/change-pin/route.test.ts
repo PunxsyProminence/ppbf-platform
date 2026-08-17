@@ -33,8 +33,21 @@ jest.mock('@/src/server/pilot/auth', () => ({
   changeOwnPin: jest.fn(),
 }));
 
+// Left unmocked everywhere else in this file: PPBF_DURABLE_RATE_LIMIT is
+// unset in the test env, so checkDurableRateLimit short-circuits to
+// isLimited:false with no DB touch (rateLimit.ts's own withDurableClient
+// contract). This one test overrides it directly to prove a durable "limited"
+// is honored, without needing to mock the whole module.
+jest.mock('@/src/server/pilot/rateLimit', () => {
+  const actual = jest.requireActual('@/src/server/pilot/rateLimit');
+  return { ...actual, checkDurableRateLimit: jest.fn(actual.checkDurableRateLimit) };
+});
+
 const mockRequirePrincipal = jest.mocked(requirePrincipalAllowingPinChange);
 const mockChangeOwnPin = jest.mocked(changeOwnPin);
+const mockCheckDurable = jest.mocked(
+  jest.requireMock('@/src/server/pilot/rateLimit').checkDurableRateLimit as jest.Mock,
+);
 
 function post(body: Record<string, unknown>) {
   return POST(new NextRequest('http://localhost/api/pilot/auth/change-pin', {
@@ -123,5 +136,18 @@ describe('POST /api/pilot/auth/change-pin weak-PIN handling', () => {
 
     expect(res.status).toBe(500);
     expect((await res.json()).error).toBe('Internal server error');
+  });
+
+  // requirePrincipalAllowingPinChange only checks the session cookie, not
+  // the current PIN itself -- a stolen-but-live session is enough to reach
+  // this route and start guessing. The durable limiter is what stops that
+  // guess budget from resetting per container replica.
+  test('a durable-limited account is refused before the PIN guess is even checked', async () => {
+    mockCheckDurable.mockResolvedValueOnce({ isLimited: true });
+
+    const res = await post({ current_pin: '481902', new_pin: '739154' });
+
+    expect(res.status).toBe(429);
+    expect(mockChangeOwnPin).not.toHaveBeenCalled();
   });
 });
