@@ -553,6 +553,54 @@ export async function updateShadowLibrarySourceClassification(
   return row;
 }
 
+export interface ShadowLibraryMirrorDocument {
+  document_id: string;
+  document_name: string;
+  content: string;
+}
+
+/**
+ * Read path for the SharePoint backup mirror: a source plus the full text
+ * of each of its documents, restricted to the same approved+verified+
+ * indexed gate that makes a document citable elsewhere in the Library.
+ * Nothing unreviewed leaves the app boundary through this path.
+ */
+export async function getShadowLibrarySourceForMirror(
+  organizationId: string,
+  sourceId: string,
+): Promise<{ source: ShadowLibrarySourceRow; documents: ShadowLibraryMirrorDocument[] } | null> {
+  const source = await queryOne<ShadowLibrarySourceRow>(
+    `select *
+     from pilot.shadow_library_sources
+     where organization_id = $1
+       and source_id = $2
+       and status = 'active'
+       and approval_state = 'approved'
+       and verification_state = 'verified'`,
+    [organizationId, sourceId],
+  );
+  if (!source) return null;
+
+  const documents = await query<ShadowLibraryMirrorDocument>(
+    `select d.document_id, d.document_name,
+            coalesce(string_agg(c.text_content, E'\n\n' order by c.ordinal), '') as content
+     from pilot.shadow_library_documents d
+     left join pilot.shadow_library_chunks c
+       on c.organization_id = d.organization_id and c.document_id = d.document_id
+     where d.organization_id = $1
+       and d.source_id = $2
+       and d.approval_state = 'approved'
+       and d.verification_state = 'verified'
+       and d.ingest_state = 'indexed'
+       and d.index_completed_at is not null
+     group by d.document_id, d.document_name
+     order by d.document_name`,
+    [organizationId, sourceId],
+  );
+
+  return { source, documents };
+}
+
 export async function listShadowLibrarySources(input: {
   organizationId: string;
   sourceType?: string;

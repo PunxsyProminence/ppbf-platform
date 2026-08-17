@@ -34,6 +34,7 @@ export async function uploadToSharePoint(
   config: SharePointConfig,
   fileName: string,
   fileBuffer: Buffer,
+  contentType = 'application/pdf',
 ): Promise<SharePointWriteResult> {
   const token = await getClientCredentialToken(
     {
@@ -52,7 +53,7 @@ export async function uploadToSharePoint(
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/pdf',
+      'Content-Type': contentType,
     },
     body: new Uint8Array(fileBuffer),
     signal: AbortSignal.timeout(SHAREPOINT_UPLOAD_TIMEOUT_MS),
