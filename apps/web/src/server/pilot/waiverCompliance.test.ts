@@ -117,6 +117,30 @@ describe('getAthleteWaiverStatus', () => {
     await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('withdrawn');
   });
 
+  // pilot.waivers.status is `text not null` with no check constraint
+  // (infra/azure/pilot_slice_postgres.sql), so the column can hold anything a
+  // writer puts there. These two pin the deliberately asymmetric handling: a
+  // recognised value survives formatting, an unrecognised one fails closed.
+  test('a recognised status survives case and padding -- a signature is not lost to whitespace', async () => {
+    for (const stored of [' Signed ', 'SIGNED', 'Signed', '\tsigned\n']) {
+      mockQuery.mockResolvedValueOnce([{ status: stored }]);
+      await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('signed');
+    }
+
+    mockQuery.mockResolvedValueOnce([{ status: ' Declined ' }]);
+    await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('declined');
+  });
+
+  test('an unrecognised status is missing, never signed -- unknown input fails closed', async () => {
+    // 'pending' and 'partial' are the plausible ones; '' and the typo are the
+    // accidents. None of them is a guardian consenting, and 'missing' is the
+    // value competitionSafetyGates refuses on.
+    for (const stored of ['pending', 'partial', '', '   ', 'sigend', 'unknown']) {
+      mockQuery.mockResolvedValueOnce([{ status: stored }]);
+      await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('missing');
+    }
+  });
+
   // Deliberately unlike trainingHolds.ts and access.ts, which swallow 42P01 to
   // degrade to a SAFE pre-migration behaviour. "We could not find out whether a
   // guardian consented" must not degrade to "proceed".

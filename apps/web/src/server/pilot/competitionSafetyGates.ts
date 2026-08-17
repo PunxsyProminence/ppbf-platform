@@ -94,19 +94,34 @@ const TRAVEL_WAIVER: TrackedWaiverType = 'travel';
  * answered, so those two say plainly that a new signature is the only route
  * and leave the asking to a human conversation, not a to-do item.
  */
+// Each refusal is written as two sentences -- what is true, then what the
+// reader can do about it -- and joined here so the inter-sentence space lives
+// in exactly one place. The previous version ended each first sentence with a
+// trailing space inside the template literal, which is invisible in review and
+// double-spaces the moment somebody adds one at the join.
+function joinSentences(...sentences: readonly string[]): string {
+  return sentences.join(' ');
+}
+
 function travelWaiverRefusal(status: WaiverStatus, event: string): string {
   if (status === 'declined') {
-    return `Travel waiver declined: this athlete's guardian declined the travel waiver, so the athlete cannot be added to ${event}. `
-      + 'That is a decision on file, not missing paperwork -- only a newly signed travel waiver changes it.';
+    return joinSentences(
+      `Travel waiver declined: this athlete's guardian declined the travel waiver, so the athlete cannot be added to ${event}.`,
+      'That is a decision on file, not missing paperwork -- only a newly signed travel waiver changes it.',
+    );
   }
 
   if (status === 'withdrawn') {
-    return `Travel waiver withdrawn: this athlete's travel consent has been withdrawn, so the athlete cannot be added to ${event}. `
-      + 'Only a newly signed travel waiver restores it.';
+    return joinSentences(
+      `Travel waiver withdrawn: this athlete's travel consent has been withdrawn, so the athlete cannot be added to ${event}.`,
+      'Only a newly signed travel waiver restores it.',
+    );
   }
 
-  return `Travel waiver missing: no signed travel waiver is on file for this athlete, and ${event} means taking a minor off-site. `
-    + "Record the guardian's travel consent on the athlete's consent page first; /admin/waiver-status lists who else is missing one.";
+  return joinSentences(
+    `Travel waiver missing: no signed travel waiver is on file for this athlete, and ${event} means taking a minor off-site.`,
+    "Record the guardian's travel consent on the athlete's consent page first; /admin/waiver-status lists who else is missing one.",
+  );
 }
 
 /**

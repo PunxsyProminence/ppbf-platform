@@ -20,7 +20,14 @@ import { query } from './db';
 export const TRACKED_WAIVER_TYPES = ['general', 'medical_release', 'photo_media', 'travel'] as const;
 export type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
 
-export type WaiverStatus = 'signed' | 'declined' | 'withdrawn' | 'missing';
+/**
+ * The status vocabulary, as a runtime list rather than a bare union, so
+ * normalizeWaiverStatus below can check a value against it at run time. Same
+ * shape as TRACKED_WAIVER_TYPES above -- the type is derived FROM the list, so
+ * a status added to one cannot go missing from the other.
+ */
+export const WAIVER_STATUSES = ['signed', 'declined', 'withdrawn', 'missing'] as const;
+export type WaiverStatus = (typeof WAIVER_STATUSES)[number];
 
 export interface AthleteWaiverStatus {
   athleteId: string;
@@ -116,5 +123,36 @@ export async function getAthleteWaiverStatus(
     [organizationId, athleteId, waiverType],
   );
 
-  return (rows[0]?.status as WaiverStatus | undefined) ?? 'missing';
+  return normalizeWaiverStatus(rows[0]?.status);
+}
+
+/**
+ * Turns whatever `pilot.waivers.status` actually holds into the vocabulary
+ * this module promises.
+ *
+ * The column is `status text not null` with NO check constraint
+ * (infra/azure/pilot_slice_postgres.sql), so nothing at the database level
+ * stops ' Signed ' or 'SIGNED' being stored, and other readers in this
+ * codebase already normalize before comparing (wallDisplay.ts trims and
+ * lowercases waiver vocabulary in two places). Casting the raw column to
+ * WaiverStatus, which is what this function used to do, was a type assertion
+ * with nothing behind it -- the same unchecked-`as` shape that let a
+ * non-numeric readiness score reach a NOT NULL column earlier today.
+ *
+ * The two directions are deliberately not symmetric, because this feeds a
+ * safety gate:
+ *
+ *   * A RECOGNISED value survives case and padding. ' Signed ' is a guardian
+ *     who signed; refusing to take a child to a competition over whitespace
+ *     punishes the family for a data-entry artifact.
+ *   * An UNRECOGNISED value becomes 'missing', never 'signed'. 'pending',
+ *     'partial', an empty string or a typo are not consent, and 'missing' is
+ *     the value that makes competitionSafetyGates refuse. Unknown input
+ *     fails closed.
+ */
+function normalizeWaiverStatus(raw: string | null | undefined): WaiverStatus {
+  const value = (raw ?? '').trim().toLowerCase();
+  return (WAIVER_STATUSES as readonly string[]).includes(value)
+    ? (value as WaiverStatus)
+    : 'missing';
 }
