@@ -253,6 +253,62 @@ function SectionCard({ title, children }: Readonly<{ title: string; children: Re
   );
 }
 
+// The declaration that has to sit above the Memberships, Grants and
+// Scholarships rows, and the door out to the records those rows are pretending
+// to be.
+//
+// Every row in this component is hardcoded: the file performs no fetch of any
+// kind, so each name, status and dollar figure below was typed by a developer
+// and none of it came from the gym's books. That was survivable while the
+// platform stored nothing. It is not survivable now, because for exactly these
+// three lanes it does: /admin/memberships is a live table-backed membership
+// register in which a scholarship is a stored discount percentage on a real
+// membership row, and /admin/grants is the live grant-obligation ledger. So an
+// admin opening the Revenue tab reads "Grant Placeholder | $0.00 | Drafting"
+// as the state of the organisation's grant work while the real ledger sits one
+// click away, and nothing on the screen tells them which one they are looking
+// at.
+//
+// For a 501(c)(3) that is not a cosmetic problem. A fabricated dollar amount or
+// row count carried out of this screen into a board packet, a funder's progress
+// report or a 990 work paper becomes a false statement made by the
+// organisation, over the signature of whoever sent it -- and the person who
+// sent it will have believed they were reading their own records.
+//
+// Law 7: a refusal is a stamp, not an error toast. This is the same mark the
+// other drawn-not-wired consoles carry -- the brass "Planned — Not Yet
+// Implemented" plus a sentence naming the rows as fabricated sample data, as in
+// src/components/coach/FloorOperationsDesk.tsx, CoachWorkspace.tsx's
+// Development tab, and app/admin/page.tsx's integration-stub list. It goes one
+// step further than those three only because it can: those consoles have no
+// real surface to hand the reader over to, and these tabs do, so the honest
+// message also carries the door. Wiring the real reads into this component is a
+// larger piece of work and a separate decision; it is deliberately not done
+// here, and this notice is what stands in for it until it is.
+function FabricatedRowsNotice({
+  rows,
+  realRecords,
+  href,
+  linkLabel,
+}: Readonly<{ rows: string; realRecords: string; href: string; linkLabel: string }>) {
+  return (
+    <div className="mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)]">
+      <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+      <p className="t-body mt-[var(--s3)]">
+        Every {rows} row below is fabricated sample data. This tab makes no request and reads no
+        record, so nothing on it is your organisation&apos;s — do not act on anything it shows, and do
+        not copy a figure from it into a board packet, a grant report, or a filing. For a 501(c)(3),
+        a fabricated financial figure that reaches a funder or a board becomes a false statement by
+        the organisation.
+      </p>
+      <p className="t-body mt-[var(--s2)]">{realRecords}</p>
+      <Link href={href} className="btn btn--ghost mt-[var(--s3)]">
+        {linkLabel}
+      </Link>
+    </div>
+  );
+}
+
 export default function RevenueFundingCenter() {
   const [activeTab, setActiveTab] = useState<RevenueFundingTab>('overview');
   const [donationRecords, setDonationRecords] = useState<DonationRecord[]>(initialDonationRecords);
@@ -381,6 +437,23 @@ export default function RevenueFundingCenter() {
         <h2 className="t-command mt-[var(--s3)]">Revenue & Funding Center</h2>
         <p className="t-body mt-[var(--s3)]">
           Front-end control surface for memberships, donations, sponsors, B2B accounts, wholesale accounts, grants, scholarships, and funding workflows.
+        </p>
+        {/* The console-wide declaration, above the summary strip rather than
+            inside a tab, because the strip is the part that is read at a glance
+            and copied without opening anything: "Memberships 2", "Grants 1",
+            "Scholarships 1" are hardcoded literals in summaryStrip, not counts
+            of any record. Whoever transcribes those tiles into a board minute
+            has invented the organisation's roster and grant load without ever
+            clicking a tab. Same stamp and same shape as the per-tab notices
+            below, and the same reason as FloorOperationsDesk.tsx putting its
+            declaration in the header instead of over each panel. */}
+        <p className="mt-[var(--s4)]"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+        <p className="t-body mt-[var(--s3)]">
+          Every row on every tab of this screen is fabricated sample data, and the counts in the
+          strip below are hardcoded numbers written to match those rows — they are not counts of
+          your organisation&apos;s records. This screen performs no fetch: nothing on it reads or writes
+          a stored record. The one exception is Donations, which counts only what you type into this
+          browser tab; that is held in the tab and nowhere else, and is gone on reload.
         </p>
         {/* Motto strip removed; see the note in AthleteWorkspace.tsx. It was
             least at home here of the four -- a grant officer reading a funding
@@ -576,6 +649,12 @@ export default function RevenueFundingCenter() {
       {activeTab === 'memberships' && (
         <SectionCard title="Membership Tracking">
           <div className="space-y-3">
+            <FabricatedRowsNotice
+              rows="membership"
+              realRecords="Your organisation's real memberships are stored records and are administered at /admin/memberships: one row per athlete per program, with its status, start date and scholarship discount."
+              href="/admin/memberships"
+              linkLabel="Open the real membership records"
+            />
             {membershipRows.map((row) => (
               <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <p className="t-command">{row[0]}</p>
@@ -776,6 +855,12 @@ export default function RevenueFundingCenter() {
       {activeTab === 'grants' && (
         <SectionCard title="Grant Pipeline Tracking">
           <div className="space-y-3">
+            <FabricatedRowsNotice
+              rows="grant"
+              realRecords="Your organisation's real grant work is stored at /admin/grants: the obligation ledger, one row per report, deliverable, renewal or filing, with its funder, its due date and whether it is overdue."
+              href="/admin/grants"
+              linkLabel="Open the real grant records"
+            />
             {grantRows.map((row) => (
               <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <p className="t-command">{row[0]}</p>
@@ -792,6 +877,18 @@ export default function RevenueFundingCenter() {
       {activeTab === 'scholarships' && (
         <SectionCard title="Scholarship Tracking">
           <div className="space-y-3">
+            {/* No separate scholarship register exists to point at, and inventing
+                one in this copy would be the same lie in a new place: a real
+                scholarship IS a membership row carrying a discount percentage
+                (see the header comment in app/admin/memberships/page.tsx -- 100%
+                for a full scholarship, never a bypass of enrolment). So the door
+                for this tab is the membership register, said out loud. */}
+            <FabricatedRowsNotice
+              rows="scholarship"
+              realRecords="Your organisation keeps no separate scholarship table: a real scholarship is a stored discount percentage on a real membership row, so it is awarded and read at /admin/memberships alongside the membership it belongs to."
+              href="/admin/memberships"
+              linkLabel="Open the real scholarship records"
+            />
             {scholarshipRows.map((row) => (
               <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <p className="t-command">{row[0]}</p>
