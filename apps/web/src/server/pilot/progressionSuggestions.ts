@@ -1,4 +1,5 @@
 import { query } from './db';
+import { getTransferReadout, TRANSFER_WINDOW_DAYS } from './falseProgress';
 import {
   getPerformanceRollup,
   PERFORMANCE_WINDOW_DAYS_DEFAULT,
@@ -31,6 +32,14 @@ import {
 //     gap of the type a rule would suggest, the rule says nothing -- the work
 //     is already on the coach's board.
 //
+//   * A RULE CAN SOURCE FROM ANOTHER MODULE'S VERDICT WITHOUT OWNING IT. The
+//     transfer-check rule below reads falseProgress.ts's already-computed
+//     not_transferring state as an input and stamps it through the same
+//     generic provenance columns every other rule uses. It does not
+//     recompute the transfer thresholds -- those stay owned by
+//     falseProgress.ts, the same way this module never recomputes readiness
+//     or attendance thresholds owned elsewhere.
+//
 // gap_type must land inside the schema's check constraint
 // ('technique','strength','endurance','skill','mental','tactical'), so each
 // rule maps to the nearest honest bucket and the evidence carries the detail.
@@ -40,12 +49,16 @@ export const READINESS_MIN_CHECKINS_PER_HALF = 2;
 export const TRAINING_DAYS_MIN_EARLY = 3;
 export const TRAINING_DAYS_DROP_RATIO = 0.5;
 
-export type SuggestionRule = 'readiness_falling' | 'training_days_dropping' | 'assignments_stalled';
+export type SuggestionRule =
+  | 'readiness_falling'
+  | 'training_days_dropping'
+  | 'assignments_stalled'
+  | 'transfer_check_failed';
 
 export interface GapSuggestion {
   athlete_id: string;
   rule: SuggestionRule;
-  gap_type: 'endurance' | 'mental';
+  gap_type: 'endurance' | 'mental' | 'skill';
   suggested_description: string;
   evidence: Record<string, number | string>;
 }
@@ -54,6 +67,22 @@ export interface StalledAssignmentRow {
   athlete_id: string;
   stalled_count: number;
   oldest_due_date: string;
+}
+
+// One row per athlete with at least one not_transferring metric in the
+// window -- already filtered and grouped by getTransferFailures below, the
+// same shape as StalledAssignmentRow: a count plus one concrete example so a
+// coach has real counts to check without every failing metric crowding the
+// evidence object.
+export interface TransferFailureRow {
+  athlete_id: string;
+  failing_metric_count: number;
+  metric_kinds: string;
+  example_metric_kind: string;
+  example_controlled_makes: number;
+  example_controlled_misses: number;
+  example_live_makes: number;
+  example_live_misses: number;
 }
 
 /**
@@ -65,6 +94,7 @@ export function deriveSuggestions(
   rollup: readonly AthletePerformanceRow[],
   stalled: readonly StalledAssignmentRow[],
   openGapTypesByAthlete: ReadonlyMap<string, ReadonlySet<string>>,
+  transferFailures: readonly TransferFailureRow[],
 ): GapSuggestion[] {
   const suggestions: GapSuggestion[] = [];
 
@@ -146,6 +176,35 @@ export function deriveSuggestions(
     });
   }
 
+  // Rule 4: transfer check failed. Sourced from falseProgress.ts's
+  // not_transferring verdict (module 053) -- strong in drills, breaking down
+  // live. Thin-data refusal already happened upstream in classifyTransfer, so
+  // this rule does no threshold math of its own, only suppression and
+  // wording. Grouped per athlete like assignments_stalled above: a kid stuck
+  // on three metrics gets one board item, not three.
+  for (const row of transferFailures) {
+    if (openTypes(row.athlete_id).has('skill')) continue;
+
+    suggestions.push({
+      athlete_id: row.athlete_id,
+      rule: 'transfer_check_failed',
+      gap_type: 'skill',
+      suggested_description:
+        `${row.failing_metric_count} metric${row.failing_metric_count === 1 ? '' : 's'} holding up in practice but `
+        + `breaking down live over the last ${TRANSFER_WINDOW_DAYS} days: ${row.metric_kinds}. `
+        + `Worth designing live exposure for.`,
+      evidence: {
+        failing_metric_count: row.failing_metric_count,
+        metric_kinds: row.metric_kinds,
+        example_metric_kind: row.example_metric_kind,
+        example_controlled_makes: row.example_controlled_makes,
+        example_controlled_misses: row.example_controlled_misses,
+        example_live_makes: row.example_live_makes,
+        example_live_misses: row.example_live_misses,
+      },
+    });
+  }
+
   return suggestions;
 }
 
@@ -188,15 +247,50 @@ async function getOpenGapTypes(
   return byAthlete;
 }
 
+// One getTransferReadout call per athlete -- falseProgress.ts only reads one
+// athlete's own attempts at a time (never cross-athlete), so there is no
+// batched query to call into instead. Gyms run this over a coach's roster,
+// not the whole platform, so the fan-out stays small.
+async function getTransferFailures(
+  organizationId: string,
+  athleteIds: readonly string[],
+): Promise<TransferFailureRow[]> {
+  if (athleteIds.length === 0) return [];
+  const perAthlete = await Promise.all(
+    athleteIds.map((athleteId) => getTransferReadout(organizationId, athleteId)),
+  );
+
+  const rows: TransferFailureRow[] = [];
+  perAthlete.forEach((readouts, index) => {
+    const failing = readouts.filter((r) => r.state === 'not_transferring');
+    if (failing.length === 0) return;
+    // getTransferReadout orders by metric_kind, so the first failing entry is
+    // a stable pick rather than whichever the join happened to return first.
+    const [example] = failing;
+    rows.push({
+      athlete_id: athleteIds[index],
+      failing_metric_count: failing.length,
+      metric_kinds: failing.map((m) => m.metric_kind).join(', '),
+      example_metric_kind: example.metric_kind,
+      example_controlled_makes: example.controlled_makes,
+      example_controlled_misses: example.controlled_misses,
+      example_live_makes: example.live_makes,
+      example_live_misses: example.live_misses,
+    });
+  });
+  return rows;
+}
+
 export async function getGapSuggestions(
   organizationId: string,
   athleteIds: readonly string[],
 ): Promise<GapSuggestion[]> {
   if (athleteIds.length === 0) return [];
-  const [rollup, stalled, openGaps] = await Promise.all([
+  const [rollup, stalled, openGaps, transferFailures] = await Promise.all([
     getPerformanceRollup(organizationId, athleteIds, PERFORMANCE_WINDOW_DAYS_DEFAULT),
     getStalledAssignments(organizationId, athleteIds),
     getOpenGapTypes(organizationId, athleteIds),
+    getTransferFailures(organizationId, athleteIds),
   ]);
-  return deriveSuggestions(rollup, stalled, openGaps);
+  return deriveSuggestions(rollup, stalled, openGaps, transferFailures);
 }

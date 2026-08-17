@@ -10,7 +10,9 @@ import {
   READINESS_MIN_CHECKINS_PER_HALF,
   TRAINING_DAYS_MIN_EARLY,
   type StalledAssignmentRow,
+  type TransferFailureRow,
 } from './progressionSuggestions';
+import { TRANSFER_WINDOW_DAYS } from './falseProgress';
 import type { AthletePerformanceRow } from './performanceAnalytics';
 
 function rollupRow(overrides: Partial<AthletePerformanceRow> = {}): AthletePerformanceRow {
@@ -37,6 +39,21 @@ function rollupRow(overrides: Partial<AthletePerformanceRow> = {}): AthletePerfo
 
 const NO_STALLED: StalledAssignmentRow[] = [];
 const NO_OPEN_GAPS = new Map<string, Set<string>>();
+const NO_TRANSFER_FAILURES: TransferFailureRow[] = [];
+
+function transferFailureRow(overrides: Partial<TransferFailureRow> = {}): TransferFailureRow {
+  return {
+    athlete_id: 'ath-1',
+    failing_metric_count: 1,
+    metric_kinds: 'jab_cross',
+    example_metric_kind: 'jab_cross',
+    example_controlled_makes: 8,
+    example_controlled_misses: 1,
+    example_live_makes: 1,
+    example_live_misses: 5,
+    ...overrides,
+  };
+}
 
 describe('readiness_falling', () => {
   test('fires at exactly the threshold drop with enough check-ins in both halves', () => {
@@ -44,6 +61,7 @@ describe('readiness_falling', () => {
       [rollupRow({ readiness_early_avg: 7.0, readiness_late_avg: 7.0 - READINESS_DROP_POINTS })],
       NO_STALLED,
       NO_OPEN_GAPS,
+      NO_TRANSFER_FAILURES,
     );
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].rule).toBe('readiness_falling');
@@ -56,6 +74,7 @@ describe('readiness_falling', () => {
       [rollupRow({ readiness_early_avg: 7.0, readiness_late_avg: 7.0 - READINESS_DROP_POINTS + 0.1 })],
       NO_STALLED,
       NO_OPEN_GAPS,
+      NO_TRANSFER_FAILURES,
     );
     expect(suggestions).toHaveLength(0);
   });
@@ -69,6 +88,7 @@ describe('readiness_falling', () => {
       })],
       NO_STALLED,
       NO_OPEN_GAPS,
+      NO_TRANSFER_FAILURES,
     );
     expect(suggestions).toHaveLength(0);
   });
@@ -78,6 +98,7 @@ describe('readiness_falling', () => {
       [rollupRow({ readiness_early_avg: 8, readiness_late_avg: 5 })],
       NO_STALLED,
       new Map([['ath-1', new Set(['endurance'])]]),
+      NO_TRANSFER_FAILURES,
     );
     expect(suggestions).toHaveLength(0);
   });
@@ -89,6 +110,7 @@ describe('training_days_dropping', () => {
       [rollupRow({ training_days_early: 6, training_days_late: 3 })],
       NO_STALLED,
       NO_OPEN_GAPS,
+      NO_TRANSFER_FAILURES,
     );
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].rule).toBe('training_days_dropping');
@@ -100,6 +122,7 @@ describe('training_days_dropping', () => {
       [rollupRow({ training_days_early: TRAINING_DAYS_MIN_EARLY - 1, training_days_late: 0 })],
       NO_STALLED,
       NO_OPEN_GAPS,
+      NO_TRANSFER_FAILURES,
     );
     expect(suggestions).toHaveLength(0);
   });
@@ -109,6 +132,7 @@ describe('training_days_dropping', () => {
       [rollupRow({ training_days_early: 6, training_days_late: 4 })],
       NO_STALLED,
       NO_OPEN_GAPS,
+      NO_TRANSFER_FAILURES,
     );
     expect(suggestions).toHaveLength(0);
   });
@@ -120,7 +144,7 @@ describe('assignments_stalled', () => {
   ];
 
   test('overdue assignments produce one grouped suggestion', () => {
-    const suggestions = deriveSuggestions([rollupRow()], STALLED, NO_OPEN_GAPS);
+    const suggestions = deriveSuggestions([rollupRow()], STALLED, NO_OPEN_GAPS, NO_TRANSFER_FAILURES);
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].rule).toBe('assignments_stalled');
     expect(suggestions[0].suggested_description).toContain('2 drill assignments past due');
@@ -131,6 +155,7 @@ describe('assignments_stalled', () => {
       [rollupRow()],
       STALLED,
       new Map([['ath-1', new Set(['mental'])]]),
+      NO_TRANSFER_FAILURES,
     );
     expect(suggestions).toHaveLength(0);
   });
@@ -140,6 +165,7 @@ describe('assignments_stalled', () => {
       [rollupRow({ training_days_early: 6, training_days_late: 0 })],
       STALLED,
       NO_OPEN_GAPS,
+      NO_TRANSFER_FAILURES,
     );
     const mental = suggestions.filter((s) => s.gap_type === 'mental');
     expect(mental).toHaveLength(1);
@@ -147,6 +173,59 @@ describe('assignments_stalled', () => {
   });
 });
 
+describe('transfer_check_failed', () => {
+  test('a single not_transferring metric produces a suggestion sourced from falseProgress.ts', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      NO_OPEN_GAPS,
+      [transferFailureRow()],
+    );
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].rule).toBe('transfer_check_failed');
+    expect(suggestions[0].gap_type).toBe('skill');
+    expect(suggestions[0].suggested_description).toContain('1 metric holding up in practice');
+    expect(suggestions[0].suggested_description).toContain(`last ${TRANSFER_WINDOW_DAYS} days`);
+    expect(suggestions[0].suggested_description).toContain('jab_cross');
+    expect(suggestions[0].evidence).toEqual({
+      failing_metric_count: 1,
+      metric_kinds: 'jab_cross',
+      example_metric_kind: 'jab_cross',
+      example_controlled_makes: 8,
+      example_controlled_misses: 1,
+      example_live_makes: 1,
+      example_live_misses: 5,
+    });
+  });
+
+  test('several failing metrics for one athlete group into one suggestion, not three', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      NO_OPEN_GAPS,
+      [transferFailureRow({ failing_metric_count: 3, metric_kinds: 'jab_cross, rear_hook, slip_counter' })],
+    );
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].suggested_description).toContain('3 metrics holding up in practice');
+    expect(suggestions[0].suggested_description).toContain('jab_cross, rear_hook, slip_counter');
+  });
+
+  test('an open skill gap suppresses the suggestion', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      new Map([['ath-1', new Set(['skill'])]]),
+      [transferFailureRow()],
+    );
+    expect(suggestions).toHaveLength(0);
+  });
+
+  test('no not_transferring metrics means no suggestion', () => {
+    const suggestions = deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, NO_TRANSFER_FAILURES);
+    expect(suggestions.filter((s) => s.rule === 'transfer_check_failed')).toHaveLength(0);
+  });
+});
+
 test('an athlete with quiet data produces no suggestions at all', () => {
-  expect(deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS)).toHaveLength(0);
+  expect(deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, NO_TRANSFER_FAILURES)).toHaveLength(0);
 });
