@@ -1,4 +1,4 @@
-import { assertActorCanAccessAthlete } from './access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete } from './access';
 import { query, queryOne } from './db';
 import {
   claimNextJob,
@@ -20,12 +20,14 @@ jest.mock('./db', () => ({
 
 jest.mock('./access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
+  accessibleAthleteIds: jest.fn(async () => new Set()),
   isOrganizationAdminRole: (role: string) => role === 'admin' || role === 'organization_admin',
 }));
 
 const mockQuery = jest.mocked(query);
 const mockQueryOne = jest.mocked(queryOne);
 const mockAssertSubjectAccess = jest.mocked(assertActorCanAccessAthlete);
+const mockAccessibleAthleteIds = jest.mocked(accessibleAthleteIds);
 
 const coach = {
   accountId: 'coach-1',
@@ -62,6 +64,7 @@ describe('SHADOW job queue safeguards', () => {
     jest.resetAllMocks();
     mockQuery.mockResolvedValue([]);
     mockAssertSubjectAccess.mockResolvedValue(undefined);
+    mockAccessibleAthleteIds.mockResolvedValue(new Set());
   });
 
   test('bounds priority and TTL before using parameterized SQL', async () => {
@@ -246,6 +249,41 @@ describe('SHADOW job queue safeguards', () => {
 
     const [sql] = mockQuery.mock.calls[0];
     expect(sql).toContain("job_type NOT IN ('heavy_bag_session', 'scout_report')");
+  });
+
+  test('authorizes a page of subject-bearing jobs with one batched call, not one per row', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { ...jobRow, job_id: 'job-1', subject_id: 'athlete-1' },
+      { ...jobRow, job_id: 'job-2', subject_id: 'athlete-2' },
+      { ...jobRow, job_id: 'job-3', subject_id: 'athlete-1' },
+      { ...jobRow, job_id: 'job-4', subject_id: null },
+    ]);
+    mockAccessibleAthleteIds.mockResolvedValueOnce(new Set(['athlete-1']));
+
+    const results = await getJobsForActor(coach);
+
+    // One batched call, covering the distinct subject ids on the page --
+    // not four (one per row), and not a duplicate call for athlete-1's
+    // second row.
+    expect(mockAccessibleAthleteIds).toHaveBeenCalledTimes(1);
+    const [, calledWithIds] = mockAccessibleAthleteIds.mock.calls[0];
+    expect(new Set(calledWithIds)).toEqual(new Set(['athlete-1', 'athlete-2']));
+
+    // The per-row path this replaces must not run at all.
+    expect(mockAssertSubjectAccess).not.toHaveBeenCalled();
+
+    // athlete-2's job is dropped (not in the accessible set); the
+    // subject-less job passes through with no lookup needed.
+    expect(results.map((job) => job.jobId)).toEqual(['job-1', 'job-3', 'job-4']);
+  });
+
+  test('skips the batched lookup entirely when no row on the page has a subject', async () => {
+    mockQuery.mockResolvedValueOnce([{ ...jobRow, subject_id: null }]);
+
+    const results = await getJobsForActor(coach);
+
+    expect(mockAccessibleAthleteIds).not.toHaveBeenCalled();
+    expect(results).toHaveLength(1);
   });
 
   test('the retention sweep deletes only terminal rows past the window', async () => {
