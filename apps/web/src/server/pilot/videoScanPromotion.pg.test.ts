@@ -656,7 +656,22 @@ describe('the sweep end to end against real Postgres', () => {
     expect(row.scan_state).toBe('passed');
   });
 
-  test('an unconfigured environment leaves the row completely untouched', async () => {
+  test('an unconfigured environment parks the row as unconfigured, and scans nothing', async () => {
+    // MIGRATED PIN. This test used to assert the row was left COMPLETELY
+    // untouched, which pinned a dead end rather than a contract: the row
+    // stayed at scan_state 'pending', the sweep could never promote it, and
+    // the coach release route refuses 'pending' -- so an environment with no
+    // scanner had no exit for the machine OR the coach, and only an
+    // administrator could free a video.
+    //
+    // 'unconfigured' existed for exactly this case and was unreachable: it is
+    // written from decision 'hold', 'hold' is only returned when zero gates
+    // are enabled, and the sweep returned before deciding in precisely that
+    // case. Parking the row is what arms the escape hatch.
+    //
+    // The half of the original assertion that was a real invariant is kept
+    // below: scan_attempts must NOT move. An environment that cannot produce
+    // a verdict must not accumulate evidence that it tried.
     await insertQuarantined('vs-1');
     const before = await readRow('vs-1');
 
@@ -665,11 +680,62 @@ describe('the sweep end to end against real Postgres', () => {
     const result = await sweep({ env: {} });
 
     expect(result.skippedReason).toBe('not_configured');
+    expect(result.unconfigured).toBe(1);
     expect(scan).not.toHaveBeenCalled();
+
     const after = await readRow('vs-1');
-    // Not even scan_attempts moved. An environment that cannot produce a
-    // verdict must not accumulate evidence that it tried.
-    expect(after).toEqual(before);
+    expect(after.scan_state).toBe('unconfigured');
+    expect(after.scan_detail).toMatchObject({ reason: 'NO_SCANNER_CONFIGURED' });
+    // Still quarantined: parking a row is not promoting it.
+    expect(after.status).toBe('quarantined');
+    // No attempt was burned, and none of the scan bookkeeping moved.
+    expect(after.scan_attempts).toBe(before.scan_attempts);
+    expect(after.scanned_at).toBe(before.scanned_at);
+    expect(after.scan_claimed_at).toBe(before.scan_claimed_at);
+  });
+
+  test('a parked row is written once, not once per tick', async () => {
+    // The early return this replaced existed to stop the sweep burning work on
+    // every quarantined video each tick. Parking is terminal -- an
+    // 'unconfigured' row is outside the claim predicate -- so the second sweep
+    // finds nothing left to park.
+    await insertQuarantined('vs-1');
+    const scan = jest.fn();
+    const sweep = await loadSweep(scan);
+
+    const first = await sweep({ env: {} });
+    const second = await sweep({ env: {} });
+
+    expect(first.unconfigured).toBe(1);
+    expect(second.unconfigured).toBe(0);
+  });
+
+  test('turning a scanner on re-arms a video parked while there was none', async () => {
+    // Without this the backlog would sit outside claimNextVideoSessionForScan's
+    // predicate forever: the environment gains a gate and never scans what it
+    // parked before the gate existed.
+    await insertQuarantined('vs-1');
+    const parkScan = jest.fn();
+    const park = await loadSweep(parkScan);
+    await park({ env: {} });
+    expect((await readRow('vs-1')).scan_state).toBe('unconfigured');
+
+    const scan = jest.fn(async () => ({
+      decision: 'promote' as const,
+      gatesEnabled: ['content'],
+      gatesPassed: ['content'],
+      reason: 'ALL_GATES_PASSED',
+      malware: null,
+      content: 'pass' as const,
+      durationMs: 9,
+    }));
+    const sweep = await loadSweep(scan);
+    const result = await sweep({ env: { PPBF_VIDEO_CONTENT_SCAN: 'vision' } });
+
+    expect(result).toMatchObject({ scanned: 1, promoted: 1 });
+    const row = await readRow('vs-1');
+    expect(row.status).toBe('ready');
+    expect(row.scan_state).toBe('passed');
   });
 
   test('a retry leaves the video quarantined and out of the queue until it is due', async () => {
