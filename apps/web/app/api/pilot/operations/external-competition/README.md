@@ -43,6 +43,35 @@ is deliberately absent from both.
 - It has no override path around any gate below. See "Deliberately not gated"
   for what that costs and why it is still the right answer.
 
+## What must be true before a child is entered in a competition
+
+The inverse of the gate list below, written out because "what does this refuse"
+and "what do I need in place to proceed" are different questions, and the second
+is the one a coach entering an athlete is actually asking.
+
+`POST /api/pilot/operations/external-competition/entries` writes an entry only
+when **all four** hold, evaluated in this order. The first failure refuses the
+whole write; there is no partial success:
+
+| # | Must be true | If it is not | Who can make it true |
+|---|---|---|---|
+| 0 | The caller's role is in `COMPETITION_WRITE_ROLES` (`organization_admin`, `admin`) | 403, before any gate runs | An admin performs the action |
+| 1 | The caller has standing with this specific athlete | 403 `Forbidden:` | Be the athlete's coach of record, hold active `coach_coverage`, or have an admin do it |
+| 2 | No active training hold covering contact for this athlete | 403 `TRAINING_HOLD_BLOCKS_COMPETITION` | Whoever placed the hold lifts it, or it expires |
+| 3 | A signed `travel` waiver is on file for this athlete | 409 `TRAVEL_WAIVER_NOT_SIGNED` | The guardian signs; an admin records it |
+
+Separately, and **not** a gate in the safety sense: recording a **loss** on an
+existing entry requires a non-blank `lesson_note`, enforced by a database CHECK
+constraint rather than application code. That is a data-quality rule about a
+result already in the past, not a precondition for entering a child, which is
+why it lives with the write it guards instead of in the gate module.
+
+Nothing else is required: no feature flag, no migration beyond what ships, no
+environment variable. This capability is live on `main` today.
+
+Rows 2 and 3 are the two a coach will actually hit, and they are deliberately
+the two a coach **cannot** clear themselves. That is the point of them.
+
 ## Gates
 
 ### Gate 1 -- the actor must have standing with this child

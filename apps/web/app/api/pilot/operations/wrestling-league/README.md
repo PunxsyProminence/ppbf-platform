@@ -36,6 +36,30 @@ deliberately absent from both.
 - It has no override path around any gate below. See "Deliberately not gated"
   for what that costs and why it is still the right answer.
 
+## What must be true before a child is put on a roster
+
+The inverse of the gate list below, written out because "what does this refuse"
+and "what do I need in place to proceed" are different questions and the second
+one is what a coach standing on the floor is actually asking.
+
+`POST /api/pilot/operations/wrestling-league/roster` writes a roster link only
+when **all four** hold. They are evaluated in this order, and the first failure
+refuses the whole write -- there is no partial success:
+
+| # | Must be true | If it is not | Who can make it true |
+|---|---|---|---|
+| 0 | The caller's role is in `LEAGUE_WRITE_ROLES` (`organization_admin`, `admin`) | 403, before any gate runs | An admin performs the action |
+| 1 | The caller has standing with this specific athlete | 403 `Forbidden:` | Be the athlete's coach of record, hold active `coach_coverage`, or have an admin do it |
+| 2 | No active training hold covering contact for this athlete | 403 `TRAINING_HOLD_BLOCKS_COMPETITION` | Whoever placed the hold lifts it, or it expires |
+| 3 | A signed `travel` waiver is on file for this athlete | 409 `TRAVEL_WAIVER_NOT_SIGNED` | The guardian signs; an admin records it |
+
+Nothing else is required: no feature flag, no migration beyond what ships, no
+environment variable. This capability is live on `main` today.
+
+Rows 2 and 3 are the two that a coach will actually hit, and they are
+deliberately the two that a coach **cannot** clear themselves. That is the
+point of them, not a gap in them.
+
 ## Gates
 
 ### Gate 1 -- the actor must have standing with this child
