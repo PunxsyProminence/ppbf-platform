@@ -45,12 +45,13 @@ export type SuggestionRule =
   | 'readiness_falling'
   | 'training_days_dropping'
   | 'assignments_stalled'
-  | 'transfer_check_failed';
+  | 'transfer_check_failed'
+  | 'competition_loss_unresolved';
 
 export interface GapSuggestion {
   athlete_id: string;
   rule: SuggestionRule;
-  gap_type: 'endurance' | 'mental' | 'skill';
+  gap_type: 'endurance' | 'mental' | 'skill' | 'technique';
   suggested_description: string;
   evidence: Record<string, number | string>;
 }
@@ -75,6 +76,21 @@ export interface TransferFailureRow {
   live_misses: number;
 }
 
+// Rule 5 input: a recorded competition loss (owner doctrine 2026-08-16,
+// enforced by the database in externalCompetition.ts): a loss cannot be
+// written without a non-blank lesson_note. That fact and its lesson
+// currently live only on the external-competition page; Rule 5 below is how
+// it reaches Progression Intelligence instead of staying stranded there.
+// Grouped per athlete like the stalled-assignment rows, evidenced by the
+// most recent loss.
+export interface CompetitionLossRow {
+  athlete_id: string;
+  loss_count: number;
+  most_recent_lesson_note: string;
+  most_recent_competition_name: string;
+  most_recent_competition_date: string;
+}
+
 /**
  * Pure rule evaluation over already-fetched aggregates. Exported separately
  * from the query wrapper so the rules are testable with no database and a
@@ -85,6 +101,7 @@ export function deriveSuggestions(
   stalled: readonly StalledAssignmentRow[],
   openGapTypesByAthlete: ReadonlyMap<string, ReadonlySet<string>>,
   transferFailures: readonly TransferFailureRow[] = [],
+  competitionLosses: readonly CompetitionLossRow[] = [],
 ): GapSuggestion[] {
   const suggestions: GapSuggestion[] = [];
 
@@ -202,6 +219,30 @@ export function deriveSuggestions(
     });
   }
 
+  // Rule 5: a competitive loss with its mandatory lesson note. Grouped per
+  // athlete like Rule 3, so a run of losses produces one suggestion, not one
+  // per entry -- evidenced by the most recent lesson so the coach sees the
+  // exact note that would otherwise stay stranded on the competition page.
+  for (const row of competitionLosses) {
+    if (openTypes(row.athlete_id).has('technique')) continue;
+
+    suggestions.push({
+      athlete_id: row.athlete_id,
+      rule: 'competition_loss_unresolved',
+      gap_type: 'technique',
+      suggested_description:
+        `${row.loss_count} recorded competition loss${row.loss_count === 1 ? '' : 'es'}, most recently at `
+        + `${row.most_recent_competition_name} (${row.most_recent_competition_date}): `
+        + `"${row.most_recent_lesson_note}". Worth turning the lesson into a tracked gap.`,
+      evidence: {
+        loss_count: row.loss_count,
+        most_recent_competition_name: row.most_recent_competition_name,
+        most_recent_competition_date: row.most_recent_competition_date,
+        most_recent_lesson_note: row.most_recent_lesson_note,
+      },
+    });
+  }
+
   return suggestions;
 }
 
@@ -220,6 +261,43 @@ async function getStalledAssignments(
        and due_date is not null and due_date < now()::date
        and completion_percentage < 100
      group by athlete_id`,
+    [organizationId, [...athleteIds]],
+  );
+}
+
+// One row per athlete with an unresolved recorded loss, carrying the most
+// recent competition/lesson via a per-athlete window ranking -- the same
+// "group but keep the newest detail" shape getStalledAssignments uses,
+// joined out to pilot.external_competitions the same way
+// listCompetitionEntries in externalCompetition.ts does, for the date and
+// name a coach needs to recognize the fight being referenced.
+async function getCompetitionLosses(
+  organizationId: string,
+  athleteIds: readonly string[],
+): Promise<CompetitionLossRow[]> {
+  if (athleteIds.length === 0) return [];
+  return query<CompetitionLossRow>(
+    `select athlete_id,
+            loss_count::int as loss_count,
+            lesson_note as most_recent_lesson_note,
+            competition_name as most_recent_competition_name,
+            competition_date::text as most_recent_competition_date
+     from (
+       select e.athlete_id,
+              e.lesson_note,
+              c.competition_name,
+              c.competition_date,
+              count(*) over (partition by e.athlete_id) as loss_count,
+              row_number() over (
+                partition by e.athlete_id
+                order by c.competition_date desc, e.updated_at desc
+              ) as rn
+       from pilot.external_competition_entries e
+       join pilot.external_competitions c
+         on c.organization_id = e.organization_id and c.competition_id = e.competition_id
+       where e.organization_id = $1 and e.athlete_id = any($2::text[]) and e.result = 'lost'
+     ) ranked
+     where rn = 1`,
     [organizationId, [...athleteIds]],
   );
 }
@@ -275,11 +353,12 @@ export async function getGapSuggestions(
   athleteIds: readonly string[],
 ): Promise<GapSuggestion[]> {
   if (athleteIds.length === 0) return [];
-  const [rollup, stalled, openGaps, transferFailures] = await Promise.all([
+  const [rollup, stalled, openGaps, transferFailures, competitionLosses] = await Promise.all([
     getPerformanceRollup(organizationId, athleteIds, PERFORMANCE_WINDOW_DAYS_DEFAULT),
     getStalledAssignments(organizationId, athleteIds),
     getOpenGapTypes(organizationId, athleteIds),
     getTransferFailures(organizationId, athleteIds),
+    getCompetitionLosses(organizationId, athleteIds),
   ]);
-  return deriveSuggestions(rollup, stalled, openGaps, transferFailures);
+  return deriveSuggestions(rollup, stalled, openGaps, transferFailures, competitionLosses);
 }
