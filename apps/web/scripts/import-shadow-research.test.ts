@@ -87,4 +87,32 @@ describe('SHADOW research intake package', () => {
     })()`);
     expect(result).toEqual(['pending']);
   });
+
+  test('refuses a coverage verdict outside the ShadowCoverageState vocabulary', () => {
+    const result = evaluate(`(() => {
+      try { m.parseCoverageState('mostly_covered'); }
+      catch (error) { return error.message; }
+      return 'unexpected-pass';
+    })()`);
+    expect(result).toBe('INVALID_COVERAGE_STATE:mostly_covered');
+  });
+
+  // The capability map is the one seed file with a second, disagreeing copy in the tree
+  // (2026-08-08, reference data, not loadable). Pinning the distribution means swapping the
+  // loaded map for another one fails here instead of importing silently.
+  test('the loaded capability map carries the documented 19/10/1 coverage distribution', () => {
+    const result = evaluate(`(async () => {
+      const seed = await m.loadSeedPackage({
+        organizationId: 'org-research-test',
+        accountId: 'account-research-test',
+        createdByRole: 'organization_admin',
+      });
+      const states = {};
+      for (const row of seed.capabilityMap) {
+        states[row.coverage_state] = (states[row.coverage_state] ?? 0) + 1;
+      }
+      return states;
+    })()`);
+    expect(result).toEqual({ covered: 19, partial: 10, uncovered: 1 });
+  });
 });

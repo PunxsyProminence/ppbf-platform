@@ -34,6 +34,10 @@ const FILES = Object.freeze({
 
 const PRIVILEGED_ROLES = new Set(['platform_owner', 'organization_admin', 'admin']);
 
+// Mirrors ShadowCoverageState in src/server/pilot/shadowLibrary.ts. The column has no CHECK
+// constraint, so an unrecognised verdict in a seed CSV would otherwise reach the table intact.
+const COVERAGE_STATES = new Set(['covered', 'partial', 'uncovered', 'unknown']);
+
 function fail(message) {
   throw new Error(message);
 }
@@ -52,6 +56,12 @@ function nullable(value) {
 function integer(value, field) {
   if (!/^-?\d+$/.test(String(value))) fail(`INVALID_INTEGER:${field}:${value}`);
   return Number(value);
+}
+
+export function parseCoverageState(value, token = 'MISSING_COVERAGE_STATE') {
+  const normalized = required(value, token);
+  if (!COVERAGE_STATES.has(normalized)) fail(`INVALID_COVERAGE_STATE:${normalized}`);
+  return normalized;
 }
 
 function metadata(value, fileName, rowNumber) {
@@ -434,7 +444,7 @@ export async function loadSeedPackage({
     required_source_types: parsePostgresTextArray(row.required_source_types),
     minimum_authority_tier: integer(row.minimum_authority_tier, 'minimum_authority_tier'),
     minimum_source_count: integer(row.minimum_source_count, 'minimum_source_count'),
-    coverage_state: required(row.coverage_state, `MISSING_COVERAGE_STATE:${index + 2}`),
+    coverage_state: parseCoverageState(row.coverage_state, `MISSING_COVERAGE_STATE:${index + 2}`),
     feeder_tracks: parseFeederTracks(row._feeder_tracks),
   }));
 
