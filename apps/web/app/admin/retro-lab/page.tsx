@@ -1,3 +1,4 @@
+import SampleDataNotice from '@/components/SampleDataNotice';
 import DevToolsQAConsole from '@/src/components/core/DevToolsQAConsole';
 import PunxsyEcosystemCore from '@/src/components/core/PunxsyEcosystemCore';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
@@ -10,6 +11,9 @@ export default async function AdminRetroLabPage() {
 
   return (
     <main className="min-h-screen bg-[#09090b]">
+      <SampleDataNotice
+        what="Every panel on this page is a prototype surface running on hardcoded values. Nothing here reads or writes the organization's records."
+      />
       <PunxsyEcosystemCore />
       <DevToolsQAConsole />
     </main>
