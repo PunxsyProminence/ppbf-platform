@@ -65,6 +65,32 @@ const ANSWER_STATE_BADGES: Record<AnswerState, { className: string; glyph: strin
   resolved: { className: 'badge badge--cleared', glyph: '✓', label: 'Resolved' },
 };
 
+// The submission's own verdict -- the per-source review the ladder above is
+// computed FROM, not the ladder itself. A submission starts 'unreviewed';
+// the other four are the review outcomes a curator can hand down.
+type ApplicabilityState = 'unreviewed' | 'responsive' | 'partially_responsive' | 'not_responsive' | 'duplicate';
+
+const REVIEW_VERDICTS: readonly Exclude<ApplicabilityState, 'unreviewed'>[] = [
+  'responsive', 'partially_responsive', 'not_responsive', 'duplicate',
+];
+
+const APPLICABILITY_BADGES: Record<ApplicabilityState, { className: string; glyph: string; label: string }> = {
+  unreviewed: { className: 'badge badge--monitor', glyph: '◉', label: 'Unreviewed' },
+  responsive: { className: 'badge badge--cleared', glyph: '✓', label: 'Responsive' },
+  partially_responsive: { className: 'badge badge--restricted', glyph: '▲', label: 'Partially Responsive' },
+  not_responsive: { className: 'badge badge--locked', glyph: '✕', label: 'Not Responsive' },
+  duplicate: { className: 'badge badge--filed', glyph: '◌', label: 'Duplicate' },
+};
+
+interface ResearchSubmissionItem {
+  submission_id: string;
+  source_id: string;
+  submission_note: string;
+  applicability_state: ApplicabilityState;
+  review_note: string;
+  created_at: string;
+}
+
 interface LibrarySourceOption {
   source_id: string;
   title: string;
@@ -101,6 +127,14 @@ export default function ResearchIntakePage() {
   // Scoped to one requirement so a message from card A never renders under
   // card B when several gaps are open at once.
   const [answerMessage, setAnswerMessage] = useState<{ forId: number; text: string } | null>(null);
+  // Review panel: the submitted-sources list for one open requirement,
+  // fetched on demand (same "click to load" pattern as Answer a Gap) rather
+  // than eagerly for every card -- the batch endpoint above only returns the
+  // computed ladder, never the underlying rows a reviewer needs to see.
+  const [reviewingId, setReviewingId] = useState<number | null>(null);
+  const [reviewItems, setReviewItems] = useState<ResearchSubmissionItem[] | null>(null);
+  const [reviewBusyId, setReviewBusyId] = useState<string | null>(null);
+  const [reviewMessage, setReviewMessage] = useState<{ forId: number; text: string } | null>(null);
   // Issue #345 workflow 3: general research intake. Classification is a
   // human-picked filing label in source metadata -- no gate, tier, or review
   // state is touched by anything in this section.
@@ -313,6 +347,73 @@ export default function ResearchIntakePage() {
       setAnswerMessage({ forId: requirementId, text: error instanceof Error ? error.message : 'Unable to submit the source.' });
     } finally {
       setAnswerBusy(false);
+    }
+  }
+
+  // Titles aren't on the submission row (it only carries source_id) -- the
+  // curator's own source list is already in memory from the Answer-a-Gap
+  // probe, so a lookup avoids a second round trip per submission.
+  const sourcesById = useMemo(() => {
+    const map = new Map<string, LibrarySourceOption>();
+    for (const source of curatorSources ?? []) map.set(source.source_id, source);
+    return map;
+  }, [curatorSources]);
+
+  async function handleToggleReview(requirementId: number) {
+    if (reviewingId === requirementId) {
+      setReviewingId(null);
+      return;
+    }
+    setReviewingId(requirementId);
+    setReviewMessage(null);
+    setReviewItems(null);
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/shadow/research-submissions?research_requirement_id=${requirementId}`,
+        { credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('Unable to load submitted sources.');
+      const payload = (await response.json()) as { items?: ResearchSubmissionItem[] };
+      setReviewItems(payload.items ?? []);
+    } catch (error) {
+      setReviewItems([]);
+      setReviewMessage({
+        forId: requirementId,
+        text: error instanceof Error ? error.message : 'Unable to load submitted sources.',
+      });
+    }
+  }
+
+  async function handleReviewSubmission(
+    requirementId: number,
+    submissionId: string,
+    applicabilityState: Exclude<ApplicabilityState, 'unreviewed'>,
+  ) {
+    setReviewBusyId(submissionId);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-submissions`, {
+        credentials: 'include',
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submission_id: submissionId, applicability_state: applicabilityState }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Review failed (${response.status})`);
+      }
+      const payload = (await response.json()) as { item?: ResearchSubmissionItem };
+      setReviewItems((current) =>
+        current?.map((item) => (item.submission_id === submissionId && payload.item ? payload.item : item)) ?? current,
+      );
+      setReviewMessage({ forId: requirementId, text: 'Review recorded.' });
+      // The ladder on the requirement card is derived from review state --
+      // a verdict here can move a card from "Sources Submitted" to
+      // "Partially Answered", so the batch read has to be redone.
+      await refreshAnswerStates(requirements.map((item) => item.research_requirement_id));
+    } catch (error) {
+      setReviewMessage({ forId: requirementId, text: error instanceof Error ? error.message : 'Unable to record the review.' });
+    } finally {
+      setReviewBusyId(null);
     }
   }
 
@@ -716,6 +817,61 @@ export default function ResearchIntakePage() {
                           ? <p className="t-muted" role="status">{answerMessage.text}</p> : null}
                       </div>
                     )}
+                  </div>
+                ) : null}
+                {curatorSources !== null ? (
+                  <div className="mt-[var(--s3)]">
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      onClick={() => void handleToggleReview(requirement.research_requirement_id)}
+                    >
+                      {reviewingId === requirement.research_requirement_id ? 'Hide submitted sources' : 'Review submitted sources'}
+                    </button>
+                    {reviewingId === requirement.research_requirement_id ? (
+                      <div className="mat-paper rounded-[var(--r-sm)] p-[var(--s4)] mt-[var(--s3)] space-y-[var(--s3)]">
+                        <p className={PAPER_LABEL}>A verdict is a review outcome, not a resolution — Mark Resolved stays the human act</p>
+                        {reviewItems === null ? (
+                          <p className="t-typed text-[length:var(--t-xs)]">Loading submitted sources…</p>
+                        ) : reviewItems.length === 0 ? (
+                          <p className="t-typed text-[length:var(--t-xs)]">No sources submitted against this requirement yet.</p>
+                        ) : (
+                          reviewItems.map((submission) => {
+                            const source = sourcesById.get(submission.source_id);
+                            const badge = APPLICABILITY_BADGES[submission.applicability_state];
+                            return (
+                              <div
+                                key={submission.submission_id}
+                                className="border-t border-[color:rgba(51,41,27,.26)] pt-[var(--s3)] first:border-t-0 first:pt-0"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+                                  <p className="t-typed text-[length:var(--t-sm)] font-bold">{source?.title ?? submission.source_id}</p>
+                                  <span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{badge.label}</span>
+                                </div>
+                                {submission.submission_note ? (
+                                  <p className="t-typed mt-[var(--s1)] text-[length:var(--t-xs)]">{submission.submission_note}</p>
+                                ) : null}
+                                <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
+                                  {REVIEW_VERDICTS.map((verdict) => (
+                                    <button
+                                      key={verdict}
+                                      type="button"
+                                      disabled={reviewBusyId === submission.submission_id || submission.applicability_state === verdict}
+                                      onClick={() => void handleReviewSubmission(requirement.research_requirement_id, submission.submission_id, verdict)}
+                                      className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {APPLICABILITY_BADGES[verdict].label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                        {reviewMessage && reviewMessage.forId === requirement.research_requirement_id
+                          ? <p className="t-typed text-[length:var(--t-xs)]" role="status">{reviewMessage.text}</p> : null}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </article>

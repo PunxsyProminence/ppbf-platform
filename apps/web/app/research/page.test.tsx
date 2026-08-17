@@ -237,3 +237,108 @@ describe('general research intake', () => {
     ]);
   });
 });
+
+// The submission-review lifecycle (GET/POST/PATCH on research-submissions)
+// had no caller: a curator could submit a source and never move it past
+// "submitted" through any shipped screen. These pin the panel that closes
+// that gap -- it lists a requirement's submitted sources on demand and
+// applies one of the four review verdicts via the existing PATCH.
+describe('submission review panel', () => {
+  const REVIEW_SUBMISSION = {
+    submission_id: 'sub-1',
+    source_id: 'src-1',
+    submission_note: 'Directly compares two roadwork volumes.',
+    applicability_state: 'unreviewed' as const,
+    review_note: '',
+    created_at: '2026-08-02T00:00:00Z',
+  };
+
+  function mockFetchReview(options: { curator: boolean; patches?: unknown[] }) {
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+
+      if (url.includes('/research-submissions') && method === 'PATCH') {
+        const body = JSON.parse(String(init?.body)) as { submission_id: string; applicability_state: string };
+        options.patches?.push(body);
+        return {
+          ok: true,
+          json: async () => ({ item: { ...REVIEW_SUBMISSION, applicability_state: body.applicability_state } }),
+        } as Response;
+      }
+      if (url.includes('/research-submissions') && url.includes('research_requirement_ids=')) {
+        return { ok: true, json: async () => ({ answer_states: { '7': 'sources_submitted' } }) } as Response;
+      }
+      if (url.includes('/research-submissions') && url.includes('research_requirement_id=7')) {
+        return { ok: true, json: async () => ({ items: [REVIEW_SUBMISSION], answer_state: 'sources_submitted' }) } as Response;
+      }
+      if (url.includes('/library/sources')) {
+        if (!options.curator) return { ok: false, status: 403, json: async () => ({}) } as Response;
+        // The general-research probe (its own filtered read) must not also
+        // surface SOURCE, or the source title matches twice: once as the
+        // review panel's row, once in the unrelated general-intake list.
+        return { ok: true, json: async () => ({ sources: url.includes('general_research=true') ? [] : [SOURCE] }) } as Response;
+      }
+      if (url.includes('/research-requirements')) {
+        return { ok: true, json: async () => ({ items: [REQUIREMENT] }) } as Response;
+      }
+      if (url.includes('/research-projection')) {
+        return { ok: true, json: async () => ({ items: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  test('a non-curator sees no review controls', async () => {
+    global.fetch = mockFetchReview({ curator: false });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.queryByRole('button', { name: 'Review submitted sources' })).toBeNull();
+  });
+
+  test('a curator opens the panel and sees the pending submission', async () => {
+    global.fetch = mockFetchReview({ curator: true });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    const toggle = await screen.findByRole('button', { name: 'Review submitted sources' });
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    expect(await screen.findByText('RPE reliability in adolescents')).toBeTruthy();
+    expect(screen.getByText('Directly compares two roadwork volumes.')).toBeTruthy();
+    expect(screen.getByText('Unreviewed')).toBeTruthy();
+  });
+
+  test('applying a verdict PATCHes the endpoint and updates the badge', async () => {
+    const patches: unknown[] = [];
+    global.fetch = mockFetchReview({ curator: true, patches });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    const toggle = await screen.findByRole('button', { name: 'Review submitted sources' });
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    await screen.findByText('RPE reliability in adolescents');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Responsive' }));
+    });
+
+    expect(patches).toEqual([{ submission_id: 'sub-1', applicability_state: 'responsive' }]);
+    expect(await screen.findByText('Review recorded.')).toBeTruthy();
+    // Two "Responsive" nodes now exist: the resulting badge and the
+    // (now-disabled) verdict button that produced it.
+    expect(screen.getAllByText('Responsive')).toHaveLength(2);
+  });
+});
