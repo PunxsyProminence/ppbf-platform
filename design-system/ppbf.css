@@ -2621,6 +2621,74 @@ body.ppbf.on-canvas {
   background: rgba(20,16,13,.08); border: 1px solid rgba(20,16,13,.24); color: var(--card-ink);
 }
 
+/* ===================================================== ORNAMENT DENSITY ===
+   One building, two levels of dressing. Owner decision 2026-08-17: a large
+   screen should feel like older equipment -- the full desk, hardware and all
+   -- and a phone should feel newer, sharp and spare.
+
+   The version considered first gave the phone its own visual language (dark
+   charcoal + gold, against sepia on desktop). It was not taken, for two
+   reasons that are about this codebase rather than taste:
+
+     1. A room is chosen by what a screen IS, not who is looking (see ROOMS).
+        buildingMap.ts assigns one of six rooms to every route, and the
+        corridor and card catalog read those rooms as wayfinding. A single
+        mobile treatment collapses all six into one, so a phone loses the only
+        cue that says which part of the building you are standing in.
+     2. Brass is reserved for the crest, a belt, one ceremonial rivet, and
+        Law 2 spends saturated colour on a participant's safety state. Gold as
+        the everyday mobile accent spends both reserves on decoration.
+
+   So the difference here is DRESSING, not language: same room, same ground,
+   same ink, fewer fixtures. Every rule below moves hardware that sits on top
+   of a panel, or the depth of a shadow. None of them touches a text colour or
+   a background a word is read against -- deliberately, because the contrast
+   sweep exists precisely because this file has shipped invisible text before,
+   and an ornament dial must not be able to do it again.
+
+   What this is NOT: it does not make a phone look like a different product.
+   If that is wanted, it is a ground change, and a ground change is a Law 6
+   decision rather than a decorating one.
+
+   Breakpoint matches globals.css, which is where the layout already turns. */
+@media (max-width: 768px) {
+  /* Hardware stands down. Rivets, pins and rope trim are decoration fixed to
+     furniture: at phone width they crowd a panel whose padding has already
+     tightened, and every one of them is aria-hidden or an empty span, so
+     nothing is lost but the ornament. Pulling them also moves brass back
+     toward its reserve rather than further from it. */
+  .rivet, .pin, .rope, .corner-rope { display: none; }
+
+  /* One fixture overhead instead of two in the corners. A phone is too narrow
+     to read two pools as two lamps -- it reads as an uneven wash. These are
+     the values .room--lit-center already uses, so the mid-content band lands
+     within .01 alpha of the two-fixture room and the ground behind text does
+     not move. Rooms that light themselves (clinic, night) keep their own. */
+  .room::before {
+    background-image:
+      radial-gradient(78% 74% at 50% -12%, rgba(255,246,223,.38), transparent 70%),
+      radial-gradient(120% 60% at 50% 36%, rgba(255,233,184,.12), transparent 78%),
+      radial-gradient(130% 84% at 50% 112%, rgba(0,0,0,.62), transparent 68%);
+  }
+
+  /* Shallower furniture. The hard offset shadow is the period detail and it
+     stays; it is the deep ones that eat the gutter at 360px and read as blur
+     rather than as depth. Tightened, never removed -- a panel with no shadow
+     stops being an object and becomes a coloured div. */
+  .woodframe {
+    box-shadow:
+      inset 0 2px 0 rgba(156,107,58,.5),
+      inset 0 -3px 6px rgba(0,0,0,.6),
+      0 6px 14px rgba(0,0,0,.55);
+  }
+  .mat-wood {
+    box-shadow:
+      inset 0 1px 0 rgba(156,107,58,.42),
+      inset 0 -2px 5px rgba(0,0,0,.55),
+      0 2px 6px rgba(0,0,0,.5);
+  }
+}
+
 /* ======================================================== PRINT MEDIA RULES === */
 /* Every screen must print identically to how it renders on screen.
    Board records and family records are the same sheet of stamped paper. */
