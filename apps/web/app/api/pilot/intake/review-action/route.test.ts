@@ -6,6 +6,7 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { getIntakeCaseById } from '@/src/server/pilot/intake';
+import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -59,6 +60,9 @@ const mockStaffProvision = createOrUpdateMicrosoftStaffAccount as jest.MockedFun
 >;
 const mockAthleteAccount = createOrUpdateAthleteAccount as jest.MockedFunction<typeof createOrUpdateAthleteAccount>;
 const mockGetIntakeCase = getIntakeCaseById as jest.MockedFunction<typeof getIntakeCaseById>;
+const mockCreateResearchRequirement = createShadowResearchRequirement as jest.MockedFunction<
+  typeof createShadowResearchRequirement
+>;
 
 function principal(): PilotPrincipal {
   return {
@@ -229,5 +233,17 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     // Three-argument form: the org rides in the legacy slot, and no
     // credential is involved at promotion time.
     expect(mockAthleteAccount).toHaveBeenCalledWith('athlete-1', 'ath-1', 'org-real');
+  });
+
+  // Guards the write half of the subject_id column: the promoted athlete's id
+  // must reach createShadowResearchRequirement as subjectId, not just as
+  // metadata.athlete_id, or the row stays unreachable by the parent-scoped
+  // filter that reads subject_id.
+  test('passes the promoted athlete as the research requirement subject', async () => {
+    await POST(promoteRequest(undefined));
+
+    expect(mockCreateResearchRequirement).toHaveBeenCalledWith(
+      expect.objectContaining({ subjectId: 'ath-1' }),
+    );
   });
 });

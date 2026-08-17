@@ -340,6 +340,7 @@ async function ensureClaimResearchRequirement(input: {
     researchRequirement: `Strengthen SHADOW Library evidence for ${input.scope} claim`,
     knowledgeGap: `Question lacks sufficient SHADOW Library evidence: ${input.question}. Evidence count: ${input.evidenceCount}. Distinct sources: ${input.distinctSourceCount}.`,
     evidenceLabel: input.subjectId,
+    subjectId: input.subjectId,
     sourceStatus: input.status === 'unsupported' ? 'missing' : 'weak',
     sourceConfidenceTier: 'INSUFFICIENT',
     sourceVerificationState: 'unknown',
