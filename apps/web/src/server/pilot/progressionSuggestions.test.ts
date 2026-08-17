@@ -10,6 +10,7 @@ import {
   READINESS_MIN_CHECKINS_PER_HALF,
   TRAINING_DAYS_MIN_EARLY,
   type StalledAssignmentRow,
+  type TransferFailureRow,
 } from './progressionSuggestions';
 import type { AthletePerformanceRow } from './performanceAnalytics';
 
@@ -144,6 +145,54 @@ describe('assignments_stalled', () => {
     const mental = suggestions.filter((s) => s.gap_type === 'mental');
     expect(mental).toHaveLength(1);
     expect(mental[0].rule).toBe('training_days_dropping');
+  });
+});
+
+describe('transfer_check_failed', () => {
+  const FAILURE: TransferFailureRow = {
+    athlete_id: 'ath-1',
+    metric_kind: 'jab_cross',
+    controlled_makes: 8,
+    controlled_misses: 1,
+    live_makes: 1,
+    live_misses: 5,
+  };
+
+  test('a not_transferring readout produces a skill-gap suggestion', () => {
+    const suggestions = deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [FAILURE]);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].rule).toBe('transfer_check_failed');
+    expect(suggestions[0].gap_type).toBe('skill');
+    expect(suggestions[0].athlete_id).toBe('ath-1');
+    expect(suggestions[0].suggested_description).toContain('jab_cross');
+    expect(suggestions[0].evidence).toEqual({
+      metric_kind: 'jab_cross',
+      controlled_makes: 8,
+      controlled_misses: 1,
+      live_makes: 1,
+      live_misses: 5,
+    });
+  });
+
+  test('two failing metrics for the same athlete produce two separate suggestions', () => {
+    const second: TransferFailureRow = { ...FAILURE, metric_kind: 'low_kick' };
+    const suggestions = deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [FAILURE, second]);
+    expect(suggestions).toHaveLength(2);
+    expect(suggestions.map((s) => s.evidence.metric_kind).sort()).toEqual(['jab_cross', 'low_kick']);
+  });
+
+  test('an open skill gap suppresses the suggestion', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      new Map([['ath-1', new Set(['skill'])]]),
+      [FAILURE],
+    );
+    expect(suggestions).toHaveLength(0);
+  });
+
+  test('no transfer failures means no suggestion, same as any other quiet rule', () => {
+    expect(deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [])).toHaveLength(0);
   });
 });
 
