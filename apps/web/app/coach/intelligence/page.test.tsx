@@ -23,6 +23,10 @@ const DIGEST = {
   fading_attendance: [{ athlete_id: 'ath-3', athlete_name: 'Rosa D.', training_days_early: 6, training_days_late: 2 }],
   unreviewed_sessions: [{ athlete_id: 'ath-1', athlete_name: 'Jordan P.', session_id: 's-1', session_date: '2026-08-01', days_waiting: 15 }],
   expiring_holds: [{ athlete_id: 'ath-4', athlete_name: 'Kim L.', hold_id: 'h-1', expires_at: '2026-08-20T00:00:00.000Z' }],
+  open_safety_items: [{
+    athlete_id: 'ath-5', athlete_name: 'Neeko F.', kind: 'escalation', source_id: 'esc-1',
+    severity: 'high', reason: 'Repeated near-miss pattern', status: 'open', created_at: '2026-08-10',
+  }],
 };
 
 function mockFetch(options: { digest?: unknown; ok?: boolean }) {
@@ -37,13 +41,15 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('all five sections render with thresholds stated and action links to the owning surfaces', async () => {
+test('all six sections render with thresholds stated and action links to the owning surfaces', async () => {
   global.fetch = mockFetch({});
 
   await act(async () => {
     render(<CoachIntelligencePage />);
   });
 
+  expect(screen.getByText('Open safety escalations and violations')).toBeTruthy();
+  expect(screen.getByText(/high safety escalation/)).toBeTruthy();
   expect(screen.getByText('Holds expiring within 14 days')).toBeTruthy();
   expect(screen.getByText('3+ RED readiness days this week')).toBeTruthy();
   expect(screen.getByText('Attendance fading')).toBeTruthy();
@@ -58,7 +64,10 @@ test('all five sections render with thresholds stated and action links to the ow
 
 test('the empty state never claims the floor is fine', async () => {
   global.fetch = mockFetch({
-    digest: { stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [] },
+    digest: {
+      stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
+      open_safety_items: [],
+    },
   });
 
   await act(async () => {

@@ -43,6 +43,7 @@ test('an empty roster returns an empty digest without touching the database', as
 
   expect(digest).toEqual({
     stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
+    open_safety_items: [],
   });
   expect(mockQuery).not.toHaveBeenCalled();
   expect(mockRollup).not.toHaveBeenCalled();
@@ -65,10 +66,49 @@ test('the queries carry the org scope, the thresholds, and the no-assignment/no-
   expect(readinessSql).toContain('distinct on (r.athlete_id, r.measured_at::date)');
   const holdSql = sqls.find((sql) => sql.includes('training_holds'));
   expect(holdSql).toContain("h.status = 'active'");
+  const safetySql = sqls.find((sql) => sql.includes('safety_escalations'));
+  expect(safetySql).toContain("status in ('open', 'acknowledged')");
+  expect(safetySql).toContain('pilot.compliance_violations');
+  expect(safetySql).toContain("status not in ('resolved', 'dismissed')");
   for (const call of mockQuery.mock.calls) {
     expect(call[1][0]).toBe('org-1');
   }
   expect(mockRollup).toHaveBeenCalledWith('org-1', ['ath-1'], ATTENDANCE_WINDOW_DAYS);
+});
+
+test('open safety escalations and compliance violations are combined and given names', async () => {
+  mockQuery.mockImplementation(async (sql: string) => {
+    if (String(sql).includes('safety_escalations')) {
+      return [
+        {
+          athlete_id: 'ath-1', kind: 'escalation', source_id: 'esc-1',
+          severity: 'high', reason: 'Repeated near-miss pattern', status: 'open', created_at: '2026-08-10',
+        },
+        {
+          athlete_id: 'ath-1', kind: 'violation', source_id: 'viol-1',
+          severity: 'moderate', reason: 'Unsupervised contact drill', status: 'new', created_at: '2026-08-12',
+        },
+      ];
+    }
+    if (String(sql).includes('full_name from pilot.athletes')) {
+      return [{ athlete_id: 'ath-1', full_name: 'Rosa D.' }];
+    }
+    return [];
+  });
+  mockRollup.mockResolvedValue([]);
+
+  const digest = await getCoachIntelligence('org-1', ['ath-1']);
+
+  expect(digest.open_safety_items).toEqual([
+    {
+      athlete_id: 'ath-1', athlete_name: 'Rosa D.', kind: 'escalation', source_id: 'esc-1',
+      severity: 'high', reason: 'Repeated near-miss pattern', status: 'open', created_at: '2026-08-10',
+    },
+    {
+      athlete_id: 'ath-1', athlete_name: 'Rosa D.', kind: 'violation', source_id: 'viol-1',
+      severity: 'moderate', reason: 'Unsupervised contact drill', status: 'new', created_at: '2026-08-12',
+    },
+  ]);
 });
 
 test('the fading filter applies the half-drop rule exactly, with names from the roster read', async () => {

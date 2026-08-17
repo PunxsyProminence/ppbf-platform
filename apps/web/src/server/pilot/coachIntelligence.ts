@@ -14,6 +14,15 @@ import { READINESS_YELLOW_MIN } from './readinessBoard';
 // threshold already exists elsewhere it is IMPORTED, not restated, so the
 // two rules can never drift apart (attendance reuses the gap-suggestion
 // constants; the RED band reuses the readiness board's).
+//
+// Item 6 (added later, capability-network audit finding): open safety
+// escalations and filed compliance violations for the coach's own roster.
+// Before this, the digest queried four sources live and never these two --
+// an athlete under active safety review could show nothing here, on the one
+// screen built to tell a coach what needs their eyes today. Same live-query,
+// no-storage shape as every other item; "open" mirrors each register's own
+// unresolved states (escalations: open/acknowledged; violations: anything
+// short of resolved/dismissed).
 
 /** Item 1: a gap identified this long ago with no drill ever assigned. */
 export const STALLED_GAP_DAYS = 14;
@@ -33,6 +42,16 @@ export interface CoachIntelligenceDigest {
   fading_attendance: Array<{ athlete_id: string; athlete_name: string; training_days_early: number; training_days_late: number }>;
   unreviewed_sessions: Array<{ athlete_id: string; athlete_name: string; session_id: string; session_date: string; days_waiting: number }>;
   expiring_holds: Array<{ athlete_id: string; athlete_name: string; hold_id: string; expires_at: string }>;
+  open_safety_items: Array<{
+    athlete_id: string;
+    athlete_name: string;
+    kind: 'escalation' | 'violation';
+    source_id: string;
+    severity: string;
+    reason: string;
+    status: string;
+    created_at: string;
+  }>;
 }
 
 export async function getCoachIntelligence(
@@ -40,11 +59,14 @@ export async function getCoachIntelligence(
   athleteIds: readonly string[],
 ): Promise<CoachIntelligenceDigest> {
   if (athleteIds.length === 0) {
-    return { stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [] };
+    return {
+      stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
+      open_safety_items: [],
+    };
   }
   const ids = [...athleteIds];
 
-  const [stalledGaps, redDays, rollup, unreviewed, holds, names] = await Promise.all([
+  const [stalledGaps, redDays, rollup, unreviewed, holds, safetyItems, names] = await Promise.all([
     // 1. Gaps identified STALLED_GAP_DAYS+ ago that never got an assignment.
     query<{ athlete_id: string; athlete_name: string; gap_type: string; gap_description: string; days_open: number }>(
       `select g.athlete_id, a.full_name as athlete_name, g.gap_type, g.gap_description,
@@ -109,9 +131,33 @@ export async function getCoachIntelligence(
        order by h.expires_at asc`,
       [organizationId, ids, HOLD_EXPIRY_DAYS],
     ),
-    // Names for item 3 (the rollup is numbers only). An id with no athlete
-    // row cannot happen for ids that came from the roster read, but the
-    // fallback renders the id rather than inventing a name.
+    // 6. Open safety escalations and unresolved compliance violations,
+    // combined into one ledger the same way the two registers are already
+    // read elsewhere (board summary, escalation ladder) -- just scoped to
+    // this coach's own roster instead of org-wide.
+    query<{
+      athlete_id: string; kind: 'escalation' | 'violation'; source_id: string;
+      severity: string; reason: string; status: string; created_at: string;
+    }>(
+      `select athlete_id, 'escalation'::text as kind, escalation_id as source_id,
+              severity, reason, status, created_at::text as created_at
+       from pilot.safety_escalations
+       where organization_id = $1 and athlete_id = any($2::text[])
+         and status in ('open', 'acknowledged')
+       union all
+       select v.athlete_id, 'violation'::text as kind, v.violation_id as source_id,
+              v.severity, coalesce(r.rule_name, 'Compliance violation') as reason, v.status, v.created_at::text as created_at
+       from pilot.compliance_violations v
+       left join pilot.compliance_rules r
+         on r.organization_id = v.organization_id and r.rule_id = v.rule_id
+       where v.organization_id = $1 and v.athlete_id = any($2::text[])
+         and v.status not in ('resolved', 'dismissed')
+       order by created_at asc`,
+      [organizationId, ids],
+    ),
+    // Names for item 3 and item 6 (both queries return numbers/ids only). An
+    // id with no athlete row cannot happen for ids that came from the roster
+    // read, but the fallback renders the id rather than inventing a name.
     query<{ athlete_id: string; full_name: string }>(
       `select athlete_id, full_name from pilot.athletes
        where organization_id = $1 and athlete_id = any($2::text[])`,
@@ -138,5 +184,9 @@ export async function getCoachIntelligence(
     fading_attendance: fading,
     unreviewed_sessions: unreviewed,
     expiring_holds: holds,
+    open_safety_items: safetyItems.map((row) => ({
+      ...row,
+      athlete_name: nameById.get(row.athlete_id) ?? row.athlete_id,
+    })),
   };
 }

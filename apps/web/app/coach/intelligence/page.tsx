@@ -6,10 +6,15 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 
 // Coach Intelligence v1 (register module 111): the owner-approved morning
-// read. Five deterministic, read-only observations about the coach's own
+// read. Six deterministic, read-only observations about the coach's own
 // athletes -- every item is a stored fact plus a named threshold, organized
 // by urgency. No ML, no scores, no predictions; the coach decides what any
 // of it means, and acting on an item happens on the surface that owns it.
+//
+// Item 6 (open safety escalations / compliance violations) renders first:
+// it is the safety-critical register this digest previously never queried,
+// so an athlete under active review is now the first thing a coach sees
+// here, not something they had to already know to go look for elsewhere.
 
 interface Digest {
   stalled_gaps: Array<{ athlete_id: string; athlete_name: string; gap_type: string; gap_description: string; days_open: number }>;
@@ -17,10 +22,15 @@ interface Digest {
   fading_attendance: Array<{ athlete_id: string; athlete_name: string; training_days_early: number; training_days_late: number }>;
   unreviewed_sessions: Array<{ athlete_id: string; athlete_name: string; session_id: string; session_date: string; days_waiting: number }>;
   expiring_holds: Array<{ athlete_id: string; athlete_name: string; hold_id: string; expires_at: string }>;
+  open_safety_items: Array<{
+    athlete_id: string; athlete_name: string; kind: 'escalation' | 'violation'; source_id: string;
+    severity: string; reason: string; status: string; created_at: string;
+  }>;
 }
 
 const EMPTY: Digest = {
   stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
+  open_safety_items: [],
 };
 
 export default function CoachIntelligencePage() {
@@ -54,7 +64,7 @@ export default function CoachIntelligencePage() {
 
   const total =
     digest.stalled_gaps.length + digest.readiness_concerns.length + digest.fading_attendance.length
-    + digest.unreviewed_sessions.length + digest.expiring_holds.length;
+    + digest.unreviewed_sessions.length + digest.expiring_holds.length + digest.open_safety_items.length;
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
@@ -64,7 +74,7 @@ export default function CoachIntelligencePage() {
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>The Morning Read</h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              Five deterministic reads of your own athletes&rsquo; records, organized by urgency.
+              Six deterministic reads of your own athletes&rsquo; records, organized by urgency.
               Every item is a stored fact plus a stated threshold — no scores, no predictions.
               You decide what any of it means.
             </p>
@@ -93,6 +103,21 @@ export default function CoachIntelligencePage() {
             </div>
           ) : (
             <div className="space-y-[var(--s4)]">
+              {digest.open_safety_items.length > 0 && (
+                <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Open safety escalations and violations</h2>
+                  <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
+                    {digest.open_safety_items.map((item) => (
+                      <li key={`${item.kind}:${item.source_id}`} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+                        <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        {' '}— {item.severity} {item.kind === 'escalation' ? 'safety escalation' : 'compliance violation'}
+                        ({item.status}): {item.reason}.
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
               {digest.expiring_holds.length > 0 && (
                 <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                   <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Holds expiring within 14 days</h2>
