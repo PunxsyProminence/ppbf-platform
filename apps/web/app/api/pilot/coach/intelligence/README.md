@@ -64,6 +64,54 @@ new shape.
   restriction is a hold, and holds live in `trainingHolds.ts`. Reading this
   page is not clearance and is not a substitute for the clearance register.
 
+## What must be true for an item to appear
+
+This capability's gates are unusual: they do not refuse a request, they
+*subtract rows*. So the honest version of "what does it take for this to be
+active" is per item, not per request, and a reader debugging "why is this coach
+seeing nothing" needs the list below rather than the gate descriptions.
+
+**For the page to render at all:**
+
+| Must be true | If it is not |
+|---|---|
+| Authenticated session | 401 |
+| Role is `coach`, `organization_admin` or `admin` | 403 `Forbidden: role not allowed` |
+| The caller has at least one athlete in scope | Page renders, digest is empty |
+
+No feature flag, migration or environment variable is involved. The capability
+is live wherever it is deployed, and it was **already live and already reporting
+"nothing needs your eyes"** while blind to two safety registers — which is what
+the change this README documents fixed.
+
+**For each individual item to appear**, all of these must hold:
+
+| Item | Appears when |
+|---|---|
+| 1. Stalled progression gap | Gap open ≥ 14 days with no drill assignment against it |
+| 2. Readiness concern | ≥ 3 RED readiness days in the last 7 |
+| 3. Fading attendance | Recent attendance below the athlete's own early-season baseline |
+| 4. Unreviewed session | A completed session unreviewed for ≥ 7 days |
+| 5. Hold expiring | An active training hold expiring within 14 days |
+| 6. Open safety escalation | Escalation `status = 'open'`, **and** it is not an `athlete_voice` row |
+| 7. Open compliance violation | Violation status in `COMPLIANCE_VIOLATION_OPEN_STATUSES` (`new`, `acknowledged`, `escalated`) |
+
+Every one is additionally scoped to the caller's own organization and to
+athletes in the caller's own roster. Items 6 and 7 are the two this change
+added; the other five predate it.
+
+**Two silences are deliberate and are not bugs** — both are argued in
+"Deliberately not gated" below, and both are the kind of thing that looks like
+a defect to whoever finds it next:
+
+- An escalation that is **acknowledged but never resolved** is still live and
+  still leaves this digest, because item 6 matches `status = 'open'` only. Widen
+  `ESCALATION_DIGEST_STATUS` to change that.
+- A coach holding **active `coach_coverage`** over a child, rather than being
+  their `coach_id` of record, sees nothing about that child here — this route
+  derives its roster from `getAthletesForCoach`, while `/api/pilot/escalations`
+  includes covering coaches. The two surfaces disagree today.
+
 ## Gates
 
 **1. Authenticated session required**
