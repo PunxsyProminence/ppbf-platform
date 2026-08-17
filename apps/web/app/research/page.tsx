@@ -7,7 +7,9 @@ import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
 import {
   RESEARCH_CLASSIFICATION_DOMAINS,
+  RESEARCH_CLASSIFICATION_LAYERS,
   researchClassificationLabel,
+  researchClassificationLayerLabel,
 } from '@/src/shared/researchClassification';
 
 interface ShadowResearchItem {
@@ -69,7 +71,7 @@ interface LibrarySourceOption {
   source_id: string;
   title: string;
   source_type: string;
-  metadata?: { general_research?: boolean; classification_domain?: string };
+  metadata?: { general_research?: boolean; classification_domain?: string; classification_layer?: string };
 }
 
 const GENERAL_SOURCE_TYPES = [
@@ -105,7 +107,7 @@ export default function ResearchIntakePage() {
   // human-picked filing label in source metadata -- no gate, tier, or review
   // state is touched by anything in this section.
   const [generalDraft, setGeneralDraft] = useState({
-    title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '',
+    title: '', sourceType: 'peer_reviewed', url: '', classification: '', layer: '', doi: '', provider: '', filename: '',
   });
   const [generalBusy, setGeneralBusy] = useState(false);
   const [generalMessage, setGeneralMessage] = useState('');
@@ -237,6 +239,7 @@ export default function ResearchIntakePage() {
           metadata: {
             general_research: true,
             classification_domain: generalDraft.classification,
+            ...(generalDraft.layer ? { classification_layer: generalDraft.layer } : {}),
             provenance,
           },
         }),
@@ -245,7 +248,7 @@ export default function ResearchIntakePage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `Registration failed (${response.status})`);
       }
-      setGeneralDraft({ title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '' });
+      setGeneralDraft({ title: '', sourceType: 'peer_reviewed', url: '', classification: '', layer: '', doi: '', provider: '', filename: '' });
       setGeneralMessage('Source registered and classified. Evidence review still decides what becomes citable.');
       const sources = await fetchSources();
       if (sources !== null) setCuratorSources(sources);
@@ -257,14 +260,14 @@ export default function ResearchIntakePage() {
     }
   }
 
-  async function handleReclassify(sourceId: string, classificationDomain: string) {
+  async function handleReclassify(sourceId: string, patch: { classification_domain?: string; classification_layer?: string }) {
     setReclassifyingId(sourceId);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources`, {
         credentials: 'include',
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_id: sourceId, classification_domain: classificationDomain }),
+        body: JSON.stringify({ source_id: sourceId, ...patch }),
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
@@ -758,6 +761,16 @@ export default function ResearchIntakePage() {
                   ))}
                 </select>
               </label>
+              <label className="field">
+                <span className="t-label">Classification layer (optional)</span>
+                <select aria-label="Classification layer" className="select" value={generalDraft.layer}
+                  onChange={(event) => setGeneralDraft((current) => ({ ...current, layer: event.target.value }))}>
+                  <option value="">Choose a layer…</option>
+                  {RESEARCH_CLASSIFICATION_LAYERS.map((layer) => (
+                    <option key={layer.key} value={layer.key}>{layer.label}</option>
+                  ))}
+                </select>
+              </label>
               <label className="field md:col-span-2">
                 <span className="t-label">URL (optional)</span>
                 <input className="input" value={generalDraft.url}
@@ -793,27 +806,53 @@ export default function ResearchIntakePage() {
                   <article key={source.source_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                     <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
                       <p className="t-body font-bold text-[color:var(--bone-100)]">{source.title}</p>
-                      <span className="badge badge--filed"><i aria-hidden="true">◌</i>
-                        {researchClassificationLabel(source.metadata?.classification_domain ?? '')}
-                      </span>
+                      <div className="flex flex-wrap gap-[var(--s2)]">
+                        <span className="badge badge--filed"><i aria-hidden="true">◌</i>
+                          {researchClassificationLabel(source.metadata?.classification_domain ?? '')}
+                        </span>
+                        {source.metadata?.classification_layer ? (
+                          <span className="badge badge--filed"><i aria-hidden="true">◌</i>
+                            {researchClassificationLayerLabel(source.metadata.classification_layer)}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    <label className="field mt-[var(--s3)]">
-                      <span className="t-label">Correct classification</span>
-                      <select
-                        aria-label={`Correct classification for ${source.title}`}
-                        className="select"
-                        value={source.metadata?.classification_domain ?? ''}
-                        disabled={reclassifyingId === source.source_id}
-                        onChange={(event) => {
-                          if (event.target.value) void handleReclassify(source.source_id, event.target.value);
-                        }}
-                      >
-                        <option value="">Choose a domain…</option>
-                        {RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => (
-                          <option key={domain.key} value={domain.key}>{domain.label}</option>
-                        ))}
-                      </select>
-                    </label>
+                    <div className="grid gap-[var(--s3)] md:grid-cols-2 mt-[var(--s3)]">
+                      <label className="field">
+                        <span className="t-label">Correct domain</span>
+                        <select
+                          aria-label={`Correct classification for ${source.title}`}
+                          className="select"
+                          value={source.metadata?.classification_domain ?? ''}
+                          disabled={reclassifyingId === source.source_id}
+                          onChange={(event) => {
+                            if (event.target.value) void handleReclassify(source.source_id, { classification_domain: event.target.value });
+                          }}
+                        >
+                          <option value="">Choose a domain…</option>
+                          {RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => (
+                            <option key={domain.key} value={domain.key}>{domain.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span className="t-label">Correct layer</span>
+                        <select
+                          aria-label={`Correct layer for ${source.title}`}
+                          className="select"
+                          value={source.metadata?.classification_layer ?? ''}
+                          disabled={reclassifyingId === source.source_id}
+                          onChange={(event) => {
+                            if (event.target.value) void handleReclassify(source.source_id, { classification_layer: event.target.value });
+                          }}
+                        >
+                          <option value="">Choose a layer…</option>
+                          {RESEARCH_CLASSIFICATION_LAYERS.map((layer) => (
+                            <option key={layer.key} value={layer.key}>{layer.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
                   </article>
                 ))}
               </div>

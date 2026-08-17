@@ -515,25 +515,40 @@ export async function createShadowLibrarySource(input: {
 }
 
 /**
- * Narrow metadata update: the general-research classification label only
+ * Narrow metadata update: the general-research classification labels only
  * (issue #345 workflow 3 -- "human correction/confirmation of classification
- * must remain possible"). Deliberately NOT a general metadata editor: the
- * domain is validated by the caller against the shared taxonomy, jsonb_set
- * touches that one key, and nothing else about the source -- title, tier,
- * status, review state -- is reachable from here.
+ * must remain possible"). Deliberately NOT a general metadata editor: domain
+ * and layer are each validated by the caller against their own shared
+ * taxonomy, jsonb_set touches only those two keys, and nothing else about
+ * the source -- title, tier, status, review state -- is reachable from here.
+ *
+ * domain and layer are independent axes and independently optional -- a
+ * caller may correct either one alone without touching the other.
  */
 export async function updateShadowLibrarySourceClassification(
   organizationId: string,
   sourceId: string,
-  classificationDomain: string,
+  classification: { domain?: string; layer?: string },
 ): Promise<ShadowLibrarySourceRow | null> {
+  let metadataExpr = 'metadata';
+  const params: unknown[] = [organizationId, sourceId];
+
+  if (classification.domain !== undefined) {
+    params.push(classification.domain);
+    metadataExpr = `jsonb_set(${metadataExpr}, '{classification_domain}', to_jsonb($${params.length}::text), true)`;
+  }
+  if (classification.layer !== undefined) {
+    params.push(classification.layer);
+    metadataExpr = `jsonb_set(${metadataExpr}, '{classification_layer}', to_jsonb($${params.length}::text), true)`;
+  }
+
   const row = await queryOne<ShadowLibrarySourceRow>(
     `update pilot.shadow_library_sources
-     set metadata = jsonb_set(metadata, '{classification_domain}', to_jsonb($3::text), true),
+     set metadata = ${metadataExpr},
          updated_at = now()
      where organization_id = $1 and source_id = $2
      returning *`,
-    [organizationId, sourceId, classificationDomain],
+    params,
   );
   return row;
 }

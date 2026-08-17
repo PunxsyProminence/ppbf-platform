@@ -10,7 +10,7 @@ import {
   updateShadowLibrarySourceClassification,
 } from '@/src/server/pilot/shadowLibrary';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
-import { isResearchClassificationDomain } from '@/src/shared/researchClassification';
+import { isResearchClassificationDomain, isResearchClassificationLayer } from '@/src/shared/researchClassification';
 
 export const runtime = 'nodejs';
 
@@ -173,11 +173,17 @@ export async function POST(request: NextRequest) {
     }
 
     // The classification taxonomy is a shared contract (issue #345): a label
-    // arriving through registration is held to the same 14 domains the
-    // correction PATCH enforces, so no route can file a source outside it.
+    // arriving through registration is held to the same domain/layer lists
+    // the correction PATCH enforces, so no route can file a source outside
+    // either taxonomy.
     const classificationDomain = (body.metadata as Record<string, unknown> | undefined)?.classification_domain;
     if (classificationDomain !== undefined && !isResearchClassificationDomain(classificationDomain)) {
       return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
+    }
+
+    const classificationLayer = (body.metadata as Record<string, unknown> | undefined)?.classification_layer;
+    if (classificationLayer !== undefined && !isResearchClassificationLayer(classificationLayer)) {
+      return NextResponse.json({ ok: false, error: 'Unsupported classification_layer' }, { status: 400 });
     }
 
     const source = await createShadowLibrarySource({
@@ -209,8 +215,10 @@ export async function POST(request: NextRequest) {
 }
 
 // Classification correction (issue #345 workflow 3). Curator-gated like every
-// other write here, and narrower than all of them: one metadata key, human-
-// picked from the shared taxonomy, nothing else about the source reachable.
+// other write here, and narrower than all of them: two metadata keys, each
+// human-picked from its own shared taxonomy, nothing else about the source
+// reachable. domain and layer are independent axes -- a caller may correct
+// either one alone, or both together.
 export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -219,19 +227,33 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as {
       source_id?: unknown;
       classification_domain?: unknown;
+      classification_layer?: unknown;
     };
 
     if (typeof body.source_id !== 'string' || !body.source_id.trim()) {
       return NextResponse.json({ ok: false, error: 'Missing source_id' }, { status: 400 });
     }
-    if (!isResearchClassificationDomain(body.classification_domain)) {
+
+    if (body.classification_domain === undefined && body.classification_layer === undefined) {
+      return NextResponse.json(
+        { ok: false, error: 'Provide classification_domain and/or classification_layer' },
+        { status: 400 },
+      );
+    }
+    if (body.classification_domain !== undefined && !isResearchClassificationDomain(body.classification_domain)) {
       return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
+    }
+    if (body.classification_layer !== undefined && !isResearchClassificationLayer(body.classification_layer)) {
+      return NextResponse.json({ ok: false, error: 'Unsupported classification_layer' }, { status: 400 });
     }
 
     const source = await updateShadowLibrarySourceClassification(
       principal.organizationId,
       body.source_id.trim(),
-      body.classification_domain,
+      {
+        domain: body.classification_domain as string | undefined,
+        layer: body.classification_layer as string | undefined,
+      },
     );
 
     if (!source) return hiddenNotFound();

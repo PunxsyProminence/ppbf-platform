@@ -244,16 +244,58 @@ describe('PATCH /api/pilot/shadow/library/sources', () => {
     expect(mockReclassify).not.toHaveBeenCalled();
   });
 
+  test('a layer outside the shared taxonomy is refused', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+
+    const response = await PATCH(patchRequest({ source_id: 'src-1', classification_layer: 'astrology' }));
+
+    expect(response.status).toBe(400);
+    expect(mockReclassify).not.toHaveBeenCalled();
+  });
+
+  test('neither domain nor layer is refused', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+
+    const response = await PATCH(patchRequest({ source_id: 'src-1' }));
+
+    expect(response.status).toBe(400);
+    expect(mockReclassify).not.toHaveBeenCalled();
+  });
+
   test('a valid correction is org-scoped, and a missing source hides as not-found', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockReclassify.mockResolvedValueOnce({ source_id: 'src-1' } as never);
 
     const ok = await PATCH(patchRequest({ source_id: 'src-1', classification_domain: 'youth_development_safeguarding' }));
     expect(ok.status).toBe(200);
-    expect(mockReclassify).toHaveBeenCalledWith('org-real', 'src-1', 'youth_development_safeguarding');
+    expect(mockReclassify).toHaveBeenCalledWith('org-real', 'src-1', {
+      domain: 'youth_development_safeguarding',
+      layer: undefined,
+    });
 
     mockReclassify.mockResolvedValueOnce(null);
     const missing = await PATCH(patchRequest({ source_id: 'src-x', classification_domain: 'youth_development_safeguarding' }));
     expect(missing.status).toBe(404);
+  });
+
+  test('domain and layer can be corrected independently or together', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockReclassify.mockResolvedValueOnce({ source_id: 'src-1' } as never);
+
+    const layerOnly = await PATCH(patchRequest({ source_id: 'src-1', classification_layer: 'evidence' }));
+    expect(layerOnly.status).toBe(200);
+    expect(mockReclassify).toHaveBeenCalledWith('org-real', 'src-1', { domain: undefined, layer: 'evidence' });
+
+    mockReclassify.mockResolvedValueOnce({ source_id: 'src-1' } as never);
+    const both = await PATCH(patchRequest({
+      source_id: 'src-1',
+      classification_domain: 'youth_development_safeguarding',
+      classification_layer: 'doctrine',
+    }));
+    expect(both.status).toBe(200);
+    expect(mockReclassify).toHaveBeenCalledWith('org-real', 'src-1', {
+      domain: 'youth_development_safeguarding',
+      layer: 'doctrine',
+    });
   });
 });

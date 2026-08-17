@@ -217,7 +217,7 @@ describe('general research intake', () => {
     expect(screen.getByText(/Evidence review still decides what becomes citable/)).toBeTruthy();
   });
 
-  test('correcting a classification PATCHes the narrow endpoint', async () => {
+  test('correcting a classification domain PATCHes the narrow endpoint', async () => {
     const capture = { posts: [] as unknown[], patches: [] as unknown[] };
     global.fetch = mockFetchGeneral({ curator: true, capture });
 
@@ -234,6 +234,26 @@ describe('general research intake', () => {
 
     expect(capture.patches).toEqual([
       { source_id: 'src-gen', classification_domain: 'nonprofit_management_governance' },
+    ]);
+  });
+
+  test('correcting a classification layer independently PATCHes the narrow endpoint', async () => {
+    const capture = { posts: [] as unknown[], patches: [] as unknown[] };
+    global.fetch = mockFetchGeneral({ curator: true, capture });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Nonprofit board best practices');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Correct layer for Nonprofit board best practices'), {
+        target: { value: 'evidence' },
+      });
+    });
+
+    expect(capture.patches).toEqual([
+      { source_id: 'src-gen', classification_layer: 'evidence' },
     ]);
   });
 });
