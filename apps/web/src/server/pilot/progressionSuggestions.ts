@@ -283,3 +283,129 @@ export async function getGapSuggestions(
   ]);
   return deriveSuggestions(rollup, stalled, openGaps, transferFailures);
 }
+
+// ---------------------------------------------------------------------------
+// GAP JUSTIFICATION -- the narrow, additive read this module also owns.
+//
+// When a coach confirms a suggestion above (see the coach progression-
+// intelligence page's handleConfirmSuggestion), the resulting
+// pilot.progression_gaps row is written with detected_from set to
+// `deterministic_rule:<rule>` and detection_data set to this module's own
+// `evidence` object for that rule. The exact numbers already land in the
+// gap's own gap_description as prose (see each rule's suggested_description
+// above) -- an athlete or parent reading a confirmed gap today already reads
+// "Readiness check-ins fell from an average of 6.5 to 4.2...". This section
+// does not disclose a new category of data; it restates that SAME already-
+// visible justification as typed fields instead of frozen prose, scoped to
+// exactly the rollup fields the rule that flagged this gap actually used.
+//
+// A manually-created gap (detected_from = 'coach_observation' or anything
+// else that is not this prefix) gets no justification: there is no rule
+// evidence to restate, and showing rollup numbers next to it would imply a
+// connection that was never made.
+//
+// assignments_stalled is deliberately mapped to an EMPTY field list: its
+// evidence (stalled_count, oldest_due_date) comes from getStalledAssignments
+// above, which is not part of AthletePerformanceRow / the Performance
+// Analytics rollup at all. There is nothing in the rollup to slice for it,
+// and the assignment's own due_date/completion_percentage are already visible
+// to the athlete/parent via GET /api/pilot/progression/assignments -- so
+// this rule contributes no rows to getGapJustifications rather than reaching
+// for an approximate substitute.
+
+const DETECTED_FROM_RULE_PREFIX = 'deterministic_rule:';
+
+/**
+ * The exact AthletePerformanceRow fields each deterministic rule reads (see
+ * deriveSuggestions above) -- restated here as an explicit allowlist so the
+ * athlete/parent-facing justification slice has one place to import from
+ * rather than a second, possibly-drifting list of "safe" fields.
+ */
+export const RULE_JUSTIFICATION_FIELDS: Readonly<Record<SuggestionRule, readonly (keyof AthletePerformanceRow)[]>> = {
+  readiness_falling: [
+    'avg_readiness',
+    'readiness_count',
+    'readiness_early_avg',
+    'readiness_late_avg',
+    'readiness_early_count',
+    'readiness_late_count',
+  ],
+  training_days_dropping: ['training_days', 'training_days_early', 'training_days_late'],
+  assignments_stalled: [],
+};
+
+/** Extracts the rule name from a gap's stored detected_from, or null when the
+ * gap was not produced by a confirmed deterministic suggestion (manual gaps,
+ * or any future detected_from vocabulary this module does not recognise). */
+export function ruleFromDetectedFrom(detectedFrom: string | null | undefined): SuggestionRule | null {
+  if (!detectedFrom || !detectedFrom.startsWith(DETECTED_FROM_RULE_PREFIX)) return null;
+  const rule = detectedFrom.slice(DETECTED_FROM_RULE_PREFIX.length);
+  return rule in RULE_JUSTIFICATION_FIELDS ? (rule as SuggestionRule) : null;
+}
+
+export interface GapJustificationSource {
+  gap_id: string;
+  detected_from: string | null;
+}
+
+export interface GapJustification {
+  gap_id: string;
+  rule: SuggestionRule;
+  fields: Partial<Record<keyof AthletePerformanceRow, number | null>>;
+}
+
+/**
+ * Pure projection: given the one performance row for an athlete and the
+ * detection source of each of their gaps, returns the allowed-fields-only
+ * justification for every rule-generated gap. Gaps with no rule (manual), an
+ * unrecognised rule, or an empty field list (assignments_stalled) contribute
+ * nothing. Exported separately from getGapJustifications below so the
+ * allowlisting is testable with no database, the same split
+ * deriveSuggestions/getGapSuggestions already uses.
+ */
+export function buildGapJustifications(
+  row: AthletePerformanceRow | undefined,
+  gaps: readonly GapJustificationSource[],
+): GapJustification[] {
+  if (!row) return [];
+
+  const justifications: GapJustification[] = [];
+  for (const gap of gaps) {
+    const rule = ruleFromDetectedFrom(gap.detected_from);
+    if (!rule) continue;
+    const allowedFields = RULE_JUSTIFICATION_FIELDS[rule];
+    if (allowedFields.length === 0) continue;
+
+    const fields: Partial<Record<keyof AthletePerformanceRow, number | null>> = {};
+    for (const field of allowedFields) {
+      fields[field] = row[field] as number | null;
+    }
+    justifications.push({ gap_id: gap.gap_id, rule, fields });
+  }
+  return justifications;
+}
+
+/**
+ * DB-calling wrapper: one rollup fetch for the single athlete (default
+ * window, same as the suggestion engine reads), projected down through
+ * buildGapJustifications. Athlete-scoped by construction -- the caller
+ * supplies exactly one athlete_id, already authorised by
+ * assertActorCanAccessAthlete before this runs.
+ */
+export async function getGapJustifications(
+  organizationId: string,
+  athleteId: string,
+  gaps: readonly GapJustificationSource[],
+): Promise<GapJustification[]> {
+  // Skip the rollup fetch entirely when nothing in this athlete's gaps could
+  // ever produce a justification -- an athlete whose gaps are all manual
+  // observations (the common case) costs this endpoint one query, not six.
+  const hasEligibleGap = gaps.some((gap) => {
+    const rule = ruleFromDetectedFrom(gap.detected_from);
+    return rule !== null && RULE_JUSTIFICATION_FIELDS[rule].length > 0;
+  });
+  if (!hasEligibleGap) return [];
+
+  const [row] = await getPerformanceRollup(organizationId, [athleteId], PERFORMANCE_WINDOW_DAYS_DEFAULT);
+  return buildGapJustifications(row, gaps);
+}

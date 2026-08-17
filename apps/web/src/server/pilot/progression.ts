@@ -367,6 +367,34 @@ export async function getAthleteGaps(
   return query<ProgressionGap>(sql, params);
 }
 
+/**
+ * gap_id + detected_from only, for the same rows getAthleteGaps would return
+ * (same organization/athlete/status scoping). detected_from is never sent to
+ * an athlete or parent as-is -- progressionSuggestions.ts's
+ * getGapJustifications reads it server-side to decide which rollup fields, if
+ * any, justify a given gap, then returns only the rule name and the allowed
+ * numbers.
+ */
+export async function getAthleteGapDetectionSources(
+  organizationId: string,
+  athleteId: string,
+  status?: string,
+): Promise<{ gap_id: string; detected_from: string | null }[]> {
+  let sql = `
+    select gap_id, detected_from
+    from pilot.progression_gaps
+    where organization_id = $1 and athlete_id = $2
+  `;
+  const params: unknown[] = [organizationId, athleteId];
+
+  if (status) {
+    sql += ` and status = $${params.length + 1}`;
+    params.push(status);
+  }
+
+  return query<{ gap_id: string; detected_from: string | null }>(sql, params);
+}
+
 export async function getProgressionGapById(
   organizationId: string,
   gapId: string,
