@@ -59,7 +59,7 @@
   --card-ink:       #241C11;
   --card-ink-muted: #6B5B44;
   --paper-2:  #E6DABE;  /* paper shadow side */
-  --canvas-warm: #EFE4C8;  /* the second ground (Law 6) — Guardian, Public Onboarding */
+  --canvas-warm: #EFE4C8;  /* the canvas ground — see ON CANVAS, and ROOMS for the rest */
 
   /* --- Chalk + slate ---------------------------------------------------- */
   --slate-board: #1C2420;
@@ -734,14 +734,23 @@ body.ppbf {
 .range--kiosk { min-height: var(--tap); width: 100%; accent-color: var(--brass-500); }
 
 /* ============================================================ ON CANVAS == */
-/* Law 6 — two grounds, one system. Everything above was tuned against ink
-   leather: light tints on a near-black mix, bright bone on a dark backdrop.
-   None of that survives a straight swap to --canvas-warm — a badge mixed
-   toward #120E0B reads as a muddy smear on cream paper, and bone-100 text
-   needs a dark ink colour instead of a light one to stay legible.
+/* Canvas is a ground alongside the rooms, not the other half of a pair. An
+   earlier reading of Law 6 gave the platform exactly two grounds keyed to who
+   was looking — ink for staff, canvas for family — and the ROOMS section below
+   says outright that this replaced it: a room is chosen by what a screen IS.
+   Canvas is what the pages OUTSIDE those rooms stand on: arrival (login,
+   activate, athlete sign-in, change-pin) and the public and family-facing
+   pages (/, /public, /help, /notices, /guardian, parent visibility). None of
+   those declare a room, and that is the actual division.
+
+   Everything above was tuned against ink leather: light tints on a near-black
+   mix, bright bone on a dark backdrop. None of that survives a straight swap
+   to --canvas-warm — a badge mixed toward #120E0B reads as a muddy smear on
+   cream paper, and bone-100 text needs a dark ink colour instead of a light
+   one to stay legible.
    Wrap any of the affected components in .on-canvas when they sit on
-   --canvas-warm (Guardian, Public Onboarding) rather than re-deriving the
-   palette per screen. .on-canvas is a ground in its own right — like
+   --canvas-warm rather than re-deriving the palette per screen. .on-canvas is
+   a ground in its own right — like
    .mat-leather or .mat-cork, it paints its own background — so apply it
    directly to <body class="ppbf on-canvas"> or a full-bleed wrapper, not
    just as a scoping hook for children. */

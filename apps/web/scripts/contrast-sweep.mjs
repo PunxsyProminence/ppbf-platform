@@ -5,11 +5,17 @@
 
    WHY THIS EXISTS
 
-   The design system has two grounds (Law 6): ink leather for staff surfaces,
-   warm canvas for the family-facing side. Most components are authored
-   against one and restated for the other, so moving a page between grounds,
-   or dropping a component onto the ground it was not written for, turns
-   legible text illegible.
+   The design system has several grounds, not one: six rooms, each chosen by
+   what a screen IS rather than who is looking (ppbf.css ROOMS), plus canvas
+   for the pages outside them — arrival, public, and family-facing. Most
+   components are authored against one ground and restated for the others, so
+   moving a page between grounds, or dropping a component onto the ground it
+   was not written for, turns legible text illegible.
+
+   (This header used to say the system had exactly two grounds, ink for staff
+   and canvas for family. That was true once; ROOMS replaced it, and the stale
+   version is worth naming because reading it is what sends someone looking
+   for a staff/family split that the code stopped making.)
 
    The unit suite cannot see this. Every one of the following passed 2,619
    green tests while being invisible on screen:
