@@ -124,9 +124,135 @@ export async function synthesizeTestClip(options: {
   return { clipPath, synthesizeMs };
 }
 
+// Alternative extraction strategies. All three spend the SAME frame budget
+// as interval sampling — none may exceed FILM_STUDY_MAX_FRAMES_PER_JOB
+// decoded frames per job, so adopting one is not a cost increase. Which one
+// (if any) the executor uses is an owner decision made on #103 from the
+// diagnostic's measured numbers; until then they power only the diagnostic.
+//
+// - thumbnail: within each window of source frames, keep the most
+//   representative one instead of whichever frame lands on the sampling
+//   tick — an interval sample can hit a motion-blurred or empty frame.
+// - tile: composite interval samples into one mosaic image, so temporal
+//   adjacency survives into a single vision input (motion reads as a strip,
+//   the way a coach reads a contact sheet) and image count drops ~9×.
+// - scene: spend frames where the content actually changes, plus frame 0 so
+//   a clip with no cuts still yields output.
+export const FILM_STUDY_THUMBNAIL_WINDOW_FRAMES = 60;
+export const FILM_STUDY_TILE_COLUMNS = 3;
+export const FILM_STUDY_TILE_ROWS = 3;
+export const FILM_STUDY_SCENE_THRESHOLD_PERCENT = 30;
+
+export function buildThumbnailFramesArgs(
+  inputPath: string,
+  outputPattern: string,
+  windowFrames: number,
+  maxFrames: number,
+): string[] {
+  assertBoundedInteger(windowFrames, 'windowFrames', 2, 900);
+  assertBoundedInteger(maxFrames, 'maxFrames', 1, FILM_STUDY_MAX_FRAMES_PER_JOB);
+  return [
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-i', inputPath,
+    '-vf', `thumbnail=n=${windowFrames}`,
+    // The thumbnail filter emits one frame per window at irregular
+    // timestamps; without vfr sync ffmpeg re-duplicates frames to restore a
+    // constant rate and the selection is undone.
+    '-vsync', 'vfr',
+    '-frames:v', String(maxFrames),
+    '-q:v', '4',
+    '-y', outputPattern,
+  ];
+}
+
+export function buildTileFramesArgs(
+  inputPath: string,
+  outputPattern: string,
+  intervalSeconds: number,
+  tileColumns: number,
+  tileRows: number,
+  maxFrames: number,
+): string[] {
+  assertBoundedInteger(intervalSeconds, 'intervalSeconds', 1, 30);
+  assertBoundedInteger(tileColumns, 'tileColumns', 2, 4);
+  assertBoundedInteger(tileRows, 'tileRows', 2, 4);
+  assertBoundedInteger(maxFrames, 'maxFrames', 1, FILM_STUDY_MAX_FRAMES_PER_JOB);
+  const cellsPerTile = tileColumns * tileRows;
+  // -frames:v counts output TILES here, so the budget must be enforced on
+  // sampled frames (tiles × cells): a budget too small for one full tile is
+  // refused rather than silently exceeded.
+  if (maxFrames < cellsPerTile) {
+    throw new Error('SHADOW_FILM_INPUT_INVALID');
+  }
+  const maxTiles = Math.floor(maxFrames / cellsPerTile);
+  return [
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-i', inputPath,
+    // Cells scale to 480px wide (even height) so a full 4×4 tile stays well
+    // under MAX_FRAME_BYTES and inside vision input limits.
+    '-vf', `fps=1/${intervalSeconds},scale=480:-2,tile=${tileColumns}x${tileRows}`,
+    '-frames:v', String(maxTiles),
+    '-q:v', '4',
+    '-y', outputPattern,
+  ];
+}
+
+export function buildSceneFramesArgs(
+  inputPath: string,
+  outputPattern: string,
+  sceneThresholdPercent: number,
+  maxFrames: number,
+): string[] {
+  assertBoundedInteger(sceneThresholdPercent, 'sceneThresholdPercent', 1, 99);
+  assertBoundedInteger(maxFrames, 'maxFrames', 1, FILM_STUDY_MAX_FRAMES_PER_JOB);
+  // The filtergraph needs a fractional threshold, but only a validated
+  // integer percent is ever interpolated — toFixed(2) of int/100 cannot
+  // produce anything but digits and one dot.
+  const threshold = (sceneThresholdPercent / 100).toFixed(2);
+  return [
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-i', inputPath,
+    // Single quotes are consumed by ffmpeg's own filtergraph parser (there
+    // is no shell — execFile passes this argv element verbatim). eq(n,0)
+    // guarantees at least frame 0, so a cut-less clip still yields output
+    // and the zero-frames invariant below stays a real failure signal.
+    '-vf', `select='eq(n,0)+gt(scene,${threshold})'`,
+    '-vsync', 'vfr',
+    '-frames:v', String(maxFrames),
+    '-q:v', '4',
+    '-y', outputPattern,
+  ];
+}
+
 export interface ExtractedFrames {
   framePaths: string[];
   extractMs: number;
+}
+
+// Each strategy writes a distinct filename prefix so several can share one
+// temp directory (the diagnostic runs all of them against the same clip)
+// without collecting each other's output.
+async function runExtraction(
+  args: string[],
+  directory: string,
+  filePattern: RegExp,
+): Promise<ExtractedFrames> {
+  const extractMs = await runFfmpeg(args);
+  const entries = await fs.readdir(directory);
+  const framePaths = entries
+    .filter((name) => filePattern.test(name))
+    .sort()
+    .map((name) => path.join(directory, name));
+  // ffmpeg exiting 0 while producing nothing is still a failure: an executor
+  // (or the diagnostic) proceeding with zero frames would "succeed" while
+  // measuring or analyzing nothing.
+  if (framePaths.length === 0) {
+    throw new Error('SHADOW_FILM_FFMPEG_FAILED');
+  }
+  return { framePaths, extractMs };
 }
 
 /**
@@ -145,21 +271,66 @@ export async function extractFrames(options: {
   const intervalSeconds = options.intervalSeconds ?? FILM_STUDY_FRAME_INTERVAL_SECONDS;
   const maxFrames = options.maxFrames ?? FILM_STUDY_MAX_FRAMES_PER_JOB;
   const outputPattern = path.join(options.directory, 'frame-%03d.jpg');
-  const extractMs = await runFfmpeg(
+  return runExtraction(
     buildExtractFramesArgs(options.clipPath, outputPattern, intervalSeconds, maxFrames),
+    options.directory,
+    /^frame-\d{3}\.jpg$/,
   );
-  const entries = await fs.readdir(options.directory);
-  const framePaths = entries
-    .filter((name) => /^frame-\d{3}\.jpg$/.test(name))
-    .sort()
-    .map((name) => path.join(options.directory, name));
-  // ffmpeg exiting 0 while producing nothing is still a failure: an executor
-  // (or the diagnostic) proceeding with zero frames would "succeed" while
-  // measuring or analyzing nothing.
-  if (framePaths.length === 0) {
-    throw new Error('SHADOW_FILM_FFMPEG_FAILED');
-  }
-  return { framePaths, extractMs };
+}
+
+/** The most representative frame from each fixed window of source frames. */
+export async function extractRepresentativeFrames(options: {
+  clipPath: string;
+  directory: string;
+  windowFrames?: number;
+  maxFrames?: number;
+}): Promise<ExtractedFrames> {
+  const windowFrames = options.windowFrames ?? FILM_STUDY_THUMBNAIL_WINDOW_FRAMES;
+  const maxFrames = options.maxFrames ?? FILM_STUDY_MAX_FRAMES_PER_JOB;
+  const outputPattern = path.join(options.directory, 'thumb-%03d.jpg');
+  return runExtraction(
+    buildThumbnailFramesArgs(options.clipPath, outputPattern, windowFrames, maxFrames),
+    options.directory,
+    /^thumb-\d{3}\.jpg$/,
+  );
+}
+
+/** Interval samples composited into mosaic images (a contact sheet per tile). */
+export async function extractTiledFrames(options: {
+  clipPath: string;
+  directory: string;
+  intervalSeconds?: number;
+  tileColumns?: number;
+  tileRows?: number;
+  maxFrames?: number;
+}): Promise<ExtractedFrames> {
+  const intervalSeconds = options.intervalSeconds ?? FILM_STUDY_FRAME_INTERVAL_SECONDS;
+  const tileColumns = options.tileColumns ?? FILM_STUDY_TILE_COLUMNS;
+  const tileRows = options.tileRows ?? FILM_STUDY_TILE_ROWS;
+  const maxFrames = options.maxFrames ?? FILM_STUDY_MAX_FRAMES_PER_JOB;
+  const outputPattern = path.join(options.directory, 'tile-%03d.jpg');
+  return runExtraction(
+    buildTileFramesArgs(options.clipPath, outputPattern, intervalSeconds, tileColumns, tileRows, maxFrames),
+    options.directory,
+    /^tile-\d{3}\.jpg$/,
+  );
+}
+
+/** Frame 0 plus one frame at every content cut above the threshold. */
+export async function extractSceneFrames(options: {
+  clipPath: string;
+  directory: string;
+  sceneThresholdPercent?: number;
+  maxFrames?: number;
+}): Promise<ExtractedFrames> {
+  const sceneThresholdPercent = options.sceneThresholdPercent ?? FILM_STUDY_SCENE_THRESHOLD_PERCENT;
+  const maxFrames = options.maxFrames ?? FILM_STUDY_MAX_FRAMES_PER_JOB;
+  const outputPattern = path.join(options.directory, 'scene-%03d.jpg');
+  return runExtraction(
+    buildSceneFramesArgs(options.clipPath, outputPattern, sceneThresholdPercent, maxFrames),
+    options.directory,
+    /^scene-\d{3}\.jpg$/,
+  );
 }
 
 export interface VisionFrameAnalysis {

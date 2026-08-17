@@ -9,6 +9,9 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   analyzeFramesWithVision,
   extractFrames,
+  extractRepresentativeFrames,
+  extractSceneFrames,
+  extractTiledFrames,
   isFilmStudyVisionConfigured,
   synthesizeTestClip,
 } from '@/src/server/pilot/shadowFilmStudy';
@@ -21,6 +24,9 @@ jest.mock('@/src/server/pilot/shadowFilmStudy', () => ({
   ...jest.requireActual('@/src/server/pilot/shadowFilmStudy'),
   analyzeFramesWithVision: jest.fn(),
   extractFrames: jest.fn(),
+  extractRepresentativeFrames: jest.fn(),
+  extractSceneFrames: jest.fn(),
+  extractTiledFrames: jest.fn(),
   isFilmStudyVisionConfigured: jest.fn(),
   getVisionDeploymentName: jest.fn(() => 'gpt-5-vision-shadow'),
   synthesizeTestClip: jest.fn(),
@@ -29,6 +35,9 @@ jest.mock('@/src/server/pilot/shadowFilmStudy', () => ({
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockAnalyze = jest.mocked(analyzeFramesWithVision);
 const mockExtract = jest.mocked(extractFrames);
+const mockExtractRepresentative = jest.mocked(extractRepresentativeFrames);
+const mockExtractScene = jest.mocked(extractSceneFrames);
+const mockExtractTiled = jest.mocked(extractTiledFrames);
 const mockConfigured = jest.mocked(isFilmStudyVisionConfigured);
 const mockSynthesize = jest.mocked(synthesizeTestClip);
 
@@ -61,6 +70,9 @@ beforeEach(async () => {
   await fs.writeFile(frameB, Buffer.from('jpeg-b'));
   mockSynthesize.mockResolvedValue({ clipPath: path.join(frameDir, 'clip.mp4'), synthesizeMs: 150 });
   mockExtract.mockResolvedValue({ framePaths: [frameA, frameB], extractMs: 80 });
+  mockExtractRepresentative.mockResolvedValue({ framePaths: [frameA, frameB], extractMs: 95 });
+  mockExtractTiled.mockResolvedValue({ framePaths: [frameA], extractMs: 120 });
+  mockExtractScene.mockResolvedValue({ framePaths: [frameA], extractMs: 200 });
   mockConfigured.mockReturnValue(true);
   mockAnalyze.mockResolvedValue({
     content: 'MODEL-OBSERVATION-TEXT',
@@ -128,6 +140,57 @@ describe('POST /api/pilot/shadow/film-study/diagnostic', () => {
 
     // The model's text itself must never leave the server: counts only.
     expect(JSON.stringify(payload)).not.toContain('MODEL-OBSERVATION-TEXT');
+  });
+
+  test('measures all three alternative strategies against the same clip', async () => {
+    const response = await POST(makeRequest());
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+
+    expect(payload.strategies.thumbnail).toMatchObject({
+      window_frames: 60,
+      ok: true,
+      extract_ms: 95,
+      frame_count: 2,
+    });
+    expect(payload.strategies.tile).toMatchObject({
+      tile_columns: 3,
+      tile_rows: 3,
+      ok: true,
+      extract_ms: 120,
+      frame_count: 1,
+    });
+    expect(payload.strategies.scene).toMatchObject({
+      threshold_percent: 30,
+      ok: true,
+      extract_ms: 200,
+      frame_count: 1,
+    });
+    expect(payload.strategies.thumbnail.avg_frame_bytes).toBeGreaterThan(0);
+
+    // Every strategy ran against the one synthesized clip, in the one
+    // request-scoped temp directory.
+    const clipPath = mockSynthesize.mock.results[0]?.value
+      ? (await mockSynthesize.mock.results[0].value).clipPath
+      : undefined;
+    expect(mockExtractRepresentative.mock.calls[0][0].clipPath).toBe(clipPath);
+    expect(mockExtractTiled.mock.calls[0][0].clipPath).toBe(clipPath);
+    expect(mockExtractScene.mock.calls[0][0].clipPath).toBe(clipPath);
+  });
+
+  test('a failing strategy is a recorded finding, not a route error', async () => {
+    mockExtractScene.mockRejectedValue(new Error('SHADOW_FILM_FFMPEG_FAILED'));
+    const response = await POST(makeRequest());
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.strategies.scene).toMatchObject({
+      ok: false,
+      error: 'SHADOW_FILM_FFMPEG_FAILED',
+    });
+    // The baseline numbers and the other strategies are still reported.
+    expect(payload.ffmpeg.frame_count).toBe(2);
+    expect(payload.strategies.thumbnail.ok).toBe(true);
+    expect(payload.strategies.tile.ok).toBe(true);
   });
 
   test('reports vision as unconfigured without attempting a call', async () => {

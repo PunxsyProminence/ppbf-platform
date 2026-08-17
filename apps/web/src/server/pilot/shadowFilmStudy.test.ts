@@ -5,10 +5,20 @@ import path from 'node:path';
 import {
   analyzeFramesWithVision,
   buildExtractFramesArgs,
+  buildSceneFramesArgs,
   buildSynthesizeClipArgs,
+  buildThumbnailFramesArgs,
+  buildTileFramesArgs,
   extractFrames,
+  extractRepresentativeFrames,
+  extractSceneFrames,
+  extractTiledFrames,
   FILM_STUDY_FRAME_INTERVAL_SECONDS,
   FILM_STUDY_MAX_FRAMES_PER_JOB,
+  FILM_STUDY_SCENE_THRESHOLD_PERCENT,
+  FILM_STUDY_THUMBNAIL_WINDOW_FRAMES,
+  FILM_STUDY_TILE_COLUMNS,
+  FILM_STUDY_TILE_ROWS,
   getVisionDeploymentName,
   isFilmStudyVisionConfigured,
   synthesizeTestClip,
@@ -136,6 +146,105 @@ describe('ffmpeg execution wrappers', () => {
         path.join(dir, 'frame-002.jpg'),
       ]);
       expect(result.extractMs).toBeGreaterThanOrEqual(0);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('alternative extraction strategies', () => {
+  // Every strategy spends the same budget: no builder may accept more than
+  // FILM_STUDY_MAX_FRAMES_PER_JOB, so adopting one is never a cost increase.
+  test('strategy defaults preserve the stated cost model', () => {
+    // One representative frame per 60 source frames = one per 2 seconds at
+    // the 30fps the synthesized clip uses — the interval policy, kept.
+    expect(FILM_STUDY_THUMBNAIL_WINDOW_FRAMES).toBe(60);
+    // 3×3 cells at the 2-second interval: 90 sampled frames become 10 images.
+    expect(FILM_STUDY_TILE_COLUMNS * FILM_STUDY_TILE_ROWS).toBe(9);
+    expect(FILM_STUDY_SCENE_THRESHOLD_PERCENT).toBe(30);
+  });
+
+  test('thumbnail selects per-window representatives with vfr sync', () => {
+    const args = buildThumbnailFramesArgs('/tmp/x/clip.mp4', '/tmp/x/thumb-%03d.jpg', 60, 90);
+    expect(args).toContain('thumbnail=n=60');
+    const vsync = args.indexOf('-vsync');
+    expect(vsync).toBeGreaterThan(-1);
+    expect(args[vsync + 1]).toBe('vfr');
+    const framesFlag = args.indexOf('-frames:v');
+    expect(args[framesFlag + 1]).toBe('90');
+  });
+
+  test('tile caps output tiles so sampled frames never exceed the budget', () => {
+    const args = buildTileFramesArgs('/tmp/x/clip.mp4', '/tmp/x/tile-%03d.jpg', 2, 3, 3, 90);
+    expect(args).toContain('fps=1/2,scale=480:-2,tile=3x3');
+    const framesFlag = args.indexOf('-frames:v');
+    // 90 frames / 9 cells = 10 tiles, not 90 tiles of 9 frames each.
+    expect(args[framesFlag + 1]).toBe('10');
+  });
+
+  test('a budget too small for one full tile is refused, not exceeded', () => {
+    expect(() => buildTileFramesArgs('/tmp/c.mp4', '/tmp/t-%03d.jpg', 2, 3, 3, 8))
+      .toThrow('SHADOW_FILM_INPUT_INVALID');
+  });
+
+  test('scene selection includes frame 0 and formats the threshold from a validated integer', () => {
+    const args = buildSceneFramesArgs('/tmp/x/clip.mp4', '/tmp/x/scene-%03d.jpg', 30, 90);
+    expect(args).toContain("select='eq(n,0)+gt(scene,0.30)'");
+    expect(buildSceneFramesArgs('/tmp/c.mp4', '/tmp/s-%03d.jpg', 5, 10))
+      .toContain("select='eq(n,0)+gt(scene,0.05)'");
+  });
+
+  test('out-of-bounds strategy parameters are refused, never interpolated', () => {
+    expect(() => buildThumbnailFramesArgs('/tmp/c.mp4', '/tmp/t-%03d.jpg', 1, 10))
+      .toThrow('SHADOW_FILM_INPUT_INVALID');
+    expect(() => buildThumbnailFramesArgs('/tmp/c.mp4', '/tmp/t-%03d.jpg', 60, FILM_STUDY_MAX_FRAMES_PER_JOB + 1))
+      .toThrow('SHADOW_FILM_INPUT_INVALID');
+    expect(() => buildTileFramesArgs('/tmp/c.mp4', '/tmp/t-%03d.jpg', 2, 1, 3, 90))
+      .toThrow('SHADOW_FILM_INPUT_INVALID');
+    expect(() => buildTileFramesArgs('/tmp/c.mp4', '/tmp/t-%03d.jpg', 2, 3, 5, 90))
+      .toThrow('SHADOW_FILM_INPUT_INVALID');
+    expect(() => buildSceneFramesArgs('/tmp/c.mp4', '/tmp/s-%03d.jpg', 0, 90))
+      .toThrow('SHADOW_FILM_INPUT_INVALID');
+    expect(() => buildSceneFramesArgs('/tmp/c.mp4', '/tmp/s-%03d.jpg', 100, 90))
+      .toThrow('SHADOW_FILM_INPUT_INVALID');
+  });
+
+  test('each strategy collects only its own filename prefix', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'film-test-'));
+    mockExecFile.mockImplementation((...args: unknown[]) => {
+      const callback = args[args.length - 1] as (err: unknown, out: { stdout: string; stderr: string }) => void;
+      Promise.all([
+        fs.writeFile(path.join(dir, 'frame-001.jpg'), 'interval'),
+        fs.writeFile(path.join(dir, 'thumb-002.jpg'), 'rep-b'),
+        fs.writeFile(path.join(dir, 'thumb-001.jpg'), 'rep-a'),
+        fs.writeFile(path.join(dir, 'tile-001.jpg'), 'mosaic'),
+        fs.writeFile(path.join(dir, 'scene-001.jpg'), 'cut'),
+      ]).then(() => callback(null, { stdout: '', stderr: '' }), (error) => callback(error, { stdout: '', stderr: '' }));
+    });
+    try {
+      const clipPath = path.join(dir, 'clip.mp4');
+      const representative = await extractRepresentativeFrames({ clipPath, directory: dir });
+      expect(representative.framePaths).toEqual([
+        path.join(dir, 'thumb-001.jpg'),
+        path.join(dir, 'thumb-002.jpg'),
+      ]);
+      const tiled = await extractTiledFrames({ clipPath, directory: dir });
+      expect(tiled.framePaths).toEqual([path.join(dir, 'tile-001.jpg')]);
+      const scene = await extractSceneFrames({ clipPath, directory: dir });
+      expect(scene.framePaths).toEqual([path.join(dir, 'scene-001.jpg')]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a strategy producing zero frames is a failure, not a success', async () => {
+    succeedExecFile();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'film-test-'));
+    try {
+      await expect(extractRepresentativeFrames({ clipPath: path.join(dir, 'clip.mp4'), directory: dir }))
+        .rejects.toThrow('SHADOW_FILM_FFMPEG_FAILED');
+      await expect(extractSceneFrames({ clipPath: path.join(dir, 'clip.mp4'), directory: dir }))
+        .rejects.toThrow('SHADOW_FILM_FFMPEG_FAILED');
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
