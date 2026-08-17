@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 
-import { POST } from './route';
+import { GET, POST } from './route';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -42,6 +42,35 @@ function postRequest(body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
 }
+
+function getRequest(query_?: string) {
+  return new NextRequest(`http://localhost/api/pilot/publications/create${query_ ? `?${query_}` : ''}`);
+}
+
+// Math.min(parseInt(...) || 50, 100) never rejected a negative limit --
+// `-5 || 50` stays -5 since a negative number is truthy, and Math.min only
+// clamps the UPPER bound -- so it reached Postgres and crashed with an
+// unhandled "LIMIT must not be negative", masked as a generic 500.
+describe('GET /api/pilot/publications/create (list)', () => {
+  test('a negative limit is rejected with 400, never reaches the database', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+
+    const res = await GET(getRequest('limit=-5'));
+
+    expect(res.status).toBe(400);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('a valid limit still lists publications', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
+
+    const res = await GET(getRequest('limit=10'));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: [{ publication_id: 'pub-1' }] });
+  });
+});
 
 // A publication carries a named youth athlete's video into a research or
 // public surface, so it must clear the same gates the violations route
