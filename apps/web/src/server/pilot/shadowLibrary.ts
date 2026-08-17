@@ -307,6 +307,12 @@ function buildClaimNarrative(results: ShadowLibrarySearchResult[]): string {
   return `Library-backed answer from current SHADOW evidence: ${snippetSummary}${snippetSummary.endsWith('.') ? '' : '.'} Primary sources: ${sourceSummary}.`;
 }
 
+interface ShadowClaimResearchRequirement {
+  id: number;
+  researchRequirement: string;
+  knowledgeGap: string;
+}
+
 async function ensureClaimResearchRequirement(input: {
   organizationId: string;
   actorAccountId: string;
@@ -317,10 +323,13 @@ async function ensureClaimResearchRequirement(input: {
   status: ShadowLibraryClaimStatus;
   evidenceCount: number;
   distinctSourceCount: number;
-}): Promise<number | null> {
+}): Promise<ShadowClaimResearchRequirement | null> {
   if (input.status === 'supported') {
     return null;
   }
+
+  const researchRequirement = `Strengthen SHADOW Library evidence for ${input.scope} claim`;
+  const knowledgeGap = `Question lacks sufficient SHADOW Library evidence: ${input.question}. Evidence count: ${input.evidenceCount}. Distinct sources: ${input.distinctSourceCount}.`;
 
   const openItems = await listShadowResearchRequirements(input.organizationId, { status: 'open' });
   const duplicate = openItems.find((item) => {
@@ -329,16 +338,16 @@ async function ensureClaimResearchRequirement(input: {
   });
 
   if (duplicate) {
-    return duplicate.research_requirement_id;
+    return { id: duplicate.research_requirement_id, researchRequirement, knowledgeGap };
   }
 
-  return createShadowResearchRequirement({
+  const id = await createShadowResearchRequirement({
     organizationId: input.organizationId,
     sourceEventName: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
     sourceEntityType: 'shadow_library_claim',
     sourceEntityId: `${input.scope}:${input.subjectId ?? 'global'}:${Date.now()}`,
-    researchRequirement: `Strengthen SHADOW Library evidence for ${input.scope} claim`,
-    knowledgeGap: `Question lacks sufficient SHADOW Library evidence: ${input.question}. Evidence count: ${input.evidenceCount}. Distinct sources: ${input.distinctSourceCount}.`,
+    researchRequirement,
+    knowledgeGap,
     evidenceLabel: input.subjectId,
     sourceStatus: input.status === 'unsupported' ? 'missing' : 'weak',
     sourceConfidenceTier: 'INSUFFICIENT',
@@ -354,6 +363,8 @@ async function ensureClaimResearchRequirement(input: {
       status: input.status,
     },
   });
+
+  return { id, researchRequirement, knowledgeGap };
 }
 
 function buildCoverageGapResearchFields(row: ShadowCoverageComputationRow, coverageState: ShadowCoverageState) {
@@ -1258,7 +1269,7 @@ export async function createShadowLibraryClaim(input: {
     confidence = 0.12;
   }
 
-  const researchRequirementId = await ensureClaimResearchRequirement({
+  const claimResearchRequirement = await ensureClaimResearchRequirement({
     organizationId: input.organizationId,
     actorAccountId: input.actorAccountId,
     actorRole: input.actorRole,
@@ -1288,7 +1299,13 @@ export async function createShadowLibraryClaim(input: {
       status,
       evidence_count: evidence.length,
       distinct_source_count: distinctSourceCount,
-      research_requirement_id: researchRequirementId,
+      research_requirement_id: claimResearchRequirement?.id ?? null,
+      // Research Intake Cards (getShadowResearchProjection) reads these two
+      // keys straight off the event payload -- without them, the card the
+      // widened filter above now surfaces would render "Not provided" for
+      // both fields instead of the actual gap.
+      research_requirement: claimResearchRequirement?.researchRequirement ?? null,
+      knowledge_gap: claimResearchRequirement?.knowledgeGap ?? null,
     },
   });
 
@@ -1312,7 +1329,7 @@ export async function createShadowLibraryClaim(input: {
     evidenceCount: evidence.length,
     distinctSourceCount,
     evidence,
-    researchRequirementId,
+    researchRequirementId: claimResearchRequirement?.id ?? null,
   };
 }
 
