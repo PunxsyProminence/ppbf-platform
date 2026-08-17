@@ -131,14 +131,24 @@ function collect(threshold) {
     let n = el;
     while (n && n !== document.documentElement) {
       const cs = getComputedStyle(n);
+      const hasGradient = cs.backgroundImage !== 'none' && /gradient/.test(cs.backgroundImage);
       // A gradient with no backing colour paints over whatever is behind it,
       // and we cannot sample it — report nothing rather than measure the
       // wrong layer. This is how mat-brass--patina behaves.
-      if (cs.backgroundImage !== 'none' && /gradient/.test(cs.backgroundImage)
-          && /rgba\(0, 0, 0, 0\)/.test(cs.backgroundColor)) return null;
+      if (hasGradient && /rgba\(0, 0, 0, 0\)/.test(cs.backgroundColor)) return null;
       const bg = parseColor(cs.backgroundColor);
       if (bg) {
-        if (bg.a >= 0.999) return composite(layers, bg);
+        // A gradient OVER an opaque colour is the same blind spot wearing a
+        // hat: the colour resolves, so the walk used to stop here and report
+        // it, but the gradient is painted on top and is what the eye receives.
+        // .room--board is the case that exposed it -- background-color is
+        // --wood-800 with a light plaster gradient over the upper wall, so a
+        // header written in dark plaster ink measured as dark-on-dark and
+        // reported 1.05:1 for an h1 that renders at 13.77:1. Three findings on
+        // /board, all three false. The ground is still the best guess
+        // available, so it is still measured; it is flagged so a reader knows
+        // the number is unverified rather than confirmed.
+        if (bg.a >= 0.999) return { bg: composite(layers, bg), gradient: hasGradient };
         // Fully transparent contributes nothing; anything between is a real
         // layer between the reader and the ground, so it is carried down.
         if (bg.a > 0) layers.push(bg);
@@ -146,7 +156,7 @@ function collect(threshold) {
       n = n.parentElement;
     }
     const body = parseColor(getComputedStyle(document.body).backgroundColor);
-    return body && body.a >= 0.999 ? composite(layers, body) : null;
+    return body && body.a >= 0.999 ? { bg: composite(layers, body), gradient: false } : null;
   };
 
   const out = [];
@@ -158,19 +168,23 @@ function collect(threshold) {
     if (r.width < 4 || r.height < 4) continue;
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) < 0.2) continue;
-    const bg = bgOf(el);
-    if (!bg) continue;
+    const resolved = bgOf(el);
+    if (!resolved) continue;
+    const { bg, gradient } = resolved;
     const a = lum(cs.color);
     const b = lum(bg);
     if (a === null || b === null) continue;
     const [hi, lo] = a > b ? [a, b] : [b, a];
     const contrast = (hi + 0.05) / (lo + 0.05);
     if (contrast < threshold) {
-      out.push({ text: text.slice(0, 48), color: cs.color, bg, contrast: +contrast.toFixed(2) });
+      out.push({
+        text: text.slice(0, 48), color: cs.color, bg, contrast: +contrast.toFixed(2), gradient,
+      });
     }
   }
   return {
-    low: out,
+    low: out.filter((f) => !f.gradient),
+    unverified: out.filter((f) => f.gradient),
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
   };
 }
@@ -208,9 +222,17 @@ for (const [path, role] of routes) {
   results.push({ path, role, mobile, ...res });
   if (!asJson) {
     const tag = res.low.length ? 'LOW ' : 'ok  ';
-    console.log(`${tag}${res.overflow ? 'OVERFLOW ' : ''}${path} (${res.low.length})`);
+    const un = res.unverified.length ? ` +${res.unverified.length} unverified` : '';
+    console.log(`${tag}${res.overflow ? 'OVERFLOW ' : ''}${path} (${res.low.length})${un}`);
     for (const f of res.low.slice(0, 4)) {
       console.log(`      ${f.contrast}:1  "${f.text}"  ${f.color} on ${f.bg}`);
+    }
+    // Printed under a separate heading, never mixed into the LOW list: these
+    // sit on a gradient, so the ground is a guess and the ratio may be wildly
+    // pessimistic. Shown rather than dropped, because a real failure can hide
+    // here too — it just cannot be confirmed from computed style alone.
+    for (const f of res.unverified.slice(0, 4)) {
+      console.log(`   ?  ${f.contrast}:1  "${f.text}"  ${f.color} on ${f.bg} (gradient ground — check by eye)`);
     }
   }
   await ctx.close();
@@ -222,7 +244,11 @@ if (asJson) {
   console.log(JSON.stringify(results, null, 2));
 } else {
   const total = results.reduce((n, r) => n + r.low.length, 0);
+  const unver = results.reduce((n, r) => n + r.unverified.length, 0);
   console.log(`\n${total} node(s) under ${THRESHOLD}:1 across ${results.length} route(s).`);
+  if (unver) {
+    console.log(`${unver} more sit on a gradient ground and cannot be resolved from computed style — look at those, do not trust the ratio.`);
+  }
   console.log('A count is not a verdict — re-run against a baseline ref and diff before acting.');
 }
 
