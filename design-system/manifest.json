@@ -301,8 +301,8 @@
       "path": "screens/floor-card.html",
       "group": "Screens",
       "name": "Floor Card",
-      "subtitle": "The athlete's own corner of the wall — earned objects, pinned. The space itself is the first thing you earn.",
-      "bytes": 23240
+      "subtitle": "The athlete's own locker bay and bench — earned gear, ringside. The space itself is the first thing you earn.",
+      "bytes": 27292
     },
     {
       "path": "screens/guardian-portal.html",
