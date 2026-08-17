@@ -1,4 +1,5 @@
 import { query } from './db';
+import { getTransferReadout } from './falseProgress';
 import {
   getPerformanceRollup,
   PERFORMANCE_WINDOW_DAYS_DEFAULT,
@@ -40,12 +41,16 @@ export const READINESS_MIN_CHECKINS_PER_HALF = 2;
 export const TRAINING_DAYS_MIN_EARLY = 3;
 export const TRAINING_DAYS_DROP_RATIO = 0.5;
 
-export type SuggestionRule = 'readiness_falling' | 'training_days_dropping' | 'assignments_stalled';
+export type SuggestionRule =
+  | 'readiness_falling'
+  | 'training_days_dropping'
+  | 'assignments_stalled'
+  | 'transfer_check_failed';
 
 export interface GapSuggestion {
   athlete_id: string;
   rule: SuggestionRule;
-  gap_type: 'endurance' | 'mental';
+  gap_type: 'endurance' | 'mental' | 'skill';
   suggested_description: string;
   evidence: Record<string, number | string>;
 }
@@ -54,6 +59,20 @@ export interface StalledAssignmentRow {
   athlete_id: string;
   stalled_count: number;
   oldest_due_date: string;
+}
+
+// Rule 4 input: one row per (athlete, metric) that the false-progress module
+// (module 053) already classified as 'not_transferring' -- strong in
+// controlled practice, weak live, with real attempt counts on both sides.
+// Deliberately the same shape falseProgress.ts hands back per metric, so
+// this rule adds no interpretation of its own on top of that verdict.
+export interface TransferFailureRow {
+  athlete_id: string;
+  metric_kind: string;
+  controlled_makes: number;
+  controlled_misses: number;
+  live_makes: number;
+  live_misses: number;
 }
 
 /**
@@ -65,6 +84,7 @@ export function deriveSuggestions(
   rollup: readonly AthletePerformanceRow[],
   stalled: readonly StalledAssignmentRow[],
   openGapTypesByAthlete: ReadonlyMap<string, ReadonlySet<string>>,
+  transferFailures: readonly TransferFailureRow[] = [],
 ): GapSuggestion[] {
   const suggestions: GapSuggestion[] = [];
 
@@ -146,6 +166,42 @@ export function deriveSuggestions(
     });
   }
 
+  // Rule 4: transfer check failed. The false-progress module (module 053)
+  // already computes, per athlete per metric, whether a skill that looks
+  // mastered in controlled practice (session, drill_assignment, assessment)
+  // is holding up in live sparring. A 'not_transferring' verdict is exactly
+  // the kind of fact this engine already turns into a suggestion for other
+  // signals -- so read it the same way, with no extra inference layered on
+  // top of that module's own classification. One suggestion per failing
+  // metric, not bundled per athlete: "jab-cross doesn't transfer" and "low
+  // kick doesn't transfer" are two different coaching conversations, unlike
+  // the interchangeable overdue-drill rows rule 3 bundles.
+  for (const failure of transferFailures) {
+    if (openTypes(failure.athlete_id).has('skill')) continue;
+
+    const controlledTotal = failure.controlled_makes + failure.controlled_misses;
+    const liveTotal = failure.live_makes + failure.live_misses;
+    const controlledRate = controlledTotal > 0 ? failure.controlled_makes / controlledTotal : 0;
+    const liveRate = liveTotal > 0 ? failure.live_makes / liveTotal : 0;
+
+    suggestions.push({
+      athlete_id: failure.athlete_id,
+      rule: 'transfer_check_failed',
+      gap_type: 'skill',
+      suggested_description:
+        `${failure.metric_kind} holds up in controlled practice (${failure.controlled_makes}/${controlledTotal}, `
+        + `${Math.round(controlledRate * 100)}%) but is not transferring to live sparring `
+        + `(${failure.live_makes}/${liveTotal}, ${Math.round(liveRate * 100)}%). Worth a pressure-tested look.`,
+      evidence: {
+        metric_kind: failure.metric_kind,
+        controlled_makes: failure.controlled_makes,
+        controlled_misses: failure.controlled_misses,
+        live_makes: failure.live_makes,
+        live_misses: failure.live_misses,
+      },
+    });
+  }
+
   return suggestions;
 }
 
@@ -188,15 +244,42 @@ async function getOpenGapTypes(
   return byAthlete;
 }
 
+// Rule 4's data source. falseProgress.ts is deliberately one-athlete-at-a-time
+// ("No cross-athlete reads, ever") so this fans out per athlete rather than
+// asking that module for a batched query it does not offer.
+async function getTransferFailures(
+  organizationId: string,
+  athleteIds: readonly string[],
+): Promise<TransferFailureRow[]> {
+  if (athleteIds.length === 0) return [];
+  const perAthlete = await Promise.all(
+    athleteIds.map(async (athleteId) => {
+      const readouts = await getTransferReadout(organizationId, athleteId);
+      return readouts
+        .filter((readout) => readout.state === 'not_transferring')
+        .map((readout) => ({
+          athlete_id: athleteId,
+          metric_kind: readout.metric_kind,
+          controlled_makes: readout.controlled_makes,
+          controlled_misses: readout.controlled_misses,
+          live_makes: readout.live_makes,
+          live_misses: readout.live_misses,
+        }));
+    }),
+  );
+  return perAthlete.flat();
+}
+
 export async function getGapSuggestions(
   organizationId: string,
   athleteIds: readonly string[],
 ): Promise<GapSuggestion[]> {
   if (athleteIds.length === 0) return [];
-  const [rollup, stalled, openGaps] = await Promise.all([
+  const [rollup, stalled, openGaps, transferFailures] = await Promise.all([
     getPerformanceRollup(organizationId, athleteIds, PERFORMANCE_WINDOW_DAYS_DEFAULT),
     getStalledAssignments(organizationId, athleteIds),
     getOpenGapTypes(organizationId, athleteIds),
+    getTransferFailures(organizationId, athleteIds),
   ]);
-  return deriveSuggestions(rollup, stalled, openGaps);
+  return deriveSuggestions(rollup, stalled, openGaps, transferFailures);
 }

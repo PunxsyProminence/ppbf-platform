@@ -71,6 +71,7 @@ const SUGGESTION_RULE_LABEL: Record<string, string> = {
   readiness_falling: 'Readiness falling',
   training_days_dropping: 'Training days dropping',
   assignments_stalled: 'Assignments stalled',
+  transfer_check_failed: 'Not transferring live',
 };
 
 const suggestionKey = (item: GapSuggestionItem) => `${item.athlete_id}:${item.rule}`;
