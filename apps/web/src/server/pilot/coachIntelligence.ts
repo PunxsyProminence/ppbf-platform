@@ -60,6 +60,15 @@ export const HOLD_EXPIRY_DAYS = 14;
  * -- see the README next to the route for what it costs.
  */
 export const ESCALATION_DIGEST_STATUS: SafetyEscalationStatus = 'open';
+
+/**
+ * The one escalation source_type item 6 does NOT report, because item 7
+ * reports the same events from their authoritative side. Named rather than
+ * inlined so the dedup is greppable from both directions: anyone widening
+ * item 7, or wondering why a compliance escalation is missing from item 6,
+ * lands here. See the filter at the mapping site for the full argument.
+ */
+export const ESCALATION_SOURCE_OWNED_BY_ITEM_7: SafetyEscalationSourceType = 'compliance_violation';
 // Item 7 states no threshold of its own: it reuses
 // COMPLIANCE_VIOLATION_OPEN_STATUSES from compliance.ts.
 
@@ -266,15 +275,44 @@ export async function getCoachIntelligence(
   // metadata blob belong to the escalation surface that can act on them, and
   // a read-only digest has no reason to carry them into a second place.
   // listEscalations' severity-then-newest ordering is preserved as-is.
-  const openEscalations = escalations.map((row) => ({
-    athlete_id: row.athlete_id,
-    athlete_name: nameById.get(row.athlete_id) ?? row.athlete_id,
-    escalation_id: row.escalation_id,
-    source_type: row.source_type,
-    severity: row.severity,
-    reason: row.reason,
-    created_at: row.created_at,
-  }));
+  const openEscalations = escalations
+    // Items 6 and 7 would otherwise report the SAME compliance event twice.
+    //
+    // compliance.ts#createComplianceViolation files an escalation with
+    // source_type 'compliance_violation' on the same transaction as the
+    // violation insert, whenever the violated rule's escalation_level maps to
+    // a supported target role. So for most rules a single violation now
+    // produces a row in BOTH registers this digest reads, and a coach would
+    // open the Morning Read to find one incident sitting in two sections
+    // under two different vocabularies.
+    //
+    // Item 7 is the side that survives, for two reasons. It reads the
+    // authoritative record -- the violation itself, with its rule name, its
+    // own status lifecycle and its days-open count -- rather than the
+    // notification filed about it. And its coverage is strictly WIDER: a rule
+    // whose escalation_level is 'board' or 'parent' produces no escalation at
+    // all (escalationLadder.ts excludes both target roles by design), so
+    // those violations exist ONLY in item 7. Dropping item 7 to dedupe would
+    // have silently lost them; dropping the compliance-derived escalations
+    // from item 6 loses nothing, because every one of them is a strict subset
+    // of what item 7 already lists.
+    //
+    // Filtered here rather than by extending EscalationListFilters: this is
+    // one caller's de-duplication concern, and escalationLadder.ts is a
+    // safeguarding capability that should not grow a filter for it. Every
+    // other source_type -- near_miss, pain_report, safety_gate_evaluation,
+    // repeated_pattern, training_hold, incident, video_scan -- still reaches
+    // item 6, and athlete_voice is still excluded upstream, unconditionally.
+    .filter((row) => row.source_type !== ESCALATION_SOURCE_OWNED_BY_ITEM_7)
+    .map((row) => ({
+      athlete_id: row.athlete_id,
+      athlete_name: nameById.get(row.athlete_id) ?? row.athlete_id,
+      escalation_id: row.escalation_id,
+      source_type: row.source_type,
+      severity: row.severity,
+      reason: row.reason,
+      created_at: row.created_at,
+    }));
 
   return {
     open_safety_escalations: openEscalations,

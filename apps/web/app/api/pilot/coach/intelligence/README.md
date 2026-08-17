@@ -93,8 +93,20 @@ the change this README documents fixed.
 | 3. Fading attendance | Recent attendance below the athlete's own early-season baseline |
 | 4. Unreviewed session | A completed session unreviewed for ≥ 7 days |
 | 5. Hold expiring | An active training hold expiring within 14 days |
-| 6. Open safety escalation | Escalation `status = 'open'`, **and** it is not an `athlete_voice` row |
+| 6. Open safety escalation | Escalation `status = 'open'`, **and** not `athlete_voice`, **and** not `source_type = 'compliance_violation'` (item 7 owns those — see below) |
 | 7. Open compliance violation | Violation status in `COMPLIANCE_VIOLATION_OPEN_STATUSES` (`new`, `acknowledged`, `escalated`) |
+
+**Items 6 and 7 do not double-report.** `compliance.ts` files an escalation
+with `source_type = 'compliance_violation'` on the same transaction as the
+violation insert, whenever the violated rule's `escalation_level` maps to a
+supported target role — so most violations produce a row in *both* registers
+this digest reads. Item 6 drops those; item 7 keeps them. Item 7 is the side
+that survives because it reads the authoritative record (rule name, own status
+lifecycle, days open) and because its coverage is strictly **wider**: a rule
+whose `escalation_level` is `board` or `parent` produces no escalation at all,
+so those violations exist only in item 7. Every other escalation source —
+`near_miss`, `pain_report`, `safety_gate_evaluation`, `repeated_pattern`,
+`training_hold`, `incident`, `video_scan` — still reaches item 6.
 
 Every one is additionally scoped to the caller's own organization and to
 athletes in the caller's own roster. Items 6 and 7 are the two this change

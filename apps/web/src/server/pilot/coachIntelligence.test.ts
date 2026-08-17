@@ -238,6 +238,74 @@ test('an athlete whose ONLY signal is an open escalation still produces a non-em
   expect(digest.open_safety_escalations).toHaveLength(1);
 });
 
+// compliance.ts files an escalation with source_type 'compliance_violation' on
+// the same transaction as the violation insert, so most violations now land in
+// BOTH registers this digest reads. Without the filter a coach sees one
+// incident twice, in two sections, under two vocabularies. Item 7 is the side
+// that survives: it reads the authoritative row, and it also covers the
+// 'board'/'parent' rules that produce no escalation at all.
+test('a compliance-derived escalation is reported once, by item 7, not twice', async () => {
+  mockRollup.mockResolvedValue([]);
+  mockQuery.mockImplementation(async (sql: string) => {
+    if (sql.includes('pilot.compliance_violations')) {
+      return [{
+        athlete_id: 'ath-1',
+        athlete_name: 'Rosa D.',
+        violation_id: 'viol-1',
+        rule_id: 'rule-mouthguard',
+        rule_name: 'Mouthguard required for contact',
+        severity: 'high',
+        status: 'new',
+        days_open: 2,
+      }];
+    }
+    if (sql.includes('full_name')) return [{ athlete_id: 'ath-1', full_name: 'Rosa D.' }];
+    return [];
+  });
+  mockListEscalations.mockResolvedValue([
+    {
+      escalation_id: 'esc-from-viol', source_type: 'compliance_violation', source_id: 'viol-1',
+      athlete_id: 'ath-1', severity: 'high', reason: 'Mouthguard required for contact',
+      escalated_to_role: 'organization_admin', triggered_by: 'system',
+      triggered_by_account_id: null, triggered_by_role: null, status: 'open',
+      acknowledged_by_account_id: null, acknowledged_at: null, resolved_by_account_id: null,
+      resolved_at: null, resolution_note: '', metadata: {},
+      created_at: '2026-08-17T06:00:00.000Z', updated_at: '2026-08-17T06:00:00.000Z',
+    },
+  ]);
+
+  const digest = await getCoachIntelligence('org-1', ['ath-1']);
+
+  // The escalation half is dropped; the violation half remains.
+  expect(digest.open_safety_escalations).toHaveLength(0);
+  expect(digest.open_compliance_violations).toHaveLength(1);
+  expect(digest.open_compliance_violations[0].violation_id).toBe('viol-1');
+});
+
+test('every other escalation source still reaches item 6', async () => {
+  // The dedup must be surgical. Only 'compliance_violation' is item 7's;
+  // if this filter ever widens, a real safeguarding record goes silent.
+  mockQuery.mockResolvedValue([]);
+  mockRollup.mockResolvedValue([]);
+  const OTHER_SOURCES = [
+    'near_miss', 'pain_report', 'safety_gate_evaluation',
+    'repeated_pattern', 'training_hold', 'incident', 'video_scan',
+  ];
+  mockListEscalations.mockResolvedValue(OTHER_SOURCES.map((source_type, i) => ({
+    escalation_id: `esc-${i}`, source_type, source_id: null, athlete_id: 'ath-1',
+    severity: 'high', reason: `${source_type} reason`, escalated_to_role: 'organization_admin',
+    triggered_by: 'system', triggered_by_account_id: null, triggered_by_role: null, status: 'open',
+    acknowledged_by_account_id: null, acknowledged_at: null, resolved_by_account_id: null,
+    resolved_at: null, resolution_note: '', metadata: {},
+    created_at: '2026-08-17T06:00:00.000Z', updated_at: '2026-08-17T06:00:00.000Z',
+  })));
+
+  const digest = await getCoachIntelligence('org-1', ['ath-1']);
+
+  expect(digest.open_safety_escalations).toHaveLength(OTHER_SOURCES.length);
+  expect(digest.open_safety_escalations.map((e) => e.source_type).sort()).toEqual([...OTHER_SOURCES].sort());
+});
+
 // ─── item 7: open compliance violations ──────────────────────────────────────
 
 function violationSql(): string {
