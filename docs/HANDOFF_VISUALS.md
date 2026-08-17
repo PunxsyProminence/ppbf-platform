@@ -85,30 +85,45 @@ Non-negotiable, and already documented in the code:
   shape. **Note:** that watch-gate lands via an open PR; on `main` you will see
   the ungated version. Read the PR branch to see the pattern you are matching.
 
-## Job 3 — The unstyled Capability Console pages
+## Job 3 — Do NOT style the Capability Console pages
 
-Six pages render today and are not styled to the design system — default fonts,
-flat black panels, empty chart placeholders:
+Six pages render today unstyled — default fonts, flat black panels, empty chart
+placeholders:
 
 `/admin/macro-analytics` · `/board/dashboard` · `/admin/communications` ·
 `/admin/curriculum` · `/coach/operations` · `/admin/retro-lab`
 
-Their outer shells were mapped onto leather and bone tokens in an earlier pass;
-the *contents* — a subsystem numbered L04–L40, tagged `[V-COACH]` /
-`[V-STAFF]` / `[V-BOARD-PUBLIC]` — were not. All six now carry a "Planned — Not
-Yet Implemented" stamp and a "every figure below is fabricated sample data"
-disclaimer, so the honesty problem is handled. **This is purely visual quality.**
+An earlier version of this brief asked for them to be brought onto the design
+system, starting with one as a proposal. **Owner decision, 2026-08-17:
+don't.** The instruction is *"skip styling; the bigger problem is that these
+are mockups — prioritise connecting real data to the ones where it exists."*
 
-Whether this subsystem should be fully styled or is deliberately out of scope is
-an open product question. Raise it before doing all six; start with one as a
-proposal.
+That is the right call and worth understanding rather than just obeying,
+because it changes what "finished" means for this subsystem. All six already
+carry a brass "Planned — Not Yet Implemented" stamp and a "every figure below
+is fabricated sample data" disclaimer, so the **honest** problem is solved: no
+admin can mistake an invented SafeSport clearance or board figure for a real
+one. Styling them would make fabricated data look *more* authoritative while
+changing nothing about whether it is true. A page that reads as unfinished,
+and says it is unfinished, is doing its job.
 
-`apps/web/components/RevenueFundingCenter.tsx` is a seventh case: its Grants,
-Scholarships and Memberships tabs show hardcoded fictional rows while the real
-records sit one click away at `/admin/grants` and `/admin/memberships`. A PR is
-adding the disclaimer plus links to the real surfaces. Design that pairing so
-"these numbers are invented" and "your real numbers are here" read as one
-message, not two stacked warnings.
+So this job is now: **leave them alone.** If you have appetite for this area,
+the useful work is wiring real data, and that is engineering rather than
+visual work — raise it rather than starting it here.
+
+**The one exception is `apps/web/components/RevenueFundingCenter.tsx`,** and it
+is the exception precisely because it is the case the owner's instruction
+points at. Its Grants, Scholarships and Memberships tabs render hardcoded
+fictional rows **while real, table-backed records for all three already
+exist**, one click away at `/admin/grants` and `/admin/memberships`. An
+in-flight PR adds the disclaimer plus links to those real surfaces, which is
+the right immediate honesty fix — but per the decision above, the intended
+end state is those tabs reading the real records, not a permanent disclaimer.
+Treat the disclaimer as a stopgap with a known replacement, not as the fix.
+
+If you do design anything here, design that pairing — "these numbers are
+invented" and "your real numbers are here" as one message, not two stacked
+warnings — and expect it to be deleted when the data lands.
 
 ## Job 4 — Locker gear icons (7 assets)
 
