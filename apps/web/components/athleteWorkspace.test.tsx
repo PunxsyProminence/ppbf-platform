@@ -905,6 +905,18 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     expect(screen.getByRole('link', { name: 'Open Your Progression' })).toBeTruthy();
   });
 
+  test('the sparring log is reachable from the workspace, not only by typing the URL', async () => {
+    // /athlete/dashboard/sparring had a real, tested, API-backed form and no
+    // link to it anywhere in the app -- only buildingMap.ts's site search
+    // knew it existed. This pins the fix, not just that a link renders: the
+    // href has to be the real route.
+    await renderWorkspace();
+
+    const link = screen.getByRole('link', { name: 'Open Combat Telemetry Log' });
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('href')).toBe('/athlete/dashboard/sparring');
+  });
+
   test('the part that genuinely is not built is still said plainly', async () => {
     // Automatic technique scoring is PARKED by owner decision. Correcting the
     // stale copy must not quietly promise it.
