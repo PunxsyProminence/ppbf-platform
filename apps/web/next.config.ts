@@ -53,6 +53,16 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
 	output: staticExportEnabled ? "export" : "standalone",
 	poweredByHeader: false,
+	// `next dev` otherwise writes apps/web/AGENTS.md and apps/web/CLAUDE.md on
+	// every run. A CLAUDE.md inside apps/web is read by any agent working in
+	// that directory, and the one Next generates pulls in its own framework
+	// primer -- which is precisely what the repo's root CLAUDE.md exists to
+	// prevent: it points at AGENT_KERNEL.md and says not to preload anything
+	// else unless the work at hand calls for it. Two entrypoints disagreeing
+	// about what to read first is worse than either alone, so the generator is
+	// off rather than gitignored: ignoring the files still leaves them on disk
+	// and still lets them be read.
+	agentRules: false,
 	turbopack: {
 		root: repoRoot,
 	},
