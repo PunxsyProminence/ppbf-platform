@@ -1351,6 +1351,42 @@ export async function upsertShadowCapabilityMap(input: {
   });
 }
 
+/**
+ * Counts only sources a capability could actually cite: the retrieval path requires the source
+ * approved, verified and not suppressed, behind an indexed and approved document. Grading on
+ * `status = 'active'` alone reported capabilities `covered` while retrieval returned nothing for
+ * them — `status` defaults to 'active' and is settable at registration, so it was the one field
+ * coverage graded on and the one field registration handed the caller for free.
+ *
+ * Kept as a single constant because the recompute and the read path must not drift: a stored
+ * verdict next to a `matched_sources` count computed by a different rule is how the two got out
+ * of step. `ingest_state = 'indexed'` transitively guarantees chunks exist, since
+ * completeShadowLibraryDocumentIndexing refuses to index a document with no non-empty chunk.
+ */
+const COVERAGE_MATCHED_SOURCES_SQL = `
+       select count(distinct s.source_id) as matched_sources
+       from pilot.shadow_library_sources s
+       where s.organization_id = cm.organization_id
+         and s.status = 'active'
+         and s.approval_state = 'approved'
+         and s.verification_state = 'verified'
+         and not coalesce(s.retrieval_suppressed, false)
+         and s.authority_tier <= cm.minimum_authority_tier
+         and (
+           coalesce(array_length(cm.required_source_types, 1), 0) = 0
+           or s.source_type = any(cm.required_source_types)
+         )
+         and exists (
+           select 1
+           from pilot.shadow_library_documents d
+           where d.source_id = s.source_id
+             and d.organization_id = s.organization_id
+             and d.ingest_state = 'indexed'
+             and d.index_completed_at is not null
+             and d.approval_state = 'approved'
+             and d.verification_state = 'verified'
+         )`;
+
 export async function recomputeShadowCapabilityCoverage(input: {
   organizationId: string;
   actorAccountId: string;
@@ -1365,16 +1401,7 @@ export async function recomputeShadowCapabilityCoverage(input: {
        cm.minimum_source_count,
        coalesce(ms.matched_sources, 0)::int as matched_sources
      from pilot.shadow_library_capability_map cm
-     left join lateral (
-       select count(distinct s.source_id) as matched_sources
-       from pilot.shadow_library_sources s
-       where s.organization_id = cm.organization_id
-         and s.status = 'active'
-         and s.authority_tier <= cm.minimum_authority_tier
-         and (
-           coalesce(array_length(cm.required_source_types, 1), 0) = 0
-           or s.source_type = any(cm.required_source_types)
-         )
+     left join lateral (${COVERAGE_MATCHED_SOURCES_SQL}
      ) ms on true
      where cm.organization_id = $1`,
     [input.organizationId],
@@ -1448,16 +1475,7 @@ export async function listShadowCapabilityCoverage(organizationId: string): Prom
        cm.updated_at,
        coalesce(ms.matched_sources, 0)::int as matched_sources
      from pilot.shadow_library_capability_map cm
-     left join lateral (
-       select count(distinct s.source_id) as matched_sources
-       from pilot.shadow_library_sources s
-       where s.organization_id = cm.organization_id
-         and s.status = 'active'
-         and s.authority_tier <= cm.minimum_authority_tier
-         and (
-           coalesce(array_length(cm.required_source_types, 1), 0) = 0
-           or s.source_type = any(cm.required_source_types)
-         )
+     left join lateral (${COVERAGE_MATCHED_SOURCES_SQL}
      ) ms on true
      where cm.organization_id = $1
      order by cm.capability_key asc`,

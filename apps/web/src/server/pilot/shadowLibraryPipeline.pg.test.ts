@@ -418,7 +418,7 @@ describe('capability coverage (real database)', () => {
     expect(rule.coverage_state).toBe('uncovered');
   });
 
-  test('a rule matching the registered doctrine source grades as covered', async () => {
+  test('coverage tracks retrievability: uncovered while withdrawn, covered once servable', async () => {
     await routes.postCoverage(jsonRequest('/api/pilot/shadow/library/capability-coverage', 'POST', {
       capability_key: 'shadow.doctrine.authority-boundary',
       required_source_types: ['internal_policy'],
@@ -426,15 +426,46 @@ describe('capability coverage (real database)', () => {
       minimum_source_count: 1,
     }));
 
-    const recompute = await routes.postCoverage(
-      jsonRequest('/api/pilot/shadow/library/capability-coverage', 'POST', { action: 'recompute' }),
-    );
-    const payload = await recompute.json();
+    async function coverageState(): Promise<string> {
+      const recompute = await routes.postCoverage(
+        jsonRequest('/api/pilot/shadow/library/capability-coverage', 'POST', { action: 'recompute' }),
+      );
+      const payload = await recompute.json();
+      return payload.items.find(
+        (item: { capability_key: string }) => item.capability_key === 'shadow.doctrine.authority-boundary',
+      ).coverage_state;
+    }
 
-    const rule = payload.items.find(
-      (item: { capability_key: string }) => item.capability_key === 'shadow.doctrine.authority-boundary',
+    // The write-path describe ends by adding a chunk to the approved doctrine document, which
+    // withdraws it from search. Evidence that cannot be retrieved cannot back a capability, so
+    // this must not read 'covered' -- grading on status='active' alone did, which is the
+    // fail-open this guards: a capability reporting covered while search returns nothing.
+    expect(await coverageState()).toBe('uncovered');
+
+    const [doctrineDocument] = await rawQuery<{ document_id: string }>(
+      `select d.document_id
+         from pilot.shadow_library_documents d
+         join pilot.shadow_library_sources s
+           on s.source_id = d.source_id and s.organization_id = d.organization_id
+        where d.organization_id = $1 and s.source_type = 'internal_policy'`,
+      [ORG_ID],
     );
-    expect(rule.coverage_state).toBe('covered');
+
+    for (const body of [
+      { action: 'complete_indexing' },
+      { action: 'review', approvalState: 'approved' },
+    ]) {
+      const response = await routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+        entityType: 'document',
+        entityId: doctrineDocument.document_id,
+        ...body,
+      }));
+      expect(response.status).toBe(200);
+    }
+
+    // Same source, same rule, same thresholds. The only thing that changed is that the evidence
+    // became servable again.
+    expect(await coverageState()).toBe('covered');
   });
 
   test('re-upserting the same capability_key updates rather than duplicating', async () => {
