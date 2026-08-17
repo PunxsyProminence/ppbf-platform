@@ -117,31 +117,70 @@ export default function ParentProgressionVisibilityPage() {
   // gate: /api/pilot/athletes/list returns only the athletes this guardian
   // is linked to.
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
           method: 'GET',
           credentials: 'include',
+          signal: controller.signal,
         });
+        if (controller.signal.aborted) return;
         if (!response.ok) throw new Error('Unable to load your linked athletes.');
         const payload = (await response.json()) as { items?: LinkedChild[] };
         const items = payload.items ?? [];
+        if (controller.signal.aborted) return;
         setChildren(items);
         setActiveChildId(items.length > 0 ? items[0].athlete_id : null);
         setErrorMessage(null);
       } catch (error) {
+        // Cancelled on unmount: nothing to say and nothing to write. A real
+        // failure still names itself in the header's alert.
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
         setChildren([]);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load your linked athletes.');
       } finally {
-        setChildrenLoading(false);
+        if (!controller.signal.aborted) setChildrenLoading(false);
       }
     })();
+    return () => controller.abort();
   }, []);
 
+  // REQUEST ORDERING. This load is a chain, not a request: gaps, then
+  // assignments, then one completions read per assignment, awaited in
+  // sequence. A guardian with two children switches between them with one tap,
+  // and without a guard both chains run at once -- so on a slow connection the
+  // FIRST child's gaps can land after the second child's, and the header above
+  // (which reads the selection, not the data) then prints one child's
+  // identified gaps, assigned drills and logged work under their sibling's
+  // name. These are a minor's development and medical-adjacent records shown
+  // to a guardian; the wrong child's record under the right child's name is a
+  // data-integrity failure, not a rendering glitch.
+  //
+  // AbortController rather than comparing the id after the fact, because a
+  // chain is exactly what benefits: aborting stops the remaining sequential
+  // requests instead of walking the whole assignment list for an answer
+  // already known to be discardable, and one signal covers every hop. It is
+  // the shape the rest of this codebase uses for a fetch keyed to something
+  // that changes (RabbitHole.tsx, AnnouncementBanner.tsx,
+  // app/admin/platform/page.tsx), and the same guard now sits on the two
+  // sibling surfaces that read these same records: components/ParentHub.tsx
+  // and app/coach/progression-intelligence.
+  //
+  // The aborted re-check before each setState matters as much as the abort
+  // itself: a response already in the pipe when the guardian tapped away must
+  // not write anything. progressionLoading is the sharpest case -- the losing
+  // chain's finally clearing it would settle the page while the live chain is
+  // still working, and this page renders "No progression gaps on record" the
+  // moment loading is false. That would tell a guardian their child has
+  // nothing on record when nobody has looked yet.
   useEffect(() => {
     // No active child means no children were linked: the progression state is
     // still its initial [] and there is nothing to clear.
     if (!activeChildId) return;
+
+    const controller = new AbortController();
+    const { signal } = controller;
 
     void (async () => {
       try {
@@ -150,18 +189,22 @@ export default function ParentProgressionVisibilityPage() {
 
         const gapsRes = await fetch(
           `${apiBase()}/api/pilot/progression/gaps?athlete_id=${encodeURIComponent(activeChildId)}`,
-          { method: 'GET', credentials: 'include' },
+          { method: 'GET', credentials: 'include', signal },
         );
+        if (signal.aborted) return;
         if (!gapsRes.ok) throw new Error(`Failed to fetch gaps: ${gapsRes.status}`);
         const gapsData = (await gapsRes.json()) as { items?: ProgressionGap[] };
+        if (signal.aborted) return;
         setGaps(gapsData.items ?? []);
 
         const assignRes = await fetch(
           `${apiBase()}/api/pilot/progression/assignments?athlete_id=${encodeURIComponent(activeChildId)}`,
-          { method: 'GET', credentials: 'include' },
+          { method: 'GET', credentials: 'include', signal },
         );
+        if (signal.aborted) return;
         if (!assignRes.ok) throw new Error(`Failed to fetch assignments: ${assignRes.status}`);
         const assignData = (await assignRes.json()) as { items?: DrillAssignment[] };
+        if (signal.aborted) return;
         const assignmentItems = assignData.items ?? [];
         setAssignments(assignmentItems);
 
@@ -171,23 +214,32 @@ export default function ParentProgressionVisibilityPage() {
         for (const assignment of assignmentItems) {
           const compRes = await fetch(
             `${apiBase()}/api/pilot/progression/completions?assignment_id=${encodeURIComponent(assignment.assignment_id)}`,
-            { method: 'GET', credentials: 'include' },
+            { method: 'GET', credentials: 'include', signal },
           );
+          if (signal.aborted) return;
           if (compRes.ok) {
             const compData = (await compRes.json()) as { items?: AssignmentCompletion[] };
             allCompletions.push(...(compData.items ?? []));
           }
         }
+        if (signal.aborted) return;
         setCompletions(allCompletions);
       } catch (error) {
+        // An abort is this page cancelling its own work, not a failure a
+        // guardian should read about -- and clearing the three lists here
+        // would blank the child they just switched TO. A genuine refusal or
+        // network failure still reaches the alert in the header, unchanged.
+        if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
         setGaps([]);
         setAssignments([]);
         setCompletions([]);
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load progression data.');
       } finally {
-        setProgressionLoading(false);
+        if (!signal.aborted) setProgressionLoading(false);
       }
     })();
+
+    return () => controller.abort();
   }, [activeChildId]);
 
   const activeChild = children.find((child) => child.athlete_id === activeChildId);

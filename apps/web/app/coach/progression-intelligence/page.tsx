@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -109,7 +109,20 @@ export default function CoachProgressionIntelligencePage() {
   // anything -- this is deliberately just visibility, not an enforced
   // block, so a coach assigning drills or verifying completions for a held
   // athlete sees that context instead of it being invisible on this page.
-  const [activeHold, setActiveHold] = useState<ActiveHoldSummary | null>(null);
+  //
+  // The hold is stored WITH the athlete it was read for, and matched against
+  // the current selection at render, the same way RabbitHole.tsx stores its
+  // anchor alongside the lessons it fetched. A hold banner is a safety claim
+  // about one particular child's body: it must never be shown, or withheld,
+  // on the strength of a read that was about somebody else. Absence is the
+  // honest state while the read for the newly selected athlete is in flight
+  // -- no banner says "this page knows of no hold", which is exactly true --
+  // so the previous athlete's banner comes down the instant the selection
+  // changes rather than lingering over the new name.
+  const [activeHold, setActiveHold] = useState<{ athleteId: string; hold: ActiveHoldSummary | null }>({
+    athleteId: '',
+    hold: null,
+  });
   const [errorMessage, setErrorMessage] = useState('');
   const [showGapForm, setShowGapForm] = useState(false);
   const [showAssignForm, setShowAssignForm] = useState(false);
@@ -213,7 +226,43 @@ export default function CoachProgressionIntelligencePage() {
     }
   };
 
+  // REQUEST ORDERING. Every athlete-scoped read on this page shares one
+  // AbortController, kept in a ref rather than a local because two different
+  // things start these loads: the selection effect below, and each write
+  // handler that reloads after it succeeds. Whichever starts second aborts
+  // whatever the first still has in flight.
+  //
+  // Without that, the loads simply raced. This is not one request but a chain
+  // -- gaps and assignments in parallel, then one completions read per
+  // assignment -- so two chains for two athletes resolve interleaved, in
+  // whatever order the network hands them back, and the LOSER can land last.
+  // A coach clicking from one athlete to the next on a slow phone would then
+  // be shown the first athlete's gaps, drills and verification queue with the
+  // second athlete's name selected above them, and would assign and verify
+  // work against that. On a platform where the record is a minor's, that is a
+  // data-integrity failure, not a flicker.
+  //
+  // AbortController rather than comparing the id after the fact because these
+  // are chains: aborting stops the per-assignment completions fan-out
+  // mid-flight instead of paying for a dozen requests whose answers are
+  // already known to be discardable, and one signal covers every request in
+  // the chain. It is also the shape this codebase already uses everywhere a
+  // fetch is keyed to something that changes -- RabbitHole.tsx,
+  // AnnouncementBanner.tsx, app/admin/platform/page.tsx and the suggestions
+  // effect a few lines above all abort in effect cleanup and then re-check
+  // controller.signal.aborted before touching state. Same pattern here, and
+  // the same pattern on the two parent surfaces this page shares its records
+  // with (components/ParentHub.tsx, app/parent/progression-visibility).
+  const athleteLoadRef = useRef<AbortController | null>(null);
+
   const reloadAthleteData = useCallback(async (athleteId: string) => {
+    // Supersede anything still in flight for the previously requested athlete
+    // before this load starts, so there is only ever one live chain.
+    athleteLoadRef.current?.abort();
+    const controller = new AbortController();
+    athleteLoadRef.current = controller;
+    const { signal } = controller;
+
     // Clearing lives here rather than in the effect below: setState called
     // synchronously in an effect body triggers cascading renders, and the lint
     // rule that blocks CI is pointing at a real problem rather than a style
@@ -224,34 +273,47 @@ export default function CoachProgressionIntelligencePage() {
       setCompletionsByAssignment({});
       return;
     }
-    const [gapsRes, assignRes] = await Promise.all([
-      fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${encodeURIComponent(athleteId)}`, { credentials: 'include' }),
-      fetch(`${apiBase()}/api/pilot/progression/assignments?athlete_id=${encodeURIComponent(athleteId)}`, { credentials: 'include' }),
-    ]);
-    if (!gapsRes.ok || !assignRes.ok) {
-      throw new Error('Unable to load progression data.');
-    }
-    const gapsData = (await gapsRes.json()) as { items?: ProgressionGap[] };
-    const assignData = (await assignRes.json()) as { items?: DrillAssignment[] };
-    setGaps(gapsData.items ?? []);
-    const items = assignData.items ?? [];
-    setAssignments(items);
+    try {
+      const [gapsRes, assignRes] = await Promise.all([
+        fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${encodeURIComponent(athleteId)}`, { credentials: 'include', signal }),
+        fetch(`${apiBase()}/api/pilot/progression/assignments?athlete_id=${encodeURIComponent(athleteId)}`, { credentials: 'include', signal }),
+      ]);
+      if (signal.aborted) return;
+      if (!gapsRes.ok || !assignRes.ok) {
+        throw new Error('Unable to load progression data.');
+      }
+      const gapsData = (await gapsRes.json()) as { items?: ProgressionGap[] };
+      const assignData = (await assignRes.json()) as { items?: DrillAssignment[] };
+      if (signal.aborted) return;
+      setGaps(gapsData.items ?? []);
+      const items = assignData.items ?? [];
+      setAssignments(items);
 
-    const nextCompletions: Record<string, AssignmentCompletion[]> = {};
-    await Promise.all(
-      items.map(async (a) => {
-        const compRes = await fetch(
-          `${apiBase()}/api/pilot/progression/completions?assignment_id=${encodeURIComponent(a.assignment_id)}`,
-          { credentials: 'include' },
-        );
-        if (compRes.ok) {
-          const compData = (await compRes.json()) as { items?: AssignmentCompletion[] };
-          nextCompletions[a.assignment_id] = compData.items ?? [];
-        }
-      }),
-    );
-    setCompletionsByAssignment(nextCompletions);
-    setErrorMessage('');
+      const nextCompletions: Record<string, AssignmentCompletion[]> = {};
+      await Promise.all(
+        items.map(async (a) => {
+          const compRes = await fetch(
+            `${apiBase()}/api/pilot/progression/completions?assignment_id=${encodeURIComponent(a.assignment_id)}`,
+            { credentials: 'include', signal },
+          );
+          if (compRes.ok) {
+            const compData = (await compRes.json()) as { items?: AssignmentCompletion[] };
+            nextCompletions[a.assignment_id] = compData.items ?? [];
+          }
+        }),
+      );
+      if (signal.aborted) return;
+      setCompletionsByAssignment(nextCompletions);
+      setErrorMessage('');
+    } catch (error) {
+      // A superseded or unmounted load is not something a coach needs to
+      // read: it was cancelled on purpose. Swallowing it HERE, rather than in
+      // each of the five callers, is what keeps every caller's own catch
+      // reporting genuine failures exactly as it did before -- a real refusal
+      // or a dead network still reaches errorMessage.
+      if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
@@ -262,30 +324,44 @@ export default function CoachProgressionIntelligencePage() {
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load progression data.');
       }
     })();
+    // Unmount, and a selection change while a write-triggered reload is in
+    // flight: reloadAthleteData supersedes its own predecessor, but nothing
+    // else would cancel a chain when this page goes away.
+    return () => athleteLoadRef.current?.abort();
   }, [selectedAthlete, reloadAthleteData]);
 
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       if (!selectedAthlete) {
-        setActiveHold(null);
+        setActiveHold({ athleteId: '', hold: null });
         return;
       }
       try {
         const response = await fetch(
           `${apiBase()}/api/pilot/training-holds?athlete_id=${encodeURIComponent(selectedAthlete)}&status=active`,
-          { credentials: 'include' },
+          { credentials: 'include', signal: controller.signal },
         );
+        if (controller.signal.aborted) return;
         if (!response.ok) {
-          setActiveHold(null);
+          setActiveHold({ athleteId: selectedAthlete, hold: null });
           return;
         }
         const payload = (await response.json().catch(() => ({}))) as { holds?: ActiveHoldSummary[] };
-        setActiveHold(payload.holds?.[0] ?? null);
-      } catch {
+        if (controller.signal.aborted) return;
+        setActiveHold({ athleteId: selectedAthlete, hold: payload.holds?.[0] ?? null });
+      } catch (error) {
         // Best-effort: no hold banner is a smaller loss than a broken page.
-        setActiveHold(null);
+        // But an ABORT must not clear anything -- this read was superseded by
+        // the next athlete's, and writing null here would be the previous
+        // athlete's answer erasing the current athlete's hold. That is the
+        // specific failure this guard exists for: a coach who cannot see an
+        // active hold puts a child who is not cleared back into contact work.
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
+        setActiveHold({ athleteId: selectedAthlete, hold: null });
       }
     })();
+    return () => controller.abort();
   }, [selectedAthlete]);
 
   const handleCreateGap = async () => {
@@ -395,6 +471,11 @@ export default function CoachProgressionIntelligencePage() {
     (g) => g.status === 'identified' || g.status === 'assigned' || g.status === 'in_progress',
   );
 
+  // A hold read for somebody else is not shown at all. See the note on the
+  // activeHold state for why this is matched at render rather than cleared on
+  // switch.
+  const shownHold = activeHold.athleteId === selectedAthlete ? activeHold.hold : null;
+
   const onLibraryPick = (drillId: string) => {
     const d = drills.find((x) => x.drill_id === drillId);
     if (!d) {
@@ -500,16 +581,16 @@ export default function CoachProgressionIntelligencePage() {
 
         {selectedAthlete && (
           <>
-            {activeHold && (
+            {shownHold && (
               <section
                 role="status"
                 className="mat-paper rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]"
               >
                 <p className="t-eyebrow">Active Training Hold</p>
                 <p className="t-body mt-[var(--s2)] font-semibold">
-                  {HOLD_SCOPE_LABEL[activeHold.scope]} is currently paused for this athlete ({activeHold.reason_category}).
+                  {HOLD_SCOPE_LABEL[shownHold.scope]} is currently paused for this athlete ({shownHold.reason_category}).
                 </p>
-                <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{activeHold.athlete_explanation}</p>
+                <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{shownHold.athlete_explanation}</p>
                 <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
                   Progression tools below still work -- this is visibility, not a block. Confirm the hold&apos;s
                   scope before assigning or verifying anything that conflicts with it.
