@@ -303,3 +303,53 @@ export function isTerminalScanDecision(decision: VideoScanDecision): boolean {
     || decision === 'blocked'
     || decision === 'needs_human_review';
 }
+
+/**
+ * Park quarantined videos as 'unconfigured' when no scan gate exists.
+ *
+ * The scan_state that means "there is no gate to ask" was previously
+ * unreachable: it is written from decision 'hold', 'hold' is only returned
+ * when zero gates are enabled, and the sweep returned before deciding in
+ * exactly that case. So a no-scanner environment left every upload sitting at
+ * 'pending' -- refused by the machine path (nothing runs) and by the coach
+ * release route alike, with no way out for anyone but an administrator.
+ *
+ * Terminal by design: an 'unconfigured' row is outside claimNextVideoSessionForScan's
+ * predicate, so this writes each video once rather than every tick.
+ */
+export async function markVideoSessionsUnconfigured(): Promise<number> {
+  const rows = await query<{ video_session_id: string }>(
+    `update pilot.video_sessions
+     set scan_state = 'unconfigured',
+         scan_detail = jsonb_build_object(
+           'decision', 'hold',
+           'reason', 'NO_SCANNER_CONFIGURED',
+           'gates_enabled', '[]'::jsonb
+         ),
+         updated_at = now()
+     where status = 'quarantined'
+       and scan_state = 'pending'
+     returning video_session_id`,
+  );
+  return rows.length;
+}
+
+/**
+ * Return 'unconfigured' videos to the scan queue once a gate is enabled.
+ *
+ * Without this, videos parked while no scanner existed would stay outside the
+ * claim predicate permanently -- the environment would gain a scanner and the
+ * backlog would never be scanned by it.
+ */
+export async function rearmUnconfiguredVideoSessions(): Promise<number> {
+  const rows = await query<{ video_session_id: string }>(
+    `update pilot.video_sessions
+     set scan_state = 'pending',
+         scan_next_attempt_at = now(),
+         updated_at = now()
+     where status = 'quarantined'
+       and scan_state = 'unconfigured'
+     returning video_session_id`,
+  );
+  return rows.length;
+}

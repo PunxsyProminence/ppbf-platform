@@ -4,6 +4,10 @@ import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access'
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { queryOne } from '@/src/server/pilot/db';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import {
+  getVideoReleasePolicy,
+  releasableScanStates,
+} from '@/src/server/pilot/videoReleasePolicy';
 
 export const runtime = 'nodejs';
 
@@ -15,10 +19,14 @@ interface VideoSessionRow {
   uploaded_by_account_id: string;
 }
 
-// The two verdicts that hand the decision to a person. 'needs_human_review' is
-// the scanner saying it could not be sure; 'unconfigured' is an environment
-// with no gate to ask. Everything else the scanner reaches, it owns.
-const HUMAN_RELEASABLE_SCAN_STATES = new Set(['needs_human_review', 'unconfigured']);
+// Which scan states a coach may release from is now the organization's
+// decision rather than a constant here -- see videoReleasePolicy.ts. The
+// strict default is unchanged and applies to any organization that has not
+// recorded one, so this widens nothing on its own.
+//
+// What no policy setting reaches: 'infected', 'blocked' and 'error'. A malware
+// verdict and a content-screen refusal are machine findings about footage of a
+// minor, and neither is a dial.
 
 /**
  * Releases an uploaded video for playback.
@@ -72,19 +80,28 @@ export async function POST(
       );
     }
 
-    // A person resolves what the scan could not; a person never overturns what
-    // it refused. 'blocked' is the content screen declining footage of a minor,
-    // and a coach who filmed it is the last person who should be able to
-    // reverse that. 'pending' and 'scanning' are not refusals -- they are a
-    // verdict that has not arrived, and releasing ahead of it would make the
-    // gate optional for anyone willing to click first.
-    if (!HUMAN_RELEASABLE_SCAN_STATES.has(row.scan_state)) {
+    // A person never overturns what the scan REFUSED, at any policy setting:
+    // 'blocked' is the content screen declining footage of a minor, and the
+    // coach who filmed it is the last person who should reverse that.
+    //
+    // What a person may resolve depends on the organization. Under the strict
+    // default only a deferred verdict is releasable, because releasing ahead
+    // of a scan that is genuinely coming would make the gate optional for
+    // whoever clicks first. Under 'coach_attested' the uploading coach may
+    // also release while the verdict is still in flight -- an organization
+    // whose coaches are all screened, reviewing its own footage the evening it
+    // was filmed, and accepting that trade knowingly.
+    const policy = await getVideoReleasePolicy(principal.organizationId);
+    const releasable = releasableScanStates(policy);
+
+    if (!releasable.includes(row.scan_state)) {
       return NextResponse.json(
         {
           error: row.scan_state === 'blocked'
             ? 'The content screen refused this video. It cannot be released here; ask an administrator to review it.'
             : 'This video is still waiting on its content scan. It can be released by hand only if the scan cannot reach a verdict.',
           scan_state: row.scan_state,
+          release_policy: policy,
         },
         { status: 409 },
       );
@@ -99,7 +116,7 @@ export async function POST(
        where video_session_id = $1 and organization_id = $2 and status = 'quarantined'
          and scan_state = any($3::text[])
        returning status`,
-      [videoId, principal.organizationId, [...HUMAN_RELEASABLE_SCAN_STATES]],
+      [videoId, principal.organizationId, releasable],
     );
 
     if (!released) {
@@ -120,6 +137,10 @@ export async function POST(
         action: 'video_release',
         from_status: 'quarantined',
         to_status: 'ready',
+        // Both recorded so a release under the loosened policy is
+        // distinguishable afterwards from one the scanner had deferred.
+        release_policy: policy,
+        from_scan_state: row.scan_state,
         uploaded_by_account_id: row.uploaded_by_account_id,
         athlete_id: row.athlete_id,
       },

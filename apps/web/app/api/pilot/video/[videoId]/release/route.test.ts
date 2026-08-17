@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { getVideoReleasePolicy } from '@/src/server/pilot/videoReleasePolicy';
 import { queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -16,6 +17,16 @@ jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
 
+// Doubled so this suite exercises the ROUTE, not the policy lookup -- which
+// has its own database-backed suite. Defaults to the strict posture, so every
+// pre-existing assertion here still describes an unconfigured organization.
+jest.mock('@/src/server/pilot/videoReleasePolicy', () => {
+  const actual = jest.requireActual('@/src/server/pilot/videoReleasePolicy');
+  return {
+    ...actual,
+    getVideoReleasePolicy: jest.fn(async () => 'scan_required'),
+  };
+});
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
@@ -221,6 +232,47 @@ describe('the scan verdict outranks the coach', () => {
     expect(res.status).toBe(200);
     expect(mockAudit).toHaveBeenCalledTimes(1);
   });
+
+  test('under coach_attested the uploading coach may release a pending video', async () => {
+    // The organization's decision, not a constant: a club whose coaches are
+    // all screened, reviewing its own footage the evening it was filmed.
+    jest.mocked(getVideoReleasePolicy).mockResolvedValueOnce('coach_attested');
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ scan_state: 'pending' }))
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    // The audit row records which posture allowed it, so a release under the
+    // loosened policy is distinguishable afterwards from a deferred verdict.
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          release_policy: 'coach_attested',
+          from_scan_state: 'pending',
+        }),
+      }),
+    );
+  });
+
+  test.each(['blocked', 'infected'])(
+    'coach_attested still cannot release a %s video -- the ceiling is not a dial',
+    async (scanState) => {
+      jest.mocked(getVideoReleasePolicy).mockResolvedValueOnce('coach_attested');
+      mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+      mockQueryOne.mockResolvedValueOnce(videoRow({
+        status: scanState === 'infected' ? 'infected' : 'quarantined',
+        scan_state: scanState,
+      }));
+
+      const res = await call();
+
+      expect(res.status).toBe(409);
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
 
   test('the write repeats the scan-state predicate, not just the status', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));

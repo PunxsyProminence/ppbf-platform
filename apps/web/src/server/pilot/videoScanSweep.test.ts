@@ -1,6 +1,11 @@
 import { sweepQuarantinedVideos } from './videoScanSweep';
 import { scanVideoSession } from './videoScan';
-import { claimNextVideoSessionForScan, settleVideoSessionScan } from './videoSessions';
+import {
+  claimNextVideoSessionForScan,
+  markVideoSessionsUnconfigured,
+  rearmUnconfiguredVideoSessions,
+  settleVideoSessionScan,
+} from './videoSessions';
 import { emitShadowEvent } from './shadowEvents';
 import { fileEscalation } from './escalationLadder';
 import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
@@ -20,6 +25,11 @@ jest.mock('./videoSessions', () => {
     ...actual,
     claimNextVideoSessionForScan: jest.fn(),
     settleVideoSessionScan: jest.fn(),
+    // Added with the 'unconfigured' fix: the sweep now parks due videos when
+    // no gate exists, and re-arms them once one is turned on. Both touch the
+    // database, so both are doubled here alongside the other two.
+    markVideoSessionsUnconfigured: jest.fn(),
+    rearmUnconfiguredVideoSessions: jest.fn(),
   };
 });
 jest.mock('./shadowEvents', () => ({ emitShadowEvent: jest.fn() }));
@@ -31,6 +41,8 @@ const mockedSettle = settleVideoSessionScan as jest.MockedFunction<typeof settle
 const mockedEmit = emitShadowEvent as jest.MockedFunction<typeof emitShadowEvent>;
 const mockedFileEscalation = fileEscalation as jest.MockedFunction<typeof fileEscalation>;
 const mockedAssertConsent = assertGuardianMediaConsent as jest.MockedFunction<typeof assertGuardianMediaConsent>;
+const mockedMarkUnconfigured = markVideoSessionsUnconfigured as jest.MockedFunction<typeof markVideoSessionsUnconfigured>;
+const mockedRearm = rearmUnconfiguredVideoSessions as jest.MockedFunction<typeof rearmUnconfiguredVideoSessions>;
 
 const CONTENT_ON = { PPBF_VIDEO_CONTENT_SCAN: 'vision' };
 
@@ -70,19 +82,46 @@ beforeEach(() => {
   // before this check existed. Tests below override this to simulate the
   // missing-consent path specifically.
   mockedAssertConsent.mockResolvedValue(undefined);
+  mockedMarkUnconfigured.mockReset();
+  mockedRearm.mockReset();
+  mockedMarkUnconfigured.mockResolvedValue(0);
+  mockedRearm.mockResolvedValue(0);
 });
 
 describe('sweepQuarantinedVideos', () => {
-  test('does no database work at all when no gate is configured', async () => {
-    // The important half of this is `claim` never being called. An
-    // unconfigured environment must not burn a scan attempt per worker tick on
-    // every quarantined video it will never be able to promote.
+  test('no gate configured parks due videos as unconfigured, and scans nothing', async () => {
+    // Previously this returned without touching the database at all, which
+    // left every upload at 'pending' -- a state the coach release route
+    // refuses -- so a no-scanner environment had no exit for machine OR coach.
+    // The park is a single bounded UPDATE and is terminal: an 'unconfigured'
+    // row is outside the claim predicate, so it is written once rather than
+    // once per tick, which is what the original early return was protecting.
+    mockedMarkUnconfigured.mockResolvedValue(3);
+
     const result = await sweepQuarantinedVideos({ env: {} });
 
-    expect(result).toEqual({ scanned: 0, promoted: 0, blocked: 0, skippedReason: 'not_configured' });
+    expect(result).toEqual({
+      scanned: 0, promoted: 0, blocked: 0, unconfigured: 3, skippedReason: 'not_configured',
+    });
+    expect(mockedMarkUnconfigured).toHaveBeenCalledTimes(1);
+    // Still no scanning: the point of the early exit is preserved.
     expect(mockedClaim).not.toHaveBeenCalled();
     expect(mockedScan).not.toHaveBeenCalled();
     expect(mockedSettle).not.toHaveBeenCalled();
+    // And nothing is re-armed while there is still no gate to scan with.
+    expect(mockedRearm).not.toHaveBeenCalled();
+  });
+
+  test('turning a gate on re-arms videos parked while there was none', async () => {
+    // Without this an environment that gains a scanner would never scan its
+    // backlog: 'unconfigured' rows sit outside claimNextVideoSessionForScan's
+    // predicate permanently.
+    mockedClaim.mockResolvedValue(null);
+
+    await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+    expect(mockedRearm).toHaveBeenCalledTimes(1);
+    expect(mockedMarkUnconfigured).not.toHaveBeenCalled();
   });
 
   test('reports nothing due when the queue is empty', async () => {
