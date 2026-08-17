@@ -2,7 +2,7 @@ jest.mock('./db', () => ({
   query: jest.fn(),
 }));
 
-import { getOrganizationWaiverStatus, TRACKED_WAIVER_TYPES } from './waiverCompliance';
+import { getAthleteWaiverStatus, getOrganizationWaiverStatus, TRACKED_WAIVER_TYPES } from './waiverCompliance';
 import { query } from './db';
 
 const mockQuery = jest.mocked(query);
@@ -85,5 +85,46 @@ describe('getOrganizationWaiverStatus', () => {
     mockQuery.mockResolvedValueOnce([]);
 
     await expect(getOrganizationWaiverStatus('org-1')).resolves.toEqual([]);
+  });
+});
+
+// The per-athlete narrowing the competition gate reads. It exists so a gate
+// can ask about one child without pulling the whole roster's consent state.
+describe('getAthleteWaiverStatus', () => {
+  test('no row at all is missing -- absence of consent is never a pass', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('missing');
+  });
+
+  test('reads one athlete, one type, newest row first -- the append-only rule', async () => {
+    mockQuery.mockResolvedValueOnce([{ status: 'signed' }]);
+
+    await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('signed');
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain('pilot.waivers');
+    expect(String(sql)).toContain('order by created_at desc');
+    expect(String(sql)).toContain('limit 1');
+    expect(params).toEqual(['org-1', 'ath-1', 'travel']);
+  });
+
+  test('a declined or withdrawn decision is reported as itself, not as missing', async () => {
+    mockQuery.mockResolvedValueOnce([{ status: 'declined' }]);
+    await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('declined');
+
+    mockQuery.mockResolvedValueOnce([{ status: 'withdrawn' }]);
+    await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('withdrawn');
+  });
+
+  // Deliberately unlike trainingHolds.ts and access.ts, which swallow 42P01 to
+  // degrade to a SAFE pre-migration behaviour. "We could not find out whether a
+  // guardian consented" must not degrade to "proceed".
+  test('a missing waivers relation is not degraded into a pass', async () => {
+    mockQuery.mockRejectedValueOnce(
+      Object.assign(new Error('relation "pilot.waivers" does not exist'), { code: '42P01' }),
+    );
+
+    await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).rejects.toThrow('does not exist');
   });
 });

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
+import { assertAthleteMayBeEnteredInCompetition } from '@/src/server/pilot/competitionSafetyGates';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -18,8 +19,18 @@ export const runtime = 'nodejs';
 
 // External-competition skeleton: athlete entries. The entry is a LINK --
 // athlete names come through the org-scoped join in externalCompetition.ts,
-// never copied. Competition and athlete ids from another organization are
-// hidden not-founds.
+// never copied. A competition id from another organization is a hidden
+// not-found; an athlete id this actor may not act on is refused by the safety
+// gate below instead (403), whose message reads the same for an athlete who
+// does not exist, one in another gym, and one who is simply not this coach's
+// -- so the status change discloses nothing the hidden not-found was hiding.
+//
+// The entries READ stays org-wide for coaches by design, and is not a gap:
+// athletes/list records the doctrine ("a coach plans a floor and picks up
+// cover across the whole gym") and already lets any coach read every athlete's
+// name and gym status org-wide, restricting only dob and emergency contact. An
+// entry row exposes a name, an entry status and a result -- nothing about the
+// child's body or family. See this capability's README.md for the gate list.
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,10 +60,29 @@ export async function POST(request: NextRequest) {
     if (!body.competition_id?.trim()) throw new ValidationError('Missing competition_id.');
     if (!body.athlete_id?.trim()) throw new ValidationError('Missing athlete_id.');
 
+    const competitionId = body.competition_id.trim();
+    const athleteId = body.athlete_id.trim();
+
+    // The three safety gates, before the entry exists: this actor's standing
+    // with this child, an active hold covering contact, and the guardian's
+    // travel consent. An entry is the moment a child is committed to competing
+    // somewhere else, and until now it was committed on a role string alone.
+    // Run BEFORE the competition lookup inside addCompetitionEntry so no entry
+    // row can be created down any path that skipped them. Each refusal is a
+    // typed PilotError, so jsonError surfaces it verbatim with its own status
+    // and this handler needs no extra catch arm -- see
+    // competitionSafetyGates.ts for why all three refuse rather than warn.
+    await assertAthleteMayBeEnteredInCompetition({
+      actor: principal,
+      athleteId,
+      kind: 'external_competition',
+      contextId: competitionId,
+    });
+
     const item = await addCompetitionEntry({
       organizationId: principal.organizationId,
-      competitionId: body.competition_id.trim(),
-      athleteId: body.athlete_id.trim(),
+      competitionId,
+      athleteId,
       createdByAccountId: principal.accountId,
     });
 

@@ -78,3 +78,43 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
 
   return Array.from(byAthlete.values());
 }
+
+/**
+ * One athlete, one tracked waiver type -- the narrow counterpart to the
+ * org-wide rollup above.
+ *
+ * getOrganizationWaiverStatus answers "who on this roster is missing what",
+ * which is the right shape for /admin/waiver-status and the wrong shape for a
+ * gate. A gate needs one athlete's one status, and must not read (or hold in
+ * memory, or risk logging) every other child's consent state to get it. So
+ * this is a narrowing, not a second source of truth: same append-only reading
+ * as the rollup -- pilot.waivers never updates in place, so the newest row for
+ * that athlete and type is the current one -- and the same treatment of
+ * absence. No row at all is 'missing', which is a status, never "fine".
+ *
+ * Deliberately NOT tolerant of a missing pilot.waivers relation, unlike the
+ * 42P01 guards in trainingHolds.ts and access.ts. Those degrade to a
+ * pre-migration behaviour that is SAFE (no hold, no coverage grant). Degrading
+ * a consent lookup would mean "we could not find out whether a guardian
+ * consented, so proceed", and for the document that authorises taking a minor
+ * off-site that is the one direction it must never fail in. A database fault
+ * here becomes a 500 and the caller's write does not happen.
+ */
+export async function getAthleteWaiverStatus(
+  organizationId: string,
+  athleteId: string,
+  waiverType: TrackedWaiverType,
+): Promise<WaiverStatus> {
+  const rows = await query<{ status: string }>(
+    `select status
+     from pilot.waivers
+     where organization_id = $1
+       and athlete_id = $2
+       and waiver_type = $3
+     order by created_at desc
+     limit 1`,
+    [organizationId, athleteId, waiverType],
+  );
+
+  return (rows[0]?.status as WaiverStatus | undefined) ?? 'missing';
+}

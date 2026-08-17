@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
+import { assertAthleteMayBeEnteredInCompetition } from '@/src/server/pilot/competitionSafetyGates';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -16,7 +17,18 @@ export const runtime = 'nodejs';
 
 // Wrestling league skeleton: season roster. The entry is a LINK -- athlete
 // names come through the org-scoped join in wrestlingLeague.ts, never copied.
-// Season and athlete ids from another organization are hidden not-founds.
+// A season id from another organization is a hidden not-found; an athlete id
+// this actor may not act on is refused by the safety gate below instead (403),
+// with a message that reads the same for an athlete who does not exist, one in
+// another gym, and one who is simply not this coach's -- so the status change
+// discloses nothing the hidden not-found was hiding.
+//
+// The roster READ stays org-wide for coaches by design, and is not a gap:
+// athletes/list records the doctrine ("a coach plans a floor and picks up
+// cover across the whole gym") and already lets any coach read every
+// athlete's name and gym status org-wide, restricting only dob and emergency
+// contact. A roster row exposes a name and a season membership, nothing that
+// list does not. See this capability's README.md for the full gate list.
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,10 +58,29 @@ export async function POST(request: NextRequest) {
     if (!body.season_id?.trim()) throw new ValidationError('Missing season_id.');
     if (!body.athlete_id?.trim()) throw new ValidationError('Missing athlete_id.');
 
+    const seasonId = body.season_id.trim();
+    const athleteId = body.athlete_id.trim();
+
+    // The three safety gates, before the link exists: this actor's standing
+    // with this child, an active hold covering contact, and the guardian's
+    // travel consent. A season roster is where this capability commits a child
+    // to competing, and until now it committed them on a role string alone.
+    // Run BEFORE the season lookup inside addLeagueRosterEntry so no roster
+    // row can be created down any path that skipped them. Each refusal is a
+    // typed PilotError, so jsonError surfaces it verbatim with its own status
+    // and this handler needs no extra catch arm -- see
+    // competitionSafetyGates.ts for why all three refuse rather than warn.
+    await assertAthleteMayBeEnteredInCompetition({
+      actor: principal,
+      athleteId,
+      kind: 'wrestling_league_season',
+      contextId: seasonId,
+    });
+
     const item = await addLeagueRosterEntry({
       organizationId: principal.organizationId,
-      seasonId: body.season_id.trim(),
-      athleteId: body.athlete_id.trim(),
+      seasonId,
+      athleteId,
       createdByAccountId: principal.accountId,
     });
 
