@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { enqueueJob } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
@@ -15,6 +16,17 @@ jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertActorCanAccessAthlete: jest.fn(),
 }));
+// The real GuardianConsentMissingError class is preserved (not replaced)
+// because http.ts's own jsonError does `error instanceof GuardianConsentMissingError`
+// against THIS module -- mocking only assertGuardianMediaConsent keeps that
+// instanceof check meaningful (same pattern as admin/video-compliance/route.test.ts).
+jest.mock('@/src/server/pilot/guardianConsent', () => {
+  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
+  return {
+    ...actual,
+    assertGuardianMediaConsent: jest.fn(),
+  };
+});
 jest.mock('@/src/server/pilot/shadowJobQueue', () => ({
   enqueueJob: jest.fn(),
   getJobStatusForActor: jest.fn(),
@@ -28,6 +40,7 @@ jest.mock('@/src/server/pilot/videoSessions', () => ({
 
 const mockPrincipal = jest.mocked(requirePrincipal);
 const mockAccess = jest.mocked(assertActorCanAccessAthlete);
+const mockConsent = jest.mocked(assertGuardianMediaConsent);
 const mockEnqueue = jest.mocked(enqueueJob);
 const mockConfigured = jest.mocked(isFilmStudyVisionConfigured);
 const mockVideo = jest.mocked(getVideoSessionById);
@@ -54,6 +67,7 @@ beforeEach(() => {
     accountId: 'coach-1', organizationId: 'org-1', role: 'coach',
   } as never);
   mockAccess.mockResolvedValue(undefined as never);
+  mockConsent.mockResolvedValue(undefined as never);
   mockConfigured.mockReturnValue(true);
   mockVideo.mockResolvedValue(readyVideo as never);
   mockEnqueue.mockResolvedValue('job-1' as never);
@@ -106,6 +120,27 @@ describe('POST video-analysis enqueues Film Study', () => {
       reason: 'SHADOW_FILM_VISION_UNCONFIGURED',
     });
     expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  test('refuses to queue analysis when guardian media consent is missing or withdrawn', async () => {
+    // 'ready' only reflects the content/malware scan, not consent -- a
+    // vision pass over the footage needs its own check, same as the
+    // publication-approval path.
+    mockConsent.mockRejectedValue(new GuardianConsentMissingError('ATH-1', ['parent-1']));
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(409);
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  test('checks consent after access, before the readiness check', async () => {
+    await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(mockAccess).toHaveBeenCalled();
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
+    expect(mockEnqueue).toHaveBeenCalled();
   });
 
   test('refuses a video that has not been scanned', async () => {

@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { assertGuardianMediaConsent } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { enqueueJob, getJobStatusForActor } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
@@ -82,6 +83,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       } satisfies VideoAnalysisResponse, { status: 400 });
     }
     await assertActorCanAccessAthlete(principal, video.athlete_id);
+
+    // T-008: 'ready' only reflects the content/malware scan, not guardian
+    // consent -- the publication-approval path already gates on this same
+    // check, but a vision pass over the footage is exactly the kind of use
+    // consent exists to cover, and nothing here asked before this route
+    // existed. Throws GuardianConsentMissingError, which jsonError below
+    // already maps to 409.
+    await assertGuardianMediaConsent(principal.organizationId, video.athlete_id);
 
     // Uploads are born 'quarantined' pending scan (#125). The worker must
     // never open an unscanned or infected file.
