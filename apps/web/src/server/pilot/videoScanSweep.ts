@@ -12,6 +12,8 @@
 // whenever the sweep next runs, because eligibility is a property of the row
 // rather than of a message somebody had to successfully send.
 
+import { sanitizedSqlState } from './db';
+import { fileEscalation } from './escalationLadder';
 import { emitShadowEvent } from './shadowEvents';
 import { scanVideoSession } from './videoScan';
 import {
@@ -102,7 +104,50 @@ export async function sweepQuarantinedVideos(options: {
 
     result.scanned += 1;
     if (scan.decision === 'promote') result.promoted += 1;
-    if (scan.decision === 'infected' || scan.decision === 'blocked') result.blocked += 1;
+    if (scan.decision === 'infected' || scan.decision === 'blocked') {
+      result.blocked += 1;
+
+      // A quarantined video was previously visible only inside the
+      // video-review page's own filtered list -- unlike a medical-clearance
+      // near-miss, nothing put it in front of a human who was not already
+      // looking. File it onto the same red-flag ladder every other
+      // system-detected safety signal uses. Skipped for an unattributed
+      // upload (no athlete_id): safety_escalations.athlete_id is not-null
+      // and there is no row to file it against.
+      //
+      // The scan verdict is already durable on the row (settleVideoSessionScan
+      // above), so a failed filing cannot corrupt it. Swallowed the same way
+      // /api/pilot/feedback/submit swallows fileAthleteVoiceEscalation and this
+      // function's own emitShadowEvent below: a persistently failing alarm
+      // (stale CHECK vocabulary, FK breakage) must stay visible to operators
+      // without taking the sweep down, so only a fixed event name and a
+      // validated SQLSTATE are logged -- never the reason or metadata.
+      if (claim.athlete_id) {
+        await fileEscalation({
+          organizationId: claim.organization_id,
+          sourceType: 'video_scan',
+          sourceId: claim.video_session_id,
+          athleteId: claim.athlete_id,
+          severity: 'high',
+          reason: `Automated content scan ${scan.decision === 'infected' ? 'flagged malware on' : 'refused'} `
+            + `uploaded footage (${scan.reason}).`,
+          triggeredBy: 'system',
+          metadata: {
+            decision: scan.decision,
+            gates_enabled: scan.gatesEnabled,
+            gates_passed: scan.gatesPassed,
+          },
+        }).catch((error: unknown) => {
+          const rawCode = error && typeof error === 'object' && 'code' in error
+            ? (error as { code: unknown }).code
+            : undefined;
+          console.error({
+            event: 'video-scan-escalation-filing-failed',
+            code: sanitizedSqlState(rawCode),
+          });
+        });
+      }
+    }
 
     // Emit only on decisions a human would want to know about. A 'retry' every
     // few minutes while Defender thinks would otherwise flood the event feed.
