@@ -52,10 +52,10 @@ test('a coach reads their own roster, not the organization', async () => {
   expect((await GET(getRequest())).status).toBe(200);
   expect(mockForCoach).toHaveBeenCalledWith('org-1', 'acct-1');
   expect(mockByOrg).not.toHaveBeenCalled();
-  expect(mockDigest).toHaveBeenCalledWith('org-1', ['ath-1']);
+  expect(mockDigest).toHaveBeenCalledWith('org-1', ['ath-1'], { excludeAthleteVoice: true });
 });
 
-test('an admin reads the organization roster', async () => {
+test('an admin reads the organization roster and does not exclude athlete_voice', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
   mockByOrg.mockResolvedValue([{ athlete_id: 'ath-2' }]);
   mockDigest.mockResolvedValue({ stalled_gaps: [] });
@@ -63,6 +63,7 @@ test('an admin reads the organization roster', async () => {
   await GET(getRequest());
 
   expect(mockByOrg).toHaveBeenCalledWith('org-1');
+  expect(mockDigest).toHaveBeenCalledWith('org-1', ['ath-2'], { excludeAthleteVoice: false });
 });
 
 test('parents, athletes, and platform_owner get nothing -- this is a staff lens', async () => {

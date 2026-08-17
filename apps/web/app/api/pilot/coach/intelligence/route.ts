@@ -17,15 +17,19 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['coach', 'organization_admin', 'admin']);
 
-    const athletes = principal.role === 'coach'
+    const isCoach = principal.role === 'coach';
+    const athletes = isCoach
       ? await getAthletesForCoach(principal.organizationId, principal.accountId)
       : isOrganizationAdminRole(principal.role)
         ? await getAthletesByOrganization(principal.organizationId)
         : [];
 
+    // athlete_voice escalations are admin-surface only -- see
+    // /api/pilot/escalations/route.ts's identical rule.
     const digest = await getCoachIntelligence(
       principal.organizationId,
       athletes.map((athlete) => athlete.athlete_id),
+      { excludeAthleteVoice: isCoach },
     );
 
     return NextResponse.json(digest);

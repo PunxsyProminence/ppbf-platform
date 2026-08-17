@@ -17,11 +17,32 @@ interface Digest {
   fading_attendance: Array<{ athlete_id: string; athlete_name: string; training_days_early: number; training_days_late: number }>;
   unreviewed_sessions: Array<{ athlete_id: string; athlete_name: string; session_id: string; session_date: string; days_waiting: number }>;
   expiring_holds: Array<{ athlete_id: string; athlete_name: string; hold_id: string; expires_at: string }>;
+  open_safety_escalations: Array<{ athlete_id: string; athlete_name: string; escalation_id: string; source_type: string; severity: string; reason: string; created_at: string }>;
+  open_compliance_violations: Array<{ athlete_id: string; athlete_name: string; violation_id: string; severity: string; status: string; created_at: string }>;
 }
 
 const EMPTY: Digest = {
   stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
+  open_safety_escalations: [], open_compliance_violations: [],
 };
+
+// Same rung mapping as /admin/escalations and /admin/compliance-center --
+// Law 2 (saturated colour means safety or status) reserves these classes for
+// exactly this kind of signal, so this reuses them rather than inventing a
+// third copy of the same four-step ladder.
+const ESCALATION_SEVERITY_BADGE: Record<string, { rung: string; glyph: string }> = {
+  critical: { rung: 'badge--locked', glyph: '✕' },
+  high: { rung: 'badge--restricted', glyph: '▲' },
+  moderate: { rung: 'badge--monitor', glyph: '◉' },
+  low: { rung: 'badge--monitor', glyph: '◉' },
+};
+const VIOLATION_SEVERITY_BADGE: Record<string, { rung: string; glyph: string }> = {
+  critical: { rung: 'badge--locked', glyph: '✕' },
+  high: { rung: 'badge--restricted', glyph: '▲' },
+  medium: { rung: 'badge--monitor', glyph: '◉' },
+  low: { rung: 'badge--cleared', glyph: '✓' },
+};
+const DEFAULT_BADGE = { rung: 'badge--monitor', glyph: '◉' };
 
 export default function CoachIntelligencePage() {
   const [digest, setDigest] = useState<Digest>(EMPTY);
@@ -54,7 +75,8 @@ export default function CoachIntelligencePage() {
 
   const total =
     digest.stalled_gaps.length + digest.readiness_concerns.length + digest.fading_attendance.length
-    + digest.unreviewed_sessions.length + digest.expiring_holds.length;
+    + digest.unreviewed_sessions.length + digest.expiring_holds.length
+    + digest.open_safety_escalations.length + digest.open_compliance_violations.length;
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
@@ -93,6 +115,46 @@ export default function CoachIntelligencePage() {
             </div>
           ) : (
             <div className="space-y-[var(--s4)]">
+              {digest.open_safety_escalations.length > 0 && (
+                <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Open safety escalations</h2>
+                  <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
+                    {digest.open_safety_escalations.map((item) => {
+                      const badge = ESCALATION_SEVERITY_BADGE[item.severity] ?? DEFAULT_BADGE;
+                      return (
+                        <li key={item.escalation_id} className="t-body flex flex-wrap items-baseline gap-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                          <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.severity}</span>
+                          <span>
+                            <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                            {' '}— {item.reason} <Link className="underline" href="/admin/escalations">Escalation ladder</Link>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
+
+              {digest.open_compliance_violations.length > 0 && (
+                <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Open compliance violations</h2>
+                  <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
+                    {digest.open_compliance_violations.map((item) => {
+                      const badge = VIOLATION_SEVERITY_BADGE[item.severity] ?? DEFAULT_BADGE;
+                      return (
+                        <li key={item.violation_id} className="t-body flex flex-wrap items-baseline gap-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                          <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.severity}</span>
+                          <span>
+                            <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                            {' '}— status: {item.status}.
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
+
               {digest.expiring_holds.length > 0 && (
                 <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                   <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Holds expiring within 14 days</h2>

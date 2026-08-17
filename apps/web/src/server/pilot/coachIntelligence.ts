@@ -33,18 +33,34 @@ export interface CoachIntelligenceDigest {
   fading_attendance: Array<{ athlete_id: string; athlete_name: string; training_days_early: number; training_days_late: number }>;
   unreviewed_sessions: Array<{ athlete_id: string; athlete_name: string; session_id: string; session_date: string; days_waiting: number }>;
   expiring_holds: Array<{ athlete_id: string; athlete_name: string; hold_id: string; expires_at: string }>;
+  open_safety_escalations: Array<{ athlete_id: string; athlete_name: string; escalation_id: string; source_type: string; severity: string; reason: string; created_at: string }>;
+  open_compliance_violations: Array<{ athlete_id: string; athlete_name: string; violation_id: string; severity: string; status: string; created_at: string }>;
+}
+
+const EMPTY_DIGEST: CoachIntelligenceDigest = {
+  stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
+  open_safety_escalations: [], open_compliance_violations: [],
+};
+
+export interface GetCoachIntelligenceOptions {
+  /** Same rule as the escalations route: an athlete_voice row exists because
+   * a child typed something into the feedback box, and the athlete's own
+   * coach may be exactly who they are disclosing about. Coach reads set
+   * this; admin reads leave it unset. */
+  excludeAthleteVoice?: boolean;
 }
 
 export async function getCoachIntelligence(
   organizationId: string,
   athleteIds: readonly string[],
+  options: GetCoachIntelligenceOptions = {},
 ): Promise<CoachIntelligenceDigest> {
   if (athleteIds.length === 0) {
-    return { stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [] };
+    return EMPTY_DIGEST;
   }
   const ids = [...athleteIds];
 
-  const [stalledGaps, redDays, rollup, unreviewed, holds, names] = await Promise.all([
+  const [stalledGaps, redDays, rollup, unreviewed, holds, escalations, violations, names] = await Promise.all([
     // 1. Gaps identified STALLED_GAP_DAYS+ ago that never got an assignment.
     query<{ athlete_id: string; athlete_name: string; gap_type: string; gap_description: string; days_open: number }>(
       `select g.athlete_id, a.full_name as athlete_name, g.gap_type, g.gap_description,
@@ -109,6 +125,35 @@ export async function getCoachIntelligence(
        order by h.expires_at asc`,
       [organizationId, ids, HOLD_EXPIRY_DAYS],
     ),
+    // 6. Open safety escalations -- the highest-severity blind spot this
+    // digest had: every other item is a routine coaching signal, this one is
+    // the platform's own red-flag ladder. excludeAthleteVoice mirrors the
+    // /api/pilot/escalations route's coach-scoped read exactly.
+    query<{ athlete_id: string; athlete_name: string; escalation_id: string; source_type: string; severity: string; reason: string; created_at: string }>(
+      `select e.athlete_id, a.full_name as athlete_name, e.escalation_id, e.source_type, e.severity, e.reason,
+              e.created_at::text as created_at
+       from pilot.safety_escalations e
+       join pilot.athletes a on a.organization_id = e.organization_id and a.athlete_id = e.athlete_id
+       where e.organization_id = $1 and e.athlete_id = any($2::text[])
+         and e.status = 'open'
+         and ($3::boolean is not true or e.source_type <> 'athlete_voice')
+       order by case e.severity when 'critical' then 0 when 'high' then 1 when 'moderate' then 2 else 3 end asc,
+                e.created_at asc`,
+      [organizationId, ids, options.excludeAthleteVoice ?? null],
+    ),
+    // 7. Open compliance violations (not yet resolved or dismissed) -- the
+    // digest's other safety-critical blind spot, same reasoning as escalations.
+    query<{ athlete_id: string; athlete_name: string; violation_id: string; severity: string; status: string; created_at: string }>(
+      `select v.athlete_id, a.full_name as athlete_name, v.violation_id, v.severity, v.status,
+              v.created_at::text as created_at
+       from pilot.compliance_violations v
+       join pilot.athletes a on a.organization_id = v.organization_id and a.athlete_id = v.athlete_id
+       where v.organization_id = $1 and v.athlete_id = any($2::text[])
+         and v.status not in ('resolved', 'dismissed')
+       order by case v.severity when 'critical' then 1 when 'high' then 2 when 'medium' then 3 when 'low' then 4 else 5 end asc,
+                v.created_at asc`,
+      [organizationId, ids],
+    ),
     // Names for item 3 (the rollup is numbers only). An id with no athlete
     // row cannot happen for ids that came from the roster read, but the
     // fallback renders the id rather than inventing a name.
@@ -138,5 +183,7 @@ export async function getCoachIntelligence(
     fading_attendance: fading,
     unreviewed_sessions: unreviewed,
     expiring_holds: holds,
+    open_safety_escalations: escalations,
+    open_compliance_violations: violations,
   };
 }

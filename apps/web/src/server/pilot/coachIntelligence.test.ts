@@ -43,6 +43,7 @@ test('an empty roster returns an empty digest without touching the database', as
 
   expect(digest).toEqual({
     stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
+    open_safety_escalations: [], open_compliance_violations: [],
   });
   expect(mockQuery).not.toHaveBeenCalled();
   expect(mockRollup).not.toHaveBeenCalled();
@@ -65,10 +66,32 @@ test('the queries carry the org scope, the thresholds, and the no-assignment/no-
   expect(readinessSql).toContain('distinct on (r.athlete_id, r.measured_at::date)');
   const holdSql = sqls.find((sql) => sql.includes('training_holds'));
   expect(holdSql).toContain("h.status = 'active'");
+  const escalationSql = sqls.find((sql) => sql.includes('safety_escalations'));
+  expect(escalationSql).toContain("e.status = 'open'");
+  expect(escalationSql).toContain("athlete_voice");
+  const violationSql = sqls.find((sql) => sql.includes('compliance_violations'));
+  expect(violationSql).toContain("v.status not in ('resolved', 'dismissed')");
   for (const call of mockQuery.mock.calls) {
     expect(call[1][0]).toBe('org-1');
   }
   expect(mockRollup).toHaveBeenCalledWith('org-1', ['ath-1'], ATTENDANCE_WINDOW_DAYS);
+});
+
+test('excludeAthleteVoice threads through to the escalations query as a null default', async () => {
+  mockQuery.mockResolvedValue([]);
+  mockRollup.mockResolvedValue([]);
+
+  await getCoachIntelligence('org-1', ['ath-1'], { excludeAthleteVoice: true });
+
+  const escalationCall = mockQuery.mock.calls.find((call) => String(call[0]).includes('safety_escalations'));
+  expect(escalationCall?.[1]).toEqual(['org-1', ['ath-1'], true]);
+
+  jest.clearAllMocks();
+  mockQuery.mockResolvedValue([]);
+  mockRollup.mockResolvedValue([]);
+  await getCoachIntelligence('org-1', ['ath-1']);
+  const defaultCall = mockQuery.mock.calls.find((call) => String(call[0]).includes('safety_escalations'));
+  expect(defaultCall?.[1]).toEqual(['org-1', ['ath-1'], null]);
 });
 
 test('the fading filter applies the half-drop rule exactly, with names from the roster read', async () => {
