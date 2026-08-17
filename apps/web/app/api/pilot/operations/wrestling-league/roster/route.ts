@@ -3,11 +3,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
   LEAGUE_READ_ROLES,
   LEAGUE_WRITE_ROLES,
   addLeagueRosterEntry,
   listLeagueRoster,
+  withdrawLeagueRosterEntry,
 } from '@/src/server/pilot/wrestlingLeague';
 
 export const runtime = 'nodejs';
@@ -60,6 +62,44 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+    return jsonError(error);
+  }
+}
+
+// Withdrawal: a `status` field transitions the roster entry to 'inactive'
+// -- the only other value the type and the database CHECK constraint allow
+// -- mirroring the {id, status} shape the season-status route already uses.
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...LEAGUE_WRITE_ROLES]);
+
+    const body = (await request.json()) as {
+      entry_id?: string;
+      status?: string;
+    };
+    if (!body.entry_id?.trim()) throw new ValidationError('Missing entry_id.');
+    if (body.status !== 'inactive') {
+      throw new ValidationError("status must be 'inactive'.");
+    }
+
+    const item = await withdrawLeagueRosterEntry({
+      organizationId: principal.organizationId,
+      entryId: body.entry_id.trim(),
+    });
+    if (!item) return hiddenNotFound();
+
+    await writePilotAuditEvent({
+      event_type: 'update',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: 'wrestling_league_roster_entry',
+      entity_id: item.entry_id,
+      details: { action: 'withdraw' },
+    });
+    return NextResponse.json({ item });
+  } catch (error) {
     return jsonError(error);
   }
 }

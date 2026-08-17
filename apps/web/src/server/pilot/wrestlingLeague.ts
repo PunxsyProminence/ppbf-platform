@@ -238,6 +238,30 @@ export async function addLeagueRosterEntry(input: {
   return listed.find((entry) => entry.athlete_id === input.athleteId) ?? null;
 }
 
+/** Withdraws an athlete from a season roster. 'inactive' is the roster's
+ * withdrawal-equivalent status -- the only other value the type and the
+ * database CHECK constraint allow -- so this mirrors withdrawCompetitionEntry
+ * in externalCompetition.ts rather than inventing a new status. Only an
+ * active entry can withdraw; an already-inactive entry reads as not-found.
+ * There is no path back here; re-adding the athlete is addLeagueRosterEntry,
+ * which the unique constraint already treats as an update to this row. */
+export async function withdrawLeagueRosterEntry(input: {
+  organizationId: string;
+  entryId: string;
+}): Promise<LeagueRosterRow | null> {
+  const row = await queryOne<{ entry_id: string; season_id: string }>(
+    `update pilot.wrestling_league_roster_entries
+     set status = 'inactive', updated_at = now()
+     where organization_id = $1 and entry_id = $2 and status = 'active'
+     returning entry_id, season_id`,
+    [input.organizationId, input.entryId],
+  );
+  if (!row) return null;
+
+  const listed = await listLeagueRoster(input.organizationId, row.season_id);
+  return listed.find((entry) => entry.entry_id === input.entryId) ?? null;
+}
+
 /** Roster with the athlete's name joined from the org-scoped athlete record
  * -- the name is read through its governed home, never copied. */
 export async function listLeagueRoster(organizationId: string, seasonId: string): Promise<LeagueRosterRow[]> {

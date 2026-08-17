@@ -212,6 +212,27 @@ export async function recordEntryResult(input: {
   return listed.find((entry) => entry.entry_id === input.entryId) ?? null;
 }
 
+/** Withdraws an entered athlete from a competition. Only an entered entry
+ * can withdraw -- an already-withdrawn entry reads as not-found, same as a
+ * result write refuses a withdrawn entry. There is no path back from
+ * withdrawn here; re-entering is a fresh entry via addCompetitionEntry. */
+export async function withdrawCompetitionEntry(input: {
+  organizationId: string;
+  entryId: string;
+}): Promise<CompetitionEntryRow | null> {
+  const row = await queryOne<{ entry_id: string; competition_id: string }>(
+    `update pilot.external_competition_entries
+     set status = 'withdrawn', updated_at = now()
+     where organization_id = $1 and entry_id = $2 and status = 'entered'
+     returning entry_id, competition_id`,
+    [input.organizationId, input.entryId],
+  );
+  if (!row) return null;
+
+  const listed = await listCompetitionEntries(input.organizationId, row.competition_id);
+  return listed.find((entry) => entry.entry_id === input.entryId) ?? null;
+}
+
 /** Entries with the athlete's name joined from the org-scoped athlete record
  * -- the name is read through its governed home, never copied. */
 export async function listCompetitionEntries(organizationId: string, competitionId: string): Promise<CompetitionEntryRow[]> {

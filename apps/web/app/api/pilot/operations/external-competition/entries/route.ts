@@ -11,6 +11,7 @@ import {
   isCompetitionEntryResult,
   listCompetitionEntries,
   recordEntryResult,
+  withdrawCompetitionEntry,
 } from '@/src/server/pilot/externalCompetition';
 
 export const runtime = 'nodejs';
@@ -72,6 +73,11 @@ export async function POST(request: NextRequest) {
 // no_contest per entry, and a LOSS REQUIRES A LESSON -- refused here with
 // the reason, and refused by the database constraint beneath. The lesson
 // is the point: "one hard-fought loss is worth a thousand easy victories."
+//
+// Withdrawal shares this PATCH: a `status` field transitions the entry to
+// 'withdrawn' (mirroring the {id, status} shape the competition/season
+// status routes already use), while a `result` field keeps recording a
+// result on an entered athlete.
 export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -79,10 +85,35 @@ export async function PATCH(request: NextRequest) {
 
     const body = (await request.json()) as {
       entry_id?: string;
+      status?: string;
       result?: string;
       lesson_note?: string;
     };
     if (!body.entry_id?.trim()) throw new ValidationError('Missing entry_id.');
+
+    if (body.status !== undefined) {
+      if (body.status !== 'withdrawn') {
+        throw new ValidationError("status must be 'withdrawn'.");
+      }
+
+      const item = await withdrawCompetitionEntry({
+        organizationId: principal.organizationId,
+        entryId: body.entry_id.trim(),
+      });
+      if (!item) return hiddenNotFound();
+
+      await writePilotAuditEvent({
+        event_type: 'update',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'external_competition_entry',
+        entity_id: item.entry_id,
+        details: { action: 'withdraw' },
+      });
+      return NextResponse.json({ item });
+    }
+
     if (!isCompetitionEntryResult(body.result)) {
       throw new ValidationError("result must be 'won', 'lost', 'draw', or 'no_contest'.");
     }
