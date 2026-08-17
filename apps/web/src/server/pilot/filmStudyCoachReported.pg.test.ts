@@ -80,6 +80,9 @@ async function readMigration(name: string): Promise<string> {
 const BASE_SQL = 'pilot_slice_postgres.sql';
 const PROPOSALS_SQL = 'pilot_slice_postgres_film_study_proposals_migration.sql';
 const COACH_REPORTED_SQL = 'pilot_slice_postgres_film_study_coach_reported_migration.sql';
+// The module appends a revision on every correction, so the table it writes to
+// must exist in any suite that corrects a proposal.
+const REVISIONS_SQL = 'pilot_slice_postgres_film_study_revisions_migration.sql';
 
 /** Seeds the org/account/athlete rows the proposal foreign keys require. */
 async function seedTenancy(client: Client): Promise<void> {
@@ -181,6 +184,7 @@ beforeAll(async () => {
   await migrateClient.query(await readMigration(BASE_SQL));
   await migrateClient.query(await readMigration(PROPOSALS_SQL));
   await migrateClient.query(await readMigration(COACH_REPORTED_SQL));
+  await migrateClient.query(await readMigration(REVISIONS_SQL));
   await seedTenancy(migrateClient);
   await migrateClient.end();
 

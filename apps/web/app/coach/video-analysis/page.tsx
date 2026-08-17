@@ -55,6 +55,10 @@ interface FilmStudyProposal {
   model_deployment: string | null;
   frames_analyzed: number | null;
   review_state: 'pending_review' | 'accepted' | 'rejected' | 'corrected';
+  // The newest correction pass, or null before the first one. 'corrected' is a
+  // working state rather than an exit -- the proposal stays in the queue and
+  // can be reworked until it reads right, then accepted.
+  corrected_observation_text: string | null;
   created_at: string;
 }
 
@@ -333,9 +337,18 @@ export default function CoachVideoAnalysisPage() {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? `Could not record verdict (${res.status}).`);
       }
-      // The settled proposal leaves the pending queue whichever exit it took --
-      // accepting, rejecting and correcting are all an exit, not just accepting.
-      setProposals((current) => current.filter((p) => p.proposal_id !== proposal.proposal_id));
+
+      if (verdict === 'corrected') {
+        // A correction is a PASS, not an exit. The proposal stays in the queue
+        // so the coach can rework it again, or accept once the wording is
+        // finally right -- dropping it here would make "correct until it is
+        // right" impossible to actually do.
+        loadProposals();
+      } else {
+        // Accepting and rejecting are both exits, so the row leaves the queue.
+        setProposals((current) => current.filter((p) => p.proposal_id !== proposal.proposal_id));
+      }
+
       setCorrectionDrafts((current) => {
         const next = { ...current };
         delete next[proposal.proposal_id];
@@ -750,7 +763,23 @@ export default function CoachVideoAnalysisPage() {
                       : `Athlete: ${p.athlete_id} · ${p.frames_analyzed} frame(s) · ${p.model_deployment}`}
                   </p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
-                  <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{formatGymStamp(p.created_at)}</p>
+                  {/* The model's original is never overwritten, so both readings
+                      stay side by side: what it proposed, and what the coach has
+                      made of it so far. */}
+                  {p.corrected_observation_text ? (
+                    <>
+                      <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
+                        Corrected to:
+                      </p>
+                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
+                        {p.corrected_observation_text}
+                      </p>
+                    </>
+                  ) : null}
+                  <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
+                    {formatGymStamp(p.created_at)}
+                    {p.review_state === 'corrected' ? ' · being reworked — correct again, or accept once it reads right' : ''}
+                  </p>
                   <div className="field mt-[var(--s3)]">
                     <label htmlFor={`correction-${p.proposal_id}`} className="t-data text-[color:var(--bone-400)]">
                       Corrected observation (only needed if you are correcting)

@@ -195,6 +195,11 @@ export async function createCoachReportedObservation(input: {
  * The coach's queue. `pending` is the working view; `all` is the audit view.
  * Pending is ordered oldest-first because the proposal that has waited longest
  * is the one most at risk of being forgotten.
+ *
+ * The working view holds 'corrected' as well as 'pending_review', because a
+ * correction is a pass rather than an exit -- a proposal being reworked has
+ * not left the queue, and dropping it after the first pass would make
+ * "correct until it is right" impossible to actually do.
  */
 export async function listFilmStudyProposals(input: {
   organizationId: string;
@@ -207,11 +212,11 @@ export async function listFilmStudyProposals(input: {
     `select ${PROPOSAL_COLUMNS}
      from pilot.shadow_film_study_proposals
      where organization_id = $1
-       and ($2::text = 'all' or review_state = 'pending_review')
+       and ($2::text = 'all' or review_state in ('pending_review', 'corrected'))
        and ($3::text is null or athlete_id = $3)
      order by
-       case when review_state = 'pending_review' then 0 else 1 end,
-       case when review_state = 'pending_review' then created_at end asc,
+       case when review_state in ('pending_review', 'corrected') then 0 else 1 end,
+       case when review_state in ('pending_review', 'corrected') then created_at end asc,
        created_at desc
      limit ${limit}`,
     [input.organizationId, input.state ?? 'pending', input.athleteId ?? null],
@@ -231,22 +236,29 @@ export async function getFilmStudyProposal(
 }
 
 /**
- * Settle a proposal: the human attestation the safety design requires.
+ * Settle a proposal, or take another pass at correcting it.
  *
- * ALL THREE verdicts are always reachable from pending_review, and nothing
- * about the proposal's content can block any of them -- an observation the
- * coach disagrees with is exactly what 'rejected' is for. That is the C1/C2
- * lesson (#122) encoded as a rule rather than relearned.
+ * ALL THREE verdicts are always reachable, and nothing about the proposal's
+ * content can block any of them -- an observation the coach disagrees with is
+ * exactly what 'rejected' is for. That is the C1/C2 lesson (#122) encoded as a
+ * rule rather than relearned.
  *
- * 'corrected' exists because rejection was previously the only thing a coach
- * who was nearly in agreement could reach, and it discarded what they knew.
- * A correction carries the coach's replacement wording alongside the model's
- * original, which is never overwritten -- both readings survive, so a later
- * reader can see what the model said and what the coach made of it.
+ * 'corrected' IS NOT TERMINAL. A coach reworks the wording until the model's
+ * proposal is at least mostly right, so a correction can be made repeatedly --
+ * from 'pending_review' the first time and from 'corrected' every time after.
+ * Each pass appends a row to pilot.film_study_proposal_revisions with its own
+ * author and timestamp; nothing is edited in place, and the model's original
+ * observation_text is never touched at all.
  *
- * Only a pending proposal can be settled: re-deciding a settled one would
- * overwrite who attested to it. Returns null when nothing was settled, which
- * the caller distinguishes from "no such proposal" by reading it back.
+ * Both exits stay reachable from 'corrected': accept once the wording is
+ * finally right, or reject and give up. Without the accept path there would be
+ * no way to say "this is right now", and the state could be refined forever
+ * but never closed.
+ *
+ * 'accepted' and 'rejected' ARE terminal. Reopening them would overwrite an
+ * attestation already given -- a different feature from refining an unsettled
+ * one. Returns null when nothing moved, which the caller distinguishes from
+ * "no such proposal" by reading it back.
  */
 export async function resolveFilmStudyProposal(input: {
   organizationId: string;
@@ -268,18 +280,26 @@ export async function resolveFilmStudyProposal(input: {
     throw new Error('corrected_observation_text is only valid with a corrected verdict');
   }
 
-  return queryOne<FilmStudyProposalRow>(
+  const settled = await queryOne<FilmStudyProposalRow>(
     `update pilot.shadow_film_study_proposals
      set review_state = $3,
          reviewed_by_account_id = $4,
          reviewed_by_role = $5,
          reviewed_at = now(),
          review_notes = $6,
-         corrected_observation_text = $7,
+         -- Carried forward on an accept/reject so the wording the coach
+         -- finally settled on is not erased by the act of settling. Only a
+         -- correction replaces it, and only ever with the newest pass.
+         corrected_observation_text = case
+           when $3 = 'corrected' then $7
+           else corrected_observation_text
+         end,
          updated_at = now()
      where organization_id = $1
        and proposal_id = $2
-       and review_state = 'pending_review'
+       -- Refining an unsettled proposal, not re-deciding a settled one:
+       -- 'corrected' is a working state, 'accepted' and 'rejected' are not.
+       and review_state in ('pending_review', 'corrected')
      returning ${PROPOSAL_COLUMNS}`,
     [
       input.organizationId,
@@ -290,5 +310,63 @@ export async function resolveFilmStudyProposal(input: {
       input.notes?.slice(0, 2000) ?? null,
       input.verdict === 'corrected' ? correctedText.slice(0, 4000) : null,
     ],
+  );
+
+  // Appended only after the row actually moved, so a rejected update (someone
+  // else settled it first) cannot leave an orphan revision claiming a pass
+  // that never happened.
+  if (settled && input.verdict === 'corrected') {
+    await query(
+      `insert into pilot.film_study_proposal_revisions
+         (revision_id, proposal_id, organization_id, revision_number,
+          observation_text, revised_by_account_id, revised_by_role, revision_note)
+       select $1, $2, $3,
+              coalesce(max(revision_number), 0) + 1,
+              $4, $5, $6, $7
+       from pilot.film_study_proposal_revisions
+       where proposal_id = $2`,
+      [
+        randomUUID(),
+        input.proposalId,
+        input.organizationId,
+        correctedText.slice(0, 4000),
+        input.reviewerAccountId,
+        input.reviewerRole,
+        input.notes?.slice(0, 2000) ?? null,
+      ],
+    );
+  }
+
+  return settled;
+}
+
+export interface FilmStudyRevisionRow {
+  revision_id: string;
+  proposal_id: string;
+  revision_number: number;
+  observation_text: string;
+  revised_by_account_id: string;
+  revised_by_role: string;
+  revised_at: string;
+  revision_note: string | null;
+}
+
+/**
+ * Every correction pass on one proposal, oldest first.
+ *
+ * The chain is the point: one-shot correction says the model was wrong, while
+ * the sequence says how far wrong it started and what the coach kept changing.
+ */
+export async function listFilmStudyProposalRevisions(
+  organizationId: string,
+  proposalId: string,
+): Promise<FilmStudyRevisionRow[]> {
+  return query<FilmStudyRevisionRow>(
+    `select revision_id, proposal_id, revision_number, observation_text,
+            revised_by_account_id, revised_by_role, revised_at, revision_note
+     from pilot.film_study_proposal_revisions
+     where organization_id = $1 and proposal_id = $2
+     order by revision_number asc`,
+    [organizationId, proposalId],
   );
 }
