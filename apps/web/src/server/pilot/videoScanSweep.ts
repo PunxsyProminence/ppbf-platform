@@ -12,6 +12,7 @@
 // whenever the sweep next runs, because eligibility is a property of the row
 // rather than of a message somebody had to successfully send.
 
+import { fileEscalation, type SafetyEscalationSeverity } from './escalationLadder';
 import { emitShadowEvent } from './shadowEvents';
 import { scanVideoSession } from './videoScan';
 import {
@@ -26,7 +27,54 @@ import {
   resolveVideoScanConfig,
   scanStateForDecision,
   videoStatusForDecision,
+  type VideoScanDecision,
 } from './videoScanPolicy';
+
+// The negative terminal verdicts -- everything a human might need to act on.
+// 'promote' is terminal too but needs nobody's attention; 'retry' is not
+// terminal at all.
+type VideoScanEscalationDecision = 'infected' | 'blocked' | 'needs_human_review';
+
+function isEscalatingScanDecision(decision: VideoScanDecision): decision is VideoScanEscalationDecision {
+  return decision === 'infected' || decision === 'blocked' || decision === 'needs_human_review';
+}
+
+/**
+ * Severity per verdict, fixed by the sweep rather than caller-supplied: this
+ * is the only filer for source_type 'video_scan', so there is no human
+ * judgment call to thread through at filing time, unlike near_miss or
+ * incident.
+ *
+ * 'blocked' is 'critical' -- the content screen affirmatively refused the
+ * footage, and this platform's subject is video of minors. 'infected' is
+ * 'high' -- a real scanner verdict and a genuine risk, but not itself a
+ * claim about what the footage shows. 'needs_human_review' is 'moderate' --
+ * the screen could not tell either way, which is a "look at this," not a
+ * "this is wrong."
+ */
+function escalationSeverityForScanDecision(decision: VideoScanEscalationDecision): SafetyEscalationSeverity {
+  switch (decision) {
+    case 'blocked':
+      return 'critical';
+    case 'infected':
+      return 'high';
+    case 'needs_human_review':
+      return 'moderate';
+  }
+}
+
+function escalationReasonForScanDecision(decision: VideoScanEscalationDecision, scanReason: string): string {
+  switch (decision) {
+    case 'infected':
+      return `Scanner found malware in this upload (${scanReason}). The file is permanently blocked -- `
+        + 'no review path can release infected footage.';
+    case 'blocked':
+      return `The content screen refused this upload (${scanReason}). Held for administrator review -- `
+        + 'the coach who uploaded it cannot release it.';
+    case 'needs_human_review':
+      return `The scan could not reach a verdict on this upload (${scanReason}). Held pending human review.`;
+  }
+}
 
 // One video per tick by default. A scan does a blob download plus a vision
 // call, so a larger batch would stretch the worker tick and delay the job
@@ -103,6 +151,38 @@ export async function sweepQuarantinedVideos(options: {
     result.scanned += 1;
     if (scan.decision === 'promote') result.promoted += 1;
     if (scan.decision === 'infected' || scan.decision === 'blocked') result.blocked += 1;
+
+    // File a safety escalation for every negative terminal verdict -- this is
+    // the gap this block closes: a blocked, infected, or needs_human_review
+    // video used to sit only in the video-review page's own filtered list,
+    // with no other surface (this ladder, the compliance center, the board)
+    // aware it existed. Unlike emitShadowEvent below, this call is NOT
+    // swallowed: a safety escalation failing to file silently is exactly the
+    // kind of gap this closes, so a filing failure surfaces through the
+    // worker's onError log and the sweep tick retries, rather than looking
+    // like it succeeded. The row itself is already durably settled by this
+    // point, so a failure here costs a delayed escalation, never data loss.
+    //
+    // Skipped when the video has no athlete_id (an unattributed team upload,
+    // the same case videoScanReview.ts documents) -- safety_escalations.athlete_id
+    // is not-null with a foreign key to pilot.athletes, so there is nothing to
+    // file against.
+    if (terminal && isEscalatingScanDecision(scan.decision) && claim.athlete_id) {
+      await fileEscalation({
+        organizationId: claim.organization_id,
+        sourceType: 'video_scan',
+        sourceId: claim.video_session_id,
+        athleteId: claim.athlete_id,
+        severity: escalationSeverityForScanDecision(scan.decision),
+        reason: escalationReasonForScanDecision(scan.decision, scan.reason),
+        triggeredBy: 'system',
+        metadata: {
+          video_session_id: claim.video_session_id,
+          decision: scan.decision,
+          reason: scan.reason,
+        },
+      });
+    }
 
     // Emit only on decisions a human would want to know about. A 'retry' every
     // few minutes while Defender thinks would otherwise flood the event feed.

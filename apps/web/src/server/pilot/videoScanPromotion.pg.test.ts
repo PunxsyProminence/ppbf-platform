@@ -591,6 +591,14 @@ describe('the sweep end to end against real Postgres', () => {
     jest.resetModules();
     jest.doMock('./videoScan', () => ({ scanVideoSession: scanImpl }));
     jest.doMock('./shadowEvents', () => ({ emitShadowEvent: jest.fn(async () => {}) }));
+    // This suite's database carries only the video_sessions migration -- no
+    // pilot.organizations, pilot.athletes, or pilot.safety_escalations, none
+    // of which this suite's own purpose (the claim/settle SQL contract) needs.
+    // Escalation filing has its own real-database coverage in
+    // escalationLadder.pg.test.ts and its own mocked-unit coverage in
+    // videoScanSweep.test.ts; mocked here the same way shadowEvents is, as a
+    // side effect this suite does not exercise.
+    jest.doMock('./escalationLadder', () => ({ fileEscalation: jest.fn(async () => ({})) }));
     const sweepModule = await import('./videoScanSweep');
     const { closePool: closeRegistryPool } = await import('./db');
     registryPools.push(closeRegistryPool);
@@ -604,6 +612,7 @@ describe('the sweep end to end against real Postgres', () => {
     registryPools = [];
     jest.dontMock('./videoScan');
     jest.dontMock('./shadowEvents');
+    jest.dontMock('./escalationLadder');
     jest.resetModules();
   });
 
