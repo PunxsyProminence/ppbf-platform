@@ -12,6 +12,7 @@ import {
   RULE_JUSTIFICATION_FIELDS,
   ruleFromDetectedFrom,
   TRAINING_DAYS_MIN_EARLY,
+  type CompetitionLossRow,
   type StalledAssignmentRow,
   type TransferFailureRow,
 } from './progressionSuggestions';
@@ -196,6 +197,54 @@ describe('transfer_check_failed', () => {
 
   test('no transfer failures means no suggestion, same as any other quiet rule', () => {
     expect(deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [])).toHaveLength(0);
+  });
+});
+
+describe('competition_loss_unresolved', () => {
+  const LOSS: CompetitionLossRow[] = [
+    {
+      athlete_id: 'ath-1',
+      loss_count: 2,
+      most_recent_lesson_note: 'kept dropping the right hand in round 2',
+      most_recent_competition_name: 'Golden Gloves Regional',
+      most_recent_competition_date: '2026-08-01',
+    },
+  ];
+
+  test('a recorded loss produces one grouped suggestion carrying the lesson note', () => {
+    const suggestions = deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [], LOSS);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].rule).toBe('competition_loss_unresolved');
+    expect(suggestions[0].gap_type).toBe('technique');
+    expect(suggestions[0].suggested_description).toContain('2 recorded competition losses');
+    expect(suggestions[0].suggested_description).toContain('kept dropping the right hand in round 2');
+    expect(suggestions[0].evidence.most_recent_lesson_note).toBe('kept dropping the right hand in round 2');
+  });
+
+  test('an open technique gap suppresses the suggestion', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      new Map([['ath-1', new Set(['technique'])]]),
+      [],
+      LOSS,
+    );
+    expect(suggestions).toHaveLength(0);
+  });
+
+  test('a single loss uses the singular form', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      NO_OPEN_GAPS,
+      [],
+      [{ ...LOSS[0], loss_count: 1 }],
+    );
+    expect(suggestions[0].suggested_description).toContain('1 recorded competition loss,');
+  });
+
+  test('no losses means no suggestion', () => {
+    expect(deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [], [])).toHaveLength(0);
   });
 });
 
