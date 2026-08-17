@@ -162,7 +162,12 @@ export default function ResearchQAChatPage() {
           <span className="rivet rivet--br" />
           <div className="frame-in mat-leather p-[var(--s5)]">
             {/* Messages */}
-            <div className="mb-[var(--s5)] max-h-[500px] space-y-[var(--s4)] overflow-y-auto pr-[var(--s2)]">
+            <div
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions"
+              className="mb-[var(--s5)] max-h-[500px] space-y-[var(--s4)] overflow-y-auto pr-[var(--s2)]"
+            >
               {messages.map((msg) => (
                 <div key={msg.id} className={`flex gap-[var(--s3)] ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.type === 'research' ? (

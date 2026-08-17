@@ -119,7 +119,9 @@ export default function GuardianMediaConsentPage() {
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}
-            {actionMessage ? <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p> : null}
+            {actionMessage ? (
+              <p role="status" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p>
+            ) : null}
           </header>
 
           {isLoading ? (
