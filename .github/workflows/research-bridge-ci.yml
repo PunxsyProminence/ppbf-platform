@@ -1,0 +1,78 @@
+name: research-bridge-ci
+
+# apps/research-bridge is its own npm workspace, built and deployed as its
+# own container (Dockerfile.research-bridge), but until this file existed
+# nothing in .github/workflows ever ran its typecheck, test, or build --
+# ci.yml's steps are all root package.json scripts that are hard-scoped to
+# the web workspace only (npm --workspace web run ...), and no other
+# workflow named research-bridge at all. Its four *.test.ts files, tsc
+# --noEmit, and tsc build were real and passing locally; they just never
+# executed before a merge.
+#
+# This is a SEPARATE workflow, not a step bolted onto ci.yml, on purpose:
+# ci.yml is the load-bearing required check for the whole repo, and this
+# gate has a different install shape (scoped workspace install, no root
+# install) and a different Node major (24, matching
+# Dockerfile.research-bridge's actual runtime -- NOT 22, which is what the
+# web workspace and its own Dockerfile use). Keeping it separate means a
+# research-bridge-only regression cannot be confused with a web-workspace
+# CI failure, and this file can be made a required check (or not) on its
+# own schedule without touching ci.yml's branch-protection contract.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/research-bridge/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/research-bridge-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/research-bridge/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/research-bridge-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-bridge-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          # Matches Dockerfile.research-bridge's own base image (node:24-alpine)
+          # -- this workspace's real runtime, not the web workspace's Node 22.
+          node-version: 24
+          cache: npm
+
+      # Mirrors Dockerfile.research-bridge's own install: a scoped workspace
+      # install from the committed root lockfile, no root package installed
+      # alongside it.
+      - name: Install locked dependencies (research-bridge workspace only)
+        run: npm ci --workspace research-bridge --include-workspace-root=false
+
+      - name: Type-check
+        run: npm run --workspace research-bridge typecheck
+
+      - name: Test
+        run: npm run --workspace research-bridge test
+
+      - name: Build
+        run: npm run --workspace research-bridge build
