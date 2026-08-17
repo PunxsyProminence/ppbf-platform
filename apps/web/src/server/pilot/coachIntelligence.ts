@@ -69,6 +69,15 @@ export const ESCALATION_DIGEST_STATUS: SafetyEscalationStatus = 'open';
  * lands here. See the filter at the mapping site for the full argument.
  */
 export const ESCALATION_SOURCE_OWNED_BY_ITEM_7: SafetyEscalationSourceType = 'compliance_violation';
+
+/**
+ * The escalation source_type that PARTIALLY overlaps item 5. Unlike item 7's,
+ * this one must never be excluded wholesale -- item 5 only sees holds with a
+ * non-null `expires_at` inside HOLD_EXPIRY_DAYS, so an indefinite hold reaches
+ * this digest through its escalation and nothing else. De-duplicated per hold
+ * id instead; see the filter at the mapping site.
+ */
+export const ESCALATION_SOURCE_ALSO_IN_ITEM_5: SafetyEscalationSourceType = 'training_hold';
 // Item 7 states no threshold of its own: it reuses
 // COMPLIANCE_VIOLATION_OPEN_STATUSES from compliance.ts.
 
@@ -259,6 +268,11 @@ export async function getCoachIntelligence(
 
   const nameById = new Map(names.map((row) => [row.athlete_id, row.full_name]));
 
+  // Which holds item 5 is already showing. Read by item 6's per-hold dedup
+  // below; built here because it is derived from item 5's result, and doing it
+  // at the filter would hide that the two items are coupled.
+  const holdIdsAlreadyListed = new Set(holds.map((row) => row.hold_id));
+
   const fading = rollup
     .filter((row) =>
       row.training_days_early >= TRAINING_DAYS_MIN_EARLY
@@ -299,11 +313,38 @@ export async function getCoachIntelligence(
     //
     // Filtered here rather than by extending EscalationListFilters: this is
     // one caller's de-duplication concern, and escalationLadder.ts is a
-    // safeguarding capability that should not grow a filter for it. Every
-    // other source_type -- near_miss, pain_report, safety_gate_evaluation,
-    // repeated_pattern, training_hold, incident, video_scan -- still reaches
-    // item 6, and athlete_voice is still excluded upstream, unconditionally.
+    // safeguarding capability that should not grow a filter for it.
     .filter((row) => row.source_type !== ESCALATION_SOURCE_OWNED_BY_ITEM_7)
+    // Item 5 overlaps item 6 too, but NOT the same way, and the difference is
+    // the whole reason this is a second filter instead of a second entry in
+    // the exclusion above.
+    //
+    // trainingHolds.ts#placeTrainingHold files an escalation with source_type
+    // 'training_hold' and source_id = the hold id, on the same transaction as
+    // every hold placement. Its own reason text says "resolving this
+    // escalation does not lift the hold", so the escalation sits open for the
+    // life of the hold and usually longer. Item 5 lists holds too, so a hold
+    // inside item 5's window with an unresolved escalation appears twice.
+    //
+    // But excluding 'training_hold' wholesale -- the compliance treatment --
+    // would be actively dangerous here, because item 5's coverage is NARROWER,
+    // not wider: it requires `expires_at is not null` and `expires_at <= now()
+    // + HOLD_EXPIRY_DAYS`. An INDEFINITE hold (no expiry) and a hold expiring
+    // beyond the window are both invisible to item 5, and their escalation is
+    // the only thing putting them on this digest at all. Dropping the
+    // source_type would have silenced an indefinite training hold -- the most
+    // serious kind there is -- to tidy up a duplicate.
+    //
+    // So the dedup is per hold, not per source_type: drop the escalation only
+    // when THAT hold is already on the page from item 5. Keyed on source_id,
+    // which fileEscalation is passed the hold id for; metadata.hold_id carries
+    // the same value and is deliberately not used, because a metadata blob is
+    // a looser contract than a column.
+    .filter((row) => !(
+      row.source_type === ESCALATION_SOURCE_ALSO_IN_ITEM_5
+      && row.source_id !== null
+      && holdIdsAlreadyListed.has(row.source_id)
+    ))
     .map((row) => ({
       athlete_id: row.athlete_id,
       athlete_name: nameById.get(row.athlete_id) ?? row.athlete_id,

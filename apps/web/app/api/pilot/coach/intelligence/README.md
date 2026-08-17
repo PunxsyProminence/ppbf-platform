@@ -96,6 +96,20 @@ the change this README documents fixed.
 | 6. Open safety escalation | Escalation `status = 'open'`, **and** not `athlete_voice`, **and** not `source_type = 'compliance_violation'` (item 7 owns those — see below) |
 | 7. Open compliance violation | Violation status in `COMPLIANCE_VIOLATION_OPEN_STATUSES` (`new`, `acknowledged`, `escalated`) |
 
+**Items 5 and 6 do not double-report either — but the fix is different, and the
+difference is the point.** `trainingHolds.ts#placeTrainingHold` files a
+`training_hold` escalation on every hold placement, and its own reason text says
+resolving that escalation does not lift the hold, so it stays open for the life
+of the hold. A hold inside item 5's window with an unresolved escalation would
+appear twice. But item 5's coverage is **narrower**, not wider: it requires
+`expires_at is not null` and `expires_at <= now() + HOLD_EXPIRY_DAYS`. An
+**indefinite** hold, and one expiring beyond the window, never reach item 5 at
+all — their escalation is the only thing putting them on this page. Excluding
+the `training_hold` source_type wholesale would therefore have silenced an
+indefinite training hold, the most serious kind, in order to tidy a duplicate.
+So this dedup is **per hold**, keyed on the escalation's `source_id`: the
+escalation is dropped only when that specific hold is already listed by item 5.
+
 **Items 6 and 7 do not double-report.** `compliance.ts` files an escalation
 with `source_type = 'compliance_violation'` on the same transaction as the
 violation insert, whenever the violated rule's `escalation_level` maps to a

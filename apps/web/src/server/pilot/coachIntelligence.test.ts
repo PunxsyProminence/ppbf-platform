@@ -259,7 +259,10 @@ test('a compliance-derived escalation is reported once, by item 7, not twice', a
         days_open: 2,
       }];
     }
-    if (sql.includes('full_name')) return [{ athlete_id: 'ath-1', full_name: 'Rosa D.' }];
+    // 'select athlete_id, full_name' is unique to the name-lookup query --
+    // matching on 'full_name' alone also matches item 5, which selects
+    // a.full_name as athlete_name, and would feed a names row back as a hold.
+    if (sql.includes('select athlete_id, full_name')) return [{ athlete_id: 'ath-1', full_name: 'Rosa D.' }];
     return [];
   });
   mockListEscalations.mockResolvedValue([
@@ -280,6 +283,76 @@ test('a compliance-derived escalation is reported once, by item 7, not twice', a
   expect(digest.open_safety_escalations).toHaveLength(0);
   expect(digest.open_compliance_violations).toHaveLength(1);
   expect(digest.open_compliance_violations[0].violation_id).toBe('viol-1');
+});
+
+// trainingHolds.ts files a 'training_hold' escalation on every hold placement,
+// and its own reason text says resolving it does not lift the hold -- so it
+// stays open for the life of the hold. Item 5 lists holds too. These two pin
+// the asymmetry that makes this dedup different from item 7's: item 5's
+// coverage is NARROWER (expires_at not null, inside the window), so the
+// source_type must never be excluded wholesale.
+test('a hold already listed by item 5 does not appear again as an escalation', async () => {
+  mockRollup.mockResolvedValue([]);
+  mockQuery.mockImplementation(async (sql: string) => {
+    if (sql.includes('pilot.training_holds')) {
+      return [{
+        athlete_id: 'ath-1', athlete_name: 'Rosa D.',
+        hold_id: 'hold-1', expires_at: '2026-08-20T00:00:00.000Z',
+      }];
+    }
+    // 'select athlete_id, full_name' is unique to the name-lookup query --
+    // matching on 'full_name' alone also matches item 5, which selects
+    // a.full_name as athlete_name, and would feed a names row back as a hold.
+    if (sql.includes('select athlete_id, full_name')) return [{ athlete_id: 'ath-1', full_name: 'Rosa D.' }];
+    return [];
+  });
+  mockListEscalations.mockResolvedValue([
+    {
+      escalation_id: 'esc-hold-1', source_type: 'training_hold', source_id: 'hold-1',
+      athlete_id: 'ath-1', severity: 'high', reason: 'Training paused (medical).',
+      escalated_to_role: 'organization_admin', triggered_by: 'human',
+      triggered_by_account_id: 'acct-1', triggered_by_role: 'coach', status: 'open',
+      acknowledged_by_account_id: null, acknowledged_at: null, resolved_by_account_id: null,
+      resolved_at: null, resolution_note: '', metadata: { hold_id: 'hold-1' },
+      created_at: '2026-08-17T06:00:00.000Z', updated_at: '2026-08-17T06:00:00.000Z',
+    },
+  ]);
+
+  const digest = await getCoachIntelligence('org-1', ['ath-1']);
+
+  expect(digest.expiring_holds).toHaveLength(1);
+  expect(digest.open_safety_escalations).toHaveLength(0);
+});
+
+test('an INDEFINITE hold still reaches the digest through its escalation', async () => {
+  // The reason the source_type is not excluded wholesale. A hold with no
+  // expires_at never appears in item 5, so its escalation is the only thing
+  // putting the most serious kind of hold on this page at all.
+  mockRollup.mockResolvedValue([]);
+  mockQuery.mockImplementation(async (sql: string) => {
+    // 'select athlete_id, full_name' is unique to the name-lookup query --
+    // matching on 'full_name' alone also matches item 5, which selects
+    // a.full_name as athlete_name, and would feed a names row back as a hold.
+    if (sql.includes('select athlete_id, full_name')) return [{ athlete_id: 'ath-1', full_name: 'Rosa D.' }];
+    return []; // item 5 returns nothing: expires_at is null, outside its query
+  });
+  mockListEscalations.mockResolvedValue([
+    {
+      escalation_id: 'esc-hold-open', source_type: 'training_hold', source_id: 'hold-indefinite',
+      athlete_id: 'ath-1', severity: 'high', reason: 'Training paused (medical).',
+      escalated_to_role: 'organization_admin', triggered_by: 'human',
+      triggered_by_account_id: 'acct-1', triggered_by_role: 'coach', status: 'open',
+      acknowledged_by_account_id: null, acknowledged_at: null, resolved_by_account_id: null,
+      resolved_at: null, resolution_note: '', metadata: {},
+      created_at: '2026-08-17T06:00:00.000Z', updated_at: '2026-08-17T06:00:00.000Z',
+    },
+  ]);
+
+  const digest = await getCoachIntelligence('org-1', ['ath-1']);
+
+  expect(digest.expiring_holds).toHaveLength(0);
+  expect(digest.open_safety_escalations).toHaveLength(1);
+  expect(digest.open_safety_escalations[0].source_type).toBe('training_hold');
 });
 
 test('every other escalation source still reaches item 6', async () => {
