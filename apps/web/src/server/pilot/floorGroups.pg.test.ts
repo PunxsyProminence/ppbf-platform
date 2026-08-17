@@ -1,12 +1,21 @@
 // Real PostgreSQL-backed contract test for the floor-groups migration
-// (modules 121 + 123).
+// (modules 121 + 123), AND for the REAL module behavior on top of it:
+// './db' is mocked to route into the embedded server (see
+// trainingHolds.pg.test.ts for the same pattern), so createPlan, addGroup,
+// listGroups, placeAthlete, and removeAthlete below are the actual
+// production functions executing their actual SQL against actual rows --
+// not the hand-written raw-SQL inserts the rest of this file uses to prove
+// schema-level constraints.
 //
 // What needs proving that reading SQL cannot prove: the three tables
 // create from nothing and re-apply as a no-op; ONE GROUP PER ATHLETE PER
 // PLAN is a primary key (a person cannot stand in two groups on the same
 // floor), while the same athlete may appear on a different day's plan
 // freely; groups cascade from their plan; and tenancy holds via the
-// composite athlete FK.
+// composite athlete FK. On top of that: addGroup's not-found-plan check,
+// placeAthlete's move-not-duplicate semantics (the on-conflict-do-update)
+// and its group/athlete existence checks, and the member-join in
+// listGroups only exist in the TS module.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -20,6 +29,23 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
+
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows[0] ?? null;
+  }),
+}));
+
+import { addGroup, createPlan, isCircuit, listGroups, placeAthlete, removeAthlete } from './floorGroups';
 
 jest.setTimeout(180_000);
 
@@ -150,9 +176,9 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
 });
 
-
-
-
+afterEach(() => {
+  activeClient = null;
+});
 
 
 async function seedPlan(client: Client, planId: string, planOn: string) {
@@ -227,6 +253,128 @@ describe('floor groups migration', () => {
         [ORG_ID],
       );
       expect(left.rows[0].n).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('isCircuit', () => {
+  test('is true only when at least one group names a station', () => {
+    expect(isCircuit([{ station_name: 'Bags' }, { station_name: null }])).toBe(true);
+    expect(isCircuit([{ station_name: null }, { station_name: '  ' }])).toBe(false);
+    expect(isCircuit([])).toBe(false);
+  });
+});
+
+// The tests above prove the migration's schema. These prove the module:
+// addGroup's not-found-plan guard, placeAthlete's group/athlete existence
+// checks and its move-not-duplicate on-conflict-do-update, removeAthlete,
+// and listGroups's member join -- none of which a raw-SQL insert can
+// exercise, because none of it is a database constraint.
+describe('the real floor-group lifecycle against real rows', () => {
+  test('addGroup returns null for an unknown plan, and creates a group joined with an empty member list otherwise', async () => {
+    const client = await freshDatabase('floor_add_group');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      await expect(addGroup({
+        organizationId: ORG_ID,
+        planId: 'no-such-plan',
+        groupName: 'Bags',
+      })).resolves.toBeNull();
+
+      const plan = await createPlan({ organizationId: ORG_ID, planOn: '2026-08-10', createdByAccountId: ADMIN_ID });
+      const group = await addGroup({
+        organizationId: ORG_ID,
+        planId: plan!.plan_id,
+        groupName: 'Bags',
+        stationName: 'Station 1',
+      });
+      expect(group).toMatchObject({ group_name: 'Bags', station_name: 'Station 1', members: [] });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('placeAthlete moves an athlete rather than duplicating them, and refuses an unknown group or athlete', async () => {
+    const client = await freshDatabase('floor_place_athlete');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const plan = await createPlan({ organizationId: ORG_ID, planOn: '2026-08-10', createdByAccountId: ADMIN_ID });
+      const bags = await addGroup({ organizationId: ORG_ID, planId: plan!.plan_id, groupName: 'Bags' });
+      const pads = await addGroup({ organizationId: ORG_ID, planId: plan!.plan_id, groupName: 'Pads' });
+
+      await expect(placeAthlete({
+        organizationId: ORG_ID,
+        planId: plan!.plan_id,
+        groupId: 'no-such-group',
+        athleteId: ATHLETE_ID,
+      })).resolves.toBeNull();
+
+      await expect(placeAthlete({
+        organizationId: ORG_ID,
+        planId: plan!.plan_id,
+        groupId: bags!.group_id,
+        athleteId: 'no-such-athlete',
+      })).resolves.toBeNull();
+
+      const afterBags = await placeAthlete({
+        organizationId: ORG_ID,
+        planId: plan!.plan_id,
+        groupId: bags!.group_id,
+        athleteId: ATHLETE_ID,
+      });
+      expect(afterBags!.find((g) => g.group_id === bags!.group_id)!.members).toEqual([
+        { athlete_id: ATHLETE_ID, athlete_name: 'Floor Athlete' },
+      ]);
+
+      // Re-placing moves them -- Bags loses the member, Pads gains it, not both.
+      const afterPads = await placeAthlete({
+        organizationId: ORG_ID,
+        planId: plan!.plan_id,
+        groupId: pads!.group_id,
+        athleteId: ATHLETE_ID,
+      });
+      expect(afterPads!.find((g) => g.group_id === bags!.group_id)!.members).toEqual([]);
+      expect(afterPads!.find((g) => g.group_id === pads!.group_id)!.members).toEqual([
+        { athlete_id: ATHLETE_ID, athlete_name: 'Floor Athlete' },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('removeAthlete takes them off the floor for that plan', async () => {
+    const client = await freshDatabase('floor_remove_athlete');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const plan = await createPlan({ organizationId: ORG_ID, planOn: '2026-08-10', createdByAccountId: ADMIN_ID });
+      const bags = await addGroup({ organizationId: ORG_ID, planId: plan!.plan_id, groupName: 'Bags' });
+      await placeAthlete({ organizationId: ORG_ID, planId: plan!.plan_id, groupId: bags!.group_id, athleteId: ATHLETE_ID });
+
+      const after = await removeAthlete({ organizationId: ORG_ID, planId: plan!.plan_id, athleteId: ATHLETE_ID });
+      expect(after.find((g) => g.group_id === bags!.group_id)!.members).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('listGroups orders stationed groups by rotation_order, unordered groups last', async () => {
+    const client = await freshDatabase('floor_list_groups');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const plan = await createPlan({ organizationId: ORG_ID, planOn: '2026-08-10', createdByAccountId: ADMIN_ID });
+      await addGroup({ organizationId: ORG_ID, planId: plan!.plan_id, groupName: 'Z-no-order' });
+      await addGroup({ organizationId: ORG_ID, planId: plan!.plan_id, groupName: 'Second', rotationOrder: 2 });
+      await addGroup({ organizationId: ORG_ID, planId: plan!.plan_id, groupName: 'First', rotationOrder: 1 });
+
+      const groups = await listGroups(ORG_ID, plan!.plan_id);
+      expect(groups.map((g) => g.group_name)).toEqual(['First', 'Second', 'Z-no-order']);
     } finally {
       await client.end();
     }

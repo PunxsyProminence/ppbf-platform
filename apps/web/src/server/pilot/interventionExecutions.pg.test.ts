@@ -1,5 +1,11 @@
 // Real PostgreSQL-backed contract test for the intervention-executions
-// migration (module 026 slice 2).
+// migration (module 026 slice 2), AND for the REAL module behavior on top
+// of it: './db' is mocked to route into the embedded server (see
+// trainingHolds.pg.test.ts for the same pattern), so startExecution,
+// recordExecutionFacts, closeExecution, correctExecution, getExecution, and
+// listExecutions below are the actual production functions executing their
+// actual SQL against actual rows -- not the hand-written raw-SQL inserts
+// the rest of this file uses to prove schema-level constraints.
 //
 // What needs proving that reading SQL cannot prove: the migration stacks
 // cleanly on the decision-loop and protocols migrations and is a no-op on
@@ -8,7 +14,11 @@
 // context vocabularies, the named-deviations and stop-reason rules, and
 // the correction lineage (reason required, one current record) are
 // database facts; and the composite FKs make cross-org decision or athlete
-// claims impossible, not merely unqueried.
+// claims impossible, not merely unqueried. On top of that: startExecution's
+// protocol-must-be-active and athlete-scoping checks, recordExecutionFacts's
+// coalesce-only-in-progress semantics, and correctExecution's two-step
+// supersession only exist in the TS module -- a raw-SQL test can prove the
+// database allows the shape, never that the module itself enforces the rule.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -22,6 +32,30 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
+
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows[0] ?? null;
+  }),
+}));
+
+import {
+  closeExecution,
+  correctExecution,
+  getExecution,
+  listExecutions,
+  recordExecutionFacts,
+  startExecution,
+} from './interventionExecutions';
 
 jest.setTimeout(180_000);
 
@@ -185,6 +219,10 @@ afterAll(async () => {
     serverProcess.kill('SIGTERM');
   });
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
+});
+
+afterEach(() => {
+  activeClient = null;
 });
 
 function insertExecution(client: Client, executionId: string, overrides: Record<string, string | number | null> = {}) {
@@ -355,6 +393,301 @@ describe('intervention executions migration', () => {
         .rejects.toMatchObject({ code: '23503' });
       await expect(insertExecution(client, 'exec-foreign-athlete', { athlete_id: OTHER_ATHLETE_ID }))
         .rejects.toMatchObject({ code: '23503' });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The tests above prove the migration's schema. These prove the module:
+// startExecution's protocol-active/athlete-scoping/hidden-not-found checks,
+// recordExecutionFacts's coalesce-only-in-progress semantics,
+// closeExecution's stop-reason requirement, correctExecution's two-step
+// supersession, and getExecution/listExecutions's tenancy and join
+// behavior -- none of which a raw-SQL insert can exercise, because none of
+// it is a database constraint.
+describe('the real intervention-execution lifecycle against real rows', () => {
+  test('startExecution snapshots the protocol plan into a v1 row; getExecution and listExecutions surface it joined', async () => {
+    const client = await freshDatabase('executions_start_snapshot');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      const started = await startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-1',
+        recordedByAccountId: ADMIN_ID,
+      });
+
+      expect(started).toMatchObject({
+        version: 1,
+        status: 'in_progress',
+        athlete_name: 'Executions Athlete',
+        protocol_title: 'Round-3 endurance block',
+        planned_exposure: { rounds: 6, sessions: 2 },
+        // The seeded 'proto-1' protocol never sets intended_task_context,
+        // so it carries the column default -- not the intervention
+        // description text, which is a separate column.
+        planned_task_context: '',
+      });
+
+      await expect(getExecution(ORG_ID, started!.execution_id)).resolves.toMatchObject({
+        execution_id: started!.execution_id,
+      });
+
+      const all = await listExecutions(ORG_ID);
+      expect(all.map((row) => row.execution_id)).toContain(started!.execution_id);
+      const forAthlete = await listExecutions(ORG_ID, ATHLETE_ID);
+      expect(forAthlete.map((row) => row.execution_id)).toContain(started!.execution_id);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('startExecution refuses a non-active protocol, and a protocol scoped to a different athlete', async () => {
+    const client = await freshDatabase('executions_start_refusals');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const OTHER_LOCAL_ATHLETE = 'ath-executions-2';
+      await client.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Second Athlete', '2012-01-01', '100', 'active', 'contact', true, $3, now(), now())`,
+        [ORG_ID, OTHER_LOCAL_ATHLETE, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_protocols
+           (organization_id, protocol_id, lineage_id, version, title, target_problem, hypothesis,
+            intervention_description, expected_outcome, status, created_by_account_id)
+         values ($1, 'proto-retired', 'proto-retired', 1, 'Old block', 'x', 'x', 'x', 'x', 'retired', $2)`,
+        [ORG_ID, ADMIN_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_protocols
+           (organization_id, protocol_id, lineage_id, version, athlete_id, title, target_problem, hypothesis,
+            intervention_description, expected_outcome, created_by_account_id)
+         values ($1, 'proto-scoped', 'proto-scoped', 1, $2, 'Scoped block', 'x', 'x', 'x', 'x', $3)`,
+        [ORG_ID, OTHER_LOCAL_ATHLETE, ADMIN_ID],
+      );
+
+      await expect(startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-retired',
+        recordedByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+
+      await expect(startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-scoped',
+        recordedByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+
+      // The athlete it IS scoped to may still use it.
+      await expect(startExecution({
+        organizationId: ORG_ID,
+        athleteId: OTHER_LOCAL_ATHLETE,
+        protocolId: 'proto-scoped',
+        recordedByAccountId: ADMIN_ID,
+      })).resolves.toMatchObject({ protocol_id: 'proto-scoped' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('startExecution hides cross-tenant reality as not-found: unknown athlete, and a decision from another org', async () => {
+    const client = await freshDatabase('executions_start_hidden_not_found');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      await expect(startExecution({
+        organizationId: ORG_ID,
+        athleteId: 'no-such-athlete',
+        protocolId: 'proto-1',
+        recordedByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+
+      const foreignDecision = await insertDecision(client, OTHER_ORG_ID, OTHER_ATHLETE_ID, OTHER_ADMIN_ID);
+      await expect(startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-1',
+        decisionId: foreignDecision,
+        recordedByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('recordExecutionFacts only touches fields it was given, only on an in-progress row', async () => {
+    const client = await freshDatabase('executions_record_facts');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const started = await startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-1',
+        recordedByAccountId: ADMIN_ID,
+      });
+      const executionId = started!.execution_id;
+
+      const firstUpdate = await recordExecutionFacts({
+        organizationId: ORG_ID,
+        executionId,
+        actualExposure: { rounds: 3 },
+        adherence: 'under_delivered',
+      });
+      expect(firstUpdate).toMatchObject({
+        actual_exposure: { rounds: 3 },
+        adherence: 'under_delivered',
+        trained_context: 'unknown', // untouched: coalesce, not overwrite
+      });
+
+      // A second, narrower update must not clobber what the first one set.
+      const secondUpdate = await recordExecutionFacts({
+        organizationId: ORG_ID,
+        executionId,
+        notes: 'checked in mid-block',
+      });
+      expect(secondUpdate).toMatchObject({
+        actual_exposure: { rounds: 3 },
+        adherence: 'under_delivered',
+        notes: 'checked in mid-block',
+      });
+
+      await client.query(
+        `update pilot.intervention_executions set status = 'completed' where organization_id = $1 and execution_id = $2`,
+        [ORG_ID, executionId],
+      );
+      await expect(recordExecutionFacts({ organizationId: ORG_ID, executionId, notes: 'too late' })).resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('closeExecution enforces the stop-reason rule, records final facts, and is a no-op once already closed', async () => {
+    const client = await freshDatabase('executions_close');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const started = await startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-1',
+        recordedByAccountId: ADMIN_ID,
+      });
+      const executionId = started!.execution_id;
+
+      await expect(closeExecution({
+        organizationId: ORG_ID,
+        executionId,
+        outcome: 'stopped',
+      })).rejects.toThrow(/stop_reason|check constraint/i);
+
+      const closed = await closeExecution({
+        organizationId: ORG_ID,
+        executionId,
+        outcome: 'completed',
+        notes: 'finished the block',
+      });
+      expect(closed).toMatchObject({ status: 'completed', notes: 'finished the block' });
+
+      // Already closed: the guarded UPDATE's status = 'in_progress' predicate
+      // matches nothing, so this is a quiet null, not an error or a second
+      // close.
+      await expect(closeExecution({
+        organizationId: ORG_ID,
+        executionId,
+        outcome: 'stopped',
+        stopChangeReason: 'too late anyway',
+      })).resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('correctExecution supersedes with a stated reason: the original keeps its values, the correction becomes current', async () => {
+    const client = await freshDatabase('executions_correct');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const started = await startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-1',
+        recordedByAccountId: ADMIN_ID,
+      });
+      const originalId = started!.execution_id;
+      await recordExecutionFacts({
+        organizationId: ORG_ID,
+        executionId: originalId,
+        actualExposure: { rounds: 5 },
+        adherence: 'delivered_as_planned',
+      });
+
+      const corrected = await correctExecution({
+        organizationId: ORG_ID,
+        executionId: originalId,
+        correctionReason: 'miscounted rounds during the session',
+        actualExposure: { rounds: 4 },
+        adherence: 'under_delivered',
+        correctedByAccountId: COACH_ID,
+      });
+
+      expect(corrected).toMatchObject({
+        version: 2,
+        supersedes_execution_id: originalId,
+        status: 'in_progress',
+        actual_exposure: { rounds: 4 },
+        adherence: 'under_delivered',
+        planned_exposure: { rounds: 6, sessions: 2 }, // carried from the original, untouched
+      });
+
+      // The original is untouched history, not overwritten.
+      await expect(getExecution(ORG_ID, originalId)).resolves.toMatchObject({
+        status: 'superseded',
+        actual_exposure: { rounds: 5 },
+        adherence: 'delivered_as_planned',
+      });
+
+      // Only the current record shows up in a listing.
+      const current = await listExecutions(ORG_ID, ATHLETE_ID);
+      expect(current.map((row) => row.execution_id)).toContain(corrected!.execution_id);
+      expect(current.map((row) => row.execution_id)).not.toContain(originalId);
+
+      // A superseded record cannot itself be corrected again.
+      await expect(correctExecution({
+        organizationId: ORG_ID,
+        executionId: originalId,
+        correctionReason: 'trying to correct history itself',
+        correctedByAccountId: COACH_ID,
+      })).resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('getExecution and listExecutions never surface another organization\'s execution', async () => {
+    const client = await freshDatabase('executions_tenancy_reads');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const started = await startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-1',
+        recordedByAccountId: ADMIN_ID,
+      });
+
+      await expect(getExecution(OTHER_ORG_ID, started!.execution_id)).resolves.toBeNull();
+      const otherOrgListing = await listExecutions(OTHER_ORG_ID);
+      expect(otherOrgListing.map((row) => row.execution_id)).not.toContain(started!.execution_id);
     } finally {
       await client.end();
     }
