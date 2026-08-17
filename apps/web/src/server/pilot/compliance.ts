@@ -342,6 +342,27 @@ const TRANSITION_CONTRACT: Record<ComplianceViolationTransition, {
 };
 
 /**
+ * The statuses that mean a violation is still live -- somebody's open problem
+ * rather than a closed record. 'resolved' and 'dismissed' are the two terminal
+ * targets in TRANSITION_CONTRACT above and no transition leads back out of
+ * either, so every other status the column's check constraint allows is open.
+ *
+ * Exported because a second consumer needs exactly this definition and must
+ * not invent its own: Coach Intelligence's Morning Read (coachIntelligence.ts,
+ * register module 111) lists still-open violations on a coach's own roster. A
+ * digest that decided for itself what "open" means would drift from this
+ * module the first time the lifecycle grew a status -- and it would drift
+ * silently, on the surface a coach reads instead of the ledger, either by
+ * counting a dismissed violation as live or, far worse, by dropping an
+ * escalated one out of a safety list.
+ */
+export const COMPLIANCE_VIOLATION_OPEN_STATUSES: ReadonlyArray<ComplianceViolation['status']> = [
+  'new',
+  'acknowledged',
+  'escalated',
+];
+
+/**
  * Move a violation through its existing lifecycle. Compare-and-set on the
  * allowed source states, organization-scoped in the predicate, one
  * transaction. Returns false (and writes nothing) when no row matched --
