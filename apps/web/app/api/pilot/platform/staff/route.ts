@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
         role: result.role,
         login_email: result.loginEmail,
         auth_provider: 'microsoft',
+        ...(result.volunteerLink ? { volunteer_id: result.volunteerLink.volunteerId } : {}),
       },
     });
 

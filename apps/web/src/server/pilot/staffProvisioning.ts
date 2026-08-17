@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
@@ -64,6 +66,11 @@ export interface StaffProvisionResult {
   // role other than parent, which never has one. Optional so a caller that
   // only stubs this result for an unrelated assertion need not restate it.
   guardianLink?: { parentId: string; athleteId: string } | null;
+  // The pilot.volunteers row this account is linked to. Null for every role
+  // other than volunteer. `created` is false when the account was already
+  // linked to a roster row (e.g. re-inviting the same address), so a caller
+  // never reports minting a roster entry that already existed.
+  volunteerLink?: { volunteerId: string; created: boolean } | null;
 }
 
 /** One guardian-to-athlete link, as the people console needs to display it. */
@@ -190,6 +197,12 @@ export function requireGuardianLinkForParentInvite(
  * pilot.parents and pilot.guardian_links rows itself in the same request; see
  * requireGuardianLinkForParentInvite for why that is enforced by the invite
  * surfaces rather than here.
+ *
+ * The volunteer role gets an analogous, unconditional write: provisioning an
+ * account for role 'volunteer' also links or creates the matching
+ * pilot.volunteers row in the same transaction, via account_id. Unlike the
+ * guardian link this needs no caller input, so every surface that can invite
+ * a volunteer gets the roster row for free.
  */
 export async function createOrUpdateMicrosoftStaffAccount(params: {
   loginEmail: string;
@@ -291,7 +304,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     }
   }
 
-  const guardianLink = await withTransaction(async (client) => {
+  const { guardianLink, volunteerLink } = await withTransaction(async (client) => {
     await client.query(
       `insert into pilot.accounts (
          account_id,
@@ -338,8 +351,50 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       );
     }
 
+    // The roster's account-link column (pilot.volunteers.account_id) is what
+    // connects a volunteer's login to their program record -- role_focus,
+    // availability, certification/background-check status. Without this,
+    // provisioning an account here leaves that link permanently unset: the
+    // person can sign in, but never appears as a linked row on the roster the
+    // org actually manages checks and availability from.
+    //
+    // Matched on (organization_id, account_id) rather than by name or email:
+    // pilot.volunteers carries no email column, so unlike the guardian claim
+    // below there is no reliable key to adopt an existing unlinked roster row
+    // left by the standalone create endpoint (POST /api/admin/volunteers,
+    // which never sets account_id). A fresh row is minted instead, scoped so
+    // re-inviting the same address is idempotent rather than piling up
+    // duplicates.
+    let volunteerLink: { volunteerId: string; created: boolean } | null = null;
+    if (role === 'volunteer') {
+      const linkedRows = await client.query<{ volunteer_id: string }>(
+        'select volunteer_id from pilot.volunteers where organization_id = $1 and account_id = $2',
+        [organizationId, accountId],
+      );
+
+      if (linkedRows.rowCount && linkedRows.rowCount > 0) {
+        volunteerLink = { volunteerId: linkedRows.rows[0].volunteer_id, created: false };
+      } else {
+        const volunteerId = randomUUID();
+        // Field defaults mirror createVolunteer (volunteers.ts): status
+        // 'pending' and active_flag false because a newly linked volunteer
+        // still needs admin review, and the program-detail columns are left
+        // null -- honestly "not recorded" -- rather than invented, since an
+        // invite carries none of them. full_name has no NOT NULL default and
+        // an invite carries no name either, so it falls back to the login
+        // email, the one identifying string every invite actually supplies.
+        await client.query(
+          `insert into pilot.volunteers
+             (organization_id, volunteer_id, account_id, full_name, role, active_flag, status, created_at, updated_at)
+           values ($1,$2,$3,$4,$5,$6,$7, now(), now())`,
+          [organizationId, volunteerId, accountId, loginEmail, 'volunteer', false, 'pending'],
+        );
+        volunteerLink = { volunteerId, created: true };
+      }
+    }
+
     if (!guardian) {
-      return null;
+      return { guardianLink: null, volunteerLink };
     }
 
     // Checked here rather than left to the guardian_links foreign key: a
@@ -449,7 +504,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       [organizationId, parentId, guardian.athleteId, guardian.relationshipToAthlete],
     );
 
-    return { parentId, athleteId: guardian.athleteId };
+    return { guardianLink: { parentId, athleteId: guardian.athleteId }, volunteerLink };
   });
 
   return {
@@ -459,6 +514,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     loginEmail,
     created: !existing,
     guardianLink,
+    volunteerLink,
   };
 }
 

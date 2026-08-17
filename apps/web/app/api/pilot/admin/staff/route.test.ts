@@ -200,6 +200,29 @@ describe('POST', () => {
     expect(payload.guardian_link).toBeNull();
     expect(mockProvision).toHaveBeenCalledWith(expect.objectContaining({ guardian: undefined }));
   });
+
+  test('a volunteer invite surfaces the roster link the provisioning module wrote', async () => {
+    mockProvision.mockResolvedValue({
+      accountId: 'val@example.com',
+      organizationId: 'org-1',
+      role: 'volunteer',
+      loginEmail: 'val@example.com',
+      created: true,
+      guardianLink: null,
+      volunteerLink: { volunteerId: 'vol-1', created: true },
+    });
+
+    const response = await POST(jsonRequest('POST', { login_email: 'val@example.com', role: 'volunteer' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.volunteer_id).toBe('vol-1');
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({ volunteer_id: 'vol-1' }),
+      }),
+    );
+  });
 });
 
 describe('DELETE', () => {

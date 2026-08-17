@@ -80,6 +80,31 @@ function guardianLinkInsertCalls() {
   );
 }
 
+function volunteerInsertCalls() {
+  return currentClient.query.mock.calls.filter(
+    ([sql]) => sql.includes('insert into pilot.volunteers'),
+  );
+}
+
+function volunteerLookupCalls() {
+  return currentClient.query.mock.calls.filter(
+    ([sql]) => sql.includes('select volunteer_id from pilot.volunteers'),
+  );
+}
+
+// Programs the in-transaction read the volunteer-link branch performs: does
+// this account already hold a linked roster row. Default is the healthy new
+// case -- nothing linked yet.
+function volunteerClient(options: { linkedRows?: Array<{ volunteer_id: string }> } = {}) {
+  return fakeClient((sql) => {
+    if (sql.includes('select volunteer_id from pilot.volunteers')) {
+      const rows = options.linkedRows ?? [];
+      return { rows, rowCount: rows.length };
+    }
+    return { rows: [], rowCount: 0 };
+  });
+}
+
 const GUARDIAN = { athleteId: 'ath-1', fullName: 'Dana Johnson', relationshipToAthlete: 'mother' };
 
 // Programs the in-transaction reads the guardian branch performs. Defaults are
@@ -673,6 +698,73 @@ describe('guardian link provisioning', () => {
     expect(result.guardianLink).toBeNull();
     expect(parentUpsertCalls()).toHaveLength(0);
     expect(guardianLinkInsertCalls()).toHaveLength(0);
+  });
+});
+
+describe('volunteer roster link provisioning', () => {
+  test('creates a linked roster row on the same transaction client as the account', async () => {
+    currentClient = volunteerClient();
+    stubLookups({});
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'val@example.com',
+      organizationId: 'org-1',
+      role: 'volunteer',
+    });
+
+    // Same client object means the same BEGIN/COMMIT: an account can never be
+    // committed without the roster link that connects it to the program record.
+    expect(accountUpsertCalls()).toHaveLength(1);
+    expect(volunteerLookupCalls()).toHaveLength(1);
+    expect(volunteerInsertCalls()).toHaveLength(1);
+
+    const params = volunteerInsertCalls()[0][1]!;
+    // organization_id, volunteer_id, account_id, full_name, role, active_flag, status
+    expect(params[0]).toBe('org-1');
+    expect(params[2]).toBe('val@example.com');
+    expect(params[3]).toBe('val@example.com'); // full_name falls back to login_email
+    expect(params[4]).toBe('volunteer');
+    expect(params[5]).toBe(false);
+    expect(params[6]).toBe('pending');
+
+    expect(result.volunteerLink).toEqual({ volunteerId: params[1], created: true });
+  });
+
+  test('reuses the existing roster row on a repeat invite instead of inserting a second one', async () => {
+    currentClient = volunteerClient({ linkedRows: [{ volunteer_id: 'vol-7' }] });
+    stubLookups({
+      existingByEmail: {
+        account_id: 'val@example.com',
+        organization_id: 'org-1',
+        role: 'volunteer',
+        auth_provider: 'microsoft',
+        is_platform_owner: false,
+      },
+    });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'val@example.com',
+      organizationId: 'org-1',
+      role: 'volunteer',
+    });
+
+    expect(result.volunteerLink).toEqual({ volunteerId: 'vol-7', created: false });
+    expect(volunteerInsertCalls()).toHaveLength(0);
+  });
+
+  test('a non-volunteer invite writes no roster rows at all', async () => {
+    currentClient = volunteerClient();
+    stubLookups({});
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'coach@example.com',
+      organizationId: 'org-1',
+      role: 'coach',
+    });
+
+    expect(result.volunteerLink).toBeNull();
+    expect(volunteerLookupCalls()).toHaveLength(0);
+    expect(volunteerInsertCalls()).toHaveLength(0);
   });
 });
 

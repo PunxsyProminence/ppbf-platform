@@ -133,6 +133,7 @@ export async function POST(request: NextRequest) {
               guardian_athlete_id: result.guardianLink.athleteId,
             }
           : {}),
+        ...(result.volunteerLink ? { volunteer_id: result.volunteerLink.volunteerId } : {}),
       },
     });
 
@@ -146,6 +147,7 @@ export async function POST(request: NextRequest) {
       guardian_link: result.guardianLink
         ? { parent_id: result.guardianLink.parentId, athlete_id: result.guardianLink.athleteId }
         : null,
+      volunteer_id: result.volunteerLink?.volunteerId ?? null,
       requires_entra_guest_invite: true,
     });
   } catch (error) {
