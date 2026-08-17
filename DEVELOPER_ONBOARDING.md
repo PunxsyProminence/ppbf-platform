@@ -59,8 +59,22 @@ SHADOW, only to exercise chat, Library search, or Film Study:
 - AZURE_AI_EMBEDDING_DEPLOYMENT_NAME
 - AZURE_AI_VISION_DEPLOYMENT_NAME
 
+Magic-link sign-in -- required in every environment real families use:
+- PPBF_APP_ORIGIN (the origin sign-in links are built against; without it
+  magicLinkStore.ts refuses to send, and the request route deliberately
+  reports success anyway to avoid a roster-disclosure oracle, so a missing
+  value here fails silently. See .env.example's own comment on this variable.)
+
 ## Step 4: Governance
-All development must follow Layer 0 rules. Get Jason approval before promoting anything to ACTIVE.
+A direct owner/user request may go straight to a bounded branch/PR after
+checking current source and open PRs; a ticket is optional unless the work
+needs coordination, handoff, scheduling, or a durable decision record. The
+owner has authorized the authoring session to merge ordinary bounded PRs once
+every required check and branch-protection requirement passes -- see
+docs/current/ACTIVE_WORK.md's "Builder rule" for the current, authoritative
+statement of this. That authorization does not extend to production
+deployment, migrations against protected environments, or anything the
+guardrails place behind a separate human gate.
 
 ## Step 5: Start Development
 cd apps/web
