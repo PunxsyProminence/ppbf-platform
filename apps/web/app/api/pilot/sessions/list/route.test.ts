@@ -92,7 +92,32 @@ describe('GET /api/pilot/sessions/list', () => {
     // foreign-org sessions can never appear in the response.
     const [sessionsSql, sessionsParams] = mockQuery.mock.calls[0];
     expect(String(sessionsSql)).toContain('organization_id = $1');
-    expect(sessionsParams).toEqual(['org-1', 'ath-1']);
+    // Now carries a bounded default (limit 200, offset 0) instead of an
+    // unbounded SELECT * -- see entities.ts#getSessionsByAthlete.
+    expect(sessionsParams).toEqual(['org-1', 'ath-1', 200, 0]);
+  });
+
+  test('an explicit limit is passed through and clamped to the max', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([]);
+
+    const req = new NextRequest('http://localhost/api/pilot/sessions/list?athlete_id=ath-1&limit=999999');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const [, sessionsParams] = mockQuery.mock.calls[0];
+    expect(sessionsParams).toEqual(['org-1', 'ath-1', 500, 0]);
+  });
+
+  test('an invalid limit is rejected with 400 before any sessions read', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+
+    const req = new NextRequest('http://localhost/api/pilot/sessions/list?athlete_id=ath-1&limit=-1');
+    const res = await GET(req);
+
+    expect(res.status).toBe(400);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test('a coach who is not assigned (no record, no live coverage) is refused before any sessions read', async () => {
