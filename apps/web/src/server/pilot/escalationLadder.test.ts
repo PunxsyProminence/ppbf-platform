@@ -100,6 +100,15 @@ describe('fileEscalation', () => {
 });
 
 describe('fileIncidentReport', () => {
+  // Unlike fileEscalation (used by every other source_type), an incident
+  // report is idempotent: it goes through its own atomic INSERT ... WHERE
+  // NOT EXISTS against queryOne directly, not fileEscalation's
+  // withTransaction path. The default here is "no duplicate exists", i.e.
+  // the insert lands and RETURNING produces a row.
+  beforeEach(() => {
+    mockQueryOne.mockResolvedValue({ escalation_id: 'esc-generated' });
+  });
+
   test('files as source_type incident, always human-triggered, with the reporter attributed', async () => {
     const escalation = await fileIncidentReport({
       organizationId: 'org-1',
@@ -115,8 +124,13 @@ describe('fileIncidentReport', () => {
     expect(escalation.triggered_by_account_id).toBe('acct-coach-1');
     expect(escalation.triggered_by_role).toBe('coach');
     expect(escalation.source_id).toBeNull();
-    const [, params] = currentClient.query.mock.calls[0];
-    expect(params).toContain('incident');
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    // source_type is a literal in the SQL text, not a bound param, in this
+    // one insert -- it is always exactly 'incident'.
+    expect(sql).toContain("'incident'");
+    expect(sql).toContain('insert into pilot.safety_escalations');
+    expect(params).toContain('acct-coach-1');
+    expect(params).toContain('coach');
   });
 
   test('occurredAt rides in metadata -- there is no dedicated column for it', async () => {
@@ -130,8 +144,8 @@ describe('fileIncidentReport', () => {
       occurredAt: '2026-08-05',
     });
 
-    const [, params] = currentClient.query.mock.calls[0];
-    const metadataJson = params[params.length - 1] as string;
+    const [, params] = mockQueryOne.mock.calls[0];
+    const metadataJson = params.find((p: unknown) => typeof p === 'string' && p.startsWith('{')) as string;
     expect(JSON.parse(metadataJson)).toEqual({ occurred_at: '2026-08-05' });
   });
 
@@ -145,8 +159,8 @@ describe('fileIncidentReport', () => {
       reportedByRole: 'coach',
     });
 
-    const [, params] = currentClient.query.mock.calls[0];
-    const metadataJson = params[params.length - 1] as string;
+    const [, params] = mockQueryOne.mock.calls[0];
+    const metadataJson = params.find((p: unknown) => typeof p === 'string' && p.startsWith('{')) as string;
     expect(JSON.parse(metadataJson)).toEqual({});
   });
 
@@ -168,7 +182,89 @@ describe('fileIncidentReport', () => {
       }),
     ).rejects.toThrow(/severity must be 'high' or 'critical'/);
 
-    expect(currentClient.query).not.toHaveBeenCalled();
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  // The idempotency this function exists to add: a double-submit or a
+  // client retry within the dedup window must not file a second row for
+  // the same real-world event.
+  describe('idempotency', () => {
+    test('a duplicate within the window returns the EXISTING report, not a new one', async () => {
+      const existingReport = {
+        escalation_id: 'esc-original',
+        source_type: 'incident',
+        source_id: null,
+        athlete_id: 'ATH-1',
+        severity: 'high',
+        reason: 'Athlete sprained an ankle during sparring.',
+        escalated_to_role: 'organization_admin',
+        triggered_by: 'human',
+        triggered_by_account_id: 'acct-coach-1',
+        triggered_by_role: 'coach',
+        status: 'open',
+        acknowledged_by_account_id: null,
+        acknowledged_at: null,
+        resolved_by_account_id: null,
+        resolved_at: null,
+        resolution_note: '',
+        metadata: {},
+        created_at: '2026-08-17T00:00:00.000Z',
+        updated_at: '2026-08-17T00:00:00.000Z',
+      };
+      // First call: the guarded INSERT ... WHERE NOT EXISTS matches nothing
+      // to insert (a duplicate already exists), so RETURNING produces no
+      // row. Second call: the re-read that finds the existing report.
+      mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(existingReport);
+
+      const result = await fileIncidentReport({
+        organizationId: 'org-1',
+        athleteId: 'ATH-1',
+        severity: 'high',
+        reason: 'Athlete sprained an ankle during sparring.',
+        reportedByAccountId: 'acct-coach-1',
+        reportedByRole: 'coach',
+      });
+
+      expect(result).toEqual(existingReport);
+      expect(mockQueryOne).toHaveBeenCalledTimes(2);
+      const [insertSql] = mockQueryOne.mock.calls[0];
+      expect(insertSql).toContain('where not exists');
+      const [selectSql] = mockQueryOne.mock.calls[1];
+      expect(selectSql).toContain('select escalation_id');
+    });
+
+    test('the not-exists check is scoped to org, athlete, reporter, reason, and the dedup window', async () => {
+      await fileIncidentReport({
+        organizationId: 'org-1',
+        athleteId: 'ATH-1',
+        severity: 'high',
+        reason: 'Athlete sprained an ankle during sparring.',
+        reportedByAccountId: 'acct-coach-1',
+        reportedByRole: 'coach',
+      });
+
+      const [sql] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain('organization_id = $1');
+      expect(sql).toContain('athlete_id = $3');
+      expect(sql).toContain('triggered_by_account_id = $7');
+      expect(sql).toContain('reason = $5');
+      expect(sql).toContain("interval '1 second'");
+    });
+
+    test('surfaces a real error rather than fabricating a report if the duplicate cannot be re-read', async () => {
+      mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+
+      await expect(
+        fileIncidentReport({
+          organizationId: 'org-1',
+          athleteId: 'ATH-1',
+          severity: 'high',
+          reason: 'Athlete sprained an ankle during sparring.',
+          reportedByAccountId: 'acct-coach-1',
+          reportedByRole: 'coach',
+        }),
+      ).rejects.toThrow('a duplicate was detected but the existing report could not be re-read');
+    });
   });
 });
 
