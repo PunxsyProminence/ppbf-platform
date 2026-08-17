@@ -141,6 +141,21 @@ describe('POST /api/pilot/compliance/violations', () => {
     expect(res.status).toBe(400);
   });
 
+  // PATCH already guards the identical request.json() call with
+  // .catch(() => null); POST did not, so malformed JSON threw a SyntaxError
+  // that matched no branch in jsonError and fell through to a masked 500
+  // instead of the clean 400 every other bad-input case on this route gets.
+  test('malformed JSON returns 400, not a masked 500', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    const malformed = new NextRequest('http://localhost/api/pilot/compliance/violations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{not valid json',
+    });
+    const res = await POST(malformed);
+    expect(res.status).toBe(400);
+  });
+
   test('403 when coach logs a violation against an unassigned athlete', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
     mockQueryOne.mockResolvedValueOnce(null);
