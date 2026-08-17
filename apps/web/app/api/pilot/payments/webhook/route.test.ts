@@ -82,6 +82,26 @@ test('deauthorization marks every lane the account backed and audits each', asyn
   }));
 });
 
+// Previously an unguarded writePilotAuditEvent inside the loop, with no
+// top-level try/catch in this route: markAccountDisconnected's write had
+// already committed, so a throw here left Next.js returning an unhandled
+// 500, Stripe retrying, and the retry's WHERE status='connected' clause
+// matching zero rows -- reporting 400 "Account not on file" for an event
+// that actually succeeded on the first delivery.
+test('an audit-write failure does not turn a committed disconnection into a webhook failure', async () => {
+  configured();
+  mockDisconnect.mockResolvedValue([
+    { organization_id: 'org-1', lane: 'giving', stripe_account_id: 'acct_1' },
+  ]);
+  mockAudit.mockRejectedValueOnce(new Error('connection pool exhausted'));
+
+  const response = await POST(signedRequest('{"type":"account.application.deauthorized","account":"acct_1"}'));
+  const payload = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(payload.handled).toBe(true);
+});
+
 test('an account not on file is rejected, not guessed at', async () => {
   configured();
   mockDisconnect.mockResolvedValue([]);

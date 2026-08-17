@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 import {
   checkRateLimit,
@@ -34,6 +35,7 @@ jest.mock('@/src/server/pilot/rateLimit', () => ({
 }));
 
 const mockLogin = loginWithAccountIdAndPin as jest.Mock;
+const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockCheckRateLimit = checkRateLimit as jest.Mock;
 const mockRecordFailedAttempt = recordFailedAttempt as jest.Mock;
 const mockClearRateLimit = clearRateLimit as jest.Mock;
@@ -74,6 +76,30 @@ describe('POST /api/pilot/auth/login', () => {
     expect(setCookie?.value).toBe('a-token');
     expect(setCookie?.maxAge).toBe(SESSION_ABSOLUTE_LIFETIME_SECONDS);
     expect(SESSION_ABSOLUTE_LIFETIME_SECONDS).toBe(24 * 60 * 60);
+  });
+
+  // Previously a raw, unguarded writePilotAuditEvent call: a transient
+  // audit-write failure threw past the cookie-setting code and returned a
+  // 500 for an athlete who typed the correct PIN, with no session issued
+  // despite the login itself having already succeeded.
+  test('an audit-write failure does not turn a correct login into a 500', async () => {
+    mockLogin.mockResolvedValueOnce({
+      token: 'a-token',
+      principal: {
+        accountId: 'acct-audit-fail',
+        role: 'athlete',
+        organizationId: 'org-1',
+        athleteId: 'ath-1',
+        sessionToken: 'a-token',
+        authProvider: 'ppbf_local',
+      },
+    });
+    mockAudit.mockRejectedValueOnce(new Error('connection pool exhausted'));
+
+    const res = await POST(request('acct-audit-fail'));
+
+    expect(res.status).toBe(200);
+    expect(res.cookies.get('ppbf_pilot_session')?.value).toBe('a-token');
   });
 
   test('401 for invalid credentials, no cookie set', async () => {

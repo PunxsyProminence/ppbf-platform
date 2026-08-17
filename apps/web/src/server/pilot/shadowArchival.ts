@@ -88,47 +88,44 @@ export async function archiveOldData(config: ArchiveConfig): Promise<ArchiveResu
       archivedCount = oldRecords.length;
     }
 
-    // Aggregate monthly statistics for all organizations
-    const orgResult = await query<{organization_id: string}>(
-      `SELECT DISTINCT organization_id FROM pilot.shadow_chat_audit`,
+    // Aggregate monthly statistics for every organization with activity last
+    // month, in ONE grouped upsert instead of a per-organization
+    // select-then-conditionally-insert loop (originally: 1 + 2*N round trips
+    // for N organizations with SHADOW activity, platform-wide -- fine at
+    // pilot scale, not something to keep doing as more gyms onboard). GROUP
+    // BY organization_id already means every returned group has at least one
+    // row, so the loop's `count > 0` gate is structural here, not a runtime
+    // check.
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const monthStartStr = monthStart.toISOString().split('T')[0];
+    const monthEndStr = monthEnd.toISOString().split('T')[0];
+    const monthStr = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`;
+
+    const aggregated = await query<{ organization_id: string }>(
+      `INSERT INTO pilot.shadow_monthly_stats
+         (organization_id, month, interaction_count, avg_filter_rate, avg_effectiveness_score, created_at)
+       SELECT
+         organization_id,
+         $1 AS month,
+         COUNT(*)::integer AS interaction_count,
+         COALESCE(AVG(CASE WHEN was_filtered THEN 1 ELSE 0 END), 0) AS avg_filter_rate,
+         0 AS avg_effectiveness_score, -- would come from recommendation tracking
+         CURRENT_TIMESTAMP
+       FROM pilot.shadow_chat_audit
+       WHERE created_at >= $2::date AND created_at <= $3::date
+       GROUP BY organization_id
+       ON CONFLICT (organization_id, month)
+       DO UPDATE SET
+         interaction_count = EXCLUDED.interaction_count,
+         avg_filter_rate = EXCLUDED.avg_filter_rate,
+         avg_effectiveness_score = EXCLUDED.avg_effectiveness_score,
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING organization_id`,
+      [monthStr, monthStartStr, monthEndStr],
     );
-    let aggregatedMonths = 0;
-
-    for (const orgRow of orgResult) {
-      const organizationId = orgRow.organization_id;
-
-      // Get last month's date range
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-      const monthStartStr = monthStart.toISOString().split('T')[0];
-      const monthEndStr = monthEnd.toISOString().split('T')[0];
-
-      // FIX 3: Parameterized aggregation query - no string interpolation
-      const statsResult = await query<{interaction_count: string; avg_filter_rate: string | null}>(
-        `SELECT 
-           COUNT(*) as interaction_count,
-           AVG(CASE WHEN was_filtered THEN 1 ELSE 0 END) as avg_filter_rate
-         FROM pilot.shadow_chat_audit
-         WHERE organization_id = $1 
-         AND created_at >= $2::date 
-         AND created_at <= $3::date`,
-        [organizationId, monthStartStr, monthEndStr],
-      );
-
-      const stats = statsResult[0];
-      if (stats && Number.parseInt(stats.interaction_count, 10) > 0) {
-        await insertMonthlyStats(
-          organizationId,
-          monthStart.getFullYear(),
-          monthStart.getMonth() + 1,
-          Number.parseInt(stats.interaction_count, 10),
-          Number.parseFloat(stats.avg_filter_rate || '0'),
-          0, // avg_effectiveness_score would come from recommendation tracking
-        );
-        aggregatedMonths++;
-      }
-    }
+    const aggregatedMonths = aggregated.length;
 
     return {
       success: true,

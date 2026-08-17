@@ -8,7 +8,13 @@ import {
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
-import { getClientIp, checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/src/server/pilot/rateLimit';
+import {
+  getClientIp,
+  checkRateLimit,
+  checkDurableRateLimit,
+  recordDurableFailedAttempt,
+  clearDurableRateLimit,
+} from '@/src/server/pilot/rateLimit';
 import { bootstrapKeyMatches } from '@/src/server/pilot/security';
 
 export const runtime = 'nodejs';
@@ -29,11 +35,23 @@ export async function POST(request: NextRequest) {
     // Shares one per-IP bucket with /api/pilot/admin/bootstrap: both gates
     // guard the same key, so guessing attempts must not get a fresh budget by
     // switching endpoint.
+    //
+    // Durable, not just volatile: this guards the credential that mints or
+    // overwrites the platform_owner account, the highest-privilege identity
+    // on the platform. The in-memory limiter alone is per-container --
+    // Container Apps runs multiple replicas -- so a guesser splitting
+    // requests across replicas, or simply resuming after a deploy, gets an
+    // independent budget per replica instead of one fleet-wide budget. Either
+    // limiter saying "limited" is enough, the same rule login/activate/
+    // magic-link already use. A durable lookup that cannot reach the
+    // database returns not-limited rather than throwing, so a blip degrades
+    // to the volatile limiter instead of locking bootstrap out entirely.
     const clientIp = getClientIp(request);
     const ipKey = `pin_bootstrap:${clientIp}`;
 
     const ipLimitCheck = checkRateLimit(ipKey);
-    if (ipLimitCheck.isLimited) {
+    const durableIpCheck = await checkDurableRateLimit(ipKey);
+    if (ipLimitCheck.isLimited || durableIpCheck.isLimited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
         { status: 429 }
@@ -41,11 +59,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (!bootstrapKeyMatches(request.headers, bootstrapKey)) {
-      recordFailedAttempt(ipKey);
+      await recordDurableFailedAttempt(ipKey);
       throw new Error('Forbidden: invalid bootstrap key');
     }
 
-    clearRateLimit(ipKey);
+    await clearDurableRateLimit(ipKey);
 
     const body = (await request.json().catch(() => ({}))) as {
       organization_id?: string;

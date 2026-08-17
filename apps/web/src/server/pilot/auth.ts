@@ -117,21 +117,32 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     [accountId],
   );
 
+  // Every rejection below logs a reason code (never the PIN) before
+  // returning null. Nothing else does: the durable rate-limit bucket this
+  // route also checks is deleted once it is more than 15 minutes old
+  // (rateLimit.ts), so an attacker spacing guesses out, or spreading them
+  // across accounts, previously left zero trace anywhere once that window
+  // passed -- no forensic trail for a suspected brute-force against a
+  // minor's account.
   if (!data?.active_flag) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'unknown_or_inactive_account' });
     return null;
   }
 
   const organizationId = data.organization_id || getPilotDefaultOrganizationId();
   if (!data.is_platform_owner && data.organization_status && data.organization_status !== 'active') {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'organization_not_active' });
     return null;
   }
 
   if (!data.pin_hash) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'no_pin_set' });
     return null;
   }
 
   const pinIsValid = await verifyPin(pin, data.pin_hash);
   if (!pinIsValid) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'wrong_pin' });
     return null;
   }
 
@@ -142,6 +153,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   // login page's default tab used to state the rule separately, and the page
   // had it wrong -- it offered a PIN form to everyone.
   if (!usesPin({ role: data.role })) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'role_not_pin_eligible' });
     return null;
   }
 
@@ -632,10 +644,16 @@ export async function changeOwnPin(accountId: string, currentPin: string, newPin
     // athlete-only rule, and the drift guard found it after two rounds of
     // reading the file missed it.
     if (!row?.active_flag || !row.pin_hash || !usesPin({ role: row.role })) {
+      console.warn('pilot-auth change-pin rejected', { accountId, reason: 'ineligible_account' });
       throw new Error('Unauthorized');
     }
 
     if (!(await verifyPin(currentPin, row.pin_hash))) {
+      // The route reaching this is gated only on a live session cookie, not
+      // on the PIN itself -- a stolen-but-live session is enough to guess
+      // here repeatedly, which is exactly the scenario a forensic trail
+      // needs to be reconstructable for.
+      console.warn('pilot-auth change-pin rejected', { accountId, reason: 'wrong_current_pin' });
       throw new Error('Unauthorized: current PIN is incorrect');
     }
 

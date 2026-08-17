@@ -322,38 +322,86 @@ export async function planRosterImport(
   };
 }
 
+interface CreatableRow {
+  planned: RosterRowPlan;
+  row: RosterImportRow;
+}
+
 /**
- * Creates the athletes the plan says to create.
+ * Attempts every `create` row in ONE multi-row insert instead of one round
+ * trip per row -- the common case, a roster where every row is valid, is
+ * every bit as create-only and collision-safe as the row-by-row version
+ * (same ON CONFLICT DO NOTHING, same "returning tells you what actually
+ * landed" logic), just in a single statement.
  *
- * Row by row rather than one transaction, deliberately. A roster of forty typed
- * by hand will have a bad row in it, and failing the whole file for row seven
- * means the operator fixes one cell and re-runs all forty -- every time. Each
- * row stands alone, the outcome of every row is reported, and re-running the
- * same file is safe because creation is create-only.
- *
- * The insert can still lose a race it passed in planning, which is why the
- * return value of insertAthleteIfAbsent is honoured rather than assumed: a row
- * planned as `create` that finds the id taken is reported as a collision, not
- * as a creation that did not happen.
+ * A single multi-row INSERT is all-or-nothing for anything ON CONFLICT does
+ * NOT absorb (a bad foreign key, a type Postgres refuses) -- one such row
+ * would abort every row in the batch, which is exactly the "row seven kills
+ * the other thirty-nine" outcome applyRosterImport's caller must never see.
+ * That failure mode is why this throws rather than trying to report a
+ * partial result: the caller (applyRosterImport) catches it and re-runs the
+ * same rows through createAthletesSequentially, which is the original
+ * row-by-row code, unchanged, kept specifically as this fallback.
  */
-export async function applyRosterImport(
+async function createAthletesBatch(
   organizationId: string,
-  rows: readonly RosterImportRow[],
-  plan: RosterImportPlan,
-): Promise<RosterImportPlan> {
-  const byLine = new Map(plan.rows.map((row) => [row.line, row]));
-  const now = new Date().toISOString();
+  toCreate: readonly CreatableRow[],
+  now: string,
+): Promise<RosterRowPlan[]> {
+  const values: unknown[] = [organizationId, now];
+  const tuples = toCreate.map(({ row }, index) => {
+    const base = 3 + index * 7;
+    values.push(
+      row.athlete_id,
+      row.full_name,
+      row.date_of_birth,
+      row.weight_class,
+      row.gym_status || 'training',
+      row.emergency_contact_note,
+      row.coach_account_id,
+    );
+    // emergency_contact and emergency_contact_note both take the same
+    // bound value ($${base + 5} twice) -- matching insertAthleteIfAbsent's
+    // own single-row insert, which fills both columns from one field.
+    return `($1, $${base}, $${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 5}, true, $${base + 6}, $2, $2)`;
+  });
+
+  const inserted = await query<{ athlete_id: string }>(
+    `insert into pilot.athletes
+       (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, emergency_contact_note, active_flag, coach_id, created_at, updated_at)
+     values ${tuples.join(', ')}
+     on conflict (organization_id, athlete_id) do nothing
+     returning athlete_id`,
+    values,
+  );
+  const createdIds = new Set(inserted.map((row) => row.athlete_id));
+
+  return toCreate.map(({ planned, row }) =>
+    createdIds.has(row.athlete_id)
+      ? { ...planned, outcome: 'create', reason: '' }
+      : {
+        ...planned,
+        outcome: 'skip_exists',
+        reason: 'Already on the roster by the time this ran. Left exactly as it is.',
+      },
+  );
+}
+
+/**
+ * The original row-by-row import, kept verbatim as the fallback path: one
+ * insert per row, so one bad row is reported and skipped while the rest of
+ * the file still lands. Used directly when there is nothing to batch
+ * (0 or 1 creatable row -- no round trips to save), and as the recovery
+ * path when createAthletesBatch's single statement fails.
+ */
+async function createAthletesSequentially(
+  organizationId: string,
+  toCreate: readonly CreatableRow[],
+  now: string,
+): Promise<RosterRowPlan[]> {
   const applied: RosterRowPlan[] = [];
 
-  for (const [index, row] of rows.entries()) {
-    const planned = byLine.get(index + 1);
-    if (!planned || planned.outcome !== 'create') {
-      if (planned) {
-        applied.push(planned);
-      }
-      continue;
-    }
-
+  for (const { planned, row } of toCreate) {
     try {
       const created = await insertAthleteIfAbsent(organizationId, {
         athlete_id: row.athlete_id,
@@ -392,6 +440,67 @@ export async function applyRosterImport(
       });
     }
   }
+
+  return applied;
+}
+
+/**
+ * Creates the athletes the plan says to create.
+ *
+ * Every `create` row is attempted as one batched insert (createAthletesBatch)
+ * when there is more than one -- collapsing what used to be up to
+ * MAX_ROWS round trips into one for the common case, a roster with no bad
+ * rows. Row-by-row isolation, the actual safety property, is preserved
+ * exactly: createAthletesSequentially (the original per-row code) runs
+ * whenever there's nothing to batch, or as the automatic fallback if the
+ * batch statement itself fails, so a spreadsheet with one bad row in it
+ * still gets every other row created and that one row reported, never the
+ * whole file discarded.
+ *
+ * The insert can still lose a race it passed in planning, which is why the
+ * return value is honoured rather than assumed: a row planned as `create`
+ * that finds the id taken is reported as a collision, not as a creation
+ * that did not happen. Re-running the same file is always safe because
+ * creation is create-only.
+ */
+export async function applyRosterImport(
+  organizationId: string,
+  rows: readonly RosterImportRow[],
+  plan: RosterImportPlan,
+): Promise<RosterImportPlan> {
+  const byLine = new Map(plan.rows.map((row) => [row.line, row]));
+  const now = new Date().toISOString();
+
+  const passthrough: RosterRowPlan[] = [];
+  const toCreate: CreatableRow[] = [];
+
+  rows.forEach((row, index) => {
+    const planned = byLine.get(index + 1);
+    if (!planned) return;
+    if (planned.outcome !== 'create') {
+      passthrough.push(planned);
+      return;
+    }
+    toCreate.push({ planned, row });
+  });
+
+  let createdRows: RosterRowPlan[];
+  if (toCreate.length === 0) {
+    createdRows = [];
+  } else if (toCreate.length === 1) {
+    createdRows = await createAthletesSequentially(organizationId, toCreate, now);
+  } else {
+    try {
+      createdRows = await createAthletesBatch(organizationId, toCreate, now);
+    } catch {
+      createdRows = await createAthletesSequentially(organizationId, toCreate, now);
+    }
+  }
+
+  // rows/passthrough/toCreate are all built from one forward pass over
+  // `rows`, so both halves already carry the original line numbers -- sort
+  // the merge back into file order rather than re-deriving it.
+  const applied = [...passthrough, ...createdRows].sort((a, b) => a.line - b.line);
 
   return {
     rows: applied,

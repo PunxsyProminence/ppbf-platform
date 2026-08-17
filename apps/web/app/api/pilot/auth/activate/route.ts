@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { redeemActivationCode } from '@/src/server/pilot/activation';
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
 import {
@@ -17,6 +18,26 @@ import {
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
+
+// A lost audit row must not report an already-committed activation (or the
+// login that follows it) as a failure -- same non-fatal-audit doctrine as
+// parent/consent's auditConsentEvent. Both call sites below run AFTER their
+// respective write already committed, so a throw here previously turned a
+// successful activation, or a successful post-activation sign-in, into a
+// 500 the athlete had no way to distinguish from a real failure.
+async function auditActivationEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try {
+    await writePilotAuditEvent(event);
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({
+      event: 'pilot-auth-activation-audit-write-failed',
+      activation_event_type: event.event_type,
+      ...(code ? { code } : {}),
+    });
+  }
+}
 
 /**
  * Redeems an activation code and sets the athlete's own PIN.
@@ -80,7 +101,7 @@ export async function POST(request: NextRequest) {
     clearRateLimit(ipKey);
     await clearDurableRateLimit(ipKey);
 
-    await writePilotAuditEvent({
+    await auditActivationEvent({
       event_type: 'update',
       actor_account_id: redeemed.accountId,
       actor_role: 'athlete',
@@ -108,7 +129,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (loginResult) {
-      await writePilotAuditEvent({
+      await auditActivationEvent({
         event_type: 'login',
         actor_account_id: loginResult.principal.accountId,
         actor_role: loginResult.principal.role,

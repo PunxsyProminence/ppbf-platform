@@ -5,7 +5,7 @@ import {
   createPublication,
   getOrganizationPublications,
 } from '@/src/server/pilot/publication';
-import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { hiddenNotFound, requirePrincipal, requireRole, jsonError, parseSafeLimit } from '@/src/server/pilot/http';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 export const runtime = 'nodejs';
@@ -17,7 +17,13 @@ export async function GET(request: NextRequest) {
 
     const status = request.nextUrl.searchParams.get('status');
     const publicationType = request.nextUrl.searchParams.get('publication_type');
-    const limit = Math.min(Number.parseInt(request.nextUrl.searchParams.get('limit') || '50', 10), 100);
+    // See publications/library/route.ts: Math.min(parseInt(...) || 50, 100)
+    // never rejected a negative value, letting it reach Postgres and crash
+    // with an unhandled "LIMIT must not be negative".
+    const limit = parseSafeLimit(request.nextUrl.searchParams.get('limit'), 50, 100);
+    if (limit === null) {
+      return NextResponse.json({ error: 'Invalid limit parameter' }, { status: 400 });
+    }
 
     const publications = await getOrganizationPublications(principal.organizationId, {
       status: status || undefined,

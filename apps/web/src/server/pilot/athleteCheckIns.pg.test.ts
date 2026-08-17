@@ -1,11 +1,21 @@
 // Real PostgreSQL-backed contract test for the athlete-check-ins
-// migration (Phase 2 slice 1).
+// migration (Phase 2 slice 1), AND for the REAL module behavior on top of
+// it: './db' is mocked to route into the embedded server (see
+// trainingHolds.pg.test.ts for the same pattern), so checkIn,
+// getTodayCheckIn, and listRecentCheckIns below are the actual production
+// functions executing their actual SQL against actual rows -- not the
+// hand-written raw-SQL inserts the rest of this file uses to prove
+// schema-level constraints.
 //
 // What needs proving that reading SQL cannot prove: the migration creates
 // the table from nothing and re-applies as a no-op; one check-in per
 // athlete per day is a unique index, not a convention; wellness bounds
 // (1-5 or null) are database facts; and tenancy holds via the composite
-// athlete FK.
+// athlete FK. On top of that: checkIn's hidden-not-found for a cross-org
+// athlete, and its idempotent-by-day behavior (a second call the same day
+// returns the SAME row with created:false, including the concurrent
+// double-tap race the on-conflict-do-nothing + re-read pattern is meant to
+// survive) only exist in the TS module.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -19,6 +29,23 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
+
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows[0] ?? null;
+  }),
+}));
+
+import { checkIn, getTodayCheckIn, listRecentCheckIns, wellnessValueError } from './athleteCheckIns';
 
 jest.setTimeout(180_000);
 
@@ -149,9 +176,9 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
 });
 
-
-
-
+afterEach(() => {
+  activeClient = null;
+});
 function insertCheckIn(client: Client, checkInId: string, overrides: Record<string, string | number | null> = {}) {
   return client.query(
     `insert into pilot.athlete_check_ins
@@ -195,6 +222,129 @@ describe('athlete check-ins migration', () => {
         [ORG_ID],
       );
       expect(rows.rows[0].n).toBe(2);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('wellnessValueError', () => {
+  test('accepts 1-5 and the absent values, refuses anything else', () => {
+    expect(wellnessValueError('energy', undefined)).toBeNull();
+    expect(wellnessValueError('energy', null)).toBeNull();
+    expect(wellnessValueError('energy', 1)).toBeNull();
+    expect(wellnessValueError('energy', 5)).toBeNull();
+    expect(wellnessValueError('energy', 0)).toContain('energy');
+    expect(wellnessValueError('energy', 6)).toContain('energy');
+    expect(wellnessValueError('energy', 2.5)).toContain('energy');
+    expect(wellnessValueError('energy', '3')).toContain('energy');
+  });
+});
+
+// The tests above prove the migration's schema. These prove the module:
+// checkIn's hidden-not-found for a cross-org athlete, and its
+// idempotent-by-day behavior (including the concurrent double-tap race) --
+// none of which a raw-SQL insert can exercise, because none of it is a
+// database constraint.
+describe('the real check-in lifecycle against real rows', () => {
+  test('checkIn creates the first check-in of the day and hides a cross-org athlete as not-found', async () => {
+    const client = await freshDatabase('checkins_create');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      const result = await checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 4, soreness: 2 });
+      expect(result).toMatchObject({ created: true, row: { energy: 4, soreness: 2, focus: null } });
+
+      await expect(checkIn({ organizationId: ORG_ID, athleteId: 'no-such-athlete' })).resolves.toBeNull();
+      await expect(checkIn({ organizationId: OTHER_ORG_ID, athleteId: ATHLETE_ID })).resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('checkIn is idempotent by day: a second call the same day returns the SAME row with created:false', async () => {
+    const client = await freshDatabase('checkins_idempotent');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      const first = await checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 3 });
+      const second = await checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 5 });
+
+      expect(second).toMatchObject({ created: false, row: { check_in_id: first!.row.check_in_id, energy: 3 } });
+    } finally {
+      await client.end();
+    }
+  });
+
+  // Concurrent double-tap: two calls racing before either has read the
+  // other's insert. The unique index (organization_id, athlete_id,
+  // checked_in_on) lets exactly one INSERT ... ON CONFLICT DO NOTHING win;
+  // checkIn's re-read-after-insert is what makes the LOSING caller still
+  // resolve to a real row instead of null. Both callers sharing one
+  // connection still exercises the real code path: each fires its own
+  // select-existing / insert-on-conflict / re-read sequence, and node-pg
+  // serializes them query-by-query in submission order, so the second
+  // caller's insert genuinely hits the first caller's already-committed row.
+  test('a concurrent double-tap resolves both callers to the SAME row, only one of them created:true', async () => {
+    const client = await freshDatabase('checkins_race');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      const [a, b] = await Promise.all([
+        checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 3 }),
+        checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 5 }),
+      ]);
+
+      expect(a!.row.check_in_id).toBe(b!.row.check_in_id);
+      expect([a!.created, b!.created].sort()).toEqual([false, true]);
+
+      const rows = await client.query(
+        `select count(*)::int as n from pilot.athlete_check_ins where organization_id = $1`,
+        [ORG_ID],
+      );
+      expect(rows.rows[0].n).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('listRecentCheckIns returns only this athlete\'s own history, newest first, bounded by limit', async () => {
+    const client = await freshDatabase('checkins_history');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      await insertCheckIn(client, 'ci-old', { checked_in_on: '2026-01-01', energy: 1 });
+      await insertCheckIn(client, 'ci-mid', { checked_in_on: '2026-01-02', energy: 2 });
+      await insertCheckIn(client, 'ci-new', { checked_in_on: '2026-01-03', energy: 3 });
+      const otherAthlete = 'ath-checkins-other';
+      await client.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Other Athlete', '2012-01-01', '100', 'active', 'contact', true, $3, now(), now())`,
+        [ORG_ID, otherAthlete, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.athlete_check_ins (organization_id, check_in_id, athlete_id, checked_in_on, energy)
+         values ($1, 'ci-other-athlete', $2, '2026-01-03', 5)`,
+        [ORG_ID, otherAthlete],
+      );
+
+      const history = await listRecentCheckIns(ORG_ID, ATHLETE_ID, 2);
+      expect(history.map((row) => row.check_in_id)).toEqual(['ci-new', 'ci-mid']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('getTodayCheckIn returns null before any check-in exists today', async () => {
+    const client = await freshDatabase('checkins_today_empty');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      await expect(getTodayCheckIn(ORG_ID, ATHLETE_ID)).resolves.toBeNull();
     } finally {
       await client.end();
     }

@@ -109,7 +109,7 @@ export default function MediaAndCommsHub() {
             </div>
 
             <div className="border border-zinc-800 bg-black p-3">
-              <p className="text-xs text-zinc-400">Timestamp Annotation Panel</p>
+              <p id="annotation-panel-label" className="text-xs text-zinc-400">Timestamp Annotation Panel</p>
               <ul className="mt-2 space-y-2 text-xs">
                 {filmTimestamps.map((entry) => (
                   <li key={entry.id} className="border border-zinc-800 bg-black p-2">
@@ -119,6 +119,7 @@ export default function MediaAndCommsHub() {
                 ))}
               </ul>
               <textarea
+                aria-labelledby="annotation-panel-label"
                 value={annotationPanel}
                 onChange={(event) => setAnnotationPanel(event.target.value)}
                 className="mt-2 min-h-[84px] w-full border border-zinc-800 bg-black p-2 text-xs text-slate-200"
@@ -126,8 +127,9 @@ export default function MediaAndCommsHub() {
             </div>
 
             <div className="border border-zinc-800 bg-black p-3">
-              <p className="text-xs text-zinc-400">Tactical Observation Notes</p>
+              <p id="tactical-notes-label" className="text-xs text-zinc-400">Tactical Observation Notes</p>
               <textarea
+                aria-labelledby="tactical-notes-label"
                 value={tacticalNotes}
                 onChange={(event) => setTacticalNotes(event.target.value)}
                 className="mt-2 min-h-[120px] w-full border border-zinc-800 bg-black p-2 text-xs text-slate-200"
@@ -135,8 +137,9 @@ export default function MediaAndCommsHub() {
             </div>
 
             <div className="border border-zinc-800 bg-black p-3">
-              <p className="text-xs text-zinc-400">Athlete Reflection Block</p>
+              <p id="athlete-reflection-label" className="text-xs text-zinc-400">Athlete Reflection Block</p>
               <textarea
+                aria-labelledby="athlete-reflection-label"
                 value={athleteReflection}
                 onChange={(event) => setAthleteReflection(event.target.value)}
                 className="mt-2 min-h-[120px] w-full border border-zinc-800 bg-black p-2 text-xs text-slate-200"

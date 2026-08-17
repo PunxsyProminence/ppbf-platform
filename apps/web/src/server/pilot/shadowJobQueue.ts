@@ -2,7 +2,7 @@
 // PostgreSQL-backed async jobs with tenant, owner, and subject authorization.
 // Schema is deployed from infra/azure; this module never creates or alters tables.
 
-import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import type { ShadowSessionType } from './shadowRouter';
@@ -197,6 +197,33 @@ async function actorCanAccessJob(actor: ActorIdentity, job: JobAccessRow): Promi
   } catch {
     return false;
   }
+}
+
+// Same predicate as actorCanAccessJob, but takes the subject's accessibility
+// as a precomputed fact rather than awaiting it per row -- getJobsForActor
+// batches accessibleAthleteIds() once for the whole page instead of calling
+// actorCanAccessJob (and therefore assertActorCanAccessAthlete) per row,
+// which for a full page of subject-bearing jobs was up to 2 sequential
+// round trips per row (coach primary-assignment check, then a coverage
+// check on miss).
+function actorCanAccessJobRow(
+  actor: ActorIdentity,
+  job: JobAccessRow,
+  accessibleSubjectIds: ReadonlySet<string>,
+): boolean {
+  const isOwner = job.account_id === actor.accountId;
+  if (!isOwner && OWNER_ONLY_JOB_TYPES.has(job.job_type)) {
+    return false;
+  }
+  if (!isOwner && !actorCanReadAllOrgJobs(actor)) {
+    return false;
+  }
+
+  if (!job.subject_id) {
+    return true;
+  }
+
+  return accessibleSubjectIds.has(job.subject_id);
 }
 
 export async function enqueueJob(input: CreateJobInput): Promise<string> {
@@ -528,13 +555,15 @@ export async function getJobsForActor(
     [actor.organizationId, actor.accountId, actorCanReadAllOrgJobs(actor), limit],
   );
 
-  const visible: JobStatusResult[] = [];
-  for (const row of rows) {
-    if (await actorCanAccessJob(actor, row)) {
-      visible.push(toStatusResult(mapJobRow(row)));
-    }
-  }
-  return visible;
+  const subjectIds = rows
+    .map((row) => row.subject_id)
+    .filter((subjectId): subjectId is string => subjectId !== null);
+  const accessibleSubjectIds =
+    subjectIds.length > 0 ? await accessibleAthleteIds(actor, subjectIds) : new Set<string>();
+
+  return rows
+    .filter((row) => actorCanAccessJobRow(actor, row, accessibleSubjectIds))
+    .map((row) => toStatusResult(mapJobRow(row)));
 }
 
 function jobTypeToSessionType(jobType: JobType): ShadowSessionType {
