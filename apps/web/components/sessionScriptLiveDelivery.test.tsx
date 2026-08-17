@@ -3,7 +3,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import SessionScriptLiveDelivery from './SessionScriptLiveDelivery';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
@@ -87,11 +87,30 @@ interface Handlers {
   detail?: () => Response | Promise<Response>;
   patch?: (body: Record<string, unknown>) => Response | Promise<Response>;
   runsGet?: () => Response | Promise<Response>;
+  athletes?: () => Response | Promise<Response>;
+  protocols?: () => Response | Promise<Response>;
+  logPost?: (body: Record<string, unknown>) => Response | Promise<Response>;
 }
+
+const DEFAULT_LOG_ATHLETES = [{ athlete_id: 'ath-1', full_name: 'Jordan P.' }];
+const DEFAULT_LOG_PROTOCOLS = [
+  { protocol_id: 'proto-1', title: 'Round-3 endurance block', version: 1, athlete_id: null, status: 'active' },
+];
 
 function mockFetch(handlers: Handlers = {}) {
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.includes('/api/pilot/coach/intervention-executions')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      if (handlers.logPost) return handlers.logPost(body);
+      return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
+    }
+    if (url.includes('/api/pilot/athletes/list')) {
+      return handlers.athletes ? handlers.athletes() : jsonResponse({ items: DEFAULT_LOG_ATHLETES });
+    }
+    if (url.includes('/api/pilot/coach/intervention-protocols')) {
+      return handlers.protocols ? handlers.protocols() : jsonResponse({ items: DEFAULT_LOG_PROTOCOLS });
+    }
     if (url.includes('/api/pilot/session-scripts/runs/')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       if (handlers.patch) return handlers.patch(body);
@@ -113,6 +132,12 @@ function mockFetch(handlers: Handlers = {}) {
 function patchCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
   return fetchMock.mock.calls
     .filter((call) => String(call[0]).includes('/api/pilot/session-scripts/runs/'))
+    .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
+}
+
+function logPostCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
+  return fetchMock.mock.calls
+    .filter((call) => String(call[0]).includes('/api/pilot/coach/intervention-executions') && (call[1] as RequestInit | undefined)?.method === 'POST')
     .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
 }
 
@@ -454,5 +479,87 @@ describe('a run that stops being live underneath the screen', () => {
     expect(onRunGone).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Elapsed delivery time')).toHaveTextContent('8:20');
     expect(screen.getByRole('alert').textContent).toContain('out of date');
+  });
+});
+
+describe('logging an intervention against this run', () => {
+  it('sends the run\'s own id as session_run_id and shows the logged execution', async () => {
+    const { fetchMock } = await renderLive(liveRun());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)'), {
+      target: { value: 'proto-1' },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+    });
+
+    expect(logPostCalls(fetchMock)).toEqual([
+      { athlete_id: 'ath-1', protocol_id: 'proto-1', session_run_id: 'ssrun_1' },
+    ]);
+    expect(screen.getByText('Round-3 endurance block')).toBeInTheDocument();
+    expect(screen.getByText('logged')).toBeInTheDocument();
+  });
+
+  it('refuses to submit before an athlete and a protocol are both picked, with no request sent', async () => {
+    const { fetchMock } = await renderLive(liveRun());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('Pick an athlete and a protocol first.');
+    expect(logPostCalls(fetchMock)).toHaveLength(0);
+  });
+
+  it('a protocol authored for a different athlete never appears once that athlete is picked', async () => {
+    await renderLive(liveRun(), {
+      protocols: () =>
+        jsonResponse({
+          items: [
+            { protocol_id: 'proto-mine', title: 'For Jordan only', version: 1, athlete_id: 'ath-1', status: 'active' },
+            { protocol_id: 'proto-other', title: 'For someone else', version: 1, athlete_id: 'ath-2', status: 'active' },
+            { protocol_id: 'proto-shared', title: 'Org-wide protocol', version: 1, athlete_id: null, status: 'active' },
+          ],
+        }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+
+    const protocolSelect = screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)');
+    expect(within(protocolSelect).getByText('For Jordan only (v1)')).toBeInTheDocument();
+    expect(within(protocolSelect).getByText('Org-wide protocol (v1)')).toBeInTheDocument();
+    expect(within(protocolSelect).queryByText('For someone else (v1)')).not.toBeInTheDocument();
+  });
+
+  it('the server\'s refusal is shown and nothing is added to the logged list', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: () => jsonResponse({ error: 'Not found' }, false, 404),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)'), {
+      target: { value: 'proto-1' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('Not found');
+    expect(screen.queryByText('logged')).not.toBeInTheDocument();
+    expect(logPostCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('a failed roster or protocol load disables logging instead of pretending the lists are empty', async () => {
+    await renderLive(liveRun(), { athletes: () => jsonResponse({}, false, 500) });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    expect(await screen.findByText(/athlete roster could not be loaded/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log intervention' })).toBeDisabled();
   });
 });
