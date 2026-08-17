@@ -308,6 +308,8 @@ export const BUILDING: readonly Door[] = [
     keywords: 'research intake requirements gaps evidence labels' },
   { href: '/research/chat', label: 'Research Chat', room: 'file', roles: OPEN,
     keywords: 'ask research question chat' },
+  { href: '/research/review', label: 'Submission Review', room: 'file', roles: ADMIN_GATE,
+    keywords: 'submission review responsive partially responsive not responsive duplicate applicability curator' },
   { href: '/evidence', label: 'Evidence Review', room: 'file', roles: ADMIN_GATE,
     keywords: 'shadow evidence sources citations provenance' },
   { href: '/knowledge-graph', label: 'Knowledge Graph', room: 'file', roles: OPEN,
