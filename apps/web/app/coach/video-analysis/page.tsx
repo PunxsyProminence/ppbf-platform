@@ -54,6 +54,14 @@ interface FilmStudyProposal {
   created_at: string;
 }
 
+// Mirrors ComplianceRule in src/server/pilot/compliance.ts, trimmed to what
+// this page's rule picker renders.
+interface ComplianceRule {
+  rule_id: string;
+  rule_name: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+}
+
 const mlPanels = [
   { title: 'Skill Recognition', detail: ML_PLACEHOLDER },
   { title: 'Punch Detection', detail: ML_PLACEHOLDER },
@@ -103,6 +111,12 @@ export default function CoachVideoAnalysisPage() {
   const [proposals, setProposals] = useState<FilmStudyProposal[]>([]);
   const [proposalsError, setProposalsError] = useState('');
   const [resolvingProposalId, setResolvingProposalId] = useState<string | null>(null);
+
+  const [complianceRules, setComplianceRules] = useState<ComplianceRule[]>([]);
+  const [selectedRuleId, setSelectedRuleId] = useState<Record<string, string>>({});
+  const [escalatingProposalId, setEscalatingProposalId] = useState<string | null>(null);
+  const [escalatedProposalIds, setEscalatedProposalIds] = useState<Set<string>>(new Set());
+  const [escalateError, setEscalateError] = useState('');
 
   const loadProposals = () => {
     void (async () => {
@@ -233,6 +247,46 @@ export default function CoachVideoAnalysisPage() {
     }
   };
 
+  // A proposal a coach is reviewing may itself be evidence of a compliance
+  // concern (unsafe technique, protocol lapse) regardless of which way the
+  // Film Study verdict lands, so this is offered alongside Accept/Reject
+  // rather than gated behind either -- see loadProposals above, whose 'ath-1'
+  // review state and video session id are already present on the row.
+  const escalateToCompliance = async (proposal: FilmStudyProposal) => {
+    const ruleId = selectedRuleId[proposal.proposal_id];
+    if (!ruleId) {
+      setEscalateError('Choose which rule this observation concerns before escalating.');
+      return;
+    }
+    const rule = complianceRules.find((r) => r.rule_id === ruleId);
+
+    setEscalatingProposalId(proposal.proposal_id);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rule_id: ruleId,
+          athlete_id: proposal.athlete_id,
+          video_session_id: proposal.video_session_id,
+          severity: rule?.severity ?? 'medium',
+          details: { source: 'film_study_proposal', proposal_id: proposal.proposal_id },
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Could not escalate to compliance (${res.status}).`);
+      }
+      setEscalatedProposalIds((current) => new Set(current).add(proposal.proposal_id));
+      setEscalateError('');
+    } catch (err) {
+      setEscalateError(err instanceof Error ? err.message : 'Could not escalate to compliance.');
+    } finally {
+      setEscalatingProposalId(null);
+    }
+  };
+
   const loadVideos = () => {
     void (async () => {
       try {
@@ -250,6 +304,18 @@ export default function CoachVideoAnalysisPage() {
   useEffect(() => {
     loadVideos();
     loadProposals();
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/compliance/rules`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Unable to load compliance rules');
+        const data = (await res.json()) as { rules?: ComplianceRule[] };
+        setComplianceRules(data.rules ?? []);
+      } catch {
+        // Non-fatal: escalation stays unavailable (the picker has nothing to
+        // choose from) but Accept/Reject and the rest of the page work as
+        // before -- this is additive, not a gate on the review queue.
+      }
+    })();
     void (async () => {
       try {
         const res = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
@@ -528,7 +594,7 @@ export default function CoachVideoAnalysisPage() {
                   </p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
                   <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{formatGymStamp(p.created_at)}</p>
-                  <div className="mt-[var(--s3)] flex gap-[var(--s3)]">
+                  <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
                     <button
                       onClick={() => { void resolveProposal(p, 'accepted'); }}
                       disabled={resolvingProposalId === p.proposal_id}
@@ -543,11 +609,36 @@ export default function CoachVideoAnalysisPage() {
                     >
                       {resolvingProposalId === p.proposal_id ? 'Recording...' : 'Reject'}
                     </button>
+                    {escalatedProposalIds.has(p.proposal_id) ? (
+                      <span className="badge badge--restricted"><i>▲</i>Escalated to compliance</span>
+                    ) : complianceRules.length > 0 ? (
+                      <>
+                        <select
+                          aria-label={`Compliance rule for observation on ${p.athlete_id}`}
+                          className="select"
+                          value={selectedRuleId[p.proposal_id] ?? ''}
+                          onChange={(e) => setSelectedRuleId((current) => ({ ...current, [p.proposal_id]: e.target.value }))}
+                        >
+                          <option value="">Select a rule...</option>
+                          {complianceRules.map((rule) => (
+                            <option key={rule.rule_id} value={rule.rule_id}>{rule.rule_name} ({rule.severity})</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => { void escalateToCompliance(p); }}
+                          disabled={escalatingProposalId === p.proposal_id || !selectedRuleId[p.proposal_id]}
+                          className="btn btn--ghost disabled:opacity-50"
+                        >
+                          {escalatingProposalId === p.proposal_id ? 'Escalating...' : 'Escalate to Compliance'}
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               ))}
             </div>
           )}
+          {escalateError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{escalateError}</p> : null}
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">

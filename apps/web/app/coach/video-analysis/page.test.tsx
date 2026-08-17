@@ -43,6 +43,9 @@ function mockFetch(options: {
   proposals?: () => Array<Record<string, unknown>>;
   resolveProposal?: () => Response;
   onResolveProposal?: (body: { proposal_id?: string; verdict?: string }) => void;
+  complianceRules?: () => Array<Record<string, unknown>>;
+  createViolation?: () => Response;
+  onCreateViolation?: (body: { rule_id?: string; athlete_id?: string; video_session_id?: string; severity?: string }) => void;
 }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -93,6 +96,18 @@ function mockFetch(options: {
           : ({ ok: true, json: async () => ({ ok: true, proposal: {} }) } as Response);
       }
       return { ok: true, json: async () => ({ ok: true, proposals: options.proposals ? options.proposals() : [] }) } as Response;
+    }
+    if (url.includes('/api/pilot/compliance/rules')) {
+      return { ok: true, json: async () => ({ ok: true, rules: options.complianceRules ? options.complianceRules() : [] }) } as Response;
+    }
+    if (url.includes('/api/pilot/compliance/violations')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        rule_id?: string; athlete_id?: string; video_session_id?: string; severity?: string;
+      };
+      options.onCreateViolation?.(body);
+      return options.createViolation
+        ? options.createViolation()
+        : ({ ok: true, status: 201, json: async () => ({ violation_id: 'v-1' }) } as Response);
     }
     return { ok: true, json: async () => ({ items: [] }) } as Response;
   });
@@ -356,5 +371,76 @@ describe('Film Study review queue', () => {
     // A rejected write must not silently clear a real proposal from view --
     // the coach still needs to see it to retry or escalate.
     expect(screen.getByText('Athlete kept guard low in round 2.')).toBeTruthy();
+  });
+
+  const rule = (overrides: Record<string, unknown> = {}) => ({
+    rule_id: 'rule-1', rule_name: 'Proper Technique & Form', severity: 'high', ...overrides,
+  });
+
+  test('with no compliance rules loaded, no escalate control is offered', async () => {
+    global.fetch = mockFetch({
+      videos: () => [], proposals: () => [proposal()], complianceRules: () => [],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByText('Athlete kept guard low in round 2.');
+    expect(screen.queryByRole('button', { name: 'Escalate to Compliance' })).toBeNull();
+  });
+
+  test('escalating requires a rule to be picked first', async () => {
+    global.fetch = mockFetch({
+      videos: () => [], proposals: () => [proposal()], complianceRules: () => [rule()],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    const escalateButton = await screen.findByRole('button', { name: 'Escalate to Compliance' });
+    expect((escalateButton as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('escalating a proposal files a violation against the picked rule, severity from the rule', async () => {
+    let recorded: { rule_id?: string; athlete_id?: string; video_session_id?: string; severity?: string; details?: unknown } | undefined;
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      complianceRules: () => [rule()],
+      onCreateViolation: (body) => { recorded = body; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    const select = await screen.findByLabelText('Compliance rule for observation on ath-1');
+    fireEvent.change(select, { target: { value: 'rule-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Escalate to Compliance' }));
+
+    await screen.findByText('Escalated to compliance');
+    expect(recorded).toEqual({
+      rule_id: 'rule-1', athlete_id: 'ath-1', video_session_id: 'vid-1', severity: 'high',
+      details: { source: 'film_study_proposal', proposal_id: 'prop-1' },
+    });
+    // The proposal itself is not settled or removed -- escalation and the
+    // accept/reject verdict are independent actions.
+    expect(screen.getByText('Athlete kept guard low in round 2.')).toBeTruthy();
+  });
+
+  test('a failed escalation shows the server reason and stays retryable', async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      complianceRules: () => [rule()],
+      createViolation: () => ({
+        ok: false, status: 400, json: async () => ({ error: 'Missing rule_id or athlete_id' }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    const select = await screen.findByLabelText('Compliance rule for observation on ath-1');
+    fireEvent.change(select, { target: { value: 'rule-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Escalate to Compliance' }));
+
+    await screen.findByText('Missing rule_id or athlete_id');
+    expect(screen.queryByText('Escalated to compliance')).toBeNull();
   });
 });
