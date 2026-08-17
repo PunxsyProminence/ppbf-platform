@@ -6,8 +6,13 @@
 // the release control on this page is the only thing standing between a coach
 // and footage that can never be played. It belongs to the coach who uploaded
 // the video and to nobody else.
+//
+// It is also the only irreversible control here, which is why so much of this
+// suite is about what has to happen BEFORE it fires: the reviewer must have
+// opened the footage, and must confirm. A Release that can be reached without
+// looking is the rubber stamp the preview was added to prevent.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import CoachVideoAnalysisPage from './page';
@@ -33,10 +38,18 @@ const video = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const athlete = (overrides: Record<string, unknown> = {}) => ({
+  athlete_id: 'ath-1',
+  full_name: 'Marcus Reed',
+  ...overrides,
+});
+
 function mockFetch(options: {
   videos: () => Array<Record<string, unknown>>;
+  athletes?: () => Array<Record<string, unknown>>;
   release?: () => Response;
   onRelease?: () => void;
+  reviewLink?: () => Response;
   role?: string;
   requestFilmStudy?: () => Response;
   pollFilmStudyJob?: (jobId: string) => Response;
@@ -75,6 +88,17 @@ function mockFetch(options: {
     }
     if (url.includes('/api/pilot/video/list')) {
       return { ok: true, json: async () => ({ items: options.videos() }) } as Response;
+    }
+    // The 15-minute review link behind 'Watch first'. Resolving it is what
+    // records the inspection, so a test that needs Release reachable has to go
+    // through here.
+    if (url.includes('/api/pilot/video/review-link')) {
+      return options.reviewLink
+        ? options.reviewLink()
+        : ({ ok: true, json: async () => ({ url: 'https://example.invalid/sas', title: 'Sparring round 3' }) } as Response);
+    }
+    if (url.includes('/api/pilot/athletes/list')) {
+      return { ok: true, json: async () => ({ items: options.athletes ? options.athletes() : [] }) } as Response;
     }
     if (url.includes('/api/pilot/shadow/video-analysis')) {
       if (init?.method === 'POST') {
@@ -128,6 +152,21 @@ afterEach(() => {
 });
 
 describe('coach video release control', () => {
+  // jsdom has no confirm, and the release path now asks for one. Returning
+  // true is "the reviewer agreed"; the refusal is asserted on its own below.
+  beforeEach(() => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
+  // Release is gated on the reviewer having opened the footage, so every test
+  // that gets as far as releasing has to watch first -- which is the point.
+  const watchFirst = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Watch first' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: 'Release' }) as HTMLButtonElement).disabled).toBe(false);
+    });
+  };
+
   test('the uploading coach is offered Release on their held video, and Play stays unavailable', async () => {
     global.fetch = mockFetch({ videos: () => [video()] }) as unknown as typeof fetch;
 
@@ -187,7 +226,8 @@ describe('coach video release control', () => {
 
     render(<CoachVideoAnalysisPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Release' }));
+    await watchFirst();
+    fireEvent.click(screen.getByRole('button', { name: 'Release' }));
 
     await screen.findByRole('button', { name: 'Play' });
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Release' })).toBeNull());
@@ -205,9 +245,170 @@ describe('coach video release control', () => {
 
     render(<CoachVideoAnalysisPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Release' }));
+    await watchFirst();
+    fireEvent.click(screen.getByRole('button', { name: 'Release' }));
 
     await screen.findByText('This video has already been released.');
+  });
+
+  test('Release is unavailable until the footage has been watched, and says so in words', async () => {
+    global.fetch = mockFetch({ videos: () => [video()] }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    const release = await screen.findByRole('button', { name: 'Release' });
+    expect((release as HTMLButtonElement).disabled).toBe(true);
+    // Law 3: a greyed button is colour only. The reason has to be readable.
+    await screen.findByText('Watch it first — Release stays unavailable until you have opened this video for review.');
+  });
+
+  test('watching the footage unlocks Release and withdraws the explanation', async () => {
+    global.fetch = mockFetch({ videos: () => [video()] }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await watchFirst();
+
+    expect(
+      screen.queryByText('Watch it first — Release stays unavailable until you have opened this video for review.'),
+    ).toBeNull();
+  });
+
+  test('a preview that never resolves is not an inspection and does not unlock Release', async () => {
+    global.fetch = mockFetch({
+      videos: () => [video()],
+      reviewLink: () => ({
+        ok: false,
+        status: 502,
+        json: async () => ({ error: 'Could not issue a review link.' }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Watch first' }));
+
+    await screen.findByText('Could not issue a review link.');
+    expect((screen.getByRole('button', { name: 'Release' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('watching a second video does not re-lock the first — inspection is per video', async () => {
+    global.fetch = mockFetch({
+      videos: () => [video(), video({ video_session_id: 'vid-2', title: 'Bag work', file_name: 'bag.mp4' })],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Watch first' }))[0]);
+    await waitFor(() => {
+      expect((screen.getAllByRole('button', { name: 'Release' })[0] as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Watch first' })[1]);
+    await waitFor(() => {
+      expect((screen.getAllByRole('button', { name: 'Release' })[1] as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    // The player is a single slot, so the second video replaced the first in
+    // it. That is not the first video's inspection being taken back -- gating
+    // on the open player rather than on a set of ids would have said it was.
+    expect((screen.getAllByRole('button', { name: 'Release' })[0] as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('declining the confirm releases nothing', async () => {
+    jest.spyOn(window, 'confirm').mockReturnValue(false);
+    let releaseCalls = 0;
+    global.fetch = mockFetch({
+      videos: () => [video()],
+      onRelease: () => { releaseCalls += 1; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await watchFirst();
+    fireEvent.click(screen.getByRole('button', { name: 'Release' }));
+
+    // Nothing is sent, and the video is still held -- a coach who thought
+    // better of it must not find the footage playable anyway.
+    await waitFor(() => expect(releaseCalls).toBe(0));
+    expect(screen.getByRole('button', { name: 'Not released' })).toBeTruthy();
+  });
+
+  test('releasing asks first, naming who can then play the footage', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    global.fetch = mockFetch({ videos: () => [video()] }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await watchFirst();
+    fireEvent.click(screen.getByRole('button', { name: 'Release' }));
+
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1));
+    expect(confirmSpy.mock.calls[0][0]).toContain('the athlete and their guardians');
+  });
+});
+
+describe('athlete identity on this page', () => {
+  test('the library names the athlete rather than printing their id', async () => {
+    global.fetch = mockFetch({
+      videos: () => [video()],
+      athletes: () => [athlete()],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByText(/Athlete: Marcus Reed/);
+  });
+
+  test('an id the roster read did not return still identifies the row', async () => {
+    global.fetch = mockFetch({
+      videos: () => [video({ athlete_id: 'ath-off-roster' })],
+      athletes: () => [athlete()],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    // Falling back to the raw id is worse than a name and far better than a
+    // blank: the row is about a real minor and has to stay traceable.
+    await screen.findByText(/Athlete: ath-off-roster/);
+  });
+
+  test('the review queue names the athlete a proposal is about', async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      athletes: () => [athlete()],
+      proposals: () => [{
+        proposal_id: 'prop-1',
+        athlete_id: 'ath-1',
+        video_session_id: 'vid-1',
+        origin: 'model_proposed',
+        observation_text: 'Athlete kept guard low in round 2.',
+        model_deployment: 'gpt-4o-vision',
+        frames_analyzed: 12,
+        review_state: 'pending_review',
+        created_at: '2026-08-04T00:00:00.000Z',
+      }],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByText(/Athlete: Marcus Reed · 12 frame\(s\) · gpt-4o-vision/);
+  });
+
+  test('the upload form picks an athlete from the roster instead of asking for a UUID', async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      athletes: () => [athlete(), athlete({ athlete_id: 'ath-2', full_name: 'Dana Whitcomb' })],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    const picker = await screen.findByLabelText('Athlete (optional)');
+    expect(picker.tagName).toBe('SELECT');
+    await waitFor(() => expect(within(picker).getByRole('option', { name: 'Dana Whitcomb' })).toBeTruthy());
+    // Optional means optional: linking no athlete has to stay reachable.
+    expect((within(picker).getByRole('option', { name: 'Not linked to one athlete…' }) as HTMLOptionElement).value)
+      .toBe('');
   });
 });
 
@@ -443,7 +644,11 @@ describe('Film Study review queue', () => {
 });
 
 describe('recording what the model missed', () => {
-  const fillMissedForm = () => {
+  // Neither id is typed any more, so the form can only be filled from the
+  // roster read and the video library -- which is the fix. A test that
+  // supplies neither is testing an empty picker, not a coach's entry.
+  const fillMissedForm = async () => {
+    await waitFor(() => expect(within(screen.getByLabelText('Athlete')).getByRole('option', { name: 'Marcus Reed' })).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
     fireEvent.change(screen.getByLabelText('Video session'), { target: { value: 'vid-1' } });
     fireEvent.change(screen.getByLabelText('What did you see that the model did not raise?'), {
@@ -451,10 +656,11 @@ describe('recording what the model missed', () => {
     });
   };
 
-  test('a coach can enter an observation the model never proposed', async () => {
-    let recorded: { athlete_id?: string; observation_text?: string } = {};
+  test('a coach picks the athlete and the video by name, and the ids still reach the server', async () => {
+    let recorded: { athlete_id?: string; video_session_id?: string; observation_text?: string } = {};
     global.fetch = mockFetch({
-      videos: () => [],
+      videos: () => [video()],
+      athletes: () => [athlete()],
       proposals: () => [],
       onReportObservation: (body) => { recorded = body; },
     }) as unknown as typeof fetch;
@@ -462,17 +668,51 @@ describe('recording what the model missed', () => {
     render(<CoachVideoAnalysisPage />);
     await screen.findByText('No Film Study observations awaiting review.');
 
-    fillMissedForm();
+    await fillMissedForm();
     fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
 
     await waitFor(() => expect(recorded.athlete_id).toBe('ath-1'));
+    expect(recorded.video_session_id).toBe('vid-1');
     expect(recorded.observation_text).toBe('Model said nothing about the head staying still.');
+  });
+
+  test('the video is chosen from the library the page already lists', async () => {
+    global.fetch = mockFetch({
+      videos: () => [video()],
+      athletes: () => [athlete()],
+      proposals: () => [],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    const picker = await screen.findByLabelText('Video session');
+    expect(picker.tagName).toBe('SELECT');
+    // Title plus file name: two sessions can share a title, and the coach has
+    // to be able to tell which clip they just watched.
+    await waitFor(() => {
+      expect((within(picker).getByRole('option', { name: 'Sparring round 3 · round3.mp4' }) as HTMLOptionElement).value)
+        .toBe('vid-1');
+    });
+  });
+
+  test('an empty library says there is nothing to record against', async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      athletes: () => [athlete()],
+      proposals: () => [],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    // An empty picker on its own reads as a broken form.
+    await screen.findByText('No videos in the library yet, so there is nothing to record an observation against.');
   });
 
   test('an incomplete entry is refused before anything is sent', async () => {
     let called = false;
     global.fetch = mockFetch({
-      videos: () => [],
+      videos: () => [video()],
+      athletes: () => [athlete()],
       proposals: () => [],
       onReportObservation: () => { called = true; },
     }) as unknown as typeof fetch;
@@ -480,6 +720,7 @@ describe('recording what the model missed', () => {
     render(<CoachVideoAnalysisPage />);
     await screen.findByText('No Film Study observations awaiting review.');
 
+    await waitFor(() => expect(within(screen.getByLabelText('Athlete')).getByRole('option', { name: 'Marcus Reed' })).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
 
@@ -489,7 +730,8 @@ describe('recording what the model missed', () => {
 
   test("a refused entry shows the server's reason", async () => {
     global.fetch = mockFetch({
-      videos: () => [],
+      videos: () => [video()],
+      athletes: () => [athlete()],
       proposals: () => [],
       reportObservation: () => ({
         ok: false,
@@ -501,7 +743,7 @@ describe('recording what the model missed', () => {
     render(<CoachVideoAnalysisPage />);
     await screen.findByText('No Film Study observations awaiting review.');
 
-    fillMissedForm();
+    await fillMissedForm();
     fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
 
     await screen.findByText('Forbidden: that athlete is not on your roster.');
@@ -510,7 +752,8 @@ describe('recording what the model missed', () => {
   test('a recorded observation reloads the queue rather than assuming it landed', async () => {
     let submitted = false;
     global.fetch = mockFetch({
-      videos: () => [],
+      videos: () => [video()],
+      athletes: () => [athlete()],
       // It lands pending like anything else, so it must appear in the queue
       // above rather than counting itself as settled.
       proposals: () => (submitted
@@ -532,7 +775,7 @@ describe('recording what the model missed', () => {
     render(<CoachVideoAnalysisPage />);
     await screen.findByText('No Film Study observations awaiting review.');
 
-    fillMissedForm();
+    await fillMissedForm();
     fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
 
     await screen.findByText('Head stayed still on the slip.');

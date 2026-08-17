@@ -22,6 +22,14 @@ interface VideoSession {
   created_at: string;
 }
 
+// The roster read behind every athlete picker on this page. Mirrors the shape
+// app/api/pilot/athletes/list returns, trimmed to the two columns a picker and
+// a display label need.
+interface AthleteOption {
+  athlete_id: string;
+  full_name: string;
+}
+
 interface ShadowObservationItem {
   id: string;
   source: 'event' | 'telemetry';
@@ -150,8 +158,14 @@ export default function CoachVideoAnalysisPage() {
   const [videoError, setVideoError] = useState('');
   const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
   const [observationError, setObservationError] = useState('');
+  const [athletes, setAthletes] = useState<AthleteOption[]>([]);
   const [releasingVideoId, setReleasingVideoId] = useState<string | null>(null);
   const [previewingVideoId, setPreviewingVideoId] = useState<string | null>(null);
+  // Which videos this reviewer has actually opened for review. A SET of ids
+  // rather than "is the player open right now": activeVideo is a single slot,
+  // so opening a second video would otherwise silently retract the first
+  // one's inspection and re-lock a Release the coach had earned.
+  const [previewedVideoIds, setPreviewedVideoIds] = useState<Set<string>>(new Set());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -443,6 +457,40 @@ export default function CoachVideoAnalysisPage() {
     })();
   }, []);
 
+  // Athlete options for the pickers on this page, loaded once. A coach reads
+  // the whole gym roster from this route, so the picker is the coach's own
+  // athletes by name instead of a UUID they were expected to know. A viewer
+  // whose role gets an empty or refused list simply sees no options -- the
+  // upload and observation writes are the real gate.
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { items?: AthleteOption[] };
+        if (controller.signal.aborted) return;
+        setAthletes(data.items ?? []);
+      } catch {
+        // Silent: the picker degrades to empty, and the rest of the page still
+        // reads. A failed roster load is not a failed video library.
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  // Both the library and the review queue store an athlete_id, and a UUID
+  // tells a coach nothing about which of their athletes a row is about. The
+  // roster read above is the only place a name exists on this page, so ids
+  // resolve through it -- falling back to the raw id rather than an empty
+  // string, because a row about an athlete the roster read never returned must
+  // still be identifiable enough to ask about.
+  const athleteLabel = (athleteId: string): string =>
+    athletes.find((athlete) => athlete.athlete_id === athleteId)?.full_name ?? athleteId;
+
   const handleUpload = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     const file = fileInputRef.current?.files?.[0];
@@ -486,6 +534,10 @@ export default function CoachVideoAnalysisPage() {
   // was a click made blind -- a release that cannot see the footage is the
   // rubber stamp intake/document-link already warned about for documents.
   // The link is a 15-minute SAS and every issuance is audited.
+  //
+  // Merely OFFERING the watch was still a rubber stamp with a nicer surface:
+  // an ungated Release meant nothing ever obliged the reviewer to look. So
+  // this is now the precondition for Release, not an option beside it.
   const previewForRelease = async (videoId: string, title: string) => {
     setPreviewingVideoId(videoId);
     try {
@@ -498,6 +550,9 @@ export default function CoachVideoAnalysisPage() {
       const data = (await res.json().catch(() => ({}))) as { url?: string; title?: string; error?: string };
       if (!res.ok || !data.url) throw new Error(data.error ?? `Could not open video (${res.status})`);
       setActiveVideo({ url: data.url, title: data.title ?? title });
+      // Recorded only here, after the link actually resolved -- a fetch that
+      // failed is not an inspection, and it must not unlock Release.
+      setPreviewedVideoIds((current) => new Set(current).add(videoId));
       setVideoError('');
     } catch (err) {
       setVideoError(err instanceof Error ? err.message : 'Failed to open video for review');
@@ -507,6 +562,16 @@ export default function CoachVideoAnalysisPage() {
   };
 
   const releaseVideo = async (videoId: string) => {
+    // Release is the irreversible direction: it makes footage of a minor
+    // playable for the athlete and their guardians, and nothing on this page
+    // puts it back in quarantine. The reversible half of this control -- the
+    // preview -- carries no confirm, for the same reason the portrait review
+    // only confirms the reject.
+    const confirmed = window.confirm(
+      'Release this video? It becomes playable for the athlete and their guardians, and this page cannot put it back.',
+    );
+    if (!confirmed) return;
+
     setReleasingVideoId(videoId);
     try {
       const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}/release`, {
@@ -585,8 +650,14 @@ export default function CoachVideoAnalysisPage() {
                 <input id="upload-title" type="text" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Sparring Round 3 — July 16" className="input" />
               </div>
               <div className="field">
-                <label htmlFor="upload-athlete" className="t-label">Athlete ID (optional)</label>
-                <input id="upload-athlete" type="text" value={uploadAthleteId} onChange={(e) => setUploadAthleteId(e.target.value)} placeholder="Link to specific athlete" className="input" />
+                <label htmlFor="upload-athlete" className="t-label">Athlete (optional)</label>
+                <select id="upload-athlete" className="select" value={uploadAthleteId}
+                  onChange={(e) => setUploadAthleteId(e.target.value)}>
+                  <option value="">Not linked to one athlete…</option>
+                  {athletes.map((athlete) => (
+                    <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                  ))}
+                </select>
               </div>
               <div className="field">
                 <label htmlFor="upload-notes" className="t-label">Notes</label>
@@ -636,7 +707,7 @@ export default function CoachVideoAnalysisPage() {
                     </div>
                     <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                       {v.file_name} · {formatBytes(v.file_size_bytes)}
-                      {v.athlete_id ? ` · Athlete: ${v.athlete_id}` : ''}
+                      {v.athlete_id ? ` · Athlete: ${athleteLabel(v.athlete_id)}` : ''}
                     </p>
                     <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{formatGymStamp(v.created_at)}</p>
                     {v.status === 'quarantined' ? (
@@ -644,6 +715,15 @@ export default function CoachVideoAnalysisPage() {
                         {canRelease(v)
                           ? 'Held for review. Release it to make it playable for the athlete and their guardians.'
                           : 'Held for review by the coach who uploaded it.'}
+                      </p>
+                    ) : null}
+                    {/* Law 3: the gate greys the Release button out, and grey
+                        is only colour. The requirement has to be readable as
+                        words too, or a reviewer is left guessing why the
+                        control in front of them does nothing. */}
+                    {canRelease(v) && !previewedVideoIds.has(v.video_session_id) ? (
+                      <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                        Watch it first — Release stays unavailable until you have opened this video for review.
                       </p>
                     ) : null}
                     {filmStudyJobs[v.video_session_id] ? (
@@ -658,7 +738,7 @@ export default function CoachVideoAnalysisPage() {
                         <button onClick={() => { void previewForRelease(v.video_session_id, v.title); }} disabled={previewingVideoId === v.video_session_id} className="btn btn--ghost disabled:opacity-50">
                           {previewingVideoId === v.video_session_id ? 'Opening...' : 'Watch first'}
                         </button>
-                        <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id} className="btn disabled:opacity-50">
+                        <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id || !previewedVideoIds.has(v.video_session_id)} className="btn disabled:opacity-50">
                           {releasingVideoId === v.video_session_id ? 'Releasing...' : 'Release'}
                         </button>
                       </>
@@ -759,8 +839,8 @@ export default function CoachVideoAnalysisPage() {
                 <div key={p.proposal_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
                   <p className="t-data text-[color:var(--bone-300)]">
                     {p.origin === 'coach_reported'
-                      ? `Athlete: ${p.athlete_id} · reported by a coach — the model did not propose this`
-                      : `Athlete: ${p.athlete_id} · ${p.frames_analyzed} frame(s) · ${p.model_deployment}`}
+                      ? `Athlete: ${athleteLabel(p.athlete_id)} · reported by a coach — the model did not propose this`
+                      : `Athlete: ${athleteLabel(p.athlete_id)} · ${p.frames_analyzed} frame(s) · ${p.model_deployment}`}
                   </p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
                   {/* The model's original is never overwritten, so both readings
@@ -838,25 +918,34 @@ export default function CoachVideoAnalysisPage() {
           <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2">
             <div className="field">
               <label htmlFor="missed-athlete" className="t-data text-[color:var(--bone-400)]">Athlete</label>
-              <input
-                id="missed-athlete"
-                type="text"
-                value={missedAthleteId}
-                onChange={(e) => setMissedAthleteId(e.target.value)}
-                placeholder="Athlete id"
-                className="input"
-              />
+              <select id="missed-athlete" className="select" value={missedAthleteId}
+                onChange={(e) => setMissedAthleteId(e.target.value)}>
+                <option value="">Select an athlete…</option>
+                {athletes.map((athlete) => (
+                  <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                ))}
+              </select>
             </div>
+            {/* The video is picked from the library this page already loaded,
+                not typed. There is no roster-style read to hang a picker on --
+                the videos in state ARE the org's video sessions -- and an
+                observation is only ever about footage the coach just watched
+                here, so the list is exactly the right set. Titles repeat
+                across sessions, hence the file name beside each one. */}
             <div className="field">
               <label htmlFor="missed-video" className="t-data text-[color:var(--bone-400)]">Video session</label>
-              <input
-                id="missed-video"
-                type="text"
-                value={missedVideoSessionId}
-                onChange={(e) => setMissedVideoSessionId(e.target.value)}
-                placeholder="Video session id"
-                className="input"
-              />
+              <select id="missed-video" className="select" value={missedVideoSessionId}
+                onChange={(e) => setMissedVideoSessionId(e.target.value)}>
+                <option value="">Select a video…</option>
+                {videos.map((v) => (
+                  <option key={v.video_session_id} value={v.video_session_id}>{v.title} · {v.file_name}</option>
+                ))}
+              </select>
+              {videos.length === 0 ? (
+                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                  No videos in the library yet, so there is nothing to record an observation against.
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="field mt-[var(--s3)]">
