@@ -56,7 +56,17 @@ This policy defines how long PPBF retains data about minors and their families, 
 
 ### Method 1: Automatic Deletion (Background Process)
 
-A scheduled script (`npm run pilot:cleanup-expired-data`) runs daily and hard-deletes data that has reached the end of its retention window.
+A GitHub Actions workflow (`.github/workflows/retention-cleanup.yml`) runs the
+script `npm run pilot:cleanup-deleted-data` (`scripts/pilot-cleanup-deleted-data.mjs`)
+every night at 07:40 UTC. The scheduled run is always a **dry run**: it
+reports what it would delete and hard-deletes nothing. Actually deleting
+requires a human to manually dispatch the same workflow with the `apply`
+input set to the literal string `APPLY` (any other value, including the
+default `DRY_RUN`, stays a dry run); the dispatch also lets the operator cap
+the run with `max_rows`. This is deliberate — retention windows here are
+measured in years, so waiting a day for a human to confirm the dry-run
+numbers look right costs nothing, while an automatic purge that is wrong is
+unrecoverable.
 
 **Preconditions:**
 - Data must have a `created_at` or `deleted_at` timestamp
@@ -66,10 +76,12 @@ A scheduled script (`npm run pilot:cleanup-expired-data`) runs daily and hard-de
 **Process:**
 1. Query for rows where `deleted_at + retention_window <= now()`
 2. Log the deletion to the audit trail: `event_type: 'DATA_PURGED'`
-3. Hard-delete the row from the database
+3. Hard-delete the row from the database (only when dispatched with `apply=APPLY`; the nightly schedule always dry-runs this step)
 4. Log success with count of rows deleted
 
-**Who can trigger:** Background process (no permission needed)  
+**Who can trigger:** The nightly dry run needs no human action; the actual
+hard-delete requires a person with repo access to dispatch the workflow with
+`apply=APPLY`  
 **Audit trail:** ✅ Logged with timestamp, data type, count deleted
 
 ### Method 2: Manual Deletion by Admin (On Demand)

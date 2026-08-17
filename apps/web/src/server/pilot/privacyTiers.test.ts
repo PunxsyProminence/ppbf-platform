@@ -147,7 +147,7 @@ describe('the promoted denylists are pinned exactly', () => {
     expect([...PUBLIC_SURFACE_FORBIDDEN_TABLES].sort()).toEqual([
       'pilot.assessments',
       'pilot.coach_observations',
-      'pilot.compliance_records',
+      'pilot.compliance_violations',
       'pilot.documents',
       'pilot.emergency_contacts',
       'pilot.feedback',
@@ -158,6 +158,27 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.shadow_near_misses',
       'pilot.training_holds',
     ]);
+  });
+
+  it('every forbidden table matches a real table -- no entry can silently protect nothing', () => {
+    // Regression guard: 'pilot.compliance_records' sat in this list for a
+    // while matching no real table (the athlete-linked one it meant to name
+    // is pilot.compliance_violations), so it silently protected nothing.
+    // Entries match by PREFIX, same as the wall tests matching substrings
+    // against query text -- 'pilot.feedback' covers pilot.feedback_submissions,
+    // 'pilot.shadow_medical' covers pilot.shadow_medical_administrative_status.
+    const azureDir = path.join(HERE, '../../../../../infra/azure');
+    const sqlFiles = readdirSync(azureDir).filter((file) => file.endsWith('.sql'));
+    const allSql = sqlFiles
+      .map((file) => readFileSync(path.join(azureDir, file), 'utf8'))
+      .join('\n')
+      .toLowerCase();
+    const realTables = [...allSql.matchAll(/create table if not exists\s+(pilot\.[a-z_]+)/g)].map((m) => m[1]);
+
+    for (const table of PUBLIC_SURFACE_FORBIDDEN_TABLES) {
+      const matches = realTables.some((real) => real === table || real.startsWith(table));
+      expect({ table, matches }).toEqual({ table, matches: true });
+    }
   });
 
   it('the forbidden columns are exactly the eight', () => {

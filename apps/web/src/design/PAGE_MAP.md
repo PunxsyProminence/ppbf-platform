@@ -36,6 +36,25 @@ is listed per row.
 
 ---
 
+## This inventory is stale
+
+As of 2026-08-17, `apps/web/app` has 126 `page.tsx` route files — the tables
+below, written when the app had 61-65, cover well under half of that. Whole
+top-level sections have no row anywhere in this document, including
+`director/`, `store/`, `workspace/`, `chalkboard/`, `wall/`, `profile/`,
+`print/`, `notices/`, and `names/`. Do not treat the tables below as a
+complete route list or use their absence as evidence a route doesn't exist.
+
+For current, self-correcting route coverage, use
+[`apps/web/components/buildingMap.ts`](../../components/buildingMap.ts) and
+its test,
+[`apps/web/components/buildingMapCoverage.test.ts`](../../components/buildingMapCoverage.test.ts),
+which fails when the map and the actual route tree diverge. The shape
+groupings and build-order guidance below are still useful for the routes they
+do cover; they are just not the full picture anymore.
+
+---
+
 ## Table shape — 19 routes
 
 A header, a filter row, and rows with per-row actions. Highest-leverage shape in

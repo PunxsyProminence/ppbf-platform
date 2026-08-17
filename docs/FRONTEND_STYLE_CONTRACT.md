@@ -94,10 +94,16 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
 1. Legacy files under `apps/web/src` are out-of-band and must not drive visual
    decisions.
 2. Active surfaces live under `apps/web/app` and `apps/web/components`.
-3. **The migration is complete** as of the golden-era pass (Aug 2026): every
-   route page and shared component under `apps/web/app` and
-   `apps/web/components` speaks the design system. `FeatureSurface` — the old
-   cream scaffold shell — is deleted. New work starts from the contract, not
+3. **The migration is not complete.** `FeatureSurface` — the old cream
+   scaffold shell — is deleted, and most of the app speaks the design system,
+   but as of 2026-08-17, 7 of the app's 126 route pages still mount a raw
+   Tailwind dark-mode shell (`bg-[#09090b] font-mono text-slate-*`) instead of
+   `ppbf.css` materials and tokens: `shadow`, `coach/operations`,
+   `board/dashboard`, `admin/macro-analytics`, `admin/curriculum`,
+   `admin/communications`, and `admin/retro-lab` (whose mounted
+   `PunxsyEcosystemCore.tsx` repeats the same pattern). Do not copy these
+   pages as a starting point for new work — see Drift Guardrails below for
+   the broader legacy-token count. New work starts from the contract, not
    from git archaeology.
 4. **`--red-primary` chrome misuse is purged.** That token aliases to
    `--locked` — the safety gate's red — and it no longer paints tabs, borders,
