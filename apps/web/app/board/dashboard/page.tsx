@@ -1,4 +1,3 @@
-import SampleDataNotice from '@/components/SampleDataNotice';
 import BoardViewportSwitcher from '@/src/components/board/BoardViewportSwitcher';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
@@ -16,11 +15,6 @@ export default async function BoardDashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
-      <SampleDataNotice
-        what="The budget lines, grant pipeline, and policy risk scores on this page are illustrative and are not this organization's finances."
-        realHref="/admin/grants"
-        realLabel="Grants"
-      />
       <BoardViewportSwitcher />
     </main>
   );

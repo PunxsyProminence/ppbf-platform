@@ -1,4 +1,3 @@
-import SampleDataNotice from '@/components/SampleDataNotice';
 import CurriculumProgressionEngine from '@/src/components/curriculum/CurriculumProgressionEngine';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
@@ -13,9 +12,6 @@ export default async function AdminCurriculumPage() {
 
   return (
     <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
-      <SampleDataNotice
-        what="The curriculum lanes, progression figures, and athlete placements on this page are illustrative and describe no real athlete."
-      />
       <CurriculumProgressionEngine />
     </main>
   );

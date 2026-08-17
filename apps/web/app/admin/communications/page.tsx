@@ -1,4 +1,3 @@
-import SampleDataNotice from '@/components/SampleDataNotice';
 import MediaAndCommsHub from '@/src/components/communications/MediaAndCommsHub';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
@@ -13,9 +12,6 @@ export default async function AdminCommunicationsPage() {
 
   return (
     <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
-      <SampleDataNotice
-        what="The messages, campaigns, and delivery figures on this page are illustrative and were sent to nobody."
-      />
       <MediaAndCommsHub />
     </main>
   );
