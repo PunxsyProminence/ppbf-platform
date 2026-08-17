@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
 import {
@@ -16,6 +17,24 @@ import {
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
+
+// A lost audit row must not tell an athlete who typed the correct PIN that
+// the server is broken -- same non-fatal-audit doctrine as parent/consent's
+// auditConsentEvent and compliance/violations' auditViolationEvent. Without
+// this, a transient audit-write failure turned an already-correct login into
+// a 500 raised before the session cookie was ever set.
+async function auditLoginEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try {
+    await writePilotAuditEvent(event);
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({
+      event: 'pilot-auth-login-audit-write-failed',
+      ...(code ? { code } : {}),
+    });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -92,7 +111,7 @@ export async function POST(request: NextRequest) {
     const finalRole = loginResult.principal.role;
     const hasMasterShadowAccess = loginResult.principal.hasMasterShadowAccess || false;
 
-    await writePilotAuditEvent({
+    await auditLoginEvent({
       event_type: 'login',
       actor_account_id: loginResult.principal.accountId,
       actor_role: finalRole,
