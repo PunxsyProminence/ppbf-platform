@@ -42,7 +42,17 @@ function mockFetch(options: {
   pollFilmStudyJob?: (jobId: string) => Response;
   proposals?: () => Array<Record<string, unknown>>;
   resolveProposal?: () => Response;
-  onResolveProposal?: (body: { proposal_id?: string; verdict?: string }) => void;
+  onResolveProposal?: (body: {
+    proposal_id?: string;
+    verdict?: string;
+    corrected_observation_text?: string;
+  }) => void;
+  reportObservation?: () => Response;
+  onReportObservation?: (body: {
+    athlete_id?: string;
+    video_session_id?: string;
+    observation_text?: string;
+  }) => void;
 }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -86,11 +96,26 @@ function mockFetch(options: {
     }
     if (url.includes('/api/pilot/shadow/film-study/proposals')) {
       if (init?.method === 'PATCH') {
-        const body = JSON.parse(String(init.body ?? '{}')) as { proposal_id?: string; verdict?: string };
+        const body = JSON.parse(String(init.body ?? '{}')) as {
+          proposal_id?: string;
+          verdict?: string;
+          corrected_observation_text?: string;
+        };
         options.onResolveProposal?.(body);
         return options.resolveProposal
           ? options.resolveProposal()
           : ({ ok: true, json: async () => ({ ok: true, proposal: {} }) } as Response);
+      }
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body ?? '{}')) as {
+          athlete_id?: string;
+          video_session_id?: string;
+          observation_text?: string;
+        };
+        options.onReportObservation?.(body);
+        return options.reportObservation
+          ? options.reportObservation()
+          : ({ ok: true, status: 201, json: async () => ({ ok: true, proposal: {} }) } as Response);
       }
       return { ok: true, json: async () => ({ ok: true, proposals: options.proposals ? options.proposals() : [] }) } as Response;
     }
@@ -278,6 +303,7 @@ describe('Film Study review queue', () => {
     proposal_id: 'prop-1',
     athlete_id: 'ath-1',
     video_session_id: 'vid-1',
+    origin: 'model_proposed',
     observation_text: 'Athlete kept guard low in round 2.',
     model_deployment: 'gpt-4o-vision',
     frames_analyzed: 12,
@@ -356,5 +382,159 @@ describe('Film Study review queue', () => {
     // A rejected write must not silently clear a real proposal from view --
     // the coach still needs to see it to retry or escalate.
     expect(screen.getByText('Athlete kept guard low in round 2.')).toBeTruthy();
+  });
+
+  test('correcting sends the replacement wording, not just a verdict', async () => {
+    let recorded: { verdict?: string; corrected_observation_text?: string } = {};
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      onResolveProposal: (body) => { recorded = body; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.change(await screen.findByLabelText('Corrected observation (only needed if you are correcting)'), {
+      target: { value: 'Guard dropped in round 3, not round 2.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Correct' }));
+
+    await waitFor(() => expect(recorded.verdict).toBe('corrected'));
+    expect(recorded.corrected_observation_text).toBe('Guard dropped in round 3, not round 2.');
+  });
+
+  test('a correction with no wording is refused before anything is sent', async () => {
+    let called = false;
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      onResolveProposal: () => { called = true; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Correct' }));
+
+    // An empty rewrite would settle as 'corrected' while reading, downstream,
+    // as agreement.
+    await screen.findByText('Write the corrected observation before recording a correction.');
+    expect(called).toBe(false);
+    expect(screen.getByText('Athlete kept guard low in round 2.')).toBeTruthy();
+  });
+
+  test('a coach-reported observation says the model did not propose it', async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal({
+        origin: 'coach_reported',
+        observation_text: 'Head stayed still on the slip.',
+        model_deployment: null,
+        frames_analyzed: null,
+      })],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByText('Head stayed still on the slip.');
+    // It must not render "null frame(s) · null" -- a coach entry has no
+    // inference run to describe, and saying so is the point of the row.
+    await screen.findByText(/reported by a coach — the model did not propose this/);
+  });
+});
+
+describe('recording what the model missed', () => {
+  const fillMissedForm = () => {
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Video session'), { target: { value: 'vid-1' } });
+    fireEvent.change(screen.getByLabelText('What did you see that the model did not raise?'), {
+      target: { value: 'Model said nothing about the head staying still.' },
+    });
+  };
+
+  test('a coach can enter an observation the model never proposed', async () => {
+    let recorded: { athlete_id?: string; observation_text?: string } = {};
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [],
+      onReportObservation: (body) => { recorded = body; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+    await screen.findByText('No Film Study observations awaiting review.');
+
+    fillMissedForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
+
+    await waitFor(() => expect(recorded.athlete_id).toBe('ath-1'));
+    expect(recorded.observation_text).toBe('Model said nothing about the head staying still.');
+  });
+
+  test('an incomplete entry is refused before anything is sent', async () => {
+    let called = false;
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [],
+      onReportObservation: () => { called = true; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+    await screen.findByText('No Film Study observations awaiting review.');
+
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
+
+    await screen.findByText('Athlete, video and the observation are all required.');
+    expect(called).toBe(false);
+  });
+
+  test("a refused entry shows the server's reason", async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [],
+      reportObservation: () => ({
+        ok: false,
+        status: 403,
+        json: async () => ({ ok: false, error: 'Forbidden: that athlete is not on your roster.' }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+    await screen.findByText('No Film Study observations awaiting review.');
+
+    fillMissedForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
+
+    await screen.findByText('Forbidden: that athlete is not on your roster.');
+  });
+
+  test('a recorded observation reloads the queue rather than assuming it landed', async () => {
+    let submitted = false;
+    global.fetch = mockFetch({
+      videos: () => [],
+      // It lands pending like anything else, so it must appear in the queue
+      // above rather than counting itself as settled.
+      proposals: () => (submitted
+        ? [{
+          proposal_id: 'prop-2',
+          athlete_id: 'ath-1',
+          video_session_id: 'vid-1',
+          origin: 'coach_reported',
+          observation_text: 'Head stayed still on the slip.',
+          model_deployment: null,
+          frames_analyzed: null,
+          review_state: 'pending_review',
+          created_at: '2026-08-04T00:00:00.000Z',
+        }]
+        : []),
+      onReportObservation: () => { submitted = true; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+    await screen.findByText('No Film Study observations awaiting review.');
+
+    fillMissedForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
+
+    await screen.findByText('Head stayed still on the slip.');
   });
 });

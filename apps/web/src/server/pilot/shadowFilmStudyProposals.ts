@@ -18,8 +18,24 @@ import { randomUUID } from 'node:crypto';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 
-export type FilmStudyProposalReviewState = 'pending_review' | 'accepted' | 'rejected';
-export type FilmStudyProposalVerdict = Extract<FilmStudyProposalReviewState, 'accepted' | 'rejected'>;
+export type FilmStudyProposalReviewState =
+  | 'pending_review'
+  | 'accepted'
+  | 'rejected'
+  | 'corrected';
+export type FilmStudyProposalVerdict = Extract<
+  FilmStudyProposalReviewState,
+  'accepted' | 'rejected' | 'corrected'
+>;
+
+/**
+ * Where the row came from. A model proposal states the deployment that made it
+ * and how many frames it saw; a coach-reported observation states the coach.
+ * Neither can borrow the other's provenance -- the database enforces that
+ * (pilot_film_study_proposals_provenance), because a coach-entered observation
+ * with a model_deployment filled in would be an invented inference run.
+ */
+export type FilmStudyProposalOrigin = 'model_proposed' | 'coach_reported';
 
 export interface FilmStudyProposalRow {
   proposal_id: string;
@@ -27,11 +43,19 @@ export interface FilmStudyProposalRow {
   athlete_id: string;
   video_session_id: string;
   job_id: string | null;
+  origin: FilmStudyProposalOrigin;
   observation_text: string;
   evidence_id: string;
-  model_deployment: string;
-  frames_analyzed: number;
+  // Null exactly when origin is 'coach_reported': there was no inference run
+  // to describe.
+  model_deployment: string | null;
+  frames_analyzed: number | null;
+  // Null exactly when origin is 'model_proposed'.
+  reported_by_account_id: string | null;
   review_state: FilmStudyProposalReviewState;
+  // The coach's replacement wording, present only on a 'corrected' row. The
+  // original observation_text is never overwritten.
+  corrected_observation_text: string | null;
   reviewed_by_account_id: string | null;
   reviewed_by_role: string | null;
   reviewed_at: string | null;
@@ -42,10 +66,22 @@ export interface FilmStudyProposalRow {
 
 const PROPOSAL_COLUMNS = `
   proposal_id, organization_id, athlete_id, video_session_id, job_id,
-  observation_text, evidence_id, model_deployment, frames_analyzed,
-  review_state, reviewed_by_account_id, reviewed_by_role, reviewed_at,
+  origin, observation_text, evidence_id, model_deployment, frames_analyzed,
+  reported_by_account_id, review_state, corrected_observation_text,
+  reviewed_by_account_id, reviewed_by_role, reviewed_at,
   review_notes, created_at, updated_at
 `;
+
+/**
+ * The SQL predicate any "how often do coaches accept what the model proposed"
+ * measurement must sit behind, exported so callers do not hand-roll it.
+ *
+ * A coach-reported observation that a coach then accepts is not evidence the
+ * model was right -- it is evidence the model missed something. Counting it as
+ * an acceptance would invert its meaning and inflate the very number the
+ * missed-detection path was added to make honest.
+ */
+export const MODEL_PROPOSAL_SCOPE_SQL = "origin = 'model_proposed'";
 
 /**
  * Build the citable evidence id for a proposal. Server-derived, mirroring the
@@ -78,8 +114,8 @@ export async function createFilmStudyProposal(input: {
   const row = await queryOne<FilmStudyProposalRow>(
     `insert into pilot.shadow_film_study_proposals
        (proposal_id, organization_id, athlete_id, video_session_id, job_id,
-        observation_text, evidence_id, model_deployment, frames_analyzed)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        origin, observation_text, evidence_id, model_deployment, frames_analyzed)
+     values ($1, $2, $3, $4, $5, 'model_proposed', $6, $7, $8, $9)
      on conflict (job_id) where job_id is not null
        do update set updated_at = now()
      returning ${PROPOSAL_COLUMNS}`,
@@ -93,6 +129,60 @@ export async function createFilmStudyProposal(input: {
       buildFilmStudyEvidenceId(input.videoSessionId),
       input.modelDeployment,
       input.framesAnalyzed,
+    ],
+  );
+  if (!row) {
+    throw new Error('SHADOW_FILM_PROPOSAL_WRITE_FAILED');
+  }
+  return row;
+}
+
+/**
+ * Record an observation the coach saw and the model did not -- the missed
+ * detection.
+ *
+ * Without this, the review record describes only what the vision pipeline
+ * produced, so a model proposing one easy observation per video and getting it
+ * accepted looks exactly like a model that finds everything. Acceptance rate
+ * measures agreement on what was proposed and is blind to false negatives by
+ * construction; this is the path that lets one be entered.
+ *
+ * It lands `pending_review` like any other row, and that is deliberate rather
+ * than an oversight. Creating it pre-accepted would give it no exit, and a row
+ * about an identifiable minor that nothing can retract is the C1/C2 failure
+ * (#122) rebuilt in a new place. One lifecycle, both exits reachable, whoever
+ * authored it.
+ *
+ * No model_deployment or frames_analyzed is written, and the database refuses
+ * a coach row that carries them: there was no inference run, and describing
+ * one would be inventing provenance.
+ */
+export async function createCoachReportedObservation(input: {
+  organizationId: string;
+  athleteId: string;
+  videoSessionId: string;
+  observationText: string;
+  reportedByAccountId: string;
+}): Promise<FilmStudyProposalRow> {
+  const observationText = input.observationText.trim();
+  if (!observationText) {
+    throw new Error('Missing observation_text');
+  }
+
+  const row = await queryOne<FilmStudyProposalRow>(
+    `insert into pilot.shadow_film_study_proposals
+       (proposal_id, organization_id, athlete_id, video_session_id,
+        origin, observation_text, evidence_id, reported_by_account_id)
+     values ($1, $2, $3, $4, 'coach_reported', $5, $6, $7)
+     returning ${PROPOSAL_COLUMNS}`,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.athleteId,
+      input.videoSessionId,
+      observationText.slice(0, 4000),
+      buildFilmStudyEvidenceId(input.videoSessionId),
+      input.reportedByAccountId,
     ],
   );
   if (!row) {
@@ -143,10 +233,16 @@ export async function getFilmStudyProposal(
 /**
  * Settle a proposal: the human attestation the safety design requires.
  *
- * BOTH verdicts are always reachable from pending_review, and nothing about
- * the proposal's content can block either one -- an observation the coach
- * disagrees with is exactly what 'rejected' is for. That is the C1/C2 lesson
- * (#122) encoded as a rule rather than relearned.
+ * ALL THREE verdicts are always reachable from pending_review, and nothing
+ * about the proposal's content can block any of them -- an observation the
+ * coach disagrees with is exactly what 'rejected' is for. That is the C1/C2
+ * lesson (#122) encoded as a rule rather than relearned.
+ *
+ * 'corrected' exists because rejection was previously the only thing a coach
+ * who was nearly in agreement could reach, and it discarded what they knew.
+ * A correction carries the coach's replacement wording alongside the model's
+ * original, which is never overwritten -- both readings survive, so a later
+ * reader can see what the model said and what the coach made of it.
  *
  * Only a pending proposal can be settled: re-deciding a settled one would
  * overwrite who attested to it. Returns null when nothing was settled, which
@@ -159,7 +255,19 @@ export async function resolveFilmStudyProposal(input: {
   reviewerAccountId: string;
   reviewerRole: PilotRole;
   notes?: string | null;
+  correctedObservationText?: string | null;
 }): Promise<FilmStudyProposalRow | null> {
+  const correctedText = input.correctedObservationText?.trim() ?? '';
+  // Checked here rather than left to the constraint so the caller gets a named
+  // failure instead of a raw check violation, and so a correction can never be
+  // recorded as an empty rewrite that reads as agreement.
+  if (input.verdict === 'corrected' && !correctedText) {
+    throw new Error('Missing corrected_observation_text for a corrected verdict');
+  }
+  if (input.verdict !== 'corrected' && correctedText) {
+    throw new Error('corrected_observation_text is only valid with a corrected verdict');
+  }
+
   return queryOne<FilmStudyProposalRow>(
     `update pilot.shadow_film_study_proposals
      set review_state = $3,
@@ -167,6 +275,7 @@ export async function resolveFilmStudyProposal(input: {
          reviewed_by_role = $5,
          reviewed_at = now(),
          review_notes = $6,
+         corrected_observation_text = $7,
          updated_at = now()
      where organization_id = $1
        and proposal_id = $2
@@ -179,6 +288,7 @@ export async function resolveFilmStudyProposal(input: {
       input.reviewerAccountId,
       input.reviewerRole,
       input.notes?.slice(0, 2000) ?? null,
+      input.verdict === 'corrected' ? correctedText.slice(0, 4000) : null,
     ],
   );
 }

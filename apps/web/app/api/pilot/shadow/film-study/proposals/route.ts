@@ -16,6 +16,7 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  createCoachReportedObservation,
   getFilmStudyProposal,
   listFilmStudyProposals,
   resolveFilmStudyProposal,
@@ -30,7 +31,7 @@ export const runtime = 'nodejs';
 // strictly NARROWER in depth, and per-athlete observations are depth.
 const PROPOSAL_REVIEWER_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
-const VERDICTS = new Set<string>(['accepted', 'rejected']);
+const VERDICTS = new Set<string>(['accepted', 'rejected', 'corrected']);
 
 export async function GET(request: NextRequest) {
   try {
@@ -71,17 +72,21 @@ export async function PATCH(request: NextRequest) {
       proposal_id?: unknown;
       verdict?: unknown;
       notes?: unknown;
+      corrected_observation_text?: unknown;
     };
 
     const proposalId = typeof body.proposal_id === 'string' ? body.proposal_id.trim() : '';
     const verdict = typeof body.verdict === 'string' ? body.verdict : '';
     const notes = typeof body.notes === 'string' ? body.notes : null;
+    const correctedObservationText = typeof body.corrected_observation_text === 'string'
+      ? body.corrected_observation_text
+      : null;
 
     if (!proposalId || !isUuid(proposalId)) {
       throw new Error('Missing proposal_id');
     }
     if (!VERDICTS.has(verdict)) {
-      throw new Error('Missing verdict: expected "accepted" or "rejected"');
+      throw new Error('Missing verdict: expected "accepted", "rejected" or "corrected"');
     }
 
     // Loaded before settling so the athlete-access check runs against the
@@ -99,6 +104,7 @@ export async function PATCH(request: NextRequest) {
       reviewerAccountId: principal.accountId,
       reviewerRole: principal.role,
       notes,
+      correctedObservationText,
     });
 
     // The proposal exists and the caller may see it, so the only way to reach
@@ -126,15 +132,94 @@ export async function PATCH(request: NextRequest) {
       details: {
         action: 'film_study_proposal_verdict',
         verdict,
+        origin: settled.origin,
         athlete_id: settled.athlete_id,
         video_session_id: settled.video_session_id,
-        model_deployment: settled.model_deployment,
-        frames_analyzed: settled.frames_analyzed,
+        model_deployment: settled.model_deployment ?? '',
+        frames_analyzed: settled.frames_analyzed ?? 0,
+        // Recorded so the audit trail shows a correction changed the wording,
+        // without reproducing an observation about a minor into the audit log.
+        corrected: settled.corrected_observation_text !== null,
         notes: notes ?? '',
       },
     });
 
     return NextResponse.json({ ok: true, proposal: settled });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+/**
+ * POST — the missed detection: a coach records an observation the model never
+ * proposed.
+ *
+ * Until this existed the queue could only hold the vision pipeline's own
+ * output, so the review record was blind to what the model failed to say. A
+ * model offering one easy observation per video and having it accepted scored
+ * the same as one that found everything.
+ *
+ * The entry lands `pending_review` like any other row rather than
+ * pre-accepted, so it keeps both exits: a mis-entered observation about a
+ * minor must be retractable (#122).
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...PROPOSAL_REVIEWER_ROLES]);
+
+    const body = (await request.json().catch(() => ({}))) as {
+      athlete_id?: unknown;
+      video_session_id?: unknown;
+      observation_text?: unknown;
+    };
+
+    const athleteId = typeof body.athlete_id === 'string' ? body.athlete_id.trim() : '';
+    const videoSessionId = typeof body.video_session_id === 'string'
+      ? body.video_session_id.trim()
+      : '';
+    const observationText = typeof body.observation_text === 'string'
+      ? body.observation_text.trim()
+      : '';
+
+    if (!athleteId) {
+      throw new Error('Missing athlete_id');
+    }
+    if (!videoSessionId) {
+      throw new Error('Missing video_session_id');
+    }
+    if (!observationText) {
+      throw new Error('Missing observation_text');
+    }
+
+    // Same per-athlete access check every athlete-scoped write takes. Writing
+    // an observation about an athlete is at least as sensitive as reading one.
+    await assertActorCanAccessAthlete(principal, athleteId);
+
+    const proposal = await createCoachReportedObservation({
+      organizationId: principal.organizationId,
+      athleteId,
+      videoSessionId,
+      observationText,
+      reportedByAccountId: principal.accountId,
+    });
+
+    await writePilotAuditEvent({
+      event_type: 'create',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: 'shadow_film_study_proposal',
+      entity_id: proposal.proposal_id,
+      details: {
+        action: 'film_study_coach_reported_observation',
+        origin: proposal.origin,
+        athlete_id: proposal.athlete_id,
+        video_session_id: proposal.video_session_id,
+      },
+    });
+
+    return NextResponse.json({ ok: true, proposal }, { status: 201 });
   } catch (error) {
     return jsonError(error);
   }

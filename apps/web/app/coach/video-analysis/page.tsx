@@ -47,10 +47,14 @@ interface FilmStudyProposal {
   proposal_id: string;
   athlete_id: string;
   video_session_id: string;
+  // 'coach_reported' is an observation a coach entered because the model never
+  // proposed it. Those rows carry no inference run, so the two model columns
+  // below are null on them rather than filled with a stand-in.
+  origin: 'model_proposed' | 'coach_reported';
   observation_text: string;
-  model_deployment: string;
-  frames_analyzed: number;
-  review_state: 'pending_review' | 'accepted' | 'rejected';
+  model_deployment: string | null;
+  frames_analyzed: number | null;
+  review_state: 'pending_review' | 'accepted' | 'rejected' | 'corrected';
   created_at: string;
 }
 
@@ -159,6 +163,12 @@ export default function CoachVideoAnalysisPage() {
   const [proposals, setProposals] = useState<FilmStudyProposal[]>([]);
   const [proposalsError, setProposalsError] = useState('');
   const [resolvingProposalId, setResolvingProposalId] = useState<string | null>(null);
+  const [correctionDrafts, setCorrectionDrafts] = useState<Record<string, string>>({});
+  const [missedAthleteId, setMissedAthleteId] = useState('');
+  const [missedVideoSessionId, setMissedVideoSessionId] = useState('');
+  const [missedObservation, setMissedObservation] = useState('');
+  const [missedSubmitting, setMissedSubmitting] = useState(false);
+  const [missedError, setMissedError] = useState('');
 
   const [validation, setValidation] = useState<FilmStudyValidationReport | null>(null);
   const [validationSummary, setValidationSummary] = useState('');
@@ -294,22 +304,43 @@ export default function CoachVideoAnalysisPage() {
     }
   };
 
-  const resolveProposal = async (proposal: FilmStudyProposal, verdict: 'accepted' | 'rejected') => {
+  const resolveProposal = async (
+    proposal: FilmStudyProposal,
+    verdict: 'accepted' | 'rejected' | 'corrected',
+  ) => {
+    // A correction without replacement wording would settle as 'corrected'
+    // while reading, downstream, as agreement. Refused here as well as in the
+    // server module so the coach sees why nothing happened.
+    const correctedText = (correctionDrafts[proposal.proposal_id] ?? '').trim();
+    if (verdict === 'corrected' && !correctedText) {
+      setProposalsError('Write the corrected observation before recording a correction.');
+      return;
+    }
+
     setResolvingProposalId(proposal.proposal_id);
     try {
       const res = await fetch(`${apiBase()}/api/pilot/shadow/film-study/proposals`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proposal_id: proposal.proposal_id, verdict }),
+        body: JSON.stringify({
+          proposal_id: proposal.proposal_id,
+          verdict,
+          ...(verdict === 'corrected' ? { corrected_observation_text: correctedText } : {}),
+        }),
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? `Could not record verdict (${res.status}).`);
       }
-      // The settled proposal leaves the pending queue either way -- accepting
-      // and rejecting are both an exit, not just accepting.
+      // The settled proposal leaves the pending queue whichever exit it took --
+      // accepting, rejecting and correcting are all an exit, not just accepting.
       setProposals((current) => current.filter((p) => p.proposal_id !== proposal.proposal_id));
+      setCorrectionDrafts((current) => {
+        const next = { ...current };
+        delete next[proposal.proposal_id];
+        return next;
+      });
       setProposalsError('');
       // This verdict IS one more data point in the measurement above, so the
       // panel is re-read rather than left showing the figure from before the
@@ -319,6 +350,48 @@ export default function CoachVideoAnalysisPage() {
       setProposalsError(err instanceof Error ? err.message : 'Could not record verdict.');
     } finally {
       setResolvingProposalId(null);
+    }
+  };
+
+  /**
+   * The missed detection. Without this the queue only ever holds what the
+   * model produced, so a model that proposes one easy observation per video
+   * and gets it accepted is indistinguishable from one that finds everything.
+   */
+  const submitMissedObservation = async () => {
+    const athleteId = missedAthleteId.trim();
+    const videoSessionId = missedVideoSessionId.trim();
+    const observationText = missedObservation.trim();
+    if (!athleteId || !videoSessionId || !observationText) {
+      setMissedError('Athlete, video and the observation are all required.');
+      return;
+    }
+
+    setMissedSubmitting(true);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/shadow/film-study/proposals`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          video_session_id: videoSessionId,
+          observation_text: observationText,
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Could not record the observation (${res.status}).`);
+      }
+      setMissedObservation('');
+      setMissedError('');
+      // It lands pending like anything else, so it appears in the queue above
+      // rather than silently counting itself as settled.
+      loadProposals();
+    } catch (err) {
+      setMissedError(err instanceof Error ? err.message : 'Could not record the observation.');
+    } finally {
+      setMissedSubmitting(false);
     }
   };
 
@@ -672,17 +745,45 @@ export default function CoachVideoAnalysisPage() {
               {proposals.map((p) => (
                 <div key={p.proposal_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
                   <p className="t-data text-[color:var(--bone-300)]">
-                    Athlete: {p.athlete_id} · {p.frames_analyzed} frame(s) · {p.model_deployment}
+                    {p.origin === 'coach_reported'
+                      ? `Athlete: ${p.athlete_id} · reported by a coach — the model did not propose this`
+                      : `Athlete: ${p.athlete_id} · ${p.frames_analyzed} frame(s) · ${p.model_deployment}`}
                   </p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
                   <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{formatGymStamp(p.created_at)}</p>
-                  <div className="mt-[var(--s3)] flex gap-[var(--s3)]">
+                  <div className="field mt-[var(--s3)]">
+                    <label htmlFor={`correction-${p.proposal_id}`} className="t-data text-[color:var(--bone-400)]">
+                      Corrected observation (only needed if you are correcting)
+                    </label>
+                    <textarea
+                      id={`correction-${p.proposal_id}`}
+                      value={correctionDrafts[p.proposal_id] ?? ''}
+                      onChange={(e) => {
+                        const { value } = e.target;
+                        setCorrectionDrafts((current) => ({ ...current, [p.proposal_id]: value }));
+                      }}
+                      rows={2}
+                      placeholder="Reword what the model got nearly right..."
+                      className="textarea"
+                    />
+                  </div>
+                  <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                     <button
                       onClick={() => { void resolveProposal(p, 'accepted'); }}
                       disabled={resolvingProposalId === p.proposal_id}
                       className="btn disabled:opacity-50"
                     >
                       {resolvingProposalId === p.proposal_id ? 'Recording...' : 'Accept'}
+                    </button>
+                    {/* The third exit: rejection used to be the only thing a
+                        coach who was nearly in agreement could reach, and it
+                        threw away what they knew. */}
+                    <button
+                      onClick={() => { void resolveProposal(p, 'corrected'); }}
+                      disabled={resolvingProposalId === p.proposal_id}
+                      className="btn btn--ghost disabled:opacity-50"
+                    >
+                      {resolvingProposalId === p.proposal_id ? 'Recording...' : 'Correct'}
                     </button>
                     <button
                       onClick={() => { void resolveProposal(p, 'rejected'); }}
@@ -696,6 +797,64 @@ export default function CoachVideoAnalysisPage() {
               ))}
             </div>
           )}
+        </section>
+
+        <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+          <h2 className="t-eyebrow">Record Something The Model Missed</h2>
+          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+            The queue above only ever shows what Film Study proposed, so it cannot see what Film Study failed to
+            say. If you watched a clip and the model said nothing about something that mattered, record it here.
+            It joins the review queue like any other observation and waits for a verdict.
+          </p>
+          <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2">
+            <div className="field">
+              <label htmlFor="missed-athlete" className="t-data text-[color:var(--bone-400)]">Athlete</label>
+              <input
+                id="missed-athlete"
+                type="text"
+                value={missedAthleteId}
+                onChange={(e) => setMissedAthleteId(e.target.value)}
+                placeholder="Athlete id"
+                className="input"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="missed-video" className="t-data text-[color:var(--bone-400)]">Video session</label>
+              <input
+                id="missed-video"
+                type="text"
+                value={missedVideoSessionId}
+                onChange={(e) => setMissedVideoSessionId(e.target.value)}
+                placeholder="Video session id"
+                className="input"
+              />
+            </div>
+          </div>
+          <div className="field mt-[var(--s3)]">
+            <label htmlFor="missed-observation" className="t-data text-[color:var(--bone-400)]">
+              What did you see that the model did not raise?
+            </label>
+            <textarea
+              id="missed-observation"
+              value={missedObservation}
+              onChange={(e) => setMissedObservation(e.target.value)}
+              rows={3}
+              placeholder="Describe what you observed, in the same terms you would use with the athlete..."
+              className="textarea"
+            />
+          </div>
+          {missedError ? (
+            <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{missedError}</p>
+          ) : null}
+          <div className="mt-[var(--s3)]">
+            <button
+              onClick={() => { void submitMissedObservation(); }}
+              disabled={missedSubmitting}
+              className="btn disabled:opacity-50"
+            >
+              {missedSubmitting ? 'Recording...' : 'Add to review queue'}
+            </button>
+          </div>
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
