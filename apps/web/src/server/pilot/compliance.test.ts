@@ -5,6 +5,7 @@ function fakeClient() {
 let currentClient: ReturnType<typeof fakeClient>;
 
 jest.mock('./db', () => ({
+  ...jest.requireActual('./db'),
   query: jest.fn(async () => []),
   queryOne: jest.fn(async () => null),
   withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => fn(currentClient)),
@@ -15,6 +16,7 @@ import {
   escalateViolation,
   getComplianceRulesByCategory,
   getOrganizationViolationSummary,
+  shouldAutoEscalateViolationRule,
   transitionComplianceViolation,
 } from './compliance';
 import { query, queryOne } from './db';
@@ -201,6 +203,59 @@ describe('createComplianceViolation', () => {
     const refusal = await createComplianceViolation(params('URGENT!!')).catch((error) => error);
 
     expect(jsonError(refusal).status).toBe(400);
+  });
+
+  test('shouldAutoEscalateViolationRule is true only for board/parent -- the two levels the manual Escalate action cannot reach', () => {
+    expect(shouldAutoEscalateViolationRule('board')).toBe(true);
+    expect(shouldAutoEscalateViolationRule('parent')).toBe(true);
+    expect(shouldAutoEscalateViolationRule('coach')).toBe(false);
+    expect(shouldAutoEscalateViolationRule('admin')).toBe(false);
+  });
+
+  test('a rule seeded for board-level escalation auto-files one at creation and comes back escalated', async () => {
+    mockQuery.mockResolvedValueOnce([{ violation_id: 'v1', status: 'new', escalation_status: 'pending' }]);
+    mockQueryOne.mockResolvedValueOnce({
+      rule_id: 'rule-1', rule_name: 'Board rule', rule_category: 'protocol',
+      severity: 'high', escalation_level: 'board', active_flag: true,
+    });
+    // escalateViolation's own CAS query, inside the transaction client.
+    currentClient.query.mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] });
+
+    const result = await createComplianceViolation(params('high'));
+
+    expect(result).toEqual({ violation_id: 'v1', status: 'escalated', escalation_status: 'in_progress' });
+    expect(currentClient.query).toHaveBeenCalledTimes(2);
+    const [, escalateParams] = currentClient.query.mock.calls[0];
+    expect(escalateParams).toEqual(['v1', 'org-1']);
+    expect(currentClient.query.mock.calls[1][0]).toContain('insert into pilot.violation_escalations');
+  });
+
+  test('a rule seeded for coach- or admin-level escalation is left alone -- already manually reachable', async () => {
+    for (const escalationLevel of ['coach', 'admin']) {
+      mockQuery.mockResolvedValueOnce([{ violation_id: 'v1', status: 'new', escalation_status: 'pending' }]);
+      mockQueryOne.mockResolvedValueOnce({
+        rule_id: 'rule-1', rule_name: 'Ordinary rule', rule_category: 'protocol',
+        severity: 'high', escalation_level: escalationLevel, active_flag: true,
+      });
+
+      const result = await createComplianceViolation(params('high'));
+
+      expect(result).toEqual({ violation_id: 'v1', status: 'new', escalation_status: 'pending' });
+      expect(currentClient.query).not.toHaveBeenCalled();
+    }
+  });
+
+  test('a failed auto-escalation does not undo the violation or surface as the caller\'s fault', async () => {
+    mockQuery.mockResolvedValueOnce([{ violation_id: 'v1', status: 'new', escalation_status: 'pending' }]);
+    mockQueryOne.mockResolvedValueOnce({
+      rule_id: 'rule-1', rule_name: 'Board rule', rule_category: 'protocol',
+      severity: 'high', escalation_level: 'board', active_flag: true,
+    });
+    currentClient.query.mockRejectedValueOnce(new Error('db unavailable'));
+
+    const result = await createComplianceViolation(params('high'));
+
+    expect(result).toEqual({ violation_id: 'v1', status: 'new', escalation_status: 'pending' });
   });
 });
 

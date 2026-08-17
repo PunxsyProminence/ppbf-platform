@@ -4,7 +4,7 @@ import {
   boardCountMetric,
   type BoardCountMetric,
 } from './boardSummary';
-import { query, queryOne, withTransaction } from './db';
+import { query, queryOne, sanitizedSqlState, withTransaction } from './db';
 
 const COMPLIANCE_SEVERITIES = ['critical', 'high', 'medium', 'low'] as const;
 
@@ -106,6 +106,21 @@ function violationMetric(
   return { status: gated.status, count: Number(recordCountInput) };
 }
 
+// The compliance centre's own manual Escalate action (PATCH
+// /api/pilot/compliance/violations, admin/compliance-center's dropdown) only
+// ever offers 'organization_admin' or 'admin' -- a rule seeded with
+// escalation_level 'board' or 'parent' can structurally never reach one that
+// way. 'coach' and 'admin' rules stay on the ordinary
+// new -> acknowledge/escalate/dismiss triage path unchanged: an admin can
+// already reach those manually, so there is no gap to close for them, and
+// forcing every violation straight to 'escalated' at birth would make
+// 'dismiss' (which only accepts 'new'/'acknowledged' as a source) permanently
+// unreachable for the common case. 'board' and 'parent' are the two values
+// the audit found genuinely dead, so only those two auto-file.
+export function shouldAutoEscalateViolationRule(escalationLevel: string): boolean {
+  return escalationLevel === 'board' || escalationLevel === 'parent';
+}
+
 export async function createComplianceViolation(params: {
   organizationId: string;
   ruleId: string;
@@ -147,7 +162,41 @@ export async function createComplianceViolation(params: {
     ],
   );
 
-  return result[0];
+  const violation = result[0];
+
+  // Best-effort, matching escalationLadder's own downstream-alarm precedent
+  // (videoScanSweep.ts's fileEscalation call, feedback/submit's
+  // fileAthleteVoiceEscalation): the violation row is already durable, so a
+  // failure here (rule deleted since, transient DB error) must not undo the
+  // creation or surface as the caller's fault -- it only stays 'new' instead
+  // of 'escalated', same as if this rule had never carried an escalation
+  // level at all.
+  try {
+    const rule = await getComplianceRuleById(params.organizationId, params.ruleId);
+    if (rule && shouldAutoEscalateViolationRule(rule.escalation_level)) {
+      await escalateViolation({
+        organizationId: params.organizationId,
+        violationId: violation.violation_id,
+        escalatedByAccountId: params.detectedByAccountId,
+        escalatedToRole: rule.escalation_level,
+        escalationReason:
+          `Auto-escalated at creation: rule '${rule.rule_name}' is seeded for `
+          + `${rule.escalation_level}-level escalation.`,
+      });
+      violation.status = 'escalated';
+      violation.escalation_status = 'in_progress';
+    }
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error
+      ? (error as { code: unknown }).code
+      : undefined;
+    console.error({
+      event: 'compliance-violation-auto-escalation-failed',
+      code: sanitizedSqlState(rawCode),
+    });
+  }
+
+  return violation;
 }
 
 export async function escalateViolation(params: {
