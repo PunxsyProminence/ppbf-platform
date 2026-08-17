@@ -165,14 +165,39 @@ for Henry," and "I also could not verify a public ruleset for the specific 'A2P 
 
 ## Four defects worth acting on separately
 
-1. **An unsourced aquatic protocol is filed under measurement, not water safety.**
-   `R19/Baseline_Test_Battery_Directions_and_Standards.docx` contains the only aquatic protocol
-   content anywhere in the five folders — a 500 m swim with a 12:30 green cut-score, a two-minute
-   tread, and conditional underwater work with a lifeguard-coverage stop rule. **No source is given
-   for any threshold.** It sits in R19 while R15 holds zero retrieved sources, and its own note says
-   to verify against the current recruiter packet before using it as a gate sheet. This is the
-   highest-risk item found: a hard water cut-score with no evidence behind it, in the domain
-   `THESIS_15` flags as "the failure mode is a child drowning."
+1. **Three different subjects are easy to merge here, and merging them is the actual risk.**
+   Keep them apart:
+
+   - **Water safety / drowning prevention (R15).** Youth safeguarding: water competency,
+     supervision, life jackets, adapted aquatics. The four references above. Dormant lane,
+     conditional on a roadmap decision.
+   - **Military water readiness (the Henry material, and `R19/Baseline_Test_Battery_Directions_and_Standards.docx`).**
+     Air Force Special Warfare accession preparation for one named athlete — a 500 m swim, a
+     two-minute tread, a 4-mile ruck at 45 lb, pull-ups, a 1.5-mile run. Performance standards for
+     an adult pursuing a specific pipeline.
+   - **Weight-cutting safety (`weight_management_safety`).** Rapid weight loss in amateur boxers,
+     PMID `33790193`. A separate capability with its own evidence.
+
+   These share the word "water" and nothing else. A drowning-prevention framework does not
+   validate a 500 m swim standard, and an accession standard says nothing about whether a child
+   is safe in a pool.
+
+   **What is actually defective:** the battery is a personal military-prep artifact sitting in
+   R19, a platform research area, with no marker saying so — which is what made it look like
+   platform aquatic doctrine. Its thresholds also state no source. They are not baseless: the
+   AFPC Pre-Accessions AFSPECWAR manual, cited in the Henry PDF, gives a 500 m swim in 15:00 as
+   the entry minimum and says plainly that barely meeting the entry standard is not enough, so a
+   12:30 green band is a reasonable derivation from a real source. The defect is an **undocumented
+   derivation**, not an invented number. The document's own note — verify against the current
+   recruiter packet before using it as a gate sheet — is the correct instinct.
+
+   **The one genuine safety thread**, and it is narrow: the battery includes conditional
+   underwater/breath-hold work. The guidance that restrains exactly that — CDC's warning against
+   hyperventilating before underwater swimming and prolonged breath-holding, and the joint
+   American Red Cross / USA Swimming / YMCA hypoxic-blackout statement — is invoked in the Henry
+   PDF but is among the claims whose footnote marker resolves to the wrong source. So the
+   restraint on the riskiest component is the part that is uncited. That is worth fixing on its
+   own terms, and it is a breath-hold question, not a drowning-prevention-curriculum question.
 
 2. **Something else is writing to the intake tree concurrently.** R15 and R16 each gained a file
    mid-session during this investigation. `R08_FORTIFICATION_MASTER_INDEX_2026-08-17.md` (written
