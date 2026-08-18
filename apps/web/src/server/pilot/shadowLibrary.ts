@@ -349,6 +349,7 @@ async function ensureClaimResearchRequirement(input: {
     researchRequirement,
     knowledgeGap,
     evidenceLabel: input.subjectId,
+    subjectId: input.subjectId,
     sourceStatus: input.status === 'unsupported' ? 'missing' : 'weak',
     sourceConfidenceTier: 'INSUFFICIENT',
     sourceVerificationState: 'unknown',
