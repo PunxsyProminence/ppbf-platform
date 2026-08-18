@@ -100,6 +100,64 @@ live status. It is updated when a pass changes state, not at the end.
 | 12 | Docs vs. code | 425 docs: claims contradicted by source, superseded files still read as current, stale runbooks | not started | — |
 | 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | not started | — |
 
+## Verification
+
+Every finding is re-read by a second pass whose job is to **refute** it. That
+was rule 2 of this audit's published standard, and it is being run rather than
+described.
+
+| Pass | Verification | Status |
+|---|---|---|
+| 2 — Authorization | spot-checked by hand (below); full refutation pass not yet run | partial |
+| 3 — Minors' data & consent | `VERIFY-03-minors-consent.md` | **running** |
+| 4 — Safety gates | `VERIFY-04-safety-gates.md` | **running** |
+
+The refutation passes are instructed to assume each finding is wrong until the
+file proves otherwise, to argue every severity *down*, and to treat a pass that
+retracts nothing as having failed at its job. That instruction exists because
+the previous run of this audit produced fifteen findings and zero retractions,
+and the first high-severity one checked by hand still contained a false
+sub-claim. Zero retractions is a result to be suspicious of, not proud of.
+
+### Checked by hand, not by an agent
+
+Three findings I opened the source for myself rather than relaying:
+
+**F-20 (safety-flags, raised to CRITICAL).** Confirmed. `resolveSafetyFlag`
+(`apps/web/src/server/pilot/safetyFlags.ts:190`) scopes its `update` by
+`organization_id` and `flag_id` only; the route calls `requireRole` and nothing
+else. The contrast is `apps/web/app/api/pilot/training-holds/route.ts:131`,
+whose comment reads "no org-wide hold roster" and which calls
+`assertCoachAssignedToAthlete` at three separate points. Grounds for the
+severity change are written above.
+
+**F-21 (guardian-record overwrite).** Confirmed verbatim.
+`apps/web/src/server/pilot/intake.ts:719-729` is exactly:
+
+```
+on conflict (organization_id, parent_id) do update set
+  account_id = excluded.account_id,
+  full_name = excluded.full_name,
+  phone = excluded.phone,
+  email = excluded.email,
+```
+
+and the signature takes `accountId?: string`, binding `params.accountId ?? null`
+— so omitting the field does not leave the existing value alone, it writes NULL
+over it. Same for `phone` and `email`. The finding is right that this is a
+rewrite, not only a link.
+
+**F-01 (competition entry consults no safety record).** Confirmed at the module
+level. `addCompetitionEntry`
+(`apps/web/src/server/pilot/externalCompetition.ts:144-185`) performs exactly two
+reads before its insert — the competition row and the athlete row — and the
+code's own comment says why: *"The competition lookup doubles as the tenancy
+check"*. That comment is useful evidence in itself: those two reads were written
+as tenancy checks and were never intended to carry a safety meaning, so this is
+a gap rather than a weakened gate. Whether a route-level guard sits upstream is
+being checked by the refutation pass; I did not settle it here and am not
+claiming to have.
+
 ## Findings
 
 None yet. When findings exist they are indexed here by severity, with the pass
