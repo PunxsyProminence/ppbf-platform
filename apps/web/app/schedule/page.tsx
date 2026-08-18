@@ -103,6 +103,12 @@ export default function SchedulerPage() {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  /* A training hold refusal arrives with two things the short line does not
+     carry: a coach's hand-written explanation for the athlete, and the
+     condition that lifts it. The server has always sent both; this page read
+     only `error` and dropped them, so a child was told "no" and never told why
+     or how to get back on the floor. */
+  const [errorDetail, setErrorDetail] = useState<{ explanation: string; liftCondition: string } | null>(null);
   const [actionInFlight, setActionInFlight] = useState(false);
 
   const [newClassTitle, setNewClassTitle] = useState('');
@@ -203,6 +209,7 @@ export default function SchedulerPage() {
     setActionInFlight(true);
     setActionMessage('');
     setErrorMessage('');
+    setErrorDetail(null);
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/scheduler`, {
@@ -212,9 +219,23 @@ export default function SchedulerPage() {
         body: JSON.stringify(payload),
       });
 
-      const result = (await response.json()) as { ok?: boolean; error?: string };
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        athlete_explanation?: string;
+        lift_condition?: string;
+      };
       if (!response.ok || !result.ok) {
-        throw new Error(result.error || 'Action failed');
+        // Handled here rather than thrown: an Error carries one string, and a
+        // refusal that states its own way out has three parts.
+        setErrorMessage(result.error || 'Action failed');
+        if (result.athlete_explanation || result.lift_condition) {
+          setErrorDetail({
+            explanation: result.athlete_explanation ?? '',
+            liftCondition: result.lift_condition ?? '',
+          });
+        }
+        return;
       }
 
       setActionMessage(successMessage);
@@ -266,6 +287,14 @@ export default function SchedulerPage() {
             <div className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.10)] p-[var(--s4)]" role="alert">
               <span className="badge badge--locked"><i>✕</i>Failed</span>
               <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
+              {errorDetail?.explanation ? (
+                <p className="t-body mt-[var(--s3)]">{errorDetail.explanation}</p>
+              ) : null}
+              {errorDetail?.liftCondition ? (
+                <p className="t-body mt-[var(--s3)]">
+                  <strong>To lift it:</strong> {errorDetail.liftCondition}
+                </p>
+              ) : null}
             </div>
           ) : null}
           {actionMessage ? (
