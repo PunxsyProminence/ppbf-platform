@@ -30,6 +30,106 @@ the file yourself before acting on any row below.
 
 ---
 
+## Live right now — two audits running, plus one thing that needs a merge
+
+Written 2026-08-18. This section is the coordination surface between the
+sessions currently working. If you are joining, read this first — it is the part
+most likely to save you from redoing somebody's afternoon.
+
+**This file is not on `main`.** It lives only on branch `docs/agent-handoff-briefs`
+(PR #437, draft). Anyone told "coordinate through NETWORK_STATUS.md" who checks
+out `main` finds nothing. Until #437 merges, the coordination instruction is
+inert for every session that has not been handed the branch name explicitly.
+That is the single highest-priority thing in this section, because everything
+else here depends on people being able to read it.
+
+### The two audits, and how they divide
+
+They are not competitors and neither is redoing the other.
+
+- **Full-spectrum audit** — `docs/PLATFORM_AUDIT_2026-08-17_FULL_SPECTRUM.md`,
+  branch `claude/app-audit-ux-ui-report-78o4cm`, **PR #456** (draft). 13 sections:
+  role-by-role UX, route census, capability status matrix, DB/infra, SHADOW,
+  forms inventory, governance. Its section 13 already reconciles itself against
+  the capability-network audit, checked open PRs before touching anything, and
+  fixed three items this file had listed as unfixed (`/admin/escalations` blank
+  Source cell, the login test that pinned nothing, the `coachIntelligence.ts`
+  false invariant comment). Treat those three as **done, on that branch**.
+- **Full-spectrum audit, second run** — `docs/audit-2026-08-18/`, branch
+  `docs/full-spectrum-audit-2026-08-18`, pinned to `origin/main` at `04dd116b`.
+  Thirteen enforcement-side passes, each writing its own file, indexed by
+  `docs/audit-2026-08-18/README.md` with live status. It de-duplicates against
+  both the above and this file before reporting anything.
+
+If you are a third session: **do not start a third audit.** Read those two and
+pick up something from "Unclaimed" below instead.
+
+### Merge decision waiting — a child can be entered into a match under an active hold
+
+Pass 4 of the second audit confirmed this on current `main`, and the fix already
+exists and is already green.
+
+`addCompetitionEntry` (`externalCompetition.ts`) and `addLeagueRosterEntry`
+(`wrestlingLeague.ts`) check exactly two things — the competition or season
+exists in the org, and the athlete exists in the org — and then insert. Neither
+reads `pilot.training_holds`, medical status, `pilot.safety_gates`, the
+clearance register, or any waiver. The athlete picker on
+`operations/external-competition` lists every athlete with no badge and no
+filter. So a child under an active `all_training` hold can be entered into an
+external boxing competition or added to a league season roster with one
+authenticated request.
+
+**PR #452 fixes it, is not a draft, and its `validate` check is green.** No new
+work is needed here and nobody should write a second fix. What is needed is a
+merge, and per this repository's own rule only the session holding the merge
+queue should perform it. If that is you: rebase onto current `main`, let CI
+finish on the rebased head, then merge.
+
+### Findings from pass 4 that are new — do not re-find these
+
+Recorded here rather than left in the audit file, because the whole point of
+this surface is that the next session does not rediscover them. Each was
+confirmed against a verbatim quote; open the file before acting.
+
+- **A hold does not cancel registrations that already exist.** The STOP rung is
+  checked once at registration and never again; attendance check-in re-checks
+  only that the registration exists. Placing a hold on a child today does
+  nothing about the sessions they are already on the roster for, and no
+  coach-facing screen shows the hold at the door.
+- **`/admin/safety-review` double-counts** one compliance violation twice and
+  every hold twice in its headline number. This is the *second* instance of the
+  collision class that was caught pre-merge on the Morning Read digest — which
+  makes it a pattern, not an accident. Before adding a reader of a shared
+  register, enumerate every writer.
+- **`raiseConductConcern` bypasses the incident-report severity floor** and the
+  30-second dedup added by #433, by filing `source_type: 'incident'` directly.
+  The same route has no athlete-scope check.
+- **All three hold scopes overstate enforcement**, not only `conditioning_only`
+  as this file previously recorded. That row was understated and is corrected
+  here rather than quietly tightened.
+- **`readinessMath.ts` has zero callers** — already known — but the *mechanism*
+  is new: the stored readiness score is taken raw from the request body, so the
+  clamp and the delta-RPE lock exist in a module nothing calls.
+- **`assertShadowAuthority` cannot deny at any of its three call sites.** Every
+  caller passes `restrictionConflict: false` and no action string matches its
+  forbidden list, so it records `allowed: true` for every medical and waiver
+  write. It is an audit logger wearing the name of a gate.
+- **A covering coach can lift a `medical` hold.** Coach Coverage was already
+  recorded here as granting youth-contact access with no clearance check; the
+  consequence not previously drawn is that the same assertion admits coverage
+  holders to the hold-*lift* path.
+- **`TrainingHoldScope` is defined five times** across the codebase, feeding
+  three exhaustive maps, one of which has no fallback. This is the same shape as
+  the `Record<SuggestionRule, …>` drift that broke `main` three times.
+
+The escalation register is now fully enumerated — eight writer call paths across
+seven source types, six readers, and one declared source type
+(`safety_gate_evaluation`) with no writer at all. That table is in
+`docs/audit-2026-08-18/PASS-04-safety-gates.md`; consult it before adding either
+a writer or a reader.
+
+---
+
 ## Closed — 12, merged
 
 | Gap | Closed by |
