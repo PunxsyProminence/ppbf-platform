@@ -47,11 +47,12 @@ describe('upsertGuardian account takeover guard', () => {
     queryMock.mockResolvedValue([]);
 
     const error = await upsertGuardian({ ...GUARDIAN, accountId: 'attacker-account' })
-      .catch((e: unknown) => e as Error);
+      .then(() => null, (e: unknown) => e as Error);
 
+    expect(error).not.toBeNull();
     // It must not disclose the real guardian's name, email or account.
-    expect(error.message).toMatch(/staff-credentialing/i);
-    expect(error.message).not.toMatch(/attacker-account/);
+    expect(error?.message).toMatch(/staff-credentialing/i);
+    expect(error?.message).not.toMatch(/attacker-account/);
   });
 
   test('creating a guardian and re-linking one still succeed', async () => {
