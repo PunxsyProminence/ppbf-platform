@@ -109,7 +109,7 @@ admitted gap.
 | 7 | Frontend & design system | 125 screens + 86 components: fabricated-data disclosure, Law 2 / Law 7 conformance, invented classes, dead ends | **running** | `PASS-07-frontend.md` |
 | 8 | SHADOW subsystem | Authority model specified vs. built, event model, **what actually drives the job processor** | **running** | `PASS-08-shadow.md` |
 | 9 | Formulas & thresholds | Registry status vs. callers, provenance of every constant gating a child's training | **running** | `PASS-09-formulas.md` |
-| 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | **running** | `PASS-10-tests-ci.md` |
+| 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | **done** | `PASS-10-tests-ci.md` |
 | 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **running** | `PASS-11-infra-secrets.md` |
 | 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **running** | `PASS-12-docs-vs-code.md` |
 | 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | queued, runs last | — |
@@ -199,6 +199,13 @@ partial by definition rather than final.
 | F-24 | MEDIUM | `automation_mode` is unvalidated at two of three SHADOW call sites with no column CHECK, so the single working denial branch is evadable by sending `"Automatic"` instead of `"automatic"` | verify-4 | **New — found by the refutation pass, not the pass it was verifying** |
 | F-25 | LOW | `/coach/progression-intelligence` is a second coach-facing hold reader that pass 4 did not list | verify-4 | New — found by the refutation pass |
 | F-26 | HIGH | `profile/roster` does not filter `athletes.deleted_at`, so a withdrawn child stays on the live coach roster — name, date of birth and portrait — for the whole retention window | verify-3 | **New — found by the refutation pass, not the pass it was verifying** |
+| T-01 | **CRITICAL** | The only path that records contact for a child carries two gates — `flagContactWithoutClearance` and `flagContactDuringHold`. The route has no sibling test, and its sole test posts a non-contact kind, so both gates short-circuit and are never exercised. **Deleting both calls leaves all 482 suites and 5,997 tests green** | 10 | New |
+| T-02 | HIGH | 69 of 94 Postgres suites leak a full PGDATA per run — 263 MB measured for one suite | 10 | New |
+| T-03 | HIGH | `test:migrations` is a 94-link `&&` chain; one failure skips every later suite, including the gate proofs (training-holds is entry 47, safety-gate-matrix 41, safety-escalations 42) | 10 | New |
+| T-04 | MEDIUM | `dataDeletion.test.ts` is six tautologies that never call the module | 10 | New |
+| T-05 | MEDIUM | The retention window is untested in the *narrowing* direction — changing `interval '2 years'` to `'2 months'` stays green | 10 | New |
+| T-06 | MEDIUM | `guardianConsent.test.ts:53-66` asserts `ok: true` for a guardian with `covers_video: false`, so closing the consent-scope gap requires editing two tests that currently encode the gap as correct | 10 | New |
+| T-07 | MEDIUM | 70 of 228 API routes are loaded by no test, including `shadow/medical-status` — the setter for the status the contact gate reads | 10 | New |
 | F-27 | MEDIUM | The unauthenticated gym wall was filed as sound on the premise that `wall_display_full_name` has no writer. `waiver_type` has no database constraint and `domain-upsert` writes it verbatim from the body, so a coach can mint that exact row; `signed_by_role` is self-declared text, defeating the guardian-signer check. The only real brake is an unset environment flag | verify-3 | **New — a "checked and found sound" entry that was not sound** |
 | F-11 | ~~HIGH~~ **MEDIUM** | Film Study checks guardian consent at enqueue and never again, and the withdrawal sweep cancels no running job | 3 | **Overstated. I called this the most important finding of the audit and that was wrong — see below** |
 | F-12 | HIGH | Consent scope is collected and presented to guardians as control but enforced by nothing, with `covers_video` defaulting `true` in three places including on every non-media waiver row | 3 | Known as an MVP cut; the default and its breadth are new |
@@ -213,6 +220,38 @@ partial by definition rather than final.
 | F-21 | HIGH | A coach can overwrite another family's guardian record — `upsertGuardian`'s `on conflict … do update` rewrites `account_id`, phone and email, and repointing `account_id` hands a chosen account guardian reach over every child that record carries, siblings included | 2 | New extension of the escalated `parent_id` finding |
 | F-22 | MEDIUM | `multidiscipline` and `competence-cohorts` call `requireRole(principal, ['coach','admin'])`, which is exact-match, so every provisioned `organization_admin` gets a 403 on a child's grappling-exposure history. Tests miss it because they drive the legacy `'admin'` value | 2 | New |
 | F-23 | MEDIUM | `DELETE /api/pilot/achievements/mentorships` authorizes only the mentor side, and does so *after* `endMentorship` has committed its UPDATE — an unauthorized coach closes the pairing and then receives the 403 | 2 | New |
+
+### The Postgres teardown diagnosis I published was wrong
+
+`NETWORK_STATUS.md` carried a confident, detailed diagnosis of the 93-suite
+teardown race, written by this session: SIGTERM is Postgres *smart* shutdown, a
+lingering client keeps the server alive, a 15-second bail-out resolves anyway,
+the data directory is deleted mid-write, `ENOTEMPTY` on `pg_wal`, fix it with
+`SIGINT` plus `fs.rm` retries. Pass 10 traced it end to end against the code as
+it stands. **Almost every link is wrong:**
+
+- There is **no shared helper.** The teardown is copy-pasted into 93 files, so a
+  one-line fix is a 93-file change. The original write-up implied one helper.
+- SIGTERM goes to a **Node wrapper**, not to Postgres.
+- `pg.stop()` in `embedded-postgres` **already sends `SIGINT`**
+  (`node_modules/embedded-postgres/dist/index.js:258`). The recommended fix was
+  already the existing behaviour.
+- `pg.stop()` resolved in **14 ms** in an instrumented probe. The 15-second
+  bail-out is never reached.
+- **`ENOTEMPTY` appears nowhere in the repository.**
+
+The real defect is different in kind: `embedded-postgres` registers
+`AsyncExitHook(gracefulShutdown)`, and `async-exit-hook` claims SIGTERM for
+itself and calls `process.exit` on the next tick after its hook resolves. One
+SIGTERM therefore starts two shutdowns and the library's wins — the wrapper's own
+`fs.rm` of a ~200 MB tree never completes, and its `catch` never fires because
+there is no error, only a dead process. Measured: a suite without a parent-side
+`fs.rm` left 263 MB behind after a fully passing run; one with it left nothing.
+
+This is the clearest example in the audit of the thing the standard was written
+against. The original diagnosis was specific, mechanistic, plausible, and
+delivered with confidence — and it was reasoning, not reading. It has been
+corrected on the shared surface rather than quietly amended.
 
 ### What the pass-3 refutation changed, including the finding I led with
 
