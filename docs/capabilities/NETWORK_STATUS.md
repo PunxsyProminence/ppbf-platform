@@ -175,6 +175,52 @@ confirmed against a verbatim quote; open the file before acting.
   three exhaustive maps, one of which has no fallback. This is the same shape as
   the `Record<SuggestionRule, …>` drift that broke `main` three times.
 
+### The retention policy promises deletion that cannot happen
+
+Verified by hand, not relayed. `pilot.video_sessions` declares `athlete_id` as a
+bare `text null` with **no foreign key to `pilot.athletes`**, and the table has
+**no `deleted_at` column**
+(`infra/azure/pilot_slice_postgres_video_sessions_migration.sql:65-80`). Other
+tables reference `video_sessions`; it references nothing. So deleting an athlete
+cannot reach their footage by cascade, and there is no soft-delete column to
+mark it with either. A minor's video is not reachable from any deletion path
+**even in principle**.
+
+`DATA_RETENTION.md` gives photos, videos, medical records, waivers and training
+notes their own deletion windows. The only deletion code touches `pilot.athletes`
+and `pilot.accounts`. Three supporting failures found alongside: the named daily
+script `pilot:cleanup-expired-data` does not exist; the workflow that does exist
+is hard-wired so a *scheduled* run can never delete; and `/admin/data-deletion`,
+cited twice as the admin's console, has no page, no nav entry and no caller,
+while the promised "reversible for 1 year" restore has no code at all. One
+finding cuts the other way and is worth knowing: waivers and medical records,
+documented as 3 years, actually die at the athlete's 2-year clock via FK cascade
+— *earlier* than promised.
+
+This is not a documentation nit in this codebase's own terms. `DATA_RETENTION.md`
+is linked from `MASTER_INDEX.md` beside the backup runbooks, carries a compliance
+scope and a privacy-officer sign-off, and reads as operational policy. A guardian
+asking what happens to video of their child would be given a two-year answer.
+
+**Now the reassuring half, which decides whether this is one document to fix or a
+systemic problem.** Of 440 documents in scope, **17 were verified TRUE and are
+listed by name** in `docs/audit-2026-08-18/PASS-12-docs-vs-code.md` so the next
+reader knows what can be trusted. Both root contract files are among them:
+`AUTH_CONTRACT.md` matches on role enum, cookie flags and endpoints, and
+`ORGANIZATION_ROLE_MODEL.md`'s board boundary holds at every checked point.
+**No contract file states a safety rule the code violates.** Six documents are
+contradicted, five of them non-safety. **The retention policy is an outlier, not
+the house style.**
+
+Two smaller ones for anyone editing docs: `docs/AGENT_EXECUTION_POLICY.md`
+declares itself read-first and binding, contradicts `AGENT_KERNEL.md` on three
+rules, is unmarked and is referenced by **zero** files — a second binding policy
+nobody reads is exactly the overlap that got `MULTI_AI_EXECUTION_PLAN.md`
+retired. And capability module 082, marked DONE, says `conditioning_only` holds
+mean "reduced permitted intensity" when the scope appears in no predicate
+anywhere — independent corroboration, from the docs side, of the hold-scope
+finding above.
+
 ### The one that changes how much green CI is worth here
 
 **The only route that records contact for a child carries two safety gates that
