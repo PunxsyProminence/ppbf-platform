@@ -9,9 +9,13 @@ import { findNearMissByTriggerContext, flagNearMiss } from './shadowNearMisses';
 
 const GATE_LESSON = 'Set status to cleared before contact continues (test gate text).';
 
-jest.mock('./shadowMedicalStatus', () => ({
-  getLatestMedicalAdministrativeStatus: jest.fn(),
-}));
+// Only the database read is mocked. isClearanceCurrent / effectiveMedicalStatus
+// are pure functions and are the shared rule this gate is being tested against
+// -- stubbing them out would test the mock instead of the time bound.
+jest.mock('./shadowMedicalStatus', () => {
+  const actual = jest.requireActual('./shadowMedicalStatus');
+  return { ...actual, getLatestMedicalAdministrativeStatus: jest.fn() };
+});
 
 jest.mock('./shadowNearMisses', () => ({
   flagNearMiss: jest.fn().mockResolvedValue({ near_miss_id: 'nm-1' }),
@@ -87,6 +91,68 @@ describe('a cleared athlete is never flagged', () => {
 
     await expect(call()).resolves.toEqual({ flagged: false });
     expect(mockFlag).not.toHaveBeenCalled();
+  });
+
+  test('a clearance with an expiry still ahead of it is not flagged', async () => {
+    const wellAhead = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+    mockStatus.mockResolvedValueOnce({ status: 'cleared', expires_at: wellAhead });
+
+    await expect(call()).resolves.toEqual({ flagged: false });
+    expect(mockFlag).not.toHaveBeenCalled();
+  });
+});
+
+// The finding this closes: this gate compared `record?.status === 'cleared'`
+// with no time bound, so a clearance recorded once counted forever. The
+// observation is still kept either way -- that doctrine does not change -- but
+// contact under a lapsed clearance now raises the near miss it always should
+// have.
+describe('a clearance that has lapsed is not read as cleared', () => {
+  const LAPSED = { status: 'cleared', expires_at: '2026-01-01T00:00:00.000Z' };
+
+  test('contact under an expired clearance is flagged', async () => {
+    mockStatus.mockResolvedValueOnce(LAPSED);
+
+    await expect(call()).resolves.toEqual({
+      flagged: true,
+      medicalStatus: 'cleared_expired',
+      severity: 'high',
+      lesson: GATE_LESSON,
+    });
+    expect(mockFlag).toHaveBeenCalledTimes(1);
+  });
+
+  test('the near miss says the clearance expired, not that the status is unrecognised', async () => {
+    mockStatus.mockResolvedValueOnce(LAPSED);
+
+    await call();
+
+    const { description, metadata } = mockFlag.mock.calls[0][0];
+    expect(description).toContain('expiry');
+    expect(metadata).toMatchObject({ medical_status: 'cleared_expired' });
+  });
+
+  test('the Safety Gate Matrix records it as flagged, not passed', async () => {
+    mockStatus.mockResolvedValueOnce(LAPSED);
+
+    await call();
+
+    expect(mockRecordEvaluation).toHaveBeenCalledTimes(1);
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({
+      gateKey: 'contact_medical_clearance',
+      outcome: 'flagged',
+    }));
+  });
+
+  // An expired clearance is a lapse, not an affirmative "must not take
+  // contact" -- so it belongs with pending/no_record at 'high', not with
+  // restricted/not_cleared at 'critical'.
+  test('the severity is high, the same as never having recorded one', async () => {
+    mockStatus.mockResolvedValueOnce(LAPSED);
+
+    const outcome = await call();
+
+    expect(outcome.severity).toBe('high');
   });
 });
 

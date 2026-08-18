@@ -1,6 +1,11 @@
 import type { ObservationKind } from './formulas/types';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGateMatrix';
-import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
+import {
+  EXPIRED_CLEARANCE_STATUS,
+  effectiveMedicalStatus,
+  getLatestMedicalAdministrativeStatus,
+  isClearanceCurrent,
+} from './shadowMedicalStatus';
 import { findNearMissByTriggerContext, flagNearMiss } from './shadowNearMisses';
 import type { ShadowNearMissSeverity } from './shadowNearMisses';
 
@@ -52,15 +57,25 @@ export function isContactObservation(kind: string, value: number | null): boolea
  * serious version of this and is critical. 'pending' and a missing record mean
  * nobody has decided yet -- still a real gap that needs a human to look, but a
  * process failure rather than a known contraindication being overridden.
+ *
+ * A lapsed clearance (EXPIRED_CLEARANCE_STATUS) sits with the second group and
+ * not the first: nobody has affirmatively said this athlete must not take
+ * contact, the clearance that said they could has simply run out. That is a
+ * process failure of the same kind as never recording one.
  */
 function severityForStatus(status: string): ShadowNearMissSeverity {
   return status === 'not_cleared' || status === 'restricted' ? 'critical' : 'high';
 }
 
 function describe(status: string, kind: string, value: number, athleteId: string): string {
-  const situation = status === 'no_record'
-    ? 'has no medical administrative status on file'
-    : `has medical administrative status '${status}', not 'cleared'`;
+  let situation: string;
+  if (status === 'no_record') {
+    situation = 'has no medical administrative status on file';
+  } else if (status === EXPIRED_CLEARANCE_STATUS) {
+    situation = 'has a medical clearance on file that has passed its stated expiry';
+  } else {
+    situation = `has medical administrative status '${status}', not 'cleared'`;
+  }
 
   return `Contact was logged for athlete ${athleteId}, who ${situation}. `
     + `Observation '${kind}' recorded a value of ${value}. The observation was kept -- `
@@ -71,7 +86,12 @@ function describe(status: string, kind: string, value: number, athleteId: string
 export interface ContactClearanceOutcome {
   /** True when a near miss was raised for this observation. */
   readonly flagged: boolean;
-  /** The status that caused the flag, for the caller's response body. */
+  /**
+   * The status that caused the flag, for the caller's response body. This is
+   * effectiveMedicalStatus(), so it may be a derived reading -- 'no_record'
+   * when nothing is on file, 'cleared_expired' when a clearance has lapsed --
+   * rather than only a stored status value.
+   */
   readonly medicalStatus?: string;
   readonly severity?: ShadowNearMissSeverity;
   /**
@@ -136,12 +156,14 @@ export async function flagContactWithoutClearance(input: {
   }
 
   // Fail closed, matching assertMedicalStatusAllowsRecommendation: only an
-  // explicit 'cleared' record counts. Absence of a clearance decision is not a
-  // clearance decision.
+  // explicit 'cleared' record that is still in force counts. Absence of a
+  // clearance decision is not a clearance decision, and a clearance past its
+  // stated expiry is no longer one either -- isClearanceCurrent owns that time
+  // bound so this gate and the recommendation gate cannot disagree about it.
   const record = await getLatestMedicalAdministrativeStatus(input.organizationId, input.athleteId);
   const value = input.value as number;
 
-  if (record?.status === 'cleared') {
+  if (isClearanceCurrent(record)) {
     // pilot.safety_gate_evaluations has a foreign key to (organization_id,
     // gate_key) in pilot.safety_gates -- a pre-migration organization with
     // no gate row would fail that constraint and abort the whole
@@ -164,7 +186,7 @@ export async function flagContactWithoutClearance(input: {
     return { flagged: false };
   }
 
-  const status = record?.status ?? 'no_record';
+  const status = effectiveMedicalStatus(record);
   const severity = severityForStatus(status);
   const lesson = gate?.requirement_text ?? DEFAULT_LESSON;
 
