@@ -87,15 +87,15 @@ live status. It is updated when a pass changes state, not at the end.
 | # | Pass | Scope | Status | Output |
 |---|---|---|---|---|
 | 1 | Authentication & session | Login, magic link, PIN, session issuance, role resolution, `AUTH_CONTRACT.md` conformance | not started | — |
-| 2 | Authorization & tenancy | `assertActorCanAccessAthlete` and siblings, org scoping, cross-org leakage, role gates across all 228 routes | not started | — |
+| 2 | Authorization & tenancy | `assertActorCanAccessAthlete` and siblings, org scoping, cross-org leakage, role gates across all 228 routes | **running** | `PASS-02-authorization.md` |
 | 3 | Minors' data & consent | Waivers, guardian links, consent scope enforcement, profile visibility, photo/video exposure | not started | — |
-| 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | not started | — |
+| 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | **running** | `PASS-04-safety-gates.md` |
 | 5 | API surface | All 228 routes: input validation, error-shape conformance, idempotency, rate limiting | not started | — |
 | 6 | Data layer | 88 migrations vs. code expectations, indexes, constraints, orphan/nullable risk, N+1 | not started | — |
 | 7 | Frontend & design system | 125 screens: design-system conformance, fabricated-data disclosure, refusal treatment, dead ends | not started | — |
 | 8 | SHADOW subsystem | Authority model, event model, evidence statistics, measurement gates | not started | — |
 | 9 | Formulas & thresholds | `formulas/registry.ts`, wired vs. unwired, coefficient provenance, youth-safety constants | not started | — |
-| 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | not started | — |
+| 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | **running** | `PASS-10-tests-ci.md` |
 | 11 | Build, infra & secrets | Dockerfiles, deploy config, env handling, secret exposure, `staticwebapp.config.json` | not started | — |
 | 12 | Docs vs. code | 425 docs: claims contradicted by source, superseded files still read as current, stale runbooks | not started | — |
 | 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | not started | — |
@@ -117,3 +117,10 @@ Appended as work happens. Newest last.
   `origin/main` at `04dd116b`. Scope counted. Standard written. Both prior
   audits located and read for de-duplication. No findings yet; no passes
   started.
+- **2026-08-18** — Passes 2, 3, 4 and 10 started, in that priority order and not
+  the numeric one. The three child-safety passes go first because a defect there
+  is a real child exposed or a held-out child cleared, and pass 10 goes with them
+  because the question it answers — *would any test fail if one of these gates
+  were deleted?* — decides how much the other three can be trusted to stay fixed.
+  Each pass writes its own file here; this index is updated when a pass changes
+  state, not at the end.
