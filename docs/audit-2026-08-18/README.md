@@ -120,6 +120,15 @@ partial by definition rather than final.
 | F-08 | MEDIUM | `readinessMath.ts` has zero callers; the stored readiness score is taken raw from the request body, so the clamp and delta-RPE lock live in a module nothing calls | 4 | New mechanism behind a known finding |
 | F-09 | LOW | `TrainingHoldScope` defined five times, feeding three exhaustive maps, one with no fallback | 4 | New — same shape as the drift that broke `main` three times |
 | F-10 | MEDIUM | `assertShadowAuthority` cannot deny at any of its three call sites; it records `allowed: true` for every medical and waiver write | 4 | New |
+| F-11 | HIGH | Film Study checks guardian consent at enqueue and never again; the async job re-validates only the actor's role, then reads the child's video by blob path. A guardian can withdraw consent, be truthfully told published media was retracted, and have frames of their child sent to an external vision service afterwards | 3 | New — **the most important finding of this audit so far** |
+| F-12 | HIGH | Consent scope is collected and presented to guardians as control but enforced by nothing, with `covers_video` defaulting `true` in three places including on every non-media waiver row | 3 | Known as an MVP cut; the default and its breadth are new |
+| F-13 | HIGH | A coach can silently overwrite an existing guardian's `pilot.parents` binding, severing a real parent from their own child's consent withdrawal | 3 | New — **owner decision, narrows a role gate** |
+| F-14 | HIGH | 60-minute unaudited SAS bearer URLs to minors' video, minted in bulk | 3 | New |
+| F-15 | HIGH | A hard-deleted athlete record silently reclassifies a surviving account from minor to staff, releasing the portrait to every coach and admin | 3 | New |
+| F-16 | MEDIUM | The waiver-status console and the media gate disagree about the same child, in the over-confident direction | 3 | New |
+| F-17 | MEDIUM | `DATA_RETENTION.md` promises per-category deletion of photos, videos, medical records and waivers that no code performs; no blob byte is ever deleted | 3 | New |
+| F-18 | MEDIUM | A second unguarded copy of the destructive purge exists with zero callers | 3 | New |
+| F-19 | LOW | `deleteAthleteRecord`'s JSDoc claims it marks photos and videos for deletion; it sets one column | 3 | New |
 
 ## Log
 
@@ -146,4 +155,16 @@ Appended as work happens. Newest last.
 - **2026-08-18** — Coordination defect found and recorded: `NETWORK_STATUS.md`,
   the file every brief names as the shared surface, is **not on `main`**. It
   exists only on branch `docs/agent-handoff-briefs` (PR #437, draft). Any session
-  told to coordinate through it that checks out `main` finds nothing.
+  told to coordinate through it that checks out `main` finds nothing. Pass 3 hit
+  this independently — it followed this README's own citation of that path, found
+  it did not resolve, and read the file from the remote branch instead. A
+  citation that does not resolve is a defect in this audit, not only in the repo.
+- **2026-08-18** — Pass 3 reported: nine findings, five HIGH, no URGENT. Nothing
+  found means a child is exposed *right now*, and the pass says so plainly rather
+  than reaching for a headline. Its most important finding is a consent race in
+  the Film Study async path — checked at enqueue, never again — which matters
+  more than its severity label suggests, because every *other* consent path in
+  this codebase closes that race properly with `for share` locks and an in-
+  transaction re-verify. That makes it an outlier, not a house style.
+  Two of its findings are owner decisions rather than fixes, and two need
+  production access this session does not have.

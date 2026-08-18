@@ -552,7 +552,7 @@ parked, and it should not inherit that parking.
 
 `/api/pilot/safety-flags` is the queue for `pilot.safety_flags`, whose flag
 codes include `medical_clearance_missing` and `concussion_rest_period`
-(`safetyFlags.ts:38-41`). Its role gate admits coaches:
+(`safetyFlags.ts:38-42`). Its role gate admits coaches:
 
 > `apps/web/app/api/pilot/safety-flags/route.ts:17` — `const QUEUE_ROLES = ['organization_admin', 'admin', 'coach'] as const;`
 
@@ -866,7 +866,7 @@ things that make a coach the owner of a class:
 **Refutation attempted, and it substantially reduced the severity.** I traced
 what class ownership actually buys. Both attendance actions call
 `assertCoachOwnsClass` *and then* `assertCanActOnAthlete` per athlete
-(lines 658/644 and 703/740), and the GET filters registrations, coaching
+(lines 644 and 658; 703 and 740), and the GET filters registrations, coaching
 requests and attendance through `accessibleAthleteIds`. So a coach who claims a
 class they have nothing to do with still cannot read or write any athlete row
 they could not already reach. What they get is the class in their list, the
@@ -894,3 +894,169 @@ takes a caller-supplied account id.
 `guardianAthleteIds` to confirm the read side is double-scoped — it is, on both
 the link row and the parent row — which is why this is LOW rather than a
 cross-tenant read.
+
+## Checked and found sound
+
+These are things I went looking for and did not find. Recording them so the
+next reader does not spend the afternoon I spent.
+
+**The primitives themselves have no fall-through.**
+`assertActorCanAccessAthlete` ends in an unconditional throw
+(`access.ts:321`), so an unknown or newly-added role is refused rather than
+admitted; `accessibleAthleteIds` mirrors it (`access.ts:406`). Both
+`requireRole` implementations refuse on non-membership rather than on
+membership, so an empty allowlist refuses everyone. `requirePageRole` redirects
+rather than admits. I found **no fail-open role gate anywhere** — every
+authorization branch I read defaults to refusal.
+
+**Organization scoping in SQL is genuinely tight.** My scanner over every
+template-literal SQL statement naming a `pilot.*` table found 25 statements
+without an `organization_id` predicate, and I read all 25. Every one is either a
+session/token/rate-limit table keyed on a globally-unique id
+(`session_tokens`, `magic_link_tokens`, `account_activation_tokens`,
+`auth_rate_limit_buckets`), a background retention or archival sweep with no
+actor (`purgeExpiredDeletedData`, `shadowArchival`, `shadowJobQueue` cleanup),
+or a scan-worker settle path (`videoSessions.ts:210`, `:264`). Two looked wrong
+and were not: `rabbitHoles.ts:429` builds its predicates dynamically and seeds
+them with `const conditions = ['r.organization_id = $1']`; `dataDeletion.ts:63`
+updates by bare `account_id` but is preceded in the same transaction by a
+`where account_id = $1 and organization_id = $2 and role = 'parent'` existence
+check. **I found no athlete, guardian, video, medical or message read that
+omits the organization filter.**
+
+**Caller-supplied `organization_id` is refused or ignored, never trusted.**
+Five routes accept one. `admin/activation-codes` refuses a mismatch outright
+(`resolveTargetOrganization`, line 32-34). `admin/capabilities` and
+`admin/gym-capabilities` silently fall back to the session's org for anyone who
+is not `platform_owner`. `platform/users/create` refuses a mismatch and its
+comment records that this was previously the bug. `public/store` is the
+anonymous catalogue and holds no athlete data by design. The `platform/*`
+mutation family requires `platform_owner`, which
+`assertActorCanAccessAthlete` separately refuses all athlete access to.
+
+**The "one side checked, the other not" pattern is the exception, not the rule.**
+I traced every two-party link write I could find by scanning for `insert into
+pilot.*` statements carrying two or more entity ids (about 120 of them). The
+ones reachable from a route validate both ends:
+`addCompetitionEntry` checks the competition and the athlete against the org
+before inserting; `addLeagueRosterEntry` does the same for the season and the
+athlete; `assignBoardSeat` calls `assertEligibleHolder`, whose comment says
+exactly why ("The table's foreign key only proves the account exists somewhere
+on the platform"); `grantCoachCoverage` calls
+`assertAthleteBelongsToOrganization` on the athlete *and*
+`assertActiveCoachAccount` on the coach; the mentorship `POST` authorizes both
+athletes with a comment explaining the principle; the scheduler's
+coaching-request approval calls `assertActiveCoachAccount` then
+`assertCoachAssignedToAthlete` on the named coach. Findings 1 and 4 are the two
+exceptions I found.
+
+**Guardian media consent cannot be forged through the intake route.** I chased
+this specifically because `domain-upsert` writes `pilot.waivers`, which is the
+table `assertGuardianMediaConsent` reads. The route's waiver branch does **not**
+pass `parentId` (`domain-upsert:89-100`), and the consent query requires
+`parent_id is not null`, so a coach cannot manufacture a signed media consent.
+Adding a bogus guardian link can only *block* publication, since the check
+requires every linked guardian to have signed. This one is fine.
+
+**`medical_intake.clearance_status` gates nothing.** `domain-upsert` lets a
+coach write an arbitrary `clearance_status` string. I grepped every read of
+`pilot.medical_intake` in `apps/web/src`: it is written by `intake.ts:460`, read
+back by `intake.ts:767` for the case aggregate, named in three privacy-tier
+denylists, and read by no gate. So this is not a clearance bypass. (This is
+consistent with the 2026-08-17 audit's §10 finding that the dead client-supplied
+clearance boolean lives in `packages/execution/safetyGate.ts` and is not the
+live path.)
+
+**Dynamic-segment routes are not IDOR-prone.** All seven were opened.
+`profile/photo/[accountId]` runs four gates in order and answers every refusal
+with the same `hiddenNotFound()`, with the reasoning written out.
+`video/[videoId]` scopes the lookup by `organization_id` and then calls
+`assertActorCanAccessAthlete`. `shadow/sessions/[conversationId]` delegates to
+`renameConversation`/`softDeleteConversation`, both of which are `where
+conversation_id = $1 and organization_id = $2 and account_id = $3`.
+`shadow/jobs/[jobId]` validates the UUID shape then delegates to
+`getJobStatusForActor`. `session-scripts/runs/[runId]` names one action per
+request specifically so a client cannot set a column by including a field.
+`gym-photos/[slot]` allowlists the slot key against a manifest.
+
+**The 14 unauthenticated routes are all deliberate.** Four public reads —
+`announcements/public`, `floor-hours/public`, `wall`, `public/store` — never
+accept a caller-supplied `organization_id`, and `wall` additionally omits
+`athlete_id` entirely, hashes its keys, defaults names to initials and is
+IP-budgeted. The nine auth entry points are the login/activation/magic-link/
+Microsoft-OAuth surfaces. `payments/webhook` is signature-verified. Both
+`admin/bootstrap` routes require `PPBF_PILOT_BOOTSTRAP_KEY` behind a shared
+durable per-IP rate-limit bucket, and the non-Microsoft one refuses every path
+by design.
+
+**The 14 role-gate-free authenticated routes are all self-scoped or
+policy-only.** `drill-library`, `session-scripts`, `workout-templates` and
+`coach/cue-library` read the gym's own teaching material and carry no athlete
+data (each says so in a comment, and `session-scripts` explicitly notes that
+what happened on a given night lives in `session_script_runs`, which it does not
+touch). `shadow/data`, `shadow/memory`, `shadow/capabilities`, `profile/me`,
+`profile/photo`, `feedback/submit`, `auth/logout` act on the caller's own
+record. `wall-of-names` and `gym-photos` derive everything from
+`principal.organizationId`.
+
+**The three routes with `isOrganizationAdminRole` but no `requireRole` are all
+fail-closed inline.** `escalations` throws
+`'Forbidden: escalations are available to coach and organization_admin/admin
+only'`; `scheduler/attendance-summary` throws the equivalent and additionally
+scopes a coach to classes they own; `shadow/research-bridge/session-export`
+falls through to `throw new Error('Forbidden: organization_admin role or
+cross-organization access required')` and derives its scope entirely from the
+session, never from a parameter.
+
+**Board and platform_owner isolation holds at the data layer.** Both are
+refused by `assertActorCanAccessAthlete` before any other check
+(`access.ts:288`, `:292`) and return an empty set from `accessibleAthleteIds`
+(`access.ts:346-348`). I did not find a route that reaches athlete data for
+either role without going through one of those two.
+
+## Could not establish
+
+**`docs/capabilities/NETWORK_STATUS.md` is not on this branch.** I read the copy
+on `origin/docs/agent-handoff-briefs`. If a newer copy exists elsewhere, my
+de-duplication against it is only as current as that branch.
+
+**175 of 228 routes were classified but not opened.** I know which helpers each
+imports and calls. I do not know whether the call sits on every path through the
+handler, whether a second verb in the same file skips it, or whether a parameter
+is used before it. The 138 routes that call `requirePrincipal` + `requireRole`
+and nothing else are the population most likely to contain more instances of
+finding 3, and I sampled rather than enumerated them.
+
+**No runtime proof of anything.** I did not start the app, run a test, or issue
+a request. Findings 1, 2, 3 and 4 all assert what a specific principal can do;
+each should be reproduced with an actual coach session before it is treated as
+confirmed. Finding 4 in particular depends on `endMentorship`'s `UPDATE`
+committing before the throw, which is what the code says but not what I
+observed.
+
+**I could not determine whether finding 3 is a decision or an oversight.** The
+eleven routes are consistent with each other and inconsistent with the four
+routes that do scope coaches by roster. That could mean two build batches with
+different assumptions, or it could mean someone decided that floor-staff
+surfaces are org-wide on purpose and never wrote it down. `ORGANIZATION_ROLE_MODEL.md`
+and `AUTH_CONTRACT.md` were outside the reading path this pass took, and I did
+not open them; if either states a coach's read scope explicitly, it settles this
+and I did not consult it.
+
+**I did not trace the volunteer analogue of finding 8.** `pilot.volunteers` has
+the same single-column `account_id` foreign key
+(`infra/azure/pilot_slice_postgres.sql:279`). I did not check whether any route
+writes it from a caller-supplied id.
+
+**I did not verify the intake-promotion path.** `intake/review-action` writes
+`pilot.parents` and `pilot.guardian_links` from `promotion.guardian.*` rather
+than from caller input, which is why I set it aside — but that route is 550+
+lines and I read only the two guardian call sites, not the code that builds
+`promotion`.
+
+**Open-PR state is from `git branch -r` on this clone, not from GitHub.** I
+enumerated 143 remote branches and diffed the ones touching my findings' files,
+but I did not query the live PR list, so a PR opened from a branch not yet
+fetched here would be invisible to me. `docs/capabilities/NETWORK_STATUS.md`'s
+own instruction is to query GitHub rather than trust a file, and I could not
+follow it.
