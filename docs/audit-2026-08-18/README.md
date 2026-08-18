@@ -113,7 +113,7 @@ admitted gap.
 | 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **done** | `PASS-11-infra-secrets.md` |
 | 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **done** | `PASS-12-docs-vs-code.md` |
 | 13a | Cross-cutting synthesis: collisions | Defects visible only between two-or-more passes together | **done — 5 of 6 directed hunts confirmed, 1 more found unprompted** | `PASS-13a-collisions.md` |
-| 13b | Cross-cutting synthesis: unified ranking | One independent severity ranking across all 157 findings, owing no pass's label any loyalty | **running** | — |
+| 13b | Cross-cutting synthesis: unified ranking | One independent severity ranking across all findings, owing no pass's label any loyalty | **done** | `PASS-13b-ranking.md` |
 | 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB | **done — all 7 of 7 traced** | `PASS-14-flows.md` |
 | 15 | Data egress & integrations | **What data about a child leaves this system, to whom, and what stands between it and the door** — model calls, SAS URLs, email, exports, telemetry, logs | **done** | `PASS-15-egress.md` |
 | 16 | Research, data library & evidence | Source lifecycle, evidence registry, Knowledge Graph, `assessment_protocols`, UI claims vs. implemented hand-offs | **done** | `PASS-16-research-library.md` |
@@ -334,6 +334,62 @@ sit in files with no runtime narrowing of any kind. Of 30 casts asserting
 membership of a closed set, each was traced individually and most are caught by a
 route-level guard or a database CHECK. That per-field tracing is the difference
 between a usable finding and a number.
+
+## The 157 count in this file was wrong, and pass 13b caught it
+
+Every earlier entry in this README quoted **157** as the total finding count. That
+number came from a grep pattern I wrote against `### [SEVERITY]` headers, and it
+undercounts: some passes use a different heading shape for findings (`F-9-01
+[HIGH]`, `J1-A`, `S-01`, `X-01`), and pass 14 in particular has numbered journey
+subsections (`### 1.1 The journey cannot start…`) that my pattern's looser
+variants partly picked up as findings when they are journey steps, not findings.
+
+**Pass 13b, which read every file rather than grepping it, recounted at 198** — 194
+in the 16 pass files plus 4 more that the verification passes themselves
+surfaced. It reported the discrepancy against the number this file was already
+carrying explicitly, rather than silently landing on a third number. That is the
+correct number now. My own quick re-grep with a broader pattern got 173, which is
+closer but still wrong for the same reason — counting headers is not the same as
+reading findings, and 13b is the only pass that actually did the latter across the
+whole corpus.
+
+## Do this week — pass 13b's list, independent of any pass's own severity label
+
+Pass 13b owed no finding its author's framing. It read all 16 pass files, all four
+verification files, and checked "already fixed" claims against `git show` rather
+than trusting commit titles — which is how it caught that **#412 fixes a
+different half of the document-ingest finding than the consent/scoping gap that
+actually matters**, while confirming #452, #422 and #459 genuinely close what they
+claim.
+
+1. **Wire a real place/lift-a-hold control into the product.** Nothing can stop a
+   child from training, by any path. The module underneath is already correct —
+   this is a clean unilateral fix, not a policy call.
+2. **Get an owner decision on the video content-screen vs. consent question.** Live
+   in production, processing every upload today.
+3. **Rotate both PINs and deal with the stale public branches carrying them.**
+4. **Close the any-coach safety-flag bypass** — the CRITICAL raised on review. Narrow,
+   mechanical fix: copy the scoping pattern the sibling training-holds route
+   already has.
+5. **Add the missing authority/expiry check on the medical-clearance write path** —
+   paired with item 1: clearing a child currently requires nothing, while stopping
+   one is impossible.
+6. **Add one test exercising the contact-clearance and hold gate together** —
+   cheapest available insurance against silently losing a CRITICAL gate in a future
+   refactor.
+7. **Get an owner decision on the production bootstrap endpoint** — a standing,
+   header-gated capability to reactivate a suspended organization.
+8. **Decide the intended semantics for the guardian-record overwrite and fix the
+   default** — the current default silently severs a real parent from consent
+   controls, siblings included.
+
+**If you can only fix one thing:** wire a real training-hold control into the
+product. Every other safety finding in this audit — medical-clearance gaps, the
+untested contact gate, video-consent races, guardians never being told about
+incidents — assumes that if something goes wrong, someone in the product can stop
+the child from training. Nobody can, by any route, today. It is also the one item
+on this list that is a clean engineering fix rather than a policy call, which is
+why it is highest-leverage for one week.
 
 ## Verification
 
