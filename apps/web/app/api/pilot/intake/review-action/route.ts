@@ -434,12 +434,17 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
 
     if (promotion.readiness) {
+      // Same provenance as the domain-upsert path, and for the same reason:
+      // this score comes from a promotion payload an administrator hand-typed,
+      // not from any formula. The row says so.
       await createReadiness({
         organizationId: principal.organizationId,
         athleteId: promotion.athlete.athlete_id,
         score: promotion.readiness.score,
         category: promotion.readiness.category,
         measuredAt: promotion.readiness.measured_at,
+        method: 'staff_entered_intake',
+        recordedByAccountId: principal.accountId,
       });
     }
 

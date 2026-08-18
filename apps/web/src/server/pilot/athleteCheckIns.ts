@@ -5,8 +5,18 @@ import { query, queryOne } from './db';
 // Athlete self check-in (Phase 2 slice 1): the athlete's own "I'm here,
 // and this is how I feel" -- one row per athlete per day. Deliberately NOT
 // attendance (that stays the coach/terminal register the passbook counts)
-// and NOT pilot.readiness (formula scores; the readiness board reads that
-// table unfiltered, so self-reports there would contaminate it).
+// and NOT pilot.readiness -- the readiness board reads that table
+// per-athlete-latest, so self-reports landing there would be indistinguishable
+// from the staff judgements already in it.
+//
+// The parenthetical here used to describe pilot.readiness as holding "formula
+// scores". It does not: no formula writes to that table, and every score in it
+// was typed by staff during intake review (see
+// docs/capabilities/READINESS_PROVENANCE_FACTS.md). The decision to keep
+// self-reports in their own table is unchanged and still correct -- mixing two
+// different kinds of claim in one column is the thing being avoided -- but the
+// reason is separation of provenance, not deference to a formula that does not
+// exist.
 //
 // Wellness self-reports (energy / soreness / focus, 1-5) are optional --
 // skipping them is legal and stored as null, never defaulted.

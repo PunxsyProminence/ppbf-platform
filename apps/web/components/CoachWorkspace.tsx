@@ -8,6 +8,10 @@ import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryP
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
+import {
+  READINESS_UNVALIDATED_CAVEAT,
+  isReadinessMethodValidated,
+} from '@/src/server/pilot/readinessProvenance';
 import { formatGymDateTimeShort, formatGymStamp } from '@/src/lib/gymTime';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
@@ -403,6 +407,11 @@ export default function CoachWorkspace() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [athletesLoading, setAthletesLoading] = useState(true);
   const [athletesError, setAthletesError] = useState<string | null>(null);
+  // Whether ANY reading on the readiness board came from an established
+  // method. Starts false so the caveat is present from first paint rather than
+  // appearing a moment after the colours do -- the disclaimer must never lag
+  // the number it qualifies.
+  const [readinessAnyValidated, setReadinessAnyValidated] = useState(false);
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
 
@@ -774,13 +783,33 @@ export default function CoachWorkspace() {
         });
         if (readinessResponse.ok) {
           const board = (await readinessResponse.json()) as {
-            items?: Array<{ athlete_id: string; status: 'GREEN' | 'YELLOW' | 'RED' }>;
+            items?: Array<{
+              athlete_id: string;
+              status: 'GREEN' | 'YELLOW' | 'RED';
+              method?: string;
+              reliability_status?: string;
+              validity_status?: string;
+            }>;
           };
-          const statusByAthlete = new Map((board.items ?? []).map((entry) => [entry.athlete_id, entry.status]));
+          const items = board.items ?? [];
+          const statusByAthlete = new Map(items.map((entry) => [entry.athlete_id, entry.status]));
           for (const athlete of athleteList) {
             const status = statusByAthlete.get(athlete.id);
             if (status) athlete.readiness = status;
           }
+          // Whether ANY reading on this board came from an established method.
+          // Today nothing does -- every score in pilot.readiness was typed by
+          // staff during intake against unvalidated defaults -- so the caveat
+          // below shows. It is computed from the feed rather than hardcoded so
+          // it stops showing on its own if a validated method is ever wired,
+          // instead of becoming a stale disclaimer nobody removes.
+          setReadinessAnyValidated(
+            items.some((entry) => isReadinessMethodValidated({
+              method: entry.method ?? 'UNKNOWN',
+              reliability_status: entry.reliability_status ?? '',
+              validity_status: entry.validity_status ?? '',
+            })),
+          );
         }
       } catch {
         // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
@@ -1628,6 +1657,20 @@ export default function CoachWorkspace() {
                     <>
                       <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
                       <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} unknown — unknown is not clear` : ''}</p>
+                      {/* The score's own caveat, shown WITH the count rather
+                          than in a help panel a coach may never open. The rule
+                          that already governs assessment results -- a value is
+                          never read without its measurement properties --
+                          applies here too; readiness was simply exempt from it
+                          until the provenance columns existed to say so.
+                          Disappears on its own if a validated method is ever
+                          wired, because the condition is computed from the
+                          feed. */}
+                      {!readinessAnyValidated && (
+                        <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-400)]">
+                          {READINESS_UNVALIDATED_CAVEAT}
+                        </p>
+                      )}
                     </>
                   ) : (
                     <>

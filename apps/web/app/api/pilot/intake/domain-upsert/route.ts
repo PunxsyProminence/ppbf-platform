@@ -115,12 +115,19 @@ export async function POST(request: NextRequest) { // NOSONAR
         notes: typeof body.payload.notes === 'string' ? body.payload.notes : undefined,
       });
     } else if (entityType === 'readiness') {
+      // A readiness score entered here is typed by a member of staff during
+      // intake review -- nothing computes it. That is recorded on the row
+      // rather than left to be inferred, and the account that typed it is
+      // recorded with it, so "where did this number come from" has an answer
+      // that does not depend on reading this file.
       entityId = await createReadiness({
         organizationId: principal.organizationId,
         athleteId,
         score: Number(body.payload.score || 0),
         category: asString(body.payload.category, 'general'),
         measuredAt: asString(body.payload.measured_at, new Date().toISOString()),
+        method: 'staff_entered_intake',
+        recordedByAccountId: principal.accountId,
       });
     } else if (entityType === 'coach_note') {
       entityId = await createCoachObservation({
