@@ -89,7 +89,7 @@ live status. It is updated when a pass changes state, not at the end.
 | 1 | Authentication & session | Login, magic link, PIN, session issuance, role resolution, `AUTH_CONTRACT.md` conformance | not started | — |
 | 2 | Authorization & tenancy | `assertActorCanAccessAthlete` and siblings, org scoping, cross-org leakage, role gates across all 228 routes | **running** | `PASS-02-authorization.md` |
 | 3 | Minors' data & consent | Waivers, guardian links, consent scope enforcement, profile visibility, photo/video exposure | not started | — |
-| 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | **running** | `PASS-04-safety-gates.md` |
+| 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | **done** | `PASS-04-safety-gates.md` |
 | 5 | API surface | All 228 routes: input validation, error-shape conformance, idempotency, rate limiting | not started | — |
 | 6 | Data layer | 88 migrations vs. code expectations, indexes, constraints, orphan/nullable risk, N+1 | not started | — |
 | 7 | Frontend & design system | 125 screens: design-system conformance, fabricated-data disclosure, refusal treatment, dead ends | not started | — |
@@ -105,9 +105,21 @@ live status. It is updated when a pass changes state, not at the end.
 None yet. When findings exist they are indexed here by severity, with the pass
 that produced them and whether the refutation pass confirmed or retracted.
 
-| ID | Severity | Finding | Pass | Verify | Status |
-|---|---|---|---|---|---|
-| — | — | *no findings recorded yet* | — | — | — |
+Pass 4 has reported; passes 2, 3 and 10 are still running, so this table is
+partial by definition rather than final.
+
+| ID | Severity | Finding | Pass | Status |
+|---|---|---|---|---|
+| F-01 | CRITICAL | Competition entry and league roster consult no safety record at all — a child under an active `all_training` hold can be entered with one authenticated request | 4 | **Known. Fixed by PR #452, which is green and not a draft. Needs a merge, not new work.** |
+| F-02 | HIGH | A hold does not cancel registrations that already exist; the STOP rung is checked once at registration and never again | 4 | New |
+| F-03 | MEDIUM | `/admin/safety-review` double-counts one compliance violation and every hold in its headline number | 4 | New — second instance of the Morning Read collision class |
+| F-04 | MEDIUM | `raiseConductConcern` bypasses the incident severity floor and the #433 dedup; same route has no athlete-scope check | 4 | New |
+| F-05 | LOW | `/admin/escalations` stale source-type union | 4 | Known; fixed on the PR #456 branch |
+| F-06 | MEDIUM | All three hold scopes overstate enforcement, not only `conditioning_only` | 4 | Half known — this audit's own prior claim was understated and is corrected |
+| F-07 | LOW | A `training_hold` gate can be recorded `blocked` but never `passed`, so a guardian sees "Not clear" permanently after one refused registration | 4 | New |
+| F-08 | MEDIUM | `readinessMath.ts` has zero callers; the stored readiness score is taken raw from the request body, so the clamp and delta-RPE lock live in a module nothing calls | 4 | New mechanism behind a known finding |
+| F-09 | LOW | `TrainingHoldScope` defined five times, feeding three exhaustive maps, one with no fallback | 4 | New — same shape as the drift that broke `main` three times |
+| F-10 | MEDIUM | `assertShadowAuthority` cannot deny at any of its three call sites; it records `allowed: true` for every medical and waiver write | 4 | New |
 
 ## Log
 
@@ -124,3 +136,14 @@ Appended as work happens. Newest last.
   were deleted?* — decides how much the other three can be trusted to stay fixed.
   Each pass writes its own file here; this index is updated when a pass changes
   state, not at the end.
+- **2026-08-18** — Pass 4 reported: ten findings, one CRITICAL, eight of them new.
+  The CRITICAL is **not new work** — PR #452 already fixes it, is green, and is
+  not a draft; what it needs is a merge. Pass 4 also confirmed three claims this
+  audit inherited from `NETWORK_STATUS.md` and **corrected one of them as
+  understated**: it is not only `conditioning_only` holds that fail to enforce,
+  it is all three scopes. Findings written into `NETWORK_STATUS.md` so the other
+  audit session does not rediscover them.
+- **2026-08-18** — Coordination defect found and recorded: `NETWORK_STATUS.md`,
+  the file every brief names as the shared surface, is **not on `main`**. It
+  exists only on branch `docs/agent-handoff-briefs` (PR #437, draft). Any session
+  told to coordinate through it that checks out `main` finds nothing.
