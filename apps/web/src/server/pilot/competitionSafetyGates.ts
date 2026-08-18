@@ -1,6 +1,6 @@
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
 import { ConflictError, ForbiddenError } from './errors';
-import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGateMatrix';
+import { getSafetyGateDefinition, recordSafetyGateEvaluation, type SafetyGateDefinition } from './safetyGateMatrix';
 import { findContactEventBlockingHold } from './trainingHolds';
 import { getAthleteWaiverStatus, type TrackedWaiverType, type WaiverStatus } from './waiverCompliance';
 
@@ -49,6 +49,30 @@ import { getAthleteWaiverStatus, type TrackedWaiverType, type WaiverStatus } fro
  * amount of warning-plus-proceed makes a gym lawfully able to put a child in a
  * van. There is no defensible "recorded warning" version of transporting a
  * minor without their guardian's consent on file, so this refuses too.
+ *
+ * WHY GATE 2 RECORDS ITS CLEARANCES, NOT ONLY ITS REFUSALS.
+ *
+ * The training-hold gate is the one gate here with a row in
+ * pilot.safety_gates, so it is the one gate here that reaches a reader. This
+ * module originally recorded only the 'blocked' outcome, which made that
+ * reader lie in two ways.
+ *
+ * getGuardianGateSummary shows a guardian ONE outcome per gate: the most
+ * recent one. With refusals the only rows ever written, a child held out in
+ * March, cleared in April, and entered in every competition since still shows
+ * `training_hold: blocked` to their guardian -- forever, because the March
+ * refusal stays the newest row there will ever be. The full history
+ * (listSafetyGateEvaluationsForAthlete) fails the same way more quietly: it
+ * reads as an unbroken column of refusals for a child the gym has in fact
+ * cleared repeatedly, and "always blocked, never passed" is a fair thing for a
+ * guardian or an admin to read as "this child has never been cleared."
+ *
+ * So the pass is recorded too, which is also what the substrate already asked
+ * for -- safetyGateMatrix.ts: "Every evaluation this module records carries the
+ * outcome, not only refusals -- the plan's 'teaching moment' doctrine wants an
+ * audit trail of 'was this athlete evaluated,' not only 'was this athlete
+ * stopped.'" Gates 1 and 3 stay unrecorded here: neither has a gate row to
+ * record against, and inventing one means a new seed and a new migration.
  *
  * WHAT IS NOT HERE. No override parameter, on purpose -- safetyGateMatrix.ts
  * states the rule for every gate wired through it: "only the underlying
@@ -101,6 +125,62 @@ const TRAVEL_WAIVER: TrackedWaiverType = 'travel';
 // double-spaces the moment somebody adds one at the join.
 function joinSentences(...sentences: readonly string[]): string {
   return sentences.join(' ');
+}
+
+/**
+ * Writes one training-hold gate evaluation, pass or refusal.
+ *
+ * Recording is best-effort and gated on the gate row existing -- copied
+ * wholesale from the scheduler's training_hold branch, which copied it from
+ * contactClearanceGate. pilot.safety_gate_evaluations has a foreign key onto
+ * (organization_id, gate_key) in pilot.safety_gates, and both of those tables
+ * arrive by operator-applied migration on their own schedule, so an
+ * organization can have holds placeable before it has anywhere to record an
+ * evaluation. Neither the refusal nor the entry may depend on whether the audit
+ * write can land: a gym whose migration has not run yet must still be able to
+ * refuse a held child, and must still be able to enter a cleared one.
+ *
+ * Both outcomes go through this one function rather than through two copies of
+ * the same six lines, for the reason this module exists at all -- two copies of
+ * a check are how one of them later stops matching the other. The asymmetry
+ * that was there before (the refusal recorded, the clearance not) is exactly
+ * that failure, one branch at a time.
+ */
+async function recordTrainingHoldEvaluation(input: {
+  organizationId: string;
+  actor: ActorIdentity;
+  athleteId: string;
+  outcome: 'passed' | 'blocked';
+  reason: string;
+  contextId: string;
+  metadata: Record<string, unknown>;
+  evaluatedAt: string;
+}): Promise<void> {
+  let gate: SafetyGateDefinition | null = null;
+  try {
+    gate = await getSafetyGateDefinition(input.organizationId, TRAINING_HOLD_GATE_KEY);
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== '42P01') {
+      throw error;
+    }
+  }
+
+  if (!gate) {
+    return;
+  }
+
+  await recordSafetyGateEvaluation({
+    organizationId: input.organizationId,
+    gateKey: TRAINING_HOLD_GATE_KEY,
+    athleteId: input.athleteId,
+    outcome: input.outcome,
+    reason: input.reason,
+    evaluatedByAccountId: input.actor.accountId,
+    evaluatedByRole: input.actor.role,
+    contextId: input.contextId,
+    metadata: input.metadata,
+    evaluatedAt: input.evaluatedAt,
+  });
 }
 
 function travelWaiverRefusal(status: WaiverStatus, event: string): string {
@@ -169,40 +249,20 @@ export async function assertAthleteMayBeEnteredInCompetition(input: {
   // words, matching the scheduler's 'training_hold' branch: the explanation
   // was written FOR the athlete and the lift condition is the teaching moment.
   const hold = await findContactEventBlockingHold(organizationId, input.athleteId);
+  // One timestamp for whichever of the two outcomes below fires.
+  const evaluatedAt = input.at ?? new Date().toISOString();
+
   if (hold) {
-    const evaluatedAt = input.at ?? new Date().toISOString();
-
-    // Recording the blocked attempt is best-effort and gated on the gate row
-    // existing -- copied wholesale from the scheduler's training_hold branch,
-    // which copied it from contactClearanceGate. pilot.safety_gate_evaluations
-    // has a foreign key onto (organization_id, gate_key) in
-    // pilot.safety_gates, and both of those tables arrive by operator-applied
-    // migration on their own schedule, so an organization can have holds
-    // placeable before it has anywhere to record an evaluation. The refusal
-    // itself must never depend on whether the audit write can land.
-    let gate = null;
-    try {
-      gate = await getSafetyGateDefinition(organizationId, TRAINING_HOLD_GATE_KEY);
-    } catch (error) {
-      if ((error as { code?: unknown }).code !== '42P01') {
-        throw error;
-      }
-    }
-
-    if (gate) {
-      await recordSafetyGateEvaluation({
-        organizationId,
-        gateKey: TRAINING_HOLD_GATE_KEY,
-        athleteId: input.athleteId,
-        outcome: 'blocked',
-        reason: `Competition entry refused: active hold covering contact (${input.kind})`,
-        evaluatedByAccountId: input.actor.accountId,
-        evaluatedByRole: input.actor.role,
-        contextId: input.contextId,
-        metadata: { hold_id: hold.hold_id, hold_scope: hold.scope, event_kind: input.kind },
-        evaluatedAt,
-      });
-    }
+    await recordTrainingHoldEvaluation({
+      organizationId,
+      actor: input.actor,
+      athleteId: input.athleteId,
+      outcome: 'blocked',
+      reason: `Competition entry refused: active hold covering contact (${input.kind})`,
+      contextId: input.contextId,
+      metadata: { hold_id: hold.hold_id, hold_scope: hold.scope, event_kind: input.kind },
+      evaluatedAt,
+    });
 
     const explanation = hold.athlete_explanation.trim();
     const liftCondition = hold.lift_condition_text.trim();
@@ -218,6 +278,31 @@ export async function assertAthleteMayBeEnteredInCompetition(input: {
 
     throw new ForbiddenError(parts.join(' '), 'TRAINING_HOLD_BLOCKS_COMPETITION');
   }
+
+  // GATE 2 cleared, and that is recorded -- see "WHY GATE 2 RECORDS ITS
+  // CLEARANCES" above for the guardian screen this row exists to keep honest.
+  //
+  // It is written here, before GATE 3 runs, because what it records is the
+  // outcome of THIS gate: the hold question was asked of this child and the
+  // answer was no hold. That stays true whether or not the travel waiver
+  // refuses two lines down, and a 'passed' row has never meant "the action went
+  // ahead" -- contactClearanceGate writes its 'passed' row before its caller
+  // has persisted anything at all, and says so ("callers invoke this BEFORE
+  // persisting the observation").
+  // Deferring it to after GATE 3 would put the pass back into the state this
+  // gate history was in before: absent for every child a different gate
+  // stopped, which is precisely the child whose record most needs to show that
+  // the hold gate was checked and cleared.
+  await recordTrainingHoldEvaluation({
+    organizationId,
+    actor: input.actor,
+    athleteId: input.athleteId,
+    outcome: 'passed',
+    reason: `Competition entry allowed: no active hold covering contact (${input.kind})`,
+    contextId: input.contextId,
+    metadata: { event_kind: input.kind },
+    evaluatedAt,
+  });
 
   // GATE 3 -- travel waiver. 409 rather than 403 on purpose: errors.ts defines
   // ConflictError as "a precondition on a DIFFERENT resource than the one
