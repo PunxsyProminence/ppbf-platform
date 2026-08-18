@@ -708,6 +708,39 @@ export async function listBarrierReports(
   };
 }
 
+/**
+ * Raised when a write would repoint an existing guardian at a different account.
+ *
+ * The intake routes take `parent_id` from the request body and validate only
+ * that it is non-empty (domain-upsert and review-action). The athlete side of
+ * those routes IS gated -- assertActorCanAccessAthlete, and for a coach
+ * assertCoachAssignedToAthlete -- but the parent side never was, and this
+ * function's ON CONFLICT clause used to overwrite `account_id` unconditionally.
+ *
+ * That combination was a privilege escalation, not merely a data-integrity bug.
+ * A guardian row carries `guardian_links` to every child of that family, and
+ * guardianAthleteIds() resolves a parent portal's reach through them. So an
+ * actor with legitimate standing on ONE athlete could post another family's
+ * `parent_id` together with an account they control, take over that guardian
+ * row, and inherit its links to children they have no standing on -- while the
+ * real guardian, whose account_id had just been replaced, lost their own.
+ * The athlete-side gate could never catch it: the damage travels through the
+ * parent row's OTHER links, which that gate does not look at.
+ *
+ * The careless case is the same shape with no malice: a mistyped parent_id
+ * silently hands this child's record to an unrelated family.
+ */
+export class GuardianAccountReassignmentError extends Error {
+  constructor(readonly parentId: string) {
+    super(
+      'Forbidden: this guardian record is already linked to a different account. '
+      + 'Changing which account a guardian signs in as is a staff-credentialing '
+      + 'action, not an intake edit.',
+    );
+    this.name = 'GuardianAccountReassignmentError';
+  }
+}
+
 export async function upsertGuardian(params: {
   organizationId: string;
   parentId: string;
@@ -716,18 +749,42 @@ export async function upsertGuardian(params: {
   phone?: string;
   email?: string;
 }): Promise<void> {
-  await query(
+  /* Two changes from the original unconditional upsert, both in the ON CONFLICT
+     clause, and both about an EXISTING row -- creating a guardian and linking
+     one to a second child are untouched, so sibling enrolment still works.
+
+     1. account_id is coalesced, not replaced. An omitted accountId used to null
+        an existing link, quietly signing a guardian out of their own children.
+     2. The update is refused outright when it would move a guardian already
+        bound to one account onto another. Done in the WHERE of the conflict
+        clause rather than as a read-then-write, so two concurrent callers
+        cannot straddle the check -- an UPDATE that the WHERE rejects touches no
+        row, and rowCount tells us it was rejected.
+
+     Re-writing the same account_id, or supplying one where none was set, both
+     still succeed: the guard fires only on an actual reassignment. Legitimate
+     account changes go through staffProvisioning, which already refuses to
+     claim a guardian row bound to another account. */
+  const updated = await query<{ parent_id: string }>(
     `insert into pilot.parents
      (organization_id, parent_id, account_id, full_name, phone, email)
      values ($1,$2,$3,$4,$5,$6)
      on conflict (organization_id, parent_id) do update set
-       account_id = excluded.account_id,
+       account_id = coalesce(pilot.parents.account_id, excluded.account_id),
        full_name = excluded.full_name,
        phone = excluded.phone,
        email = excluded.email,
-       updated_at = now()`,
+       updated_at = now()
+     where pilot.parents.account_id is null
+        or excluded.account_id is null
+        or pilot.parents.account_id = excluded.account_id
+     returning parent_id`,
     [params.organizationId, params.parentId, params.accountId ?? null, params.fullName, params.phone ?? null, params.email ?? null],
   );
+
+  if (updated.length === 0) {
+    throw new GuardianAccountReassignmentError(params.parentId);
+  }
 }
 
 export async function linkGuardianAthlete(params: {
