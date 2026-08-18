@@ -4,7 +4,13 @@ import { changeOwnPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError, requirePrincipalAllowingPinChange } from '@/src/server/pilot/http';
-import { checkRateLimit, clearRateLimit, getClientIp, recordFailedAttempt } from '@/src/server/pilot/rateLimit';
+import {
+  checkRateLimit,
+  checkDurableRateLimit,
+  clearDurableRateLimit,
+  getClientIp,
+  recordDurableFailedAttempt,
+} from '@/src/server/pilot/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -15,6 +21,14 @@ export const runtime = 'nodejs';
  * It is rate limited on the same footing as login because it takes the
  * current PIN as input: without a limit it would be a second, unthrottled
  * place to guess one.
+ *
+ * Durable, not just volatile, for the same reason login is: a session
+ * cookie alone gets a caller in here (requirePrincipalAllowingPinChange
+ * checks the session, not the current PIN), so a holder of a stolen-but-live
+ * session can guess the current PIN repeatedly. The in-memory limiter is
+ * per-container, so across Container Apps' multiple replicas that guesser's
+ * real budget is N times the intended 5-attempts-then-backoff design. Either
+ * limiter saying "limited" is enough.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +38,14 @@ export async function POST(request: NextRequest) {
     const accountKey = `pin_change_account:${principal.accountId}`;
     const ipKey = `pin_change_ip:${clientIp}`;
 
-    if (checkRateLimit(accountKey).isLimited || checkRateLimit(ipKey).isLimited) {
+    const durableAccountCheck = await checkDurableRateLimit(accountKey);
+    const durableIpCheck = await checkDurableRateLimit(ipKey);
+    if (
+      checkRateLimit(accountKey).isLimited
+      || checkRateLimit(ipKey).isLimited
+      || durableAccountCheck.isLimited
+      || durableIpCheck.isLimited
+    ) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
         { status: 429 },
@@ -43,14 +64,14 @@ export async function POST(request: NextRequest) {
       await changeOwnPin(principal.accountId, currentPin, newPin);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('Unauthorized')) {
-        recordFailedAttempt(accountKey);
-        recordFailedAttempt(ipKey);
+        await recordDurableFailedAttempt(accountKey);
+        await recordDurableFailedAttempt(ipKey);
       }
       throw error;
     }
 
-    clearRateLimit(accountKey);
-    clearRateLimit(ipKey);
+    await clearDurableRateLimit(accountKey);
+    await clearDurableRateLimit(ipKey);
 
     await writePilotAuditEvent({
       event_type: 'update',

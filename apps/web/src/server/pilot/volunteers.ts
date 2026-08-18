@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import { query, queryOne } from './db';
 
 export const VOLUNTEER_STATUSES = ['active', 'pending', 'inactive'] as const;
@@ -29,10 +31,18 @@ export interface VolunteerRecord {
 export interface VolunteerCreateInput {
   organizationId: string;
   fullName: string;
-  roleFocus: string;
-  availability: string;
-  certificationStatus: string;
-  backgroundCheckStatus: string;
+  // string | null rather than a required string: POST /api/admin/volunteers
+  // still validates all four are present before it ever calls this (so that
+  // route's behavior is unchanged), but createOrUpdateMicrosoftStaffAccount
+  // (staffProvisioning.ts) also calls this to create the roster row a
+  // volunteer invite is missing today, and an invite carries only an email --
+  // it does not know a role focus or an availability window. The columns are
+  // nullable in the base schema for exactly this "not yet known" case; see
+  // the migration header.
+  roleFocus: string | null;
+  availability: string | null;
+  certificationStatus: string | null;
+  backgroundCheckStatus: string | null;
   notes?: string | null;
   // Set when the volunteer is also a platform account. Most volunteers are
   // not, so this is null far more often than not, and the column is nullable
@@ -93,34 +103,48 @@ export async function getVolunteer(
   );
 }
 
-export async function createVolunteer(input: VolunteerCreateInput): Promise<string> {
+/**
+ * Accepts an optional client so a caller (staffProvisioning.ts's
+ * createOrUpdateMicrosoftStaffAccount) can make writing the roster row part
+ * of the same transaction that creates the account -- a volunteer invite
+ * should never commit an account with no roster row behind it, the same
+ * reasoning fileEscalation (escalationLadder.ts) documents for its own
+ * optional client.
+ */
+export async function createVolunteer(input: VolunteerCreateInput, client?: PoolClient): Promise<string> {
   const volunteerId = randomUUID();
 
   // `role` and `active_flag` are the base schema's own columns and are NOT
-  // NULL / defaulted there. They are written from the program fields rather
-  // than left to defaults so the canonical columns stay truthful instead of
-  // quietly disagreeing with role_focus and status.
-  await query(
-    `insert into pilot.volunteers
+  // NULL / defaulted there. `role` is written from role_focus rather than
+  // left to a default so the canonical column stays truthful instead of
+  // quietly disagreeing with it -- and falls back to the literal 'volunteer'
+  // only when role_focus itself is unknown, so a not-null column is never
+  // asked to hold a value nobody supplied.
+  const values = [
+    input.organizationId,
+    volunteerId,
+    input.accountId ?? null,
+    input.fullName,
+    input.roleFocus ?? 'volunteer',
+    false,
+    input.roleFocus ?? null,
+    input.availability ?? null,
+    input.certificationStatus ?? null,
+    input.backgroundCheckStatus ?? null,
+    'pending',
+    input.notes ?? null,
+  ];
+  const sql = `insert into pilot.volunteers
        (organization_id, volunteer_id, account_id, full_name, role, active_flag,
         role_focus, availability, certification_status, background_check_status,
         status, notes, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now(), now())`,
-    [
-      input.organizationId,
-      volunteerId,
-      input.accountId ?? null,
-      input.fullName,
-      input.roleFocus,
-      false,
-      input.roleFocus,
-      input.availability,
-      input.certificationStatus,
-      input.backgroundCheckStatus,
-      'pending',
-      input.notes ?? null,
-    ],
-  );
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now(), now())`;
+
+  if (client) {
+    await client.query(sql, values);
+  } else {
+    await query(sql, values);
+  }
 
   return volunteerId;
 }

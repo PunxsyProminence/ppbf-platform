@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getAthleteById, getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -55,7 +55,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ items: [] });
     }
 
-    const athletes = await getAthletesByOrganization(principal.organizationId);
+    // Unbounded before this: SELECT * with no LIMIT, so an admin roster
+    // page load pulled every athlete row in the org regardless of size.
+    // limit is optional -- an admin browsing the roster with no params
+    // still gets everything, exactly today's behavior -- but a caller that
+    // wants a bounded page (or that hits a gym with hundreds of athletes)
+    // now has a real way to ask for one.
+    const rawLimit = request.nextUrl.searchParams.get('limit');
+    const limit = rawLimit === null ? null : parseSafeLimit(rawLimit, 0, 2000);
+    if (rawLimit !== null && limit === null) {
+      return NextResponse.json({ error: 'Invalid limit parameter' }, { status: 400 });
+    }
+    const rawOffset = request.nextUrl.searchParams.get('offset');
+    const offset = rawOffset === null ? 0 : Math.max(Number.parseInt(rawOffset, 10) || 0, 0);
+
+    const athletes = await getAthletesByOrganization(
+      principal.organizationId,
+      limit ? { limit, offset } : undefined,
+    );
     return NextResponse.json({ items: athletes });
   } catch (error) {
     return jsonError(error);

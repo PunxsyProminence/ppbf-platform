@@ -2,7 +2,7 @@
 // Connects recommendation outcomes → Growth Metrics → SHADOW Library → Scout Reports.
 // This is how SHADOW improves over time: each interaction informs future advice.
 
-import { query, queryOne } from './db';
+import { query, queryOne, sanitizedSqlState } from './db';
 import type { PilotRole } from './contracts';
 import { recordRecommendationEffectiveness } from './shadowMetrics';
 import { upsertRememberedFact } from './shadowUserProfile';
@@ -133,8 +133,21 @@ async function safeLogLearningEvent(
 ): Promise<void> {
   try {
     await logLearningEvent(signal, effectivenessScore, actions);
-  } catch {
-    // Non-critical — don't fail the whole loop
+  } catch (error) {
+    // Non-critical -- don't fail the whole loop. But this INSERT is the
+    // ONLY durable record that the loop ran, what it decided, and why: a
+    // silent catch here previously left an operator debugging "why did
+    // SHADOW stop updating its playbook for this org" with no log line and
+    // no row to find. errorClass/code only -- never the raw error object,
+    // matching db.ts's own sanitized-logging stance.
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error('SHADOW learning event not recorded', {
+      organizationId: signal.organizationId,
+      feedbackId: signal.feedbackId,
+      errorClass: error instanceof Error ? error.constructor?.name : typeof error,
+      ...(code ? { code } : {}),
+    });
   }
 }
 

@@ -13,16 +13,41 @@ import { query, queryOne, withTransaction } from './db';
  * the /admin/escalations page that reads it ARE the escalation mechanism.
  *
  * Deliberately NOT unified with pilot.compliance_violations /
- * violation_escalations -- that system already works and has its own UI.
- * This module owns near-miss-shaped signal only (near_miss, pain_report,
- * safety_gate_evaluation, repeated_pattern); whether to eventually merge
- * the two is a real product question left open.
+ * violation_escalations as systems -- violation_escalations (the manual
+ * "Escalate" action's own history table) already works and has its own UI,
+ * and stays exactly as it is. 'video_scan' and 'compliance_violation' below
+ * are this ladder accepting two new signal sources the same way
+ * training_hold/incident/athlete_voice each did: videoScanSweep.ts's
+ * sweepQuarantinedVideos files one for a terminal negative scan verdict, and
+ * compliance.ts's createComplianceViolation files one alongside a violation
+ * whose rule's escalation_level maps to a supported target role, so the
+ * pull-based surface actually surfaces both. Whether to ever merge the two
+ * TABLES into one remains the real, still-open product question.
  */
 
 export type SafetyEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
-export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold' | 'incident';
+export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold' | 'incident' | 'video_scan' | 'compliance_violation';
 export type SafetyEscalationStatus = 'open' | 'acknowledged' | 'resolved';
-/** Who an escalation is filed against. Deliberately excludes 'board' -- see the migration header for why. */
+/**
+ * Who an escalation is filed against. Deliberately excludes 'board' and
+ * 'parent' -- see the migration header for why.
+ *
+ * pilot.compliance_rules.escalation_level allows 'board' and 'parent' in
+ * addition to 'coach'/'admin' (compliance.ts), but neither has a safe
+ * target here: 'board' would put an individually-identifiable athlete
+ * record in front of board, which ORGANIZATION_ROLE_MODEL.md and
+ * boardRoleBoundaries.test.ts both hold to aggregate/k-anonymity-gated
+ * reads only (getBoardEscalationSummary below is the one legal board-facing
+ * view of this data), and 'parent' would let a guardian learn an
+ * escalation exists at all, which parent/safety/route.ts's own doc
+ * explicitly refuses for the same disclosure-safety reason athlete_voice
+ * rows are hidden from a coach. A compliance rule seeded/authored with
+ * escalation_level 'board' or 'parent' therefore does not auto-file here
+ * (compliance.ts's createComplianceViolation skips it) until a real
+ * product/safety decision creates a safe board- or parent-facing surface
+ * for individual safety records -- this is reported as a known gap, not
+ * silently widened.
+ */
 export type SafetyEscalationTargetRole = 'coach' | 'organization_admin' | 'admin';
 
 export interface SafetyEscalationRow {
@@ -171,6 +196,17 @@ export interface FileIncidentReportInput {
   occurredAt?: string | null;
 }
 
+// POST /api/pilot/incidents accepts no client-supplied idempotency key, and
+// a double-submit or a client retry after a dropped response is a real
+// pattern for an admin-facing form with no optimistic UI -- each retried
+// request otherwise files a second, fully duplicate 'incident' escalation
+// for the same real-world event, doubling the manual safety-review queue
+// for something that only happened once. A window this short cannot
+// mistake two genuinely separate incidents (even identically worded ones,
+// reported minutes apart) for the same submission; it exists to absorb a
+// retried REQUEST, not to deduplicate the athlete's history.
+const INCIDENT_DEDUP_WINDOW_SECONDS = 30;
+
 /**
  * Capability #152: a post-hoc report that harm or a rule violation actually
  * occurred, distinct from pilot.shadow_near_misses ("this almost happened")
@@ -179,6 +215,18 @@ export interface FileIncidentReportInput {
  * and severity is never allowed to read as anything less than 'high' --
  * this is the one source_type where the filer is asserting something
  * genuinely happened, not flagging a possibility.
+ *
+ * Idempotent within INCIDENT_DEDUP_WINDOW_SECONDS: the same org/athlete/
+ * reporter/reason combination filed twice in quick succession returns the
+ * FIRST report both times rather than inserting a duplicate. The check and
+ * the insert are one atomic statement (INSERT ... SELECT ... WHERE NOT
+ * EXISTS), matching detectRepeatedPatternEscalations's own accepted
+ * tradeoff elsewhere in this file: this is not a partial-unique-index-level
+ * guarantee against two requests landing at the database in the same
+ * instant (that would need a migration and a client-supplied key neither of
+ * which exist here), but it closes the documented failure mode -- a
+ * sequential retry, which by definition cannot reach Postgres before the
+ * first attempt has already committed.
  */
 export async function fileIncidentReport(input: FileIncidentReportInput): Promise<SafetyEscalationRow> {
   // The 'high'/'critical' floor above is a TypeScript-only guarantee -- it
@@ -193,18 +241,92 @@ export async function fileIncidentReport(input: FileIncidentReportInput): Promis
   if (input.severity !== 'high' && input.severity !== 'critical') {
     throw new Error(`fileIncidentReport: severity must be 'high' or 'critical', got '${String(input.severity)}'`);
   }
-  return fileEscalation({
-    organizationId: input.organizationId,
-    sourceType: 'incident',
-    sourceId: null,
-    athleteId: input.athleteId,
-    severity: input.severity,
-    reason: input.reason,
-    triggeredBy: 'human',
-    triggeredByAccountId: input.reportedByAccountId,
-    triggeredByRole: input.reportedByRole,
-    metadata: input.occurredAt ? { occurred_at: input.occurredAt } : {},
-  });
+
+  const escalationId = randomUUID();
+  const escalatedToRole: SafetyEscalationTargetRole = 'organization_admin';
+  const metadata = input.occurredAt ? { occurred_at: input.occurredAt } : {};
+
+  const inserted = await queryOne<{ escalation_id: string }>(
+    `insert into pilot.safety_escalations (
+       organization_id, escalation_id, source_type, source_id, athlete_id,
+       severity, reason, escalated_to_role,
+       triggered_by, triggered_by_account_id, triggered_by_role,
+       metadata
+     )
+     select $1, $2, 'incident', null, $3, $4, $5, $6, 'human', $7, $8, $9::jsonb
+     where not exists (
+       select 1 from pilot.safety_escalations
+       where organization_id = $1
+         and source_type = 'incident'
+         and athlete_id = $3
+         and triggered_by_account_id = $7
+         and reason = $5
+         and created_at > now() - ($10 * interval '1 second')
+     )
+     returning escalation_id`,
+    [
+      input.organizationId,
+      escalationId,
+      input.athleteId,
+      input.severity,
+      input.reason,
+      escalatedToRole,
+      input.reportedByAccountId,
+      input.reportedByRole,
+      JSON.stringify(metadata),
+      INCIDENT_DEDUP_WINDOW_SECONDS,
+    ],
+  );
+
+  if (inserted) {
+    const now = new Date().toISOString();
+    return {
+      escalation_id: escalationId,
+      source_type: 'incident',
+      source_id: null,
+      athlete_id: input.athleteId,
+      severity: input.severity,
+      reason: input.reason,
+      escalated_to_role: escalatedToRole,
+      triggered_by: 'human',
+      triggered_by_account_id: input.reportedByAccountId,
+      triggered_by_role: input.reportedByRole,
+      status: 'open',
+      acknowledged_by_account_id: null,
+      acknowledged_at: null,
+      resolved_by_account_id: null,
+      resolved_at: null,
+      resolution_note: '',
+      metadata,
+      created_at: now,
+      updated_at: now,
+    };
+  }
+
+  // A duplicate landed inside the window: the caller's request still
+  // resolves to a real record -- the report that already exists -- rather
+  // than silently doing nothing or throwing on what looks, from the
+  // reporter's side, like an ordinary submission.
+  const existing = await queryOne<SafetyEscalationRow>(
+    `select escalation_id, source_type, source_id, athlete_id, severity, reason,
+            escalated_to_role, triggered_by, triggered_by_account_id, triggered_by_role,
+            status, acknowledged_by_account_id, acknowledged_at::text,
+            resolved_by_account_id, resolved_at::text, resolution_note, metadata,
+            created_at::text, updated_at::text
+     from pilot.safety_escalations
+     where organization_id = $1 and source_type = 'incident' and athlete_id = $2
+       and triggered_by_account_id = $3 and reason = $4
+       and created_at > now() - ($5 * interval '1 second')
+     order by created_at desc
+     limit 1`,
+    [input.organizationId, input.athleteId, input.reportedByAccountId, input.reason, INCIDENT_DEDUP_WINDOW_SECONDS],
+  );
+  if (existing) return existing;
+
+  // Vanishingly unlikely -- the row that blocked the insert would have to
+  // be deleted between the two queries -- but never fabricate a report that
+  // does not exist; a real error here is honest, a synthesized one is not.
+  throw new Error('fileIncidentReport: a duplicate was detected but the existing report could not be re-read');
 }
 
 export interface EscalationListFilters {

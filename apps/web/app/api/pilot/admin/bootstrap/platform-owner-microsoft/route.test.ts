@@ -5,6 +5,7 @@ import {
   createOrUpdateMicrosoftPlatformOwnerAccount,
   createOrganization,
 } from '@/src/server/pilot/auth';
+import { checkDurableRateLimit } from '@/src/server/pilot/rateLimit';
 
 jest.mock('@/src/server/pilot/auth', () => {
   const actual = jest.requireActual('@/src/server/pilot/auth');
@@ -40,6 +41,9 @@ jest.mock('@/src/server/pilot/rateLimit', () => ({
   checkRateLimit: () => ({ isLimited: false }),
   recordFailedAttempt: jest.fn(),
   clearRateLimit: jest.fn(),
+  checkDurableRateLimit: jest.fn(async () => ({ isLimited: false })),
+  recordDurableFailedAttempt: jest.fn(async () => ({ delayMs: 1000 })),
+  clearDurableRateLimit: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/src/server/pilot/security', () => ({
@@ -48,6 +52,7 @@ jest.mock('@/src/server/pilot/security', () => ({
 
 const mockCreateOrganization = createOrganization as jest.Mock;
 const mockCreateOwner = createOrUpdateMicrosoftPlatformOwnerAccount as jest.Mock;
+const mockCheckDurable = checkDurableRateLimit as jest.Mock;
 
 const originalPrimaryOwnerEmail = process.env.PPBF_PRIMARY_OWNER_EMAIL;
 const originalBootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY;
@@ -112,5 +117,17 @@ describe('POST /api/pilot/admin/bootstrap/platform-owner-microsoft', () => {
 
     expect(response.status).toBe(200);
     expect(payload.login_email).toBe('admin@punxsyprominence.org');
+  });
+
+  // The in-memory limiter alone is per-container; a durable "limited" must
+  // refuse the highest-privilege account's own credential guess just as
+  // firmly as the volatile one does, and before the key comparison runs.
+  test('a durable-limited IP is refused before the bootstrap key is even checked', async () => {
+    mockCheckDurable.mockResolvedValueOnce({ isLimited: true });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(429);
+    expect(mockCreateOwner).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,13 @@
 import { buildRosterCsv } from '@/app/api/pilot/admin/export/roster/csv';
-import { parseCsv, parseRosterCsv, planRosterImport } from './rosterImport';
+import { applyRosterImport, parseCsv, parseRosterCsv, planRosterImport, type RosterImportRow, type RosterRowPlan } from './rosterImport';
 import { query } from './db';
+import { insertAthleteIfAbsent } from './entities';
 
 jest.mock('./db', () => ({ query: jest.fn() }));
 jest.mock('./entities', () => ({ insertAthleteIfAbsent: jest.fn() }));
 
 const mockQuery = query as jest.Mock;
+const mockInsertIfAbsent = insertAthleteIfAbsent as jest.Mock;
 
 beforeEach(() => {
   jest.resetAllMocks();
@@ -216,5 +218,154 @@ describe('planRosterImport', () => {
     ]);
     expect(plan.rows.map((r) => r.line)).toEqual([1, 2, 3]);
     expect(plan.rows[1].outcome).toBe('reject');
+  });
+});
+
+// applyRosterImport batches every `create` row into one insert instead of
+// one round trip per row (up to MAX_ROWS = 500), but must reproduce the
+// original row-by-row semantics exactly: per-row error isolation, races
+// lost against another writer reported as skip_exists, and file order
+// preserved in the result.
+describe('applyRosterImport', () => {
+  const row = (over: Partial<RosterImportRow> = {}): RosterImportRow => ({
+    athlete_id: 'ath-1',
+    full_name: 'A Name',
+    date_of_birth: '2012-03-14',
+    weight_class: '',
+    gym_status: '',
+    emergency_contact_note: '',
+    coach_account_id: '',
+    ...over,
+  });
+
+  const planned = (over: Partial<RosterRowPlan> = {}): RosterRowPlan => ({
+    line: 1,
+    athlete_id: 'ath-1',
+    full_name: 'A Name',
+    outcome: 'create',
+    reason: '',
+    ...over,
+  });
+
+  it('does nothing and calls neither query nor insertAthleteIfAbsent when there is nothing to create', async () => {
+    const rows = [row({ athlete_id: '' })];
+    const plan = { rows: [planned({ outcome: 'reject', reason: 'No athlete id.' })], counts: { create: 0, skip_exists: 0, reject: 1 } };
+
+    const result = await applyRosterImport('org-1', rows, plan);
+
+    expect(result.counts).toEqual({ create: 0, skip_exists: 0, reject: 1 });
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockInsertIfAbsent).not.toHaveBeenCalled();
+  });
+
+  it('a single creatable row goes straight through insertAthleteIfAbsent -- nothing to batch', async () => {
+    mockInsertIfAbsent.mockResolvedValueOnce(true);
+    const rows = [row()];
+    const plan = { rows: [planned()], counts: { create: 1, skip_exists: 0, reject: 0 } };
+
+    const result = await applyRosterImport('org-1', rows, plan);
+
+    expect(result.rows[0]).toMatchObject({ outcome: 'create', reason: '' });
+    expect(mockInsertIfAbsent).toHaveBeenCalledTimes(1);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('batches multiple creatable rows into ONE insert call, not one per row', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }, { athlete_id: 'ath-2' }, { athlete_id: 'ath-3' }]);
+    const rows = [row({ athlete_id: 'ath-1' }), row({ athlete_id: 'ath-2' }), row({ athlete_id: 'ath-3' })];
+    const plan = {
+      rows: [
+        planned({ line: 1, athlete_id: 'ath-1' }),
+        planned({ line: 2, athlete_id: 'ath-2' }),
+        planned({ line: 3, athlete_id: 'ath-3' }),
+      ],
+      counts: { create: 3, skip_exists: 0, reject: 0 },
+    };
+
+    const result = await applyRosterImport('org-1', rows, plan);
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockInsertIfAbsent).not.toHaveBeenCalled();
+    expect(result.counts).toEqual({ create: 3, skip_exists: 0, reject: 0 });
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('on conflict (organization_id, athlete_id) do nothing');
+    expect(params).toContain('ath-1');
+    expect(params).toContain('ath-3');
+  });
+
+  it('a row the batch insert did not return (lost the race) reports skip_exists, not create', async () => {
+    // Only ath-1 and ath-3 came back from RETURNING -- ath-2 was taken by
+    // another writer between planning and this call.
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }, { athlete_id: 'ath-3' }]);
+    const rows = [row({ athlete_id: 'ath-1' }), row({ athlete_id: 'ath-2' }), row({ athlete_id: 'ath-3' })];
+    const plan = {
+      rows: [
+        planned({ line: 1, athlete_id: 'ath-1' }),
+        planned({ line: 2, athlete_id: 'ath-2' }),
+        planned({ line: 3, athlete_id: 'ath-3' }),
+      ],
+      counts: { create: 3, skip_exists: 0, reject: 0 },
+    };
+
+    const result = await applyRosterImport('org-1', rows, plan);
+
+    expect(result.counts).toEqual({ create: 2, skip_exists: 1, reject: 0 });
+    const raced = result.rows.find((r) => r.athlete_id === 'ath-2');
+    expect(raced).toMatchObject({ outcome: 'skip_exists' });
+    expect(raced!.reason).toMatch(/left exactly as it is/i);
+  });
+
+  it('falls back to one insert per row when the batch statement itself fails, isolating the one bad row', async () => {
+    mockQuery.mockRejectedValueOnce(new Error('insert or update on table "athletes" violates foreign key constraint'));
+    mockInsertIfAbsent
+      .mockResolvedValueOnce(true) // ath-1: fine
+      .mockRejectedValueOnce(new Error('bad coach id')) // ath-2: the actual culprit
+      .mockResolvedValueOnce(true); // ath-3: fine
+    const rows = [row({ athlete_id: 'ath-1' }), row({ athlete_id: 'ath-2' }), row({ athlete_id: 'ath-3' })];
+    const plan = {
+      rows: [
+        planned({ line: 1, athlete_id: 'ath-1' }),
+        planned({ line: 2, athlete_id: 'ath-2' }),
+        planned({ line: 3, athlete_id: 'ath-3' }),
+      ],
+      counts: { create: 3, skip_exists: 0, reject: 0 },
+    };
+
+    const result = await applyRosterImport('org-1', rows, plan);
+
+    // The failed batch is the ONE query call; recovery is per-row from there.
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockInsertIfAbsent).toHaveBeenCalledTimes(3);
+    expect(result.counts).toEqual({ create: 2, skip_exists: 0, reject: 1 });
+    const failed = result.rows.find((r) => r.athlete_id === 'ath-2');
+    expect(failed).toMatchObject({ outcome: 'reject', reason: 'bad coach id' });
+    // The rows on either side of the bad one still landed -- the whole file
+    // was not discarded for one row's sake.
+    expect(result.rows.find((r) => r.athlete_id === 'ath-1')).toMatchObject({ outcome: 'create' });
+    expect(result.rows.find((r) => r.athlete_id === 'ath-3')).toMatchObject({ outcome: 'create' });
+  });
+
+  it('preserves file order in the result, interleaving planning-time rejections with newly created rows', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-2' }, { athlete_id: 'ath-4' }]);
+    const rows = [
+      row({ athlete_id: '' }),
+      row({ athlete_id: 'ath-2' }),
+      row({ athlete_id: 'ath-2' }), // duplicate id in the file: rejected in planning
+      row({ athlete_id: 'ath-4' }),
+    ];
+    const plan = {
+      rows: [
+        planned({ line: 1, athlete_id: '', outcome: 'reject', reason: 'No athlete id.' }),
+        planned({ line: 2, athlete_id: 'ath-2' }),
+        planned({ line: 3, athlete_id: 'ath-2', outcome: 'reject', reason: 'This athlete id appears more than once in the file.' }),
+        planned({ line: 4, athlete_id: 'ath-4' }),
+      ],
+      counts: { create: 2, skip_exists: 0, reject: 2 },
+    };
+
+    const result = await applyRosterImport('org-1', rows, plan);
+
+    expect(result.rows.map((r) => r.line)).toEqual([1, 2, 3, 4]);
+    expect(result.rows.map((r) => r.outcome)).toEqual(['reject', 'create', 'reject', 'create']);
   });
 });

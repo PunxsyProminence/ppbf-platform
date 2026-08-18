@@ -196,7 +196,21 @@ export async function POST(request: NextRequest) {
         });
         learningAccepted = true;
         learningReason = 'HUMAN_REVIEW_REQUIRED';
-      } catch {
+      } catch (error) {
+        // processLearningSignal already wraps every one of its own DB
+        // writes in a local try/catch that swallows and records into
+        // `actions` rather than rethrowing, so reaching HERE means
+        // something outside those guarded writes broke (a TypeError, an
+        // unanticipated logic error) -- not the routine DB-write-failure
+        // case the client-visible learningReason already names. That
+        // makes this the only place such a bug would ever surface, and an
+        // empty catch left zero trace of it; log the class only, never
+        // the raw error.
+        console.error('SHADOW learning signal processing failed unexpectedly', {
+          feedbackId,
+          organizationId: principal.organizationId,
+          errorClass: error instanceof Error ? error.constructor?.name : typeof error,
+        });
         learningReason = 'LEARNING_RECORD_FAILED';
       }
     }

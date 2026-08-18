@@ -2,6 +2,7 @@ import { sweepQuarantinedVideos } from './videoScanSweep';
 import { scanVideoSession } from './videoScan';
 import { claimNextVideoSessionForScan, settleVideoSessionScan } from './videoSessions';
 import { emitShadowEvent } from './shadowEvents';
+import { fileEscalation } from './escalationLadder';
 
 jest.mock('./videoScan', () => ({ scanVideoSession: jest.fn() }));
 jest.mock('./videoSessions', () => {
@@ -17,11 +18,13 @@ jest.mock('./videoSessions', () => {
   };
 });
 jest.mock('./shadowEvents', () => ({ emitShadowEvent: jest.fn() }));
+jest.mock('./escalationLadder', () => ({ fileEscalation: jest.fn() }));
 
 const mockedScan = scanVideoSession as jest.MockedFunction<typeof scanVideoSession>;
 const mockedClaim = claimNextVideoSessionForScan as jest.MockedFunction<typeof claimNextVideoSessionForScan>;
 const mockedSettle = settleVideoSessionScan as jest.MockedFunction<typeof settleVideoSessionScan>;
 const mockedEmit = emitShadowEvent as jest.MockedFunction<typeof emitShadowEvent>;
+const mockedFileEscalation = fileEscalation as jest.MockedFunction<typeof fileEscalation>;
 
 const CONTENT_ON = { PPBF_VIDEO_CONTENT_SCAN: 'vision' };
 
@@ -52,8 +55,10 @@ beforeEach(() => {
   mockedClaim.mockReset();
   mockedSettle.mockReset();
   mockedEmit.mockReset();
+  mockedFileEscalation.mockReset();
   mockedSettle.mockResolvedValue(true);
   mockedEmit.mockResolvedValue(undefined);
+  mockedFileEscalation.mockResolvedValue({} as Awaited<ReturnType<typeof fileEscalation>>);
 });
 
 describe('sweepQuarantinedVideos', () => {
@@ -96,7 +101,7 @@ describe('sweepQuarantinedVideos', () => {
     }));
   });
 
-  test('a malware hit marks the video infected', async () => {
+  test('a malware hit marks the video infected and files a high-severity escalation', async () => {
     mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
     mockedScan.mockResolvedValue(scanResult({
       decision: 'infected', reason: 'MALWARE_DETECTED', malware: 'malicious',
@@ -108,14 +113,24 @@ describe('sweepQuarantinedVideos', () => {
     expect(mockedSettle).toHaveBeenCalledWith(expect.objectContaining({
       scanState: 'infected', nextStatus: 'infected', terminal: true,
     }));
+    expect(mockedFileEscalation).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      sourceType: 'video_scan',
+      sourceId: 'vs-1',
+      athleteId: 'ath-1',
+      severity: 'high',
+      triggeredBy: 'system',
+      metadata: expect.objectContaining({ video_session_id: 'vs-1', decision: 'infected', reason: 'MALWARE_DETECTED' }),
+    }));
   });
 
-  test('a refusal and an uncertain verdict both leave status alone', async () => {
-    for (const [decision, scanState] of [
-      ['blocked', 'blocked'],
-      ['needs_human_review', 'needs_human_review'],
+  test('a refusal and an uncertain verdict both leave status alone and escalate at their own severity', async () => {
+    for (const [decision, scanState, severity] of [
+      ['blocked', 'blocked', 'critical'],
+      ['needs_human_review', 'needs_human_review', 'moderate'],
     ] as const) {
       mockedSettle.mockClear();
+      mockedFileEscalation.mockClear();
       mockedClaim.mockReset().mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
       mockedScan.mockResolvedValue(scanResult({ decision, reason: 'X' }));
 
@@ -126,7 +141,46 @@ describe('sweepQuarantinedVideos', () => {
       expect(mockedSettle).toHaveBeenCalledWith(expect.objectContaining({
         scanState, nextStatus: null, terminal: true,
       }));
+      // The escalation ladder is the surface this closes: a blocked or
+      // needs_human_review video used to be visible only on the video-review
+      // page's own filtered list.
+      expect(mockedFileEscalation).toHaveBeenCalledWith(expect.objectContaining({
+        sourceType: 'video_scan',
+        athleteId: 'ath-1',
+        severity,
+        triggeredBy: 'system',
+      }));
     }
+  });
+
+  test('does not escalate a promoted video', async () => {
+    mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+    mockedScan.mockResolvedValue(scanResult({ decision: 'promote', gatesPassed: ['content'] }));
+
+    await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+    expect(mockedFileEscalation).not.toHaveBeenCalled();
+  });
+
+  test('does not escalate a non-terminal retry', async () => {
+    mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+    mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+    await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+    expect(mockedFileEscalation).not.toHaveBeenCalled();
+  });
+
+  test('skips escalation for a blocked/infected video with no athlete_id (unattributed team upload)', async () => {
+    // pilot.safety_escalations.athlete_id is not-null with a foreign key to
+    // pilot.athletes -- an unattributed upload has nothing to file against.
+    mockedClaim.mockResolvedValueOnce({ ...CLAIM, athlete_id: null }).mockResolvedValue(null);
+    mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
+
+    const result = await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+    expect(result).toMatchObject({ scanned: 1, blocked: 1 });
+    expect(mockedFileEscalation).not.toHaveBeenCalled();
   });
 
   test('a retry backs off instead of re-scanning at worker cadence', async () => {

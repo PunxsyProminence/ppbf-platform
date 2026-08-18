@@ -293,11 +293,26 @@ export interface OrganizationConsentRow {
 // guardian_links rows are surfaced too (consent unverifiable is itself the
 // finding an org-admin auditing this needs to see), listed separately by the
 // caller rather than folded silently into "missing".
-export async function listOrganizationConsentStatus(organizationId: string): Promise<OrganizationConsentRow[]> {
-  const athletes = await query<{ athlete_id: string; full_name: string }>(
-    `select athlete_id, full_name from pilot.athletes where organization_id = $1 order by full_name asc`,
-    [organizationId],
-  );
+export async function listOrganizationConsentStatus(
+  organizationId: string,
+  page?: { limit: number; offset?: number },
+): Promise<OrganizationConsentRow[]> {
+  // page is opt-in and defaults to unbounded. This function backs the org-
+  // wide consent AUDIT (see the route's own doc comment): a default cap
+  // would silently drop athletes from the one screen whose entire purpose
+  // is catching a missing or lapsed consent. Hiding the finding this route
+  // exists to surface is worse than the query being slow -- a caller that
+  // genuinely wants a bounded page opts in explicitly.
+  const athletes = page
+    ? await query<{ athlete_id: string; full_name: string }>(
+        `select athlete_id, full_name from pilot.athletes where organization_id = $1
+         order by full_name asc limit $2 offset $3`,
+        [organizationId, page.limit, page.offset ?? 0],
+      )
+    : await query<{ athlete_id: string; full_name: string }>(
+        `select athlete_id, full_name from pilot.athletes where organization_id = $1 order by full_name asc`,
+        [organizationId],
+      );
 
   return Promise.all(
     athletes.map(async (athlete) => ({

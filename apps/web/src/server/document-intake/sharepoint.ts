@@ -1,6 +1,11 @@
 import { getClientCredentialToken } from './auth'
 import type { SharePointWriteResult } from './types'
 
+// A file upload (PDF bytes), not a metadata call, so this needs more
+// headroom than the token fetches; 30s bounds a stall without being tight
+// enough to trip on an ordinary-sized document.
+const SHAREPOINT_UPLOAD_TIMEOUT_MS = 30_000
+
 export interface SharePointConfig {
   tenantId: string
   clientId: string
@@ -50,6 +55,7 @@ export async function uploadToSharePoint(
       'Content-Type': 'application/pdf',
     },
     body: new Uint8Array(fileBuffer),
+    signal: AbortSignal.timeout(SHAREPOINT_UPLOAD_TIMEOUT_MS),
   })
 
   if (!response.ok) {

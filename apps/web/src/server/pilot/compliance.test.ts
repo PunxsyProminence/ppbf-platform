@@ -183,10 +183,17 @@ describe('createComplianceViolation', () => {
     };
   }
 
+  // The violation insert and the rule lookup that decides whether to
+  // auto-file an escalation both run on the transaction client, not the
+  // top-level query()/queryOne() -- one transaction, matching
+  // trainingHolds.ts:placeTrainingHold's own pairing.
   test.each(['critical', 'high', 'medium', 'low'])('accepts the %s severity', async (severity) => {
-    mockQuery.mockResolvedValueOnce([{ violation_id: 'v1' }]);
+    currentClient.query
+      .mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] }) // violation insert
+      .mockResolvedValueOnce({ rows: [] }); // rule lookup: no matching rule found
 
     await expect(createComplianceViolation(params(severity))).resolves.toEqual({ violation_id: 'v1' });
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   // The column has no check constraint, so anything stored outside the four
@@ -195,12 +202,99 @@ describe('createComplianceViolation', () => {
   test('refuses a severity outside the vocabulary before writing anything', async () => {
     await expect(createComplianceViolation(params('URGENT!!'))).rejects.toThrow('Unsupported severity');
     expect(mockQuery).not.toHaveBeenCalled();
+    expect(currentClient.query).not.toHaveBeenCalled();
   });
 
   test('reports the refusal as a 400, not a masked 500', async () => {
     const refusal = await createComplianceViolation(params('URGENT!!')).catch((error) => error);
 
     expect(jsonError(refusal).status).toBe(400);
+  });
+
+  // The finding this closes: pilot.compliance_rules.escalation_level was
+  // seeded and read back to the compliance centre's UI, but nothing ever
+  // acted on it. A violation against a rule configured for a given level now
+  // auto-files a pull-surface escalation targeting the matching role, reusing
+  // escalationLadder.ts's fileEscalation exactly like every other producer.
+  describe('auto-escalation on rule escalation_level', () => {
+    function mockRule(escalationLevel: string, ruleName = 'Physical Injury Prevention') {
+      currentClient.query.mockResolvedValueOnce({ rows: [{ rule_name: ruleName, escalation_level: escalationLevel }] });
+    }
+
+    test("escalation_level 'coach' auto-files an escalation targeting 'coach'", async () => {
+      currentClient.query.mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] });
+      mockRule('coach');
+
+      await createComplianceViolation(params('high'));
+
+      expect(currentClient.query).toHaveBeenCalledTimes(3);
+      const [escalationSql, escalationParams] = currentClient.query.mock.calls[2];
+      expect(escalationSql).toContain('insert into pilot.safety_escalations');
+      expect(escalationParams).toEqual([
+        'org-1', expect.any(String), 'compliance_violation', 'v1', 'ath-1',
+        'high', expect.stringContaining('Physical Injury Prevention'), 'coach',
+        'system', null, null, expect.any(String),
+      ]);
+    });
+
+    test("escalation_level 'admin' auto-files an escalation targeting 'organization_admin' (the canonical modern role name)", async () => {
+      currentClient.query.mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] });
+      mockRule('admin');
+
+      await createComplianceViolation(params('critical'));
+
+      const [, escalationParams] = currentClient.query.mock.calls[2];
+      expect(escalationParams).toEqual(expect.arrayContaining(['organization_admin']));
+    });
+
+    // Compliance severities ('critical','high','medium','low') and
+    // escalationLadder.ts's near-miss-inherited severities
+    // ('low','moderate','high','critical') are different, unreconciled
+    // vocabularies -- 'medium' is the one value with no same-named
+    // counterpart and must map to 'moderate', not pass through raw and fail
+    // the escalation table's own CHECK constraint.
+    test("severity 'medium' maps to escalation severity 'moderate'", async () => {
+      currentClient.query.mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] });
+      mockRule('coach');
+
+      await createComplianceViolation(params('medium'));
+
+      const [, escalationParams] = currentClient.query.mock.calls[2];
+      expect(escalationParams[5]).toBe('moderate');
+    });
+
+    test.each(['board', 'parent'])(
+      "escalation_level '%s' does not auto-file -- no safe SafetyEscalationTargetRole exists for it",
+      async (escalationLevel) => {
+        currentClient.query.mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] });
+        mockRule(escalationLevel);
+
+        await createComplianceViolation(params('critical'));
+
+        // Only the violation insert and the rule lookup run; no third call.
+        expect(currentClient.query).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    test('a rule_id that does not resolve in this organization skips escalation without failing the violation write', async () => {
+      currentClient.query
+        .mockResolvedValueOnce({ rows: [{ violation_id: 'v1' }] })
+        .mockResolvedValueOnce({ rows: [] }); // rule lookup finds nothing
+
+      await expect(createComplianceViolation(params('critical'))).resolves.toEqual({ violation_id: 'v1' });
+      expect(currentClient.query).toHaveBeenCalledTimes(2);
+    });
+
+    test('the escalation reason names the violated rule and the sourceId is the new violation_id', async () => {
+      currentClient.query.mockResolvedValueOnce({ rows: [{ violation_id: 'v-escalated' }] });
+      mockRule('coach', 'Code of Conduct');
+
+      await createComplianceViolation(params('high'));
+
+      const [, escalationParams] = currentClient.query.mock.calls[2];
+      expect(escalationParams[3]).toBe('v-escalated'); // source_id
+      expect(escalationParams[6]).toContain('Code of Conduct'); // reason
+    });
   });
 });
 

@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { assertGuardianMediaConsent } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { enqueueJob, getJobStatusForActor } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
@@ -94,6 +95,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         reason: 'VIDEO_SESSION_NOT_READY',
       } satisfies VideoAnalysisResponse, { status: 409 });
     }
+
+    // T-008: 'ready' only means the content-safety scan passed -- it says
+    // nothing about guardian media consent. The video-publication approval
+    // path (video-compliance/route.ts, publications/publish/route.ts) has
+    // gated on this same precondition since T-008; Film Study opens the same
+    // footage to AI analysis and must not be a side door around that gate.
+    // jsonError already turns GuardianConsentMissingError into the same 409
+    // shape those routes use, so no separate catch is needed here.
+    await assertGuardianMediaConsent(principal.organizationId, video.athlete_id);
 
     const jobId = await enqueueJob({
       jobType: 'film_study',
