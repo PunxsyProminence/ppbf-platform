@@ -849,7 +849,7 @@ One action does not follow suit:
 > ```
 
 `setSchedulerClassCover` is an unconditional `set covering_coach_account_id = $3`
-(`schedulerDb.ts:157-163`) — it does not check that the slot is empty, so coach B
+(`schedulerDb.ts:156-164`) — it does not check that the slot is empty, so coach B
 silently replaces coach A. And `covering_coach_account_id` is one of the three
 things that make a coach the owner of a class:
 

@@ -723,10 +723,10 @@ the platform at the wrong database, with nothing between the call and the
 > — `apps/web/src/server/pilot/dataDeletion.ts:114`
 
 The body runs one statement — `update pilot.athletes set deleted_at = now()`
-(`dataDeletion.ts:139-143`) — and the code twenty lines below the JSDoc explicitly
+(`dataDeletion.ts:139-142`) — and the code twenty lines below the JSDoc explicitly
 contradicts it: *"NOT a deletion count: a soft delete leaves the athlete row in
 place, so the FK cascade does not fire and nothing here is removed"*
-(`dataDeletion.ts:147-149`). Somebody already caught this once, corrected the
+(`dataDeletion.ts:147-150`). Somebody already caught this once, corrected the
 audit field, and left the docstring. It matters because it is the sentence an
 admin-console screen or a future retention doc would be written from.
 
