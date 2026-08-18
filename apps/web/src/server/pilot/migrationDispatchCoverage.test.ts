@@ -139,5 +139,9 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // two columns, and shadow-evidence is the migration that creates the table
     // and the library foreign keys it repoints.
     expect(at('platform-library-scope')).toBeGreaterThan(at('shadow-evidence'));
+    // medical-clearance-expiry adds expires_at to
+    // pilot.shadow_medical_administrative_status, which shadow-decision-loop
+    // creates. Applied first, a rebuild dies on ALTER against a missing table.
+    expect(at('medical-clearance-expiry')).toBeGreaterThan(at('shadow-decision-loop'));
   });
 });

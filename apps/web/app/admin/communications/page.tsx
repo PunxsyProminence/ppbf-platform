@@ -11,7 +11,7 @@ export default async function AdminCommunicationsPage() {
   await requirePageRole(['organization_admin', 'admin', 'staff']);
 
   return (
-    <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
+    <main className="min-h-screen bg-[var(--hide-950)] font-mono text-[color:var(--bone-300)] p-4">
       <MediaAndCommsHub />
     </main>
   );

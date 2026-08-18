@@ -1,4 +1,10 @@
-// Real PostgreSQL-backed contract test for the program-memberships migration.
+// Real PostgreSQL-backed contract test for the program-memberships migration,
+// AND for the REAL module behavior on top of it: './db' is mocked to route
+// into the embedded server (see trainingHolds.pg.test.ts for the same
+// pattern), so createMembership, setMembershipStatus, setMembershipScholarship,
+// and listMemberships below are the actual production functions executing
+// their actual SQL against actual rows -- not the hand-written raw-SQL
+// inserts the rest of this file uses to prove schema-level constraints.
 //
 // What needs proving that reading SQL cannot prove: the migration creates
 // the table from nothing; re-applying it is a no-op; the vocabularies and
@@ -6,7 +12,11 @@
 // one-active-membership-per-athlete-per-program rule is a partial unique
 // index (a second ACTIVE row is refused, but history rows for the same
 // athlete+program coexist); and the tenancy shape holds via the composite
-// athlete FK.
+// athlete FK. On top of that: setMembershipStatus's JS-level state machine
+// (MEMBERSHIP_TRANSITIONS -- a DB constraint doesn't know "ended is
+// terminal"), its ended_on clamp, createMembership's hidden-not-found for a
+// cross-org athlete and its translation of the unique-index violation into
+// a domain error, only exist in the TS module.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -20,6 +30,30 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
+
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows[0] ?? null;
+  }),
+}));
+
+import {
+  createMembership,
+  isMembershipStatus,
+  listMembershipFlagsForAthlete,
+  listMemberships,
+  setMembershipScholarship,
+  setMembershipStatus,
+} from './programMemberships';
 
 jest.setTimeout(180_000);
 
@@ -167,6 +201,10 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
 });
 
+afterEach(() => {
+  activeClient = null;
+});
+
 describe('program memberships migration', () => {
   test('creates the table from nothing and accepts a valid enrollment', async () => {
     const client = await freshDatabase('memberships_fresh');
@@ -248,6 +286,303 @@ describe('program memberships migration', () => {
       // composite FK makes the athlete simply not exist there.
       await expect(insertMembership(client, 'mem-cross', { organization_id: OTHER_ORG_ID }))
         .rejects.toMatchObject({ code: '23503' });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('isMembershipStatus', () => {
+  test('accepts the three real statuses and refuses anything else', () => {
+    expect(isMembershipStatus('active')).toBe(true);
+    expect(isMembershipStatus('lapsed')).toBe(true);
+    expect(isMembershipStatus('ended')).toBe(true);
+    expect(isMembershipStatus('paused')).toBe(false);
+    expect(isMembershipStatus(3)).toBe(false);
+  });
+});
+
+// The tests above prove the migration's schema. These prove the module:
+// createMembership's tenancy-via-hidden-not-found and its translation of the
+// unique-index violation into a named domain error, setMembershipStatus's
+// JS-level transition state machine and ended_on clamp, and
+// setMembershipScholarship's not-found handling -- none of which a raw-SQL
+// insert can exercise, because none of it is a database constraint.
+describe('the real membership lifecycle against real rows', () => {
+  test('createMembership joins the athlete name, and hides a cross-org athlete as not-found', async () => {
+    const client = await freshDatabase('memberships_create');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      const created = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        scholarshipPercent: 50,
+        createdByAccountId: ADMIN_ID,
+      });
+      expect(created).toMatchObject({
+        athlete_name: 'Membership Athlete',
+        program_name: 'Youth Boxing',
+        status: 'active',
+        scholarship_percent: 50,
+      });
+
+      await expect(createMembership({
+        organizationId: ORG_ID,
+        athleteId: 'no-such-athlete',
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        createdByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+
+      await expect(createMembership({
+        organizationId: OTHER_ORG_ID,
+        athleteId: ATHLETE_ID, // real athlete, but in the OTHER org's namespace
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        createdByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('createMembership refuses a second active enrollment with a named domain error, not a raw SQL error', async () => {
+    const client = await freshDatabase('memberships_duplicate');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        createdByAccountId: ADMIN_ID,
+      });
+
+      await expect(createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2026-07-01',
+        createdByAccountId: ADMIN_ID,
+      })).rejects.toThrow('MEMBERSHIP_DUPLICATE_ACTIVE');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('setMembershipStatus enforces the transition state machine: active<->lapsed freely, ended is terminal', async () => {
+    const client = await freshDatabase('memberships_transitions');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const created = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      const membershipId = created!.membership_id;
+
+      await expect(setMembershipStatus({ organizationId: ORG_ID, membershipId, status: 'lapsed' }))
+        .resolves.toMatchObject({ status: 'lapsed' });
+      await expect(setMembershipStatus({ organizationId: ORG_ID, membershipId, status: 'active' }))
+        .resolves.toMatchObject({ status: 'active' });
+      await expect(setMembershipStatus({ organizationId: ORG_ID, membershipId, status: 'ended' }))
+        .resolves.toMatchObject({ status: 'ended' });
+
+      // Ended is terminal: not even back to lapsed.
+      await expect(setMembershipStatus({ organizationId: ORG_ID, membershipId, status: 'lapsed' }))
+        .rejects.toThrow('Invalid status transition: ended -> lapsed');
+
+      await expect(setMembershipStatus({ organizationId: ORG_ID, membershipId: 'no-such-membership', status: 'lapsed' }))
+        .resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('setMembershipStatus clamps ended_on forward to started_on when the membership had not started yet', async () => {
+    const client = await freshDatabase('memberships_ended_on_clamp');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      // A future started_on: greatest(today, started_on) must pick
+      // started_on, never a date before it -- the module's own comment ("no
+      // end before the beginning") and the check constraint (mem-blank
+      // above) both say an ended_on earlier than started_on is refused.
+      const created = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2099-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+
+      const ended = await setMembershipStatus({
+        organizationId: ORG_ID,
+        membershipId: created!.membership_id,
+        status: 'ended',
+      });
+      expect(ended!.ended_on).toBe('2099-01-01');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('setMembershipScholarship updates the percent and note, and reports not-found for an unknown id', async () => {
+    const client = await freshDatabase('memberships_scholarship');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const created = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        createdByAccountId: ADMIN_ID,
+      });
+
+      const updated = await setMembershipScholarship({
+        organizationId: ORG_ID,
+        membershipId: created!.membership_id,
+        scholarshipPercent: 75,
+        scholarshipNote: 'sliding scale approved',
+      });
+      expect(updated).toMatchObject({ scholarship_percent: 75, scholarship_note: 'sliding scale approved' });
+
+      await expect(setMembershipScholarship({
+        organizationId: ORG_ID,
+        membershipId: 'no-such-membership',
+        scholarshipPercent: 10,
+      })).resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('listMemberships surfaces live enrollments before ended ones', async () => {
+    const client = await freshDatabase('memberships_listing');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const active = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      const toEnd = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Wrestling',
+        startedOn: '2025-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      await setMembershipStatus({ organizationId: ORG_ID, membershipId: toEnd!.membership_id, status: 'ended' });
+
+      const rows = await listMemberships(ORG_ID);
+      const ids = rows.map((row) => row.membership_id);
+      expect(ids.indexOf(active!.membership_id)).toBeLessThan(ids.indexOf(toEnd!.membership_id));
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The capability-network audit finding this migration/module pairs with:
+// membership status was read only by this module and its own admin page,
+// nowhere near class registration. These prove the read
+// registerForClassTransactionally rides on -- non-blocking, real rows,
+// real ordering, and the same SAVEPOINT-survives-a-missing-table guarantee
+// findRegistrationBlockingHold already proves for training holds, since
+// registerForClassTransactionally calls both probes on the same client in
+// the same transaction.
+describe('listMembershipFlagsForAthlete (the class-registration flag read)', () => {
+  test('an active-only membership reads as no flags; lapsed/ended memberships across programs come back sorted', async () => {
+    const client = await freshDatabase('memberships_flags');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const active = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      await expect(listMembershipFlagsForAthlete(ORG_ID, ATHLETE_ID)).resolves.toEqual([]);
+
+      const wrestling = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Wrestling',
+        startedOn: '2025-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      await setMembershipStatus({ organizationId: ORG_ID, membershipId: wrestling!.membership_id, status: 'lapsed' });
+
+      const bjj = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'BJJ',
+        startedOn: '2024-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      await setMembershipStatus({ organizationId: ORG_ID, membershipId: bjj!.membership_id, status: 'ended' });
+
+      const flags = await listMembershipFlagsForAthlete(ORG_ID, ATHLETE_ID);
+      // program_name asc: BJJ before Wrestling. The still-active Youth
+      // Boxing membership never appears.
+      expect(flags).toEqual([
+        { membership_id: bjj!.membership_id, program_name: 'BJJ', status: 'ended' },
+        { membership_id: wrestling!.membership_id, program_name: 'Wrestling', status: 'lapsed' },
+      ]);
+      expect(flags.some((flag) => flag.membership_id === active!.membership_id)).toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('reads inside a real transaction via the provided client, and a missing table mid-transaction rolls back to its own savepoint instead of aborting the transaction', async () => {
+    const client = await freshDatabase('memberships_flags_txn');
+    try {
+      await client.query(migrationSql);
+      await client.query(
+        `insert into pilot.program_memberships
+           (organization_id, membership_id, athlete_id, program_name, status, started_on, ended_on, scholarship_percent, created_by_account_id)
+         values ($1, 'mem-ended', $2, 'Youth Boxing', 'ended', '2025-01-01', '2026-01-01', 0, $3)`,
+        [ORG_ID, ATHLETE_ID, ADMIN_ID],
+      );
+
+      await client.query('BEGIN');
+      try {
+        const flags = await listMembershipFlagsForAthlete(ORG_ID, ATHLETE_ID, client as never);
+        expect(flags).toEqual([{ membership_id: 'mem-ended', program_name: 'Youth Boxing', status: 'ended' }]);
+
+        // This is the exact failure mode findRegistrationBlockingHold's
+        // SAVEPOINT guard exists to survive -- registerForClassTransactionally
+        // calls this function right after that hold probe, on the same
+        // client, in the same transaction. Without the guard here, a
+        // pre-migration deploy (table not created yet) would leave every
+        // registration attempt 500ing (Postgres 25P02), held athlete or not.
+        await client.query('drop table pilot.program_memberships');
+        await expect(listMembershipFlagsForAthlete(ORG_ID, ATHLETE_ID, client as never)).resolves.toEqual([]);
+
+        // The transaction itself must still be alive for the caller's next
+        // statement -- the registration insert that follows this probe in
+        // registerForClassTransactionally.
+        const stillAlive = await client.query('select 1 as one');
+        expect(stillAlive.rows[0]).toEqual({ one: 1 });
+      } finally {
+        await client.query('ROLLBACK');
+      }
     } finally {
       await client.end();
     }

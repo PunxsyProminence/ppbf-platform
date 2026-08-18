@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 
 interface ComplianceViolation {
   violation_id: string;
@@ -43,6 +44,10 @@ export default function AdminComplianceCenterPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [selectedViolation, setSelectedViolation] = useState<ComplianceViolation | null>(null);
+  const escalateModalRef = useDialogFocusTrap<HTMLDivElement>({
+    open: selectedViolation !== null,
+    onClose: () => setSelectedViolation(null),
+  });
   const [escalateToRole, setEscalateToRole] = useState('organization_admin');
   // Per-row, not a single scalar: a transition in flight on one violation
   // must never disable another row's buttons.
@@ -382,10 +387,16 @@ export default function AdminComplianceCenterPage() {
         {/* Escalation Modal */}
         {selectedViolation && (
           <div className="fixed inset-0 flex items-center justify-center bg-black/60 p-[var(--s4)]">
-            <div className="frame max-w-sm">
+            <div
+              ref={escalateModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="escalate-violation-heading"
+              className="frame max-w-sm"
+            >
               <i className="rivet rivet--tl" /><i className="rivet rivet--tr" /><i className="rivet rivet--bl" /><i className="rivet rivet--br" />
               <div className="frame-in mat-leather p-[var(--s5)]">
-                <h3 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Escalate Violation</h3>
+                <h3 id="escalate-violation-heading" className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Escalate Violation</h3>
                 <p className="t-body mb-[var(--s4)]">
                   Athlete: <span className="font-semibold text-[color:var(--bone-100)]">{selectedViolation.athlete_id}</span>
                 </p>

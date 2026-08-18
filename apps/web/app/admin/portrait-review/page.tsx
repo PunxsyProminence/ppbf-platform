@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
@@ -19,6 +19,38 @@ function formatDate(value: string): string {
   return formatGymDateTimeShort(value) ?? value;
 }
 
+/**
+ * Where the portrait under review comes from.
+ *
+ * Deliberately NOT profileClient.ts's portraitUrl(): that points at the normal
+ * read path, which runs decidePortrait() and answers 404 for anything that is
+ * not 'released' -- so it returns nothing at all for the pending portraits this
+ * console exists to decide. This is the review-only route beside it
+ * (app/api/pilot/admin/portrait-review/photo/[accountId]), which serves
+ * pending_review portraits to an organization admin, audits the view, and
+ * refuses every other state. Same shape as the video pipeline's split between
+ * video/[videoId] and video/review-link.
+ */
+function reviewPortraitUrl(accountId: string): string {
+  return `${apiBase()}/api/pilot/admin/portrait-review/photo/${encodeURIComponent(accountId)}`;
+}
+
+/**
+ * What "you have looked at it" is keyed on.
+ *
+ * video-review keys its inspected set by video_session_id, which is safe there
+ * because a video session is immutable -- the bytes behind an id never change.
+ * A portrait is not: it is a mutable slot on the account row, and a member can
+ * replace a pending photo with a different one while the reviewer has the queue
+ * open. Keyed by account alone, the reviewer's look at the FIRST photograph
+ * would silently authorise approving the SECOND one, which is exactly the
+ * failure this whole change exists to prevent. photo_uploaded_at moves with
+ * every upload, so the pair identifies the actual photograph that was seen.
+ */
+function portraitKey(item: PendingPortrait): string {
+  return `${item.account_id}::${item.uploaded_at}`;
+}
+
 export default function PortraitReviewPage() {
   const [items, setItems] = useState<PendingPortrait[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -27,6 +59,19 @@ export default function PortraitReviewPage() {
   // another row's request is still in flight, and each row's own button must
   // only re-enable when THAT row's request resolves.
   const [pendingAccountIds, setPendingAccountIds] = useState<Set<string>>(new Set());
+  // Which row's portrait is on screen right now. One slot: a wall of children's
+  // faces is not a review screen, and a reviewer deciding one photograph should
+  // have one photograph in front of them. Nothing is fetched until they ask.
+  const [shownAccountId, setShownAccountId] = useState<string | null>(null);
+  // Which portraits this reviewer has actually SEEN. Separate from the slot
+  // above, and for the reason video-review's own comment gives: the slot holds
+  // one row and is cleared after a decision, so it can only answer "is a
+  // photograph on screen now" -- not "did you ever look at this one", which is
+  // the question the Approve gate has to ask.
+  const [inspectedPortraitKeys, setInspectedPortraitKeys] = useState<Set<string>>(new Set());
+  // A portrait the browser asked for and could not render. Tracked separately
+  // so the row can say so, and so it can never be mistaken for an inspection.
+  const [unavailablePortraitKeys, setUnavailablePortraitKeys] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -49,7 +94,33 @@ export default function PortraitReviewPage() {
     })();
   }, [load]);
 
-  async function decide(accountId: string, decision: Decision) {
+  async function decide(item: PendingPortrait, decision: Decision) {
+    const accountId = item.account_id;
+    const key = portraitKey(item);
+
+    // THE GATE, in the function that actually sends the request.
+    //
+    // The Approve button for an unseen portrait is already disabled and the row
+    // already carries the NOT VIEWED stamp, so in normal use this is
+    // unreachable. It is here because the disabled attribute is a property of
+    // one button in one render, and this is the only place a release is ever
+    // spoken -- a future refactor that adds a keyboard shortcut, a bulk action
+    // or a second Approve control must not be able to get past it by accident.
+    // Nothing is announced: the stamp explaining the refusal is already on the
+    // row, and Law 7 puts a refusal in ink rather than in a toast.
+    if (decision === 'approve' && !inspectedPortraitKeys.has(key)) {
+      return;
+    }
+
+    if (decision === 'approve') {
+      // Worded to say what actually happens, and to whom. Same pattern as
+      // admin/video-review's approve confirm: the irreversible, releasing
+      // direction is the one that gets the friction.
+      const confirmed = window.confirm(
+        `Approve this portrait of ${item.full_name}? It is released under the platform’s visibility rules — for a child, to their own coaches and guardians. You are attesting that you have looked at the photograph above and that it is an appropriate photograph of this member.`,
+      );
+      if (!confirmed) return;
+    }
     // A reject deletes the photo bytes -- the review row stays for the audit
     // trail, but the confirm is here because that half is not reversible.
     if (decision === 'reject') {
@@ -71,6 +142,9 @@ export default function PortraitReviewPage() {
         throw new Error(payload.error || 'Unable to record the decision.');
       }
       setActionMessage(decision === 'approve' ? 'Portrait approved.' : 'Portrait rejected.');
+      // The decision is made, so the face comes off the screen. A refused
+      // decision deliberately leaves it up: the reviewer is still working on it.
+      setShownAccountId((current) => (current === accountId ? null : current));
       await load();
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : 'Unable to record the decision.');
@@ -97,6 +171,12 @@ export default function PortraitReviewPage() {
               Every uploaded photo starts here and is visible to nobody but its uploader until an admin decides.
               Approving releases it under the platform&rsquo;s usual visibility rules; rejecting deletes the photo and
               keeps the record for the audit trail.
+            </p>
+            <p className="t-body mt-[var(--s3)] max-w-4xl">
+              Approving is an attestation about a photograph of a member, and most members here are children. What you
+              are attesting is that you have looked at that photograph and that it is an appropriate one: show the
+              portrait, look at it, then decide. Rejecting asks nothing of you first &mdash; refusing a photograph is the
+              safe direction and is never slowed down. Every portrait you open is recorded against your account.
             </p>
             {errorMessage ? (
               <p role="alert" className="alert alert--critical mt-[var(--s3)]">
@@ -138,32 +218,120 @@ export default function PortraitReviewPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
-                    <tr key={item.account_id} className="border-b border-[color:var(--hide-800)] last:border-b-0 align-top">
-                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.full_name}</td>
-                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.uploaded_at)}</td>
-                      <td className="px-[var(--s4)] py-[var(--s3)]">
-                        <div className="flex flex-col gap-[var(--s2)]">
-                          <button
-                            type="button"
-                            disabled={pendingAccountIds.has(item.account_id)}
-                            onClick={() => void decide(item.account_id, 'approve')}
-                            className="btn--lever min-h-[44px] disabled:opacity-50"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            disabled={pendingAccountIds.has(item.account_id)}
-                            onClick={() => void decide(item.account_id, 'reject')}
-                            className="btn--lever min-h-[44px] disabled:opacity-50"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((item) => {
+                    const key = portraitKey(item);
+                    const isShown = shownAccountId === item.account_id;
+                    const isInspected = inspectedPortraitKeys.has(key);
+                    const isUnavailable = unavailablePortraitKeys.has(key);
+                    const isBusy = pendingAccountIds.has(item.account_id);
+
+                    return (
+                      <Fragment key={item.account_id}>
+                        <tr className="border-b border-[color:var(--hide-800)] last:border-b-0 align-top">
+                          <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.full_name}</td>
+                          <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.uploaded_at)}</td>
+                          <td className="px-[var(--s4)] py-[var(--s3)]">
+                            <div className="flex flex-col gap-[var(--s2)]">
+                              <button
+                                type="button"
+                                onClick={() => setShownAccountId(isShown ? null : item.account_id)}
+                                className="btn btn--ghost min-h-[44px]"
+                              >
+                                {isShown ? 'Hide portrait' : 'Show portrait'}
+                              </button>
+                              {isInspected ? null : (
+                                <>
+                                  {/* Law 7: the refusal is ink on the row, not a
+                                      toast that scrolls away. And Law 3's
+                                      corollary that a greyed control must say
+                                      why -- a disabled button on its own leaves
+                                      the reviewer guessing. */}
+                                  <span className="stamp stamp--sm stamp--flat">Not viewed</span>
+                                  <p className="t-body max-w-[34ch]" data-testid={`approve-gate-${item.account_id}`}>
+                                    Look at this portrait before approving it. Rejecting does not require it.
+                                  </p>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                disabled={isBusy || !isInspected}
+                                onClick={() => void decide(item, 'approve')}
+                                className="btn--lever min-h-[44px] disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => void decide(item, 'reject')}
+                                className="btn--lever min-h-[44px] disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isShown ? (
+                          // A full-width row rather than a thumbnail in the
+                          // Actions cell: this is the object under review, and a
+                          // face too small to judge is the same rubber stamp
+                          // with a picture next to it.
+                          <tr className="border-b border-[color:var(--hide-800)] last:border-b-0">
+                            <td colSpan={3} className="px-[var(--s4)] pb-[var(--s4)]">
+                              <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.3)] bg-[var(--hide-950)] p-[var(--s4)]">
+                                <p className="t-label text-[color:var(--brass-500)]">
+                                  Portrait under review — {item.full_name}
+                                </p>
+                                {/* A bare <img>, not next/image, for the reason
+                                    ProfilePortrait.tsx writes out: the optimizer
+                                    fetches the source itself and caches the
+                                    result server-side, and this route answers
+                                    differently depending on who is asking AND on
+                                    a review state that changes the moment a
+                                    decision lands. A copy of an undecided
+                                    child's face in a shared cache would outlive
+                                    both gates. */}
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={reviewPortraitUrl(item.account_id)}
+                                  alt={`Portrait submitted for ${item.full_name}, awaiting review`}
+                                  decoding="async"
+                                  className="mt-[var(--s3)] block max-h-[420px] w-auto rounded-[var(--r-sm)] border border-[color:var(--hide-700)]"
+                                  // The inspection is recorded when the browser
+                                  // has actually decoded and painted the bytes.
+                                  // Not on the click, not on the request: a
+                                  // request that 404s or a file that will not
+                                  // decode is not a look at a photograph, and
+                                  // must not unlock Approve.
+                                  onLoad={() => {
+                                    setInspectedPortraitKeys((prev) => new Set(prev).add(key));
+                                    setUnavailablePortraitKeys((prev) => {
+                                      const next = new Set(prev);
+                                      next.delete(key);
+                                      return next;
+                                    });
+                                  }}
+                                  onError={() => {
+                                    setUnavailablePortraitKeys((prev) => new Set(prev).add(key));
+                                  }}
+                                />
+                                {isUnavailable ? (
+                                  <div className="mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
+                                    <span className="stamp stamp--sm stamp--flat">Portrait unavailable</span>
+                                    <p className="t-body max-w-[60ch]">
+                                      This photograph could not be loaded, so it cannot be approved. It may already
+                                      have been decided by another reviewer. Reload the queue; if the row is still
+                                      here, reject it rather than releasing a photograph nobody has seen.
+                                    </p>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </section>

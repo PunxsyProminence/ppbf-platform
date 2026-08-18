@@ -20,7 +20,14 @@ import { query } from './db';
 export const TRACKED_WAIVER_TYPES = ['general', 'medical_release', 'photo_media', 'travel'] as const;
 export type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
 
-export type WaiverStatus = 'signed' | 'declined' | 'withdrawn' | 'missing';
+/**
+ * The status vocabulary, as a runtime list rather than a bare union, so
+ * normalizeWaiverStatus below can check a value against it at run time. Same
+ * shape as TRACKED_WAIVER_TYPES above -- the type is derived FROM the list, so
+ * a status added to one cannot go missing from the other.
+ */
+export const WAIVER_STATUSES = ['signed', 'declined', 'withdrawn', 'missing'] as const;
+export type WaiverStatus = (typeof WAIVER_STATUSES)[number];
 
 export interface AthleteWaiverStatus {
   athleteId: string;
@@ -77,4 +84,75 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
   }
 
   return Array.from(byAthlete.values());
+}
+
+/**
+ * One athlete, one tracked waiver type -- the narrow counterpart to the
+ * org-wide rollup above.
+ *
+ * getOrganizationWaiverStatus answers "who on this roster is missing what",
+ * which is the right shape for /admin/waiver-status and the wrong shape for a
+ * gate. A gate needs one athlete's one status, and must not read (or hold in
+ * memory, or risk logging) every other child's consent state to get it. So
+ * this is a narrowing, not a second source of truth: same append-only reading
+ * as the rollup -- pilot.waivers never updates in place, so the newest row for
+ * that athlete and type is the current one -- and the same treatment of
+ * absence. No row at all is 'missing', which is a status, never "fine".
+ *
+ * Deliberately NOT tolerant of a missing pilot.waivers relation, unlike the
+ * 42P01 guards in trainingHolds.ts and access.ts. Those degrade to a
+ * pre-migration behaviour that is SAFE (no hold, no coverage grant). Degrading
+ * a consent lookup would mean "we could not find out whether a guardian
+ * consented, so proceed", and for the document that authorises taking a minor
+ * off-site that is the one direction it must never fail in. A database fault
+ * here becomes a 500 and the caller's write does not happen.
+ */
+export async function getAthleteWaiverStatus(
+  organizationId: string,
+  athleteId: string,
+  waiverType: TrackedWaiverType,
+): Promise<WaiverStatus> {
+  const rows = await query<{ status: string }>(
+    `select status
+     from pilot.waivers
+     where organization_id = $1
+       and athlete_id = $2
+       and waiver_type = $3
+     order by created_at desc
+     limit 1`,
+    [organizationId, athleteId, waiverType],
+  );
+
+  return normalizeWaiverStatus(rows[0]?.status);
+}
+
+/**
+ * Turns whatever `pilot.waivers.status` actually holds into the vocabulary
+ * this module promises.
+ *
+ * The column is `status text not null` with NO check constraint
+ * (infra/azure/pilot_slice_postgres.sql), so nothing at the database level
+ * stops ' Signed ' or 'SIGNED' being stored, and other readers in this
+ * codebase already normalize before comparing (wallDisplay.ts trims and
+ * lowercases waiver vocabulary in two places). Casting the raw column to
+ * WaiverStatus, which is what this function used to do, was a type assertion
+ * with nothing behind it -- the same unchecked-`as` shape that let a
+ * non-numeric readiness score reach a NOT NULL column earlier today.
+ *
+ * The two directions are deliberately not symmetric, because this feeds a
+ * safety gate:
+ *
+ *   * A RECOGNISED value survives case and padding. ' Signed ' is a guardian
+ *     who signed; refusing to take a child to a competition over whitespace
+ *     punishes the family for a data-entry artifact.
+ *   * An UNRECOGNISED value becomes 'missing', never 'signed'. 'pending',
+ *     'partial', an empty string or a typo are not consent, and 'missing' is
+ *     the value that makes competitionSafetyGates refuse. Unknown input
+ *     fails closed.
+ */
+function normalizeWaiverStatus(raw: string | null | undefined): WaiverStatus {
+  const value = (raw ?? '').trim().toLowerCase();
+  return (WAIVER_STATUSES as readonly string[]).includes(value)
+    ? (value as WaiverStatus)
+    : 'missing';
 }

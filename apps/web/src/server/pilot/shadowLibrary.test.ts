@@ -23,6 +23,7 @@ jest.mock('./shadowEmbeddings', () => ({
 import { assertActorCanAccessAthlete } from './access';
 import { query, queryOne } from './db';
 import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
+import { emitShadowEvent } from './shadowEvents';
 import { createShadowResearchRequirement, listShadowResearchRequirements } from './shadowResearch';
 import {
   createShadowLibraryChunk,
@@ -36,6 +37,7 @@ const mockQueryOne = queryOne as jest.MockedFunction<typeof queryOne>;
 const mockAssertActorCanAccessAthlete = jest.mocked(assertActorCanAccessAthlete);
 const mockIsSemanticEnabled = jest.mocked(isSemanticLibrarySearchEnabled);
 const mockEmbedText = jest.mocked(embedText);
+const mockEmitShadowEvent = jest.mocked(emitShadowEvent);
 
 describe('SHADOW library search scope', () => {
   beforeEach(() => {
@@ -406,5 +408,48 @@ describe('SHADOW library claim honesty', () => {
     expect(result.status).toBe('unsupported');
     expect(result.evidenceCount).toBe(0);
     expect(result.distinctSourceCount).toBe(0);
+  });
+
+  // ensureClaimResearchRequirement's call into createShadowResearchRequirement
+  // is where an athlete-scoped claim gap becomes a subject_id-scoped
+  // requirement row -- the only writer this migration's column depends on
+  // actually reaching. A future edit that stops threading subjectId through
+  // would silently reopen the "no writer populates the clean column" gap.
+  it('threads the claim subject through to the created research requirement', async () => {
+    mockQuery.mockResolvedValueOnce([] as never);
+
+    await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      scope: 'subject',
+      subjectId: 'athlete-x',
+      question: 'Is there evidence for a claim about this athlete specifically?',
+    });
+
+    expect(createShadowResearchRequirement).toHaveBeenCalledWith(
+      expect.objectContaining({ subjectId: 'athlete-x' }),
+    );
+  });
+
+  it('logs the gap event with requirement/knowledge-gap text a research-intake panel can render', async () => {
+    mockQuery.mockResolvedValueOnce([] as never); // no evidence -> unsupported
+
+    await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'Is there evidence for a claim nobody has written about?',
+    });
+
+    expect(mockEmitShadowEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+        payload: expect.objectContaining({
+          research_requirement: expect.any(String),
+          knowledge_gap: expect.stringContaining('Is there evidence for a claim nobody has written about?'),
+        }),
+      }),
+    );
   });
 });

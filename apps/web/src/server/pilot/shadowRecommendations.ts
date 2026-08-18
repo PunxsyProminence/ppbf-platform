@@ -1,5 +1,10 @@
 import { query, withTransaction } from './db';
-import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
+import {
+  EXPIRED_CLEARANCE_STATUS,
+  effectiveMedicalStatus,
+  getLatestMedicalAdministrativeStatus,
+  isClearanceCurrent,
+} from './shadowMedicalStatus';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 
 export type ShadowRecommendationStatus = 'provisional' | 'accepted' | 'rejected' | 'expired' | 'superseded';
@@ -21,13 +26,22 @@ export interface ShadowRecommendationRow {
 
 const DEFAULT_EXPIRY_HOURS = 72;
 
+function blockedMessage(status: string): string {
+  if (status === 'no_record') {
+    return "Blocked: this athlete has no medical administrative status on file yet. A medically sensitive decision requires an explicit 'cleared' status -- set one in the Medical Status panel before recording this decision.";
+  }
+  // A lapsed clearance needs its own sentence. "your status is
+  // 'cleared_expired', not 'cleared'" would read as a bug to the coach, and the
+  // action it calls for is different: not "decide", but "re-confirm".
+  if (status === EXPIRED_CLEARANCE_STATUS) {
+    return "Blocked: this athlete's medical clearance has passed its stated expiry, so it no longer counts as current. Record a new 'cleared' status in the Medical Status panel once the clearance has been re-confirmed.";
+  }
+  return `Blocked: this athlete's medical administrative status is '${status}', not 'cleared'. Set status to 'cleared' in the Medical Status panel before recording this decision, or leave it as-is if the athlete should not yet participate.`;
+}
+
 export class MedicalStatusBlockedError extends Error {
   constructor(readonly status: string) {
-    super(
-      status === 'no_record'
-        ? "Blocked: this athlete has no medical administrative status on file yet. A medically sensitive decision requires an explicit 'cleared' status -- set one in the Medical Status panel before recording this decision."
-        : `Blocked: this athlete's medical administrative status is '${status}', not 'cleared'. Set status to 'cleared' in the Medical Status panel before recording this decision, or leave it as-is if the athlete should not yet participate.`,
-    );
+    super(blockedMessage(status));
     this.name = 'MedicalStatusBlockedError';
   }
 }
@@ -41,13 +55,17 @@ export async function assertMedicalStatusAllowsRecommendation(
   organizationId: string,
   athleteId: string,
 ): Promise<void> {
-  // Fail closed: only an explicit 'cleared' record allows a medically
-  // sensitive recommendation through. No record on file, 'pending', and
-  // 'restricted'/'not_cleared' all block -- absence of a clearance decision
-  // is not itself a clearance decision.
+  // Fail closed: only an explicit 'cleared' record that is still in force
+  // allows a medically sensitive recommendation through. No record on file,
+  // 'pending', 'restricted'/'not_cleared', and a clearance past its stated
+  // expiry all block -- absence of a clearance decision is not itself a
+  // clearance decision, and neither is a clearance that has run out.
+  //
+  // isClearanceCurrent is shared with contactClearanceGate.ts precisely so the
+  // time bound cannot be enforced on one path and skipped on the other.
   const status = await getLatestMedicalAdministrativeStatus(organizationId, athleteId);
-  if (!status || status.status !== 'cleared') {
-    throw new MedicalStatusBlockedError(status?.status ?? 'no_record');
+  if (!isClearanceCurrent(status)) {
+    throw new MedicalStatusBlockedError(effectiveMedicalStatus(status));
   }
 }
 

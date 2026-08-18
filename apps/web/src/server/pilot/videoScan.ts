@@ -170,18 +170,33 @@ export interface VideoScanResult extends VideoScanOutcome {
  *
  * A disabled gate is not consulted at all -- no blob read, no vision call --
  * and reports null, which the policy already knows not to count as a pass.
+ *
+ * `skipContentScreen` is a THIRD state, distinct from the gate being off:
+ * guardian consent is missing right now, but the gate stays enabled in
+ * `config` -- the vision call is simply not made this attempt, and content
+ * reports null exactly as it would while a verdict is still pending. That
+ * keeps this indistinguishable from an ordinary "hasn't reported yet" retry:
+ * scan_state stays 'pending' (reclaimable, and re-checked on every retry, so
+ * a guardian consenting mid-backoff is picked up on the next attempt) rather
+ * than falling to 'hold'/'unconfigured' (permanent, never reclaimed by
+ * claimNextVideoSessionForScan -- caught in review on PR #465) or promoting
+ * the video on malware alone while consent is outstanding, which would
+ * silently skip content screening rather than defer it.
  */
 export async function scanVideoSession(params: {
   blobPath: string;
   attempts: number;
   config: VideoScanConfig;
   maxAttempts?: number;
+  skipContentScreen?: boolean;
 }): Promise<VideoScanResult> {
   const start = Date.now();
   const { config } = params;
 
   const malware = config.malware === 'off' ? null : await readMalwareVerdict(params.blobPath);
-  const content = config.content === 'off' ? null : await runContentScreen(params.blobPath);
+  const content = config.content === 'off' || params.skipContentScreen
+    ? null
+    : await runContentScreen(params.blobPath);
 
   const outcome = decideVideoScanOutcome({
     config,

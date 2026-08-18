@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { useFocusOnStepChange } from '@/src/lib/useFocusOnStepChange';
 
 
 type FeedbackKind = 'success' | 'error' | 'info';
@@ -34,6 +35,9 @@ async function postJson(path: string, body: Record<string, unknown>) {
 
 export default function SetupWizard() {
   const [step, setStep] = useState(1);
+  // Each step transition unmounts the clicked button's whole content block
+  // with no focus moved to the next step -- this is the fix.
+  useFocusOnStepChange(`step-${step}-heading`);
   const session = usePilotSession();
   const isMicrosoftSession = session.authProvider === 'microsoft';
   const sessionRole = session.role;
@@ -250,7 +254,7 @@ export default function SetupWizard() {
         >
           <div className="flex items-start justify-between gap-[var(--s4)]">
             <div className="flex-1">
-              <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 1: Create Your Gym Profile</h2>
+              <h2 id="step-1-heading" tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 1: Create Your Gym Profile</h2>
               <p className="t-body mt-[var(--s3)]">
                 Give your gym a unique ID and friendly name. This is how PPBF identifies your organization.
               </p>
@@ -313,7 +317,7 @@ export default function SetupWizard() {
         >
           <div className="flex items-start justify-between gap-[var(--s4)]">
             <div className="flex-1">
-              <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 2: Add The Gym Admin</h2>
+              <h2 id="step-2-heading" tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 2: Add The Gym Admin</h2>
               <p className="t-body mt-[var(--s3)]">
                 Every gym needs one person who can manage it. They sign in with Microsoft — PINs are athlete-only.
               </p>
@@ -368,7 +372,7 @@ export default function SetupWizard() {
           }`}
         >
           <div className="flex-1">
-            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 3: Choose Your Features</h2>
+            <h2 id="step-3-heading" tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 3: Choose Your Features</h2>
             <p className="t-body mt-[var(--s3)]">
               Select which tools your gym wants to use. You can always change these later.
             </p>
@@ -422,7 +426,7 @@ export default function SetupWizard() {
           <section className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:var(--cleared)] p-[var(--s5)]">
             <div className="space-y-[var(--s4)] text-center">
               <span className="stamp stamp--green stamp--lg">Setup Complete</span>
-              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Gym Setup Complete!</h2>
+              <h2 id="step-4-heading" tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Gym Setup Complete!</h2>
               <p className="t-body">
                 Your gym is now configured and ready for coaches and athletes to join.
               </p>

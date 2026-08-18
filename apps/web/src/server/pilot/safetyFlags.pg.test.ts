@@ -55,6 +55,7 @@ import {
   advanceReturnToTrainingStep,
   createReturnToTrainingPlan,
   getFlagCalibration,
+  getSafetyFlagById,
   raiseSafetyFlag,
   resolveSafetyFlag,
 } from './safetyFlags';
@@ -269,6 +270,68 @@ describe('pilot_safety_flags_medical_human_only', () => {
         triggeredBy: 'human_entry',
       });
       expect(flag.triggered_by).toBe('human_entry');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// The route's athlete-scope gate (2026-08-18 safety audit, CRITICAL finding
+// on /api/pilot/safety-flags) reads the flag's subject through this function
+// before letting a coach resolve or bypass it. Two properties it depends on
+// cannot be proven by reading the SQL: that the subject actually comes back,
+// and that the organization filter really excludes another gym's flag rather
+// than matching on flag_id alone.
+describe('getSafetyFlagById', () => {
+  test('returns the flag with its subject, and never a flag from another organization', async () => {
+    const client = await freshDatabase('ppbf_test_safetyflags_get_by_id_scope');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+
+      const ORG_B = 'org-safetyflags-b';
+      const COACH_B = 'acct-safetyflags-coach-b';
+      const ATHLETE_B = 'athlete-safetyflags-b';
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ($1, $1, 'active')`,
+        [ORG_B],
+      );
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, 'coach', $2, 'microsoft')`,
+        [COACH_B, ORG_B],
+      );
+      await client.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact,
+            active_flag, coach_id, created_at, updated_at)
+         values ($1,$2,'Athlete B','2011-02-02','132lb','active','Contact',true,$3,now(),now())`,
+        [ORG_B, ATHLETE_B, COACH_B],
+      );
+
+      const flagB = await raiseSafetyFlag({
+        organizationId: ORG_B,
+        athleteId: ATHLETE_B,
+        flagClass: 'external_rule',
+        flagCode: 'concussion_rest_period',
+        triggeredBy: 'human_entry',
+      });
+
+      // Whose flag is this? Without the subject the route cannot apply the gate.
+      await expect(getSafetyFlagById(ORG_B, flagB.flag_id)).resolves.toMatchObject({
+        flag_id: flagB.flag_id,
+        athlete_id: ATHLETE_B,
+        flag_code: 'concussion_rest_period',
+      });
+
+      // A real flag id, read from the wrong organization, is indistinguishable
+      // from a flag id that never existed -- both null, so neither the flag nor
+      // the child behind it can be probed across gyms.
+      await expect(getSafetyFlagById(ORG_A, flagB.flag_id)).resolves.toBeNull();
+      await expect(
+        getSafetyFlagById(ORG_A, '00000000-0000-4000-8000-000000000000'),
+      ).resolves.toBeNull();
     } finally {
       activeClient = null;
       await client.end();

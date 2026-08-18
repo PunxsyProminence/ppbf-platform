@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { enqueueJob } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
@@ -15,6 +16,13 @@ jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertActorCanAccessAthlete: jest.fn(),
 }));
+jest.mock('@/src/server/pilot/guardianConsent', () => {
+  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
+  return {
+    ...actual,
+    assertGuardianMediaConsent: jest.fn(),
+  };
+});
 jest.mock('@/src/server/pilot/shadowJobQueue', () => ({
   enqueueJob: jest.fn(),
   getJobStatusForActor: jest.fn(),
@@ -28,6 +36,7 @@ jest.mock('@/src/server/pilot/videoSessions', () => ({
 
 const mockPrincipal = jest.mocked(requirePrincipal);
 const mockAccess = jest.mocked(assertActorCanAccessAthlete);
+const mockAssertConsent = jest.mocked(assertGuardianMediaConsent);
 const mockEnqueue = jest.mocked(enqueueJob);
 const mockConfigured = jest.mocked(isFilmStudyVisionConfigured);
 const mockVideo = jest.mocked(getVideoSessionById);
@@ -54,6 +63,8 @@ beforeEach(() => {
     accountId: 'coach-1', organizationId: 'org-1', role: 'coach',
   } as never);
   mockAccess.mockResolvedValue(undefined as never);
+  // Consent is on file unless a test says otherwise.
+  mockAssertConsent.mockResolvedValue(undefined);
   mockConfigured.mockReturnValue(true);
   mockVideo.mockResolvedValue(readyVideo as never);
   mockEnqueue.mockResolvedValue('job-1' as never);
@@ -105,6 +116,31 @@ describe('POST video-analysis enqueues Film Study', () => {
     await expect(response.json()).resolves.toMatchObject({
       reason: 'SHADOW_FILM_VISION_UNCONFIGURED',
     });
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  test('checks guardian media consent for the video\'s athlete before enqueueing', async () => {
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(202);
+    expect(mockAssertConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
+    // Consent must be verified before the job is queued, not after.
+    const consentOrder = mockAssertConsent.mock.invocationCallOrder[0];
+    const enqueueOrder = mockEnqueue.mock.invocationCallOrder[0];
+    expect(consentOrder).toBeLessThan(enqueueOrder);
+  });
+
+  test('refuses to queue Film Study when guardian media consent is missing', async () => {
+    // T-008: 'ready' only reflects the content-safety scan, not guardian
+    // media consent -- the same precondition the publication approval path
+    // enforces must also gate the analysis request on this footage.
+    mockAssertConsent.mockRejectedValueOnce(new GuardianConsentMissingError('ATH-1', ['parent-1']));
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toMatch(/guardian media consent is missing or withdrawn/);
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 

@@ -5,11 +5,16 @@
 // gap of the same type suppresses its suggestion).
 
 import {
+  buildGapJustifications,
   deriveSuggestions,
   READINESS_DROP_POINTS,
   READINESS_MIN_CHECKINS_PER_HALF,
+  RULE_JUSTIFICATION_FIELDS,
+  ruleFromDetectedFrom,
   TRAINING_DAYS_MIN_EARLY,
+  type CompetitionLossRow,
   type StalledAssignmentRow,
+  type TransferFailureRow,
 } from './progressionSuggestions';
 import type { AthletePerformanceRow } from './performanceAnalytics';
 
@@ -147,6 +152,233 @@ describe('assignments_stalled', () => {
   });
 });
 
+describe('transfer_check_failed', () => {
+  const FAILURE: TransferFailureRow = {
+    athlete_id: 'ath-1',
+    metric_kind: 'jab_cross',
+    controlled_makes: 8,
+    controlled_misses: 1,
+    live_makes: 1,
+    live_misses: 5,
+  };
+
+  test('a not_transferring readout produces a skill-gap suggestion', () => {
+    const suggestions = deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [FAILURE]);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].rule).toBe('transfer_check_failed');
+    expect(suggestions[0].gap_type).toBe('skill');
+    expect(suggestions[0].athlete_id).toBe('ath-1');
+    expect(suggestions[0].suggested_description).toContain('jab_cross');
+    expect(suggestions[0].evidence).toEqual({
+      metric_kind: 'jab_cross',
+      controlled_makes: 8,
+      controlled_misses: 1,
+      live_makes: 1,
+      live_misses: 5,
+    });
+  });
+
+  test('two failing metrics for the same athlete produce two separate suggestions', () => {
+    const second: TransferFailureRow = { ...FAILURE, metric_kind: 'low_kick' };
+    const suggestions = deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [FAILURE, second]);
+    expect(suggestions).toHaveLength(2);
+    expect(suggestions.map((s) => s.evidence.metric_kind).sort()).toEqual(['jab_cross', 'low_kick']);
+  });
+
+  test('an open skill gap suppresses the suggestion', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      new Map([['ath-1', new Set(['skill'])]]),
+      [FAILURE],
+    );
+    expect(suggestions).toHaveLength(0);
+  });
+
+  test('no transfer failures means no suggestion, same as any other quiet rule', () => {
+    expect(deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [])).toHaveLength(0);
+  });
+});
+
+describe('competition_loss_unresolved', () => {
+  const LOSS: CompetitionLossRow[] = [
+    {
+      athlete_id: 'ath-1',
+      loss_count: 2,
+      most_recent_lesson_note: 'kept dropping the right hand in round 2',
+      most_recent_competition_name: 'Golden Gloves Regional',
+      most_recent_competition_date: '2026-08-01',
+    },
+  ];
+
+  test('a recorded loss produces one grouped suggestion carrying the lesson note', () => {
+    const suggestions = deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [], LOSS);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].rule).toBe('competition_loss_unresolved');
+    expect(suggestions[0].gap_type).toBe('technique');
+    expect(suggestions[0].suggested_description).toContain('2 recorded competition losses');
+    expect(suggestions[0].suggested_description).toContain('kept dropping the right hand in round 2');
+    expect(suggestions[0].evidence.most_recent_lesson_note).toBe('kept dropping the right hand in round 2');
+  });
+
+  test('an open technique gap suppresses the suggestion', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      new Map([['ath-1', new Set(['technique'])]]),
+      [],
+      LOSS,
+    );
+    expect(suggestions).toHaveLength(0);
+  });
+
+  test('a single loss uses the singular form', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow()],
+      NO_STALLED,
+      NO_OPEN_GAPS,
+      [],
+      [{ ...LOSS[0], loss_count: 1 }],
+    );
+    expect(suggestions[0].suggested_description).toContain('1 recorded competition loss,');
+  });
+
+  test('no losses means no suggestion', () => {
+    expect(deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS, [], [])).toHaveLength(0);
+  });
+});
+
 test('an athlete with quiet data produces no suggestions at all', () => {
   expect(deriveSuggestions([rollupRow()], NO_STALLED, NO_OPEN_GAPS)).toHaveLength(0);
+});
+
+// The athlete/parent-facing justification slice (getGapJustifications' pure
+// half): only a gap whose detected_from names a rule with a non-empty field
+// list gets a justification, and it gets exactly that rule's fields -- never
+// the full rollup, and never a field another rule owns.
+describe('ruleFromDetectedFrom', () => {
+  test('reads the rule out of a confirmed-suggestion gap', () => {
+    expect(ruleFromDetectedFrom('deterministic_rule:readiness_falling')).toBe('readiness_falling');
+    expect(ruleFromDetectedFrom('deterministic_rule:training_days_dropping')).toBe('training_days_dropping');
+    expect(ruleFromDetectedFrom('deterministic_rule:assignments_stalled')).toBe('assignments_stalled');
+  });
+
+  test('a manual gap has no rule', () => {
+    expect(ruleFromDetectedFrom('coach_observation')).toBeNull();
+    expect(ruleFromDetectedFrom('manual_observation')).toBeNull();
+    expect(ruleFromDetectedFrom(null)).toBeNull();
+    expect(ruleFromDetectedFrom(undefined)).toBeNull();
+  });
+
+  test('an unrecognised rule name is treated as no rule', () => {
+    expect(ruleFromDetectedFrom('deterministic_rule:some_future_rule')).toBeNull();
+  });
+});
+
+describe('buildGapJustifications', () => {
+  test('a readiness_falling gap gets only readiness fields', () => {
+    const row = rollupRow({
+      avg_readiness: 6.1,
+      readiness_count: 9,
+      readiness_early_avg: 7.5,
+      readiness_late_avg: 5.5,
+      readiness_early_count: 4,
+      readiness_late_count: 5,
+      training_days: 12,
+      avg_rpe: 6.8,
+    });
+    const result = buildGapJustifications(row, [
+      { gap_id: 'gap-1', detected_from: 'deterministic_rule:readiness_falling' },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      gap_id: 'gap-1',
+      rule: 'readiness_falling',
+      fields: {
+        avg_readiness: 6.1,
+        readiness_count: 9,
+        readiness_early_avg: 7.5,
+        readiness_late_avg: 5.5,
+        readiness_early_count: 4,
+        readiness_late_count: 5,
+      },
+    });
+    // Never any field the rule did not use, including ones the rollup carries.
+    expect(result[0].fields).not.toHaveProperty('training_days');
+    expect(result[0].fields).not.toHaveProperty('avg_rpe');
+    expect(result[0].fields).not.toHaveProperty('sessions_total');
+  });
+
+  test('a training_days_dropping gap gets only training-days fields', () => {
+    const row = rollupRow({ training_days: 14, training_days_early: 9, training_days_late: 3 });
+    const result = buildGapJustifications(row, [
+      { gap_id: 'gap-2', detected_from: 'deterministic_rule:training_days_dropping' },
+    ]);
+
+    expect(result).toEqual([
+      {
+        gap_id: 'gap-2',
+        rule: 'training_days_dropping',
+        fields: { training_days: 14, training_days_early: 9, training_days_late: 3 },
+      },
+    ]);
+  });
+
+  test('an assignments_stalled gap gets no fields at all -- nothing in the rollup backs it', () => {
+    const result = buildGapJustifications(rollupRow(), [
+      { gap_id: 'gap-3', detected_from: 'deterministic_rule:assignments_stalled' },
+    ]);
+    expect(result).toHaveLength(0);
+  });
+
+  test('a manually-created gap gets no justification', () => {
+    const result = buildGapJustifications(rollupRow(), [
+      { gap_id: 'gap-4', detected_from: 'coach_observation' },
+      { gap_id: 'gap-5', detected_from: null },
+    ]);
+    expect(result).toHaveLength(0);
+  });
+
+  test('a mix of gaps yields only the eligible ones, each scoped to its own rule', () => {
+    const row = rollupRow({ readiness_early_avg: 8, readiness_late_avg: 6, training_days_early: 5, training_days_late: 1 });
+    const result = buildGapJustifications(row, [
+      { gap_id: 'gap-manual', detected_from: 'coach_observation' },
+      { gap_id: 'gap-readiness', detected_from: 'deterministic_rule:readiness_falling' },
+      { gap_id: 'gap-training', detected_from: 'deterministic_rule:training_days_dropping' },
+      { gap_id: 'gap-stalled', detected_from: 'deterministic_rule:assignments_stalled' },
+    ]);
+
+    expect(result.map((r) => r.gap_id)).toEqual(['gap-readiness', 'gap-training']);
+  });
+
+  test('no rollup row for the athlete means no justification for anyone', () => {
+    const result = buildGapJustifications(undefined, [
+      { gap_id: 'gap-1', detected_from: 'deterministic_rule:readiness_falling' },
+    ]);
+    expect(result).toHaveLength(0);
+  });
+
+  // This list is maintained BY HAND on purpose, and it is the second half of
+  // the speed bump RULE_JUSTIFICATION_FIELDS's Record type creates: adding a
+  // rule to SuggestionRule breaks the compiler there and breaks this
+  // assertion here, so nobody can extend the rule vocabulary without making
+  // an explicit decision about what an athlete or parent is shown as that
+  // rule's justification. transfer_check_failed maps to [] because its
+  // evidence comes from pilot.training_attempts, not the Performance
+  // Analytics rollup -- see the module comment.
+  test('the field allowlist is exhaustive over the rule vocabulary and never spans rules', () => {
+    expect(Object.keys(RULE_JUSTIFICATION_FIELDS).sort()).toEqual(
+      [
+        'assignments_stalled',
+        'competition_loss_unresolved',
+        'readiness_falling',
+        'training_days_dropping',
+        'transfer_check_failed',
+      ].sort(),
+    );
+    const readinessFields = new Set(RULE_JUSTIFICATION_FIELDS.readiness_falling);
+    const trainingFields = new Set(RULE_JUSTIFICATION_FIELDS.training_days_dropping);
+    for (const field of trainingFields) expect(readinessFields.has(field)).toBe(false);
+  });
 });

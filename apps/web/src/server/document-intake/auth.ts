@@ -4,6 +4,11 @@ export interface AadClientCredentials {
   clientSecret: string
 }
 
+// Backs both writeDataverseRecord and uploadToSharePoint's token fetch. Not
+// bounding it left a stall on login.microsoftonline.com hang the whole
+// intake ingest chain indefinitely; 10s is generous for a token endpoint.
+const AAD_TOKEN_TIMEOUT_MS = 10_000
+
 export async function getClientCredentialToken(
   credentials: AadClientCredentials,
   scope: string,
@@ -21,6 +26,7 @@ export async function getClientCredentialToken(
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    signal: AbortSignal.timeout(AAD_TOKEN_TIMEOUT_MS),
   })
 
   if (!response.ok) {

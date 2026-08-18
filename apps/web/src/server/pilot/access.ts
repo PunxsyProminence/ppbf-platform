@@ -1,6 +1,6 @@
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
-import { isGuardianLinkedToAthlete } from './guardianAccess';
+import { guardianAthleteIds, isGuardianLinkedToAthlete } from './guardianAccess';
 
 export interface ActorIdentity {
   accountId: string;
@@ -319,6 +319,91 @@ export async function assertActorCanAccessAthlete(actor: ActorIdentity, athleteI
   }
 
   throw new Error('Forbidden: role not allowed');
+}
+
+/**
+ * Batched counterpart to assertActorCanAccessAthlete, for a caller that must
+ * authorize many candidate athletes against one actor without paying one
+ * round trip per candidate -- e.g. filtering a page of job/session rows down
+ * to the subset whose subject the actor may see. Returns exactly the ids
+ * assertActorCanAccessAthlete would NOT have thrown on; a caller that
+ * previously did `try { await assertActorCanAccessAthlete(actor, id); ok =
+ * true } catch { ok = false }` per id gets the identical per-id boolean from
+ * `result.has(id)`, evaluated in a bounded number of queries regardless of
+ * how many ids are passed.
+ */
+export async function accessibleAthleteIds(
+  actor: ActorIdentity,
+  athleteIds: readonly string[],
+): Promise<Set<string>> {
+  const distinctIds = Array.from(new Set(athleteIds));
+  if (distinctIds.length === 0) {
+    return new Set();
+  }
+
+  // Mirrors assertActorCanAccessAthlete's own unconditional refusal for
+  // these two roles.
+  if (actor.role === 'platform_owner' || actor.role === 'board') {
+    return new Set();
+  }
+
+  if (isOrganizationAdminRole(actor.role)) {
+    const rows = await query<{ athlete_id: string }>(
+      'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = any($2::text[])',
+      [actor.organizationId, distinctIds],
+    );
+    return new Set(rows.map((row) => row.athlete_id));
+  }
+
+  if (actor.role === 'coach') {
+    const assignedRows = await query<{ athlete_id: string }>(
+      'select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2 and athlete_id = any($3::text[])',
+      [actor.organizationId, actor.accountId, distinctIds],
+    );
+    const result = new Set(assignedRows.map((row) => row.athlete_id));
+
+    const remaining = distinctIds.filter((id) => !result.has(id));
+    if (remaining.length > 0) {
+      try {
+        const coverageRows = await query<{ athlete_id: string }>(
+          `select athlete_id
+           from pilot.coach_coverage
+           where organization_id = $1
+             and covering_coach_id = $2
+             and starts_at <= now()
+             and expires_at > now()
+             and athlete_id = any($3::text[])`,
+          [actor.organizationId, actor.accountId, remaining],
+        );
+        for (const row of coverageRows) {
+          result.add(row.athlete_id);
+        }
+      } catch (error) {
+        // Same tolerance as assertCoachAssignedToAthlete: a database that
+        // predates the coach_coverage migration must behave as "no
+        // coverage", not fail every coach's job/session listing outright.
+        const code = (error as { code?: unknown }).code;
+        if (code !== '42P01') {
+          throw error;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  if (actor.role === 'athlete') {
+    return actor.athleteId && distinctIds.includes(actor.athleteId) ? new Set([actor.athleteId]) : new Set();
+  }
+
+  if (actor.role === 'parent') {
+    const linkedIds = new Set(await guardianAthleteIds(actor.organizationId, actor.accountId));
+    return new Set(distinctIds.filter((id) => linkedIds.has(id)));
+  }
+
+  // Mirrors assertActorCanAccessAthlete's fallthrough refusal for any other
+  // role (volunteer, staff, ...).
+  return new Set();
 }
 
 export function assertAthleteUpdateAllowed(

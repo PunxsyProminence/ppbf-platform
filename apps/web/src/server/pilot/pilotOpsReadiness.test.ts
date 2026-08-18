@@ -104,7 +104,14 @@ describe('buildPilotOpsReadinessReport', () => {
     expect(report.ingest.reason).toContain('mock');
   });
 
-  it('reports document ingest configured once every pipeline credential is present', () => {
+  // MIGRATED PIN. This test used to assert `ingest.enabled === true` for
+  // exactly this environment -- ten credentials and no folder ids -- which was
+  // the defect rather than the contract: the Google Drive destination has
+  // nowhere to write, so its uploads would land in the service account's own
+  // storage. The credentials are unchanged; the expectation is corrected, and
+  // GOOGLE_DRIVE_FOLDER_ID is added below to show what a genuinely ready
+  // pipeline looks like.
+  it('does NOT report ingest healthy when a destination has credentials but no folder', () => {
     const report = buildPilotOpsReadinessReport({
       DATAVERSE_ORG_URL: 'https://example.crm.dynamics.com',
       DATAVERSE_TENANT_ID: 't',
@@ -117,8 +124,95 @@ describe('buildPilotOpsReadinessReport', () => {
       SHAREPOINT_DRIVE_ID: 'drive',
       GOOGLE_SERVICE_ACCOUNT_JSON: '{}',
     });
+
+    expect(report.ingest.destinations.googleDrive.enabled).toBe(true);
+    expect(report.ingest.destinations.googleDrive.ready).toBe(false);
+    expect(report.ingest.destinations.googleDrive.missing).toContain('GOOGLE_DRIVE_FOLDER_ID');
+    // Dataverse and SharePoint ARE ready, but the incomplete Drive config
+    // makes getPipelineConfig throw for the WHOLE pipeline, so no ingest
+    // request would succeed. `enabled` has to say so.
+    //
+    // This assertion is the one that matters and the one this test originally
+    // lacked: it checked only `reason`, so the flag could -- and did -- report
+    // enabled:true while every request failed.
+    expect(report.ingest.enabled).toBe(false);
+    expect(report.ingest.reason).toMatch(/refuse to start/i);
+  });
+
+  it('reports every pipeline credential AND destination present as fully configured', () => {
+    const report = buildPilotOpsReadinessReport({
+      DATAVERSE_ORG_URL: 'https://example.crm.dynamics.com',
+      DATAVERSE_TENANT_ID: 't',
+      DATAVERSE_CLIENT_ID: 'c',
+      DATAVERSE_CLIENT_SECRET: 's',
+      GRAPH_TENANT_ID: 't',
+      GRAPH_CLIENT_ID: 'c',
+      GRAPH_CLIENT_SECRET: 's',
+      SHAREPOINT_SITE_ID: 'site',
+      SHAREPOINT_DRIVE_ID: 'drive',
+      GOOGLE_SERVICE_ACCOUNT_JSON: '{}',
+      GOOGLE_DRIVE_FOLDER_ID: 'folder-abc',
+    });
     expect(report.ingest.enabled).toBe(true);
     expect(report.ingest.mockMode).toBe(false);
+    expect(report.ingest.destinations.dataverse.ready).toBe(true);
+    expect(report.ingest.destinations.sharepoint.ready).toBe(true);
+    expect(report.ingest.destinations.googleDrive.ready).toBe(true);
+  });
+
+  it('reports WHICH destinations are live, not merely that credentials exist', () => {
+    // The question an operator actually has. The old single boolean could not
+    // answer it, so "ingest: enabled" said nothing about where a document goes.
+    const report = buildPilotOpsReadinessReport({
+      GOOGLE_SERVICE_ACCOUNT_JSON: '{}',
+      GOOGLE_DRIVE_FOLDER_ID: 'folder-abc',
+    });
+
+    expect(report.ingest.enabled).toBe(true);
+    expect(report.ingest.destinations.googleDrive.ready).toBe(true);
+    expect(report.ingest.destinations.dataverse.enabled).toBe(false);
+    expect(report.ingest.destinations.sharepoint.enabled).toBe(false);
+    expect(report.ingest.reason).toMatch(/googleDrive/);
+  });
+
+  it('a single destination is a working pipeline -- ingest is no longer all-or-nothing', () => {
+    // Standing up a Dataverse instance to get PDFs into a Drive folder was
+    // never a reasonable requirement.
+    const driveOnly = buildPilotOpsReadinessReport({
+      GOOGLE_SERVICE_ACCOUNT_JSON: '{}',
+      GOOGLE_DRIVE_FOLDER_ID: 'folder-abc',
+    });
+    const dataverseOnly = buildPilotOpsReadinessReport({
+      DATAVERSE_ORG_URL: 'https://example.crm.dynamics.com',
+      DATAVERSE_TENANT_ID: 't',
+      DATAVERSE_CLIENT_ID: 'c',
+      DATAVERSE_CLIENT_SECRET: 's',
+    });
+
+    expect(driveOnly.ingest.enabled).toBe(true);
+    expect(dataverseOnly.ingest.enabled).toBe(true);
+  });
+
+  it('a partly-configured destination is reported as broken, not silently off', () => {
+    const report = buildPilotOpsReadinessReport({ GRAPH_TENANT_ID: 't' });
+
+    expect(report.ingest.enabled).toBe(false);
+    expect(report.ingest.destinations.sharepoint.enabled).toBe(true);
+    expect(report.ingest.destinations.sharepoint.ready).toBe(false);
+    expect(report.ingest.reason).toMatch(/refuse to start/i);
+  });
+
+  it('never echoes a credential value into the readiness report', () => {
+    // This report is served by an admin HTTP endpoint. It reports variable
+    // NAMES and booleans; a secret must never travel in a reason string.
+    const secret = 'super-secret-client-secret-value';
+    const report = buildPilotOpsReadinessReport({
+      GRAPH_TENANT_ID: 't',
+      GRAPH_CLIENT_SECRET: secret,
+      GOOGLE_SERVICE_ACCOUNT_JSON: '{"private_key":"' + secret + '"}',
+    });
+
+    expect(JSON.stringify(report)).not.toContain(secret);
   });
 
   it('reports the postgres connection flag independent of durable rate limiting', () => {

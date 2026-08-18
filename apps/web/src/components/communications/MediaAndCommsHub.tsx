@@ -36,6 +36,12 @@ export default function MediaAndCommsHub() {
       <header className="border-b border-zinc-800 pb-3">
         <h1 className="text-sm uppercase tracking-[0.2em] text-slate-200">Media, Film, and Communications Hub</h1>
         <p className="mt-2 text-xs text-zinc-500">Layers 16, 24, 30 and Directory Ingestors</p>
+        <p className="mt-3"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+        <p className="mt-2 text-xs text-zinc-400">
+          Every contact, media item, and release status below is fabricated sample data. Nothing on
+          this page reads or writes real records — do not act on anything it shows, and never treat
+          an entry here as consent to publish a minor&apos;s image.
+        </p>
       </header>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
@@ -109,7 +115,7 @@ export default function MediaAndCommsHub() {
             </div>
 
             <div className="border border-zinc-800 bg-black p-3">
-              <p className="text-xs text-zinc-400">Timestamp Annotation Panel</p>
+              <p id="annotation-panel-label" className="text-xs text-zinc-400">Timestamp Annotation Panel</p>
               <ul className="mt-2 space-y-2 text-xs">
                 {filmTimestamps.map((entry) => (
                   <li key={entry.id} className="border border-zinc-800 bg-black p-2">
@@ -119,6 +125,7 @@ export default function MediaAndCommsHub() {
                 ))}
               </ul>
               <textarea
+                aria-labelledby="annotation-panel-label"
                 value={annotationPanel}
                 onChange={(event) => setAnnotationPanel(event.target.value)}
                 className="mt-2 min-h-[84px] w-full border border-zinc-800 bg-black p-2 text-xs text-slate-200"
@@ -126,8 +133,9 @@ export default function MediaAndCommsHub() {
             </div>
 
             <div className="border border-zinc-800 bg-black p-3">
-              <p className="text-xs text-zinc-400">Tactical Observation Notes</p>
+              <p id="tactical-notes-label" className="text-xs text-zinc-400">Tactical Observation Notes</p>
               <textarea
+                aria-labelledby="tactical-notes-label"
                 value={tacticalNotes}
                 onChange={(event) => setTacticalNotes(event.target.value)}
                 className="mt-2 min-h-[120px] w-full border border-zinc-800 bg-black p-2 text-xs text-slate-200"
@@ -135,8 +143,9 @@ export default function MediaAndCommsHub() {
             </div>
 
             <div className="border border-zinc-800 bg-black p-3">
-              <p className="text-xs text-zinc-400">Athlete Reflection Block</p>
+              <p id="athlete-reflection-label" className="text-xs text-zinc-400">Athlete Reflection Block</p>
               <textarea
+                aria-labelledby="athlete-reflection-label"
                 value={athleteReflection}
                 onChange={(event) => setAthleteReflection(event.target.value)}
                 className="mt-2 min-h-[120px] w-full border border-zinc-800 bg-black p-2 text-xs text-slate-200"

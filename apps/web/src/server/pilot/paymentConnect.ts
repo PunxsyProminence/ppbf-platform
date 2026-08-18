@@ -17,6 +17,13 @@ import type { PaymentLane } from './paymentSetup';
 const STRIPE_AUTHORIZE_URL = 'https://connect.stripe.com/oauth/authorize';
 const STRIPE_TOKEN_URL = 'https://connect.stripe.com/oauth/token';
 
+/** The token exchange runs inline in the GET handler an admin's browser
+ * lands on straight from Stripe. Without a bound, a stall on Stripe's side
+ * hangs that redirect target indefinitely instead of failing fast into a
+ * clear "exchange-failed" response. 10s matches the OIDC token-exchange
+ * timeout used for the same class of call elsewhere in this codebase. */
+const STRIPE_NETWORK_TIMEOUT_MS = 10_000;
+
 /** How long a connect attempt's state token stays valid. Long enough to
  * complete Stripe onboarding in one sitting, short enough that a leaked link
  * goes stale. */
@@ -139,6 +146,7 @@ export async function exchangeCodeForAccountId(code: string, platformSecretKey: 
       code,
       client_secret: platformSecretKey,
     }).toString(),
+    signal: AbortSignal.timeout(STRIPE_NETWORK_TIMEOUT_MS),
   });
   const payload = (await response.json().catch(() => ({}))) as { stripe_user_id?: string; error?: string; error_description?: string };
   if (!response.ok || !payload.stripe_user_id) {

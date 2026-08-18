@@ -591,6 +591,30 @@ describe('the sweep end to end against real Postgres', () => {
     jest.resetModules();
     jest.doMock('./videoScan', () => ({ scanVideoSession: scanImpl }));
     jest.doMock('./shadowEvents', () => ({ emitShadowEvent: jest.fn(async () => {}) }));
+    // This suite's database carries only the video_sessions migration -- no
+    // pilot.organizations, pilot.athletes, or pilot.safety_escalations, none
+    // of which this suite's own purpose (the claim/settle SQL contract) needs.
+    // Escalation filing has its own real-database coverage in
+    // escalationLadder.pg.test.ts and its own mocked-unit coverage in
+    // videoScanSweep.test.ts; mocked here the same way shadowEvents is, as a
+    // side effect this suite does not exercise.
+    jest.doMock('./escalationLadder', () => ({ fileEscalation: jest.fn(async () => ({})) }));
+    // Same reasoning as escalationLadder above: checking guardian consent
+    // reads pilot.parents and pilot.waivers, neither of which this suite's
+    // database carries. The consent gate itself has real-database coverage in
+    // guardianConsent.pg.test.ts and its own mocked-unit coverage in
+    // videoScanSweep.test.ts (including the missing-consent fallback path);
+    // mocked here to consent-present so this suite's scans reach the same
+    // decision they did before that gate existed.
+    jest.doMock('./guardianConsent', () => ({
+      // GuardianConsentMissingError must be the real class, not left
+      // undefined: videoScanSweep.ts imports it for an `instanceof` check,
+      // which throws a TypeError against `undefined` rather than the
+      // intended error type if the mocked assertGuardianMediaConsent above
+      // ever rejects.
+      ...jest.requireActual('./guardianConsent'),
+      assertGuardianMediaConsent: jest.fn(async () => {}),
+    }));
     const sweepModule = await import('./videoScanSweep');
     const { closePool: closeRegistryPool } = await import('./db');
     registryPools.push(closeRegistryPool);
@@ -604,6 +628,8 @@ describe('the sweep end to end against real Postgres', () => {
     registryPools = [];
     jest.dontMock('./videoScan');
     jest.dontMock('./shadowEvents');
+    jest.dontMock('./escalationLadder');
+    jest.dontMock('./guardianConsent');
     jest.resetModules();
   });
 

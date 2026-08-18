@@ -3,7 +3,7 @@
 // Implements dual-mode architecture: Quick Round (fast/sync) vs Heavy Bag (deep/async)
 
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/src/server/pilot/db';
+import { query, sanitizedSqlState } from '@/src/server/pilot/db';
 import { isUuid, requirePrincipal, jsonError } from '@/src/server/pilot/http';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import type { PilotRole } from '@/src/server/pilot/contracts';
@@ -744,10 +744,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       ? requestValidation.topic
       : (classification.topic || 'general');
 
-    // Step 3: Load personal user shadow profile + classify profiling tier
-    const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as PilotRole);
+    // Steps 3 and 5 (profile load, unlock-state evaluation, role-based
+    // context) run concurrently rather than sequentially: none of the three
+    // reads another's result as an input (getOrCreateShadowUserProfile is
+    // keyed only on accountId/organizationId/role; retrieveShadowContext
+    // takes only role/id/org/athlete fields), so awaiting them one after
+    // another on every chat turn -- the platform's highest-traffic path --
+    // was paying their summed latency instead of their max.
+    const [userProfile, unlockState, roleBasedContext] = await Promise.all([
+      getOrCreateShadowUserProfile(userId, organizationId, userRole as PilotRole),
+      evaluateShadowUnlockState({ organizationId, accountId: userId }).catch(() => null),
+      retrieveShadowContext({
+        userRole,
+        userId,
+        organizationId,
+        actorAthleteId: principal.athleteId,
+        athleteId,
+      }),
+    ]);
     const tierResult = classifyProfileTier(userProfile);
-    const unlockState = await evaluateShadowUnlockState({ organizationId, accountId: userId }).catch(() => null);
 
     // Step 4: Build tier-aware context (Quick Round = lightweight, Heavy Bag = full)
     const contextOutput = buildShadowContext({
@@ -756,15 +771,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       userMessage: message,
       userRole: userRole as PilotRole,
       organizationId,
-      athleteId,
-    });
-
-    // Step 5: Retrieve role-based context and merge with tier-aware context
-    const roleBasedContext = await retrieveShadowContext({
-      userRole,
-      userId,
-      organizationId,
-      actorAthleteId: principal.athleteId,
       athleteId,
     });
 
@@ -816,7 +822,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       && mentionsCrossOrganizationScope(message);
     const platformRollup = wantsPlatformScope
       ? await getPlatformRollup().catch((error) => {
-          console.error('SHADOW platform rollup unavailable', error);
+          // Sanitized, not the raw error object: getPlatformRollup does real
+          // DB queries, so a pg DatabaseError here can carry .detail/.table/
+          // .column/.hint -- the same class of value db.ts's own
+          // sanitizedSqlState/sanitizedPoolErrorLog exist to keep out of
+          // logs, and the pattern this file's own other catches already use
+          // (line 271's {status}, line 1200's {errorClass}).
+          const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+          const sqlState = sanitizedSqlState(rawCode);
+          console.error('SHADOW platform rollup unavailable', {
+            errorClass: error instanceof Error ? error.constructor?.name : typeof error,
+            ...(sqlState ? { code: sqlState } : {}),
+          });
           return null;
         })
       : null;

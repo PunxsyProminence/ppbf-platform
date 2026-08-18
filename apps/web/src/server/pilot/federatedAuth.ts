@@ -4,6 +4,17 @@ const OIDC_DISCOVERY_PATH = '/v2.0/.well-known/openid-configuration';
 const OIDC_SCOPES = 'openid profile email';
 const ALLOWED_JWT_ALGORITHMS = new Set(['RS256']);
 
+// These three calls run on every Microsoft sign-in's critical path (discovery,
+// token exchange, then JWKS to verify the returned id_token), and none of
+// them previously carried a timeout -- unlike shadowFilmStudy.ts and
+// shadowJobProcessor.ts's AbortSignal.timeout convention for external calls.
+// A stall on login.microsoftonline.com hung the callback route's GET handler
+// indefinitely: no error shown, the browser left spinning, the invocation
+// tied up for however long the platform's own ambient limit allows. 10s is
+// generous for a metadata/token/JWKS fetch to Microsoft's own endpoints --
+// this is not an AI inference call -- while still bounding the hang.
+const OIDC_NETWORK_TIMEOUT_MS = 10_000;
+
 interface OidcDiscovery {
   authorization_endpoint: string;
   token_endpoint: string;
@@ -70,7 +81,10 @@ export function createCodeChallenge(verifier: string): string {
 
 export async function fetchOidcDiscovery(tenantId: string): Promise<OidcDiscovery> {
   const issuerBase = `https://login.microsoftonline.com/${tenantId}`;
-  const response = await fetch(`${issuerBase}${OIDC_DISCOVERY_PATH}`, { cache: 'no-store' });
+  const response = await fetch(`${issuerBase}${OIDC_DISCOVERY_PATH}`, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(OIDC_NETWORK_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error('Failed to load Microsoft OIDC metadata');
   }
@@ -135,6 +149,7 @@ export async function exchangeCodeForIdToken(
     },
     body,
     cache: 'no-store',
+    signal: AbortSignal.timeout(OIDC_NETWORK_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -255,7 +270,10 @@ function validateClaims(claims: MicrosoftClaims, config: ClientConfig, issuer: s
 }
 
 async function fetchJwks(jwksUri: string): Promise<Jwk[]> {
-  const response = await fetch(jwksUri, { cache: 'no-store' });
+  const response = await fetch(jwksUri, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(OIDC_NETWORK_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error('Failed to load Microsoft JWKS');
   }

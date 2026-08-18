@@ -1,4 +1,7 @@
-FROM node:20-alpine
+# Matches ci.yml/apply-migrations.yml's node-version: 22; was 20. Not
+# build-tested locally (no docker daemon in this sandbox) -- CI's own image
+# build is the real verification.
+FROM node:22-alpine
 
 WORKDIR /app
 

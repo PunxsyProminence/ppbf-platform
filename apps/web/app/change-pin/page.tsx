@@ -114,7 +114,7 @@ export default function ChangePinPage() {
               {error && (
                 /* Law 3: glyph + uppercase label carry the refusal, so it
                    survives greyscale; the red is the third channel. */
-                <div role="alert" className="alert alert--critical alert--tight">
+                <div id="change-pin-error" role="alert" className="alert alert--critical alert--tight">
                   <span className="alert-icon" aria-hidden="true">✕</span>
                   <div className="alert-body">
                     <p className="alert-title">PIN refused</p>
@@ -139,6 +139,8 @@ export default function ChangePinPage() {
                   maxLength={DEFAULT_PIN_LENGTH}
                   onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
                   className="input input--kiosk font-[family-name:var(--font-mono)] tracking-[0.3em]"
+                  aria-invalid={error !== ''}
+                  aria-describedby={error ? 'change-pin-error' : undefined}
                 />
               </div>
 
@@ -157,6 +159,8 @@ export default function ChangePinPage() {
                   maxLength={DEFAULT_PIN_LENGTH}
                   onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
                   className="input input--kiosk font-[family-name:var(--font-mono)] tracking-[0.3em]"
+                  aria-invalid={error !== ''}
+                  aria-describedby={error ? 'change-pin-error' : undefined}
                 />
               </div>
 
@@ -174,6 +178,8 @@ export default function ChangePinPage() {
                   maxLength={DEFAULT_PIN_LENGTH}
                   onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
                   className="input input--kiosk font-[family-name:var(--font-mono)] tracking-[0.3em]"
+                  aria-invalid={error !== ''}
+                  aria-describedby={error ? 'change-pin-error' : undefined}
                 />
               </div>
 

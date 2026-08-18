@@ -4,7 +4,7 @@ jest.mock('./db', () => ({
 }));
 
 import { query, queryOne } from './db';
-import { createShadowResearchRequirement, resolveShadowResearchRequirement } from './shadowResearch';
+import { createShadowResearchRequirement, listShadowResearchRequirements, resolveShadowResearchRequirement } from './shadowResearch';
 
 const mockQuery = jest.mocked(query);
 const mockQueryOne = jest.mocked(queryOne);
@@ -40,6 +40,72 @@ describe('SHADOW research requirements', () => {
     );
     expect(sql).toContain('returning research_requirement_id');
   });
+
+  // subject_id mirrors pilot.shadow_library_documents.subject_id: a plain
+  // insert column, not part of the idempotency key above, so it must land at
+  // its own parameter position rather than inside the ON CONFLICT clause.
+  test('inserts subject_id as a plain column at its own parameter position', async () => {
+    mockQueryOne.mockResolvedValue({ research_requirement_id: 82 });
+
+    await createShadowResearchRequirement({
+      organizationId: 'org-1',
+      sourceEventName: 'SHADOW_INTAKE_CASE_APPROVED',
+      sourceEntityType: 'intake_case',
+      sourceEntityId: 'case-1',
+      researchRequirement: 'Confirm approval evidence.',
+      knowledgeGap: 'Awaiting stronger evidence.',
+      evidenceLabel: null,
+      sourceStatus: 'observed',
+      sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW' as const,
+      sourceVerificationState: 'unknown' as const,
+      createdByAccountId: 'account-1',
+      createdByRole: 'coach',
+      subjectId: 'athlete-1',
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain('subject_id');
+    expect(params?.at(-1)).toBe('athlete-1');
+  });
+
+  test('an absent subjectId inserts null rather than undefined', async () => {
+    mockQueryOne.mockResolvedValue({ research_requirement_id: 83 });
+
+    await createShadowResearchRequirement({
+      organizationId: 'org-1',
+      sourceEventName: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
+      sourceEntityType: 'shadow_library_capability_map',
+      sourceEntityId: 'cap-1',
+      researchRequirement: 'Close coverage gap.',
+      knowledgeGap: 'No qualifying sources.',
+      evidenceLabel: 'cap-1',
+      sourceStatus: 'missing',
+      sourceConfidenceTier: 'INSUFFICIENT' as const,
+      sourceVerificationState: 'unknown' as const,
+      createdByAccountId: 'account-1',
+      createdByRole: 'coach',
+    });
+
+    const [, params] = mockQueryOne.mock.calls[0];
+    expect(params?.at(-1)).toBeNull();
+  });
+});
+
+describe('listShadowResearchRequirements', () => {
+  test('scopes to the subject_id column only -- the retired 3-field heuristic is gone', async () => {
+    mockQuery.mockResolvedValue([]);
+
+    await listShadowResearchRequirements('org-1', { athleteIds: ['athlete-1'] });
+
+    const [sql, params = []] = mockQuery.mock.calls[0];
+    expect(sql).toContain('resolved_at,\n       subject_id');
+    expect(sql).toContain('or subject_id = any($4::text[])');
+    expect(sql).not.toContain('source_entity_id = any');
+    expect(sql).not.toContain('evidence_label = any');
+    expect(sql).not.toContain("metadata->>'subject_id'");
+    expect(params[2]).toBe(true);
+    expect(params[3]).toEqual(['athlete-1']);
+  });
 });
 
 describe('resolveShadowResearchRequirement', () => {
@@ -62,8 +128,8 @@ describe('resolveShadowResearchRequirement', () => {
 
   test('a parent cannot resolve a requirement outside their athlete scope', async () => {
     // The where clause itself does the filtering; simulate the DB returning
-    // zero rows because the row's source_entity_id/evidence_label/subject_id
-    // matched none of the caller's linked athlete IDs.
+    // zero rows because the row's subject_id matched none of the caller's
+    // linked athlete IDs.
     mockQuery.mockResolvedValue([]);
 
     const resolved = await resolveShadowResearchRequirement({
@@ -76,7 +142,7 @@ describe('resolveShadowResearchRequirement', () => {
 
     expect(resolved).toBe(false);
     const [sql, params = []] = mockQuery.mock.calls[0];
-    expect(sql).toContain('source_entity_id = any($5::text[])');
+    expect(sql).toContain('or subject_id = any($5::text[])');
     expect(params[3]).toBe(true);
     expect(params[4]).toEqual(['athlete-not-theirs']);
   });
