@@ -5,13 +5,15 @@
 // staging.
 //
 // What this pins down: assertMedicalStatusAllowsRecommendation now runs
-// unconditionally, and only an athlete whose LATEST status row is exactly
-// 'cleared' passes it. This check has to answer "how many athletes are in
-// that state" against a real roster -- so the test seeds a full spread
-// (no record, pending, restricted, not_cleared, cleared, a superseded-then-
-// re-cleared history, an inactive athlete, and a second organization) and
-// asserts the per-org counts match what getLatestMedicalAdministrativeStatus
-// would actually decide for each one.
+// unconditionally, and only an athlete whose LATEST status row is 'cleared'
+// AND still current (isClearanceCurrent -- no stated expiry, or an expiry
+// still in the future) passes it. This check has to answer "how many
+// athletes are in that state" against a real roster -- so the test seeds a
+// full spread (no record, pending, restricted, not_cleared, a current
+// cleared, a lapsed cleared, a superseded-then-re-cleared history, an
+// inactive athlete, and a second organization) and asserts the per-org
+// counts match what isClearanceCurrent / effectiveMedicalStatus would
+// actually decide for each one.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
 import net from 'node:net';
@@ -35,6 +37,10 @@ const DECISION_LOOP_SQL_PATH = path.resolve(
   __dirname,
   '../../../../../infra/azure/pilot_slice_postgres_shadow_decision_loop_migration.sql',
 );
+const EXPIRY_SQL_PATH = path.resolve(
+  __dirname,
+  '../../../../../infra/azure/pilot_slice_postgres_medical_clearance_expiry_migration.sql',
+);
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -43,6 +49,7 @@ interface CoverageRow {
   organization_id: string;
   active_athletes: number;
   cleared: number;
+  cleared_expired: number;
   restricted: number;
   not_cleared: number;
   pending: number;
@@ -131,12 +138,13 @@ async function insertStatus(
   status: string,
   coachId: string,
   effectiveAt: string,
+  expiresAt: string | null = null,
 ) {
   await client.query(
     `insert into pilot.shadow_medical_administrative_status
-       (organization_id, athlete_id, status, restriction_flags, source_reference, set_by_account_id, set_by_role, effective_at)
-     values ($1, $2, $3, '{}'::jsonb, null, $4, 'coach', $5)`,
-    [organizationId, athleteId, status, coachId, effectiveAt],
+       (organization_id, athlete_id, status, restriction_flags, source_reference, set_by_account_id, set_by_role, effective_at, expires_at)
+     values ($1, $2, $3, '{}'::jsonb, null, $4, 'coach', $5, $6::timestamptz)`,
+    [organizationId, athleteId, status, coachId, effectiveAt, expiresAt],
   );
 }
 
@@ -199,6 +207,7 @@ describe('checkMedicalClearanceCoverage', () => {
     client = await newTestDatabase('ppbf_test_medical_clearance_coverage');
     await client.query(await fs.readFile(SCHEMA_SQL_PATH, 'utf8'));
     await client.query(await fs.readFile(DECISION_LOOP_SQL_PATH, 'utf8'));
+    await client.query(await fs.readFile(EXPIRY_SQL_PATH, 'utf8'));
 
     await insertOrg(client, ORG);
     await insertOrg(client, ORG_2);
@@ -215,6 +224,16 @@ describe('checkMedicalClearanceCoverage', () => {
     await insertStatus(client, ORG, 'ath-not-cleared', 'not_cleared', 'coach-1', '2026-08-01T00:00:00Z');
     await insertAthlete(client, ORG, 'ath-cleared', 'coach-1');
     await insertStatus(client, ORG, 'ath-cleared', 'cleared', 'coach-1', '2026-08-01T00:00:00Z');
+    // A clearance with a stated expiry still in the future must count as
+    // current, the same way isClearanceCurrent treats it -- not every
+    // expires_at is a lapse.
+    await insertAthlete(client, ORG, 'ath-cleared-future-expiry', 'coach-1');
+    await insertStatus(client, ORG, 'ath-cleared-future-expiry', 'cleared', 'coach-1', '2026-08-01T00:00:00Z', '2099-01-01T00:00:00Z');
+    // A clearance whose expires_at has already passed must NOT count as
+    // 'cleared' -- this is the gap PR #473 (medical clearance expiry) opened:
+    // a stored 'cleared' row no longer means the athlete is covered.
+    await insertAthlete(client, ORG, 'ath-cleared-lapsed', 'coach-1');
+    await insertStatus(client, ORG, 'ath-cleared-lapsed', 'cleared', 'coach-1', '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z');
     // History matters: an earlier 'cleared' superseded by a later 'restricted'
     // must count as restricted, not cleared -- exactly what
     // getLatestMedicalAdministrativeStatus's own ordering would return.
@@ -233,16 +252,17 @@ describe('checkMedicalClearanceCoverage', () => {
     await client.end();
   });
 
-  test('counts each active athlete under its latest status, per organization', async () => {
+  test('counts each active athlete under its latest EFFECTIVE status, per organization', async () => {
     const { checkMedicalClearanceCoverage } = await nativeDynamicImport(CHECKER_SCRIPT_PATH);
     const { byOrg } = await checkMedicalClearanceCoverage(client);
 
     const gym1 = byOrg.find((r) => r.organization_id === ORG);
     expect(gym1).toEqual({
       organization_id: ORG,
-      active_athletes: 6,
-      cleared: 1,
-      restricted: 2,
+      active_athletes: 8,
+      cleared: 2, // ath-cleared, ath-cleared-future-expiry
+      cleared_expired: 1, // ath-cleared-lapsed
+      restricted: 2, // ath-restricted, ath-superseded
       not_cleared: 1,
       pending: 1,
       no_record: 1,
@@ -253,6 +273,7 @@ describe('checkMedicalClearanceCoverage', () => {
       organization_id: ORG_2,
       active_athletes: 1,
       cleared: 1,
+      cleared_expired: 0,
       restricted: 0,
       not_cleared: 0,
       pending: 0,
@@ -266,9 +287,9 @@ describe('checkMedicalClearanceCoverage', () => {
 
     const gym1 = byOrg.find((r) => r.organization_id === ORG);
     const counted = gym1
-      ? gym1.cleared + gym1.restricted + gym1.not_cleared + gym1.pending + gym1.no_record
+      ? gym1.cleared + gym1.cleared_expired + gym1.restricted + gym1.not_cleared + gym1.pending + gym1.no_record
       : 0;
     expect(counted).toBe(gym1?.active_athletes);
-    expect(counted).toBe(6); // ath-inactive is the 7th athlete and is not among these 6.
+    expect(counted).toBe(8); // ath-inactive is the 9th athlete and is not among these 8.
   });
 });
