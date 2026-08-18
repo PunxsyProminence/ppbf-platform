@@ -87,7 +87,7 @@ live status. It is updated when a pass changes state, not at the end.
 | # | Pass | Scope | Status | Output |
 |---|---|---|---|---|
 | 1 | Authentication & session | Login, magic link, PIN, session issuance, role resolution, `AUTH_CONTRACT.md` conformance | not started | — |
-| 2 | Authorization & tenancy | `assertActorCanAccessAthlete` and siblings, org scoping, cross-org leakage, role gates across all 228 routes | **running** | `PASS-02-authorization.md` |
+| 2 | Authorization & tenancy | `assertActorCanAccessAthlete` and siblings, org scoping, cross-org leakage, role gates across all 228 routes | **done** | `PASS-02-authorization.md` |
 | 3 | Minors' data & consent | Waivers, guardian links, consent scope enforcement, profile visibility, photo/video exposure | not started | — |
 | 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | **done** | `PASS-04-safety-gates.md` |
 | 5 | API surface | All 228 routes: input validation, error-shape conformance, idempotency, rate limiting | not started | — |
@@ -129,6 +129,39 @@ partial by definition rather than final.
 | F-17 | MEDIUM | `DATA_RETENTION.md` promises per-category deletion of photos, videos, medical records and waivers that no code performs; no blob byte is ever deleted | 3 | New |
 | F-18 | MEDIUM | A second unguarded copy of the destructive purge exists with zero callers | 3 | New |
 | F-19 | LOW | `deleteAthleteRecord`'s JSDoc claims it marks photos and videos for deletion; it sets one column | 3 | New |
+| F-20 | **CRITICAL** | `/api/pilot/safety-flags` gives any coach the whole gym's open safety queue and lets them raise or **bypass** a flag on any child, with no athlete-scope check at the route or in `resolveSafetyFlag` | 2 | New — **severity raised from the pass's own HIGH; see below** |
+| F-21 | HIGH | A coach can overwrite another family's guardian record — `upsertGuardian`'s `on conflict … do update` rewrites `account_id`, phone and email, and repointing `account_id` hands a chosen account guardian reach over every child that record carries, siblings included | 2 | New extension of the escalated `parent_id` finding |
+| F-22 | MEDIUM | `multidiscipline` and `competence-cohorts` call `requireRole(principal, ['coach','admin'])`, which is exact-match, so every provisioned `organization_admin` gets a 403 on a child's grappling-exposure history. Tests miss it because they drive the legacy `'admin'` value | 2 | New |
+| F-23 | MEDIUM | `DELETE /api/pilot/achievements/mentorships` authorizes only the mentor side, and does so *after* `endMentorship` has committed its UPDATE — an unauthorized coach closes the pairing and then receives the 403 | 2 | New |
+
+### On F-20, and why I moved it
+
+Pass 2 rated this HIGH and said in its own report that it met the CRITICAL bar,
+inviting the check. I made it, by reading the route and the module rather than
+taking either label on trust, and I am moving it to CRITICAL. The grounds:
+
+- It is a **write**, not only a read. `resolveSafetyFlag`
+  (`safetyFlags.ts:190`) scopes its `update` by `organization_id` and `flag_id`
+  alone — there is no athlete-scope check at the route or inside the module — so
+  a coach can resolve or bypass an open flag on a child they have no standing
+  on. Reading another child's `concussion_rest_period` is bad; clearing it is
+  the thing this platform exists to prevent.
+- The codebase **already refuses exactly this next door**, which makes it a miss
+  rather than a considered trade-off. `training-holds/route.ts:131` carries the
+  comment "no org-wide hold roster" and calls `assertCoachAssignedToAthlete` at
+  three separate points.
+- Pass 2's two stated reasons for stopping at HIGH do not survive contact. "No
+  UI path" is not a mitigation for an authenticated API endpoint. "A vetted
+  coach in the same gym" is a real consideration, but the platform itself has
+  already decided it is insufficient — that is what the sibling routes' scoping
+  means.
+
+The mitigations that **are** real, and belong in the record: an `external_rule`
+flag cannot be bypassed (`safetyFlags.ts:205`, backed by a database constraint),
+and every resolution writes an audit event carrying the actor's id and role. But
+`flag_class` is supplied by whoever raises the flag rather than derived from the
+flag code, and a coach may raise flags — so the class that protects the worst
+codes is not guaranteed to be set on them.
 
 ## Log
 
@@ -168,3 +201,15 @@ Appended as work happens. Newest last.
   transaction re-verify. That makes it an outlier, not a house style.
   Two of its findings are owner decisions rather than fixes, and two need
   production access this session does not have.
+- **2026-08-18** — Pass 2 reported: eight findings, and it was straight about its
+  own reach — 228 routes classified mechanically, 31 deep-read, 22 more inspected
+  at handler level, **175 not opened**. That sentence is why the pass is usable;
+  a claim to have reviewed all 228 would not have been.
+  It also answered the question it was sent to answer: the "one side checked,
+  the other not" pattern is **the exception, not the rule** — roughly 120
+  two-party link inserts traced, and all but two validate both ends, several with
+  comments explaining why. That is a genuinely reassuring result and is recorded
+  as such.
+  One severity call was raised on review from HIGH to CRITICAL after I read the
+  route and module myself; the grounds are written above rather than the label
+  quietly changed.
