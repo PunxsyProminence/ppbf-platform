@@ -416,6 +416,63 @@ export async function findRegistrationBlockingHold(
   }
 }
 
+/**
+ * The other enforcement read: does an active hold stop this CONTACT EVENT?
+ *
+ * findRegistrationBlockingHold above deliberately narrows to 'all_training',
+ * and its own comment says why: scheduler classes are untyped, so a scoped
+ * hold cannot know whether a given class involves contact, and the scoped
+ * rungs enforce at the contact surface instead. A wrestling match and an
+ * external competition carry no such ambiguity -- they are contact and
+ * maximal exertion by definition -- so the REGRESS rung ('contact_only',
+ * training continues at reduced intensity) has to stop them too, or "no
+ * contact for now" would mean no sparring on the gym floor and a match on
+ * Saturday.
+ *
+ * The scope set here is exactly the one flagContactDuringHold below already
+ * treats as "a hold covering contact". The two must not drift; if a fourth
+ * scope is ever added, both belong in the same edit.
+ *
+ * Returns the athlete's own words alongside the hold, so the caller's refusal
+ * is the sentence written FOR the athlete plus the lift condition -- the same
+ * shape the registration STOP already surfaces, rather than a bare "no".
+ *
+ * Expiry is enforced in the predicate at read time, like
+ * findRegistrationBlockingHold: a lapsed hold stops matching without needing
+ * a sweep, and this is an enforcement probe, not the staff list that has to
+ * reconcile the stored status column.
+ *
+ * Missing-table (42P01, pre-migration window) reads as "no hold", the same
+ * degradation every other read in this module promises. That is a fail-OPEN on
+ * one narrow condition, and it is deliberate: it keeps one contract for what a
+ * pre-migration database means rather than inventing a second, stricter one
+ * for competitions, and a gym whose training_holds relation does not exist yet
+ * has no holds to honour. The competition gate that calls this states the same
+ * limit in its own README so nobody has to infer it.
+ */
+export async function findContactEventBlockingHold(
+  organizationId: string,
+  athleteId: string,
+): Promise<Pick<TrainingHoldRow, 'hold_id' | 'scope' | 'athlete_explanation' | 'lift_condition_text'> | null> {
+  try {
+    return await queryOne<Pick<TrainingHoldRow, 'hold_id' | 'scope' | 'athlete_explanation' | 'lift_condition_text'>>(
+      `select hold_id, scope, athlete_explanation, lift_condition_text
+       from pilot.training_holds
+       where organization_id = $1 and athlete_id = $2
+         and status = 'active'
+         and scope in ('all_training', 'contact_only')
+         and (expires_at is null or expires_at > now())
+       limit 1`,
+      [organizationId, athleteId],
+    );
+  } catch (error) {
+    if (!isMissingTableError(error)) {
+      throw error;
+    }
+    return null;
+  }
+}
+
 const HOLD_CONTACT_TRIGGER = 'contact_observation_during_training_hold';
 
 export interface HoldContactOutcome {

@@ -2,6 +2,7 @@ import { query, queryOne, withTransaction } from './db';
 import { fileEscalation } from './escalationLadder';
 import { findNearMissByTriggerContext, flagNearMiss } from './shadowNearMisses';
 import {
+  findContactEventBlockingHold,
   findRegistrationBlockingHold,
   flagContactDuringHold,
   getActiveTrainingHold,
@@ -379,6 +380,57 @@ describe('findRegistrationBlockingHold', () => {
 
     await expect(findRegistrationBlockingHold('org-1', 'ATH-1', client as never)).rejects.toThrow('connection refused');
     expect(client.query.mock.calls.some(([sql]) => String(sql).trim().startsWith('ROLLBACK'))).toBe(false);
+  });
+});
+
+describe('findContactEventBlockingHold', () => {
+  test('a contact event is blocked by contact_only as well as all_training', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await findContactEventBlockingHold('org-1', 'ATH-1');
+
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    // The whole point of this probe existing next to
+    // findRegistrationBlockingHold: a match IS contact, so the REGRESS rung
+    // stops it too. If this assertion is ever relaxed, an athlete told "no
+    // contact for now" can be entered into a competition on Saturday.
+    expect(String(sql)).toContain("scope in ('all_training', 'contact_only')");
+    expect(String(sql)).toContain("status = 'active'");
+    // Conditioning-only is training that continues; it is not a contact bar.
+    expect(String(sql)).not.toContain('conditioning_only');
+    // Expiry in the predicate, so a lapsed hold stops blocking with no sweep.
+    expect(String(sql)).toContain('expires_at is null or expires_at > now()');
+    expect(params).toEqual(['org-1', 'ATH-1']);
+  });
+
+  test("returns the hold with the athlete's own words, so the caller can quote them", async () => {
+    mockQueryOne.mockResolvedValueOnce({
+      hold_id: 'hold-1',
+      scope: 'contact_only',
+      athlete_explanation: 'Your ribs need two more weeks before contact.',
+      lift_condition_text: 'A coach clears you after a pain-free week.',
+    });
+
+    await expect(findContactEventBlockingHold('org-1', 'ATH-1')).resolves.toEqual({
+      hold_id: 'hold-1',
+      scope: 'contact_only',
+      athlete_explanation: 'Your ribs need two more weeks before contact.',
+      lift_condition_text: 'A coach clears you after a pain-free week.',
+    });
+  });
+
+  test('a missing table (pre-migration window) reads as no hold, matching the registration probe', async () => {
+    mockQueryOne.mockRejectedValueOnce(
+      Object.assign(new Error('relation "pilot.training_holds" does not exist'), { code: '42P01' }),
+    );
+
+    await expect(findContactEventBlockingHold('org-1', 'ATH-1')).resolves.toBeNull();
+  });
+
+  test('any other database error still propagates', async () => {
+    mockQueryOne.mockRejectedValueOnce(Object.assign(new Error('connection refused'), { code: '08006' }));
+
+    await expect(findContactEventBlockingHold('org-1', 'ATH-1')).rejects.toThrow('connection refused');
   });
 });
 
