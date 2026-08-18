@@ -1549,7 +1549,14 @@ h6 {
    system's palette -- the filter costs them nothing and is not aimed at them.
    Nothing here touches the caption or title, which are siblings of the mount
    rather than children of it. */
-.photo-slot-mount > img {
+.photo-slot-mount > img,
+/* The customization page's upload preview gets the identical treatment, and
+   that is not a nicety. The release rule for a gym photograph is that a person
+   who can SEE the picture decides it goes up -- so the thing they approve has
+   to be the thing that ships. The preview sits outside .photo-slot-mount, so it
+   rendered in full colour while the wall rendered sepia, and an admin chose
+   between a photograph they were never shown. Same declaration, one place. */
+.gym-photo-preview {
   filter: sepia(.42) contrast(1.05) brightness(.96);
 }
 

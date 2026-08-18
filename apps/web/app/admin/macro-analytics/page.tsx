@@ -1,3 +1,4 @@
+import SampleDataNotice from '@/components/SampleDataNotice';
 import MacroCommandCenter from '@/src/components/analytics/MacroCommandCenter';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
@@ -12,6 +13,11 @@ export default async function AdminMacroAnalyticsPage() {
 
   return (
     <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
+      <SampleDataNotice
+        what="The athlete counts, attendance figures, and SafeSport and background-check statuses on this page are illustrative. Never treat a name here as a cleared adult."
+        realHref="/admin/compliance-center"
+        realLabel="the Compliance Center"
+      />
       <MacroCommandCenter />
     </main>
   );

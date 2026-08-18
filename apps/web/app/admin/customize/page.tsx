@@ -241,7 +241,7 @@ export default function AdminCustomizePage() {
                         is session-scoped and must not pass through the optimizer's
                         shared cache. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewSrc} alt={slot.alt} loading="lazy" decoding="async" className="block w-full" />
+                    <img src={previewSrc} alt={slot.alt} loading="lazy" decoding="async" className="gym-photo-preview block w-full" />
                   </div>
                 )}
 

@@ -109,6 +109,20 @@ export default function SchedulerPage() {
      only `error` and dropped them, so a child was told "no" and never told why
      or how to get back on the floor. */
   const [errorDetail, setErrorDetail] = useState<{ explanation: string; liftCondition: string } | null>(null);
+
+  /* Every error goes through here. The training-hold refusal is the only one
+     carrying a coach's explanation and a lift condition, so those two parts
+     must die with the message that brought them -- otherwise an unrelated
+     "Select an athlete first." inherits the previous refusal's prose and tells
+     a child their hold is still in force when it may not be. Setting the
+     message anywhere else is what let that happen; this is the only setter. */
+  const showError = useCallback(
+    (message: string, detail: { explanation: string; liftCondition: string } | null = null) => {
+      setErrorMessage(message);
+      setErrorDetail(detail);
+    },
+    [],
+  );
   const [actionInFlight, setActionInFlight] = useState(false);
 
   const [newClassTitle, setNewClassTitle] = useState('');
@@ -142,7 +156,7 @@ export default function SchedulerPage() {
   // "Loading scheduler...", every time a dropdown changes.
   const loadSchedulerState = useCallback(async () => {
     setLoading(true);
-    setErrorMessage('');
+    showError('');
 
     try {
       const authRes = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
@@ -186,11 +200,11 @@ export default function SchedulerPage() {
         setAthletes([]);
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load scheduler state');
+      showError(error instanceof Error ? error.message : 'Failed to load scheduler state');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -208,8 +222,7 @@ export default function SchedulerPage() {
 
     setActionInFlight(true);
     setActionMessage('');
-    setErrorMessage('');
-    setErrorDetail(null);
+    showError('');
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/scheduler`, {
@@ -228,20 +241,22 @@ export default function SchedulerPage() {
       if (!response.ok || !result.ok) {
         // Handled here rather than thrown: an Error carries one string, and a
         // refusal that states its own way out has three parts.
-        setErrorMessage(result.error || 'Action failed');
-        if (result.athlete_explanation || result.lift_condition) {
-          setErrorDetail({
-            explanation: result.athlete_explanation ?? '',
-            liftCondition: result.lift_condition ?? '',
-          });
-        }
+        showError(
+          result.error || 'Action failed',
+          result.athlete_explanation || result.lift_condition
+            ? {
+              explanation: result.athlete_explanation ?? '',
+              liftCondition: result.lift_condition ?? '',
+            }
+            : null,
+        );
         return;
       }
 
       setActionMessage(successMessage);
       await loadSchedulerState();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Action failed');
+      showError(error instanceof Error ? error.message : 'Action failed');
     } finally {
       setActionInFlight(false);
     }
@@ -335,7 +350,7 @@ export default function SchedulerPage() {
                               setSelectedClassId(item.class_id);
                               const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
                               if (!targetAthlete) {
-                                setErrorMessage('Select an athlete first before registering.');
+                                showError('Select an athlete first before registering.');
                                 return;
                               }
                               void runAction(
@@ -480,7 +495,7 @@ export default function SchedulerPage() {
                     onClick={() => {
                       const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
                       if (!targetAthlete) {
-                        setErrorMessage('Select an athlete first.');
+                        showError('Select an athlete first.');
                         return;
                       }
                       void runAction(
@@ -552,7 +567,7 @@ export default function SchedulerPage() {
                     onClick={() => {
                       const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
                       if (!targetAthlete) {
-                        setErrorMessage('Select an athlete first.');
+                        showError('Select an athlete first.');
                         return;
                       }
 
@@ -653,7 +668,7 @@ export default function SchedulerPage() {
                               onClick={() => {
                                 const coachId = (assignCoachInputs[item.request_id] ?? '').trim();
                                 if (!coachId) {
-                                  setErrorMessage('Enter the coach account id to assign first.');
+                                  showError('Enter the coach account id to assign first.');
                                   return;
                                 }
                                 void runAction(
