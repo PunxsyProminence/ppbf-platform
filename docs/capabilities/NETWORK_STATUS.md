@@ -131,6 +131,30 @@ unrelated third party. It is still an egress whose data-handling posture this
 repository cannot establish, which is why it still matters under the codebase's
 own doctrine.
 
+### RESOLVED — a guardian could permanently see "blocked" for a cleared child: PR #472
+
+The competition training-hold gate recorded `outcome: 'blocked'` on a refusal
+and **nothing at all** on a clearance. Both readers of that gate history show
+only the most recent row — so a child held out in March, cleared in April,
+and entered in every competition since **still reads `training_hold: blocked`
+permanently**, because the March refusal is and remains the newest row that
+will ever exist. "Always blocked, never passed" reads as "never cleared" —
+a false record of the gym's own safeguarding decisions about a real child.
+
+Fixed by routing both outcomes through one helper (same best-effort posture
+the refusal branch already had) instead of leaving the pass path silent.
+Recorded before the travel-waiver gate runs, deliberately: the hold question
+was asked and answered, settled either way by the time gate 3 runs, and a
+`'passed'` row has never meant "the whole action went ahead" elsewhere in this
+codebase either.
+
+**Caught its own predecessor's mistake in the test suite**: an existing test
+asserted "a passing gate records nothing" under a comment that literally
+described the bug as intended behavior. Removed, with the rest of that test
+(gate lookups happen, entry proceeds) left intact. **Proved the new tests are
+real regression tests**, not tautologies, by stashing the fix and re-running —
+got exactly the four behavior-pinning failures expected, no others.
+
 ### RESOLVED, and found to be systemic: PR #471 (`profile/roster` deleted_at)
 
 Closed, and **wider than reported**: the roster route had *two* `pilot.athletes`
