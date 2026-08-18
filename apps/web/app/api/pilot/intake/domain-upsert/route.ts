@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { assertActiveParentAccount, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
@@ -131,15 +131,31 @@ export async function POST(request: NextRequest) { // NOSONAR
         noteText: asString(body.payload.note_text),
       });
     } else if (entityType === 'guardian_link') {
+      // Attaching a guardian to an athlete grants that guardian's account
+      // ongoing read access to the athlete's training holds, safety-gate
+      // outcomes, and staff messages (see guardianAthleteIds). The athlete
+      // side is already checked above via assertActorCanAccessAthlete; this
+      // branch additionally requires organization_admin (not coach -- no
+      // shipped coach workflow calls this today, so narrowing it costs no
+      // real functionality) and, when an account_id is supplied, requires
+      // it actually be an active parent-role account in this organization,
+      // so a link can't be minted onto an arbitrary or wrong-family account.
+      requireRole(principal, ['organization_admin']);
+
       const parentId = asString(body.payload.parent_id);
       if (!parentId) {
         throw new Error('Missing parent_id for guardian link');
       }
 
+      const guardianAccountId = typeof body.payload.account_id === 'string' ? body.payload.account_id : undefined;
+      if (guardianAccountId) {
+        await assertActiveParentAccount(principal.organizationId, guardianAccountId, 'account_id');
+      }
+
       await upsertGuardian({
         organizationId: principal.organizationId,
         parentId,
-        accountId: typeof body.payload.account_id === 'string' ? body.payload.account_id : undefined,
+        accountId: guardianAccountId,
         fullName: asString(body.payload.full_name, 'Guardian'),
         phone: typeof body.payload.phone === 'string' ? body.payload.phone : undefined,
         email: typeof body.payload.email === 'string' ? body.payload.email : undefined,

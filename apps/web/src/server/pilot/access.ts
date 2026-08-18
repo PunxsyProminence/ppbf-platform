@@ -137,6 +137,34 @@ export async function assertActiveCoachAccount(
   }
 }
 
+/**
+ * A guardian_link write has no meaning unless the account it names is
+ * actually a parent in the same organization. Without this, an intake
+ * writer could attach any account_id at all to an athlete's guardian_links
+ * -- including one from an unrelated family -- and that account would then
+ * read the athlete's training holds, safety-gate outcomes, and staff
+ * messages via guardianAthleteIds. Mirrors assertActiveCoachAccount's shape.
+ */
+export async function assertActiveParentAccount(
+  organizationId: string,
+  accountId: string,
+  field: string,
+): Promise<void> {
+  const parent = await queryOne<{ account_id: string }>(
+    `select account_id
+     from pilot.accounts
+     where account_id = $1
+       and organization_id = $2
+       and role = 'parent'
+       and active_flag = true`,
+    [accountId, organizationId],
+  );
+
+  if (!parent) {
+    throw new Error(`Missing ${field}: must be an active parent account in this organization`);
+  }
+}
+
 export async function grantCoachCoverage(params: {
   organizationId: string;
   athleteId: string;
