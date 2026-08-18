@@ -35,13 +35,18 @@ Apply multi-organization schema changes, seed bootstrap organization ownership, 
   - pilot.organization_memberships
   - pilot.parents
   - pilot.volunteers
-  - pilot.staff
   - pilot.attendance
   - pilot.readiness
   - pilot.assessments
   - pilot.documents
-  - pilot.messages
-  - pilot.skills
+
+  This migration originally also created `pilot.staff`, `pilot.messages`, and
+  `pilot.skills`. A later audit found zero application code reading or
+  writing any of the three, and
+  [infra/azure/pilot_slice_postgres_dead_schema_removal_migration.sql](infra/azure/pilot_slice_postgres_dead_schema_removal_migration.sql)
+  dropped all three (and removed their `create table` statements from this
+  migration's SQL). They are no longer expected outcomes of running this
+  runbook.
 - Existing pilot tables have organization_id ownership populated.
 - Duplicate athlete_id values are allowed across different organizations.
 - Platform-owner org lifecycle endpoints are functional.

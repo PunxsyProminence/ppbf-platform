@@ -30,10 +30,18 @@ import { READINESS_YELLOW_MIN } from './readinessBoard';
 // storage, no judgment about what the record means.
 //
 // Thresholds are named constants pinned by tests. Where an equivalent
-// threshold already exists elsewhere it is IMPORTED, not restated, so the
-// two rules can never drift apart (attendance reuses the gap-suggestion
-// constants; the RED band reuses the readiness board's; what counts as a
-// still-open compliance violation reuses compliance.ts's lifecycle).
+// threshold already exists elsewhere it is IMPORTED, not restated (attendance
+// reuses the gap-suggestion constants; the RED band reuses the readiness
+// board's; what counts as a still-open compliance violation reuses
+// compliance.ts's lifecycle). Importing the constant only keeps the NUMBER
+// from drifting -- the comparison built around it has to be copied by hand,
+// so item 3's fading-attendance filter below is written to match
+// progressionSuggestions.ts's training_days_dropping rule operator-for-
+// operator (>= on the early floor, <= on the late half: "lost AT LEAST half"
+// per that rule's own comment), not just constant-for-constant. Both are
+// pinned at the exact-half boundary -- see the cross-module agreement test in
+// coachIntelligence.test.ts -- so a future edit to either side that breaks
+// the match fails loudly instead of silently.
 
 /** Item 1: a gap identified this long ago with no drill ever assigned. */
 export const STALLED_GAP_DAYS = 14;
@@ -275,8 +283,11 @@ export async function getCoachIntelligence(
 
   const fading = rollup
     .filter((row) =>
+      // Mirrors progressionSuggestions.ts's training_days_dropping rule
+      // exactly, including the boundary: losing exactly half counts as
+      // "lost at least half of" (<=), not just losing more than half (<).
       row.training_days_early >= TRAINING_DAYS_MIN_EARLY
-      && row.training_days_late < row.training_days_early * TRAINING_DAYS_DROP_RATIO)
+      && row.training_days_late <= row.training_days_early * TRAINING_DAYS_DROP_RATIO)
     .map((row) => ({
       athlete_id: row.athlete_id,
       athlete_name: nameById.get(row.athlete_id) ?? row.athlete_id,

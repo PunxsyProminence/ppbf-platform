@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertActiveParentAccount, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { createCoachObservation } from '@/src/server/pilot/intake';
+import { createCoachObservation, linkGuardianAthlete, upsertGuardian } from '@/src/server/pilot/intake';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 // The register reconciliation (Wave 9) found this route's coach_note write
@@ -21,7 +21,7 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
-  return { ...actual, assertActorCanAccessAthlete: jest.fn() };
+  return { ...actual, assertActorCanAccessAthlete: jest.fn(), assertActiveParentAccount: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -34,13 +34,16 @@ jest.mock('@/src/server/pilot/shadowAuthority', () => {
 
 jest.mock('@/src/server/pilot/intake', () => {
   const actual = jest.requireActual('@/src/server/pilot/intake');
-  return { ...actual, createCoachObservation: jest.fn() };
+  return { ...actual, createCoachObservation: jest.fn(), upsertGuardian: jest.fn(), linkGuardianAthlete: jest.fn() };
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockCreate = createCoachObservation as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockAssertActiveParent = assertActiveParentAccount as jest.Mock;
+const mockUpsertGuardian = upsertGuardian as jest.Mock;
+const mockLinkGuardianAthlete = linkGuardianAthlete as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -121,4 +124,85 @@ test('a missing payload is a 400-class refusal, not a write of empty strings', a
 
   expect(response.status).toBeGreaterThanOrEqual(400);
   expect(mockCreate).not.toHaveBeenCalled();
+});
+
+// A guardian_link write attaches an account to an athlete's guardian_links,
+// which grants that account ongoing read access to the athlete's training
+// holds, safety-gate outcomes, and staff messages (via guardianAthleteIds).
+// A prior version of this branch admitted any caller allowed by the route's
+// top-level role gate (organization_admin OR coach) and never validated the
+// account_id at all -- a coach with legitimate standing on one athlete could
+// attach any account in the organization as that athlete's guardian. These
+// pin the fix: the branch now requires organization_admin, and validates
+// account_id (when supplied) names a real, active, same-organization parent.
+
+const GUARDIAN_LINK_BODY = {
+  entity_type: 'guardian_link',
+  athlete_id: 'ath-1',
+  payload: { parent_id: 'parent-1', account_id: 'acct-parent-1' },
+};
+
+test('a coach cannot attach a guardian -- no shipped coach workflow needs this, and it would grant read access to the child’s safety data', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+
+  const response = await POST(postRequest(GUARDIAN_LINK_BODY));
+
+  expect(response.status).toBeGreaterThanOrEqual(400);
+  expect(mockAssertActiveParent).not.toHaveBeenCalled();
+  expect(mockUpsertGuardian).not.toHaveBeenCalled();
+  expect(mockLinkGuardianAthlete).not.toHaveBeenCalled();
+});
+
+test('an organization_admin attaching a guardian must name a real parent account in this organization', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockAssertActiveParent.mockResolvedValue(undefined);
+  mockUpsertGuardian.mockResolvedValue(undefined);
+  mockLinkGuardianAthlete.mockResolvedValue(undefined);
+
+  const response = await POST(postRequest(GUARDIAN_LINK_BODY));
+  const payload = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(payload).toMatchObject({ ok: true, entity_type: 'guardian_link' });
+  expect(mockAssertActiveParent).toHaveBeenCalledWith('org-1', 'acct-parent-1', 'account_id');
+  expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({
+    organizationId: 'org-1',
+    parentId: 'parent-1',
+    accountId: 'acct-parent-1',
+  }));
+  expect(mockLinkGuardianAthlete).toHaveBeenCalledWith(expect.objectContaining({
+    organizationId: 'org-1',
+    parentId: 'parent-1',
+    athleteId: 'ath-1',
+  }));
+});
+
+test('an organization_admin cannot attach an account that is not an active parent in this organization', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockAssertActiveParent.mockRejectedValue(new Error('Missing account_id: must be an active parent account in this organization'));
+
+  const response = await POST(postRequest(GUARDIAN_LINK_BODY));
+
+  expect(response.status).toBeGreaterThanOrEqual(400);
+  expect(mockUpsertGuardian).not.toHaveBeenCalled();
+  expect(mockLinkGuardianAthlete).not.toHaveBeenCalled();
+});
+
+test('a guardian_link write with no account_id skips account validation but still requires organization_admin', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockUpsertGuardian.mockResolvedValue(undefined);
+  mockLinkGuardianAthlete.mockResolvedValue(undefined);
+
+  const response = await POST(postRequest({
+    entity_type: 'guardian_link',
+    athlete_id: 'ath-1',
+    payload: { parent_id: 'parent-1' },
+  }));
+
+  expect(response.status).toBe(200);
+  expect(mockAssertActiveParent).not.toHaveBeenCalled();
+  expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
 });

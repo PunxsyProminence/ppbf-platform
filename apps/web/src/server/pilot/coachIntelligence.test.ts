@@ -12,7 +12,8 @@ import {
   UNREVIEWED_SESSION_DAYS,
   getCoachIntelligence,
 } from './coachIntelligence';
-import { TRAINING_DAYS_MIN_EARLY, TRAINING_DAYS_DROP_RATIO } from './progressionSuggestions';
+import { deriveSuggestions, TRAINING_DAYS_MIN_EARLY, TRAINING_DAYS_DROP_RATIO } from './progressionSuggestions';
+import type { AthletePerformanceRow } from './performanceAnalytics';
 
 // The owner-approved definition, pinned: every item is a stored fact plus a
 // named threshold; the attendance rule REUSES the gap-suggestion constants
@@ -119,6 +120,7 @@ test('the fading filter applies the half-drop rule exactly, with names from the 
     if (String(sql).includes('full_name from pilot.athletes')) {
       return [
         { athlete_id: 'ath-fading', full_name: 'Rosa D.' },
+        { athlete_id: 'ath-boundary', full_name: 'Alex P.' },
         { athlete_id: 'ath-fine', full_name: 'Sam R.' },
         { athlete_id: 'ath-new', full_name: 'Kim L.' },
       ];
@@ -128,17 +130,74 @@ test('the fading filter applies the half-drop rule exactly, with names from the 
   mockRollup.mockResolvedValue([
     // 6 -> 2 training days: under half of early -- fading.
     { athlete_id: 'ath-fading', training_days_early: 6, training_days_late: 2 },
-    // 6 -> 3: exactly half is NOT under half -- fine.
-    { athlete_id: 'ath-fine', training_days_early: 6, training_days_late: 3 },
+    // 6 -> 3: exactly half lost is still "lost AT LEAST half" -- fading too.
+    // (Matches progressionSuggestions.ts's training_days_dropping rule,
+    // which also fires at this exact boundary -- see the agreement test
+    // below.)
+    { athlete_id: 'ath-boundary', training_days_early: 6, training_days_late: 3 },
+    // 6 -> 4: above half retained -- fine.
+    { athlete_id: 'ath-fine', training_days_early: 6, training_days_late: 4 },
     // 2 -> 0: early below the minimum floor -- too little signal to flag.
     { athlete_id: 'ath-new', training_days_early: 2, training_days_late: 0 },
   ]);
 
-  const digest = await getCoachIntelligence('org-1', ['ath-fading', 'ath-fine', 'ath-new']);
+  const digest = await getCoachIntelligence('org-1', ['ath-fading', 'ath-boundary', 'ath-fine', 'ath-new']);
 
   expect(digest.fading_attendance).toEqual([
     { athlete_id: 'ath-fading', athlete_name: 'Rosa D.', training_days_early: 6, training_days_late: 2 },
+    { athlete_id: 'ath-boundary', athlete_name: 'Alex P.', training_days_early: 6, training_days_late: 3 },
   ]);
+});
+
+// The header comment's "never drift apart" claim is only as good as this:
+// the same rollup row, fed through progressionSuggestions.ts's
+// training_days_dropping rule and through this module's fading-attendance
+// filter, must agree at the exact half-drop boundary -- not just share the
+// two threshold constants, which alone would not have caught a `<` vs `<=`
+// mismatch (this test previously did not exist, and that mismatch shipped).
+describe('fading_attendance agrees with progressionSuggestions.training_days_dropping', () => {
+  function rollupRow(overrides: Partial<AthletePerformanceRow> = {}): AthletePerformanceRow {
+    return {
+      athlete_id: 'ath-1',
+      sessions_total: 0,
+      sessions_completed: 0,
+      avg_rpe: null,
+      training_days: 0,
+      training_days_early: 0,
+      training_days_late: 0,
+      readiness_count: 0,
+      avg_readiness: null,
+      readiness_early_avg: null,
+      readiness_late_avg: null,
+      readiness_early_count: 0,
+      readiness_late_count: 0,
+      open_gaps: 0,
+      active_assignments: 0,
+      avg_assignment_completion: null,
+      ...overrides,
+    };
+  }
+
+  function isFading(row: AthletePerformanceRow): boolean {
+    return row.training_days_early >= TRAINING_DAYS_MIN_EARLY
+      && row.training_days_late <= row.training_days_early * TRAINING_DAYS_DROP_RATIO;
+  }
+
+  test.each([
+    ['well above the floor and well under half', { training_days_early: 6, training_days_late: 2 }],
+    ['exactly the half boundary', { training_days_early: 6, training_days_late: 3 }],
+    ['just above half (no signal)', { training_days_early: 6, training_days_late: 4 }],
+    ['exactly at the early-days floor, with a real drop', { training_days_early: TRAINING_DAYS_MIN_EARLY, training_days_late: 1 }],
+    ['below the early-days floor (too little signal)', { training_days_early: TRAINING_DAYS_MIN_EARLY - 1, training_days_late: 0 }],
+  ])('%s: both rules reach the same verdict', (_label, overrides) => {
+    const row = rollupRow(overrides as Partial<AthletePerformanceRow>);
+
+    const suggestionFired = deriveSuggestions([row], [], new Map())
+      .some((s) => s.rule === 'training_days_dropping');
+    const digestFired = isFading(row);
+
+    expect(digestFired).toBe(suggestionFired);
+  });
 });
 
 // ─── item 6: open safety escalations (#194) ──────────────────────────────────
