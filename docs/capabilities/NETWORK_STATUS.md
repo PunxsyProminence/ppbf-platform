@@ -5,37 +5,34 @@ Written for an agent picking up work who needs to know what is already done,
 already in review, or deliberately parked — before spending an afternoon on
 something that merged this morning.
 
-**Status as of `origin/main` at `88c0c94b`, 2026-08-18 08:56 UTC.** This file
+**Status as of `origin/main` at `3f961545`, 2026-08-18 09:18 UTC.** This file
 carries the commit it was written against because it will go stale. Check
 `git log` and the open PR list before trusting any row.
 
-**UPDATE 2026-08-18 08:56 UTC — seven of the nine batch fixes are now merged
-to `main`, one at a time, re-verifying `mergeable_state`/CI fresh immediately
-before each merge (never in parallel — see "two things this exercise
-taught" below for why):** #465, #466, #468, #469, #470, #471, #472. See
-`git log --oneline -10 origin/main` for the squash commits.
+**UPDATE 2026-08-18 09:18 UTC — all eight non-draft batch fixes are now
+merged to `main`, one at a time, re-verifying `mergeable_state`/CI fresh
+immediately before each merge (never in parallel — see "two things this
+exercise taught" below for why):** #465, #466, #468, #469, #470, #471, #472,
+#473. See `git log --oneline -10 origin/main` for the squash commits.
 
-**Still open, do not duplicate:**
-- **#473** (medical-status authority + expiry) — was `mergeable_state:
-  blocked` with checks in progress at last check. Copilot then found two more
-  real issues in a fresh review round, both fixed and pushed in a follow-up
-  commit: (1) `setMedicalAdministrativeStatus` now translates the
-  `expires_at`-vs-`effective_at` CHECK violation into a 400 instead of
-  leaking a raw 500 — real race, since `parseExpiresAt` checks JS
-  `Date.now()` before `assertShadowAuthority` and the INSERT run, so a
-  couple of seconds' gap (latency, clock skew) is enough for a validly-parsed
-  expiry to lapse before the row lands; (2) the migration runner's
-  `READINESS_QUERY` now uses `to_regclass()` for `constraint_ready` instead
-  of a `::regclass` cast, matching `status_table_ready` — confirmed this one
-  is not reachable via the runner's actual call order (the migration's own
-  `alter table` already guarantees the table exists before this query runs),
-  fixed anyway for internal consistency, said so on the thread. Both threads
-  resolved. CI needs to re-run against the new commit before this is
-  mergeable — check fresh, do not assume the earlier "blocked" state still
-  applies.
-- **#467** (training-hold place/lift control) — stays **draft** per the
-  visual-review convention. Do not mark ready or merge without explicit
-  separate instruction.
+**#473's merge needed a real conflict resolution, not just a rebase**: by
+the time its Copilot-review follow-up commit was ready, the other seven had
+already landed and `mergeable_state` had gone `dirty` — `#466` and `#473`
+each independently appended one entry to the same `test:migrations` chain
+string in `apps/web/package.json`, so both edits landed in the same
+line-range. Resolved by merging `origin/main` into the PR branch and keeping
+both new chain entries (`guardian-upsert` then `medical-clearance-expiry`)
+plus both new script definitions — an additive, non-semantic conflict, not a
+real disagreement. Re-verified after resolving: typecheck clean, lint clean
+(same 11 pre-existing warnings, 0 errors), both new pg-tests green,
+**full suite 504 suites / 6332 tests green**, then CI green on the merge
+commit before merging. If you add a new `.pg.test.ts` migration while
+another PR is also mid-flight, expect this exact shape of conflict on
+`package.json` — it is mechanical, not a design collision.
+
+**#467** (training-hold place/lift control) stays **draft** per the
+visual-review convention. Do not mark ready or merge without explicit
+separate instruction. It is the only one of the nine batch PRs left open.
 
 There is a visual version of this at
 `https://claude.ai/code/artifact/adc821bb-d309-485a-9ff3-db3e830d4e24`. It is
@@ -197,10 +194,10 @@ neutralized in place → exactly 13 tests go red, nothing else. Full suite
 coverage guard) complete.
 
 **All nine fixes from this batch opened as #465–#473.** Every review comment
-received so far has been addressed and its thread resolved. **Seven are now
-merged to `main`** (#465, #466, #468, #469, #470, #471, #472) — see the
-update note at the top of this file. #473 has one more round of Copilot
-fixes pushed and needs fresh CI; #467 stays draft per convention.
+received so far has been addressed and its thread resolved. **All eight
+non-draft PRs are now merged to `main`** (#465, #466, #468, #469, #470,
+#471, #472, #473) — see the update note at the top of this file. #467 stays
+draft per convention, the only one still open.
 
 ### RESOLVED — a guardian could permanently see "blocked" for a cleared child: PR #472
 
@@ -785,10 +782,11 @@ a writer or a reader.
 
 ---
 
-## Closed — 31, merged
+## Closed — 32, merged
 
 | Gap | Closed by |
 |---|---|
+| `pilot.shadow_medical_administrative_status` had no authority check and no expiry, so one clearance recorded once counted forever | #473 |
 | The video content screen sent frames to a vision model with no guardian consent check | #465 |
 | `upsertGuardian` nulled `account_id`/`phone`/`email` on an omitted field | #466 |
 | Deleting two contact safety gates from the observations route would leave the suite green (coverage gap) | #468 |
