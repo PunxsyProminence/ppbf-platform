@@ -1,5 +1,5 @@
 import { query } from './db';
-import { listShadowEvents, listShadowTelemetry, getShadowReviewProjection } from './shadowReadModels';
+import { listShadowEvents, listShadowTelemetry, getShadowReviewProjection, getShadowResearchProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
 
 jest.mock('./db', () => ({
@@ -112,5 +112,53 @@ describe('getShadowReviewProjection athlete scoping', () => {
 
     const itemsParams = mockQuery.mock.calls[0][1];
     expect(itemsParams[itemsParams.length - 1]).toBeNull();
+  });
+});
+
+describe('getShadowResearchProjection event-name filter', () => {
+  function eventRow(overrides: Partial<{
+    shadow_event_id: number;
+    event_name: string;
+    payload: Record<string, unknown>;
+  }>) {
+    return {
+      shadow_event_id: 1,
+      organization_id: 'org-1',
+      event_name: 'SHADOW_RESEARCH_NOTE',
+      entity_type: 'shadow_library_claim',
+      entity_id: 'e-1',
+      actor_account_id: 'acct-1',
+      actor_role: 'coach',
+      payload: {},
+      created_at: '2026-08-17T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  test('a Library Q&A knowledge gap (SHADOW_LIBRARY_CLAIM_GAP_DETECTED) is included with its requirement/gap text', async () => {
+    mockQuery.mockResolvedValueOnce([
+      eventRow({
+        shadow_event_id: 42,
+        event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+        payload: {
+          research_requirement: 'Strengthen SHADOW Library evidence for scoped claim',
+          knowledge_gap: 'Question lacks sufficient SHADOW Library evidence: what is optimal jab cadence?',
+        },
+      }),
+    ]);
+
+    const items = await getShadowResearchProjection(context({}));
+
+    expect(items).toHaveLength(1);
+    expect(items[0].source_event_name).toBe('SHADOW_LIBRARY_CLAIM_GAP_DETECTED');
+    expect(items[0].knowledge_gap).toBe('Question lacks sufficient SHADOW Library evidence: what is optimal jab cadence?');
+  });
+
+  test('an unrelated event with no INTAKE/EVIDENCE/RESEARCH/UPLOAD/GAP token is excluded', async () => {
+    mockQuery.mockResolvedValueOnce([eventRow({ event_name: 'SHADOW_LIBRARY_CLAIM_SUPPORTED' })]);
+
+    const items = await getShadowResearchProjection(context({}));
+
+    expect(items).toHaveLength(0);
   });
 });
