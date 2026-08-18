@@ -118,6 +118,7 @@ export default function CommunityServicePage() {
                         {person.entry_count} {person.entry_count === 1 ? 'entry' : 'entries'}
                       </span>
                       <button type="button" className="btn btn--ghost"
+                        aria-expanded={open}
                         onClick={() => setOpenPerson(open ? null : person.person_account_id)}>
                         {open ? 'Hide entries' : 'Show entries'}
                       </button>

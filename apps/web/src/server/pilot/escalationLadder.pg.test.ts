@@ -324,6 +324,22 @@ describe('safety escalations against real Postgres', () => {
     }
   });
 
+  // #video-scan-escalation: the video scan sweep files these when a scan
+  // reaches infected/blocked/needs_human_review -- a quarantined video used
+  // to be visible only on the video-review page's own filtered list.
+  test('the video_scan source_type stores, carrying the video session pointer in source_id', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_video_scan', { dropEscalationsTableFirst: true, applyIncrement: true });
+    try {
+      await insertEscalation(client, { source_type: 'video_scan', source_id: 'vs-123', severity: 'critical' });
+      const { rows } = await client.query(
+        `select source_type, source_id, severity from pilot.safety_escalations where escalation_id = 'esc-1'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'video_scan', source_id: 'vs-123', severity: 'critical' });
+    } finally {
+      await client.end();
+    }
+  });
+
   test('every admitted status value stores', async () => {
     const client = await freshDatabase('ppbf_test_escalations_status_admits', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {
@@ -526,6 +542,75 @@ describe('safety escalations against real Postgres', () => {
         `select source_type, severity, triggered_by from pilot.safety_escalations where escalation_id = 'esc-incident-repaired'`,
       );
       expect(rows[0]).toEqual({ source_type: 'incident', severity: 'high', triggered_by: 'human' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  // #video-scan-escalation: the same repair mechanism must also cover
+  // 'video_scan' -- a database stuck on any earlier revision must widen
+  // straight to the current full vocabulary in one pass.
+  test('re-running the migration widens a stale pre-video_scan CHECK in place', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_stale_video_scan_check', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    try {
+      await client.query('alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check');
+      await client.query(
+        `alter table pilot.safety_escalations
+         add constraint safety_escalations_source_type_check
+         check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident'))`,
+      );
+      await expect(insertEscalation(client, { source_type: 'video_scan', source_id: 'vs-1', severity: 'critical' })).rejects.toThrow(
+        /violates check constraint/i,
+      );
+
+      await client.query(migrationSql);
+      await insertEscalation(client, {
+        escalation_id: 'esc-video-scan-repaired',
+        source_type: 'video_scan',
+        source_id: 'vs-1',
+        severity: 'critical',
+      });
+      const { rows } = await client.query(
+        `select source_type, source_id, severity from pilot.safety_escalations where escalation_id = 'esc-video-scan-repaired'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'video_scan', source_id: 'vs-1', severity: 'critical' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  // compliance.ts:createComplianceViolation is the newest producer: the same
+  // repair mechanism proven above for athlete_voice/incident must also cover
+  // 'compliance_violation' -- a database stuck on any earlier revision must
+  // widen straight to the current full vocabulary in one pass.
+  test('re-running the migration widens a stale pre-compliance_violation CHECK in place', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_stale_compliance_violation_check', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    try {
+      await client.query('alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check');
+      await client.query(
+        `alter table pilot.safety_escalations
+         add constraint safety_escalations_source_type_check
+         check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident'))`,
+      );
+      await expect(insertEscalation(client, { source_type: 'compliance_violation' })).rejects.toThrow(
+        /violates check constraint/i,
+      );
+
+      await client.query(migrationSql);
+      await insertEscalation(client, {
+        escalation_id: 'esc-compliance-violation-repaired',
+        source_type: 'compliance_violation',
+      });
+      const { rows } = await client.query(
+        `select source_type from pilot.safety_escalations where escalation_id = 'esc-compliance-violation-repaired'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'compliance_violation' });
     } finally {
       await client.end();
     }

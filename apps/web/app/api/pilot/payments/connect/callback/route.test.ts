@@ -82,6 +82,26 @@ test('a valid round trip stores the account under the state-named lane and audit
   }));
 });
 
+// Previously an unguarded writePilotAuditEvent: upsertConnectedAccount had
+// already committed the connection by the time this ran, so a throw here
+// fell through to jsonError(), which always returns NextResponse.json(...)
+// -- never a redirect -- to what is a full-page browser navigation from
+// Stripe. The admin would see raw JSON with no way back to /admin/payments
+// and no way to tell the connection actually succeeded.
+test('an audit-write failure still redirects with the real outcome, not raw JSON', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  configured();
+  mockExchange.mockResolvedValue('acct_new_1');
+  mockUpsert.mockResolvedValue({ stripe_account_id: 'acct_new_1' });
+  mockAudit.mockRejectedValueOnce(new Error('connection pool exhausted'));
+  const state = signConnectState({ organizationId: 'org-1', lane: 'giving' }, SIGNING_KEY);
+
+  const response = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`));
+
+  expect(response.status).toBe(302);
+  expect(response.headers.get('location')).toContain('/admin/payments?connect=ok&lane=giving');
+});
+
 test("another organization's state cannot attach an account here", async () => {
   mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-2' }));
   configured();

@@ -215,6 +215,12 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
     );
 
     if (tokenRows.rows.length === 0) {
+      // Never the submitted code itself -- it is a bearer credential for the
+      // duration it is live, same reason a PIN is never logged. Nothing else
+      // records this rejection: the durable rate-limit bucket the caller
+      // checks separately is deleted after 15 minutes (rateLimit.ts), so a
+      // guesser spacing attempts out previously left no trace anywhere.
+      console.warn('pilot-auth activation rejected', { reason: 'code_unknown_used_or_expired' });
       throw new Error('Unauthorized: activation code is invalid, already used, or expired');
     }
 
@@ -229,6 +235,7 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
     );
 
     if (organization.rows.length === 0 || organization.rows[0].status !== 'active') {
+      console.warn('pilot-auth activation rejected', { accountId, reason: 'organization_not_active' });
       throw new Error('Unauthorized: activation code is invalid, already used, or expired');
     }
 
@@ -247,6 +254,7 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
 
     if (updated.rows.length === 0) {
       // The account changed role or organization between issue and redemption.
+      console.warn('pilot-auth activation rejected', { accountId, reason: 'account_role_or_org_changed' });
       throw new Error('Unauthorized: activation code is invalid, already used, or expired');
     }
 

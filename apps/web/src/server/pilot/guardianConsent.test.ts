@@ -317,4 +317,27 @@ describe('listOrganizationConsentStatus', () => {
       { athleteId: 'ath-1', athleteName: 'Sample Athlete', consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] } },
     ]);
   });
+
+  // page is opt-in and must default to unbounded: this function backs the
+  // org-wide consent AUDIT, and a silent cap would hide the exact finding
+  // (a non-compliant athlete) the audit exists to surface.
+  test('with no page argument, the athletes query carries no LIMIT/OFFSET', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }]).mockResolvedValueOnce([]);
+
+    await listOrganizationConsentStatus('org-a');
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).not.toMatch(/limit/i);
+    expect(params).toEqual(['org-a']);
+  });
+
+  test('an explicit page bounds the athletes query', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }]).mockResolvedValueOnce([]);
+
+    await listOrganizationConsentStatus('org-a', { limit: 50, offset: 100 });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toMatch(/limit \$2 offset \$3/i);
+    expect(params).toEqual(['org-a', 50, 100]);
+  });
 });

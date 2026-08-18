@@ -67,15 +67,19 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['coach', 'admin', 'organization_admin']);
 
-    const body = (await request.json()) as {
+    // .catch(() => null) mirrors PATCH below: without it, malformed/empty
+    // JSON throws a SyntaxError that matches no PilotError/prefix branch in
+    // jsonError and falls to a masked 500, while the identical failure on
+    // PATCH already returns a clean 400 for the same input.
+    const body = (await request.json().catch(() => null)) as {
       rule_id?: string;
       video_session_id?: string;
       athlete_id?: string;
       severity?: string;
       details?: Record<string, unknown>;
-    };
+    } | null;
 
-    if (!body.rule_id || !body.athlete_id) {
+    if (!body?.rule_id || !body.athlete_id) {
       throw new Error('Missing rule_id or athlete_id');
     }
 

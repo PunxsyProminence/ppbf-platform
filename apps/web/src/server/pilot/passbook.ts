@@ -362,7 +362,12 @@ export async function getCoachPassbookGapQueue(
        limit 1
      ) last_visit on true
      left join lateral (
-       select count(*)::int as recorded_absences
+       -- count(distinct attendance_date), not count(*): pilot.attendance has no
+       -- unique constraint on (organization_id, athlete_id, attendance_date), so
+       -- the same athlete-day can appear more than once and count(*) inflates
+       -- this number. A coach reading "3 absences since their last visit" needs
+       -- three days, not three rows.
+       select count(distinct attendance_date)::int as recorded_absences
        from pilot.attendance
        where organization_id = g.organization_id
          and athlete_id = g.athlete_id

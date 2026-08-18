@@ -20,6 +20,12 @@ export interface GoogleDriveConfig {
   folderId: string
 }
 
+// A file upload (PDF bytes), not a metadata call; 30s matches the SharePoint
+// upload bound for the same reason -- generous enough for an ordinary
+// document, still bounding a stall instead of leaving it unbounded like the
+// other three external calls in this module before this pass.
+const GOOGLE_DRIVE_UPLOAD_TIMEOUT_MS = 30_000
+
 interface ServiceAccount {
   client_email: string
   private_key: string
@@ -56,19 +62,22 @@ export async function uploadToGoogleDrive(
 
   const drive = google.drive({ version: 'v3', auth })
 
-  const createResponse = await drive.files.create({
-    requestBody: {
-      name: fileName,
-      mimeType: 'application/pdf',
-      parents: [folderId],
+  const createResponse = await drive.files.create(
+    {
+      requestBody: {
+        name: fileName,
+        mimeType: 'application/pdf',
+        parents: [folderId],
+      },
+      media: {
+        mimeType: 'application/pdf',
+        body: Readable.from(fileBuffer),
+      },
+      fields: 'id,webViewLink',
+      supportsAllDrives: true,
     },
-    media: {
-      mimeType: 'application/pdf',
-      body: Readable.from(fileBuffer),
-    },
-    fields: 'id,webViewLink',
-    supportsAllDrives: true,
-  })
+    { timeout: GOOGLE_DRIVE_UPLOAD_TIMEOUT_MS },
+  )
 
   if (!createResponse.data.id) {
     throw new Error('Google Drive upload succeeded but response did not include file id')

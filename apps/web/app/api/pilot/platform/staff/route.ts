@@ -9,6 +9,7 @@ import {
   listOrganizationMembers,
   requireGuardianLinkForParentInvite,
   type GuardianAthleteLink,
+  type VolunteerRosterAssignment,
 } from '@/src/server/pilot/staffProvisioning';
 
 export const runtime = 'nodejs';
@@ -57,6 +58,15 @@ export async function POST(request: NextRequest) {
         full_name?: string;
         relationship_to_athlete?: string;
       };
+      volunteer?: {
+        volunteer_id?: string;
+        full_name?: string;
+        role_focus?: string;
+        availability?: string;
+        certification_status?: string;
+        background_check_status?: string;
+        notes?: string | null;
+      };
       account_id?: string;
     };
 
@@ -86,12 +96,26 @@ export async function POST(request: NextRequest) {
     // every surface that can create one, not just the one an admin uses.
     requireGuardianLinkForParentInvite(role, guardian);
 
+    // Optional -- see the org-admin staff route for why this is not required.
+    const volunteer: VolunteerRosterAssignment | undefined = body.volunteer
+      ? {
+          volunteerId: body.volunteer.volunteer_id?.trim() || undefined,
+          fullName: body.volunteer.full_name,
+          roleFocus: body.volunteer.role_focus,
+          availability: body.volunteer.availability,
+          certificationStatus: body.volunteer.certification_status,
+          backgroundCheckStatus: body.volunteer.background_check_status,
+          notes: body.volunteer.notes,
+        }
+      : undefined;
+
     const result = await createOrUpdateMicrosoftStaffAccount({
       loginEmail,
       organizationId,
       role,
       accountIdHint: body.account_id?.trim() || undefined,
       guardian,
+      volunteer,
       // This route is platform-owner only and provisions every invitable role,
       // including the organization_admin and board seats an org admin may not
       // touch. Stating that authority is required: the peer-protection guard
@@ -112,6 +136,7 @@ export async function POST(request: NextRequest) {
         role: result.role,
         login_email: result.loginEmail,
         auth_provider: 'microsoft',
+        ...(result.volunteerLink ? { volunteer_id: result.volunteerLink.volunteerId } : {}),
       },
     });
 
@@ -122,6 +147,7 @@ export async function POST(request: NextRequest) {
       role: result.role,
       login_email: result.loginEmail,
       created: result.created,
+      volunteer_link: result.volunteerLink ? { volunteer_id: result.volunteerLink.volunteerId } : null,
       // Surfaced so the console can tell the operator the invite is only half
       // done until the identity exists in the tenant.
       requires_entra_guest_invite: true,

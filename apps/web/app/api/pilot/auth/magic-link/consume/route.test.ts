@@ -6,6 +6,7 @@ import { GET, POST } from './route';
 jest.mock('@/src/server/pilot/rateLimit', () => ({
   getClientIp: () => '203.0.113.9',
   checkRateLimit: jest.fn(() => ({ isLimited: false })),
+  clearRateLimit: jest.fn(),
   recordFailedAttempt: jest.fn(),
 }));
 
@@ -19,7 +20,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { redeemMagicLink } from '@/src/server/pilot/magicLinkStore';
-import { checkRateLimit, recordFailedAttempt } from '@/src/server/pilot/rateLimit';
+import { checkRateLimit, clearRateLimit, recordFailedAttempt } from '@/src/server/pilot/rateLimit';
 
 function post(body: unknown) {
   return POST({ json: async () => body, headers: new Headers() } as never);
@@ -120,15 +121,32 @@ describe('POST /api/pilot/auth/magic-link/consume', () => {
     expect(redeemMagicLink).not.toHaveBeenCalled();
   });
 
-  test('records an attempt on every redemption, not only failures', async () => {
-    // The limiter sits in FRONT of the token lookup -- there is no account to
-    // key on until the token resolves, and resolving it is the expensive part.
-    await post({ token: 'some-token' });
+  // Previously this bucket incremented on every POST including successes,
+  // with nothing anywhere in the route to clear it on success -- so a
+  // shared IP's own valid redemptions ate into and never released the next
+  // person's budget on that IP. A gym's morning drop-off (several parents
+  // signing in from the same Wi-Fi within minutes) is exactly the
+  // legitimate-traffic case that degraded for no attacker at all.
+  test('a successful redemption does NOT record a failed attempt', async () => {
+    await post({ token: 'good-token' });
+    expect(recordFailedAttempt).not.toHaveBeenCalled();
+  });
+
+  test('a successful redemption clears the bucket, releasing any prior attempts on that IP', async () => {
+    await post({ token: 'good-token' });
+    expect(clearRateLimit).toHaveBeenCalledWith('magic_link_consume_ip:203.0.113.9');
+  });
+
+  test('a failed redemption records the attempt, so grinding tokens still gets throttled', async () => {
+    (redeemMagicLink as jest.Mock).mockResolvedValue({ ok: false, reason: 'TOKEN_UNKNOWN' });
+    await post({ token: 'bad-token' });
     expect(recordFailedAttempt).toHaveBeenCalledWith('magic_link_consume_ip:203.0.113.9');
+    expect(clearRateLimit).not.toHaveBeenCalled();
   });
 
   test('does not record an attempt for a malformed request', async () => {
     await post({});
     expect(recordFailedAttempt).not.toHaveBeenCalled();
+    expect(clearRateLimit).not.toHaveBeenCalled();
   });
 });

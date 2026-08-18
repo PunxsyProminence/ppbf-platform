@@ -7,6 +7,9 @@ jest.mock('@/src/server/pilot/rateLimit', () => ({
   checkRateLimit: jest.fn(() => ({ isLimited: false })),
   recordFailedAttempt: jest.fn(),
   clearRateLimit: jest.fn(),
+  checkDurableRateLimit: jest.fn(async () => ({ isLimited: false })),
+  recordDurableFailedAttempt: jest.fn(async () => ({ delayMs: 1000 })),
+  clearDurableRateLimit: jest.fn(async () => undefined),
 }));
 
 describe('POST /api/pilot/admin/bootstrap', () => {

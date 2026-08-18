@@ -84,7 +84,10 @@ describe('which read a role gets', () => {
     const response = await GET(makeRequest());
 
     expect(response.status).toBe(200);
-    expect(mockGetAthletesByOrganization).toHaveBeenCalledWith('org-1');
+    // No limit param on the request -- the org-wide roster stays unbounded
+    // by default, exactly today's behavior. A caller that wants a bounded
+    // page opts in with ?limit=.
+    expect(mockGetAthletesByOrganization).toHaveBeenCalledWith('org-1', undefined);
     expect(mockGetAthletesForCoach).not.toHaveBeenCalled();
   });
 
@@ -96,8 +99,27 @@ describe('which read a role gets', () => {
 
     await GET(makeRequest());
 
-    expect(mockGetAthletesByOrganization).toHaveBeenCalledWith('org-1');
+    expect(mockGetAthletesByOrganization).toHaveBeenCalledWith('org-1', undefined);
     expect(mockGetAthletesForCoach).not.toHaveBeenCalled();
+  });
+
+  test('an explicit limit is passed through as a bounded page', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'admin-1' }));
+
+    const req = new NextRequest('http://localhost/api/pilot/athletes/list?limit=50&offset=100');
+    await GET(req);
+
+    expect(mockGetAthletesByOrganization).toHaveBeenCalledWith('org-1', { limit: 50, offset: 100 });
+  });
+
+  test('an invalid limit is rejected with 400, never reaches the roster query', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'admin-1' }));
+
+    const req = new NextRequest('http://localhost/api/pilot/athletes/list?limit=-5');
+    const res = await GET(req);
+
+    expect(res.status).toBe(400);
+    expect(mockGetAthletesByOrganization).not.toHaveBeenCalled();
   });
 
   test('an athlete still gets only their own record', async () => {

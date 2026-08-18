@@ -1,6 +1,11 @@
 import { getClientCredentialToken } from './auth'
 import type { DataverseWriteResult, ProcessedPdfPayload } from './types'
 
+// The Dataverse write can carry a base64 PDF plus a 6000-char extracted-text
+// preview; 30s is generous for that payload while still bounding a stall
+// rather than leaving it unbounded.
+const DATAVERSE_WRITE_TIMEOUT_MS = 30_000
+
 export interface DataverseConfig {
   orgUrl: string
   tableName: string
@@ -88,6 +93,7 @@ export async function writeDataverseRecord(
       Prefer: 'return=representation',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(DATAVERSE_WRITE_TIMEOUT_MS),
   })
 
   if (!response.ok) {

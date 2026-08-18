@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import { query, queryOne } from './db';
 
 // Program memberships with scholarship-as-discount. The payment slot's rule,
@@ -152,6 +154,76 @@ export async function setMembershipStatus(input: {
      where m.organization_id = $1 and m.membership_id = $2`,
     [input.organizationId, input.membershipId],
   );
+}
+
+export interface MembershipFlag {
+  membership_id: string;
+  program_name: string;
+  status: MembershipStatus;
+}
+
+/**
+ * Non-active (lapsed/ended) memberships for one athlete -- the read the
+ * class-registration flow was missing entirely (capability-network audit:
+ * membership status was read only by this module and its own admin page,
+ * nowhere near registration). Deliberately informational, never a gate:
+ * unlike a training hold's STOP, a lapsed/ended membership is a
+ * billing/enrollment fact (this migration's own header: "WHAT THIS
+ * DELIBERATELY IS NOT: billing"), not a safety fact, and product policy on
+ * whether it should ever block is an explicit open question for the owner.
+ * Per the owner's standing default for an ambiguous product-policy call,
+ * this rides along as a non-blocking flag on a successful registration so a
+ * coach/admin can see it and follow up with the family -- it never refuses
+ * the registration itself.
+ *
+ * An athlete can hold several memberships across different programs (one
+ * per program is enforced live; history rows coexist), and classes carry no
+ * program of their own (same "classes are untyped" fact trainingHolds.ts
+ * documents for holds), so this returns every non-active membership on
+ * record rather than trying to match one program to the class.
+ *
+ * Reads inside the caller's transaction when given a client (the same
+ * consistency point as the registration write, and the same SAVEPOINT
+ * guard findRegistrationBlockingHold uses: a bare 42P01 mid-transaction
+ * would otherwise leave the enclosing BEGIN block aborted for every
+ * statement after it); a bare pool query otherwise. A missing table
+ * (pre-migration window) degrades to "nothing to flag", never a 500 on the
+ * registration path.
+ */
+export async function listMembershipFlagsForAthlete(
+  organizationId: string,
+  athleteId: string,
+  client?: PoolClient,
+): Promise<MembershipFlag[]> {
+  const sql = `select membership_id, program_name, status
+     from pilot.program_memberships
+     where organization_id = $1 and athlete_id = $2 and status <> 'active'
+     order by program_name asc`;
+  const params = [organizationId, athleteId];
+
+  if (client) {
+    await client.query('SAVEPOINT membership_flag_probe');
+    try {
+      const result = await client.query<MembershipFlag>(sql, params);
+      await client.query('RELEASE SAVEPOINT membership_flag_probe');
+      return result.rows;
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== '42P01') {
+        throw error;
+      }
+      await client.query('ROLLBACK TO SAVEPOINT membership_flag_probe');
+      return [];
+    }
+  }
+
+  try {
+    return await query<MembershipFlag>(sql, params);
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== '42P01') {
+      throw error;
+    }
+    return [];
+  }
 }
 
 /** Scholarship is a stored discount on the membership, 0-100. Setting it is

@@ -114,7 +114,13 @@ jobs:
       ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
       # Preferred: explicit production RG secret. Fallback keeps current
       # behavior for repositories that have not populated the new secret yet.
-      RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP || 'rg-ppbf-enterprise-staging' }}
+      # No fallback. This previously defaulted to the STAGING resource group,
+      # so an unset secret pointed every production step -- the digest and SHA
+      # guards, the image update, the post-deploy verification -- at staging,
+      # and each one passed while reporting production. A wrong-environment
+      # deploy that announces success is worse than one that refuses, so the
+      # value is required and the job fails without it.
+      RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
       CONTAINER_APP_NAME: app-ppbf-production
     steps:
       # Full history: the rollback guard below asks whether the commit being
@@ -409,8 +415,31 @@ jobs:
       # "malware" among the gates for videos nothing scanned. Set it to
       # defender_index_tags only after confirming Defender for Storage malware
       # scanning is on for the account behind AZURE_STORAGE_CONNECTION_STRING.
+      #
+      # PPBF_APP_ORIGIN is the origin magic-link sign-in emails are built
+      # against. Not a secret -- it is the public address of production -- so
+      # it is a var, and the deploy refuses to run without it.
+      #
+      # It has to be caught here because it cannot be caught in production.
+      # magicLinkStore.ts throws MISSING_PPBF_APP_ORIGIN, and the request
+      # route swallows every issue failure deliberately, so that the endpoint
+      # cannot be used to ask whether an address belongs to a family at this
+      # gym. That silence is the right trade for a youth roster, and its cost
+      # is exactly this: with the origin unset, every parent is told a link is
+      # on the way and no link is ever sent. Guardian sign-in is the only way
+      # a parent reaches the platform at all, so this fails the deploy rather
+      # than shipping a login that is quietly one hundred percent broken.
       - name: Deploy Tested Digest to Azure Container App (Production)
+        env:
+          PPBF_APP_ORIGIN: ${{ vars.PPBF_APP_ORIGIN }}
         run: |
+          if [ -z "$PPBF_APP_ORIGIN" ]; then
+            echo "Required production variable 'PPBF_APP_ORIGIN' is not configured."
+            echo "Magic-link sign-in silently sends nothing without it. Set the"
+            echo "repository or environment variable and re-run."
+            exit 1
+          fi
+
           az containerapp update \
             --name "$CONTAINER_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
@@ -424,6 +453,7 @@ jobs:
               PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret \
               PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri \
               PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path \
+              PPBF_APP_ORIGIN="$PPBF_APP_ORIGIN" \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \

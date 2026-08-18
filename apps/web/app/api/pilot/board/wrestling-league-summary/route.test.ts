@@ -1,0 +1,71 @@
+import { NextRequest } from 'next/server';
+
+import { GET } from './route';
+import { getBoardWrestlingLeagueSummary } from '@/src/server/pilot/wrestlingLeague';
+import { requirePrincipal } from '@/src/server/pilot/http';
+
+jest.mock('@/src/server/pilot/wrestlingLeague', () => ({
+  getBoardWrestlingLeagueSummary: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/http', () => {
+  const actual = jest.requireActual('@/src/server/pilot/http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
+
+const mockRequirePrincipal = jest.mocked(requirePrincipal);
+const mockSummary = jest.mocked(getBoardWrestlingLeagueSummary);
+
+function principal(role: string) {
+  return {
+    accountId: 'acct-caller',
+    role,
+    organizationId: 'org-a',
+    athleteId: null,
+    sessionToken: 'token',
+    authProvider: 'microsoft',
+  } as never;
+}
+
+afterEach(() => {
+  jest.clearAllMocks();
+});
+
+describe('GET /api/pilot/board/wrestling-league-summary', () => {
+  test('board reads the k-anonymity-gated summary for its own organization', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('board'));
+    mockSummary.mockResolvedValueOnce({
+      scope: 'organization_aggregate',
+      minimumCohortSize: 5,
+      generatedAt: 'now',
+      seasonsByStatus: { planned: 1, active: 1, completed: 0 },
+      rosteredAthletes: { status: 'insufficient_data', count: null },
+    } as never);
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/board/wrestling-league-summary'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(mockSummary).toHaveBeenCalledWith('org-a');
+
+    const body = await response.json();
+    // The suppressed cohort stays suppressed all the way to the wire: a
+    // small roster must never surface as a small real number.
+    expect(body.summary.rosteredAthletes).toEqual({ status: 'insufficient_data', count: null });
+  });
+
+  // This is the board's ONLY wrestling-league surface; every other reader
+  // uses /api/pilot/operations/wrestling-league/* and must not double-dip
+  // here, where the k-anonymity floor is the sole protection layer.
+  test.each(['coach', 'organization_admin', 'admin', 'athlete', 'parent'])(
+    '%s is refused',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+
+      const response = await GET(new NextRequest('http://localhost/api/pilot/board/wrestling-league-summary'));
+
+      expect(response.status).toBe(403);
+      expect(mockSummary).not.toHaveBeenCalled();
+    },
+  );
+});
