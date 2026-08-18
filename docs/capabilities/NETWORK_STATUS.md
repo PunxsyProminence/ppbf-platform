@@ -131,6 +131,28 @@ unrelated third party. It is still an egress whose data-handling posture this
 repository cannot establish, which is why it still matters under the codebase's
 own doctrine.
 
+### RESOLVED — SAS URLs are no longer cacheable: PR #470
+
+Four routes returned a Shared Access Signature URL to a minor's video or
+intake document with no `Cache-Control` header — a SAS URL **is** the access,
+not a reference to it, so a copy retained by a browser or shared cache is a
+second holder no audit row names and no authorization check ever saw.
+
+**Verified the "four" precisely rather than trusting the finding** — grepped
+both SAS-minting entry points in `blob.ts` and read every caller; confirmed no
+fifth exists. **Matched an existing documented convention instead of
+inventing one**: `apps/web/app/api/pilot/profile/README.md`'s Gate 4 already
+states the exact reasoning ("a signed URL to a child's face is a bearer
+capability that outlives the session … `no-store` rather than `max-age`
+because a photograph whose release is revoked has to stop being served") and
+several sibling routes already use it. All four now match.
+
+Left `blob.ts` and the 60-minute expiry value untouched on purpose — that's a
+separate finding from the same audit, not this PR's job. Flagged one open
+question for the owner rather than deciding unilaterally: JSON responses
+elsewhere use two lighter header flavours, and if the house convention should
+be the lighter one instead, it's a one-word change across four lines.
+
 ### RESOLVED — the safety-flags CRITICAL: PR #469
 
 Closes the finding that raised HIGH → CRITICAL on review: any coach could read
