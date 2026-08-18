@@ -46,12 +46,22 @@ credentials and do not exist anywhere in `origin/main`'s history. PR #418
 (the next PR stacked on #415) has its own base recorded as `bc1e6967`
 exactly, confirming that's the intended tip and the three trailing commits
 are stray — most likely the other concurrent session committing to this
-branch by mistake instead of its own. **Do not force-push this branch to
-reset it without checking whether those three commits represent real,
-otherwise-unlanded work first** — they may need to be recovered onto a
-different branch before #415 is cleaned up. Left untouched for now; #415,
-and the #418→#419→#420 stack on top of it, are on hold until this is
-resolved.
+branch by mistake instead of its own.
+
+**Update: the two non-redundant stray commits are confirmed to exist
+nowhere else in the repository** (`9b40e47b` "Add a layer axis to the
+research classification taxonomy" and `279e4d14` "Mirror approved SHADOW
+Library sources to SharePoint as a backup" — checked via `git log --all
+--source --grep` across every local and remote ref; only match is this
+branch). The third (`8412311f`, Coach Intelligence escalations/violations)
+is confirmed redundant — already shipped as merged PR #450. **Before any
+reset, all three have been saved to `origin/rescue/415-stray-commits`**
+(pushed, points at the branch's current tip `8412311f`) so nothing is lost
+regardless of what happens to `claude/ppbf-platform-orientation-qg4j3b`
+next. #415 can now be safely force-reset to `bc1e6967` whenever someone
+does it — the owner has approved that action. #415, and the #418→#419→#420
+stack on top of it, remain on hold only because two sessions are active on
+this repo at once; not for lack of a safe path forward anymore.
 
 **Status as of `origin/main` at `3f961545`, 2026-08-18 09:18 UTC.** This file
 carries the commit it was written against because it will go stale. Check
@@ -830,10 +840,15 @@ a writer or a reader.
 
 ---
 
-## Closed — 32, merged
+## Closed — 37, merged (#410 CI in flight, #415 pending reset — see notes above, neither merged yet)
 
 | Gap | Closed by |
 |---|---|
+| No UI path could place or lift a training hold on a child — the #1 priority in this whole audit | #467 |
+| A quarantined minor's video could be approved (made playable) with one unwatched click | #421 |
+| Owner-approved background art was undeployed; 3 routes bypassed the family/warm-ground rule | #416 |
+| No read-only measurement of medical-clearance coverage ahead of the fail-closed gate rollout | #464 |
+| Full-spectrum UX/UI audit report, plus a dead privacy-denylist entry, 5 stale docs, and the unvalidated `parent_id` guardian-link privilege gap (owner-approved narrowing) | #456 |
 | `pilot.shadow_medical_administrative_status` had no authority check and no expiry, so one clearance recorded once counted forever | #473 |
 | The video content screen sent frames to a vision model with no guardian consent check | #465 |
 | `upsertGuardian` nulled `account_id`/`phone`/`email` on an omitted field | #466 |
