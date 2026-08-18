@@ -11,6 +11,17 @@ export const runtime = 'nodejs';
 // 2026-08-16). Same audience derivation as performance analytics and the
 // readiness board: a coach reads their OWN roster, an admin reads the
 // organization's. Read-only -- this route surfaces; the coach decides.
+//
+// The athlete id list built below IS this capability's access boundary. The
+// digest takes no athlete_id, no organization_id, and no filter from the
+// caller: every one of its seven items is scoped to exactly these ids inside
+// getCoachIntelligence, so a coach cannot widen the read by asking. That
+// matters more now than it did at v1 -- since the digest gained the two
+// safety registers (open escalations, open compliance violations) this list
+// is what stands between a coach and another coach's athlete's safeguarding
+// record. See README.md in this directory for the full gate list, including
+// the athlete_voice exclusion the digest applies unconditionally because it
+// is handed ids and an organization but never a role.
 
 export async function GET(request: NextRequest) {
   try {
