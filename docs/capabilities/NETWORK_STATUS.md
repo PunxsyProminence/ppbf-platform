@@ -131,11 +131,20 @@ unrelated third party. It is still an egress whose data-handling posture this
 repository cannot establish, which is why it still matters under the codebase's
 own doctrine.
 
-### What this needs
+### RESOLVED — fixed and merged: PR #465
 
-An owner decision on whether the content screen runs before consent, after it, or
-not at all — **before the gym is in live use**, which is the window that makes
-this cheap to fix. Not an incident response.
+Gates the vision content screen on `assertGuardianMediaConsent`, mirroring
+Film Study. Went through two rounds of real review (Codex and Copilot both
+independently caught the same P1: an early version forced `content: 'off'` on
+missing consent, which — on an environment with malware scanning also off,
+which both deploy workflows are — zeroed every gate and resolved to `hold`,
+a `scan_state` the claim query never reclaims. A consent-blocked video would
+have stopped being scanned forever, even after the guardian later consented.
+Corrected to a `skipContentScreen` flag that leaves the gate enabled and
+reports "no verdict yet" instead, keeping it on the ordinary retry/backoff
+path and re-checking consent on every claim. Direct regression test added
+against the real `scanVideoSession` + `decideVideoScanOutcome` proving `hold`
+is never reached while a gate is genuinely enabled.
 
 ## Live right now — two audits running, plus one thing that needs a merge
 
@@ -433,6 +442,9 @@ problem, and the rewriting half can be fixed without narrowing anything a
 legitimate intake edit needs — so **it should not inherit the parked status of
 the linking half.** That is the one substantive change to how this file
 previously recorded the guardian-link question.
+
+
+**RESOLVED — fixed, PR #466 open.** `upsertGuardian` now coalesces `account_id`/`phone`/`email` against the existing row instead of overwriting with NULL on omission; `full_name` still overwrites (required at both call sites). Does not touch the parked linking-authorization question below. New real-Postgres test pins the exact audit scenario. Owner review pending.
 
 Two smaller ones worth not rediscovering: `multidiscipline` and
 `competence-cohorts` use an exact-match `requireRole(principal, ['coach','admin'])`,
