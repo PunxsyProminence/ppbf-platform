@@ -32,4 +32,4 @@ export default function AthleteLayout({ children }: AthleteLayoutProps) {
   );
 }
 
-// Punxsy Prominence Boxing and Fitness, Registered Office: 204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715
+// Punxsy Prominence Boxing and Fitness, Registered Office: 220 N Jefferson St, Punxsutawney, PA 15767

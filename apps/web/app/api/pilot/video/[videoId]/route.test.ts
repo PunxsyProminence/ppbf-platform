@@ -184,4 +184,16 @@ describe('GET /api/pilot/video/[videoId]', () => {
     const res = await call();
     expect(res.status).toBe(404);
   });
+
+  test('the response carrying the playback SAS url is not storable by any cache', async () => {
+    // stream_url is a bearer credential: it plays a minor's footage for its
+    // whole validity window with no session behind it. A copy retained by the
+    // browser or by an intermediary outlives the access check above.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect((await res.json()).stream_url).toBe('https://blob.example/sas');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
 });

@@ -91,9 +91,9 @@ export const GYM_PHOTO_SLOTS: readonly GymPhotoSlot[] = [
   {
     key: 'entrance',
     title: 'The front door',
-    caption: '204 Pennsylvania Ave. What you are looking for when you pull up the first time.',
+    caption: '220 N Jefferson St. What you are looking for when you pull up the first time.',
     file: 'entrance.svg',
-    alt: 'Illustration of the entrance to the gym at 204 Pennsylvania Ave, Big Run — a placeholder until the real photograph is taken.',
+    alt: 'Illustration of the entrance to the gym at 220 N Jefferson St, Punxsutawney — a placeholder until the real photograph is taken.',
     surfaces: ['public'],
   },
   {

@@ -1,0 +1,555 @@
+<!-- @dsCard group="Screens" name="Floor Card" subtitle="The athlete's own locker bay and bench — earned gear, ringside. The space itself is the first thing you earn." -->
+<meta charset="utf-8">
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { min-height: 100vh; }
+  .sheet { padding: var(--s6); max-width: 1180px; margin: 0 auto; }
+
+  .head-row { display: flex; justify-content: space-between; align-items: flex-start;
+              gap: var(--s6); flex-wrap: wrap; margin-bottom: var(--s6); }
+  .head-copy { max-width: 62ch; }
+  .head-copy h1 { margin: var(--s2) 0 var(--s3); }
+  .head-copy p { margin: 0; }
+
+  .note { max-width: 78ch; margin: 0 0 var(--s6); }
+
+  .stage-hd { margin: var(--s8) 0 var(--s3); }
+  .stage-hd h2 { margin: 0 0 var(--s2); }
+  .stage-hd p { margin: 0; max-width: 76ch; }
+
+  /* ============================================================== THE BAY ====
+     An athlete's bay is a locker and the bench in front of it, ringside. The
+     room around it is the gym floor, assigned by purpose the way Law 6 assigns
+     every room -- the athlete owns the bay, not the building. */
+  .fc-bay { padding: var(--s6); border-radius: var(--r-lg); }
+
+  /* The locker: back panel, a rail of hooks across the top, a shelf below. */
+  .fc-locker { position: relative; border-radius: var(--r-sm) var(--r-sm) 0 0;
+               padding: var(--s5) var(--s5) var(--s6); }
+  /* Riveted construction -- the same brass hardware vocabulary the sheet uses
+     for oxidised fittings, four to a panel. */
+  .fc-rivet { position: absolute; width: 11px; height: 11px; border-radius: 50%;
+              background: radial-gradient(circle at 35% 30%, var(--brass-300), var(--brass-700) 62%, var(--brass-900));
+              box-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .fc-rivet--tl { top: 7px; left: 7px; }   .fc-rivet--tr { top: 7px; right: 7px; }
+  .fc-rivet--bl { bottom: 7px; left: 7px; } .fc-rivet--br { bottom: 7px; right: 7px; }
+
+  /* The hook rail. Hooks are earned too -- an empty hook is the visible shape
+     of the next thing, which is why unearned gear is drawn and not hidden. */
+  .fc-rail { position: relative; height: 21px; margin-bottom: var(--s5);
+             border-radius: 2px;
+             background: linear-gradient(180deg, var(--brass-700), var(--brass-900));
+             box-shadow: 0 2px 4px rgba(0,0,0,.5), inset 0 1px 0 rgba(212,175,74,.35); }
+  .fc-rail::after { content: ''; position: absolute; inset: 0; border-radius: 2px;
+                    background-image: var(--grain-fine); opacity: .3;
+                    mix-blend-mode: overlay; pointer-events: none; }
+
+  /* The bench: wood slats, gear resting on top of it. */
+  .fc-bench { border-radius: 0 0 var(--r-sm) var(--r-sm); padding: var(--s5);
+              position: relative;
+              box-shadow: inset 0 3px 8px rgba(0,0,0,.45); }
+  .fc-bench::before { content: ''; position: absolute; inset: 0;
+                      border-radius: 0 0 var(--r-sm) var(--r-sm); pointer-events: none;
+                      background: repeating-linear-gradient(90deg,
+                        transparent 0 88px, rgba(0,0,0,.30) 88px 91px); }
+  .fc-bench-lbl { position: relative; margin-bottom: var(--s4); }
+
+  .fc-gear-row { display: flex; flex-wrap: wrap; gap: var(--s5); align-items: flex-start;
+                 position: relative; }
+
+  /* ------------------------------------------------------------ A GEAR ITEM
+     One earned piece of kit. The artwork is a PLACEHOLDER -- geometry standing
+     in a correctly sized slot, for the artist to replace. What this file is
+     responsible for is the slot, the hardware, the label and the provenance
+     line; the glove itself is not engineering. */
+  .fc-gear { width: 123px; text-align: center; }
+  .fc-gear-art { height: 89px; display: grid; place-items: center; }
+  .fc-gear-art svg { width: 72px; height: 72px; }
+  .fc-gear-nm { display: block; margin-top: var(--s2);
+                font: 700 11px/1.3 var(--font-ui); letter-spacing: .05em;
+                text-transform: uppercase; color: var(--bone-300); }
+  /* THE PROVENANCE LINE. Every piece of gear says what earned it, on the
+     object, in the hand voice. This repo already established that a number
+     without provenance is not evidence (pilot.readiness, #410); a reward
+     without provenance is the same defect in a nicer coat. It is also the
+     anti-gaming mechanism -- kit that names its own cause cannot be read as a
+     score. */
+  .fc-gear-from { display: block; margin-top: 3px;
+                  font: 400 10.5px/1.4 var(--font-hand); color: var(--bone-400); }
+  /* Unearned: drawn, dimmed, still legible as a shape so an athlete can see
+     what the next thing IS. Never called "locked" -- Law 2 reserves that word
+     for the Layer 11 safety state, and a milestone you have not reached is not
+     a safety refusal. */
+  .fc-gear--unearned { opacity: .34; }
+  .fc-gear--unearned .fc-gear-art svg { stroke-dasharray: 4 3; }
+
+  /* Gear hanging from the rail rather than sitting on the bench. */
+  .fc-hang { position: relative; padding-top: var(--s3); }
+  .fc-hang::before { content: ''; position: absolute; top: -18px; left: 50%;
+                     translate: -50% 0; width: 3px; height: 20px;
+                     background: linear-gradient(180deg, var(--brass-700), var(--brass-900));
+                     border-radius: 0 0 2px 2px; }
+
+  /* -------------------------------------------------------------- NAMEPLATE
+     A brass plate riveted to the locker door. The only object in the bay that
+     carries the athlete's name, and the last one earned. */
+  .fc-plate { position: relative; display: inline-flex; align-items: center;
+              gap: var(--s3); padding: var(--s3) var(--s5);
+              border-radius: var(--r-sm); }
+  .fc-plate-nm { font: 700 15px/1 var(--font-stencil); letter-spacing: .1em;
+                 text-transform: uppercase; }
+
+  /* ------------------------------------------------------------------ NEXT UP
+     Exactly one thing. A seal is ink pressed into paper, so an unearned one
+     needs paper under it: --unearned drops to 30% opacity and the seal's ink is
+     --card-ink, which on a dark bay would be near-black on near-black. The
+     sheet states the rule -- "a ground states its own ink" (Law 6) -- so the
+     slot keeps its paper rather than the seal being lightened, which would have
+     made an unearned milestone glow brighter than an earned one. */
+  .fc-next { display: flex; align-items: center; gap: var(--s5); flex-wrap: wrap;
+             margin-top: var(--s5); padding: var(--s5);
+             border-radius: 0 var(--r-lg) var(--r-lg) 0;
+             border-left: 4px solid var(--brass-700);
+             background: linear-gradient(90deg, rgba(212,175,74,.16) 0%, transparent 100%); }
+  .fc-next-chip { padding: var(--s3) var(--s4) var(--s2); border-radius: var(--r-sm);
+                  flex-shrink: 0; }
+  .fc-next-copy { min-width: 220px; flex: 1; }
+  .fc-next-copy p { margin: var(--s2) 0 0; }
+
+  /* ------------------------------------------------------------- THE GEAR BAG
+     Curation. Everything earned, whether or not it is out on the bench. An
+     athlete chooses what is on display; they do not choose what they have, and
+     nothing here can ever be removed, expire, or be spent. */
+  .fc-bag { display: grid; gap: var(--s4);
+            grid-template-columns: repeat(auto-fill, minmax(233px, 1fr)); }
+  .fc-bag-row { display: flex; align-items: center; gap: var(--s4);
+                padding: var(--s3) var(--s4); border-radius: var(--r-sm);
+                min-height: var(--tap); }
+  .fc-bag-copy { flex: 1; min-width: 0; }
+  .fc-bag-nm { display: block; font: 700 12px/1.3 var(--font-ui);
+               letter-spacing: .04em; text-transform: uppercase; }
+  .fc-bag-from { display: block; margin-top: 2px; font: 400 11px/1.4 var(--font-hand); }
+
+  /* ---------------------------------------------------------------- MATERIALS
+     What an athlete customises is the KIT AND THE BAY -- the locker liner, the
+     bench finish, the nameplate metal. Not the room.
+
+     This is the one place the brief and the sheet had to be reconciled rather
+     than simply implemented. "Pick your background" in a game means choosing
+     the world behind everything. Here grounds carry meaning: ppbf.css assigns
+     one of six rooms by what a screen is FOR, and roleGround.ts gives family
+     surfaces the warm canvas deliberately. An athlete picking a room would be
+     picking a meaning, and two athletes on one screen would be standing in
+     different buildings. Liner and finish carry no such meaning, so they are
+     free to be personal -- and it is the truer version of the request anyway:
+     what changes is the kit you own, not the gym you were let into. */
+  .fc-swatches { display: flex; gap: var(--s4); flex-wrap: wrap; margin-top: var(--s3); }
+  .fc-swatch { width: 89px; text-align: center; }
+  .fc-swatch-chip { height: 55px; border-radius: var(--r-sm);
+                    border: 2px solid var(--brass-800); }
+  .fc-swatch .t-label { display: block; margin-top: var(--s2); font-size: 9px; }
+  .fc-swatch--unearned { opacity: .3; filter: grayscale(1); }
+  .fc-duck { background-color: #C9B48A; background-image: var(--grain-fine);
+             background-blend-mode: overlay; }
+  .fc-hide { background-color: #4A2F1B; background-image: var(--grain);
+             background-blend-mode: overlay; }
+
+  .fc-legend { margin-top: var(--s6); padding-top: var(--s4);
+               border-top: 1px dashed rgba(184,145,47,.34); }
+
+  @media (max-width: 720px) {
+    .sheet { padding: var(--s5); }
+    .fc-gear { width: 100px; }
+    .fc-gear-art { height: 72px; }
+    .fc-gear-art svg { width: 58px; height: 58px; }
+  }
+</style>
+
+<body class="ppbf room--floor">
+<div class="sheet">
+
+  <div class="head-row">
+    <div class="head-copy">
+      <span class="t-label">Athlete · Personal</span>
+      <h1 class="t-command" style="font-size: var(--t-2xl);">Floor Card</h1>
+      <p class="t-body">Your bay. Your bench. Everything on it, you earned — and every piece
+        says what earned it.</p>
+    </div>
+    <span class="badge badge--filed"><i>&#9679;</i>You, your coach, your guardian</span>
+  </div>
+
+  <p class="note t-body">
+    <b>The space itself is the first thing you earn.</b> A new athlete does not open a grid of
+    forty grey slots — that is an itemised inventory of everything they have not done, on day
+    one. They get an empty bench, one bare hook, and a roll of wraps. The gear arrives one
+    piece at a time; the hooks, the shelf and the nameplate arrive after that. The bay fills
+    up as the athlete does, so it is never empty and never a shortfall.
+  </p>
+
+  <!-- ============================================================ DAY ONE == -->
+  <div class="stage-hd">
+    <h2 class="t-command">Day one</h2>
+    <p class="t-body">A bare hook, an empty bench, and the wraps every new boxer gets. One
+      thing coming.</p>
+  </div>
+
+  <div class="fc-bay mat-wood--dark">
+    <div class="fc-locker mat-leather--worn">
+      <i class="fc-rivet fc-rivet--tl"></i><i class="fc-rivet fc-rivet--tr"></i>
+      <div class="fc-rail"></div>
+      <div class="fc-gear-row">
+        <div class="fc-gear fc-hang">
+          <div class="fc-gear-art">
+            <!-- PLACEHOLDER: hand wraps. Artist replaces. -->
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Hand wraps, earned">
+              <rect x="24" y="30" width="52" height="40" rx="8"/>
+              <path d="M24 44h52M24 56h52"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Hand Wraps</span>
+          <span class="fc-gear-from">Card opened &middot; first session</span>
+        </div>
+
+        <div class="fc-gear fc-hang fc-gear--unearned">
+          <div class="fc-gear-art">
+            <!-- PLACEHOLDER: gloves. Artist replaces. -->
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Gloves, not yet earned">
+              <path d="M30 40a16 16 0 0132 0v22a10 10 0 01-10 10H40a10 10 0 01-10-10z"/>
+              <path d="M30 62h32M62 46h6a6 6 0 010 12h-6"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Gloves</span>
+          <span class="fc-gear-from">unearned</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="fc-bench mat-wood">
+      <span class="t-label fc-bench-lbl">Bench &mdash; empty</span>
+    </div>
+
+    <div class="fc-next">
+      <div class="fc-next-chip mat-paper aged">
+        <div class="tcard-seal-slot tcard-seal-slot--unearned">
+          <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="First five sessions, not yet earned">
+            <defs><path id="d1" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+            <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+            <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+              <textPath href="#d1" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+            <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">5</text>
+          </svg>
+          <span class="tcard-seal-lbl">5</span>
+        </div>
+      </div>
+      <div class="fc-next-copy">
+        <span class="t-label">Next</span>
+        <p class="t-body">Log five sessions and your gloves go on the hook. <b>Two down.</b></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================== LATER ON == -->
+  <div class="stage-hd">
+    <h2 class="t-command">Eight months in</h2>
+    <p class="t-body">The same bay, after the shelf, the nameplate and two liners were earned.
+      Nothing here was bought, chosen from a shop, or awarded for spending anything.</p>
+  </div>
+
+  <div class="fc-bay mat-wood--dark">
+    <div class="fc-locker mat-leather--worn">
+      <i class="fc-rivet fc-rivet--tl"></i><i class="fc-rivet fc-rivet--tr"></i>
+      <i class="fc-rivet fc-rivet--bl"></i><i class="fc-rivet fc-rivet--br"></i>
+
+      <div class="fc-rail"></div>
+      <div class="fc-gear-row">
+        <div class="fc-gear fc-hang">
+          <div class="fc-gear-art">
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Hand wraps, earned">
+              <rect x="24" y="30" width="52" height="40" rx="8"/><path d="M24 44h52M24 56h52"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Hand Wraps</span>
+          <span class="fc-gear-from">Card opened &middot; 6 Jan</span>
+        </div>
+
+        <div class="fc-gear fc-hang">
+          <div class="fc-gear-art">
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Gloves, earned">
+              <path d="M30 40a16 16 0 0132 0v22a10 10 0 01-10 10H40a10 10 0 01-10-10z"/>
+              <path d="M30 62h32M62 46h6a6 6 0 010 12h-6"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Gloves</span>
+          <span class="fc-gear-from">13 sessions logged &middot; 4 Feb</span>
+        </div>
+
+        <div class="fc-gear fc-hang">
+          <div class="fc-gear-art">
+            <!-- PLACEHOLDER: jump rope. Artist replaces. -->
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Jump rope, earned">
+              <circle cx="50" cy="54" r="22"/>
+              <path d="M34 36l-8-10M66 36l8-10"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Jump Rope</span>
+          <span class="fc-gear-from">25 miles roadwork &middot; 19 Apr</span>
+        </div>
+
+        <div class="fc-gear fc-hang fc-gear--unearned">
+          <div class="fc-gear-art">
+            <!-- PLACEHOLDER: headgear. Artist replaces. -->
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Headgear, not yet earned">
+              <path d="M28 46a22 22 0 0144 0v14a12 12 0 01-12 12H40a12 12 0 01-12-12z"/>
+              <path d="M28 56h10M62 56h10"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Headgear</span>
+          <span class="fc-gear-from">unearned</span>
+        </div>
+      </div>
+
+      <div style="margin-top:var(--s5)">
+        <span class="fc-plate mat-brass--patina">
+          <span class="fc-plate-nm">M. Ortega</span>
+        </span>
+        <span class="t-label" style="display:block;margin-top:var(--s2)">
+          Nameplate &middot; 1% Club nomination, 3 Mar
+        </span>
+      </div>
+    </div>
+
+    <div class="fc-bench mat-wood">
+      <span class="t-label fc-bench-lbl">Bench</span>
+      <div class="fc-gear-row">
+        <div class="fc-gear">
+          <div class="fc-gear-art">
+            <!-- PLACEHOLDER: mouthpiece case. Artist replaces. -->
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Mouthpiece case, earned">
+              <rect x="22" y="36" width="56" height="32" rx="10"/>
+              <path d="M22 52h56"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Mouthpiece Case</span>
+          <span class="fc-gear-from">First sparring round &middot; 12 Jan</span>
+        </div>
+
+        <div class="fc-gear">
+          <div class="fc-gear-art">
+            <!-- PLACEHOLDER: Vaseline tin. Artist replaces. -->
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Corner tin, earned">
+              <ellipse cx="50" cy="42" rx="24" ry="9"/>
+              <path d="M26 42v16c0 5 11 9 24 9s24-4 24-9V42"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Corner Tin</span>
+          <span class="fc-gear-from">Cornered for a teammate &middot; 2 Jun</span>
+        </div>
+
+        <div class="fc-gear">
+          <div class="fc-gear-art">
+            <!-- PLACEHOLDER: corner stool. Artist replaces. -->
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Corner stool, earned">
+              <path d="M26 40h48M32 40l6 32M68 40l-6 32M38 62h24"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Corner Stool</span>
+          <span class="fc-gear-from">Guard retention goal met &middot; 22 Mar</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="fc-next">
+      <div class="fc-next-chip mat-paper aged">
+        <div class="tcard-seal-slot tcard-seal-slot--unearned">
+          <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="Twenty-one sessions, not yet earned">
+            <defs><path id="d2" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+            <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+            <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+              <textPath href="#d2" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+            <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">21</text>
+          </svg>
+          <span class="tcard-seal-lbl">21</span>
+        </div>
+      </div>
+      <div class="fc-next-copy">
+        <span class="t-label">Next</span>
+        <p class="t-body">Three more sessions and the headgear comes off the shelf.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== THE CEREMONY == -->
+  <div class="stage-hd">
+    <h2 class="t-command">The moment it is earned</h2>
+    <p class="t-body">A stamp coming down on paper, and nothing else — the same press the
+      training card already uses. No bounce, no spin, no confetti, no fanfare sting. Kit earned
+      over months does not deserve a slot-machine, and a gym that celebrated like one would be
+      telling an eleven-year-old that the noise is the point.</p>
+  </div>
+
+  <div class="fc-bay mat-wood--dark">
+    <div class="fc-locker mat-leather--worn">
+      <i class="fc-rivet fc-rivet--tl"></i><i class="fc-rivet fc-rivet--tr"></i>
+
+      <p class="tcard-earned" role="status" id="cerNote" hidden>
+        <b>Earned:</b> Headgear
+        <span class="t-label">21 sessions logged &middot; today</span>
+      </p>
+
+      <div class="fc-rail"></div>
+      <div class="fc-gear-row" style="align-items:center">
+        <div class="fc-gear fc-hang fc-gear--unearned tcard-seal-slot tcard-seal-slot--unearned" id="cerItem">
+          <div class="fc-gear-art">
+            <svg viewBox="0 0 100 100" fill="none" stroke="var(--bone-300)" stroke-width="3"
+                 role="img" aria-label="Headgear">
+              <path d="M28 46a22 22 0 0144 0v14a12 12 0 01-12 12H40a12 12 0 01-12-12z"/>
+              <path d="M28 56h10M62 56h10"/>
+            </svg>
+          </div>
+          <span class="fc-gear-nm">Headgear</span>
+          <span class="fc-gear-from" id="cerLine">unearned</span>
+        </div>
+
+        <button class="btn btn--kiosk" style="width:auto" id="cerBtn">Log the 21st session</button>
+      </div>
+    </div>
+
+    <p class="t-body fc-legend">
+      Three channels, and any one carries it alone (Law 3): the stamp lands, the gear comes up
+      out of its dimmed state, and <b>a line of type says what was earned and what earned it</b>.
+      Under reduced motion the movement is cancelled and the words remain — which is why the
+      sentence is the message and the animation is only the manners.
+    </p>
+  </div>
+
+  <!-- ========================================================= THE GEAR BAG == -->
+  <div class="stage-hd">
+    <h2 class="t-command">The gear bag</h2>
+    <p class="t-body">Everything earned, whether or not it is out on the bench. You choose what
+      is on display; you do not choose what you have. Nothing here can be removed, expire, or
+      be spent — that is the whole difference between this and a score.</p>
+  </div>
+
+  <div class="fc-bay mat-wood--dark">
+    <div class="fc-bag">
+      <div class="fc-bag-row mat-leather--raised">
+        <span class="stamp stamp--sm stamp--brass stamp--flat">Out</span>
+        <div class="fc-bag-copy">
+          <span class="fc-bag-nm">Corner Tin</span>
+          <span class="fc-bag-from">Cornered for a teammate &middot; 2 Jun</span>
+        </div>
+      </div>
+      <div class="fc-bag-row mat-leather--raised">
+        <span class="stamp stamp--sm stamp--brass stamp--flat">Out</span>
+        <div class="fc-bag-copy">
+          <span class="fc-bag-nm">Corner Stool</span>
+          <span class="fc-bag-from">Guard retention goal met &middot; 22 Mar</span>
+        </div>
+      </div>
+      <div class="fc-bag-row mat-leather">
+        <span class="t-label" style="min-width:52px">In bag</span>
+        <div class="fc-bag-copy">
+          <span class="fc-bag-nm">Skipping Mat</span>
+          <span class="fc-bag-from">30-day attendance &middot; 28 Feb</span>
+        </div>
+      </div>
+      <div class="fc-bag-row mat-leather">
+        <span class="t-label" style="min-width:52px">In bag</span>
+        <div class="fc-bag-copy">
+          <span class="fc-bag-nm">Focus Mitts</span>
+          <span class="fc-bag-from">Held for a teammate &middot; 14 May</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================= THE MATERIALS == -->
+  <div class="stage-hd">
+    <h2 class="t-command">Liners and finishes</h2>
+    <p class="t-body">What an athlete customises is the kit and the bay — the locker liner, the
+      bench finish, the nameplate metal. Not the room: grounds carry meaning here, and an
+      athlete picking a room would be picking a meaning.</p>
+  </div>
+
+  <div class="fc-bay mat-wood--dark">
+    <span class="t-label">Locker liner</span>
+    <div class="fc-swatches">
+      <div class="fc-swatch">
+        <div class="fc-swatch-chip mat-wood"></div>
+        <span class="t-label">Plank &middot; start</span>
+      </div>
+      <div class="fc-swatch">
+        <div class="fc-swatch-chip fc-duck"></div>
+        <span class="t-label">Canvas duck &middot; 30 days</span>
+      </div>
+      <div class="fc-swatch fc-swatch--unearned">
+        <div class="fc-swatch-chip fc-hide"></div>
+        <span class="t-label">Hide &middot; unearned</span>
+      </div>
+      <div class="fc-swatch fc-swatch--unearned">
+        <div class="fc-swatch-chip mat-brass--patina"></div>
+        <span class="t-label">Brass &middot; unearned</span>
+      </div>
+    </div>
+
+    <p class="t-body fc-legend">
+      <b>Rarity is material, never colour.</b> A gaming platform would rank these blue, purple,
+      orange. Law 2 reserves saturated colour for safety and status alone, so a cosmetic tier
+      may never borrow it — a gold badge outranking a green one would put a decoration in the
+      same visual register as a medical hold. Standing is carried by what a thing is made of
+      instead: canvas, then wood, then hide, then brass. Which is also how it works in a real
+      gym.
+    </p>
+  </div>
+
+  <p class="note t-body" style="margin-top:var(--s8)">
+    <b>Not in this screen, deliberately:</b> no leaderboard and no other athlete's bay — the bay
+    is visible to the athlete, their coach and their guardian, and nobody else. No comparison,
+    no ranking, no "you are 4th". Everyone with access sees the same bay, so there is no second
+    version of an athlete's own record. And no points balance anywhere: every piece of kit came
+    from one discrete, permanent, named accomplishment, and says which one.
+    <br><br>
+    <b>The gear artwork is placeholder geometry.</b> Correctly sized slots with the hardware,
+    labels and provenance lines built around them — the gloves, wraps, tin and stool themselves
+    are for the artist, not for this file.
+  </p>
+
+</div>
+
+<script>
+  // The ceremony, driven exactly as the training card drives it: drop the
+  // unearned state, then restart the press animation.
+  (function () {
+    var btn  = document.getElementById('cerBtn');
+    var item = document.getElementById('cerItem');
+    var note = document.getElementById('cerNote');
+    var line = document.getElementById('cerLine');
+    if (!btn || !item) return;
+
+    btn.addEventListener('click', function () {
+      item.classList.remove('tcard-seal-slot--unearned', 'fc-gear--unearned');
+      line.textContent = '21 sessions logged · today';
+      note.hidden = false;
+
+      // Restart rather than add: a second press must replay, not no-op.
+      item.classList.remove('tcard-seal-slot--pressed');
+      void item.offsetWidth;
+      item.classList.add('tcard-seal-slot--pressed');
+
+      btn.disabled = true;
+      btn.textContent = 'Earned';
+    });
+  })();
+</script>
+</body>

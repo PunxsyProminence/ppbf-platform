@@ -49,6 +49,7 @@ jest.mock('./db', () => ({
 import {
   createMembership,
   isMembershipStatus,
+  listMembershipFlagsForAthlete,
   listMemberships,
   setMembershipScholarship,
   setMembershipStatus,
@@ -489,6 +490,99 @@ describe('the real membership lifecycle against real rows', () => {
       const rows = await listMemberships(ORG_ID);
       const ids = rows.map((row) => row.membership_id);
       expect(ids.indexOf(active!.membership_id)).toBeLessThan(ids.indexOf(toEnd!.membership_id));
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The capability-network audit finding this migration/module pairs with:
+// membership status was read only by this module and its own admin page,
+// nowhere near class registration. These prove the read
+// registerForClassTransactionally rides on -- non-blocking, real rows,
+// real ordering, and the same SAVEPOINT-survives-a-missing-table guarantee
+// findRegistrationBlockingHold already proves for training holds, since
+// registerForClassTransactionally calls both probes on the same client in
+// the same transaction.
+describe('listMembershipFlagsForAthlete (the class-registration flag read)', () => {
+  test('an active-only membership reads as no flags; lapsed/ended memberships across programs come back sorted', async () => {
+    const client = await freshDatabase('memberships_flags');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const active = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Youth Boxing',
+        startedOn: '2026-06-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      await expect(listMembershipFlagsForAthlete(ORG_ID, ATHLETE_ID)).resolves.toEqual([]);
+
+      const wrestling = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'Wrestling',
+        startedOn: '2025-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      await setMembershipStatus({ organizationId: ORG_ID, membershipId: wrestling!.membership_id, status: 'lapsed' });
+
+      const bjj = await createMembership({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        programName: 'BJJ',
+        startedOn: '2024-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      await setMembershipStatus({ organizationId: ORG_ID, membershipId: bjj!.membership_id, status: 'ended' });
+
+      const flags = await listMembershipFlagsForAthlete(ORG_ID, ATHLETE_ID);
+      // program_name asc: BJJ before Wrestling. The still-active Youth
+      // Boxing membership never appears.
+      expect(flags).toEqual([
+        { membership_id: bjj!.membership_id, program_name: 'BJJ', status: 'ended' },
+        { membership_id: wrestling!.membership_id, program_name: 'Wrestling', status: 'lapsed' },
+      ]);
+      expect(flags.some((flag) => flag.membership_id === active!.membership_id)).toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('reads inside a real transaction via the provided client, and a missing table mid-transaction rolls back to its own savepoint instead of aborting the transaction', async () => {
+    const client = await freshDatabase('memberships_flags_txn');
+    try {
+      await client.query(migrationSql);
+      await client.query(
+        `insert into pilot.program_memberships
+           (organization_id, membership_id, athlete_id, program_name, status, started_on, ended_on, scholarship_percent, created_by_account_id)
+         values ($1, 'mem-ended', $2, 'Youth Boxing', 'ended', '2025-01-01', '2026-01-01', 0, $3)`,
+        [ORG_ID, ATHLETE_ID, ADMIN_ID],
+      );
+
+      await client.query('BEGIN');
+      try {
+        const flags = await listMembershipFlagsForAthlete(ORG_ID, ATHLETE_ID, client as never);
+        expect(flags).toEqual([{ membership_id: 'mem-ended', program_name: 'Youth Boxing', status: 'ended' }]);
+
+        // This is the exact failure mode findRegistrationBlockingHold's
+        // SAVEPOINT guard exists to survive -- registerForClassTransactionally
+        // calls this function right after that hold probe, on the same
+        // client, in the same transaction. Without the guard here, a
+        // pre-migration deploy (table not created yet) would leave every
+        // registration attempt 500ing (Postgres 25P02), held athlete or not.
+        await client.query('drop table pilot.program_memberships');
+        await expect(listMembershipFlagsForAthlete(ORG_ID, ATHLETE_ID, client as never)).resolves.toEqual([]);
+
+        // The transaction itself must still be alive for the caller's next
+        // statement -- the registration insert that follows this probe in
+        // registerForClassTransactionally.
+        const stillAlive = await client.query('select 1 as one');
+        expect(stillAlive.rows[0]).toEqual({ one: 1 });
+      } finally {
+        await client.query('ROLLBACK');
+      }
     } finally {
       await client.end();
     }

@@ -249,8 +249,20 @@ jobs:
           RESEARCH_BRIDGE_EXPORT_AUDIENCE: ${{ vars.RESEARCH_BRIDGE_EXPORT_AUDIENCE }}
           RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS: ${{ vars.RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS }}
           RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST: ${{ vars.RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST }}
+          # The origin magic-link sign-in emails are built against. Not a
+          # secret -- it is the public address of this environment -- so it
+          # is a var, checked below like the research bridge values.
+          #
+          # It is checked at DEPLOY time because it cannot be noticed at run
+          # time. magicLinkStore.ts throws MISSING_PPBF_APP_ORIGIN, and the
+          # request route swallows every issue failure on purpose so the
+          # endpoint cannot be used to test whether an address belongs to a
+          # family here. That silence is right for the roster, and it means
+          # an unset origin looks exactly like a link that was sent: the
+          # parent is told one is on the way and none ever arrives.
+          PPBF_APP_ORIGIN: ${{ vars.PPBF_APP_ORIGIN }}
         run: |
-          for name in RESEARCH_BRIDGE_EXPORT_AUDIENCE RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST; do
+          for name in RESEARCH_BRIDGE_EXPORT_AUDIENCE RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST PPBF_APP_ORIGIN; do
             if [ -z "${!name}" ]; then
               echo "Required staging research bridge variable '$name' is not configured."
               exit 1
@@ -269,6 +281,7 @@ jobs:
               PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret \
               PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri \
               PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path \
+              PPBF_APP_ORIGIN="$PPBF_APP_ORIGIN" \
               AZURE_AI_ENDPOINT="$AZURE_AI_ENDPOINT" \
               AZURE_AI_DEPLOYMENT_NAME="$AZURE_AI_DEPLOYMENT_NAME" \
               AZURE_AI_API_VERSION="$AZURE_AI_API_VERSION" \

@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
+import { listMembershipFlagsForAthlete, type MembershipFlag } from './programMemberships';
 import { findRegistrationBlockingHold } from './trainingHolds';
 
 export type SchedulerRole = 'athlete' | 'parent' | 'coach' | 'organization_admin' | 'admin';
@@ -181,7 +182,7 @@ export type RegisterForClassOutcome =
   | { outcome: 'class_not_found' }
   | { outcome: 'already_registered' }
   | { outcome: 'training_hold'; holdId: string; athleteExplanation: string; liftConditionText: string }
-  | { outcome: 'registered' | 'waitlisted'; registrationId: string };
+  | { outcome: 'registered' | 'waitlisted'; registrationId: string; membershipFlags: MembershipFlag[] };
 
 // Registration must not be a check-then-insert sequence: an unlocked
 // lookup/count/insert races under concurrent requests, letting two
@@ -278,7 +279,15 @@ export async function registerForClassTransactionally(
       );
     }
 
-    return { outcome: status, registrationId: registration.registration_id };
+    // Non-blocking membership flag (capability-network audit finding): a
+    // lapsed/ended program membership never refuses the registration --
+    // only a training hold does that (#82 STOP above). It rides along on a
+    // successful registration so a coach/admin sees it and can follow up
+    // with the family; the owner's product-policy call on whether it
+    // should ever hard-block is deliberately still open.
+    const membershipFlags = await listMembershipFlagsForAthlete(organizationId, athleteId, client);
+
+    return { outcome: status, registrationId: registration.registration_id, membershipFlags };
   });
 }
 

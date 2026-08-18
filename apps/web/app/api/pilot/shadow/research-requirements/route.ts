@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
@@ -69,7 +69,12 @@ export async function POST(request: NextRequest) {
       source_confidence_tier?: 'SUFFICIENT_FOR_LOW_RISK_ACTION' | 'SUFFICIENT_FOR_REVIEW' | 'LIMITED' | 'CONFLICTED' | 'INSUFFICIENT' | 'NOT_APPLICABLE';
       source_verification_state?: 'verified' | 'partially_verified' | 'unverified' | 'unknown';
       metadata?: Record<string, unknown>;
+      subject_id?: unknown;
     };
+
+    if (body.subject_id !== undefined && body.subject_id !== null && typeof body.subject_id !== 'string') {
+      return NextResponse.json({ ok: false, error: 'subject_id must be a string' }, { status: 400 });
+    }
 
     if (body.action === 'resolve') {
       if (!body.research_requirement_id) {
@@ -105,6 +110,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.source_event_name && body.source_entity_type && body.source_entity_id && body.research_requirement && body.knowledge_gap) {
+      // A subject_id makes this requirement athlete-scoped -- the same
+      // write-time boundary /shadow/library/documents already enforces for
+      // subject-scoped evidence. A blank string is treated as absent rather
+      // than as a subject.
+      const subjectId = (body.subject_id as string | null | undefined)?.trim() || null;
+      if (subjectId) {
+        await assertActorCanAccessAthlete(principal, subjectId);
+      }
+
       const id = await createShadowResearchRequirement({
         organizationId: principal.organizationId,
         sourceEventName: body.source_event_name,
@@ -113,6 +127,7 @@ export async function POST(request: NextRequest) {
         researchRequirement: body.research_requirement,
         knowledgeGap: body.knowledge_gap,
         evidenceLabel: body.evidence_label ?? null,
+        subjectId,
         sourceStatus: body.source_status ?? 'observed',
         sourceConfidenceTier: body.source_confidence_tier ?? 'SUFFICIENT_FOR_REVIEW',
         sourceVerificationState: body.source_verification_state ?? 'unknown',

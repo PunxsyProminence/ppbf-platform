@@ -14,7 +14,7 @@ export default async function BoardDashboardPage() {
   await requirePageRole(['board', 'platform_owner']);
 
   return (
-    <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
+    <main className="min-h-screen bg-[var(--hide-950)] font-mono text-[color:var(--bone-300)] p-4">
       <BoardViewportSwitcher />
     </main>
   );

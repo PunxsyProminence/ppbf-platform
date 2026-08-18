@@ -14,6 +14,16 @@ import { ConflictError, NotFoundError, ValidationError } from './errors';
 // on every resolution -- not friction, the training signal -- because it is
 // the only mechanism by which a false positive is ever identified as one.
 //
+// PER-ATHLETE AUTHORITY IS ENFORCED BY THE CALLER, NOT HERE. Every function
+// below is organization-scoped data access only: it will happily read or
+// write a flag for any athlete in the organization it is given. The rule that
+// a coach may only touch flags for athletes they are assigned to (or hold an
+// active coverage grant for) lives in the route, which is where the sibling
+// training-holds module enforces the identical rule. A new caller of
+// listOpenSafetyFlags/raiseSafetyFlag/resolveSafetyFlag MUST apply that gate
+// itself -- getSafetyFlagById exists so it can, by naming the flag's subject
+// before anything acts on it.
+//
 // MEDICAL DETERMINATIONS ARE NEVER COMPUTED HERE. No function in this
 // module infers, shortens, or clears a rest period. A confirmed concussion,
 // its rest period, and the earliest return date are all human-entered on
@@ -168,6 +178,28 @@ export async function listOpenSafetyFlags(
        case severity when 'blocking_display' then 0 when 'attention' then 1 else 2 end,
        created_at desc`,
     [organizationId, filter.flagClass ?? null, filter.severity ?? null, filter.athleteId ?? null],
+  );
+}
+
+/**
+ * One flag by id, organization-scoped.
+ *
+ * Exists so a caller can learn WHOSE flag it is before acting on it. The
+ * route's coach-authority check needs the flag's subject before
+ * resolveSafetyFlag runs -- exactly as training-holds needs
+ * getTrainingHoldById before liftTrainingHold -- and, like that sibling, the
+ * caller must report "not yours" and "not real" identically, so a flag id
+ * cannot be probed across the roster.
+ */
+export async function getSafetyFlagById(
+  organizationId: string,
+  flagId: string,
+): Promise<SafetyFlagRow | null> {
+  return queryOne<SafetyFlagRow>(
+    `select ${FLAG_FIELDS}
+     from pilot.safety_flags
+     where organization_id = $1 and flag_id = $2`,
+    [organizationId, flagId],
   );
 }
 
