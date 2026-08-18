@@ -2,9 +2,13 @@ jest.mock('./db', () => ({
   query: jest.fn(),
   withTransaction: jest.fn(),
 }));
-jest.mock('./shadowMedicalStatus', () => ({
-  getLatestMedicalAdministrativeStatus: jest.fn(),
-}));
+// Only the database read is mocked. isClearanceCurrent / effectiveMedicalStatus
+// are pure functions and are the shared rule this guard is being tested for --
+// stubbing them out would test the mock instead of the time bound.
+jest.mock('./shadowMedicalStatus', () => {
+  const actual = jest.requireActual('./shadowMedicalStatus');
+  return { ...actual, getLatestMedicalAdministrativeStatus: jest.fn() };
+});
 jest.mock('./shadowAuditEntries', () => ({
   writeShadowAuditEntry: jest.fn(),
 }));
@@ -63,6 +67,9 @@ function clearedStatus(
     set_by_account_id: 'coach-1',
     set_by_role: 'coach',
     effective_at: '2026-07-27T10:00:00.000Z',
+    // Null = no stated expiry, which is the default posture: see the
+    // TODO(owner) on ShadowMedicalAdministrativeStatusRow.expires_at.
+    expires_at: null,
     created_at: '2026-07-27T10:00:00.000Z',
     ...overrides,
   };
@@ -109,6 +116,7 @@ describe('createProvisionalRecommendation', () => {
       set_by_account_id: 'coach-1',
       set_by_role: 'coach',
       effective_at: '2026-07-27T10:00:00.000Z',
+      expires_at: null,
       created_at: '2026-07-27T10:00:00.000Z',
     });
 
@@ -153,6 +161,7 @@ describe('createProvisionalRecommendation', () => {
       set_by_account_id: 'coach-1',
       set_by_role: 'coach',
       effective_at: '2026-07-27T10:00:00.000Z',
+      expires_at: null,
       created_at: '2026-07-27T10:00:00.000Z',
     });
 
@@ -179,6 +188,7 @@ describe('createProvisionalRecommendation', () => {
       set_by_account_id: 'coach-1',
       set_by_role: 'coach',
       effective_at: '2026-07-27T10:00:00.000Z',
+      expires_at: null,
       created_at: '2026-07-27T10:00:00.000Z',
     });
 
@@ -213,6 +223,44 @@ describe('createProvisionalRecommendation', () => {
     });
 
     expect(mockGetMedicalStatus).toHaveBeenCalledWith('org-1', 'athlete-1');
+  });
+
+  // The time bound, stated as a test. Before expires_at existed this guard
+  // compared `status !== 'cleared'` on the latest row with no clock involved,
+  // so a clearance recorded once let every medically sensitive recommendation
+  // through forever.
+  test('blocks when the clearance on file has passed its stated expiry', async () => {
+    mockGetMedicalStatus.mockResolvedValueOnce(clearedStatus({
+      expires_at: '2026-01-01T00:00:00.000Z',
+    }));
+
+    await expect(createProvisionalRecommendation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      recommendationText: 'Clear athlete for full-contact sparring.',
+      expectedOutcome: 'Athlete returns to full sparring load.',
+      createdByAccountId: 'coach-1',
+      createdByRole: 'coach',
+    })).rejects.toThrow(/expiry/i);
+
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+
+  test('allows it while the clearance on file is still inside its expiry', async () => {
+    mockGetMedicalStatus.mockResolvedValueOnce(clearedStatus({
+      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+    }));
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
+    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery } as never));
+
+    await expect(createProvisionalRecommendation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      recommendationText: 'Clear athlete for full-contact sparring.',
+      expectedOutcome: 'Athlete returns to full sparring load.',
+      createdByAccountId: 'coach-1',
+      createdByRole: 'coach',
+    })).resolves.toBeDefined();
   });
 
   // The forgery path, stated as a test. There is no longer any input a caller
