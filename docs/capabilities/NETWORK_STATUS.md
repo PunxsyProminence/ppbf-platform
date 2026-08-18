@@ -131,6 +131,47 @@ unrelated third party. It is still an egress whose data-handling posture this
 repository cannot establish, which is why it still matters under the codebase's
 own doctrine.
 
+### RESOLVED — the medical-status write closes S-01, and refuses to invent a number: PR #473
+
+Closes the finding that a clearance status feeding contact-decision gates had
+**no authority check at all** and **no expiry** — a "cleared" recorded once
+counted forever, read by bare equality with no clock involved.
+
+**Both closed for real, not superficially.** `assertShadowAuthority` is now
+called with arguments chosen so it can actually deny — `lowRisk: false`
+unconditionally for an automatic actor, `reversible: false` because contact
+already taken under a wrong "cleared" reading can't be undone — rather than
+being wired in as a formality. `automation_mode` is validated against a closed
+set at this route too, closing the exact casing evasion (`"Automatic"` vs.
+`"automatic"`) an earlier pass found at the sibling sites. The expiry is
+enforced through one shared helper both readers now call, so it cannot be
+correct on one path and forgotten on the other — and a lapsed clearance reads
+as its own state (`cleared_expired`, high severity, its own sentence to the
+coach), not silently reclassified as a plain refusal.
+
+**Refused to fabricate the one number that actually matters.** The clearance
+validity window — how long a "cleared" should count for — is left as a
+structural `TODO(owner)`, not a value, citing `docs/HANDOFF_RESEARCH.md`'s own
+standing rule that an uncited plausible answer for a child's medical data is
+worse than an admitted gap, because code gets built on it. Mechanism ships;
+the number waits for the citation.
+
+**Correctly left the authorization question alone.** Who may write a
+clearance is unchanged — still any assigned coach — because narrowing that is
+the escalated, parked authorization decision from earlier in this audit, not
+something a bug fix should quietly resolve. Pinned as current behavior in the
+new tests specifically so a future narrowing is a visible test change, not a
+silent one.
+
+Regression-proved empirically: authority check and both expiry reads
+neutralized in place → exactly 13 tests go red, nothing else. Full suite
+6251/6251, migration ceremony (SQL + runner + npm script + workflow +
+coverage guard) complete.
+
+**All nine fixes from this batch are now open: #465–#473.** Every review
+comment received so far has been addressed and its thread resolved. Nothing
+merged — all nine are yours to review.
+
 ### RESOLVED — a guardian could permanently see "blocked" for a cleared child: PR #472
 
 The competition training-hold gate recorded `outcome: 'blocked'` on a refusal
