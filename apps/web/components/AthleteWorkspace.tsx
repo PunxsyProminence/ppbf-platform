@@ -71,7 +71,7 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
 function groupForTab(tab: TabID): GroupID {
   return TAB_GROUPS.find((group) => group.tabs.some((entry) => entry.id === tab))?.id ?? 'today';
 }
-type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
+type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED' | 'UNASSESSED';
 /**
  * The categories a goal can be filed under, and the mirror of GOAL_CATEGORIES
  * in src/server/pilot/contracts.ts and the CHECK in
@@ -228,7 +228,14 @@ function autoCheckInNote(readiness: ReadinessLevel): string {
   return `Auto check-in readiness ${readiness}`;
 }
 
-const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$/;
+/**
+ * Recognises every note this function can produce, including an
+ * UNASSESSED-readiness check-in (see ReadinessLevel above) -- the pattern is
+ * consulted on the way back to tell "the app wrote this placeholder" apart
+ * from "the athlete typed a real note", and a check-in filed before the
+ * fourth rung existed must not start reading as the athlete's own words.
+ */
+const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED|UNASSESSED)$/;
 
 /**
  * pilot.sessions stores date as `date` and rpe as `numeric`, and node-postgres
@@ -266,7 +273,16 @@ function normalizeStoredSession(row: unknown): StoredSession | null {
   };
 }
 
-function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
+/**
+ * Absent is absent -- no default is invented (the same doctrine
+ * pilot_slice_postgres_athlete_check_ins_migration.sql and
+ * src/server/pilot/athleteCheckIns.ts hold for wellness self-reports). A
+ * `null`/`undefined` reading means the athlete has never touched the slider,
+ * which is a distinct fact from a real self-report of 8/10 and must not be
+ * coerced into one of the three pass-fail bands below.
+ */
+function getReadinessLevel(readinessToTrain: number | null | undefined): ReadinessLevel {
+  if (readinessToTrain == null) return 'UNASSESSED';
   if (readinessToTrain >= 7) return 'GREEN';
   if (readinessToTrain >= 5) return 'YELLOW';
   return 'RED';
@@ -574,7 +590,12 @@ export default function AthleteWorkspace() {
   const [motivation, setMotivation] = useState(7);
   const [soreness, setSoreness] = useState(2);
   const [hydrationStatus, setHydrationStatus] = useState(8);
-  const [readinessToTrain, setReadinessToTrain] = useState(8);
+  // Nullable on purpose: absent is absent (see getReadinessLevel above). The
+  // slider has never been touched until the athlete moves it, and that is a
+  // different fact from a real self-report of 8/10 -- the only signal of
+  // "touched" is this value leaving null, so there is no second flag to keep
+  // in sync with it.
+  const [readinessToTrain, setReadinessToTrain] = useState<number | null>(null);
   const [injuryFlag, setInjuryFlag] = useState(false);
   // Fast-Track: the minimum-friction data path so athletes who won't fill out
   // a rich Deep-Track sparring log still contribute something SHADOW's
@@ -1192,6 +1213,13 @@ export default function AthleteWorkspace() {
 
     const now = new Date();
     const readiness = getReadinessLevel(readinessToTrain);
+    // pilot.sessions.rpe is a NOT NULL numeric column, and Fast-Track's
+    // Session Load formula (rpe * duration) needs a real number too -- unlike
+    // `readiness` above, this field cannot honestly go null without widening
+    // the sessions schema, which is a separate decision from this fix. Kept
+    // at the slider's own displayed default (see the readiness-train input)
+    // rather than inventing a different fallback for the same unset value.
+    const sessionRpe = readinessToTrain ?? 8;
     const activeGoal = smartGoals.find((goal) => goal.status === 'Active');
     const generatedTasks = buildWorkoutFloorTasks({
       readiness,
@@ -1263,7 +1291,7 @@ export default function AthleteWorkspace() {
           session_id: sessionId,
           athlete_id: backendAthleteId,
           date: sessionDate,
-          rpe: readinessToTrain,
+          rpe: sessionRpe,
           notes: checkInNote,
           completed_flag: false,
           created_at: now.toISOString(),
@@ -1279,7 +1307,7 @@ export default function AthleteWorkspace() {
           sessionId,
           athleteId: backendAthleteId,
           date: sessionDate,
-          rpe: readinessToTrain,
+          rpe: sessionRpe,
           checkInNote,
           createdAt: now.toISOString(),
         });
@@ -1308,7 +1336,7 @@ export default function AthleteWorkspace() {
       athleteId: backendAthleteId,
       contextId: sessionId,
       observedAt: now.toISOString(),
-      rpe: readinessToTrain,
+      rpe: sessionRpe,
       durationMinutes: sessionDurationMinutes,
       painFlag: injuryFlag,
       medicalReadAck,
@@ -1770,8 +1798,14 @@ export default function AthleteWorkspace() {
                     </div>
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">Readiness to Train (1-10)</label>
-                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{readinessToTrain}/10</p>
+                      {/* The DOM control needs a real numeric position even
+                          when nothing has been reported yet -- 8 is only
+                          where the handle sits, never a value read anywhere
+                          else. getReadinessLevel/currentReadiness above read
+                          the real state (readinessToTrain, still null here),
+                          not this display fallback. */}
+                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain ?? 8} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
+                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{readinessToTrain === null ? 'Not reported yet' : `${readinessToTrain}/10`}</p>
                     </div>
                     <div className="field">
                       <label className="t-label" htmlFor="session-duration">Session Duration (minutes)</label>

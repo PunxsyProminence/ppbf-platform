@@ -223,6 +223,26 @@ describe('athlete workspace honesty', () => {
     expect(screen.getByText('Unavailable - not yet tracked')).toBeTruthy();
   });
 
+  // Regression: readinessToTrain used to seed as useState(8), and 8 reads as
+  // GREEN ("READY FOR TRAINING") on the summary tile. That made a brand-new
+  // athlete who has never touched the readiness slider -- most saliently, a
+  // first-day athlete nobody has assessed yet -- indistinguishable from a real
+  // 8/10 self-report. Absent must render as absent (see getReadinessLevel in
+  // AthleteWorkspace.tsx), never as a fabricated pass reading.
+  test('a never-assessed athlete is shown as not yet assessed, never as READY FOR TRAINING', async () => {
+    await renderWorkspace();
+
+    expect(screen.getByText('NOT YET ASSESSED')).toBeTruthy();
+    expect(screen.queryByText('READY FOR TRAINING')).toBeNull();
+    expect(screen.queryByText('MODIFY TRAINING')).toBeNull();
+    expect(screen.queryByText('COACH REVIEW REQUIRED')).toBeNull();
+
+    // The My Dashboard readiness slider (readiness-train) is on screen by
+    // default here. Its own copy must not claim a real 8/10 reading exists
+    // just because the DOM handle needs somewhere to sit.
+    expect(screen.getByText('Not reported yet')).toBeTruthy();
+  });
+
   test('the Schedule tab offers the real scheduler instead of unbookable class rows', async () => {
     await renderWorkspace();
     openTab('Schedule');

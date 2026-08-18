@@ -5,7 +5,11 @@ import { RabbitHole, type RabbitHoleAnchor } from './RabbitHole';
 import ShadowChatButton from './ShadowChatButton';
 
 interface AthleteSummaryPanelProps {
-  readiness: 'GREEN' | 'YELLOW' | 'RED';
+  // UNASSESSED is not a fourth safety band -- it is the honest state of an
+  // athlete who has never touched the readiness slider (see getReadinessLevel
+  // in AthleteWorkspace.tsx). Coercing that into GREEN by way of a fabricated
+  // default reading is the bug this type exists to make impossible again.
+  readiness: 'GREEN' | 'YELLOW' | 'RED' | 'UNASSESSED';
   tasksDue: number;
   goalsActive: number;
   upcomingSession?: string;
@@ -105,22 +109,29 @@ export function AthleteSummaryPanel({
   upcomingSession,
   unreadMessages
 }: Readonly<AthleteSummaryPanelProps>) {
+  // UNASSESSED borrows the sheet's own administrative rung (--filed / the
+  // .badge--filed token pair) rather than any of the three safety colours --
+  // the same rung already used elsewhere for Deactivated/Unfilled/Unknown, so
+  // "nothing measured yet" never reads as a caution or pass/fail judgement.
   const readinessColor = {
     GREEN: 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[color:var(--cleared)]',
     YELLOW: 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[color:var(--restricted)]',
-    RED: 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]'
+    RED: 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]',
+    UNASSESSED: 'bg-[color-mix(in_srgb,var(--filed)_16%,transparent)] border-[color:var(--filed)]'
   }[readiness];
 
   const readinessText = {
     GREEN: 'READY FOR TRAINING',
     YELLOW: 'MODIFY TRAINING',
-    RED: 'COACH REVIEW REQUIRED'
+    RED: 'COACH REVIEW REQUIRED',
+    UNASSESSED: 'NOT YET ASSESSED'
   }[readiness];
 
   const readinessGlyph = {
     GREEN: '✓',
     YELLOW: '▲',
-    RED: '✕'
+    RED: '✕',
+    UNASSESSED: '◌'
   }[readiness];
 
   return (
