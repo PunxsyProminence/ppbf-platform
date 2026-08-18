@@ -81,7 +81,15 @@ export default function GuardianSafetyPage() {
 
   return (
     <RoleSessionGate allowedRoles={['parent']}>
-      <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      {/* T7 (Plate Set v1): a family surface takes the warm ground or none --
+          never another room's wall. This route is gated to `parent`, which
+          roleGround.ts calls family, so the office room it used to declare
+          would have put a plank-wall plate behind a safety page written for a
+          parent. The room is dropped rather than swapped for .on-canvas:
+          this page's type is still tuned for ink, and moving the ground
+          without converting the content is the readability trap roleGround.ts
+          warns about. Converting it is its own slice. */}
+      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
