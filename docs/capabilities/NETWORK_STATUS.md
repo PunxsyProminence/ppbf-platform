@@ -131,6 +131,21 @@ unrelated third party. It is still an egress whose data-handling posture this
 repository cannot establish, which is why it still matters under the codebase's
 own doctrine.
 
+### Two of three background fixes landed as PRs — #467, #468
+
+- **PR #467** (draft) — wires a real place/lift-hold control into
+  `/coach/sports-medicine`. Server untouched; client calls the existing,
+  already-correct route. 5 new tests, `designSystemClasses` green (0 invented
+  classes). Honest cut-list in the PR body (no `expires_at` control, no
+  admin-wide surface, second GET-based hold screen left read-only).
+- **PR #468** — closes the contact-clearance/hold-gate coverage hole. Proved
+  its own regression-test claim empirically rather than asserting it: with the
+  gates neutralized in a throwaway copy, the OLD suite stayed green (7/7) and
+  the NEW suite went 20/28 red. Test-only, zero application code touched.
+- `fix/safety-flags-athlete-scope` (the CRITICAL bypass) had not yet pushed a
+  branch as of this note — check `gh pr list` before assuming it needs
+  restarting.
+
 ### Snapshot at usage reset — three fixes in flight, unmerged, do not duplicate
 
 Written right before a session usage reset, so state is not lost. If you are
