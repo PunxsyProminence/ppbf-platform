@@ -30,6 +30,36 @@ the file yourself before acting on any row below.
 
 ---
 
+## URGENT — two credentials are still readable in this repository's git history
+
+Actionable today, and the action is **rotation**, not a code change.
+
+`.github/workflows/deploy-staging.yml` twice carried a PIN as a literal. Both were
+fixed on `main` — but neither fix removed the credential from `origin`, because
+`main`'s history was squash-rewritten while the pre-fix branch commits were left
+in place. **The repository is public, so a plain `git clone` still fetches them.**
+
+- `PILOT_ADMIN_PIN` — a 5-digit literal, introduced 2026-07-18, replaced on `main`
+  by `7745489c` the same day.
+- `PILOT_SHADOW_ATHLETE_PIN` — a 6-digit literal, across six commits 2026-07-29 to
+  2026-07-30, replaced on `main` by `79a18771`.
+
+Exact commit SHAs and line numbers are in
+`docs/audit-2026-08-18/PASS-11-infra-secrets.md`. **The values are withheld there
+and are not written anywhere in these audit files, not even partially** — the SHAs
+are enough for the owner to retrieve and rotate them, and a reader without
+repository access learns nothing usable.
+
+The second one is doubly worth acting on because the fix commit's own message
+already described the risk exactly: *"the gate athlete PIN was a literal in a
+public repo"*, against *"a publicly reachable staging login, on an account the
+provisioner writes as active with `must_change_pin=false`"*. The fix was right;
+it just did not reach the history.
+
+**What to do:** rotate both PINs, and delete or rewrite the stale remote branches
+carrying those commits. Removing them from `main` has already been done and is not
+sufficient.
+
 ## URGENT — every child's video has already been sent to a vision model, unconsented
 
 Read this before anything else on this page. Verified by hand, element by
@@ -142,7 +172,15 @@ grounds recorded in the audit README) and this file's own prior claim about
 training-hold scopes was **corrected as understated**. Both directions happen.
 Verifying is not a formality here.
 
-### Merge decision waiting — a child can be entered into a match under an active hold
+### RESOLVED — the competition-entry hold bypass is fixed and merged
+
+**PR #452 merged as `951030e1`.** A child under an active `all_training` hold can
+no longer be entered into an external competition or added to a league roster.
+This was the audit's only CRITICAL that had a ready fix waiting, and it is closed.
+The section below is kept as the record of what it was, because the *shape* of it
+— two tenancy reads mistaken for safety reads — is the thing worth remembering.
+
+### The finding, for the record — a child could be entered into a match under an active hold
 
 Pass 4 of the second audit confirmed this on current `main`, and the fix already
 exists and is already green.
@@ -455,7 +493,7 @@ a writer or a reader.
 
 ---
 
-## Closed — 12, merged
+## Closed — 23, merged
 
 | Gap | Closed by |
 |---|---|
@@ -471,6 +509,17 @@ a writer or a reader.
 | A cross-org privilege flag read at login with no way to set it | #449 |
 | Shadow-job list authorization ran one query per row | #431 |
 | Incident reports could be double-filed by a retry | #433 |
+| **Competition entry consulted nothing about the child before writing the link** | **#452** |
+| Three progression surfaces could render one child's record under another's name | #460 |
+| A rejected Film Study proposal was citable as evidence | #459 |
+| Portrait review approved a child's photo without displaying it | #461 |
+| The revenue centre presented invented figures as the books | #462 |
+| The gate inventory was undocumented | #463 |
+| Remaining prototypes undeclared, and sign-in lost silently | #422 |
+| Board had no aggregate view of the volunteer roster | #455 |
+| Board had no visibility into league or external competition | #457 |
+| Lapsed membership was invisible at class registration | #458 |
+| Library Q&A knowledge gaps were unreachable from Research Intake | #453 |
 
 ## In review — query GitHub, not this file
 
