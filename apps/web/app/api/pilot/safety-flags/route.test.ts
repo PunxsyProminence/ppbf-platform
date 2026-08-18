@@ -323,6 +323,23 @@ describe('POST /api/pilot/safety-flags athlete scope', () => {
     expect(mockRaise).not.toHaveBeenCalled();
   });
 
+  test('a whitespace-only person_account_id does not slip past the guard and reach the write', async () => {
+    // Copilot review, PR #469: the guard checked `.trim()` while the write
+    // used the raw value, so "   " read as absent to the guard but arrived at
+    // raiseSafetyFlag as a truthy, non-empty subject -- letting a coach file a
+    // real person-subject record through the exact column this gate exists to
+    // close. Normalizing once closes it; this proves the write never sees it.
+    mockRaise.mockResolvedValueOnce(flagRow());
+
+    const res = await post({ ...body, person_account_id: '   ' });
+
+    expect(res.status).toBe(201);
+    expect(mockRaise).toHaveBeenCalledWith(expect.objectContaining({
+      athleteId: 'ATH-MINE',
+      personAccountId: undefined,
+    }));
+  });
+
   test('vocabulary is still validated before the authority check', async () => {
     const res = await post({ athlete_id: 'ATH-MINE', flag_code: 'load_spike' });
 
@@ -410,6 +427,21 @@ describe('PATCH /api/pilot/safety-flags athlete scope', () => {
     const res = await patch(body);
 
     expect(res.status).toBe(404);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('an unexpected failure inside the assignment gate surfaces as a real error, not a hidden 404', async () => {
+    // Copilot review, PR #469: a blanket catch around assertCoachAssignedToAthlete
+    // turned every failure -- including a database outage -- into "that safety
+    // flag does not exist". Only the gate's own documented refusal message may
+    // become the hidden 404; anything else must propagate, so an infrastructure
+    // fault is never mistaken for a data problem.
+    mockGetFlagById.mockResolvedValueOnce(flagRow({ athlete_id: 'ATH-OTHER' }));
+    mockCoachAssigned.mockRejectedValueOnce(new Error('db unavailable'));
+
+    const res = await patch(body);
+
+    expect(res.status).toBe(500);
     expect(mockResolve).not.toHaveBeenCalled();
   });
 

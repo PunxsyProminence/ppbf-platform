@@ -141,6 +141,16 @@ export async function POST(request: NextRequest) {
     }
 
     const athleteId = body.athlete_id?.trim() || undefined;
+    // Normalized once, and this is the value used everywhere below -- the
+    // coach guard and the write must agree on what "no person_account_id"
+    // means. Checking `body.person_account_id?.trim()` for the guard while
+    // passing the raw `body.person_account_id` to raiseSafetyFlag let a
+    // whitespace-only value (`"   "`) slip past the guard (empty after trim,
+    // so the guard saw "absent") while still reaching the write as a truthy,
+    // non-empty string -- a coach could have filed a real person-subject
+    // record through exactly the column this gate exists to close (Copilot
+    // review, PR #469).
+    const personAccountId = body.person_account_id?.trim() || undefined;
 
     // A coach may only raise a flag against an athlete they stand on, and
     // must name that athlete: a person_account_id subject is admin-only here
@@ -154,7 +164,7 @@ export async function POST(request: NextRequest) {
       if (!athleteId) {
         throw new Error('Missing athlete_id: a coach may only raise a flag against an athlete they are assigned to');
       }
-      if (body.person_account_id?.trim()) {
+      if (personAccountId) {
         // Refused rather than dropped: a coach naming an athlete they stand on
         // AND an arbitrary account would still be filing a record against that
         // account, past a gate that only checked the athlete half.
@@ -172,7 +182,7 @@ export async function POST(request: NextRequest) {
     const created = await raiseSafetyFlag({
       organizationId: principal.organizationId,
       athleteId,
-      personAccountId: body.person_account_id,
+      personAccountId,
       flagClass: body.flag_class,
       flagCode: body.flag_code.trim(),
       severity: body.severity,
@@ -237,8 +247,17 @@ export async function PATCH(request: NextRequest) {
       }
       try {
         await assertCoachAssignedToAthlete(principal.accountId, existing.athlete_id, principal.organizationId);
-      } catch {
-        throw flagNotFound();
+      } catch (error) {
+        // Only the gate's own refusal ("Forbidden: coach not assigned to
+        // athlete") becomes the hidden 404. A blanket catch here swallowed
+        // every other failure too -- a transient database error inside the
+        // gate would have surfaced as "that safety flag does not exist"
+        // instead of a 500, hiding an infrastructure fault behind a message
+        // that reads as a data problem (Copilot review, PR #469).
+        if (error instanceof Error && error.message.startsWith('Forbidden: ')) {
+          throw flagNotFound();
+        }
+        throw error;
       }
     }
 
