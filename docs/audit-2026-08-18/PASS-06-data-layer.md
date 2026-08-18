@@ -229,10 +229,12 @@ reference `pilot.accounts`; 3 mention `deleted_at`, all three again in
 
 The write is a bare timestamp and touches nothing else:
 
-> `      `update pilot.accounts`
-> `         set deleted_at = now(), updated_at = now()`
-> `       where account_id = $1`
-> — `apps/web/src/server/pilot/dataDeletion.ts:63-65`
+```
+      `update pilot.accounts
+         set deleted_at = now(), updated_at = now()
+       where account_id = $1
+```
+— `apps/web/src/server/pilot/dataDeletion.ts:63-65`
 
 **Refutation attempted, four ways.**
 (a) *A later migration adds a view or rule that filters it* — no; `deleted_at`
@@ -298,9 +300,11 @@ real guardian.
 
 Both deletes and the audit insert are one transaction, deliberately:
 
-> `      `delete from pilot.athletes`
-> `        where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})`
-> — `apps/web/scripts/pilot-cleanup-deleted-data.mjs:131-132`
+```
+      `delete from pilot.athletes
+        where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})
+```
+— `apps/web/scripts/pilot-cleanup-deleted-data.mjs:131-132`
 
 so a single blocking row aborts the entire run, for every family, and the
 operator gets one identifier-only line:
@@ -328,7 +332,7 @@ behaviour is broken.
 but the retention policy cannot execute. Records this platform committed to
 destroying stay indefinitely, the nightly dry run reports a count of rows that
 *would* be deleted and cannot be, and the workflow's own framing of that dry run
-as "the monitor" (`.github/workflows/retention-cleanup.yml:36-39`) reports a
+as "the monitor" (`.github/workflows/retention-cleanup.yml:35-39`) reports a
 number that is wrong in the reassuring direction.
 
 Not CRITICAL by this audit's bar: no minor's data is exposed to anyone new and
@@ -739,7 +743,7 @@ Eight pairs differ textually; six differ only in whitespace or constraint
 naming. The two that differ **materially** are both reconciled by a later
 migration, which is why neither is a finding:
 - `pilot.scheduler_attendance.method` admits `'parent'` in the base schema and
-  not in `..._scheduler_tables_migration.sql:85`. `..._attendance_parent_method_migration.sql:64-70`
+  not in `..._scheduler_tables_migration.sql:86`. `..._attendance_parent_method_migration.sql:64-70`
   drops both possible constraint names and re-adds the correct one on every run,
   and runs **after** `scheduler-tables` in the `all` order.
 - `pilot.shadow_research_requirements` carries a four-column `unique(...)` in the
@@ -813,7 +817,7 @@ Holes, stated as holes.
 - **What any deployed database actually looks like.** Everything above is read
   from files. `pilot.video_sessions` in particular exists in an environment "if
   and only if somebody once POSTed to that route there"
-  (`..._video_sessions_migration.sql:7-8`), so staging and production may hold
+  (`..._video_sessions_migration.sql:6-8`), so staging and production may hold
   the *old* status CHECK, or the table with neither index, and nothing in the
   repository can tell which. The same uncertainty applies to any table whose two
   declarations differ.

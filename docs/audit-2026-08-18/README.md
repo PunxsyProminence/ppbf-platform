@@ -100,7 +100,7 @@ admitted gap.
 
 | # | Pass | Scope | Status | Output |
 |---|---|---|---|---|
-| 1 | Authentication & session | Login, magic link, PIN, bootstrap key, session issuance and invalidation, `AUTH_CONTRACT.md` conformance | **running** | `PASS-01-authentication.md` |
+| 1 | Authentication & session | Login, magic link, PIN, bootstrap key, session issuance and invalidation, `AUTH_CONTRACT.md` conformance | **done** | `PASS-01-authentication.md` |
 | 2 | Authorization & tenancy | `assertActorCanAccessAthlete` and siblings, org scoping, cross-org leakage, role gates across all 228 routes | **done** | `PASS-02-authorization.md` |
 | 3 | Minors' data & consent | Waivers, guardian links, consent scope enforcement, profile visibility, photo/video exposure | not started | — |
 | 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | **done** | `PASS-04-safety-gates.md` |
@@ -114,9 +114,65 @@ admitted gap.
 | 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **done** | `PASS-12-docs-vs-code.md` |
 | 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | queued, runs last | — |
 | 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB: enrolment, consent withdrawal, placing a hold, competition entry, incident, guardian visibility, coach onboarding | **running** | `PASS-14-flows.md` |
-| 15 | Data egress & integrations | **What data about a child leaves this system, to whom, and what stands between it and the door** — model calls, SAS URLs, email, exports, telemetry, logs | **running** | `PASS-15-egress.md` |
+| 15 | Data egress & integrations | **What data about a child leaves this system, to whom, and what stands between it and the door** — model calls, SAS URLs, email, exports, telemetry, logs | **done** | `PASS-15-egress.md` |
 | 16 | Research, data library & evidence | Source lifecycle, evidence registry, Knowledge Graph, `assessment_protocols`, UI claims vs. implemented hand-offs | **running** | `PASS-16-research-library.md` |
 | 17 | Resilience & failure behaviour | **Does each safety gate fail closed or fail open?** Swallowed errors, permissive defaults, non-transactional multi-step safety writes, retries that double-write | **running** | `PASS-17-resilience.md` |
+
+## URGENT — read this one first
+
+**Every video uploaded of a child has already been sent to an external vision
+model, with no consent check anywhere in that path, and it is live in
+production.** I verified every element of this by hand rather than relaying it.
+
+`videoScan.ts:131-147` downloads a minor's uploaded video, extracts up to twelve
+frames, and posts them to the Azure OpenAI vision deployment:
+
+```
+const bytes = await downloadPilotVideoFile(blobPath);
+...
+const analysis = await analyzeFramesWithVision({
+  frames,
+  prompt: VIDEO_CONTENT_SCREEN_PROMPT,
+```
+
+Grepping `consent` across the four modules in that path —
+`videoScanSweep.ts`, `videoScan.ts`, `videoScanPolicy.ts`, `videoSessions.ts` —
+returns **zero hits in all four.**
+
+It is not an optional path. `videoScanPolicy.ts:174-176` says so itself:
+
+```
+// Every enabled gate reported an affirmative pass. This is the ONLY path to
+// a readable video.
+```
+
+And it is on in production: `deploy-production.yml:441` sets
+`PPBF_VIDEO_CONTENT_SCAN=vision`, with the worker enabled at `:437`.
+
+**The part that makes this more than an oversight.** The codebase already knows
+this call needs guardian consent. `shadow/video-analysis/route.ts:106` calls
+`assertGuardianMediaConsent`, under a comment that states the principle
+exactly:
+
+```
+// Film Study opens the same footage to AI analysis and must not be a side
+// door around that gate.
+```
+
+The content screen makes the *same kind of call on the same footage* with no
+gate — and because it is the only route to `status='ready'`, **every video that
+Film Study's consent gate is ever asked about has already been through a vision
+model.** The gate guards a door the data went through first.
+
+This reframes the Film Study finding entirely. I spent much of this audit
+treating a ~30-second race on the consent re-check as the headline; the real
+finding is that consent was already moot by the time that gate is reached.
+
+**What this needs from a human, today:** a decision on whether the content screen
+should run before consent, after it, or not at all — and a factual answer for any
+guardian who asks where footage of their child has been. It is not a code fix
+somebody should make unilaterally: it changes what the platform does with every
+upload.
 
 ## Verification
 
@@ -199,6 +255,15 @@ partial by definition rather than final.
 | F-24 | MEDIUM | `automation_mode` is unvalidated at two of three SHADOW call sites with no column CHECK, so the single working denial branch is evadable by sending `"Automatic"` instead of `"automatic"` | verify-4 | **New — found by the refutation pass, not the pass it was verifying** |
 | F-25 | LOW | `/coach/progression-intelligence` is a second coach-facing hold reader that pass 4 did not list | verify-4 | New — found by the refutation pass |
 | F-26 | HIGH | `profile/roster` does not filter `athletes.deleted_at`, so a withdrawn child stays on the live coach roster — name, date of birth and portrait — for the whole retention window | verify-3 | **New — found by the refutation pass, not the pass it was verifying** |
+| E-01 | **CRITICAL** | Frames of **every** uploaded video of a child are sent to an external vision model with **no consent check anywhere** in that path — and it is the mandatory route to a readable video, so the Film Study consent gate guards a door the data already went through. Live in production. **Hand-verified in full** | 15 | New — **the most important finding of this audit** |
+| E-03 | HIGH | `POST /api/document-ingest` fans whole uploaded PDFs to three destinations — Dataverse (full base64 body plus a 6,000-character text extract), SharePoint and **Google Drive** — on a role check alone, with one global destination shared by every organisation. Held at HIGH rather than CRITICAL because no deploy workflow sets the required env vars, so it fails closed today | 15 | New |
+| E-04 | MEDIUM | `shadowFilmStudy.ts:4-10` states the opposite of what the module does — it says film_study stays UNAVAILABLE, while the processor's exclusion set is empty. This is the docstring an auditor would read to answer "does a child's face leave?" | 15 | New |
+| E-05 | MEDIUM | Four SAS-bearing responses set no `Cache-Control`, while every sibling minor-data response sets `no-store` | 15 | New |
+| E-06 | MEDIUM | Every athlete-scoped SHADOW turn ships that child's verbatim near-miss incident text to the model, and a minor can trigger it about themselves | 15 | New |
+| A-01 | HIGH | `POST /api/pilot/platform/athlete-shell` creates a live, sign-in-able athlete account on the **published** starting PIN, in any organisation — while its own doc comment and its response body both state it grants no sign-in capability | 1 | New |
+| A-02 | HIGH | The platform-owner bootstrap endpoint is armed in production indefinitely behind one static header secret; one correct header reactivates any suspended organisation and rewrites the `platform_owner` row | 1 | New |
+| A-03 | MEDIUM | `seatRequiresMicrosoft` has zero callers, so the board-seat credential upgrade is enforced by nothing | 1 | New |
+| A-04 | MEDIUM | No lockout exists anywhere on authentication — backoff caps at 60s and resets after 15 idle minutes | 1 | New |
 | S-01 | HIGH | `pilot.shadow_medical_administrative_status` is read by three gates. Its sole writer is reachable by **any assigned coach**, `sourceReference` is optional free-text, there is **no expiry** (bare equality on the latest row), and there is **no `assertShadowAuthority` call at all** — on the one route whose job is clearing a child, while that check's own denylist names `clear`, `concussion` and `sparring` | 8 | New |
 | S-02 | MEDIUM | `SHADOW_PHASE1_HARDENING_CHECKLIST.md:40` claims authority tests that do not exist — both route tests `jest.mock` the module to a no-op | 8 | New |
 | S-03 | MEDIUM | `createShadowLibraryClaim` returns hardcoded `confidence = 0.78 / 0.46 / 0.12` derived from a row count, contradicting the doctrine's own "must not fabricate certainty" | 8 | New |

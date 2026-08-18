@@ -586,14 +586,14 @@ athlete access check runs fifteen lines later.
 > ```
 
 `assertShadowAuthority` inserts unconditionally before deciding
-(`shadowAuthority.ts:75-93`). So a coach can name any `athlete_id` in the gym
+(`shadowAuthority.ts:76-93`). So a coach can name any `athlete_id` in the gym
 and any `entity_type` string, and a row lands in
 `pilot.shadow_authority_checks` with `allowed = true`,
 `action = 'intake.domain_upsert.<caller text>'` and
 `metadata.athlete_id = <that child>` — *then* the access check refuses, or the
 `if`-chain falls through to `throw new Error('Unsupported entity_type')`.
 
-**Refutation attempted.** Is the insert conditional? No — `shadowAuthority.ts:75`
+**Refutation attempted.** Is the insert conditional? No — `shadowAuthority.ts:76`
 runs before the `if (!decision.allowed)` at `:95`. Is `entityType` validated
 before interpolation? No: `:42-45` checks only `!entityType`, and the
 `'Unsupported entity_type'` throw is after the whole `if`-chain. Is this pass 2's
@@ -616,7 +616,7 @@ because it reads as evidence.
 `decideShadowAuthority` has six denial branches. Three of them are gated on
 `automationMode === 'automatic'`:
 
-> `apps/web/src/server/pilot/shadowAuthority.ts:45-63` —
+> `apps/web/src/server/pilot/shadowAuthority.ts:46-63` —
 > ```
 >   if (input.automationMode === 'automatic' && isForbiddenAutomaticClearanceAction(input.action)) {
 >     return { allowed: false, reason: 'Automatic clearance and medical authority actions are prohibited.' };
@@ -714,14 +714,14 @@ required and integer-checked, 10 MB cap enforced twice, MIME check, `%PDF-`
 magic-byte check, empty-file check, 15-second parse timeout, filename
 sanitized. Then:
 
-> `apps/web/app/api/document-ingest/route.ts:236-249` —
+> `apps/web/app/api/document-ingest/route.ts:247-250` —
 > ```
 >       : await Promise.all([
 >           uploadToSharePoint(getPipelineConfig().sharepoint, fileName, rawBuffer),
 >           uploadToGoogleDrive(getPipelineConfig().googleDrive, fileName, rawBuffer),
 >         ])
 > ```
-preceded at `:229-234` by `await writeDataverseRecord(…)`.
+preceded at `:234` by `await writeDataverseRecord(…)`.
 
 Three writes to three external systems, no transaction spanning them, no
 compensation on partial failure, no idempotency key, and no rate limiter on a
