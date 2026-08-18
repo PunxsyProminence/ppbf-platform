@@ -124,37 +124,39 @@ export async function sweepQuarantinedVideos(options: {
     // a side door around that gate. So a video with a named athlete does not
     // get vision-screened until a guardian has consented to media analysis.
     //
-    // Consent-missing does not mean the scan is skipped, and it does not mean
-    // 'blocked' -- both would either promote nothing forever (a config no
-    // operator chose) or treat "we haven't asked yet" as "we looked and it's
-    // wrong" (a claim nobody made). It means content is 'off' for THIS scan,
-    // exactly like an operator who never turned vision on: the malware gate
-    // still runs and can still promote the video on its own, which is the
-    // same fallback this module already gives every org with no vision
-    // deployment configured at all -- a per-video instance of an existing
-    // global state, not a new one.
+    // Consent-missing is treated as "no verdict yet", NOT as the gate being
+    // off. The two look similar but are not: forcing content 'off' for this
+    // call would, on an environment that also has malware scanning off (both
+    // deploy workflows do -- PPBF_VIDEO_MALWARE_SCAN is left unset), leave
+    // zero gates enabled, which decideVideoScanOutcome resolves to 'hold' and
+    // writes scan_state 'unconfigured' -- a state claimNextVideoSessionForScan
+    // never reclaims. The video would stop being scanned forever, even after
+    // the guardian later consents (caught in review on PR #465; both Codex
+    // and Copilot found it independently). Passing skipContentScreen instead
+    // keeps the content gate enabled in config, so the outcome is the same
+    // 'pending'/retry path an ordinary not-yet-arrived verdict already takes:
+    // reclaimable, backed off, and re-checked against consent on every retry.
     //
     // A video with no athlete_id (the unattributed team-upload case this
     // sweep already treats specially for escalation filing) has no guardian
     // to ask, so it is unaffected here -- closing that gap is its own,
     // separate piece of work.
     let contentSkippedForConsent = false;
-    let effectiveConfig = config;
     if (config.content === 'vision' && claim.athlete_id) {
       try {
         await assertGuardianMediaConsent(claim.organization_id, claim.athlete_id);
       } catch (error) {
         if (!(error instanceof GuardianConsentMissingError)) throw error;
         contentSkippedForConsent = true;
-        effectiveConfig = { ...config, content: 'off' };
       }
     }
 
     const scan = await scanVideoSession({
       blobPath: claim.blob_path,
       attempts: claim.scan_attempts,
-      config: effectiveConfig,
+      config,
       maxAttempts: DEFAULT_MAX_SCAN_ATTEMPTS,
+      skipContentScreen: contentSkippedForConsent,
     });
 
     const nextStatus = videoStatusForDecision(scan.decision);

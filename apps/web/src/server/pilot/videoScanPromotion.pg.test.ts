@@ -606,7 +606,15 @@ describe('the sweep end to end against real Postgres', () => {
     // videoScanSweep.test.ts (including the missing-consent fallback path);
     // mocked here to consent-present so this suite's scans reach the same
     // decision they did before that gate existed.
-    jest.doMock('./guardianConsent', () => ({ assertGuardianMediaConsent: jest.fn(async () => {}) }));
+    jest.doMock('./guardianConsent', () => ({
+      // GuardianConsentMissingError must be the real class, not left
+      // undefined: videoScanSweep.ts imports it for an `instanceof` check,
+      // which throws a TypeError against `undefined` rather than the
+      // intended error type if the mocked assertGuardianMediaConsent above
+      // ever rejects.
+      ...jest.requireActual('./guardianConsent'),
+      assertGuardianMediaConsent: jest.fn(async () => {}),
+    }));
     const sweepModule = await import('./videoScanSweep');
     const { closePool: closeRegistryPool } = await import('./db');
     registryPools.push(closeRegistryPool);

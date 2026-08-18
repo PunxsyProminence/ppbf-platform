@@ -289,20 +289,38 @@ describe('sweepQuarantinedVideos', () => {
       expect(mockedAssertConsent).toHaveBeenCalledWith('org-1', 'ath-1');
     });
 
-    test('falls back to malware-only, does not throw, when the guardian has not consented', async () => {
+    test('passes skipContentScreen, WITHOUT disabling the gate in config, when the guardian has not consented', async () => {
+      // Forcing config.content to 'off' here would, on an environment with
+      // malware scanning also off (both deploy workflows leave it unset),
+      // zero out every enabled gate -- decideVideoScanOutcome resolves that
+      // to 'hold', which writes scan_state 'unconfigured', a state
+      // claimNextVideoSessionForScan never reclaims. The video would stop
+      // being scanned forever, even after the guardian later consents. So
+      // config.content must stay 'vision' -- only skipContentScreen carries
+      // the missing-consent signal, keeping this on the ordinary
+      // pending/retry path.
       mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
       mockedAssertConsent.mockRejectedValue(new GuardianConsentMissingError('ath-1', ['parent-1']));
-      mockedScan.mockResolvedValue(scanResult({ decision: 'retry', gatesEnabled: ['malware'] }));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
 
       const result = await sweepQuarantinedVideos({ env: CONTENT_ON });
 
       // The scan still ran -- consent-missing is not an error the sweep
-      // propagates -- and it ran with content turned off for this call only,
-      // the same shape as an operator who never enabled vision at all.
+      // propagates.
       expect(result.scanned).toBe(1);
       expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({
-        config: { malware: 'off', content: 'off' },
+        config: { malware: 'off', content: 'vision' },
+        skipContentScreen: true,
       }));
+    });
+
+    test('does not set skipContentScreen when the guardian has consented', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: false }));
     });
 
     test('records why the content gate was skipped in scan_detail', async () => {
