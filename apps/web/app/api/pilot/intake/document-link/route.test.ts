@@ -88,4 +88,20 @@ describe('POST /api/pilot/intake/document-link', () => {
       details: expect.objectContaining({ action: 'document_link_issued' }),
     }));
   });
+
+  test('the response carrying the SAS link is not storable by any cache', async () => {
+    // The link is a bearer credential to a youth athlete's intake paperwork.
+    // A cached copy is a second holder that no audit row names.
+    mockGetDocument.mockResolvedValue({
+      intake_document_id: 'doc-1',
+      intake_case_id: 'case-1',
+      file_name: 'waiver_consent.pdf',
+      blob_path: 'quarantine/org-real/intake-1/waiver_consent.pdf',
+    } as never);
+
+    const response = await POST(linkRequest({ intake_document_id: 'doc-1' }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
 });

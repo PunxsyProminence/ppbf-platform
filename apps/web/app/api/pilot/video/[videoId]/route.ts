@@ -61,11 +61,17 @@ export async function GET(
 
     const sasUrl = getPilotVideoSasUrl(row.blob_path, 60);
 
+    // A SAS URL is a bearer credential, not a reference: whoever holds the
+    // string can fetch a minor's footage for the whole validity window, with no
+    // session and no idea who is holding it. So the response that carries one
+    // must not be storable by the browser or by any intermediary -- the same
+    // reasoning profile/README.md Gate 4 sets out for portraits, and the same
+    // header value the portrait routes use.
     return NextResponse.json({
       ...row,
       blob_path: undefined,
       stream_url: sasUrl,
-    });
+    }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } });
   } catch (error) {
     return jsonError(error);
   }

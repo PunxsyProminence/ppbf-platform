@@ -54,13 +54,20 @@ export async function POST(request: NextRequest) {
       shadow_mirror: false,
     });
 
+    // Every issuance is audited above, which only means something if each
+    // audited issuance is the only way the link reaches a reader. The SAS URL
+    // is a bearer credential -- 15 minutes of read access to a youth athlete's
+    // intake paperwork for whoever holds the string -- so a copy left in the
+    // browser's cache or in an intermediary hands it to a holder no audit row
+    // names. Same header value the portrait routes use (profile/README.md
+    // Gate 4), for the same reason.
     return NextResponse.json({
       ok: true,
       intake_document_id: intakeDocumentId,
       file_name: document.file_name,
       url,
       expires_in_minutes: LINK_EXPIRY_MINUTES,
-    });
+    }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } });
   } catch (error) {
     return jsonError(error);
   }
