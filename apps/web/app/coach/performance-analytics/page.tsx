@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import DataState, { dataStatus } from '@/components/DataState';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 
@@ -105,29 +106,19 @@ export default function PerformanceAnalyticsPage() {
             ))}
           </nav>
 
-          {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
-              <div className="alert-body">
-                <p className="alert-title">Failed</p>
-                <p className="alert-msg">{errorMessage}</p>
-              </div>
-            </div>
-          )}
-
-          {loading ? (
-            <div className="flex justify-center py-[var(--s7)]">
-              <span className="working">Loading performance rollup...</span>
-            </div>
-          ) : items.length === 0 ? (
-            <div className="mat-leather rounded-[var(--r-lg)]">
-              <div className="empty">
-                <div className="empty-glyph" aria-hidden="true">🥊</div>
-                <div className="empty-title">No athletes on your roster</div>
-                <p className="empty-msg mx-auto">Athletes you coach (or cover) will appear here with their rollup.</p>
-              </div>
-            </div>
-          ) : (
+          {/* One rollup, one DataState: the catch block below resets `items`
+              to `[]` on a failed fetch, so an unguarded empty check rendered
+              "No athletes on your roster" -- a claim about the roster --
+              directly under the "Failed" banner reporting that the roster
+              was never actually read. */}
+          <DataState
+            status={dataStatus({ loading, error: !!errorMessage, empty: items.length === 0 })}
+            loadingLabel="Loading performance rollup..."
+            errorMessage={errorMessage}
+            emptyGlyph="🥊"
+            emptyTitle="No athletes on your roster"
+            emptyMessage="Athletes you coach (or cover) will appear here with their rollup."
+          >
             <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]" style={{ overflowX: 'auto' }}>
               <table className="w-full" style={{ borderCollapse: 'collapse' }}>
                 <thead>
@@ -170,7 +161,7 @@ export default function PerformanceAnalyticsPage() {
                 </tbody>
               </table>
             </div>
-          )}
+          </DataState>
 
           <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import DataState, { dataStatus } from '@/components/DataState';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 
@@ -44,7 +45,17 @@ const APPROVAL_BADGES: Record<ReviewState, { className: string; glyph: string; l
 
 export default function EvidenceReviewPage() {
   const [queue, setQueue] = useState<ReviewQueue>({ sources: [], documents: [] });
-  const [error, setError] = useState('');
+  // Two distinct errors, on purpose. `loadError` is "the GET never landed",
+  // which is what decides whether the empty-queue copy below is allowed to
+  // render (see DataState's doctrine comment for the bug this replaced --
+  // this page used to show "No sources are awaiting review" directly under
+  // its own failure banner). `actionError` is a review action gone wrong
+  // (approve/reject/reindex); the queue the reviewer is already looking at
+  // stays on screen while that banner is up, so they can see what they were
+  // acting on and retry.
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [busyKey, setBusyKey] = useState('');
 
   const fetchQueue = useCallback(async (): Promise<ReviewQueue> => {
@@ -58,9 +69,14 @@ export default function EvidenceReviewPage() {
 
   useEffect(() => {
     void fetchQueue().then(
-      setQueue,
-      (loadError: unknown) => {
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load evidence.');
+      (loaded) => {
+        setQueue(loaded);
+        setLoadError('');
+        setLoading(false);
+      },
+      (error: unknown) => {
+        setLoadError(error instanceof Error ? error.message : 'Unable to load evidence.');
+        setLoading(false);
       },
     );
   }, [fetchQueue]);
@@ -68,7 +84,7 @@ export default function EvidenceReviewPage() {
   const update = async (payload: Record<string, string>) => {
     const key = `${payload.entityType}:${payload.entityId}:${payload.action}`;
     setBusyKey(key);
-    setError('');
+    setActionError('');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/evidence/review`, {
         method: 'PATCH',
@@ -82,7 +98,7 @@ export default function EvidenceReviewPage() {
       }
       setQueue(await fetchQueue());
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Evidence review failed.');
+      setActionError(updateError instanceof Error ? updateError.message : 'Evidence review failed.');
     } finally {
       setBusyKey('');
     }
@@ -133,12 +149,12 @@ export default function EvidenceReviewPage() {
           </p>
         </header>
 
-        {error ? (
+        {actionError ? (
           <div role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
             <span className="badge badge--locked">
               <i>✕</i>Review Error
             </span>
-            <p className="t-body mt-[var(--s3)]">{error}</p>
+            <p className="t-body mt-[var(--s3)]">{actionError}</p>
           </div>
         ) : null}
 
@@ -146,14 +162,15 @@ export default function EvidenceReviewPage() {
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             <span className="text-[color:var(--hide-900)]">Sources</span>
           </h2>
-          {/* The ink goes on a child span, exactly as the heading above does.
-              ppbf.css is unlayered and .t-body states a bone colour, so a
-              Tailwind text-[…] utility on the same element loses the cascade
-              and never lands -- this line was rendering bone-on-cork at
-              2.34:1. A span carries no .t-body of its own, so it wins. */}
-          {queue.sources.length === 0 ? (
-            <p className="t-body"><span className="text-[color:var(--hide-800)]">No sources are awaiting review.</span></p>
-          ) : null}
+          <DataState
+            status={dataStatus({ loading, error: !!loadError, empty: queue.sources.length === 0 })}
+            loadingLabel="Loading the review queue..."
+            errorMessage={loadError}
+            errorTitle="Sources unavailable"
+            emptyTitle="No sources are awaiting review"
+            emptyMessage="Sources move here once they enter the SHADOW review pipeline."
+            framed={false}
+          >
           {queue.sources.map((source) => {
             const badge = APPROVAL_BADGES[source.approval_state];
             return (
@@ -186,15 +203,22 @@ export default function EvidenceReviewPage() {
               </article>
             );
           })}
+          </DataState>
         </section>
 
         <section className="space-y-[var(--s4)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             <span className="text-[color:var(--hide-900)]">Documents</span>
           </h2>
-          {queue.documents.length === 0 ? (
-            <p className="t-body"><span className="text-[color:var(--hide-800)]">No documents are awaiting review.</span></p>
-          ) : null}
+          <DataState
+            status={dataStatus({ loading, error: !!loadError, empty: queue.documents.length === 0 })}
+            loadingLabel="Loading the review queue..."
+            errorMessage={loadError}
+            errorTitle="Documents unavailable"
+            emptyTitle="No documents are awaiting review"
+            emptyMessage="Documents move here once they enter the SHADOW review pipeline."
+            framed={false}
+          >
           {queue.documents.map((document) => {
             const badge = APPROVAL_BADGES[document.approval_state];
             return (
@@ -247,6 +271,7 @@ export default function EvidenceReviewPage() {
               </article>
             );
           })}
+          </DataState>
         </section>
       </div>
     </RoleStandaloneView>

@@ -46,6 +46,7 @@ function mockFetch(options: {
   capture?: { posts: Array<{ url: string; body: unknown }> };
   rosterPostStatus?: number;
   rosterPostError?: string;
+  seasonsGetStatus?: number;
 }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -61,6 +62,9 @@ function mockFetch(options: {
       return { ok: true, json: async () => ({ item: {} }) } as Response;
     }
     if (url.includes('/wrestling-league/seasons')) {
+      if (options.seasonsGetStatus) {
+        return { ok: false, status: options.seasonsGetStatus, json: async () => ({}) } as Response;
+      }
       return { ok: true, json: async () => ({ items: [SEASON] }) } as Response;
     }
     if (url.includes('/wrestling-league/events')) {
@@ -99,6 +103,19 @@ test('seasons render from the API read', async () => {
   });
 
   expect(await screen.findByText('Winter League 2026')).toBeTruthy();
+});
+
+test('a failed seasons load shows the failure, never "No seasons on record"', async () => {
+  global.fetch = mockFetch({ seasonsGetStatus: 500 });
+
+  await act(async () => {
+    render(<WrestlingLeagueManagementPage />);
+  });
+
+  expect(await screen.findByText('Unable to load league seasons.')).toBeTruthy();
+  // The regression this closes: an empty `seasons` array from a failed GET
+  // must never render the same copy an actually-empty roster would.
+  expect(screen.queryByText('No seasons on record')).toBeNull();
 });
 
 test('creating a season posts the form', async () => {

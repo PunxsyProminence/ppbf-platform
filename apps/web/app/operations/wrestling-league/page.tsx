@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import DataState, { dataStatus } from '@/components/DataState';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
@@ -61,6 +62,14 @@ export default function WrestlingLeagueManagementPage() {
   const [seasons, setSeasons] = useState<SeasonRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Distinct from errorMessage on purpose. errorMessage is the shared banner
+  // for every write on this page (create season, change status, add an
+  // event, add a roster athlete) -- gating the season list's DataState on it
+  // would hide an already-loaded roster of seasons the moment an unrelated
+  // "add roster athlete" call failed. seasonsLoadError is only ever set by
+  // the initial GET below, which is the one failure that actually means "the
+  // season list itself has nothing trustworthy to show".
+  const [seasonsLoadError, setSeasonsLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSeasonForm, setShowSeasonForm] = useState(false);
   const [seasonForm, setSeasonForm] = useState({ season_name: '', starts_on: '', ends_on: '' });
@@ -89,12 +98,12 @@ export default function WrestlingLeagueManagementPage() {
     void (async () => {
       try {
         await reloadSeasons(controller.signal);
-        setErrorMessage(null);
+        setSeasonsLoadError(null);
         setLoading(false);
       } catch (error) {
         // An aborted load is the page unmounting, not a failure to report.
         if (controller.signal.aborted) return;
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load league seasons.');
+        setSeasonsLoadError(error instanceof Error ? error.message : 'Unable to load league seasons.');
         setLoading(false);
       }
     })();
@@ -308,19 +317,21 @@ export default function WrestlingLeagueManagementPage() {
               </div>
             )}
 
-            {loading ? (
-              <div className="flex justify-center py-[var(--s7)]">
-                <span className="working">Loading seasons...</span>
-              </div>
-            ) : seasons.length === 0 ? (
-              <div className="mat-leather mt-[var(--s4)] rounded-[var(--r-lg)]">
-                <div className="empty">
-                  <div className="empty-title">No seasons on record</div>
-                  <p className="empty-msg mx-auto">When a league season is planned, it gets filed here.</p>
-                </div>
-              </div>
-            ) : (
-              <ul className="mt-[var(--s4)] space-y-[var(--s3)]">
+            {/* Seasons is a single panel, so it gets one DataState: a failed
+                load and an empty roster must never be allowed to render the
+                same "No seasons on record" copy -- see DataState's doctrine
+                comment, this page's own season list was one of the two real
+                instances of that bug. */}
+            <div className="mt-[var(--s4)]">
+              <DataState
+                status={dataStatus({ loading, error: !!seasonsLoadError, empty: seasons.length === 0 })}
+                loadingLabel="Loading seasons..."
+                errorMessage={seasonsLoadError}
+                errorTitle="Seasons unavailable"
+                emptyTitle="No seasons on record"
+                emptyMessage="When a league season is planned, it gets filed here."
+              >
+              <ul className="space-y-[var(--s3)]">
                 {seasons.map((season) => {
                   const badge = SEASON_BADGE[season.status] ?? SEASON_BADGE.planned;
                   const selected = season.season_id === selectedSeasonId;
@@ -428,7 +439,8 @@ export default function WrestlingLeagueManagementPage() {
                   );
                 })}
               </ul>
-            )}
+              </DataState>
+            </div>
           </section>
 
           <div className="mt-[var(--s6)]">

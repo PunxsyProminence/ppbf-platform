@@ -64,6 +64,18 @@ test('the empty state appears once loading settles with an empty roster', async 
   await waitFor(() => expect(screen.queryByText(/Loading performance rollup/)).toBeNull());
 });
 
+test('a failed fetch shows the failure, never "No athletes on your roster"', async () => {
+  global.fetch = mockFetch(() => ({ ok: false, status: 500, json: async () => ({}) }) as Response);
+
+  render(<PerformanceAnalyticsPage />);
+
+  await screen.findByText('Failed to load performance analytics: 500');
+  // The regression this closes: the catch block resets `items` to `[]`, and
+  // an unguarded empty check rendered the roster-empty copy right under the
+  // failure banner for the same request.
+  expect(screen.queryByText('No athletes on your roster')).toBeNull();
+});
+
 test('a loaded row shows its numbers and a rising readiness trend', async () => {
   global.fetch = mockFetch(() => okWith([ITEM]));
 
