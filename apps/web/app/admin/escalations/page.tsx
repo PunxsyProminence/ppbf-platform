@@ -8,7 +8,23 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
-type EscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold';
+/* Mirrors SafetyEscalationSourceType in src/server/pilot/escalationLadder.ts.
+   This copy fell three members behind it -- incident, video_scan and
+   compliance_violation are the three newest filers -- and because SOURCE_LABEL
+   below is keyed off this union, the newest escalations rendered an EMPTY Source
+   cell with no fallback. A safety row that does not say where it came from is
+   the one row on this page that has to. Keep both lists in step; the render
+   below now falls back to the raw value rather than blank if they drift again. */
+type EscalationSourceType =
+  | 'near_miss'
+  | 'pain_report'
+  | 'safety_gate_evaluation'
+  | 'repeated_pattern'
+  | 'athlete_voice'
+  | 'training_hold'
+  | 'incident'
+  | 'video_scan'
+  | 'compliance_violation';
 
 interface SafetyEscalation {
   escalation_id: string;
@@ -35,6 +51,9 @@ const SOURCE_LABEL: Record<EscalationSourceType, string> = {
   repeated_pattern: 'Repeated Pattern',
   athlete_voice: 'Athlete Voice',
   training_hold: 'Training Hold',
+  incident: 'Incident Report',
+  video_scan: 'Video Scan',
+  compliance_violation: 'Compliance Violation',
 };
 
 const STATUS_TABS: Array<{ value: EscalationStatus | 'all'; label: string }> = [
@@ -292,7 +311,7 @@ export default function EscalationsPage() {
                         <td className="px-[var(--s4)] py-[var(--s3)]">
                           <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.severity}</span>
                         </td>
-                        <td className="t-body px-[var(--s4)] py-[var(--s3)]">{SOURCE_LABEL[item.source_type]}</td>
+                        <td className="t-body px-[var(--s4)] py-[var(--s3)]">{SOURCE_LABEL[item.source_type] ?? item.source_type}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.athlete_id}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)] max-w-[40ch]">{item.reason}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.created_at)}</td>
