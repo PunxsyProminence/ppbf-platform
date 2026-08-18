@@ -89,6 +89,7 @@ on:
           - library-scope
           - runtime-claims
           - shadow-filter-rate
+          - medical-clearance-coverage
 
 permissions:
   id-token: write
@@ -293,6 +294,7 @@ jobs:
               run_one library-scope       pilot:check-library-scope
               run_one runtime-claims      pilot:check-runtime-claims
               run_one shadow-filter-rate  pilot:check-shadow-filter-rate
+              run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
@@ -304,6 +306,7 @@ jobs:
             library-scope)      run_one library-scope       pilot:check-library-scope ;;
             runtime-claims)     run_one runtime-claims      pilot:check-runtime-claims ;;
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
+            medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
             *)
               echo "::error::Unknown check '$CHECK'."
               exit 1
