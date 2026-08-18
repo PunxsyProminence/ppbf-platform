@@ -130,6 +130,29 @@ They are not competitors and neither is redoing the other.
 If you are a third session: **do not start a third audit.** Read those two and
 pick up something from "Unclaimed" below instead.
 
+### Where the audit stands, for whoever reads this next
+
+Sixteen passes run. **Fifteen wrote reports; pass 14 (role journeys) is being
+re-run after two agent deaths** and is the one known gap. Pass 13 (cross-cutting
+synthesis) is still open and still reserved for the other session.
+
+Three refutation passes have reported or are running. The two that have reported
+produced **six downgrades between them and no retractions**, and — more usefully —
+found four findings whose supporting text carried a factual error, plus two
+findings the passes they were checking had missed entirely. One of those was an
+entry filed under *"checked and found sound"* that was not sound.
+
+**So the operating rule for reading any of this: a "confirmed" row means the quote
+is real, not that the reasoning is sound, and a "sound" row means somebody looked
+once.** Open the file.
+
+Findings already corrected downward on this page, so nobody acts on a stale
+version: the Film Study consent window (HIGH → MEDIUM, and superseded entirely by
+the vision-egress finding above), the claim that no coach surface shows a training
+hold (false — two surfaces do), the claim that `assertShadowAuthority` cannot deny
+anywhere (inert at two of three sites, not three), and this file's whole Postgres
+teardown diagnosis (retracted — almost every link was wrong).
+
 ### Two sessions are working this audit. Here is the split.
 
 **Do not both work the same pass.** The thirteen passes are indexed in
@@ -493,7 +516,7 @@ a writer or a reader.
 
 ---
 
-## Closed — 23, merged
+## Closed — 24, merged
 
 | Gap | Closed by |
 |---|---|
@@ -520,6 +543,7 @@ a writer or a reader.
 | Board had no visibility into league or external competition | #457 |
 | Lapsed membership was invisible at class registration | #458 |
 | Library Q&A knowledge gaps were unreachable from Research Intake | #453 |
+| Document ingest reported "configured" without checking real destinations | #412 |
 
 ## In review — query GitHub, not this file
 
