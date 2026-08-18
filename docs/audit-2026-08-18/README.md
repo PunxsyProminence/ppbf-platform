@@ -84,21 +84,39 @@ separately, not held until the audit finishes.
 Each pass writes its own file in this directory. This table is the index and the
 live status. It is updated when a pass changes state, not at the end.
 
+The list started at thirteen and is now seventeen. The four added — role
+journeys, data egress, the research and evidence machinery, and failure
+behaviour — are not padding; each answers a question none of the original
+thirteen asked. **Pass 15** asks what data about a child leaves the building and
+to whom, which no per-file pass reaches because egress is a property of the whole
+system. **Pass 17** asks whether a safety gate fails closed or fails open, which
+matters more here than whether the gate exists: a gate that throws into a
+permissive default is worse than no gate, because the screen will show it as
+passed. **Pass 14** traces whole journeys rather than pieces, because the
+category that keeps biting this codebase is the seam between two correct
+modules. **Pass 16** audits the machinery by which a claim earns authority, in a
+codebase whose stated principle is that invented authority is worse than an
+admitted gap.
+
 | # | Pass | Scope | Status | Output |
 |---|---|---|---|---|
-| 1 | Authentication & session | Login, magic link, PIN, session issuance, role resolution, `AUTH_CONTRACT.md` conformance | not started | — |
+| 1 | Authentication & session | Login, magic link, PIN, bootstrap key, session issuance and invalidation, `AUTH_CONTRACT.md` conformance | **running** | `PASS-01-authentication.md` |
 | 2 | Authorization & tenancy | `assertActorCanAccessAthlete` and siblings, org scoping, cross-org leakage, role gates across all 228 routes | **done** | `PASS-02-authorization.md` |
 | 3 | Minors' data & consent | Waivers, guardian links, consent scope enforcement, profile visibility, photo/video exposure | not started | — |
 | 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | **done** | `PASS-04-safety-gates.md` |
-| 5 | API surface | All 228 routes: input validation, error-shape conformance, idempotency, rate limiting | not started | — |
-| 6 | Data layer | 88 migrations vs. code expectations, indexes, constraints, orphan/nullable risk, N+1 | not started | — |
-| 7 | Frontend & design system | 125 screens: design-system conformance, fabricated-data disclosure, refusal treatment, dead ends | not started | — |
-| 8 | SHADOW subsystem | Authority model, event model, evidence statistics, measurement gates | not started | — |
-| 9 | Formulas & thresholds | `formulas/registry.ts`, wired vs. unwired, coefficient provenance, youth-safety constants | not started | — |
+| 5 | API surface | All 228 routes: input validation, `jsonError` prefix conformance, idempotency, rate limiting, `hiddenNotFound` | **running** | `PASS-05-api-surface.md` |
+| 6 | Data layer | 88 migrations vs. code, constraints, tenancy columns, policy hiding in DDL, N+1 | **running** | `PASS-06-data-layer.md` |
+| 7 | Frontend & design system | 125 screens + 86 components: fabricated-data disclosure, Law 2 / Law 7 conformance, invented classes, dead ends | **running** | `PASS-07-frontend.md` |
+| 8 | SHADOW subsystem | Authority model specified vs. built, event model, **what actually drives the job processor** | **running** | `PASS-08-shadow.md` |
+| 9 | Formulas & thresholds | Registry status vs. callers, provenance of every constant gating a child's training | **running** | `PASS-09-formulas.md` |
 | 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | **running** | `PASS-10-tests-ci.md` |
-| 11 | Build, infra & secrets | Dockerfiles, deploy config, env handling, secret exposure, `staticwebapp.config.json` | not started | — |
-| 12 | Docs vs. code | 425 docs: claims contradicted by source, superseded files still read as current, stale runbooks | not started | — |
-| 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | not started | — |
+| 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **running** | `PASS-11-infra-secrets.md` |
+| 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **running** | `PASS-12-docs-vs-code.md` |
+| 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | queued, runs last | — |
+| 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB: enrolment, consent withdrawal, placing a hold, competition entry, incident, guardian visibility, coach onboarding | **running** | `PASS-14-flows.md` |
+| 15 | Data egress & integrations | **What data about a child leaves this system, to whom, and what stands between it and the door** — model calls, SAS URLs, email, exports, telemetry, logs | **running** | `PASS-15-egress.md` |
+| 16 | Research, data library & evidence | Source lifecycle, evidence registry, Knowledge Graph, `assessment_protocols`, UI claims vs. implemented hand-offs | **running** | `PASS-16-research-library.md` |
+| 17 | Resilience & failure behaviour | **Does each safety gate fail closed or fail open?** Swallowed errors, permissive defaults, non-transactional multi-step safety writes, retries that double-write | **running** | `PASS-17-resilience.md` |
 
 ## Verification
 
@@ -259,6 +277,13 @@ Appended as work happens. Newest last.
   transaction re-verify. That makes it an outlier, not a house style.
   Two of its findings are owner decisions rather than fixes, and two need
   production access this session does not have.
+- **2026-08-18** — Scope widened from thirteen passes to seventeen, and the work
+  split across two sessions. The split is recorded in `NETWORK_STATUS.md` rather
+  than here, because that is the file both sessions read. Pass 13 (cross-cutting
+  synthesis) is deliberately reserved for the *other* session and runs last: a
+  synthesis written by the session that wrote the passes inherits that session's
+  blind spots, and the whole purpose of a pass hunting defects visible only
+  between passes is that it be a second reading.
 - **2026-08-18** — Pass 2 reported: eight findings, and it was straight about its
   own reach — 228 routes classified mechanically, 31 deep-read, 22 more inspected
   at handler level, **175 not opened**. That sentence is why the pass is usable;
