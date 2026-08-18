@@ -85,10 +85,15 @@ does not assume the whole class is handled:
 - **#433** — `escalationLadder.ts:250-281` absorbs a *sequential* retry via a 30s
   `where not exists`. Two simultaneous requests can still both insert: no partial
   unique index, no idempotency key. The code says so at `:220-227`.
-- **#449** — the route uses `requirePrincipal`, not
+- **#449** — none. An earlier draft of this file recorded a residual here: that
+  the route uses `requirePrincipal` rather than
   `requireMicrosoftAuthenticatedPrincipal`, so a PIN-issued `platform_owner`
-  session passes. Identical to its four sibling cross-org routes, so this is a
-  platform-wide pre-existing gap, not a regression from #449.
+  session would pass. **That was wrong.** All five cross-org routes do use
+  `requirePrincipal`, but `credentialPolicy` makes `platform_owner`
+  Microsoft-only, PIN login refuses the role outright, and `resolvePrincipal`
+  revokes live `ppbf_local` privileged sessions. The guarantee is held by the
+  session layer rather than restated at each route guard, which is why reading
+  the route alone suggests a hole that is not there.
 
 ---
 
@@ -180,8 +185,10 @@ Pattern/Finding can never populate (`shadowReadModels.ts:487-490`) · volunteer
 
 Ranked. Each was checked against code.
 
-1. `docs/current/AUTH_CONTRACT.md:12` and `ORGANIZATION_ROLE_MODEL.md:165`
-   present cross-organization authorization as role-only. #449 added a second
+1. `AUTH_CONTRACT.md:12` and `ORGANIZATION_ROLE_MODEL.md:165` (both at repo
+   root, not under `docs/current/`) present cross-organization authorization as
+   role-only. **Now fixed** — both name the flag, who may grant it, what refuses
+   it, and that revoke is immediate because the read is live. #449 added a second
    dimension: `has_master_shadow_access`, read live at `auth.ts:329` and granting
    every organization's data at
    `app/api/pilot/shadow/research-bridge/session-export/route.ts:65`. Anyone
