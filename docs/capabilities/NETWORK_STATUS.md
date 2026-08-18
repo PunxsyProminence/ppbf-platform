@@ -5,9 +5,37 @@ Written for an agent picking up work who needs to know what is already done,
 already in review, or deliberately parked — before spending an afternoon on
 something that merged this morning.
 
-**Status as of `origin/main` at `04dd116b`, 2026-08-17 23:30 UTC.** This file
+**Status as of `origin/main` at `88c0c94b`, 2026-08-18 08:56 UTC.** This file
 carries the commit it was written against because it will go stale. Check
 `git log` and the open PR list before trusting any row.
+
+**UPDATE 2026-08-18 08:56 UTC — seven of the nine batch fixes are now merged
+to `main`, one at a time, re-verifying `mergeable_state`/CI fresh immediately
+before each merge (never in parallel — see "two things this exercise
+taught" below for why):** #465, #466, #468, #469, #470, #471, #472. See
+`git log --oneline -10 origin/main` for the squash commits.
+
+**Still open, do not duplicate:**
+- **#473** (medical-status authority + expiry) — was `mergeable_state:
+  blocked` with checks in progress at last check. Copilot then found two more
+  real issues in a fresh review round, both fixed and pushed in a follow-up
+  commit: (1) `setMedicalAdministrativeStatus` now translates the
+  `expires_at`-vs-`effective_at` CHECK violation into a 400 instead of
+  leaking a raw 500 — real race, since `parseExpiresAt` checks JS
+  `Date.now()` before `assertShadowAuthority` and the INSERT run, so a
+  couple of seconds' gap (latency, clock skew) is enough for a validly-parsed
+  expiry to lapse before the row lands; (2) the migration runner's
+  `READINESS_QUERY` now uses `to_regclass()` for `constraint_ready` instead
+  of a `::regclass` cast, matching `status_table_ready` — confirmed this one
+  is not reachable via the runner's actual call order (the migration's own
+  `alter table` already guarantees the table exists before this query runs),
+  fixed anyway for internal consistency, said so on the thread. Both threads
+  resolved. CI needs to re-run against the new commit before this is
+  mergeable — check fresh, do not assume the earlier "blocked" state still
+  applies.
+- **#467** (training-hold place/lift control) — stays **draft** per the
+  visual-review convention. Do not mark ready or merge without explicit
+  separate instruction.
 
 There is a visual version of this at
 `https://claude.ai/code/artifact/adc821bb-d309-485a-9ff3-db3e830d4e24`. It is
@@ -168,9 +196,11 @@ neutralized in place → exactly 13 tests go red, nothing else. Full suite
 6251/6251, migration ceremony (SQL + runner + npm script + workflow +
 coverage guard) complete.
 
-**All nine fixes from this batch are now open: #465–#473.** Every review
-comment received so far has been addressed and its thread resolved. Nothing
-merged — all nine are yours to review.
+**All nine fixes from this batch opened as #465–#473.** Every review comment
+received so far has been addressed and its thread resolved. **Seven are now
+merged to `main`** (#465, #466, #468, #469, #470, #471, #472) — see the
+update note at the top of this file. #473 has one more round of Copilot
+fixes pushed and needs fresh CI; #467 stays draft per convention.
 
 ### RESOLVED — a guardian could permanently see "blocked" for a cleared child: PR #472
 
@@ -755,10 +785,17 @@ a writer or a reader.
 
 ---
 
-## Closed — 24, merged
+## Closed — 31, merged
 
 | Gap | Closed by |
 |---|---|
+| The video content screen sent frames to a vision model with no guardian consent check | #465 |
+| `upsertGuardian` nulled `account_id`/`phone`/`email` on an omitted field | #466 |
+| Deleting two contact safety gates from the observations route would leave the suite green (coverage gap) | #468 |
+| Any coach could read the whole gym's safety queue and clear another child's concussion flag | #469 |
+| Four routes returned a SAS URL (a bearer credential) with no `Cache-Control: no-store` | #470 |
+| Coach roster read `pilot.athletes` without excluding soft-deleted (withdrawn) rows | #471 |
+| The competition training-hold gate recorded every refusal and no clearance, ever | #472 |
 | Film Study analysis ran with no guardian consent check on the footage | #438 |
 | A blocked/infected video scan never filed a safety escalation | #439 |
 | Competition losses stranded on their own page, never reaching progression | #442 |
