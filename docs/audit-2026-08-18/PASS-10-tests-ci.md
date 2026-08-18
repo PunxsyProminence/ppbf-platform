@@ -237,7 +237,7 @@ Every assertion is a tautology over a literal the test itself just wrote:
 The module's real retention window is not a `retentionDays` constant at all —
 it is SQL:
 
-`dataDeletion.ts:208-213`:
+`dataDeletion.ts:209-214`:
 
 > ```
 >     const athleteDelete = await client.query(
@@ -601,9 +601,15 @@ so both gates return at `isContactObservation` before doing anything observable.
 3. *Does the module test cover the wiring?* No. `trainingHolds.pg.test.ts:320`
    calls `flagContactDuringHold` directly. That proves the function works; it
    cannot notice that the route stopped calling it.
-4. *Would `lint` or `typecheck` catch removal?* No. Removing the calls **and**
-   their imports (`route.ts:4-5`) leaves both clean — verified by running both;
-   the current warnings are all pre-existing unused-variable noise elsewhere.
+4. *Would `lint` or `typecheck` catch removal?* No. Removing the calls alone
+   would leave `flagContactWithoutClearance` and `flagContactDuringHold` as
+   unused imports at `route.ts:4-5`, which `@typescript-eslint/no-unused-vars`
+   reports as a **warning**, not an error — `npm run lint` currently exits 0 with
+   eleven such warnings, so the build would still pass. Removing the imports as
+   well leaves nothing at all to report. I did not modify the file to prove this
+   (this pass is read-only); the claim rests on the observed lint contract —
+   `✖ 11 problems (0 errors, 11 warnings)` — and on the absence of any test that
+   loads the route.
 
 **Consequence.** An agent refactoring this route — for instance to move the
 gates after the store, or to make them non-blocking, or simply deleting a block
@@ -666,7 +672,7 @@ corroboration, not coincidence.
 `apps/web/package.json:90` is a single line joining 94 npm scripts with `&&`:
 
 > ```
->     "test:migrations": "npm run test:migrations:session && npm run test:migrations:library && npm run test:migrations:library-coverage && … && npm run test:migrations:one-percent-club",
+>     "test:migrations": "npm run test:migrations:session && npm run test:migrations:library && npm run test:migrations:library-coverage && [90 further `&& npm run test:migrations:*` entries elided] && npm run test:migrations:one-percent-club",
 > ```
 
 `&&` short-circuits. The first suite to exit non-zero — for any reason,
@@ -693,7 +699,7 @@ distinguishes them.
 
 Quoted in full under *Tests that pin nothing* §2. Every assertion is over a
 literal the test itself constructed. The module's two authorization guards
-(`dataDeletion.ts:35`, `:122`) and its retention SQL (`:208-213`) are untouched.
+(`dataDeletion.ts:35`, `:122`) and its retention SQL (`:209-214`) are untouched.
 
 **Refutation attempted, and partly successful.** The *route*-level gate is
 genuinely covered: `app/api/pilot/admin/data-deletion/route.test.ts:53-62`
@@ -783,10 +789,18 @@ told these two fixtures are part of the change.
 Measured: 89 route directories have no sibling `*.test.ts`; of those, 70 are
 imported by no test file anywhere in the tree. Two matter for safety:
 
-- `app/api/pilot/shadow/medical-status/route.ts` — the route that **sets** the
-  medical administrative status `contactClearanceGate` reads. Its role gate is
-  `requireRole(principal, [...SHADOW_PHI_ROLES]);` at `:27` and `:57`, with the
-  comment "*organization-private health information and platform_owner must never*".
+- `app/api/pilot/shadow/medical-status/route.ts` — the route that reads and
+  **sets** the medical administrative status `contactClearanceGate` reads. Its
+  role gate is at `:27` (GET) and `:57` (PUT):
+
+  `medical-status/route.ts:24-27`:
+
+  > ```
+  >     // SHADOW_PHI_ROLES, not the projection read set: medical clearance is
+  >     // organization-private health information and platform_owner must never
+  >     // reach it. See shadowRoleSets.ts for why Omega is narrower here, not wider.
+  >     requireRole(principal, [...SHADOW_PHI_ROLES]);
+  > ```
 - `app/api/pilot/auth/activate/route.ts` — account activation, the PIN entry
   point.
 
@@ -857,7 +871,7 @@ fail loudly until it is.
 `ci.yml:23` and `research-bridge-ci.yml`'s jobs block both declare `validate`.
 `research-bridge-ci.yml` runs only on paths under `apps/research-bridge/**`
 (plus the two lockfile/manifest files and itself), so on most PRs it produces no
-check at all. `ci.yml:16-19`'s own comment refers to "*the branch protection's
+check at all. `ci.yml:15-19`'s own comment refers to "*the branch protection's
 required `validate` context*". Whether the required context resolves
 unambiguously is a repository setting I could not read (see below); it is worth a
 human glancing at the required-checks list once.
@@ -917,7 +931,7 @@ human glancing at the required-checks list once.
   thin adapters whose contract *is* "forward to the canonical route with the
   organization scope stripped", and mocking the downstream route is the right way
   to assert that. Not fake tests.
-- **CI's ordering comments are load-bearing and correct.** `ci.yml:16-19`
+- **CI's ordering comments are load-bearing and correct.** `ci.yml:15-19`
   explains why `cancel-in-progress` is PR-only ("*a cancelled check reads as
   'never validated'*"). `run-checks.yml`'s header explains why it has no
   `confirm_target` where `apply-migrations.yml` does ("*These scripts cannot

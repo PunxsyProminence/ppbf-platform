@@ -127,7 +127,7 @@ described.
 | Pass | Verification | Status |
 |---|---|---|
 | 2 — Authorization | spot-checked by hand (below); full refutation pass not yet run | partial |
-| 3 — Minors' data & consent | `VERIFY-03-minors-consent.md` | **running** |
+| 3 — Minors' data & consent | `VERIFY-03-minors-consent.md` | **done — 4 downgraded, 0 retracted** |
 | 4 — Safety gates | `VERIFY-04-safety-gates.md` | **done — 2 downgraded, 1 narrowed, 1 corrected, 0 retracted** |
 
 The refutation passes are instructed to assume each finding is wrong until the
@@ -198,19 +198,73 @@ partial by definition rather than final.
 | F-10 | MEDIUM | `assertShadowAuthority` is inert at **two of its three** call sites | 4 | New — **the original "all three" headline was falsified on verification; see below** |
 | F-24 | MEDIUM | `automation_mode` is unvalidated at two of three SHADOW call sites with no column CHECK, so the single working denial branch is evadable by sending `"Automatic"` instead of `"automatic"` | verify-4 | **New — found by the refutation pass, not the pass it was verifying** |
 | F-25 | LOW | `/coach/progression-intelligence` is a second coach-facing hold reader that pass 4 did not list | verify-4 | New — found by the refutation pass |
-| F-11 | HIGH | Film Study checks guardian consent at enqueue and never again; the async job re-validates only the actor's role, then reads the child's video by blob path. A guardian can withdraw consent, be truthfully told published media was retracted, and have frames of their child sent to an external vision service afterwards | 3 | New — **the most important finding of this audit so far** |
+| F-26 | HIGH | `profile/roster` does not filter `athletes.deleted_at`, so a withdrawn child stays on the live coach roster — name, date of birth and portrait — for the whole retention window | verify-3 | **New — found by the refutation pass, not the pass it was verifying** |
+| F-27 | MEDIUM | The unauthenticated gym wall was filed as sound on the premise that `wall_display_full_name` has no writer. `waiver_type` has no database constraint and `domain-upsert` writes it verbatim from the body, so a coach can mint that exact row; `signed_by_role` is self-declared text, defeating the guardian-signer check. The only real brake is an unset environment flag | verify-3 | **New — a "checked and found sound" entry that was not sound** |
+| F-11 | ~~HIGH~~ **MEDIUM** | Film Study checks guardian consent at enqueue and never again, and the withdrawal sweep cancels no running job | 3 | **Overstated. I called this the most important finding of the audit and that was wrong — see below** |
 | F-12 | HIGH | Consent scope is collected and presented to guardians as control but enforced by nothing, with `covers_video` defaulting `true` in three places including on every non-media waiver row | 3 | Known as an MVP cut; the default and its breadth are new |
 | F-13 | HIGH | A coach can silently overwrite an existing guardian's `pilot.parents` binding, severing a real parent from their own child's consent withdrawal | 3 | New — **owner decision, narrows a role gate** |
-| F-14 | HIGH | 60-minute unaudited SAS bearer URLs to minors' video, minted in bulk | 3 | New |
-| F-15 | HIGH | A hard-deleted athlete record silently reclassifies a surviving account from minor to staff, releasing the portrait to every coach and admin | 3 | New |
+| F-14 | ~~HIGH~~ **MEDIUM** | 60-minute unaudited SAS bearer URLs to minors' video, minted in bulk | 3 | Downgraded on verification |
+| F-15 | ~~HIGH~~ **MEDIUM** | A hard-deleted athlete record silently reclassifies a surviving account from minor to staff | 3 | Chain held link-for-link; the *consequence* failed — every athlete-derived listing reads `pilot.athletes`, so the ghost account disappears from all of them |
 | F-16 | MEDIUM | The waiver-status console and the media gate disagree about the same child, in the over-confident direction | 3 | New |
 | F-17 | MEDIUM | `DATA_RETENTION.md` promises per-category deletion of photos, videos, medical records and waivers that no code performs; no blob byte is ever deleted | 3 | New |
-| F-18 | MEDIUM | A second unguarded copy of the destructive purge exists with zero callers | 3 | New |
+| F-18 | ~~MEDIUM~~ **LOW** | A second unguarded copy of the destructive purge exists with zero callers | 3 | Downgraded on verification |
 | F-19 | LOW | `deleteAthleteRecord`'s JSDoc claims it marks photos and videos for deletion; it sets one column | 3 | New |
 | F-20 | **CRITICAL** | `/api/pilot/safety-flags` gives any coach the whole gym's open safety queue and lets them raise or **bypass** a flag on any child, with no athlete-scope check at the route or in `resolveSafetyFlag` | 2 | New — **severity raised from the pass's own HIGH; see below** |
 | F-21 | HIGH | A coach can overwrite another family's guardian record — `upsertGuardian`'s `on conflict … do update` rewrites `account_id`, phone and email, and repointing `account_id` hands a chosen account guardian reach over every child that record carries, siblings included | 2 | New extension of the escalated `parent_id` finding |
 | F-22 | MEDIUM | `multidiscipline` and `competence-cohorts` call `requireRole(principal, ['coach','admin'])`, which is exact-match, so every provisioned `organization_admin` gets a 403 on a child's grappling-exposure history. Tests miss it because they drive the legacy `'admin'` value | 2 | New |
 | F-23 | MEDIUM | `DELETE /api/pilot/achievements/mentorships` authorizes only the mentor side, and does so *after* `endMentorship` has committed its UPDATE — an unauthorized coach closes the pairing and then receives the 403 | 2 | New |
+
+### What the pass-3 refutation changed, including the finding I led with
+
+**Four downgrades, zero retractions, and every re-extracted quote was
+character-exact at its cited line.** Nothing was fabricated. What broke was
+reasoning and reach — which is the more common failure and the harder one to
+catch.
+
+**The Film Study finding was overstated, and I led with it.** I called it "the
+most important finding of this audit so far" and described a guardian
+withdrawing consent and having frames of their child sent to an external service
+afterwards. Three sub-claims fail:
+
+1. *"The executor re-validates only the actor's role."* False.
+   `shadowJobProcessor.ts:172-178` re-loads the actor from the live database and
+   re-runs `assertActorCanAccessAthlete` on the subject athlete.
+2. *"Could not establish what drives the queue."* **The repository answers it.**
+   `instrumentation.ts:31-39` starts an in-process drain loop, and
+   `.github/workflows/deploy-production.yml:437` sets
+   `PPBF_SHADOW_WORKER_ENABLED=true`. I had promoted this to one of the three
+   questions I most wanted answered, and it was answerable from the tree the
+   whole time.
+3. Consequently the race window is **~30 seconds** (`shadowJobWorker.ts:20`),
+   hard-capped at 24h by `expires_at` (`pilot_slice_postgres.sql:1000`) — not the
+   "enqueued in the afternoon, runs in the evening" story I told.
+
+The core gap survives and is still worth fixing: there are zero consent
+references anywhere in the job path, and the withdrawal sweep genuinely cancels
+nothing — `cancelJobForActor`'s only caller is a user-driven DELETE. But a
+30-second window with a live access re-check is a different animal from what I
+reported. **HIGH → MEDIUM.**
+
+**What held, and got worse in the holding.** The `covers_video` sub-claim I told
+the pass to attack hardest survived: `domain-upsert/route.ts:90-100` omits
+`coversVideo`, and `upsertWaiver` is the only production insert into
+`pilot.waivers`. One correction, and it cuts against us — the DDL default is
+unreachable at runtime, but **it backfilled every pre-existing row**. That is
+worse than a live default, not better.
+
+**The most valuable thing this pass produced was not a verdict.** It found an
+entry pass 3 had filed under *"checked and found sound"* that was not sound: the
+unauthenticated gym wall, cleared on the premise that `wall_display_full_name`
+has no writer. `waiver_type` has no database constraint
+(`pilot_slice_postgres.sql:413`) and `domain-upsert` writes it verbatim from the
+request body, so a coach can mint exactly that row — and `signed_by_role` is
+self-declared text, which defeats `wallDisplay.ts`'s guardian-signer check. The
+only real brake is an unset environment flag. **A false "sound" is more
+dangerous than a false finding**, because nobody re-reads it.
+
+It also found that `profile/roster` does not filter `athletes.deleted_at`, so a
+withdrawn child remains on the live coach roster — name, date of birth, portrait
+— for the entire retention window.
 
 ### What the pass-4 refutation changed, including two things I told the owner that were wrong
 
