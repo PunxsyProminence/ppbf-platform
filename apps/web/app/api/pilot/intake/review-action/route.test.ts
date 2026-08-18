@@ -5,6 +5,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
+import { upsertAthlete } from '@/src/server/pilot/entities';
 import { createReadiness, getIntakeCaseById } from '@/src/server/pilot/intake';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
@@ -64,6 +65,7 @@ const mockCreateResearchRequirement = createShadowResearchRequirement as jest.Mo
   typeof createShadowResearchRequirement
 >;
 const mockCreateReadiness = createReadiness as jest.MockedFunction<typeof createReadiness>;
+const mockUpsertAthlete = upsertAthlete as jest.MockedFunction<typeof upsertAthlete>;
 
 function principal(): PilotPrincipal {
   return {
@@ -302,6 +304,34 @@ describe('promotion readiness is validated before it reaches pilot.readiness', (
 
     expect(response.status).toBe(400);
     expect(String(payload.error)).toMatch(/Unsupported promotion\.readiness\.score/);
+    expect(mockCreateReadiness).not.toHaveBeenCalled();
+  });
+
+  test('a missing readiness score is refused the same way, not silently skipped', async () => {
+    const response = await POST(
+      readinessPromoteRequest({ category: 'general', measured_at: '2026-08-17T12:00:00Z' }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(String(payload.error)).toMatch(/Unsupported promotion\.readiness\.score/);
+    expect(mockCreateReadiness).not.toHaveBeenCalled();
+  });
+
+  // The finding this pins: requireFiniteNumber used to run only at the
+  // createReadiness call, after upsertAthlete and every other promotion
+  // write had already committed -- so an invalid score returned a clean 400
+  // that looked like nothing had happened, while most of the promotion had.
+  // A caller who fixed the score and resubmitted would then re-run every
+  // earlier write, duplicating the insert-only assessment/attendance rows
+  // (Codex review, PR #423). Validation now runs before the first write.
+  test('an invalid readiness score is refused before the athlete write, not after it', async () => {
+    const response = await POST(
+      readinessPromoteRequest({ score: 'high', category: 'general', measured_at: '2026-08-17T12:00:00Z' }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
     expect(mockCreateReadiness).not.toHaveBeenCalled();
   });
 });

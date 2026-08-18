@@ -32,11 +32,16 @@ function asString(value: unknown, fallback = ''): string {
 // missing reading must stay missing, not become a fabricated alarm.
 function requireFiniteNumber(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    // "Unsupported" is jsonError's recognized prefix for a present-but-invalid
-    // value (see "Unsupported guardian.pin" elsewhere) -- anything else falls
-    // into the generic 500 branch, which scrubs the message and would hide a
-    // legitimate validation refusal behind an opaque server error.
-    throw new Error(`Unsupported ${field}: must be a number`);
+    // "Unsupported" is jsonError's recognized prefix for a client-supplied
+    // field that is missing, wrong-typed, or otherwise invalid (see
+    // "Unsupported guardian.pin" elsewhere) -- anything else falls into the
+    // generic 500 branch, which scrubs the message and would hide a
+    // legitimate validation refusal behind an opaque server error. The
+    // message names both failure modes this guard actually rejects --
+    // missing/wrong-typed and non-finite (NaN, Infinity) -- since "must be a
+    // number" alone reads as though only the type was checked (Copilot
+    // review, PR #423).
+    throw new Error(`Unsupported ${field}: must be a finite number, and cannot be missing`);
   }
   return value;
 }
