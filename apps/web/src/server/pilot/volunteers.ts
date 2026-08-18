@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 
 import { query, queryOne } from './db';
+import { BOARD_MINIMUM_COHORT_SIZE, boardCountMetric, type BoardCountMetric } from './boardSummary';
 
 export const VOLUNTEER_STATUSES = ['active', 'pending', 'inactive'] as const;
 export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
@@ -166,4 +167,75 @@ export async function updateVolunteerStatus(input: {
   );
 
   return rows.length > 0;
+}
+
+export interface BoardVolunteerSummary {
+  scope: 'organization_aggregate';
+  minimumCohortSize: number;
+  generatedAt: string;
+  volunteersByStatus: {
+    active: BoardCountMetric;
+    pending: BoardCountMetric;
+    inactive: BoardCountMetric;
+  };
+  newVolunteers30Days: BoardCountMetric;
+}
+
+interface BoardVolunteerSummaryRow {
+  active_count: number;
+  pending_count: number;
+  inactive_count: number;
+  new_count: number;
+}
+
+/**
+ * Board's ONLY window into the volunteer roster -- count-only and
+ * k-anonymity-gated exactly like every other board aggregate (see
+ * boardSummary.ts's own metrics and escalationLadder.ts's
+ * getBoardEscalationSummary, which this mirrors). Board never reads a
+ * pilot.volunteers row directly: no volunteer_id, no account_id, no
+ * full_name, no role_focus, no certification_status or
+ * background_check_status, no notes -- only how many volunteers sit in each
+ * status bucket and how many joined in the last 30 days.
+ *
+ * Each bucket counts volunteers directly rather than events attached to a
+ * volunteer (unlike sessions/goals/reviews in boardSummary.ts, one
+ * pilot.volunteers row IS one volunteer), so the record count and the
+ * cohort/participant count boardCountMetric gates on are the same number
+ * here. That makes this the same shape as boardSummary.ts's activeAthletes
+ * metric, not the rate-metric shape used for sessions or coach reviews: a
+ * bucket with 1-4 volunteers reports 'insufficient_data' rather than a small
+ * real number, and an empty bucket reports 'unavailable' rather than a
+ * measured zero, identical to every other board count.
+ */
+export async function getBoardVolunteerSummary(organizationId: string): Promise<BoardVolunteerSummary> {
+  const row = await queryOne<BoardVolunteerSummaryRow>(
+    `select
+       count(*) filter (where status = 'active')::int as active_count,
+       count(*) filter (where status = 'pending')::int as pending_count,
+       count(*) filter (where status = 'inactive')::int as inactive_count,
+       count(*) filter (where created_at >= now() - interval '30 days')::int as new_count
+     from pilot.volunteers
+     where organization_id = $1`,
+    [organizationId],
+  );
+
+  const safe = row ?? {
+    active_count: 0,
+    pending_count: 0,
+    inactive_count: 0,
+    new_count: 0,
+  };
+
+  return {
+    scope: 'organization_aggregate',
+    minimumCohortSize: BOARD_MINIMUM_COHORT_SIZE,
+    generatedAt: new Date().toISOString(),
+    volunteersByStatus: {
+      active: boardCountMetric(safe.active_count, safe.active_count),
+      pending: boardCountMetric(safe.pending_count, safe.pending_count),
+      inactive: boardCountMetric(safe.inactive_count, safe.inactive_count),
+    },
+    newVolunteers30Days: boardCountMetric(safe.new_count, safe.new_count),
+  };
 }
