@@ -60,7 +60,7 @@ export interface PrintSheetProps {
 }
 
 export const GYM_NAME = 'Punxsy Prominence Boxing & Fitness';
-export const GYM_ADDRESS = '204 Pennsylvania Ave, Big Run, PA 15715';
+export const GYM_ADDRESS = '220 N Jefferson St, Punxsutawney, PA 15767';
 
 export default function PrintSheet({ eyebrow, title, footNote, children, className = '' }: PrintSheetProps) {
   return (

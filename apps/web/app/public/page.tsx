@@ -1,12 +1,124 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import PhotoSlot from '@/components/PhotoSlot';
 import ShadowChatButton from '@/components/ShadowChatButton';
+import SignInPanel from '@/components/SignInPanel';
 import { readRoleSession, subscribeRoleSession } from '@/components/roleSession';
 import { GYM_STAFF_CARDS, gymPhotoSlotsFor, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
+
+/**
+ * THE SIGN-IN POPOVER -- owner decision 2026-08-16: /public stays the front
+ * door (story first, sign-in secondary) and signing in becomes a panel on
+ * this same page rather than a trip to another one. Structurally identical to
+ * CommandsOverlay (components/CommandsOverlay.tsx): full-screen backdrop,
+ * Escape closes, focus returns to whatever opened it. That pattern already
+ * exists and works, so it is reused rather than a new one invented.
+ */
+function SignInOverlay({ onClose }: { onClose: () => void }) {
+  const restoreRef = useRef<HTMLElement | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Read inside the effect via a ref rather than adding `onClose` to the
+  // dependency array: this codebase's one caller passes a useCallback'd,
+  // referentially stable close function, so behavior is identical either
+  // way today, but the ref form stays correct even if a future caller
+  // doesn't memoize -- the mount/focus-restore logic below runs exactly
+  // once regardless, and Escape/Tab always call the latest onClose rather
+  // than a version closed over one render ago (review comment, PR #417).
+  const onCloseRef = useRef(onClose);
+  // Ref writes during render are unsafe under concurrent rendering (a
+  // component can render more than once without committing), so the sync
+  // runs in its own no-deps effect -- after every commit -- rather than
+  // inline in the function body.
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    restoreRef.current = document.activeElement as HTMLElement;
+    panelRef.current?.focus();
+
+    function focusableElements(): HTMLElement[] {
+      const panel = panelRef.current;
+      if (!panel) return [];
+      return Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
+    }
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      // Without this, Tab past the last control (or Shift+Tab past the
+      // first) lands focus on the still-interactive page underneath --
+      // visually hidden by the backdrop, so a keyboard user operates
+      // controls they cannot see (Codex review, PR #417). Queried live on
+      // every Tab rather than once on mount: which fields exist changes
+      // with the selected sign-in method (Microsoft / email link / PIN).
+      if (e.key === 'Tab') {
+        const focusable = focusableElements();
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      restoreRef.current?.focus?.();
+    };
+  }, []);
+
+  return (
+    <div
+      className="ppbf fixed inset-0 z-[210] flex items-start justify-center overflow-y-auto px-4 py-8 sm:items-center"
+      role="presentation"
+    >
+      {/* The actual close-on-backdrop-click target. This div has no
+          children, so any mousedown that lands on it IS the backdrop --
+          unlike the old handler on the outer flex container, which this
+          div fully covers, so its own e.target could never equal
+          e.currentTarget and a backdrop click silently did nothing
+          (Codex + Copilot review, PR #417).
+
+          Warm wash, not black: rgba(31,20,9) is --wood-900 ("frame shadow,
+          deepest recess") rather than a generic near-black scrim, so the
+          page dims toward the same warm register as the ground behind it
+          instead of reading as a different, colder surface stacked on top. */}
+      <div
+        className="absolute inset-0 bg-[rgba(31,20,9,.6)]"
+        onMouseDown={onClose}
+      />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Sign in"
+        tabIndex={-1}
+        className="relative w-full max-w-[720px]"
+      >
+        <Suspense fallback={null}>
+          <SignInPanel embedded onClose={onClose} />
+        </Suspense>
+      </div>
+    </div>
+  );
+}
 
 type VisitorType =
   | 'Athlete / Participant'
@@ -262,6 +374,8 @@ export default function PublicPortalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
   const [telemetryTraces, setTelemetryTraces] = useState<TelemetryTrace[]>([]);
+  const [showSignIn, setShowSignIn] = useState(false);
+  const closeSignIn = useCallback(() => setShowSignIn(false), []);
 
   useEffect(() => {
     const syncRole = () => {
@@ -334,7 +448,7 @@ export default function PublicPortalPage() {
         setConfirmation(
           payload.error
           || 'Something went wrong sending this and it did not go through. Try again, or just come by: '
-          + '204 Pennsylvania Ave, Big Run, PA 15715.',
+          + '220 N Jefferson St, Punxsutawney, PA 15767.',
         );
         return;
       }
@@ -349,7 +463,7 @@ export default function PublicPortalPage() {
     } catch {
       setConfirmation(
         'The connection dropped and this was not sent. Try again, or just come by: '
-        + '204 Pennsylvania Ave, Big Run, PA 15715.',
+        + '220 N Jefferson St, Punxsutawney, PA 15767.',
       );
     } finally {
       setSubmitting(false);
@@ -364,9 +478,9 @@ export default function PublicPortalPage() {
             <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">PUNXSY PROMINENCE BOXING &amp; FITNESS</p>
             <h1 className="font-display text-4xl tracking-tight text-[color:var(--hide-950)] md:text-5xl">A boxing gym for kids, for adults, and for anyone who just wants to get in shape.</h1>
             <p className="max-w-4xl text-sm leading-7 text-[color:var(--hide-800)] md:text-base">
-              We are a nonprofit gym in Big Run, Pennsylvania. Some people here are training to compete. Most are not.
-              Kids come for coaching and for adults who notice how their week is going, and kids train free. Adults come
-              to learn to box, or to work the bags hard and never get hit once. All of it counts as training here.
+              We are a nonprofit gym in Punxsutawney, Pennsylvania. Some people here are training to compete. Most are
+              not. Kids come for coaching and for adults who notice how their week is going, and kids train free. Adults
+              come to learn to box, or to work the bags hard and never get hit once. All of it counts as training here.
             </p>
             <p className="max-w-4xl text-sm leading-7 text-[color:var(--hide-800)] md:text-base">
               Nothing on this page signs you up for anything. Read what we run, and if something sounds like you, tell us
@@ -374,12 +488,19 @@ export default function PublicPortalPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/login"
+            {/* Opens the sign-in popover in place -- owner decision
+                2026-08-16: signing in is a panel on this page, not a trip
+                to another one. /login still exists as its own address for
+                anyone who bookmarked it or was redirected there with an
+                error to explain, so nothing else depends on this button
+                navigating anywhere. */}
+            <button
+              type="button"
+              onClick={() => setShowSignIn(true)}
               className="btn"
             >
               Member Login
-            </Link>
+            </button>
             {/* Members only: SHADOW requires an authenticated session, and this
                 button sends signed-out visitors to /login. The label says so
                 rather than advertising a public chat surface that does not exist. */}
@@ -394,7 +515,7 @@ export default function PublicPortalPage() {
                 not prose. It also replaces a "Status: ready" chip that told a
                 nervous parent nothing and told them it in machine language. */}
             <div className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper px-4 py-3 text-xs font-mono text-[color:var(--hide-950)] shadow-[var(--shadow-sm)]">
-              204 Pennsylvania Ave, Big Run, PA 15715
+              220 N Jefferson St, Punxsutawney, PA 15767
             </div>
           </div>
         </header>
@@ -423,8 +544,11 @@ export default function PublicPortalPage() {
               >
                 Open Admin Workspace
               </Link>
+              {/* Was pointed at /login, which cannot manage anything --
+                  /notices is the real announcement read/write/update
+                  surface, already gated to admin/coach/platform_owner/board. */}
               <Link
-                href="/login"
+                href="/notices"
                 className="btn btn--ghost"
               >
                 Manage Announcements
@@ -525,8 +649,8 @@ export default function PublicPortalPage() {
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT THIS PAGE IS</h2>
           <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             This is the front door: what we run, who it is for, and a way to reach a person. It does not log you into
-            anything and it does not put you in a system. If you would rather do this in person, the gym is at 204
-            Pennsylvania Ave in Big Run and you are welcome to come watch a session before you decide anything.
+            anything and it does not put you in a system. If you would rather do this in person, the gym is at 220 N
+            Jefferson St in Punxsutawney and you are welcome to come watch a session before you decide anything.
           </p>
         </section>
 
@@ -544,15 +668,29 @@ export default function PublicPortalPage() {
               // landed at 1.43:1 and its title at 1.68:1, so selecting a
               // pathway made the card unreadable. --paper-2 is the actual
               // "canvas, one shade down" and keeps the copy at ink contrast.
+              //
+              // Selected also takes .lift-1 ("paper on a wall") so picking a
+              // pathway reads as physically choosing a card off the board,
+              // not just recoloring a border.
               const selected = selectedPath === path.visitorType;
               return (
-                <article key={path.title} className={`border-2 p-4 ${selected ? 'border-[color:var(--brass-600)] mat-paper' : 'border-[color:rgba(107,78,18,.28)] mat-paper'}`}>
+                <article
+                  key={path.title}
+                  className={`border-2 p-4 ${selected ? 'lift-1 border-[color:var(--brass-600)] mat-paper' : 'border-[color:rgba(107,78,18,.28)] mat-paper'}`}
+                >
                   <p className="text-[length:var(--t-md)] font-bold text-[color:var(--hide-950)]">{path.title}</p>
                   <p className="mt-2 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]">{path.description}</p>
                   <button
                     type="button"
                     onClick={() => selectPath(path.visitorType)}
-                    className="mt-3 min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-3 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--red-highlight)]"
+                    /* --red-highlight resolves to --restricted (design-system/ppbf.css),
+                       the color reserved for a gate refusing something -- Law 2's whole
+                       point is that a saturated status color never means anything else.
+                       Choosing "this is me" is the opposite of a refusal, so the hover
+                       had been borrowing the wrong law. --brass-600 is a real hover
+                       state -- a face two shades lighter than the button's rest state --
+                       not a status color at all. */
+                    className="mt-3 min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-3 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--brass-600)]"
                   >
                     That is me
                   </button>
@@ -686,7 +824,10 @@ export default function PublicPortalPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-60"
+              // Same fix as the pathway buttons above: --red-highlight is the
+              // safety-gate refusal color, not a hover state for sending an
+              // ordinary, welcome form.
+              className="min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--brass-600)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? 'Sending...' : 'Send this to a coach'}
             </button>
@@ -818,6 +959,7 @@ export default function PublicPortalPage() {
         </section>
         </div>
       </div>
+      {showSignIn && <SignInOverlay onClose={closeSignIn} />}
     </main>
   );
 }
