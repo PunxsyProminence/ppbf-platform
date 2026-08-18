@@ -241,17 +241,21 @@ found is a set of gaps that need a deliberate act, a race window, or an unlikely
 sequence to bite. That is a materially different thing from the pass 4 CRITICAL,
 which needs one authenticated request.
 
-- **Film Study checks guardian consent at enqueue and never again.** This is the
-  one to act on. The async job re-validates only the *actor's role* and then
-  reads the child's video by blob path; the consent-withdrawal sweep touches
-  publications and the research library and cancels no running job. So a
-  guardian can withdraw consent, be truthfully told published media was
-  retracted, and have frames of their child sent to an external vision service
-  afterwards. It matters more than its severity label suggests because **every
-  other consent path in this codebase closes this race correctly** — `for share`
-  locks, re-verification inside the claim transaction. This is an outlier, not
-  the house pattern, which means fixing it is matching the existing standard
-  rather than inventing one.
+- **Film Study checks guardian consent at enqueue and never again**, and the
+  withdrawal sweep cancels no running job — `cancelJobForActor`'s only caller is
+  a user-driven DELETE. There are zero consent references anywhere in the job
+  path. That gap is real and worth closing.
+
+  *Corrected on verification, and this file previously told you worse than the
+  truth.* An earlier version said the executor "re-validates only the actor's
+  role" and that a guardian could withdraw consent and have frames sent
+  afterwards. Both overstated. `shadowJobProcessor.ts:172-178` re-loads the actor
+  from the live database and re-runs `assertActorCanAccessAthlete` on the subject
+  athlete. And the queue *is* driven — `instrumentation.ts:31-39` starts an
+  in-process drain loop and the production deploy workflow sets
+  `PPBF_SHADOW_WORKER_ENABLED=true` — so the race window is about **30 seconds**
+  (`shadowJobWorker.ts:20`), capped at 24h by `expires_at`, not open-ended.
+  **HIGH → MEDIUM.** Fix it, but do not treat it as an emergency.
 - **Consent scope is enforced by nothing, and defaults to permissive.** This
   file already recorded `covers_video` and `public_use_allowed` as a documented
   MVP cut. What is new: `covers_video` defaults `true` in three places,
@@ -277,19 +281,39 @@ which needs one authenticated request.
   byte is ever deleted. A second, unguarded copy of the destructive purge exists
   with zero callers.
 
-**Two things pass 3 could not establish, recorded as holes rather than guessed:**
-whether the retention purge has ever run in `APPLY` mode, and what actually
-drives the SHADOW job queue in production — nothing in `.github/workflows/` or
-`apps/web` calls `shadow/jobs/process`. That second one bounds the Film Study
-finding in either direction and is the most useful single question anyone with
-production access could answer for this audit.
+**One of the two questions pass 3 could not settle is now answered, from the
+repository itself.** What drives the SHADOW job queue: `instrumentation.ts:31-39`
+starts an in-process drain loop, enabled in production by
+`PPBF_SHADOW_WORKER_ENABLED=true` in the deploy workflow. Nobody needed
+production access — it was in the tree the whole time, and this audit had
+promoted it to a headline open question. Recorded as a miss, not quietly closed.
+
+**Still unestablished:** whether the retention purge has ever run in `APPLY`
+mode. That decides whether the hard-delete reclassification is theoretical or
+has already happened, and it needs Actions run history.
+
+**Two new findings came from the pass that was verifying pass 3, not from pass 3:**
+
+- **`profile/roster` does not filter `athletes.deleted_at`.** A withdrawn child
+  stays on the live coach roster — name, date of birth, portrait — for the whole
+  retention window.
+- **The unauthenticated gym wall was cleared as sound, and is not.** Pass 3 filed
+  it under "checked and found sound" because `wall_display_full_name` has no
+  writer. But `waiver_type` carries no database constraint
+  (`pilot_slice_postgres.sql:413`) and `domain-upsert` writes it verbatim from
+  the request body, so a coach can mint exactly that row; `signed_by_role` is
+  self-declared text, defeating `wallDisplay.ts`'s guardian-signer check. The
+  only real brake is an unset environment flag. **A false "sound" is more
+  dangerous than a false finding, because nobody re-reads it** — treat every
+  "checked and found sound" entry in these audits accordingly.
 
 ### Verification is running, and it is moving things — in both directions
 
-Every finding here is re-read by a pass whose job is to **refute** it. The first
-of those has reported, on pass 4's ten findings: **zero retracted, two
+Every finding here is re-read by a pass whose job is to **refute** it. Both have now reported. On pass 4's ten findings: **zero retracted, two
 downgraded, one narrowed, one corrected — and four of the ten carried a factual
-error in their supporting text.**
+error in their supporting text.** On pass 3's nine: **zero retracted, four
+downgraded**, with every re-extracted quote character-exact at its cited line —
+so nothing was fabricated; what broke was reasoning and reach.
 
 Two of those errors had already been written into this file and are corrected
 above rather than quietly edited: a coach *is* shown training holds, and
