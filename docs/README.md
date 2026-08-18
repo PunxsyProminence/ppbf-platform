@@ -27,3 +27,9 @@ PR list, which stays current; a copied table would not.
   thresholds already in production are defensible.
 - `EXTERNAL_AUDIT_PROMPTS.md` — for a model with no repository access, where
   the point is that it has no stake in believing us.
+
+`AGENT_BRIEFING_PROMPT.md` is the thing you actually paste to an agent joining
+the build. It carries the shared picture every agent needs — lanes, the merge
+rule, the drive-folder boundary, what needs a human — with one blank at the
+bottom for their role, which then points them at the brief above that fits. Re-
+paste it when an agent'"'"'s context resets.
