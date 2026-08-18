@@ -104,7 +104,7 @@ admitted gap.
 | 2 | Authorization & tenancy | `assertActorCanAccessAthlete` and siblings, org scoping, cross-org leakage, role gates across all 228 routes | **done** | `PASS-02-authorization.md` |
 | 3 | Minors' data & consent | Waivers, guardian links, consent scope enforcement, profile visibility, photo/video exposure | not started | — |
 | 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | **done** | `PASS-04-safety-gates.md` |
-| 5 | API surface | All 228 routes: input validation, `jsonError` prefix conformance, idempotency, rate limiting, `hiddenNotFound` | **running** | `PASS-05-api-surface.md` |
+| 5 | API surface | All 228 routes: input validation, `jsonError` prefix conformance, idempotency, rate limiting, `hiddenNotFound` | **done** | `PASS-05-api-surface.md` |
 | 6 | Data layer | 88 migrations vs. code, constraints, tenancy columns, policy hiding in DDL, N+1 | **running** | `PASS-06-data-layer.md` |
 | 7 | Frontend & design system | 125 screens + 86 components: fabricated-data disclosure, Law 2 / Law 7 conformance, invented classes, dead ends | **running** | `PASS-07-frontend.md` |
 | 8 | SHADOW subsystem | Authority model specified vs. built, event model, **what actually drives the job processor** | **done** | `PASS-08-shadow.md` |
@@ -173,6 +173,29 @@ should run before consent, after it, or not at all — and a factual answer for 
 guardian who asks where footage of their child has been. It is not a code fix
 somebody should make unilaterally: it changes what the platform does with every
 upload.
+
+### Two passes returned "no CRITICAL", and that is a result
+
+Passes 5 and 8 both came back without a CRITICAL, and both said why rather than
+leaving it as an absence. Pass 5 chased two candidates that looked like gate
+defeats and **both refuted** — `shadow/unlocks` activation mode is fail-closed at
+`shadowUnlocks.ts:263`, and the SHADOW authority-mode question turned out to be a
+record-integrity problem rather than a bypass. Pass 8's two candidates came back
+HIGH after refutation partly succeeded.
+
+That matters for reading this audit honestly. Findings are not evenly
+distributed and the severity labels are not being handed out to fill a quota. Of
+the passes that have reported, the CRITICALs cluster in exactly two places —
+what leaves the building, and what the documentation promises about deletion.
+
+**One number worth having: 73 unchecked casts on request bodies, across 61 of
+228 routes, and zero routes use a schema validator.** The pass qualified that
+properly instead of leaving it as a scary total — 155 body-cast sites exist, 52
+are honest (`unknown` / `Record<string, unknown>`), 103 concrete, and 73 of those
+sit in files with no runtime narrowing of any kind. Of 30 casts asserting
+membership of a closed set, each was traced individually and most are caught by a
+route-level guard or a database CHECK. That per-field tracing is the difference
+between a usable finding and a number.
 
 ## Verification
 
@@ -260,6 +283,11 @@ partial by definition rather than final.
 | E-04 | MEDIUM | `shadowFilmStudy.ts:4-10` states the opposite of what the module does — it says film_study stays UNAVAILABLE, while the processor's exclusion set is empty. This is the docstring an auditor would read to answer "does a child's face leave?" | 15 | New |
 | E-05 | MEDIUM | Four SAS-bearing responses set no `Cache-Control`, while every sibling minor-data response sets `no-store` | 15 | New |
 | E-06 | MEDIUM | Every athlete-scoped SHADOW turn ships that child's verbatim near-miss incident text to the model, and a minor can trigger it about themselves | 15 | New |
+| P-01 | HIGH | `POST /api/pilot/audit/get` returns `select *` over `pilot.audit_events` behind a **one-entry** coach denylist. 56 entity types are written; three carry payloads a coach should not enumerate gym-wide — `account` details include `login_email` and guardian link ids, `intake_case` includes reviewers' free-text notes, `parent_barrier_report` includes a named athlete's family hardship category. The narrow gate exists and this route goes around it | 5 | New — not in pass 2 (among its 175 unopened), not in `NETWORK_STATUS.md`, not in the last 40 commits |
+| P-02 | MEDIUM | `intake/domain-upsert` writes the SHADOW authority record — `allowed: true`, caller-authored `action`, named child — **before** `assertActorCanAccessAthlete` runs | 5 | New; corroborates S-01's ordering point from a second direction |
+| P-03 | MEDIUM | Film Study vision jobs enqueue with no dedup, so duplicate AI runs occur on the same minor's footage | 5 | New |
+| P-04 | MEDIUM | `document-ingest` writes Dataverse, SharePoint and Drive with no idempotency, no compensation and no rate limit | 5 | New; pairs with E-03 |
+| P-05 | LOW | `env.ts:6` reports an unset environment variable as a **400 naming the variable**, contradicting the rule `http.ts:90` states in the codebase's own words | 5 | New |
 | A-01 | HIGH | `POST /api/pilot/platform/athlete-shell` creates a live, sign-in-able athlete account on the **published** starting PIN, in any organisation — while its own doc comment and its response body both state it grants no sign-in capability | 1 | New |
 | A-02 | HIGH | The platform-owner bootstrap endpoint is armed in production indefinitely behind one static header secret; one correct header reactivates any suspended organisation and rewrites the `platform_owner` row | 1 | New |
 | A-03 | MEDIUM | `seatRequiresMicrosoft` has zero callers, so the board-seat credential upgrade is enforced by nothing | 1 | New |

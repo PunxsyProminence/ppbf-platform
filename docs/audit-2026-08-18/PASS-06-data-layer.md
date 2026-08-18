@@ -425,7 +425,7 @@ The column defaults permissive:
 
 The only writer defaults permissive too, and never demotes an existing row:
 
-> `        params.isPrimary ?? true,`
+> `      params.isPrimary ?? true,`
 > — `apps/web/src/server/pilot/intake.ts:438`
 
 and there is no unique constraint or partial unique index on
@@ -437,8 +437,8 @@ table's only constraints are its primary key and its athlete FK
 The consumer that matters resolves "the" contact by a tie-break that the above
 makes meaningless:
 
-> `       order by c.is_primary desc, c.created_at asc`
-> `       limit 1`
+> `    order by c.is_primary desc, c.created_at asc`
+> `    limit 1`
 > — `apps/web/app/api/pilot/admin/export/roster/route.ts:81-82`
 
 **Refutation attempted.** Searched for any code that sets `is_primary = false`
@@ -587,7 +587,7 @@ One module documents that it depends on that path:
 > ` * verified_by_account_id, verified_at, and issued_on`
 > ` * (pilot_person_clearances_current); callers passing status='current'`
 > ` * without a verifier hit that constraint, same as any other write path.`
-> — `apps/web/src/server/pilot/clearanceRegister.ts:132-136`
+> — `apps/web/src/server/pilot/clearanceRegister.ts:133-136`
 
 **Refutation attempted, and it lowers this to LOW twice over.** First: I checked
 whether the safety-critical CHECK constraints are in fact mirrored, and they
@@ -666,8 +666,13 @@ filters on `athlete_id` and defaults to no limit:
 
 > `       and ($3::text is null or athlete_id = $3)`
 > — `apps/web/src/server/pilot/activityLog.ts:175`
-> `       ${filter.limit ? 'limit $7' : ''}`
-> — `apps/web/src/server/pilot/activityLog.ts:180`
+
+and the limit clause is present only when the caller asked for one:
+
+```
+     ${filter.limit ? 'limit $7' : ''}`,
+```
+— `apps/web/src/server/pilot/activityLog.ts:180`
 
 **Refutation attempted.** The unbounded default is argued in the file
 (`:165-169`: a volunteer-hours total that goes "to a school, a court, or a
