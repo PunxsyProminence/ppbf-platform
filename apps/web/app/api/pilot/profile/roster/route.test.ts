@@ -225,6 +225,11 @@ describe('the soft-delete exclusion is in the SQL on every branch', () => {
 
     const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain('from pilot.athletes');
+    // The coach-scope clause, asserted on the SQL text itself rather than only
+    // on `params` -- the fixture puts both athletes on the same coach, so a
+    // params-only check would still pass if this clause were ever accidentally
+    // dropped from the query (Copilot review, PR #471).
+    expect(sql).toContain('a.coach_id = $2');
     expect(sql).toContain('and a.deleted_at is null');
     expect(params).toEqual(['org-1', COACH]);
   });
