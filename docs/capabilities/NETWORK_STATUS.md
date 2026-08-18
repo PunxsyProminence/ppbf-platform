@@ -60,41 +60,82 @@ it just did not reach the history.
 carrying those commits. Removing them from `main` has already been done and is not
 sufficient.
 
-## URGENT — every child's video has already been sent to a vision model, unconsented
+## CORRECTED — the video content screen sends frames to a vision service with no consent check
 
-Read this before anything else on this page. Verified by hand, element by
-element, not relayed from an agent.
+**An earlier version of this section was headed "every child's video has already
+been sent to a vision model, unconsented" and said so in the past tense. That
+framing was wrong in two specific ways, and the correction matters because the
+original could have prompted the gym to notify families about something this
+repository cannot evidence happened.** The correction is left visible rather than
+swapped in.
+
+### What holds, and it is still worth fixing
+
+**There is no consent check anywhere in the scan path.** This is the strongest
+clause and it survived refutation without qualification. Zero consent references
+across `videoScanSweep.ts`, `videoScan.ts`, `videoScanPolicy.ts`,
+`videoSessions.ts`, or at upload. Inverting the search: all four
+`assertGuardianMediaConsent` call sites in the repository are on
+publish/compliance/Film-Study paths — none on upload, sweep, scan, policy or
+release.
 
 `videoScan.ts:131-147` downloads a minor's uploaded video, extracts up to twelve
-frames, and posts them to the Azure OpenAI vision deployment via
-`analyzeFramesWithVision`. Grepping `consent` across the four modules in that
-path — `videoScanSweep.ts`, `videoScan.ts`, `videoScanPolicy.ts`,
-`videoSessions.ts` — returns **zero hits in all four**.
+frames, and posts them to the Azure OpenAI vision deployment. In the production
+configuration, every video the sweep picks up goes through that call.
 
-It is not an optional path. `videoScanPolicy.ts:174-176` states it itself:
-*"Every enabled gate reported an affirmative pass. This is the ONLY path to a
-readable video."* And it is on in production: `deploy-production.yml:441` sets
-`PPBF_VIDEO_CONTENT_SCAN=vision`, worker enabled at `:437`.
+And the codebase already knows this call needs consent:
+`shadow/video-analysis/route.ts` gates the equivalent Film Study call with
+`assertGuardianMediaConsent`, under a comment saying that path "must not be a side
+door around that gate."
 
-**The codebase already knows this call needs consent.**
-`shadow/video-analysis/route.ts:106` calls `assertGuardianMediaConsent` under a
-comment that names the principle exactly: *"Film Study opens the same footage to
-AI analysis and must not be a side door around that gate."* The content screen
-makes the same kind of call on the same footage with no gate — and because it is
-the mandatory route to `status='ready'`, **every video that Film Study's consent
-gate is ever asked about has already been through a vision model.** The gate
-guards a door the data went through first.
+### What was wrong
 
-**This reframes the Film Study finding recorded further down this page.** That
-row treats a ~30-second race on a consent re-check as the problem. The real
-problem is that consent was already moot by the time that gate is reached. The
-row is left in place with this correction rather than rewritten, because the
-sequence of how this was understood is itself worth knowing.
+**1. The past tense is unsupported.** `deploy-production.yml:392-397` records the
+owner enabling this gate on 2026-08-01 on an explicit stated basis:
 
-**Do not fix this unilaterally.** It changes what the platform does with every
-upload, and it needs an owner decision on whether the content screen runs before
-consent, after it, or not at all. It also needs a factual answer prepared for any
-guardian who asks where footage of their child has been.
+> ```
+> # Enabled on the owner's explicit instruction (2026-08-01), on the
+> # stated basis that no athlete footage reaches production until the
+> # platform is in live use at the gym. So this turns the gate on BEFORE
+> # any minor's video exists in production, rather than applying a new
+> # automated decision to footage already sitting there.
+> ```
+
+The single transmission this repository evidences is a **staging** upload. So this
+is a forward-looking exposure to close before the gym goes live, **not** an event
+requiring anyone to notify families. Anybody who read the earlier version of this
+section should treat that as retracted.
+
+**2. "The ONLY path to a readable video" is false.** That claim rested on a comment
+at `videoScanPolicy.ts:174-175` which sits above a `promote` return inside a pure
+function — it means "promote is the only *decision* that makes a video readable",
+not "no other code writes `ready`". There are three writers.
+`video/[videoId]/release/route.ts:96-104` lets a coach promote from `quarantined`
+where `scan_state` is human-releasable:
+
+> ```
+> update pilot.video_sessions
+> set status = 'ready', updated_at = now()
+> where video_session_id = $1 and organization_id = $2 and status = 'quarantined'
+>   and scan_state = any($3::text[])
+> ```
+
+reachable after repeated scan failures with **zero frames transmitted**. A
+malware-only configuration also promotes with no vision call at all. So the claim
+that Film Study's consent gate necessarily guards a door the data already went
+through does not hold in general — only under the vision configuration.
+
+**3. "External" needs restating.** The frames move to a Microsoft-operated
+inference service, between Azure services this gym already uses — not to an
+unrelated third party. It is still an egress whose data-handling posture this
+repository cannot establish, which is why it still matters under the codebase's
+own doctrine.
+
+### What this needs
+
+An owner decision on whether the content screen runs before consent, after it, or
+not at all — **before the gym is in live use**, which is the window that makes
+this cheap to fix. Not an incident response.
 
 ## Live right now — two audits running, plus one thing that needs a merge
 
