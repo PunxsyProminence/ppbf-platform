@@ -3,6 +3,11 @@
 What these files are, what their statuses actually mean, and three things to fix
 about how they are maintained.
 
+**For the capability NETWORK — what reads what, which gates are live, and which
+gaps are open — see `NETWORK_STATUS.md` beside this file.** That is a different
+question from this backlog: this file tracks 200 planning rows, that one tracks
+running code and cites file:line for every claim.
+
 Written when this tree was brought into version control on 2026-08-03. It had
 been produced by a PowerShell wave process running outside git, so nothing here
 had a history and none of it had been read by anyone else.
@@ -42,7 +47,7 @@ Spot-checked against the codebase:
 | 194 Red Flag Escalation | DONE | Real: `app/api/pilot/compliance/escalate/` with a test |
 | 200 Privacy-Tier | DONE | Real: `src/server/pilot/access.ts` role tiers |
 | 151 Consent / Waiver | DONE | Partly: `pilot.waivers` exists in the base schema, and intake domain APIs touch consent |
-| 152 Incident Report | DONE | Mapped, not built: no incident table or route; it rests on treating `pilot.compliance_violations` as the incident record |
+| 152 Incident Report | DONE | Built (2026-08-17, #433): `app/api/pilot/incidents/route.ts` files into `pilot.safety_escalations` with `source_type='incident'` via `escalationLadder.ts:231`. Write-only; reads go through `/api/pilot/escalations` |
 | 147 Board Reporting | DONE | Mapped: the existing board summary + compliance summary, explicitly "not a second parallel report stack" |
 
 None of those are wrong. But `DONE` is carrying two different meanings, and the
@@ -66,10 +71,10 @@ I had guessed the opposite in this file's first draft — that the table existed
 and nothing wrote to it. That guess was wrong, and the fix list has been
 corrected rather than this one.
 
-**What is genuinely missing is narrower than either document said:** no screen
-calls that route. A repo-wide search for `domain-upsert` across `.tsx` returns
-nothing. A guardian's signature can be recorded by an API call and by no human
-standing in the gym. That is the same defect as the three consoles that shipped
+**This has since been closed.** When written, no screen called that route — a
+repo-wide search for `domain-upsert` across `.tsx` returned nothing, so a
+guardian's signature could be recorded by an API call and by no human standing in
+the gym. The consent console shipped: `app/admin/consent/page.tsx:195` calls it. That is the same defect as the three consoles that shipped
 with no navigation — the capability exists and there is no way in — and it is
 worth its own module rather than being buried in a DONE row.
 
@@ -132,10 +137,14 @@ mirror it. As of this commit:
 
 | Status | Count |
 |---|---|
-| DRAFT | 178 |
-| DONE | 19 |
-| QUEUED | 2 |
-| IN_PROGRESS | 1 |
+| DRAFT | 101 |
+| DONE | 94 |
+| DEFERRED | 6 |
+
+Counts drift every time the CSV is touched, and a stale table here is worse than
+no table. The CSV is the source; re-derive rather than trusting these numbers.
+(They read DRAFT 178 / DONE 19 / QUEUED 2 / IN_PROGRESS 1 when this file was
+written on 2026-08-03.)
 
 `Active` is `false` on all 200. `PromotionRequired` gates anything becoming
 live. Neither should be flipped from this backlog — promotion is a separate,
