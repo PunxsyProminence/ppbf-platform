@@ -158,9 +158,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  // cascade: pilot.athlete_guardian_links (and any other FK referencing
-  // pilot.parents) is truncated along with it. This suite only asserts
-  // against pilot.parents rows, so the cascade is harmless here.
+  // cascade: pilot.guardian_links (FK to pilot.parents, on delete cascade)
+  // is truncated along with it. This suite only asserts against pilot.parents
+  // rows, so the cascade is harmless here.
   await client.query('truncate pilot.parents cascade');
 });
 
