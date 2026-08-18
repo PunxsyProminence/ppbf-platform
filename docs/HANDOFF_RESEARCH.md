@@ -5,7 +5,7 @@ amount of coding can close. Sibling of `docs/EXTERNAL_AUDIT_PROMPTS.md` and
 `docs/HANDOFF_VISUALS.md`.
 
 Read `AGENT_KERNEL.md` first, then `docs/capabilities/NETWORK_STATUS.md` (what
-has already merged, what is in review, and which items below are blocked on your
+has already merged, what is in flight, and which items below are blocked on your
 output rather than on code), then `docs/AI_COLLABORATION.md` for collision
 control, then `apps/web/src/server/pilot/formulas/registry.ts` and
 `docs/RESEARCH_EVIDENCE_REGISTRY.md`.

@@ -47,21 +47,32 @@ the file yourself before acting on any row below.
 | Shadow-job list authorization ran one query per row | #431 |
 | Incident reports could be double-filed by a retry | #433 |
 
-## In review — 8
+## In review — query GitHub, not this file
 
-Open pull requests. **Not fixed until merged.** If you are about to touch one of
-these files, read the PR first.
+At the time of writing, eight of the findings below were addressed by open pull
+requests. **Their live state is not copied here on purpose.**
+`docs/current/ACTIVE_WORK.md` already rules that "open PR state belongs in
+GitHub and should be queried live rather than copied here", and it is right: a
+table of PR numbers in a markdown file is stale the moment somebody merges, and
+a *stale* list of which files are spoken for is worse than no list, because it
+reads as authoritative.
 
-| What | PR | Files to avoid |
-|---|---|---|
-| Competition entry: coach-standing, training-hold and travel-waiver gates | #452 | `competitionSafetyGates.ts`, `wrestlingLeague.ts`, `externalCompetition.ts`, `trainingHolds.ts`, `waiverCompliance.ts` |
-| Morning Read digest was blind to both safety registers | #450 | `coachIntelligence.ts`, `compliance.ts`, `app/coach/intelligence` |
-| A rejected Film Study proposal was citable as evidence | #459 | `interventionEvidence.ts` |
-| Three surfaces could render one child's record under another's name | #460 | `coach/progression-intelligence`, `ParentHub.tsx`, `parent/progression-visibility` |
-| Portrait review approved a child's photo without displaying it | #461 | `app/admin/portrait-review` |
-| Revenue centre showed fabricated figures as the books | #462 | `RevenueFundingCenter.tsx` |
-| `GATES.md` + seven capability gate READMEs | #463 | `docs/capabilities/GATES.md` |
-| Lapsed membership as a non-blocking flag at registration | branch `feat/membership-status-registration-flag` | `scheduler/route.ts`, `programMemberships.ts` |
+An earlier version of this file carried that table. It was a mistake, and
+removing it is the correction.
+
+**To find what is currently in flight and which files it owns:**
+
+```
+gh pr list --state open        # or the GitHub UI
+git diff --name-only origin/main...origin/<branch>
+```
+
+Findings that had a PR open when this was written: the competition-entry
+gates, the Morning Read digest's blind spot, rejected Film Study proposals as
+evidence, the three child-data fetch races, portrait review, the revenue
+centre's fabricated figures, the gate inventory, and lapsed-membership
+flagging. Search open PRs by those descriptions rather than by a number that
+may already have merged.
 
 ## Found after the map — 5, none fixed
 
@@ -162,9 +173,24 @@ The durable mitigation for (1) is a repository setting — "require branches to 
 up to date before merging" — not code. It is **not enabled**; raise it rather
 than assuming somebody has.
 
+Until it is, the mitigation available today is **serial merging.**
+`docs/current/ACTIVE_WORK.md` authorizes an "ordinary bounded PR" to be "merged
+by the authoring session once every required check passes" — and that
+authorization, read literally by several sessions at once, is precisely how
+`main` broke. Each session was obeying it, each PR was green, and the break
+lived only in the merge. The authorization is not wrong; what it lacks is an
+ordering. So when more than one session is landing work in the same window,
+have **one** session own the merge queue: rebase onto current `main`, let CI
+finish on the rebased head, merge, then take the next one. Serial merging is
+slower by minutes and it is the difference between three broken-`main` incidents
+in a day and none. A session that merges its own PR while another PR is in
+flight is not doing anything forbidden — it is just skipping the only check
+that would have caught this class.
+
 **Collision control lives in `AI_COLLABORATION.md`.** Check current `main`,
-`docs/current/ACTIVE_WORK.md`, and the open PR list before editing. The "in
-review" table above lists the files currently spoken for.
+`docs/current/ACTIVE_WORK.md`, and the open PR list before editing. The open PR
+list is what tells you which files are currently spoken for — this file does not
+try to, for the reason given above.
 
 ---
 
@@ -176,10 +202,22 @@ published artifact is private to whoever published it — so the repository is
 the only place two of us can actually coordinate. That makes this file the
 handoff, and a stale one costs somebody real work.
 
-**Claim before you build.** Add a row to the "in review" table naming your PR
-and the files it owns, in the same commit that opens the PR. The point of that
-table is not status reporting; it is the list somebody else reads to find out
-what they must not touch. A claim added after the collision is worth nothing.
+**Claim by lane, and open the PR early.** Coordination here is by *surface*,
+not by role — `docs/current/ACTIVE_WORK.md` defines the standing lanes (product
+build, SHADOW/statistics, design/visuals, ops/deploy) and the rule that a
+session picks one lane and "does not drive-by fix another lane's surface". Pick
+a lane, open a draft PR early so the claim is visible in GitHub where it stays
+current, and check open PRs for collisions before starting. Do not record your
+claim in this file — see the note above about why copied PR state is worse than
+none.
+
+Note that **roles are not lanes.** A researcher, a wirer and an auditor can all
+collide on one file, because a lane is a territory and a role is a job. This
+repository already tried role-based sequencing (Architect → Implementer →
+Reviewer → QA) and retired it — `docs/MULTI_AI_EXECUTION_PLAN.md` is marked
+SUPERSEDED and says not to reconstruct it, because two overlapping systems
+forced agents to reconcile role rules against lane rules. Staff by role if that
+suits the humans; coordinate by lane regardless.
 
 **Record the shape of what you found, not just that you fixed it.** Two of the
 worst problems here were invisible to per-PR review — an exhaustive `Record`
@@ -188,10 +226,11 @@ third one read. Those are only catchable if the previous agent wrote down the
 *shape*. If you find a third such class, put it in the "two things this
 exercise taught" section above, with the question a future PR should ask.
 
-**Move rows rather than deleting them.** When your PR merges, move its row from
-"in review" to "closed" with its number. When a finding turns out to be wrong,
-move it out and say so — a retraction recorded is more useful than a row that
-quietly disappears, because the next agent would otherwise re-find it.
+**Move rows rather than deleting them.** When your PR merges, add its row to
+"closed" with its number and remove it from wherever it sat before. When a
+finding turns out to be wrong, move it out and say so — a retraction recorded is
+more useful than a row that quietly disappears, because the next agent would
+otherwise re-find it.
 
 **Correct this file when it is wrong about you.** If a row misdescribes your
 work, or claims something is parked that the owner has since unparked, fix it

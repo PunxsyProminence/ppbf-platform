@@ -15,9 +15,10 @@ Standing briefs for an agent picking up one lane of this platform. Collision
 control for all of them is `AI_COLLABORATION.md`.
 
 **Start with `capabilities/NETWORK_STATUS.md`** whichever lane you are on: what
-the capability audit found, what has already merged, what is in review (and so
-whose files not to touch), and what is deliberately parked. It exists so nobody
-spends an afternoon on something that merged this morning.
+the capability audit found, what has already merged, what is in flight, and what
+is deliberately parked. It exists so nobody spends an afternoon on something
+that merged this morning. For whose files not to touch it sends you to the open
+PR list, which stays current; a copied table would not.
 
 - `HANDOFF_VISUALS.md` — the visual layer: design-system conformance, refusal
   states, and the outstanding illustration assets.

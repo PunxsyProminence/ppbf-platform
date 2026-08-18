@@ -6,9 +6,10 @@ access, pasted code, and no stake in believing us. This one assumes the opposite
 you can read the tree, run the checks, and open a PR.
 
 Read `AGENT_KERNEL.md` first, then `docs/capabilities/NETWORK_STATUS.md` (what
-has already merged, what is in review and whose files are therefore spoken for,
-and what is parked), then `docs/AI_COLLABORATION.md` for collision control, then
-`design-system/ppbf.css` and `design-system/README.md`.
+has already merged, what is in flight, and what is parked — it points you at the
+open PR list for whose files are spoken for rather than copying it), then
+`docs/AI_COLLABORATION.md` for collision control, then `design-system/ppbf.css`
+and `design-system/README.md`.
 
 ## Before you start
 
@@ -174,6 +175,39 @@ Rules, from `apps/web/src/shared/gymPhotos.ts`'s own header:
 
 Scenes: the front door (220 N Jefferson St) · the floor on an ordinary night ·
 the ring · the bags · the wraps bench · the notice wall. Landscape, ~1220×754.
+
+## The shared drive folder, and which side is canonical
+
+UI/UX and flow work happens with a partner tool outside this repository, using
+a shared drive folder to hold templates, button treatments and component
+studies. That is a good way to move assets. It is also the exact shape of the
+defect that broke `main` three times in one day — a vocabulary maintained in
+two places drifts, and the copy that drifts is the one nobody tests.
+
+So the boundary is one-directional, and it is not negotiable:
+
+| Thing | Canonical home | Moves how |
+|---|---|---|
+| Tokens, classes, the eight laws | `design-system/ppbf.css` **in this repo** | Repo → drive. Export a snapshot to work against; never edit the drive copy and expect it to matter. |
+| Rendered assets: SVG icons, illustrations, photography | the drive folder, until committed | Drive → repo, by a person who looked at the file. Committing it is the release decision. |
+| Layout studies, flow diagrams, button explorations | the drive folder | Stay there. They are studies, not sources. |
+
+Two rules follow, and both have already bitten this codebase:
+
+1. **A class that is not in `ppbf.css` does not exist**, however finished it
+   looks in the drive folder. `apps/web/components/designSystemClasses.test.ts`
+   fails the build on invented CSS classes — that test is the guard, and it only
+   reads the repo. If a study needs a new class, add it to `ppbf.css` with its
+   reasoning comment in the same PR that uses it.
+2. **An asset is not "delivered" until it is committed.** The design/visuals
+   lane in `docs/current/ACTIVE_WORK.md` says work "blocked on owner-supplied
+   assets stays blocked; do not substitute invented assets." A file sitting in
+   the drive folder is still blocked. Move it, or say it is blocked — do not
+   approximate it in code.
+
+If the drive folder and `ppbf.css` disagree about a colour, a radius, or a type
+scale, **`ppbf.css` is right by definition** and the drive copy is stale. Fix
+the drive copy; do not "reconcile" them by editing the repo to match a study.
 
 ## Working agreement
 
