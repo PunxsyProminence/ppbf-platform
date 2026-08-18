@@ -12,7 +12,7 @@ export default async function AdminCurriculumPage() {
   await requirePageRole(['organization_admin', 'admin', 'coach']);
 
   return (
-    <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
+    <main className="min-h-screen bg-[var(--hide-950)] font-mono text-[color:var(--bone-300)] p-4">
       <SampleDataNotice
         what="The curriculum lanes, athlete placements, and badges on this page are illustrative and describe no real athlete."
       />

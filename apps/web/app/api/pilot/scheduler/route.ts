@@ -467,11 +467,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Non-blocking membership flag (capability-network audit finding):
+      // registration itself is never refused for a lapsed/ended membership
+      // -- only an all-training hold does that, above -- but the coach/admin
+      // who just registered this athlete should see it. An athlete/parent
+      // registering themself sees it too; that mirrors the training-hold
+      // explanation, which is also written to be readable by the family, not
+      // hidden from them.
       return NextResponse.json({
         ok: true,
         class_id: classId,
         athlete_id: athleteId,
         status: result.outcome,
+        membership_flags: result.membershipFlags,
       });
     }
 

@@ -12,7 +12,7 @@ export default async function AdminMacroAnalyticsPage() {
   await requirePageRole(['organization_admin', 'admin']);
 
   return (
-    <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
+    <main className="min-h-screen bg-[var(--hide-950)] font-mono text-[color:var(--bone-300)] p-4">
       <SampleDataNotice
         what="The athlete counts, attendance figures, and SafeSport and background-check statuses on this page are illustrative. Never treat a name here as a cleared adult."
         realHref="/admin/compliance-center"

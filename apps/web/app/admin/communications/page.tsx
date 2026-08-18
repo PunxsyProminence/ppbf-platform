@@ -12,7 +12,7 @@ export default async function AdminCommunicationsPage() {
   await requirePageRole(['organization_admin', 'admin', 'staff']);
 
   return (
-    <main className="min-h-screen bg-[#09090b] font-mono text-slate-300 p-4">
+    <main className="min-h-screen bg-[var(--hide-950)] font-mono text-[color:var(--bone-300)] p-4">
       <SampleDataNotice
         what="The messages, campaigns, and delivery figures on this page are illustrative and were sent to nobody. Never treat an entry here as consent to publish a minor's image."
       />

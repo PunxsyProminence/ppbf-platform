@@ -48,6 +48,12 @@ type SchedulerCoachingRequest = {
   created_at: string;
 };
 
+type MembershipFlag = {
+  membership_id: string;
+  program_name: string;
+  status: string;
+};
+
 type SchedulerAttendance = {
   attendance_id: string;
   class_id: string;
@@ -237,6 +243,7 @@ export default function SchedulerPage() {
         error?: string;
         athlete_explanation?: string;
         lift_condition?: string;
+        membership_flags?: MembershipFlag[];
       };
       if (!response.ok || !result.ok) {
         // Handled here rather than thrown: an Error carries one string, and a
@@ -253,7 +260,22 @@ export default function SchedulerPage() {
         return;
       }
 
-      setActionMessage(successMessage);
+      // Non-blocking membership flag (capability-network audit finding):
+      // registration never refuses a lapsed/ended membership -- only a
+      // training hold blocks -- but a coach/admin acting here should still
+      // see it, so it rides along on the success message instead of being
+      // silently dropped.
+      if (result.membership_flags && result.membership_flags.length > 0) {
+        const summary = result.membership_flags
+          .map((flag) => `${flag.program_name} (${flag.status})`)
+          .join(', ');
+        setActionMessage(
+          `${successMessage} Note: this athlete's membership is not active -- ${summary}. `
+            + 'Registration was NOT blocked; please follow up with the family.',
+        );
+      } else {
+        setActionMessage(successMessage);
+      }
       await loadSchedulerState();
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Action failed');

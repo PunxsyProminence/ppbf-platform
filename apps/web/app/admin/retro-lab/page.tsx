@@ -10,7 +10,7 @@ export default async function AdminRetroLabPage() {
   await requirePageRole(['organization_admin', 'platform_owner']);
 
   return (
-    <main className="min-h-screen bg-[#09090b]">
+    <main className="min-h-screen bg-[var(--hide-950)]">
       <SampleDataNotice
         what="Every panel on this page is a prototype surface running on hardcoded values. Nothing here reads or writes the organization's records."
       />

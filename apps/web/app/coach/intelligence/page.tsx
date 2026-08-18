@@ -6,12 +6,27 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 
 // Coach Intelligence v1 (register module 111): the owner-approved morning
-// read. Five deterministic, read-only observations about the coach's own
+// read. Seven deterministic, read-only observations about the coach's own
 // athletes -- every item is a stored fact plus a named threshold, organized
 // by urgency. No ML, no scores, no predictions; the coach decides what any
 // of it means, and acting on an item happens on the surface that owns it.
+//
+// The two safety registers render FIRST and are counted in `total`. Before
+// they existed this page could total zero items -- and print "Nothing needs
+// your eyes" -- for an athlete carrying an open safety escalation or an open
+// compliance violation, because the digest never read either register. The
+// empty state is the whole reason the omission mattered, so the fix has to
+// reach the page and not stop at the API.
 
 interface Digest {
+  open_safety_escalations: Array<{
+    athlete_id: string; athlete_name: string; escalation_id: string;
+    source_type: string; severity: string; reason: string; created_at: string;
+  }>;
+  open_compliance_violations: Array<{
+    athlete_id: string; athlete_name: string; violation_id: string;
+    rule_id: string; rule_name: string; severity: string; status: string; days_open: number;
+  }>;
   stalled_gaps: Array<{ athlete_id: string; athlete_name: string; gap_type: string; gap_description: string; days_open: number }>;
   readiness_concerns: Array<{ athlete_id: string; athlete_name: string; red_days: number }>;
   fading_attendance: Array<{ athlete_id: string; athlete_name: string; training_days_early: number; training_days_late: number }>;
@@ -20,8 +35,37 @@ interface Digest {
 }
 
 const EMPTY: Digest = {
+  open_safety_escalations: [], open_compliance_violations: [],
   stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
 };
+
+// Severity rung -> the design system's status badge, the same mapping
+// /admin/escalations already uses, so one severity does not read as two
+// different colours on two staff surfaces. Law 2: saturated colour is
+// safety/status only, which is exactly what these are. The two registers
+// carry different vocabularies ('moderate' on escalations, 'medium' on
+// compliance violations) and both are listed rather than normalized --
+// renaming another capability's stored value on the way to the screen is how
+// a surface starts lying about the record. Anything unrecognized falls to
+// 'monitor' rather than disappearing: an unbadged safety row is still a
+// safety row a coach must see.
+const SEVERITY_BADGE: Record<string, string> = {
+  critical: 'badge--locked',
+  high: 'badge--restricted',
+  moderate: 'badge--monitor',
+  medium: 'badge--monitor',
+  low: 'badge--monitor',
+};
+
+function severityBadgeClass(severity: string): string {
+  return SEVERITY_BADGE[severity] ?? 'badge--monitor';
+}
+
+// The stored source_type/status values read as database enums, so they are
+// spaced for a human without being renamed.
+function humanize(value: string): string {
+  return value.replace(/_/g, ' ');
+}
 
 export default function CoachIntelligencePage() {
   const [digest, setDigest] = useState<Digest>(EMPTY);
@@ -53,7 +97,8 @@ export default function CoachIntelligencePage() {
   }, []);
 
   const total =
-    digest.stalled_gaps.length + digest.readiness_concerns.length + digest.fading_attendance.length
+    digest.open_safety_escalations.length + digest.open_compliance_violations.length
+    + digest.stalled_gaps.length + digest.readiness_concerns.length + digest.fading_attendance.length
     + digest.unreviewed_sessions.length + digest.expiring_holds.length;
 
   return (
@@ -64,9 +109,10 @@ export default function CoachIntelligencePage() {
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>The Morning Read</h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              Five deterministic reads of your own athletes&rsquo; records, organized by urgency.
+              Seven deterministic reads of your own athletes&rsquo; records, organized by urgency.
               Every item is a stored fact plus a stated threshold — no scores, no predictions.
-              You decide what any of it means.
+              You decide what any of it means. Open safety escalations and open compliance
+              violations lead the list; they are shown here, but they are acted on where they live.
             </p>
           </header>
 
@@ -93,6 +139,38 @@ export default function CoachIntelligencePage() {
             </div>
           ) : (
             <div className="space-y-[var(--s4)]">
+              {digest.open_safety_escalations.length > 0 && (
+                <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Open safety escalations</h2>
+                  <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
+                    {digest.open_safety_escalations.map((item) => (
+                      <li key={item.escalation_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+                        <span className={`badge ${severityBadgeClass(item.severity)}`}>{item.severity}</span>
+                        {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        {' '}— {humanize(item.source_type)}: {item.reason}
+                        {' '}(filed {item.created_at.slice(0, 10)}). <Link className="underline" href="/admin/escalations">Escalation queue</Link>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {digest.open_compliance_violations.length > 0 && (
+                <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Open compliance violations</h2>
+                  <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
+                    {digest.open_compliance_violations.map((item) => (
+                      <li key={item.violation_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+                        <span className={`badge ${severityBadgeClass(item.severity)}`}>{item.severity}</span>
+                        {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        {' '}— {item.rule_name} ({humanize(item.status)}, open {item.days_open} days).
+                        {' '}Closing one out is an organization admin action.
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
               {digest.expiring_holds.length > 0 && (
                 <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                   <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Holds expiring within 14 days</h2>

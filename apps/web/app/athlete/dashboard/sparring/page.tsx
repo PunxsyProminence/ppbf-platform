@@ -1,8 +1,10 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
+import { GYM_ADDRESS, GYM_NAME } from '@/components/PrintSheet';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
 type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
@@ -220,10 +222,31 @@ export default function SparringTelemetryPage() {
   const contactLevelLabel = ['None', 'Light', 'Moderate', 'Heavy'][contactLevel] ?? 'Unknown';
 
   return (
-    /* Athlete-facing gym-floor surface: ink ground, the floor room's brick wall
-       (same pattern as /schedule), and Law 5 sizing throughout — every control
-       clears var(--tap), the working type sits at var(--t-md). */
-    <main className="room--floor min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    /* This page had no role gate at all -- every sibling athlete route wraps in
+       RoleStandaloneView, this one rendered the full form to a signed-out
+       visitor and relied entirely on the API route's own requireRole to
+       reject the eventual submit. The data was never actually exposed
+       (observations/route.ts enforces this exact role list server-side), but
+       the page shell painted for anyone, which every other gated surface
+       refuses to do. RoleStandaloneView's own <main> now supplies the room
+       ground and background this page used to set on its own top-level
+       element, so those classes move off it to avoid nesting two <main>s.
+
+       allowedRoles matches observations/route.ts, not just ['athlete']:
+       buildingMap.ts already lists this route as OPEN rather than
+       athlete-only, and the API accepts coach and admin roles too -- a coach
+       logging a session on a shared tablet is a real path, not a leftover.
+       Server-side that list is ['athlete', 'coach', 'organization_admin',
+       'admin']; client-side ClubRole's 'admin' already represents
+       organization_admin (roleRoutes.ts), and platform_owner (Omega) is
+       deliberately absent here for the same reason it's absent from #414's
+       film-study proposals route -- Omega is broader in breadth but strictly
+       narrower in depth, and this is an ordinary operational surface, not
+       one of the surfaces Omega is scoped for.
+       roleLabel is a description of the surface, not a claim about who's
+       allowed, matching how multi-role pages elsewhere name themselves
+       (Evidence Review, Decision Loop Review) rather than naming one role. */
+    <RoleStandaloneView roleLabel="Sparring Log" routeLabel="/athlete/dashboard/sparring" allowedRoles={['athlete', 'coach', 'admin']} showShellHeader={false} room="floor">
       <header className="flex flex-wrap items-center justify-between gap-[var(--s4)] border-b-[3px] border-[color:var(--brass-500)] bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s4)]">
         <div>
           <p className="t-eyebrow">Track D/E · Deep-Track</p>
@@ -422,9 +445,11 @@ export default function SparringTelemetryPage() {
         </div>
       </form>
 
+      {/* Reuses PrintSheet's GYM_NAME/GYM_ADDRESS -- same fix as
+          coach/environment/passbook-check/page.tsx, same reason. */}
       <footer className="t-muted px-[var(--s5)] pb-[var(--s6)]">
-        Punxsy Prominence Boxing and Fitness, Registered Office: 204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715
+        {GYM_NAME}, Registered Office: {GYM_ADDRESS}
       </footer>
-    </main>
+    </RoleStandaloneView>
   );
 }

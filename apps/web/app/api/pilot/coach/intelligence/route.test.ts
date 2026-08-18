@@ -65,6 +65,27 @@ test('an admin reads the organization roster', async () => {
   expect(mockByOrg).toHaveBeenCalledWith('org-1');
 });
 
+test('the safety registers reach the caller unfiltered', async () => {
+  // The route is a pass-through by design: the digest already applied every
+  // scope and exclusion. Pinned because a well-meaning "tidy the payload"
+  // edit here would silently restore the exact defect items 6 and 7 fixed --
+  // a coach reading an empty morning read over an open safeguarding record.
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockForCoach.mockResolvedValue([{ athlete_id: 'ath-1' }]);
+  mockDigest.mockResolvedValue({
+    open_safety_escalations: [{ athlete_id: 'ath-1', escalation_id: 'esc-1', severity: 'critical' }],
+    open_compliance_violations: [{ athlete_id: 'ath-1', violation_id: 'violation_1', severity: 'high' }],
+    stalled_gaps: [],
+  });
+
+  const response = await GET(getRequest());
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(body.open_safety_escalations).toHaveLength(1);
+  expect(body.open_compliance_violations).toHaveLength(1);
+});
+
 test('parents, athletes, and platform_owner get nothing -- this is a staff lens', async () => {
   for (const role of ['parent', 'athlete', 'platform_owner'] as const) {
     mockRequirePrincipal.mockResolvedValue(principal({ role }));
