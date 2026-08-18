@@ -164,7 +164,17 @@ export async function GET(request: NextRequest) {
       summarize(retractedRows),
     ]);
 
-    return NextResponse.json({ ok: true, items, drafts, published, retracted });
+    // `items` can carry a SAS `stream_url` per queued publication, and a SAS
+    // URL is a bearer credential: for its validity window whoever holds the
+    // string can watch a minor's footage with no session at all. This queue
+    // hands out a batch of them at once, so a stored copy -- browser cache or
+    // any intermediary -- is a batch disclosure. Not storable, therefore, with
+    // the same header value the portrait routes use (profile/README.md Gate 4).
+    // The POST responses below carry no SAS URL and are left alone.
+    return NextResponse.json(
+      { ok: true, items, drafts, published, retracted },
+      { headers: { 'Cache-Control': 'private, no-store, max-age=0' } },
+    );
   } catch (error) {
     return jsonError(error);
   }

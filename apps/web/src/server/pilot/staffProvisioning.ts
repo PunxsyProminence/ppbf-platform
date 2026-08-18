@@ -1,6 +1,7 @@
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+import { createVolunteer } from './volunteers';
 
 // Roles that can be provisioned as a Microsoft-authenticated account through
 // this module.
@@ -54,6 +55,33 @@ export interface GuardianAthleteLink {
   relationshipToAthlete: string;
 }
 
+/**
+ * Optional detail for the volunteer-roster half of a volunteer invite. Every
+ * field here is an override, never a gate -- see the roster block inside
+ * createOrUpdateMicrosoftStaffAccount for why a volunteer invite creates or
+ * links a pilot.volunteers row unconditionally, whether or not any of this
+ * is supplied.
+ *
+ *   - volunteerId set: links the account to that EXISTING, not-yet-linked
+ *     pilot.volunteers row -- the path for when the roster row was created
+ *     first (e.g. through the volunteer-management console) and this invite
+ *     only adds the login.
+ *   - volunteerId absent: a new pilot.volunteers row is created via
+ *     createVolunteer (reused, not duplicated) and linked to the account.
+ *     Every field left unset here is simply left null on that row (nullable
+ *     in the base schema for exactly this reason) rather than invented, and
+ *     stays editable afterward on the volunteer-management console.
+ */
+export interface VolunteerRosterAssignment {
+  volunteerId?: string;
+  fullName?: string;
+  roleFocus?: string;
+  availability?: string;
+  certificationStatus?: string;
+  backgroundCheckStatus?: string;
+  notes?: string | null;
+}
+
 export interface StaffProvisionResult {
   accountId: string;
   organizationId: string;
@@ -64,6 +92,11 @@ export interface StaffProvisionResult {
   // role other than parent, which never has one. Optional so a caller that
   // only stubs this result for an unrelated assertion need not restate it.
   guardianLink?: { parentId: string; athleteId: string } | null;
+  // The volunteer-roster row created or linked alongside the account. Null
+  // for every role other than volunteer, and for a volunteer invite that
+  // named no roster detail at all. Optional for the same stubbing reason as
+  // guardianLink.
+  volunteerLink?: { volunteerId: string } | null;
 }
 
 /** One guardian-to-athlete link, as the people console needs to display it. */
@@ -198,6 +231,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   accountIdHint?: string;
   callerInvitableRoles?: readonly InvitableStaffRole[];
   guardian?: GuardianAthleteLink;
+  volunteer?: VolunteerRosterAssignment;
 }): Promise<StaffProvisionResult> {
   const loginEmail = normalizeEmail(params.loginEmail);
   const organizationId = params.organizationId.trim();
@@ -210,6 +244,10 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
 
   if (role !== 'parent' && params.guardian) {
     throw new Error('Forbidden: a guardian link belongs only to the parent role');
+  }
+
+  if (role !== 'volunteer' && params.volunteer) {
+    throw new Error('Forbidden: a volunteer roster link belongs only to the volunteer role');
   }
 
   const guardian = params.guardian ? normalizeGuardian(params.guardian) : null;
@@ -291,7 +329,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     }
   }
 
-  const guardianLink = await withTransaction(async (client) => {
+  const { guardianLink, volunteerLink } = await withTransaction(async (client) => {
     await client.query(
       `insert into pilot.accounts (
          account_id,
@@ -338,118 +376,195 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       );
     }
 
-    if (!guardian) {
-      return null;
-    }
+    let guardianLink: { parentId: string; athleteId: string } | null = null;
 
-    // Checked here rather than left to the guardian_links foreign key: a
-    // constraint violation surfaces as an opaque 500, and an admin who
-    // mistyped a record id needs to be told which id had no athlete behind it.
-    // Inside the transaction, so the athlete cannot be removed between the
-    // check and the link.
-    const athlete = await client.query<{ athlete_id: string }>(
-      'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2',
-      [organizationId, guardian.athleteId],
-    );
+    if (guardian) {
+      // Checked here rather than left to the guardian_links foreign key: a
+      // constraint violation surfaces as an opaque 500, and an admin who
+      // mistyped a record id needs to be told which id had no athlete behind it.
+      // Inside the transaction, so the athlete cannot be removed between the
+      // check and the link.
+      const athlete = await client.query<{ athlete_id: string }>(
+        'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2',
+        [organizationId, guardian.athleteId],
+      );
 
-    if (athlete.rowCount === 0) {
-      throw new Error(`Missing athlete_id: no athlete record "${guardian.athleteId}" in this organization`);
-    }
-
-    // One pilot.parents record per account, reused across invites so a
-    // guardian of two athletes ends up with two links rather than two
-    // guardian records that each resolve half their family.
-    //
-    // THE ROSTER IMPORT GETS THERE FIRST. scripts/seed-data.ts writes a
-    // pilot.parents row per guardian on the roster with a content-hashed
-    // parent_id and account_id left NULL -- deliberately, because importing a
-    // family must not mint logins. That row already carries a guardian_link per
-    // sibling. Matching only on account_id or the derived id therefore missed
-    // it entirely: the invite inserted a SECOND row for the same human, the
-    // account attached to the new row, and every imported sibling link stayed
-    // on the orphaned one. The guardian signed in and saw exactly the one child
-    // named in their invite, with no indication the rest existed.
-    //
-    // So an unclaimed row whose email matches is a candidate to CLAIM rather
-    // than an obstacle. Email is the right key: it is what the importer
-    // deduplicates guardians on, and it is normalized identically on both sides
-    // (trim + lowercase). A row carrying no email cannot be claimed here -- the
-    // only thing left to match on would be the name, and merging two families
-    // because two adults share a name is worse than the duplicate row.
-    const derivedParentId = `par-${accountId}`;
-    // email_matches is nullable, not boolean: a row with no email compares
-    // NULL against the address, which is neither a match nor a mismatch. The
-    // filter below treats it as "not claimable", which is the intended reading.
-    const parentRows = await client.query<{
-      parent_id: string;
-      account_id: string | null;
-      email_matches: boolean | null;
-    }>(
-      `select parent_id,
-              account_id,
-              (nullif(lower(trim(coalesce(email, ''))), '') = $4) as email_matches
-       from pilot.parents
-       where organization_id = $1
-         and (
-           account_id = $2
-           or parent_id = $3
-           or (account_id is null and nullif(lower(trim(coalesce(email, ''))), '') = $4)
-         )
-       order by parent_id asc`,
-      [organizationId, accountId, derivedParentId, loginEmail],
-    );
-
-    const ownRecord = parentRows.rows.find((row) => row.account_id === accountId);
-
-    let parentId: string;
-    if (ownRecord) {
-      parentId = ownRecord.parent_id;
-    } else {
-      const claimable = parentRows.rows.filter((row) => row.account_id === null && row.email_matches === true);
-
-      if (claimable.length > 1) {
-        // Two unclaimed records for one address means the import ran on a file
-        // that disagreed with itself. Picking one would silently strand the
-        // other's children, which is the very failure this block exists to fix,
-        // so it stops and says so instead.
-        throw new Error(
-          'Conflict: more than one unclaimed guardian record carries this email address, so the record to claim is ambiguous',
-        );
+      if (athlete.rowCount === 0) {
+        throw new Error(`Missing athlete_id: no athlete record "${guardian.athleteId}" in this organization`);
       }
 
-      if (claimable.length === 1) {
-        parentId = claimable[0].parent_id;
-      } else if (parentRows.rows.length > 0) {
-        // Something holds the derived id, or an unclaimed record sits on it
-        // under a different address. Either way it is not this guardian's, and
-        // linking to it would hand this account that family's children.
-        throw new Error('Forbidden: guardian record id is already in use by another guardian');
+      // One pilot.parents record per account, reused across invites so a
+      // guardian of two athletes ends up with two links rather than two
+      // guardian records that each resolve half their family.
+      //
+      // THE ROSTER IMPORT GETS THERE FIRST. scripts/seed-data.ts writes a
+      // pilot.parents row per guardian on the roster with a content-hashed
+      // parent_id and account_id left NULL -- deliberately, because importing a
+      // family must not mint logins. That row already carries a guardian_link per
+      // sibling. Matching only on account_id or the derived id therefore missed
+      // it entirely: the invite inserted a SECOND row for the same human, the
+      // account attached to the new row, and every imported sibling link stayed
+      // on the orphaned one. The guardian signed in and saw exactly the one child
+      // named in their invite, with no indication the rest existed.
+      //
+      // So an unclaimed row whose email matches is a candidate to CLAIM rather
+      // than an obstacle. Email is the right key: it is what the importer
+      // deduplicates guardians on, and it is normalized identically on both sides
+      // (trim + lowercase). A row carrying no email cannot be claimed here -- the
+      // only thing left to match on would be the name, and merging two families
+      // because two adults share a name is worse than the duplicate row.
+      const derivedParentId = `par-${accountId}`;
+      // email_matches is nullable, not boolean: a row with no email compares
+      // NULL against the address, which is neither a match nor a mismatch. The
+      // filter below treats it as "not claimable", which is the intended reading.
+      const parentRows = await client.query<{
+        parent_id: string;
+        account_id: string | null;
+        email_matches: boolean | null;
+      }>(
+        `select parent_id,
+                account_id,
+                (nullif(lower(trim(coalesce(email, ''))), '') = $4) as email_matches
+         from pilot.parents
+         where organization_id = $1
+           and (
+             account_id = $2
+             or parent_id = $3
+             or (account_id is null and nullif(lower(trim(coalesce(email, ''))), '') = $4)
+           )
+         order by parent_id asc`,
+        [organizationId, accountId, derivedParentId, loginEmail],
+      );
+
+      const ownRecord = parentRows.rows.find((row) => row.account_id === accountId);
+
+      let parentId: string;
+      if (ownRecord) {
+        parentId = ownRecord.parent_id;
       } else {
-        parentId = derivedParentId;
+        const claimable = parentRows.rows.filter((row) => row.account_id === null && row.email_matches === true);
+
+        if (claimable.length > 1) {
+          // Two unclaimed records for one address means the import ran on a file
+          // that disagreed with itself. Picking one would silently strand the
+          // other's children, which is the very failure this block exists to fix,
+          // so it stops and says so instead.
+          throw new Error(
+            'Conflict: more than one unclaimed guardian record carries this email address, so the record to claim is ambiguous',
+          );
+        }
+
+        if (claimable.length === 1) {
+          parentId = claimable[0].parent_id;
+        } else if (parentRows.rows.length > 0) {
+          // Something holds the derived id, or an unclaimed record sits on it
+          // under a different address. Either way it is not this guardian's, and
+          // linking to it would hand this account that family's children.
+          throw new Error('Forbidden: guardian record id is already in use by another guardian');
+        } else {
+          parentId = derivedParentId;
+        }
+      }
+
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name, email)
+         values ($1, $2, $3, $4, $5)
+         on conflict (organization_id, parent_id) do update set
+           account_id = excluded.account_id,
+           full_name = excluded.full_name,
+           email = excluded.email,
+           updated_at = now()`,
+        [organizationId, parentId, accountId, guardian.fullName, loginEmail],
+      );
+
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, $2, $3, $4)
+         on conflict (organization_id, parent_id, athlete_id) do update set
+           relationship_to_athlete = excluded.relationship_to_athlete,
+           updated_at = now()`,
+        [organizationId, parentId, guardian.athleteId, guardian.relationshipToAthlete],
+      );
+
+      guardianLink = { parentId, athleteId: guardian.athleteId };
+    }
+
+    let volunteerLink: { volunteerId: string } | null = null;
+
+    if (role === 'volunteer') {
+      // Unconditional -- unlike guardian, this never depends on the caller
+      // passing anything. The bug this closes is that a volunteer account and
+      // a pilot.volunteers row were two permanently disconnected records with
+      // nothing anywhere linking them; making the link opt-in would leave
+      // exactly that gap open for every invite that does not know to ask for
+      // it (which today is every invite -- neither the org-admin nor the
+      // platform-owner staff route sends a `volunteer` field).
+      //
+      // Re-invites (the account already `existing`) must not spawn a second
+      // roster row each time, so an account already carrying one is found and
+      // reused before anything is created or linked, mirroring how guardian
+      // reuses one pilot.parents record per account rather than minting a new
+      // one on every invite.
+      const ownVolunteerRow = await client.query<{ volunteer_id: string }>(
+        'select volunteer_id from pilot.volunteers where organization_id = $1 and account_id = $2',
+        [organizationId, accountId],
+      );
+
+      if ((ownVolunteerRow.rowCount ?? 0) > 0) {
+        volunteerLink = { volunteerId: ownVolunteerRow.rows[0].volunteer_id };
+      } else if (params.volunteer?.volunteerId) {
+        const targetVolunteerId = params.volunteer.volunteerId.trim();
+
+        // Same reasoning as the athlete check above: a constraint violation
+        // reads as an opaque 500, and inside the transaction so the row
+        // cannot be claimed by someone else between the check and the link.
+        const targetRow = await client.query<{ volunteer_id: string; account_id: string | null }>(
+          'select volunteer_id, account_id from pilot.volunteers where organization_id = $1 and volunteer_id = $2',
+          [organizationId, targetVolunteerId],
+        );
+
+        if (targetRow.rowCount === 0) {
+          throw new Error(`Missing volunteer_id: no volunteer record "${targetVolunteerId}" in this organization`);
+        }
+
+        if (targetRow.rows[0].account_id && targetRow.rows[0].account_id !== accountId) {
+          throw new Error('Forbidden: this volunteer roster row is already linked to a different account');
+        }
+
+        await client.query(
+          `update pilot.volunteers
+           set account_id = $3, updated_at = now()
+           where organization_id = $1 and volunteer_id = $2`,
+          [organizationId, targetVolunteerId, accountId],
+        );
+
+        volunteerLink = { volunteerId: targetVolunteerId };
+      } else {
+        // Reuses createVolunteer (volunteers.ts) rather than duplicating its
+        // insert here. fullName falls back to the login email -- the same
+        // honest-placeholder convention `accountId` above already uses --
+        // rather than inventing a name nobody supplied; every field this
+        // leaves unset stays editable afterward on the volunteer-management
+        // console.
+        const newVolunteerId = await createVolunteer(
+          {
+            organizationId,
+            fullName: params.volunteer?.fullName?.trim() || loginEmail,
+            roleFocus: params.volunteer?.roleFocus?.trim() || null,
+            availability: params.volunteer?.availability?.trim() || null,
+            certificationStatus: params.volunteer?.certificationStatus?.trim() || null,
+            backgroundCheckStatus: params.volunteer?.backgroundCheckStatus?.trim() || null,
+            notes: params.volunteer?.notes ?? null,
+            accountId,
+          },
+          client,
+        );
+
+        volunteerLink = { volunteerId: newVolunteerId };
       }
     }
 
-    await client.query(
-      `insert into pilot.parents (organization_id, parent_id, account_id, full_name, email)
-       values ($1, $2, $3, $4, $5)
-       on conflict (organization_id, parent_id) do update set
-         account_id = excluded.account_id,
-         full_name = excluded.full_name,
-         email = excluded.email,
-         updated_at = now()`,
-      [organizationId, parentId, accountId, guardian.fullName, loginEmail],
-    );
-
-    await client.query(
-      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
-       values ($1, $2, $3, $4)
-       on conflict (organization_id, parent_id, athlete_id) do update set
-         relationship_to_athlete = excluded.relationship_to_athlete,
-         updated_at = now()`,
-      [organizationId, parentId, guardian.athleteId, guardian.relationshipToAthlete],
-    );
-
-    return { parentId, athleteId: guardian.athleteId };
+    return { guardianLink, volunteerLink };
   });
 
   return {
@@ -459,6 +574,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     loginEmail,
     created: !existing,
     guardianLink,
+    volunteerLink,
   };
 }
 

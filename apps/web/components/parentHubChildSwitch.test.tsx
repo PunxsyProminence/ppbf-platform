@@ -115,6 +115,163 @@ describe('parent hub child selector', () => {
   });
 });
 
+// REQUEST ORDERING ON THE FIGHT CARD.
+//
+// The card is the one object on this hub that carries a named child's identity
+// -- their face, the ring name they wrote themselves, and the coach who is
+// with them -- and it is refetched per selection while the child's NAME beside
+// it comes from the roster and changes the instant the guardian taps. So when
+// the two card reads race, the loser can land last and print one child's
+// identity under their sibling's name. Not a stale field: the wrong child.
+describe('request ordering when the guardian switches child', () => {
+  function card(overrides: Record<string, unknown> = {}) {
+    return {
+      accountId: 'acct_child_1',
+      displayName: 'First Child',
+      initials: 'FC',
+      ringName: 'Thunder',
+      corner: 'red',
+      cornerLabel: 'Red Corner',
+      program: 'youth_mentorship',
+      programLabel: 'Youth Mentorship',
+      coachName: 'Coach Danielle',
+      coachAccountId: 'acct_coach_1',
+      coachPhotoAvailable: false,
+      coachInitials: 'CD',
+      timeAtGym: '1 year',
+      photoAvailable: false,
+      ...overrides,
+    };
+  }
+
+  const SECOND_CARD = card({
+    accountId: 'acct_child_2',
+    displayName: 'Second Child',
+    initials: 'SC',
+    ringName: 'Lightning',
+    corner: 'blue',
+    cornerLabel: 'Blue Corner',
+  });
+
+  // The roster load reads every child's card once for the selector plate, so
+  // the read this test holds open is the SECOND one for the first child --
+  // the per-selection read that fills the card panel.
+  function installCardFetch(firstChildCardAnswered: Promise<void>): jest.Mock {
+    let firstChildCardReads = 0;
+    const fetchMock = jest.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/athletes/list')) {
+        return jsonResponse({
+          items: [
+            { athlete_id: 'ath_1', full_name: 'First Child' },
+            { athlete_id: 'ath_2', full_name: 'Second Child' },
+          ],
+        });
+      }
+      if (url.includes('/api/pilot/profile/card')) {
+        if (url.includes('ath_1')) {
+          firstChildCardReads += 1;
+          if (firstChildCardReads > 1) await firstChildCardAnswered;
+          return jsonResponse({ card: card() });
+        }
+        return jsonResponse({ card: SECOND_CARD });
+      }
+      if (url.includes('/api/pilot/announcements/get')) return jsonResponse({ ok: true, announcements: [] });
+      if (url.includes('/api/pilot/parent/safety')) return jsonResponse({ ok: true, items: [] });
+      if (url.includes('/api/pilot/parent/messages')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, items: [] });
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  test("a slow card read for the child left behind never renders under the selected child's name", async () => {
+    let releaseFirstChildCard: () => void = () => {};
+    const firstChildCardAnswered = new Promise<void>((resolve) => {
+      releaseFirstChildCard = resolve;
+    });
+    installCardFetch(firstChildCardAnswered);
+
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    // The first child is selected by default and their card read is still open.
+    expect(screen.queryByLabelText('Fight card for First Child')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+
+    expect(screen.getByLabelText('Fight card for Second Child')).toBeTruthy();
+
+    // The first child's card finally arrives -- last, and for a child the
+    // guardian is no longer looking at.
+    await act(async () => {
+      releaseFirstChildCard();
+    });
+
+    expect(screen.queryByLabelText('Fight card for First Child')).toBeNull();
+    expect(screen.queryByText('“Thunder”')).toBeNull();
+    expect(screen.getByLabelText('Fight card for Second Child')).toBeTruthy();
+    expect(screen.getByText('“Lightning”')).toBeTruthy();
+  });
+
+  test("the previous child's card does not hang over the new name while the new read is open", async () => {
+    // The mirror image: the first child's card has already landed, and the
+    // SECOND child's read is the slow one. A card left on screen through the
+    // switch would be the same wrong-child claim, just reached the other way,
+    // so the card is matched against the current selection at render.
+    let releaseSecondChildCard: () => void = () => {};
+    const secondChildCardAnswered = new Promise<void>((resolve) => {
+      releaseSecondChildCard = resolve;
+    });
+    let secondChildCardReads = 0;
+    global.fetch = jest.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/athletes/list')) {
+        return jsonResponse({
+          items: [
+            { athlete_id: 'ath_1', full_name: 'First Child' },
+            { athlete_id: 'ath_2', full_name: 'Second Child' },
+          ],
+        });
+      }
+      if (url.includes('/api/pilot/profile/card')) {
+        if (url.includes('ath_2')) {
+          secondChildCardReads += 1;
+          if (secondChildCardReads > 1) await secondChildCardAnswered;
+          return jsonResponse({ card: SECOND_CARD });
+        }
+        return jsonResponse({ card: card() });
+      }
+      return jsonResponse({ ok: true, items: [] });
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByLabelText('Fight card for First Child')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+
+    // Nothing claimed about the newly selected child yet: no card at all is
+    // the honest state, and it is what a failed card read already looks like.
+    expect(screen.queryByLabelText('Fight card for First Child')).toBeNull();
+    expect(screen.queryByText('“Thunder”')).toBeNull();
+
+    await act(async () => {
+      releaseSecondChildCard();
+    });
+
+    expect(screen.getByLabelText('Fight card for Second Child')).toBeTruthy();
+  });
+});
+
 // The hub asks for its own surface. 'parent_hub' is the placement an author
 // chooses to reach guardians specifically, and the server's read includes
 // 'everywhere' with any placement, so gym-wide items still arrive.

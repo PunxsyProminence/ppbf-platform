@@ -160,6 +160,9 @@ describe('VideoReviewManagementPage', () => {
       if (String(url).includes('/api/pilot/video/list')) {
         return jsonResponse({ items: videoItems });
       }
+      if (String(url).includes('/api/pilot/video/review-link') && init?.method === 'POST') {
+        return jsonResponse({ ok: true, url: 'https://blob.example.com/s?sas=t', expires_in_minutes: 15 });
+      }
       if (String(url).includes('/api/pilot/video/scan-review') && init?.method === 'POST') {
         return jsonResponse({
           ok: true,
@@ -172,8 +175,14 @@ describe('VideoReviewManagementPage', () => {
       return jsonResponse({ ok: true });
     });
     global.fetch = fetchMock as unknown as typeof fetch;
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<VideoReviewManagementPage />);
+
+    // Approve now requires the reviewer to have opened the footage first, so the
+    // happy path has to inspect before it can decide.
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect / Watch Video' }));
+    await screen.findByText('Temporary Inspection Link Active (15m TTL)');
 
     const approveBtn = await screen.findByRole('button', { name: 'Approve Video (Set Ready)' });
     fireEvent.click(approveBtn);
@@ -181,6 +190,94 @@ describe('VideoReviewManagementPage', () => {
     expect(
       await screen.findByText('✓ Video "vid-101" approved — status updated to ready.'),
     ).toBeTruthy();
+    expect(confirmSpy).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('refuses to approve a video the reviewer has not opened', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+
+    const fetchMock = jest.fn(async (url: string) => {
+      if (String(url).includes('/api/pilot/video/list')) {
+        return jsonResponse({
+          items: [
+            {
+              video_session_id: 'vid-101',
+              title: 'Sparring Drill 1',
+              notes: 'Needs review',
+              file_name: 'clip.mp4',
+              file_size_bytes: 1048576,
+              mime_type: 'video/mp4',
+              status: 'quarantined',
+              scan_state: 'needs_human_review',
+              athlete_id: 'ath-001',
+              uploaded_by_account_id: 'coach-1',
+              created_at: '2026-08-01T12:00:00Z',
+            },
+          ],
+        });
+      }
+      return jsonResponse({ ok: true });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<VideoReviewManagementPage />);
+
+    const approveBtn = await screen.findByRole('button', { name: 'Approve Video (Set Ready)' });
+    expect((approveBtn as HTMLButtonElement).disabled).toBe(true);
+    // The reason is stated in words, not carried by the disabled styling alone.
+    expect(screen.getByTestId('approve-gate-vid-101')).toBeTruthy();
+
+    // And no decision request escapes even if the click lands.
+    fireEvent.click(approveBtn);
+    expect(
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/scan-review')),
+    ).toHaveLength(0);
+  });
+
+  it('abandons the approval when the reviewer cancels the confirm', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/video/list')) {
+        return jsonResponse({
+          items: [
+            {
+              video_session_id: 'vid-101',
+              title: 'Sparring Drill 1',
+              notes: 'Needs review',
+              file_name: 'clip.mp4',
+              file_size_bytes: 1048576,
+              mime_type: 'video/mp4',
+              status: 'quarantined',
+              scan_state: 'needs_human_review',
+              athlete_id: 'ath-001',
+              uploaded_by_account_id: 'coach-1',
+              created_at: '2026-08-01T12:00:00Z',
+            },
+          ],
+        });
+      }
+      if (String(url).includes('/api/pilot/video/review-link') && init?.method === 'POST') {
+        return jsonResponse({ ok: true, url: 'https://blob.example.com/s?sas=t', expires_in_minutes: 15 });
+      }
+      return jsonResponse({ ok: true });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<VideoReviewManagementPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect / Watch Video' }));
+    await screen.findByText('Temporary Inspection Link Active (15m TTL)');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve Video (Set Ready)' }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/scan-review')),
+    ).toHaveLength(0);
+    confirmSpy.mockRestore();
   });
 
   it('submits block decision to scan-review route', async () => {

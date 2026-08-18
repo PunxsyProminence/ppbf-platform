@@ -2636,6 +2636,11 @@ body.ppbf.on-canvas {
   .kiosk-bar, .rail, .shadow-panel, .commands { display: none; }
   .room--floor::before, .room--office::before, .room--board::before,
   .room--file::before, .room--clinic::before, .room--night::before { display: none; }
+  /* The plate ground (Plate Set v1). The broad strip below reaches every
+     element via `*`, but `*` does not match pseudo-elements, so the plate
+     would survive onto paper as a full-page photograph of a wall. Named
+     here beside the light it sits under. */
+  .room::after, .on-canvas::after { display: none; }
   @page { margin: 1in; size: letter portrait; }
   .page-break { page-break-after: always; }
 }
@@ -3279,4 +3284,75 @@ body.ppbf.on-canvas {
    chrome, and later rules win on any overlap, which is the order wanted. */
 @media print {
   .catalog, .catalog-hint, .picktray, .pickconfirm { display: none !important; }
+}
+
+/* ======================================================== PLATES (v1) =====
+   Background plate compositing grounds. Owner-approved Plate Set v1,
+   2026-08-16, frozen — this block WIRES that set; it does not restyle it.
+
+   WHAT A PLATE IS. Layer 0 only: the photographed wall a room stands in.
+   Real UI composites on top in code. No plate carries lettering, and no
+   plate substitutes for a stamp, a ticket, or passbook content.
+
+   WHY ::after AND WHY z-index:-1. The room's own gradient wall is painted
+   by the element background; the fixture light is .room::before at z-index 0;
+   content is at z-index 1. Per CSS painting order a negative-z-index
+   pseudo-element lands ABOVE the element's own background and BELOW both.
+   So the plate covers the gradient wall and the lamps still fall across it,
+   which is the order the art expects. `isolation: isolate` is required with
+   it: without a stacking context on .room the -1 layer escapes upward and
+   paints behind the page ground instead.
+
+   THE ZERO-ASSET GUARANTEE IS PRESERVED. This file's room section states
+   that every room is zero-asset "so the floor tablet still renders them with
+   no network." That still holds: a plate is one more background-image layer,
+   and a background-image layer whose URL fails is simply not painted. Offline,
+   or on a 404, the gym tablet falls back to the gradient wall and the lit
+   pools exactly as before. A plate is an enhancement over that ground, never
+   a replacement for it -- which is also why the plate must never be an <img>.
+
+   ADDING A VARIANT. Rooms are reused heavily (office 42 pages, floor 22), so
+   the set is expected to grow. A second plate for a room is a new file plus
+   one declaration here; nothing else changes. */
+.room { isolation: isolate; }
+.on-canvas { position: relative; isolation: isolate; }
+
+.room::after,
+.on-canvas::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-image: var(--plate, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Plate Set v1 — locked inventory. */
+.room--office { --plate: url("/plates/plate-01-office-01.png"); }
+.room--floor  { --plate: url("/plates/plate-02a-floor-landscape-01.png"); }
+.room--board  { --plate: url("/plates/plate-04-board-01.png"); }
+.room--file   { --plate: url("/plates/plate-05-file-01.png"); }
+.room--clinic { --plate: url("/plates/plate-03-clinic-01.png"); }
+.room--night  { --plate: url("/plates/plate-06-night-01.png"); }
+
+/* The gym tablet stands upright. A landscape wall cropped to a portrait
+   viewport loses the courses that make it read as masonry, so the floor
+   room carries its own portrait plate rather than being scaled into one. */
+@media (orientation: portrait) {
+  .room--floor { --plate: url("/plates/plate-02b-floor-portrait-01.png"); }
+}
+
+/* Plate 7. The family ground is .on-canvas, not a room -- Law 6's second
+   ground -- so it is declared here rather than in the room list above.
+   T7: family surfaces take the warm plate and no other. */
+.on-canvas { --plate: url("/plates/plate-07-warm-ground-01.png"); }
+
+/* Reduced motion is not the relevant axis here, but reduced DATA is: a
+   coach on a metered tablet gets the gradient wall, which is a complete
+   room on its own. */
+@media (prefers-reduced-data: reduce) {
+  .room::after, .on-canvas::after { background-image: none; }
 }

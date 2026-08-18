@@ -243,10 +243,26 @@ export async function upsertCoachReview(organizationId: string, payload: PilotCo
 }
 
 // List functions for frontend data fetching
-export async function getAthletesByOrganization(organizationId: string): Promise<PilotAthlete[]> {
+//
+// `page` is opt-in and defaults to undefined -- unbounded, exactly today's
+// behavior -- because several callers (coach/intelligence, readiness-board,
+// progression/suggestions, analytics/performance) compute across the WHOLE
+// roster; a silent default cap there would not slow them down, it would
+// make them wrong by quietly dropping athletes past the cut. Only the
+// roster-browsing route (athletes/list's org-admin branch) passes one.
+export async function getAthletesByOrganization(
+  organizationId: string,
+  page?: { limit: number; offset?: number },
+): Promise<PilotAthlete[]> {
+  if (!page) {
+    return query<PilotAthlete>(
+      'select * from pilot.athletes where organization_id = $1 order by created_at desc',
+      [organizationId]
+    );
+  }
   return query<PilotAthlete>(
-    'select * from pilot.athletes where organization_id = $1 order by created_at desc',
-    [organizationId]
+    'select * from pilot.athletes where organization_id = $1 order by created_at desc limit $2 offset $3',
+    [organizationId, page.limit, page.offset ?? 0]
   );
 }
 
@@ -341,23 +357,39 @@ export async function getAthletesForCoach(organizationId: string, coachId: strin
   }
 }
 
+// page is opt-in, same reasoning as getAthletesByOrganization above:
+// undefined preserves today's unbounded behavior exactly.
 export async function getGoalsByAthlete(
   organizationId: string,
-  athleteId: string
+  athleteId: string,
+  page?: { limit: number; offset?: number },
 ): Promise<PilotGoal[]> {
+  if (!page) {
+    return query<PilotGoal>(
+      'select * from pilot.goals where organization_id = $1 and athlete_id = $2 order by created_at desc',
+      [organizationId, athleteId]
+    );
+  }
   return query<PilotGoal>(
-    'select * from pilot.goals where organization_id = $1 and athlete_id = $2 order by created_at desc',
-    [organizationId, athleteId]
+    'select * from pilot.goals where organization_id = $1 and athlete_id = $2 order by created_at desc limit $3 offset $4',
+    [organizationId, athleteId, page.limit, page.offset ?? 0]
   );
 }
 
 export async function getSessionsByAthlete(
   organizationId: string,
-  athleteId: string
+  athleteId: string,
+  page?: { limit: number; offset?: number },
 ): Promise<PilotSession[]> {
+  if (!page) {
+    return query<PilotSession>(
+      'select * from pilot.sessions where organization_id = $1 and athlete_id = $2 order by date desc',
+      [organizationId, athleteId]
+    );
+  }
   return query<PilotSession>(
-    'select * from pilot.sessions where organization_id = $1 and athlete_id = $2 order by date desc',
-    [organizationId, athleteId]
+    'select * from pilot.sessions where organization_id = $1 and athlete_id = $2 order by date desc limit $3 offset $4',
+    [organizationId, athleteId, page.limit, page.offset ?? 0]
   );
 }
 

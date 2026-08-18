@@ -16,6 +16,11 @@ export interface ShadowResearchRequirementInput {
   createdByAccountId: string;
   createdByRole: string;
   metadata?: Record<string, unknown>;
+  // Mirrors pilot.shadow_library_documents.subject_id exactly: text,
+  // nullable, no foreign key -- a research requirement may outlive the
+  // athlete it was about. Absent/null means the row is not about one athlete
+  // (e.g. an org-wide capability-coverage gap).
+  subjectId?: string | null;
 }
 
 export interface ShadowResearchRequirementRow {
@@ -36,6 +41,7 @@ export interface ShadowResearchRequirementRow {
   metadata: Record<string, unknown>;
   created_at: string;
   resolved_at: string | null;
+  subject_id: string | null;
 }
 
 export interface ShadowResearchRequirementFilter {
@@ -47,8 +53,8 @@ export interface ShadowResearchRequirementFilter {
 export async function createShadowResearchRequirement(input: ShadowResearchRequirementInput): Promise<number> {
   const row = await queryOne<{ research_requirement_id: number }>(
     `insert into pilot.shadow_research_requirements
-     (organization_id, source_event_name, source_entity_type, source_entity_id, research_requirement, knowledge_gap, evidence_label, source_status, source_confidence_tier, source_verification_state, created_by_account_id, created_by_role, metadata)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
+     (organization_id, source_event_name, source_entity_type, source_entity_id, research_requirement, knowledge_gap, evidence_label, source_status, source_confidence_tier, source_verification_state, created_by_account_id, created_by_role, metadata, subject_id)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14)
      on conflict (organization_id, source_event_name, source_entity_type, source_entity_id)
      do update set
        source_entity_id = pilot.shadow_research_requirements.source_entity_id
@@ -67,6 +73,7 @@ export async function createShadowResearchRequirement(input: ShadowResearchRequi
       input.createdByAccountId,
       input.createdByRole,
       JSON.stringify(input.metadata ?? {}),
+      input.subjectId ?? null,
     ],
   );
 
@@ -101,15 +108,14 @@ export async function listShadowResearchRequirements(
        created_by_role,
        metadata,
        created_at,
-       resolved_at
+       resolved_at,
+       subject_id
      from pilot.shadow_research_requirements
      where organization_id = $1
        and ($2::text is null or status = $2)
        and (
          $3::boolean = false
-         or source_entity_id = any($4::text[])
-         or evidence_label = any($4::text[])
-         or metadata->>'subject_id' = any($4::text[])
+         or subject_id = any($4::text[])
        )
      order by created_at desc`,
     [organizationId, filter.status ?? null, hasAthleteScope, athleteIds],
@@ -123,10 +129,9 @@ export async function resolveShadowResearchRequirement(input: {
   resolvedByRole: string;
   metadata?: Record<string, unknown>;
   // When provided (a parent caller), the row must match one of these athlete
-  // IDs via the same source_entity_id/evidence_label/metadata.subject_id
-  // heuristic listShadowResearchRequirements uses -- otherwise a parent could
-  // resolve any other family's requirement in the org by guessing/enumerating
-  // an id, even though the list view is already correctly scoped.
+  // IDs via the subject_id column -- otherwise a parent could resolve any
+  // other family's requirement in the org by guessing/enumerating an id, even
+  // though the list view is already correctly scoped.
   athleteIds?: string[];
 }): Promise<boolean> {
   const hasAthleteScope = (input.athleteIds?.length ?? 0) > 0;
@@ -142,9 +147,7 @@ export async function resolveShadowResearchRequirement(input: {
        and status = 'open'
        and (
          $4::boolean = false
-         or source_entity_id = any($5::text[])
-         or evidence_label = any($5::text[])
-         or metadata->>'subject_id' = any($5::text[])
+         or subject_id = any($5::text[])
        )
      returning research_requirement_id`,
     [

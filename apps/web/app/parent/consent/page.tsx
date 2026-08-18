@@ -103,7 +103,10 @@ export default function GuardianMediaConsentPage() {
 
   return (
     <RoleSessionGate allowedRoles={['parent']}>
-      <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      {/* T7 (Plate Set v1): family surfaces take the warm ground or none.
+          Gated to `parent`; see the note on parent/safety for why the room is
+          dropped rather than swapped to .on-canvas. */}
+      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
@@ -119,7 +122,9 @@ export default function GuardianMediaConsentPage() {
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}
-            {actionMessage ? <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p> : null}
+            {actionMessage ? (
+              <p role="status" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p>
+            ) : null}
           </header>
 
           {isLoading ? (

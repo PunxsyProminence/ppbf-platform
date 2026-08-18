@@ -1,4 +1,5 @@
 import {
+  accessibleAthleteIds,
   assertActorCanAccessAthlete,
   assertAthleteBelongsToOrganization,
   assertAthleteUpdateAllowed,
@@ -481,6 +482,137 @@ describe('assertActorCanAccessAthlete', () => {
     test('throws Forbidden for staff', async () => {
       const actor: ActorIdentity = { accountId: 's1', role: 'staff', organizationId: 'org-1', athleteId: null };
       await expect(assertActorCanAccessAthlete(actor, 'ath-1')).rejects.toThrow('Forbidden');
+    });
+  });
+});
+
+// ─── accessibleAthleteIds ─────────────────────────────────────────────────────
+//
+// The batched counterpart to assertActorCanAccessAthlete: same authorization
+// rule per role, but evaluated for a whole candidate list in a bounded
+// number of queries instead of one round trip per id. Each test's rule
+// mirrors the matching assertActorCanAccessAthlete test above -- this is a
+// different query shape for the identical predicate, not a different rule.
+
+describe('accessibleAthleteIds', () => {
+  test('returns an empty set without querying when given no ids', async () => {
+    const actor: ActorIdentity = { accountId: 'a', role: 'organization_admin', organizationId: 'org-1', athleteId: null };
+    await expect(accessibleAthleteIds(actor, [])).resolves.toEqual(new Set());
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('dedupes repeated ids before querying', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }]);
+    const actor: ActorIdentity = { accountId: 'a', role: 'organization_admin', organizationId: 'org-1', athleteId: null };
+    await accessibleAthleteIds(actor, ['ath-1', 'ath-1', 'ath-1']);
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params[1]).toEqual(['ath-1']);
+  });
+
+  test('denies platform_owner without querying, same as assertActorCanAccessAthlete', async () => {
+    const actor: ActorIdentity = { accountId: 'a', role: 'platform_owner', organizationId: 'org-1', athleteId: null };
+    await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set());
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('denies board without querying, same as assertActorCanAccessAthlete', async () => {
+    const actor: ActorIdentity = { accountId: 'b', role: 'board', organizationId: 'org-1', athleteId: null };
+    await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set());
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('org admin: returns only the ids that belong to their organization', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }]);
+    const actor: ActorIdentity = { accountId: 'a', role: 'organization_admin', organizationId: 'org-1', athleteId: null };
+    const result = await accessibleAthleteIds(actor, ['ath-1', 'ath-other-org']);
+    expect(result).toEqual(new Set(['ath-1']));
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('pilot.athletes');
+    expect(params).toEqual(['org-1', ['ath-1', 'ath-other-org']]);
+  });
+
+  test('legacy admin role behaves like organization_admin', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }]);
+    const actor: ActorIdentity = { accountId: 'a', role: 'admin', organizationId: 'org-1', athleteId: null };
+    await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set(['ath-1']));
+  });
+
+  describe('coach role', () => {
+    test('returns directly assigned athletes without a coverage query', async () => {
+      mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }, { athlete_id: 'ath-2' }]);
+      const actor: ActorIdentity = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1', athleteId: null };
+      const result = await accessibleAthleteIds(actor, ['ath-1', 'ath-2']);
+      expect(result).toEqual(new Set(['ath-1', 'ath-2']));
+      // Every candidate matched the direct-assignment query -- nothing left
+      // to check coverage for.
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    test('falls back to a coverage query only for ids that missed direct assignment', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ athlete_id: 'ath-1' }]) // assigned: ath-1 only
+        .mockResolvedValueOnce([{ athlete_id: 'ath-2' }]); // covered: ath-2
+      const actor: ActorIdentity = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1', athleteId: null };
+      const result = await accessibleAthleteIds(actor, ['ath-1', 'ath-2', 'ath-3']);
+
+      expect(result).toEqual(new Set(['ath-1', 'ath-2']));
+      const [coverageSql, coverageParams] = mockQuery.mock.calls[1];
+      expect(coverageSql).toContain('pilot.coach_coverage');
+      expect(coverageParams).toEqual(['org-1', 'coach-1', ['ath-2', 'ath-3']]);
+    });
+
+    test('a missing coach_coverage table (42P01) is treated as no coverage, matching assertCoachAssignedToAthlete', async () => {
+      const missingTable = Object.assign(new Error('relation "pilot.coach_coverage" does not exist'), { code: '42P01' });
+      mockQuery.mockResolvedValueOnce([]).mockRejectedValueOnce(missingTable);
+      const actor: ActorIdentity = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1', athleteId: null };
+      await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set());
+    });
+
+    test('any other database error from the coverage lookup still propagates', async () => {
+      const dbDown = Object.assign(new Error('connection refused'), { code: '08006' });
+      mockQuery.mockResolvedValueOnce([]).mockRejectedValueOnce(dbDown);
+      const actor: ActorIdentity = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1', athleteId: null };
+      await expect(accessibleAthleteIds(actor, ['ath-1'])).rejects.toThrow('connection refused');
+    });
+  });
+
+  describe('athlete role', () => {
+    test('returns only their own id, without querying', async () => {
+      const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: 'ath-1' };
+      await expect(accessibleAthleteIds(actor, ['ath-1', 'ath-2'])).resolves.toEqual(new Set(['ath-1']));
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    test('returns an empty set when athleteId is unset', async () => {
+      const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: null };
+      await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set());
+    });
+  });
+
+  describe('parent role', () => {
+    test('returns the subset of candidates the parent is linked to', async () => {
+      mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }, { athlete_id: 'ath-2' }]);
+      const actor: ActorIdentity = { accountId: 'parent-acct-1', role: 'parent', organizationId: 'org-1', athleteId: null };
+      const result = await accessibleAthleteIds(actor, ['ath-1', 'ath-3']);
+      expect(result).toEqual(new Set(['ath-1']));
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('guardian_links');
+      expect(params).toEqual(['org-1', 'parent-acct-1']);
+    });
+  });
+
+  describe('volunteer and staff roles', () => {
+    test('returns an empty set for volunteer, without querying', async () => {
+      const actor: ActorIdentity = { accountId: 'v1', role: 'volunteer', organizationId: 'org-1', athleteId: null };
+      await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set());
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    test('returns an empty set for staff, without querying', async () => {
+      const actor: ActorIdentity = { accountId: 's1', role: 'staff', organizationId: 'org-1', athleteId: null };
+      await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set());
+      expect(mockQuery).not.toHaveBeenCalled();
     });
   });
 });

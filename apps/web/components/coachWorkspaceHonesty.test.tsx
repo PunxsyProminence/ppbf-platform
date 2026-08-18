@@ -985,6 +985,76 @@ describe('roster readiness comes from the board feed, honestly', () => {
     expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
   });
 
+  // The scores driving these colours are typed by staff during intake review;
+  // no validated formula produces them (see
+  // docs/capabilities/READINESS_PROVENANCE_FACTS.md). The rule that already
+  // governs assessment results -- a value is never read without its
+  // measurement properties -- applies here too.
+  test('an unvalidated readiness method is caveated beside the count, not hidden in a help panel', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [
+          {
+            athlete_id: 'ath_1',
+            status: 'GREEN',
+            score: 8,
+            measured_at: '2026-08-15T12:00:00.000Z',
+            method: 'staff_entered_intake',
+            reliability_status: 'UNVALIDATED - PPBF MUST ESTABLISH',
+            validity_status: 'UNKNOWN',
+            evidence_class: 'INSUFFICIENT EVIDENCE',
+          },
+        ],
+      }),
+    });
+
+    expect(screen.getByText(/entered by staff during intake review/i)).toBeTruthy();
+    expect(screen.getByText(/not as a measurement/i)).toBeTruthy();
+  });
+
+  // Fail-closed: a feed that omits provenance entirely (an older server, or a
+  // shape change) must be treated as unvalidated, never as validated-by-absence.
+  test('a feed carrying no provenance at all is still caveated', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [
+          { athlete_id: 'ath_1', status: 'GREEN', score: 8, measured_at: '2026-08-15T12:00:00.000Z' },
+        ],
+      }),
+    });
+
+    expect(screen.getByText(/entered by staff during intake review/i)).toBeTruthy();
+  });
+
+  // The caveat must not become a permanent fixture nobody can remove: it is
+  // computed from the feed, so an established method retires it automatically.
+  test('a validated method retires the caveat without a code change', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [
+          {
+            athlete_id: 'ath_1',
+            status: 'GREEN',
+            score: 8,
+            measured_at: '2026-08-15T12:00:00.000Z',
+            method: 'some_future_validated_method',
+            reliability_status: 'ESTABLISHED',
+            validity_status: 'ESTABLISHED',
+            evidence_class: 'ESTABLISHED',
+          },
+        ],
+      }),
+    });
+
+    // The tile is live (one GREEN reading, two athletes without one), so the
+    // caveat's absence is a real decision rather than the tile being empty.
+    expect(screen.getByText(/0 RED, 0 YELLOW, 2 unknown/)).toBeTruthy();
+    expect(screen.queryByText(/entered by staff during intake review/i)).toBeNull();
+  });
+
   test('a failed feed reads as no signal, never as zero flags', async () => {
     await renderWorkspace({
       athletesList: threeAthletes,

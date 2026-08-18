@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { assertActiveParentAccount, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
@@ -23,6 +23,27 @@ export const runtime = 'nodejs';
 
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+// pilot.readiness.score is NOT NULL and read straight into a coach-facing
+// triage board (readinessBoard.ts). Number(value || 0) used to turn a
+// missing or malformed score into a real, stored 0 -- which the board reads
+// as RED, "adjust the plan", for an athlete nobody actually measured. A
+// missing reading must stay missing, not become a fabricated alarm.
+function requireFiniteNumber(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    // "Unsupported" is jsonError's recognized prefix for a client-supplied
+    // field that is missing, wrong-typed, or otherwise invalid (see
+    // "Unsupported guardian.pin" elsewhere) -- anything else falls into the
+    // generic 500 branch, which scrubs the message and would hide a
+    // legitimate validation refusal behind an opaque server error. The
+    // message names both failure modes this guard actually rejects --
+    // missing/wrong-typed and non-finite (NaN, Infinity) -- since "must be a
+    // number" alone reads as though only the type was checked (Copilot
+    // review, PR #423).
+    throw new Error(`Unsupported ${field}: must be a finite number, and cannot be missing`);
+  }
+  return value;
 }
 
 export async function POST(request: NextRequest) { // NOSONAR
@@ -115,12 +136,19 @@ export async function POST(request: NextRequest) { // NOSONAR
         notes: typeof body.payload.notes === 'string' ? body.payload.notes : undefined,
       });
     } else if (entityType === 'readiness') {
+      // A readiness score entered here is typed by a member of staff during
+      // intake review -- nothing computes it. That is recorded on the row
+      // rather than left to be inferred, and the account that typed it is
+      // recorded with it, so "where did this number come from" has an answer
+      // that does not depend on reading this file.
       entityId = await createReadiness({
         organizationId: principal.organizationId,
         athleteId,
-        score: Number(body.payload.score || 0),
+        score: requireFiniteNumber(body.payload.score, 'payload.score'),
         category: asString(body.payload.category, 'general'),
         measuredAt: asString(body.payload.measured_at, new Date().toISOString()),
+        method: 'staff_entered_intake',
+        recordedByAccountId: principal.accountId,
       });
     } else if (entityType === 'coach_note') {
       entityId = await createCoachObservation({
@@ -131,15 +159,31 @@ export async function POST(request: NextRequest) { // NOSONAR
         noteText: asString(body.payload.note_text),
       });
     } else if (entityType === 'guardian_link') {
+      // Attaching a guardian to an athlete grants that guardian's account
+      // ongoing read access to the athlete's training holds, safety-gate
+      // outcomes, and staff messages (see guardianAthleteIds). The athlete
+      // side is already checked above via assertActorCanAccessAthlete; this
+      // branch additionally requires organization_admin (not coach -- no
+      // shipped coach workflow calls this today, so narrowing it costs no
+      // real functionality) and, when an account_id is supplied, requires
+      // it actually be an active parent-role account in this organization,
+      // so a link can't be minted onto an arbitrary or wrong-family account.
+      requireRole(principal, ['organization_admin']);
+
       const parentId = asString(body.payload.parent_id);
       if (!parentId) {
         throw new Error('Missing parent_id for guardian link');
       }
 
+      const guardianAccountId = typeof body.payload.account_id === 'string' ? body.payload.account_id : undefined;
+      if (guardianAccountId) {
+        await assertActiveParentAccount(principal.organizationId, guardianAccountId, 'account_id');
+      }
+
       await upsertGuardian({
         organizationId: principal.organizationId,
         parentId,
-        accountId: typeof body.payload.account_id === 'string' ? body.payload.account_id : undefined,
+        accountId: guardianAccountId,
         fullName: asString(body.payload.full_name, 'Guardian'),
         phone: typeof body.payload.phone === 'string' ? body.payload.phone : undefined,
         email: typeof body.payload.email === 'string' ? body.payload.email : undefined,

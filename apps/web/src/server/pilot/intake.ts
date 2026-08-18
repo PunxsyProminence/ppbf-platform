@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import type { ReadinessMethod } from './readinessProvenance';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
 
 export type IntakeDocumentType =
@@ -558,20 +559,65 @@ export async function createAttendance(params: {
   return attendanceId;
 }
 
+// ReadinessMethod is defined ONCE, in readinessProvenance.ts, and re-exported
+// here for callers already importing from this module. It was briefly declared
+// in both files, which is the drift hazard this whole change exists to remove:
+// two hand-kept copies of the method vocabulary would eventually disagree with
+// each other and with the database CHECK constraint, and the copy that drifted
+// would be the one describing a score nobody could audit.
+//
+// Imported as well as re-exported because `export type { X } from` publishes
+// the name without binding it locally, and createReadiness below uses it.
+export type { ReadinessMethod };
+
+/**
+ * Writes one readiness reading, and REQUIRES the caller to say what produced
+ * it.
+ *
+ * `method` is not optional and has no default, here or in the column. Three
+ * engine proposals (modules 021, 029, 033) independently refused to consume
+ * this table because a score arrived with no way to audit where it came from;
+ * a defaulted parameter here would reintroduce exactly that, one layer up from
+ * the database. See docs/capabilities/READINESS_PROVENANCE_FACTS.md.
+ *
+ * The measurement-property arguments default toward "not established", the
+ * same direction pilot.assessment_protocols defaults them. Nothing that writes
+ * here today has a validated method, so nothing today passes them -- they are
+ * parameters rather than constants only so that a future validated method can
+ * state its own status without this function needing to know about it.
+ */
 export async function createReadiness(params: {
   organizationId: string;
   athleteId: string;
   score: number;
   category: string;
   measuredAt: string;
+  method: ReadinessMethod;
+  recordedByAccountId?: string | null;
+  reliabilityStatus?: string;
+  validityStatus?: string;
+  evidenceClass?: string;
 }): Promise<string> {
   const readinessId = randomUUID();
 
   await query(
     `insert into pilot.readiness
-     (organization_id, readiness_id, athlete_id, score, category, measured_at)
-     values ($1,$2,$3,$4,$5,$6)`,
-    [params.organizationId, readinessId, params.athleteId, params.score, params.category, params.measuredAt],
+     (organization_id, readiness_id, athlete_id, score, category, measured_at,
+      method, recorded_by_account_id, reliability_status, validity_status, evidence_class)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      params.organizationId,
+      readinessId,
+      params.athleteId,
+      params.score,
+      params.category,
+      params.measuredAt,
+      params.method,
+      params.recordedByAccountId ?? null,
+      params.reliabilityStatus ?? 'UNVALIDATED - PPBF MUST ESTABLISH',
+      params.validityStatus ?? 'UNKNOWN',
+      params.evidenceClass ?? 'INSUFFICIENT EVIDENCE',
+    ],
   );
 
   return readinessId;
@@ -716,15 +762,23 @@ export async function upsertGuardian(params: {
   phone?: string;
   email?: string;
 }): Promise<void> {
+  // account_id, phone and email are optional in this signature -- both
+  // callers omit them when the caller-supplied payload simply did not carry
+  // one, not to mean "clear it". Overwriting unconditionally, as this used to
+  // do, meant naming an EXISTING parent_id with a shorter payload silently
+  // nulled a real guardian's account link and contact details rather than
+  // leaving them alone. coalesce against the current row so an omitted field
+  // preserves what is already on file; full_name has no optional caller path
+  // (both call sites always supply one) and keeps overwriting as before.
   await query(
     `insert into pilot.parents
      (organization_id, parent_id, account_id, full_name, phone, email)
      values ($1,$2,$3,$4,$5,$6)
      on conflict (organization_id, parent_id) do update set
-       account_id = excluded.account_id,
+       account_id = coalesce(excluded.account_id, pilot.parents.account_id),
        full_name = excluded.full_name,
-       phone = excluded.phone,
-       email = excluded.email,
+       phone = coalesce(excluded.phone, pilot.parents.phone),
+       email = coalesce(excluded.email, pilot.parents.email),
        updated_at = now()`,
     [params.organizationId, params.parentId, params.accountId ?? null, params.fullName, params.phone ?? null, params.email ?? null],
   );

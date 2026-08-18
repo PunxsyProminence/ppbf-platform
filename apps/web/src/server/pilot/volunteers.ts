@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import { query, queryOne } from './db';
+import { BOARD_MINIMUM_COHORT_SIZE, boardCountMetric, type BoardCountMetric } from './boardSummary';
 
 export const VOLUNTEER_STATUSES = ['active', 'pending', 'inactive'] as const;
 export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
@@ -29,10 +32,18 @@ export interface VolunteerRecord {
 export interface VolunteerCreateInput {
   organizationId: string;
   fullName: string;
-  roleFocus: string;
-  availability: string;
-  certificationStatus: string;
-  backgroundCheckStatus: string;
+  // string | null rather than a required string: POST /api/admin/volunteers
+  // still validates all four are present before it ever calls this (so that
+  // route's behavior is unchanged), but createOrUpdateMicrosoftStaffAccount
+  // (staffProvisioning.ts) also calls this to create the roster row a
+  // volunteer invite is missing today, and an invite carries only an email --
+  // it does not know a role focus or an availability window. The columns are
+  // nullable in the base schema for exactly this "not yet known" case; see
+  // the migration header.
+  roleFocus: string | null;
+  availability: string | null;
+  certificationStatus: string | null;
+  backgroundCheckStatus: string | null;
   notes?: string | null;
   // Set when the volunteer is also a platform account. Most volunteers are
   // not, so this is null far more often than not, and the column is nullable
@@ -93,34 +104,48 @@ export async function getVolunteer(
   );
 }
 
-export async function createVolunteer(input: VolunteerCreateInput): Promise<string> {
+/**
+ * Accepts an optional client so a caller (staffProvisioning.ts's
+ * createOrUpdateMicrosoftStaffAccount) can make writing the roster row part
+ * of the same transaction that creates the account -- a volunteer invite
+ * should never commit an account with no roster row behind it, the same
+ * reasoning fileEscalation (escalationLadder.ts) documents for its own
+ * optional client.
+ */
+export async function createVolunteer(input: VolunteerCreateInput, client?: PoolClient): Promise<string> {
   const volunteerId = randomUUID();
 
   // `role` and `active_flag` are the base schema's own columns and are NOT
-  // NULL / defaulted there. They are written from the program fields rather
-  // than left to defaults so the canonical columns stay truthful instead of
-  // quietly disagreeing with role_focus and status.
-  await query(
-    `insert into pilot.volunteers
+  // NULL / defaulted there. `role` is written from role_focus rather than
+  // left to a default so the canonical column stays truthful instead of
+  // quietly disagreeing with it -- and falls back to the literal 'volunteer'
+  // only when role_focus itself is unknown, so a not-null column is never
+  // asked to hold a value nobody supplied.
+  const values = [
+    input.organizationId,
+    volunteerId,
+    input.accountId ?? null,
+    input.fullName,
+    input.roleFocus ?? 'volunteer',
+    false,
+    input.roleFocus ?? null,
+    input.availability ?? null,
+    input.certificationStatus ?? null,
+    input.backgroundCheckStatus ?? null,
+    'pending',
+    input.notes ?? null,
+  ];
+  const sql = `insert into pilot.volunteers
        (organization_id, volunteer_id, account_id, full_name, role, active_flag,
         role_focus, availability, certification_status, background_check_status,
         status, notes, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now(), now())`,
-    [
-      input.organizationId,
-      volunteerId,
-      input.accountId ?? null,
-      input.fullName,
-      input.roleFocus,
-      false,
-      input.roleFocus,
-      input.availability,
-      input.certificationStatus,
-      input.backgroundCheckStatus,
-      'pending',
-      input.notes ?? null,
-    ],
-  );
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now(), now())`;
+
+  if (client) {
+    await client.query(sql, values);
+  } else {
+    await query(sql, values);
+  }
 
   return volunteerId;
 }
@@ -142,4 +167,75 @@ export async function updateVolunteerStatus(input: {
   );
 
   return rows.length > 0;
+}
+
+export interface BoardVolunteerSummary {
+  scope: 'organization_aggregate';
+  minimumCohortSize: number;
+  generatedAt: string;
+  volunteersByStatus: {
+    active: BoardCountMetric;
+    pending: BoardCountMetric;
+    inactive: BoardCountMetric;
+  };
+  newVolunteers30Days: BoardCountMetric;
+}
+
+interface BoardVolunteerSummaryRow {
+  active_count: number;
+  pending_count: number;
+  inactive_count: number;
+  new_count: number;
+}
+
+/**
+ * Board's ONLY window into the volunteer roster -- count-only and
+ * k-anonymity-gated exactly like every other board aggregate (see
+ * boardSummary.ts's own metrics and escalationLadder.ts's
+ * getBoardEscalationSummary, which this mirrors). Board never reads a
+ * pilot.volunteers row directly: no volunteer_id, no account_id, no
+ * full_name, no role_focus, no certification_status or
+ * background_check_status, no notes -- only how many volunteers sit in each
+ * status bucket and how many joined in the last 30 days.
+ *
+ * Each bucket counts volunteers directly rather than events attached to a
+ * volunteer (unlike sessions/goals/reviews in boardSummary.ts, one
+ * pilot.volunteers row IS one volunteer), so the record count and the
+ * cohort/participant count boardCountMetric gates on are the same number
+ * here. That makes this the same shape as boardSummary.ts's activeAthletes
+ * metric, not the rate-metric shape used for sessions or coach reviews: a
+ * bucket with 1-4 volunteers reports 'insufficient_data' rather than a small
+ * real number, and an empty bucket reports 'unavailable' rather than a
+ * measured zero, identical to every other board count.
+ */
+export async function getBoardVolunteerSummary(organizationId: string): Promise<BoardVolunteerSummary> {
+  const row = await queryOne<BoardVolunteerSummaryRow>(
+    `select
+       count(*) filter (where status = 'active')::int as active_count,
+       count(*) filter (where status = 'pending')::int as pending_count,
+       count(*) filter (where status = 'inactive')::int as inactive_count,
+       count(*) filter (where created_at >= now() - interval '30 days')::int as new_count
+     from pilot.volunteers
+     where organization_id = $1`,
+    [organizationId],
+  );
+
+  const safe = row ?? {
+    active_count: 0,
+    pending_count: 0,
+    inactive_count: 0,
+    new_count: 0,
+  };
+
+  return {
+    scope: 'organization_aggregate',
+    minimumCohortSize: BOARD_MINIMUM_COHORT_SIZE,
+    generatedAt: new Date().toISOString(),
+    volunteersByStatus: {
+      active: boardCountMetric(safe.active_count, safe.active_count),
+      pending: boardCountMetric(safe.pending_count, safe.pending_count),
+      inactive: boardCountMetric(safe.inactive_count, safe.inactive_count),
+    },
+    newVolunteers30Days: boardCountMetric(safe.new_count, safe.new_count),
+  };
 }

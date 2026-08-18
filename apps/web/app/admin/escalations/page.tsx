@@ -5,14 +5,23 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+// Imported (type-only, erased at build time -- safe in a 'use client' page,
+// matching e.g. app/athlete/sign-in/page.tsx's `import type { PilotRole }`)
+// rather than re-declared here: escalationLadder.ts is the canonical source
+// of truth for which source_types exist, and SOURCE_LABEL below is keyed off
+// this same type so a future new source_type fails `npx tsc --noEmit` with a
+// missing-key error instead of silently rendering a blank Source cell, which
+// is exactly how 'incident'/'video_scan'/'compliance_violation' went blank
+// here -- this file used to keep its own separate union that drifted out of
+// sync with the real one.
+import type { SafetyEscalationSourceType } from '@/src/server/pilot/escalationLadder';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
-type EscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold';
 
 interface SafetyEscalation {
   escalation_id: string;
-  source_type: EscalationSourceType;
+  source_type: SafetyEscalationSourceType;
   athlete_id: string;
   severity: EscalationSeverity;
   reason: string;
@@ -28,13 +37,23 @@ const SEVERITY_BADGE: Record<EscalationSeverity, { rung: string; glyph: string }
   low: { rung: 'badge--monitor', glyph: '◉' },
 };
 
-const SOURCE_LABEL: Record<EscalationSourceType, string> = {
+// Record<SafetyEscalationSourceType, string> (not Record<string, string>) is
+// load-bearing: TypeScript rejects this object if it is missing a key for
+// any value the canonical union admits, so a new source_type added to
+// escalationLadder.ts without a label here is a compile error, not a blank
+// cell in production.
+// Exported so page.test.tsx can assert, without a full render, that every
+// value SAFETY_ESCALATION_SOURCE_TYPES admits has a non-blank label here.
+export const SOURCE_LABEL: Record<SafetyEscalationSourceType, string> = {
   near_miss: 'Near Miss',
   pain_report: 'Pain Report',
   safety_gate_evaluation: 'Safety Gate',
   repeated_pattern: 'Repeated Pattern',
   athlete_voice: 'Athlete Voice',
   training_hold: 'Training Hold',
+  incident: 'Incident',
+  video_scan: 'Video Scan',
+  compliance_violation: 'Compliance Violation',
 };
 
 const STATUS_TABS: Array<{ value: EscalationStatus | 'all'; label: string }> = [

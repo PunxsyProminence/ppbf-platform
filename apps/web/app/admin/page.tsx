@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RevenueFundingCenter from '@/components/RevenueFundingCenter';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
@@ -473,6 +474,14 @@ export default function AdminCapabilitiesPage() {
      feature that can actually hurt somebody. */
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   const [pendingBulk, setPendingBulk] = useState<BulkAction | null>(null);
+  // closeOnEscape: false -- Law 7's own comment on this confirmation is
+  // explicit that CANCEL and the delete button are the only two ways out;
+  // an incidental Escape must not become a third, undocumented one.
+  const bulkDeleteRef = useDialogFocusTrap<HTMLElement>({
+    open: pendingBulk !== null,
+    onClose: () => setPendingBulk(null),
+    closeOnEscape: false,
+  });
   const [bulkRole, setBulkRole] = useState<RoleName>('Admin');
   /**
    * The one step back.
@@ -1191,7 +1200,7 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/admin/consent"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
                 >
                   CONSENT
                 </Link>
@@ -1199,7 +1208,7 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/admin/import"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
                 >
                   LOAD ROSTER
                 </Link>
@@ -1207,7 +1216,7 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/admin/gear"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
                 >
                   EQUIPMENT
                 </Link>
@@ -1215,7 +1224,7 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/admin/customize"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
                 >
                   CUSTOMIZE
                 </Link>
@@ -1770,7 +1779,13 @@ export default function AdminCapabilitiesPage() {
                   destructive confirmation you can dismiss by accident, and the
                   two buttons below are the only two ways out. */}
               {pendingBulk && (
-                <article className="pickconfirm" role="alertdialog" aria-label="Confirm a deletion">
+                <article
+                  ref={bulkDeleteRef}
+                  className="pickconfirm"
+                  role="alertdialog"
+                  aria-modal="true"
+                  aria-label="Confirm a deletion"
+                >
                   <h3 className="pickconfirm-title">
                     Delete {describeCount(selectedCount)} from the registry?
                   </h3>

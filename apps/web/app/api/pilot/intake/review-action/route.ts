@@ -39,6 +39,26 @@ function requireString(value: unknown, field: string): string {
   return value.trim();
 }
 
+// promotion.readiness.score is typed as `number` in IntakePromotionPayload,
+// but that type comes from an `as` cast on the request body -- nothing
+// checks the actual JSON value before it reaches pilot.readiness, a NOT
+// NULL column a coach-facing triage board reads as ground truth.
+function requireFiniteNumber(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    // "Unsupported" is jsonError's recognized prefix for a client-supplied
+    // field that is missing, wrong-typed, or otherwise invalid (see
+    // "Unsupported guardian.pin" below) -- anything else falls into the
+    // generic 500 branch, which scrubs the message and would hide a
+    // legitimate validation refusal behind an opaque server error. The
+    // message names both failure modes this guard actually rejects --
+    // missing/wrong-typed and non-finite (NaN, Infinity) -- since "must be a
+    // number" alone reads as though only the type was checked (Copilot
+    // review, PR #423).
+    throw new Error(`Unsupported ${field}: must be a finite number, and cannot be missing`);
+  }
+  return value;
+}
+
 export async function POST(request: NextRequest) { // NOSONAR
   try {
     const principal = await requirePrincipal(request);
@@ -164,6 +184,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         researchRequirement: researchFields.researchRequirement,
         knowledgeGap: researchFields.knowledgeGap,
         evidenceLabel: null,
+        subjectId: intakeCase.primary_athlete_id,
         sourceStatus: researchFields.sourceStatus,
         sourceConfidenceTier: 'LIMITED',
         sourceVerificationState: researchFields.sourceVerificationState,
@@ -237,6 +258,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         researchRequirement: researchFields.researchRequirement,
         knowledgeGap: researchFields.knowledgeGap,
         evidenceLabel: null,
+        subjectId: intakeCase.primary_athlete_id,
         sourceStatus: researchFields.sourceStatus,
         sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW',
         sourceVerificationState: researchFields.sourceVerificationState,
@@ -281,6 +303,20 @@ export async function POST(request: NextRequest) { // NOSONAR
     if (process.env.PPBF_INTAKE_PROMOTION_ENABLED !== 'true') {
       throw new Error('Forbidden: intake promotion is not enabled');
     }
+
+    // Validated here, before any promotion write begins, not down at the
+    // createReadiness call where it used to live. This route has no
+    // transaction wrapping its promotion writes -- by the time readiness was
+    // reached, the athlete, account, guardian, emergency contact, medical,
+    // waiver, assessment and attendance writes had already committed. A
+    // refusal down there therefore returned a clean 400 that looked like
+    // nothing had happened, while most of the promotion had, and a caller
+    // who fixed the score and resubmitted would re-run every write in this
+    // function -- duplicating the UUID-backed assessment and attendance rows,
+    // which insert rather than upsert (Codex review, PR #423).
+    const validatedReadinessScore = promotion.readiness
+      ? requireFiniteNumber(promotion.readiness.score, 'promotion.readiness.score')
+      : undefined;
 
     const athleteCreatedAt = new Date().toISOString();
 
@@ -432,12 +468,23 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
 
     if (promotion.readiness) {
+      // Same provenance as the domain-upsert path, and for the same reason:
+      // this score comes from a promotion payload an administrator hand-typed,
+      // not from any formula. The row says so.
+      //
+      // score is validatedReadinessScore, not a fresh requireFiniteNumber call
+      // against promotion.readiness.score -- the value was already checked
+      // above, before the first write in this function ran. Re-validating
+      // the same field here would be harmless, but keeping the checked value
+      // makes it visible that this call cannot be the one that fails.
       await createReadiness({
         organizationId: principal.organizationId,
         athleteId: promotion.athlete.athlete_id,
-        score: promotion.readiness.score,
+        score: validatedReadinessScore as number,
         category: promotion.readiness.category,
         measuredAt: promotion.readiness.measured_at,
+        method: 'staff_entered_intake',
+        recordedByAccountId: principal.accountId,
       });
     }
 
@@ -509,6 +556,7 @@ export async function POST(request: NextRequest) { // NOSONAR
       researchRequirement: researchFields.researchRequirement,
       knowledgeGap: researchFields.knowledgeGap,
       evidenceLabel: null,
+      subjectId: promotion.athlete.athlete_id,
       sourceStatus: researchFields.sourceStatus,
       sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW',
       sourceVerificationState: researchFields.sourceVerificationState,

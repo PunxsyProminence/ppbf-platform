@@ -1,11 +1,22 @@
 // Real PostgreSQL-backed contract test for the program-phases migration
-// (module 129).
+// (module 129), AND for the REAL module behavior on top of it: './db' is
+// mocked to route into the embedded server (see trainingHolds.pg.test.ts
+// for the same pattern), so startPhase, endPhase, and listPhases below are
+// the actual production functions executing their actual SQL against
+// actual rows -- not the hand-written raw-SQL inserts the rest of this
+// file uses to prove schema-level constraints.
 //
 // What needs proving that reading SQL cannot prove: the migration creates
 // the table from nothing and re-applies as a no-op; ONE OPEN PHASE per
 // program is a partial unique index (a program cannot be in two blocks at
 // once) while closed history accumulates freely; and a phase cannot end
-// before it began.
+// before it began. On top of that: startPhase's own date-ordering refusal
+// (a new phase cannot begin before the one it replaces) and its
+// auto-close-the-day-before behavior, and endPhase's already-closed and
+// ends-before-it-began guards, only exist in the TS module -- the partial
+// unique index only proves the DATABASE refuses two open rows, never that
+// the module's own ordering rule is what keeps a second row from being
+// attempted in the first place.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -19,6 +30,23 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
+
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows[0] ?? null;
+  }),
+}));
+
+import { endPhase, getPhase, listPhases, startPhase } from './programPhases';
 
 jest.setTimeout(180_000);
 
@@ -149,9 +177,9 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
 });
 
-
-
-
+afterEach(() => {
+  activeClient = null;
+});
 
 function insertPhase(client: Client, phaseId: string, overrides: Record<string, string | null> = {}) {
   return client.query(
@@ -208,6 +236,153 @@ describe('program phases migration', () => {
         [ORG_ID],
       );
       expect(rows.rows[0].n).toBe(4);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The tests above prove the migration's schema. These prove the module:
+// startPhase's own date-ordering refusal and its auto-close-the-day-before
+// behavior, and endPhase's already-closed and ends-before-it-began guards
+// -- none of which a raw-SQL insert can exercise, because none of it is a
+// database constraint.
+describe('the real program-phase lifecycle against real rows', () => {
+  test('startPhase opens the first phase, then closes it the day before the next one begins', async () => {
+    const client = await freshDatabase('phases_start_lifecycle');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      const first = await startPhase({
+        organizationId: ORG_ID,
+        programName: 'Youth Boxing',
+        phaseName: 'Foundation',
+        startedOn: '2026-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      expect(first).toMatchObject({ phase_name: 'Foundation', started_on: '2026-01-01', ended_on: null });
+
+      const second = await startPhase({
+        organizationId: ORG_ID,
+        programName: 'Youth Boxing',
+        phaseName: 'Competition prep',
+        startedOn: '2026-03-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      expect(second).toMatchObject({ phase_name: 'Competition prep', started_on: '2026-03-01', ended_on: null });
+
+      // The first phase was closed the day before the second began, not on
+      // the same day (that would double-count the boundary date).
+      await expect(getPhase(ORG_ID, first!.phase_id)).resolves.toMatchObject({ ended_on: '2026-02-28' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('startPhase refuses to begin before (or on) the phase it would replace', async () => {
+    const client = await freshDatabase('phases_start_order');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const open = await startPhase({
+        organizationId: ORG_ID,
+        programName: 'Youth Boxing',
+        phaseName: 'Foundation',
+        startedOn: '2026-03-01',
+        createdByAccountId: ADMIN_ID,
+      });
+
+      await expect(startPhase({
+        organizationId: ORG_ID,
+        programName: 'Youth Boxing',
+        phaseName: 'Backdated',
+        startedOn: '2026-02-01',
+        createdByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+
+      // Same day is also refused, not just strictly earlier.
+      await expect(startPhase({
+        organizationId: ORG_ID,
+        programName: 'Youth Boxing',
+        phaseName: 'Same day',
+        startedOn: '2026-03-01',
+        createdByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+
+      // The open phase is untouched by either refused attempt.
+      await expect(getPhase(ORG_ID, open!.phase_id)).resolves.toMatchObject({ ended_on: null });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('endPhase refuses an end date before the phase began, and is a no-op on an already-closed phase', async () => {
+    const client = await freshDatabase('phases_end');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const open = await startPhase({
+        organizationId: ORG_ID,
+        programName: 'Youth Boxing',
+        phaseName: 'Foundation',
+        startedOn: '2026-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+
+      await expect(endPhase({
+        organizationId: ORG_ID,
+        phaseId: open!.phase_id,
+        endedOn: '2025-12-31',
+      })).resolves.toBeNull();
+
+      const ended = await endPhase({ organizationId: ORG_ID, phaseId: open!.phase_id, endedOn: '2026-04-30' });
+      expect(ended).toMatchObject({ ended_on: '2026-04-30' });
+
+      // Already closed: a second end attempt is a quiet null, not a rewrite.
+      await expect(endPhase({
+        organizationId: ORG_ID,
+        phaseId: open!.phase_id,
+        endedOn: '2026-05-31',
+      })).resolves.toBeNull();
+      await expect(getPhase(ORG_ID, open!.phase_id)).resolves.toMatchObject({ ended_on: '2026-04-30' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('listPhases surfaces open phases before closed history, and filters by program', async () => {
+    const client = await freshDatabase('phases_listing');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      const boxingClosed = await startPhase({
+        organizationId: ORG_ID,
+        programName: 'Youth Boxing',
+        phaseName: 'Foundation',
+        startedOn: '2026-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      const boxingOpen = await startPhase({
+        organizationId: ORG_ID,
+        programName: 'Youth Boxing',
+        phaseName: 'Competition prep',
+        startedOn: '2026-03-01',
+        createdByAccountId: ADMIN_ID,
+      });
+      await startPhase({
+        organizationId: ORG_ID,
+        programName: 'Wrestling',
+        phaseName: 'Foundation',
+        startedOn: '2026-01-01',
+        createdByAccountId: ADMIN_ID,
+      });
+
+      const boxing = await listPhases(ORG_ID, 'Youth Boxing');
+      expect(boxing.map((p) => p.phase_id)).toEqual([boxingOpen!.phase_id, boxingClosed!.phase_id]);
+
+      const all = await listPhases(ORG_ID);
+      expect(all).toHaveLength(3);
     } finally {
       await client.end();
     }

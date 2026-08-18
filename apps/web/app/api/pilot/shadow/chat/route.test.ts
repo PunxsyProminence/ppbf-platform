@@ -42,6 +42,7 @@ jest.mock('@/src/server/pilot/access', () => ({
 
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
+  sanitizedSqlState: jest.fn(() => undefined),
 }));
 
 jest.mock('@/src/server/pilot/shadowReadiness', () => ({

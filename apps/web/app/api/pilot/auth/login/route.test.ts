@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 import {
   checkRateLimit,
@@ -34,6 +35,7 @@ jest.mock('@/src/server/pilot/rateLimit', () => ({
 }));
 
 const mockLogin = loginWithAccountIdAndPin as jest.Mock;
+const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockCheckRateLimit = checkRateLimit as jest.Mock;
 const mockRecordFailedAttempt = recordFailedAttempt as jest.Mock;
 const mockClearRateLimit = clearRateLimit as jest.Mock;
@@ -74,6 +76,30 @@ describe('POST /api/pilot/auth/login', () => {
     expect(setCookie?.value).toBe('a-token');
     expect(setCookie?.maxAge).toBe(SESSION_ABSOLUTE_LIFETIME_SECONDS);
     expect(SESSION_ABSOLUTE_LIFETIME_SECONDS).toBe(24 * 60 * 60);
+  });
+
+  // Previously a raw, unguarded writePilotAuditEvent call: a transient
+  // audit-write failure threw past the cookie-setting code and returned a
+  // 500 for an athlete who typed the correct PIN, with no session issued
+  // despite the login itself having already succeeded.
+  test('an audit-write failure does not turn a correct login into a 500', async () => {
+    mockLogin.mockResolvedValueOnce({
+      token: 'a-token',
+      principal: {
+        accountId: 'acct-audit-fail',
+        role: 'athlete',
+        organizationId: 'org-1',
+        athleteId: 'ath-1',
+        sessionToken: 'a-token',
+        authProvider: 'ppbf_local',
+      },
+    });
+    mockAudit.mockRejectedValueOnce(new Error('connection pool exhausted'));
+
+    const res = await POST(request('acct-audit-fail'));
+
+    expect(res.status).toBe(200);
+    expect(res.cookies.get('ppbf_pilot_session')?.value).toBe('a-token');
   });
 
   test('401 for invalid credentials, no cookie set', async () => {
@@ -156,24 +182,22 @@ describe('POST /api/pilot/auth/login durable rate limiting', () => {
     expect(mockLogin).not.toHaveBeenCalled();
   });
 
-  // The property that matters most. A rate-limit lookup is a guard, not the
+  // The property that matters most -- a rate-limit lookup is a guard, not the
   // operation: if the durable store is unreachable it must degrade to the
-  // volatile limiter, never deny. Failing this closed would lock every
-  // athlete out of the platform on a database blip -- a far worse outage
-  // than the brute force it guards against.
-  test('a durable store outage does not lock anyone out', async () => {
-    mockCheckRateLimit.mockReturnValue({ isLimited: false });
-    // checkDurableRateLimit swallows its own errors and reports not-limited.
-    mockCheckDurable.mockResolvedValue({ isLimited: false });
-    mockLogin.mockResolvedValueOnce({
-      principal: { accountId: 'acct-outage', role: 'athlete', organizationId: 'org-1' },
-      token: 'tok',
-    });
-
-    const res = await POST(request('acct-outage'));
-
-    expect(res.status).toBe(200);
-  });
+  // volatile limiter, never deny -- used to be "verified" right here, but the
+  // test only ever set mockCheckDurable to resolve { isLimited: false }: the
+  // exact same value the beforeEach above already defaults it to. It never
+  // simulated the durable store failing, so it was byte-for-byte the ordinary
+  // successful-login path with an outage-flavored name and comment.
+  //
+  // Because @/src/server/pilot/rateLimit is mocked wholesale at the top of
+  // this file, checkDurableRateLimit here IS the "durable store" as far as
+  // route.ts is concerned -- there is no lower layer left in this module
+  // registry to fail. Genuinely simulating the outage (the Postgres pool
+  // rejecting) and proving the real withDurableClient/checkDurableRateLimit
+  // fallback in rateLimit.ts degrades instead of throwing lives in
+  // ./route.durableOutage.test.ts, which leaves rateLimit.ts unmocked and
+  // fails the pool client itself.
 
   test('the volatile limiter still blocks on its own', async () => {
     // Belt and braces: durable clear, volatile limited.

@@ -226,12 +226,20 @@ export async function POST(request: NextRequest) {
 
     const pdfBase64 = rawBuffer.toString('base64')
 
+    // Read ONCE, not three times as this used to. getPipelineConfig now throws
+    // when a destination is configured-but-incomplete, and calling it per
+    // destination meant that refusal could land after the first two writes had
+    // already happened -- a partial delivery reported as a total failure.
+    const pipeline = isMockModeEnabled() ? null : getPipelineConfig()
+
     const dataverse = isMockModeEnabled()
       ? {
           tableName: 'annotations',
           recordId: `mock-dv-${Date.now()}`,
         }
-      : await writeDataverseRecord(getPipelineConfig().dataverse, payload, pdfBase64)
+      : pipeline?.dataverse
+        ? await writeDataverseRecord(pipeline.dataverse, payload, pdfBase64)
+        : null
 
     const [sharepoint, googleDrive] = isMockModeEnabled()
       ? [
@@ -245,14 +253,28 @@ export async function POST(request: NextRequest) {
           },
         ]
       : await Promise.all([
-          uploadToSharePoint(getPipelineConfig().sharepoint, fileName, rawBuffer),
-          uploadToGoogleDrive(getPipelineConfig().googleDrive, fileName, rawBuffer),
+          pipeline?.sharepoint
+            ? uploadToSharePoint(pipeline.sharepoint, fileName, rawBuffer)
+            : Promise.resolve(null),
+          pipeline?.googleDrive
+            ? uploadToGoogleDrive(pipeline.googleDrive, fileName, rawBuffer)
+            : Promise.resolve(null),
         ])
+
+    // Named positively so the audit row and the response both state where the
+    // document went, rather than leaving a reader to infer it from which
+    // fields happen to be null.
+    const writtenTo = [
+      dataverse ? 'dataverse' : null,
+      sharepoint ? 'sharepoint' : null,
+      googleDrive ? 'googleDrive' : null,
+    ].filter((name): name is string => name !== null)
 
     const result: DocumentIngestResult = {
       status: 'ok',
       fileName,
       classification,
+      writtenTo,
       dataverse,
       sharepoint,
       googleDrive,
@@ -266,9 +288,10 @@ export async function POST(request: NextRequest) {
         organizationId: principal.organizationId,
         uploadedByAccountId: principal.accountId,
         destination: classification.destination,
-        dataverseRecordId: dataverse.recordId,
-        sharePointItemId: sharepoint.itemId,
-        googleDriveFileId: googleDrive.fileId,
+        writtenTo,
+        dataverseRecordId: dataverse?.recordId ?? null,
+        sharePointItemId: sharepoint?.itemId ?? null,
+        googleDriveFileId: googleDrive?.fileId ?? null,
         mockMode: isMockModeEnabled(),
       },
     })
