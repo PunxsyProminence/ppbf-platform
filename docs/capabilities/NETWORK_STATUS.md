@@ -122,6 +122,64 @@ confirmed against a verbatim quote; open the file before acting.
   three exhaustive maps, one of which has no fallback. This is the same shape as
   the `Record<SuggestionRule, …>` drift that broke `main` three times.
 
+### Findings from pass 2 (authorization) — a second thing needing a decision today
+
+**`/api/pilot/safety-flags` has no athlete-scope check** — not at the route, and
+not inside `resolveSafetyFlag`, which scopes its `update` by `organization_id`
+and `flag_id` alone. Any coach can therefore read the whole gym's open safety
+queue (the codes include `medical_clearance_missing` and
+`concussion_rest_period`), raise a flag against any child, and **bypass** an open
+flag on a child they hold no standing on. Clearing another child's concussion
+rest flag is the thing this platform exists to prevent.
+
+The sibling routes refuse exactly this, which is what makes it a miss rather
+than a trade-off: `training-holds` carries the comment "no org-wide hold roster"
+and calls `assertCoachAssignedToAthlete` at three separate points; `escalations`
+scopes coaches to their own athletes. Real mitigations, for the record: an
+`external_rule` flag cannot be bypassed (database-constraint backed), and every
+resolution writes an audit event with the actor's id and role — but `flag_class`
+is set by whoever raises the flag rather than derived from the flag code, so the
+class that protects the worst codes is not guaranteed to be on them.
+
+**A coach can overwrite another family's guardian record.**
+`POST /api/pilot/intake/domain-upsert` with `entity_type: 'guardian_link'` gates
+the athlete side correctly and then passes a raw body `parent_id` *and*
+`account_id` into `upsertGuardian`, whose `on conflict … do update` **rewrites**
+the named record: phone and email are nulled when omitted (that is the emergency
+channel for a minor), and repointing `account_id` hands a chosen account the
+guardian role over every child that record carries — **including siblings the
+coach has no standing on**.
+
+This matters for how the parked `parent_id` decision gets framed. Both prior
+audits describe this route as a *linking* problem. It is also a *rewriting*
+problem, and the rewriting half can be fixed without narrowing anything a
+legitimate intake edit needs — so **it should not inherit the parked status of
+the linking half.** That is the one substantive change to how this file
+previously recorded the guardian-link question.
+
+Two smaller ones worth not rediscovering: `multidiscipline` and
+`competence-cohorts` use an exact-match `requireRole(principal, ['coach','admin'])`,
+so every provisioned `organization_admin` gets a 403 on a child's
+grappling-exposure history — fail-closed, but it will read as a broken page
+during a safeguarding investigation, and the tests miss it because they drive
+the legacy `'admin'` value. And `DELETE /api/pilot/achievements/mentorships`
+authorizes only the mentor side, *after* the `UPDATE` has already committed, so
+an unauthorized coach ends the pairing and then receives the 403.
+
+**The reassuring result, which belongs here too.** Pass 2 was sent to find out
+whether the "one side checked, the other not" shape behind the `parent_id`
+finding repeats elsewhere. It traced roughly 120 two-party link inserts and
+found **all but two validate both ends**, several with comments explaining why.
+`addCompetitionEntry`, `addLeagueRosterEntry`, `assignBoardSeat`,
+`grantCoachCoverage`, the mentorship `POST` and the scheduler's coaching-request
+approval all check both sides. So that shape is the exception here, not the
+house pattern — do not go hunting it as a systemic problem.
+
+**What pass 2 did not do**, because it matters for how much to lean on it: of
+228 routes it classified all of them mechanically, deep-read 31, inspected 22
+more at handler level, and **did not open the remaining 175**. No code was run.
+Reproduce findings against a live coach session before acting on any severity.
+
 ### Findings from pass 3 (minors' data and consent) — also do not re-find these
 
 Pass 3 found **no live exposure** — nothing here means a child is exposed right
