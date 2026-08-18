@@ -121,12 +121,22 @@ Three passes, deliberately different so they would not all fail the same way.
 
 ## Do the safety gates have tests that would fail if the gate were removed?
 
-The honest summary first: **the gate *modules* are protected. Four of the six
-gate families have genuinely strong tests that would go red if the logic were
-removed. The weakness is not in the modules — it is in the wiring**: one
-route that carries two gates has no test that exercises it with a triggering
-input, and two of the six "gates" are not gates at all, so there is nothing for
-a test to protect.
+The honest summary first, counted rather than characterised. Of the six gate
+families named in the brief:
+
+- **three are protected end to end** — guardian media consent, the authorization
+  helpers, and escalation filing. Each has a test that fails if the logic is
+  removed *and* a test that fails if a call site stops calling it.
+- **one is protected at its enforcing rung and unprotected at its flagging rung**
+  — training holds. The STOP path (an `all_training` hold blocking class
+  registration) has two independent tests that would go red. The REGRESS path
+  (`contact_only`) has a well-tested module and an untested wire.
+- **two are not gates at all**, so there is nothing for a test to protect —
+  the `general`/`medical_release`/`travel` waivers gate nothing, and no formula
+  gates training.
+
+**The weakness is not in the modules — it is in the wiring.** One route carries
+two of the gates and no test exercises it with an input that reaches them.
 
 | Gate | Is there a test that fails if the gate is removed? | Where | Notes |
 |---|---|---|---|
@@ -134,12 +144,12 @@ a test to protect.
 | **Training hold — REGRESS** (`contact_only` flags contact) | **Module: yes. Wiring: no.** | Module: `trainingHolds.pg.test.ts:303-336` and `trainingHolds.test.ts:385-456`. Wiring: **none** | The only caller is `observations/route.ts:141`, and no test posts a contact observation to that route. See **T-01** |
 | **Training hold — `conditioning_only`** | n/a — no enforcement exists to protect | — | Already recorded in `NETWORK_STATUS.md` and PASS-04 F-06. A test cannot protect a gate that was never built |
 | **Guardian media consent** | **Yes, at three layers** | Module logic: `guardianConsent.test.ts:42-133`; against real Postgres: `guardianMediaConsentMigration.pg.test.ts:307-521`; call sites: `shadow/video-analysis/route.test.ts:122-144`, `publications/publish/route.test.ts:252-274`, `admin/video-compliance/route.test.ts:483-540` | Each route test asserts `toHaveBeenCalledWith(org, athlete)` **and** that a rejection produces a 4xx, so removing the call fails on the first assertion. Zero-guardian is pinned as *not* vacuously ok |
-| **Guardian consent *scope*** (`covers_video`, `public_use_allowed`) | No — and a test actively pins the *absence* | `guardianConsent.test.ts:53-66` | Enforcement gap already reported (PASS-03 HIGH, `NETWORK_STATUS.md`). What is new here is that the test suite would have to be *edited* to fix it — see **T-05** |
+| **Guardian consent *scope*** (`covers_video`, `public_use_allowed`) | No — and a test actively pins the *absence* | `guardianConsent.test.ts:53-66` | Enforcement gap already reported (PASS-03 HIGH, `NETWORK_STATUS.md`). What is new here is that the test suite would have to be *edited* to fix it — see **T-06** |
 | **Waiver gates** (`general`, `medical_release`, `travel`) | **No gate exists.** Nothing to protect | `waiverCompliance.ts` is a read-only rollup with one caller, `admin/waiver-status/route.ts` | Grep of every non-test reader of `pilot.waivers` finds exactly one enforcement path, and it is `photo_media`. Consistent with PASS-03 §"Exactly one waiver type is consulted by any gate" |
 | **Contact medical clearance** (`contact_medical_clearance`) | **Module: yes, thoroughly. Wiring: no.** | Module: `contactClearanceGate.test.ts` (19 tests incl. gate-deactivation, dedup, pre-migration fallback). Wiring: **none** | Sole caller is `observations/route.ts:126`. See **T-01** |
-| **Authorization helpers** (`access.ts`) | **Yes** | `access.test.ts` (702 lines) covers every role branch of `assertActorCanAccessAthlete` and `accessibleAthleteIds` incl. platform_owner and board denial-before-lookup; `boardRoleBoundaries.test.ts` drives 8 athlete-scoped surfaces as board and asserts 403; `organizationScope.convention.test.ts` is a filesystem-walking convention gate over `app/api` | The strongest area in the repo. Note it protects the *helpers* and one role; it does not prove every route calls one — see **T-06** |
+| **Authorization helpers** (`access.ts`) | **Yes** | `access.test.ts` (702 lines) covers every role branch of `assertActorCanAccessAthlete` and `accessibleAthleteIds` incl. platform_owner and board denial-before-lookup; `boardRoleBoundaries.test.ts` drives 8 athlete-scoped surfaces as board and asserts 403; `organizationScope.convention.test.ts` is a filesystem-walking convention gate over `app/api` | The strongest area in the repo. Note it protects the *helpers* and one role; it does not prove every route calls one — see **T-07** |
 | **Escalation filing** (`fileEscalation`) | **Yes, at all six call sites** | `escalationLadder.test.ts:36-44` pins the auto-escalate threshold; `shadowNearMisses.test.ts:130-170`, `compliance.test.ts:224-300`, `videoScanSweep.test.ts`, `behaviorStandards.test.ts`, `athleteVoice.test.ts`, `trainingHolds.pg.test.ts:262-270` each pin their own filing | Six non-test call sites of `fileEscalation` exist; all six have a test file that references it. Atomicity ("the hold and its escalation are one transaction") is proved by dropping `safety_escalations` mid-placement |
-| **Formulas that gate training** | **No formula gates training.** The one module that looks like a gate is dead code | `readinessMath.ts` has zero importers; `formulas/registry.ts` results have no enforcement consumer | Orphan already recorded as PASS-04 F-08. The test angle is new — see **T-07** |
+| **Formulas that gate training** | **No formula gates training.** The one module that looks like a gate is dead code | `readinessMath.ts` has zero importers; `formulas/registry.ts` results have no enforcement consumer | Orphan already recorded as PASS-04 F-08. The test angle is new — see **T-09** |
 | **Safety gate matrix** (`enforcement: 'block' \| 'flag'`) | Partially | `safetyGateMatrix.test.ts` (61 lines) tests only `getGuardianGateSummary`, a read-only display function. `safetyGateMatrix.pg.test.ts` (617 lines) covers the evaluation records | The unit test's name would let a reader believe the matrix is unit-tested; it tests the parent-facing projection |
 
 **The single most valuable line of this pass:** every gate that *is* wired has a
@@ -241,7 +251,7 @@ it is SQL:
 **What it would let through:** stubbing `deleteAthleteRecord`,
 `deleteGuardianAccount` and `getDeletionStatus` to no-ops; deleting the
 authorization guards at `dataDeletion.ts:35` and `:122`; and — jointly with the
-`.pg.test.ts`, see T-03 — narrowing `interval '2 years'` to any shorter window.
+`.pg.test.ts`, see T-05 — narrowing `interval '2 years'` to any shorter window.
 
 ### 3. `safetyGateMatrix.test.ts` tests the parent-facing projection, not the matrix
 
@@ -542,7 +552,7 @@ read the same authorization at the same minute — which is what already happene
 
 ## Findings
 
-### [CRITICAL] The contact-clearance gate and the hold REGRESS rung are wired into one route, and no test exercises that route with a contact observation
+### [CRITICAL] T-01 — The contact-clearance gate and the hold REGRESS rung are wired into one route, and no test exercises that route with a contact observation
 
 `apps/web/app/api/pilot/shadow/formulas/observations/route.ts` is the single
 path that records contact for a child (PASS-04 confirms this:
@@ -604,13 +614,13 @@ active `contact_only` training hold, would be silently recorded with no near
 miss and no escalation. Note that the route's own comments state the ordering as
 load-bearing ("*Runs BEFORE the observation is stored, so a failure here aborts
 the whole request rather than quietly persisting contact nobody was alerted to*",
-`:122-124`) — the invariant is written down and unenforced.
+`:122-125`) — the invariant is written down and unenforced.
 
 This is a CRITICAL by the audit's own standard: a missing test leaving a
 child-safety gate unprotected against regression. It is the only one in this
 pass.
 
-### [HIGH] 69 of 94 Postgres suites leak a full data directory; a complete `test:migrations` run is a deterministic disk-filling machine
+### [HIGH] T-02 — 69 of 94 Postgres suites leak a full data directory; a complete `test:migrations` run is a deterministic disk-filling machine
 
 Measured above. `npm run test:migrations:training-holds` passed 16/16 and left
 263 MB in `os.tmpdir()`; `athleteCheckIns`, which deletes in the parent, left
@@ -651,7 +661,7 @@ infrastructure rather than like a gap in evidence. This box's own operating
 instructions record the suite having exhausted the disk before; that is
 corroboration, not coincidence.
 
-### [HIGH] `test:migrations` is a 94-link `&&` chain, so one failure hides the other 93 suites
+### [HIGH] T-03 — `test:migrations` is a 94-link `&&` chain, so one failure hides the other 93 suites
 
 `apps/web/package.json:90` is a single line joining 94 npm scripts with `&&`:
 
@@ -679,7 +689,7 @@ reachability is not execution.
 safety-gate Postgres proofs did not run this time", and nothing in the output
 distinguishes them.
 
-### [MEDIUM] `dataDeletion.test.ts` is six tautologies under the name of the child-data deletion module
+### [MEDIUM] T-04 — `dataDeletion.test.ts` is six tautologies under the name of the child-data deletion module
 
 Quoted in full under *Tests that pin nothing* §2. Every assertion is over a
 literal the test itself constructed. The module's two authorization guards
@@ -698,12 +708,12 @@ MEDIUM, not HIGH.
 counting test files — or an agent asked "is this module tested?" — concludes yes.
 It also carries a specific hole; see the next finding.
 
-### [MEDIUM] Nothing in the suite would catch the retention window being *narrowed*
+### [MEDIUM] T-05 — Nothing in the suite would catch the retention window being *narrowed*
 
 `dataDeletion.test.ts:65-68` asserts `365 * 2 === 730` — arithmetic, not the
 module. The Postgres suite seeds its fixture three years back:
 
-`apps/web/src/server/pilot/dataRetentionDeletion.pg.test.ts:215-219`:
+`apps/web/src/server/pilot/dataRetentionDeletion.pg.test.ts:214-218`:
 
 > ```
 >     await client.query(
@@ -731,7 +741,7 @@ retention policy is a compliance failure that this suite would report as green.
 PASS-03 already records that the retention *documentation* overstates what is
 deleted; this is the complementary point that the *window* is untested.
 
-### [MEDIUM] A guardian who declines video is asserted to be "ok" for the video gate
+### [MEDIUM] T-06 — A guardian who declines video is asserted to be "ok" for the video gate
 
 `apps/web/src/server/pilot/guardianConsent.test.ts:53-66`:
 
@@ -768,7 +778,7 @@ two red suites and may reasonably conclude they have broken something. That is
 how a correct fix gets reverted. Whoever picks up the PASS-03 finding should be
 told these two fixtures are part of the change.
 
-### [MEDIUM] 70 of 228 API routes are loaded by no test, including the setter for the status the contact gate reads
+### [MEDIUM] T-07 — 70 of 228 API routes are loaded by no test, including the setter for the status the contact gate reads
 
 Measured: 89 route directories have no sibling `*.test.ts`; of those, 70 are
 imported by no test file anywhere in the tree. Two matter for safety:
@@ -797,7 +807,7 @@ role boundary does not. The 70 routes are a standing surface where a role gate
 can be dropped in a refactor without any test noticing. PASS-02 covers the
 substance of route authorization; this is the coverage-of-that-substance view.
 
-### [LOW] The login route's durable-outage test still pins nothing — and is unfixed on every branch, contrary to the record
+### [LOW] T-08 — The login route's durable-outage test still pins nothing — and is unfixed on every branch, contrary to the record
 
 Quoted under *Tests that pin nothing* §5. Two things to record.
 
@@ -832,7 +842,7 @@ much smaller than "a durable store outage would lock every athlete out is
 untested" — because it isn't. The correct fix is to rename or delete the login
 test, not to panic about the property.
 
-### [LOW] `readinessMath.test.ts` gives a dead safety formula the appearance of test coverage
+### [LOW] T-09 — `readinessMath.test.ts` gives a dead safety formula the appearance of test coverage
 
 Eleven assertions over three functions with zero importers (the orphan itself is
 PASS-04 F-08). The prior full-spectrum audit separately records that
@@ -842,7 +852,7 @@ name is the third layer of that same illusion. Deleting the module and its test
 together is the honest move; if the clamp is meant to be wired, the test should
 fail loudly until it is.
 
-### [LOW] Two workflows both name their job `validate`, and one is path-filtered
+### [LOW] T-10 — Two workflows both name their job `validate`, and one is path-filtered
 
 `ci.yml:23` and `research-bridge-ci.yml`'s jobs block both declare `validate`.
 `research-bridge-ci.yml` runs only on paths under `apps/research-bridge/**`
