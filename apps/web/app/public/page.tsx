@@ -370,7 +370,19 @@ export default function PublicPortalPage() {
   // value here marks the submission as almost certainly automated.
   const [website, setWebsite] = useState('');
   const [formStarted, setFormStarted] = useState(false);
-  const [confirmation, setConfirmation] = useState('');
+  // Three real outcomes, not one string doing triple duty: a parent could not
+  // tell success from refusal from a dropped connection before this, because
+  // all three wrote the same `confirmation` string into the same neutral <p>.
+  // 'refusal' covers both the client-side consent gate and a server rejection
+  // (payload.error) -- both are "this did not go through because of what was
+  // submitted." 'network-error' is kept separate because the request may or
+  // may not have reached the server; the honest message is "try again," not
+  // "fix your answers." Modeled on the errorMessage/actionMessage split in
+  // apps/web/app/schedule/page.tsx and the three-kind feedback switcher in
+  // apps/web/app/admin/platform/page.tsx.
+  const [intakeResult, setIntakeResult] = useState<
+    { kind: 'success' | 'refusal' | 'network-error'; text: string } | null
+  >(null);
   const [submitting, setSubmitting] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
   const [telemetryTraces, setTelemetryTraces] = useState<TelemetryTrace[]>([]);
@@ -416,7 +428,7 @@ export default function PublicPortalPage() {
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!consentToContact) {
-      setConfirmation('Please check the box above so we know it is okay to contact you.');
+      setIntakeResult({ kind: 'refusal', text: 'Please check the box above so we know it is okay to contact you.' });
       return;
     }
     if (submitting) {
@@ -424,7 +436,7 @@ export default function PublicPortalPage() {
     }
 
     setSubmitting(true);
-    setConfirmation('');
+    setIntakeResult(null);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/public-interest`, {
         method: 'POST',
@@ -445,15 +457,20 @@ export default function PublicPortalPage() {
       const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
 
       if (!response.ok || !payload.ok) {
-        setConfirmation(
-          payload.error
-          || 'Something went wrong sending this and it did not go through. Try again, or just come by: '
-          + '220 N Jefferson St, Punxsutawney, PA 15767.',
-        );
+        setIntakeResult({
+          kind: 'refusal',
+          text:
+            payload.error
+            || 'Something went wrong sending this and it did not go through. Try again, or just come by: '
+            + '220 N Jefferson St, Punxsutawney, PA 15767.',
+        });
         return;
       }
 
-      setConfirmation('Got it -- thanks. A staff member reads every one of these, and someone will get back to you the way you asked.');
+      setIntakeResult({
+        kind: 'success',
+        text: 'Got it -- thanks. A staff member reads every one of these, and someone will get back to you the way you asked.',
+      });
       addTrace('intake form submitted', `${fullName || 'Visitor'} submitted interest as ${visitorType} for ${programInterest}.`);
       setFullName('');
       setEmail('');
@@ -461,10 +478,12 @@ export default function PublicPortalPage() {
       setMessage('');
       setConsentToContact(false);
     } catch {
-      setConfirmation(
-        'The connection dropped and this was not sent. Try again, or just come by: '
-        + '220 N Jefferson St, Punxsutawney, PA 15767.',
-      );
+      setIntakeResult({
+        kind: 'network-error',
+        text:
+          'The connection dropped and this was not sent. Try again, or just come by: '
+          + '220 N Jefferson St, Punxsutawney, PA 15767.',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -832,7 +851,40 @@ export default function PublicPortalPage() {
               {submitting ? 'Sending...' : 'Send this to a coach'}
             </button>
 
-            {confirmation && <p className="text-[length:var(--t-sm)] text-[color:var(--brass-800)]">{confirmation}</p>}
+            {intakeResult && (
+              // Same component and role split schedule/page.tsx and
+              // admin/platform/page.tsx already use for a queue outcome:
+              // refusal is assertive (role="alert", the red rung) because it
+              // means "fix something and resend," success is polite
+              // (role="status", the green rung), and network-error gets its
+              // own rung (--monitor/blue) rather than collapsing into either,
+              // because a dropped connection is neither "you were refused"
+              // nor "it worked" -- it is "try again."
+              <div
+                role={intakeResult.kind === 'refusal' ? 'alert' : 'status'}
+                className={`alert alert--tight ${
+                  intakeResult.kind === 'success'
+                    ? 'alert--success'
+                    : intakeResult.kind === 'refusal'
+                      ? 'alert--critical'
+                      : 'alert--info'
+                }`}
+              >
+                <span className="alert-icon" aria-hidden="true">
+                  {intakeResult.kind === 'success' ? '✓' : intakeResult.kind === 'refusal' ? '✕' : '◉'}
+                </span>
+                <div className="alert-body">
+                  <p className="alert-title">
+                    {intakeResult.kind === 'success'
+                      ? 'Sent'
+                      : intakeResult.kind === 'refusal'
+                        ? 'Not sent'
+                        : 'Connection dropped'}
+                  </p>
+                  <p className="alert-msg">{intakeResult.text}</p>
+                </div>
+              </div>
+            )}
           </form>
         </section>
 
