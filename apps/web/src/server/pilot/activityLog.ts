@@ -157,8 +157,16 @@ export async function listActivityLog(
     activityDomain?: ActivityDomain;
     since?: string;
     until?: string;
+    limit?: number;
   } = {},
 ): Promise<ActivityLogRow[]> {
+  // limit is opt-in and defaults to unbounded. getCommunityServiceTotals
+  // (communityService.ts) sums these rows into a figure this module's own
+  // header says may go to a school, a court, or a scholarship committee --
+  // a default cap here would silently under-report someone's hours rather
+  // than just running slower, which is a worse failure than the unbounded
+  // growth it would guard against. A caller that genuinely wants a bounded
+  // page (as opposed to a complete total) opts in explicitly.
   return query<ActivityLogRow>(
     `select ${ACTIVITY_FIELDS}
      from pilot.activity_log
@@ -168,7 +176,8 @@ export async function listActivityLog(
        and ($4::text is null or activity_domain = $4)
        and ($5::date is null or occurred_on >= $5)
        and ($6::date is null or occurred_on <= $6)
-     order by occurred_on desc, created_at desc`,
+     order by occurred_on desc, created_at desc
+     ${filter.limit ? 'limit $7' : ''}`,
     [
       organizationId,
       filter.personAccountId ?? null,
@@ -176,6 +185,7 @@ export async function listActivityLog(
       filter.activityDomain ?? null,
       filter.since ?? null,
       filter.until ?? null,
+      ...(filter.limit ? [filter.limit] : []),
     ],
   );
 }

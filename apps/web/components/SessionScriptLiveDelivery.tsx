@@ -29,6 +29,30 @@ const NOTABLE_KINDS: Record<string, string> = {
   reflection: 'Reflection',
 };
 
+// The intervention-execution link. pilot.intervention_executions.session_run_id
+// (pilot_intervention_executions_session_run_fk) already ties an execution to the
+// run that was live when it started -- this is the ONLY surface that sets it,
+// because "in progress" is a fact this screen already holds and nowhere else does.
+interface InterventionAthleteOption {
+  athlete_id: string;
+  full_name: string;
+}
+
+interface InterventionProtocolOption {
+  protocol_id: string;
+  title: string;
+  version: number;
+  athlete_id: string | null;
+  status: string;
+}
+
+interface LoggedIntervention {
+  execution_id: string;
+  athlete_name: string;
+  protocol_title: string;
+  created_at: string;
+}
+
 /** The four authored coaching fields, omitting the ones the author left empty. */
 function blockDetailLines(block: Block): { label: string; value: string }[] {
   return [
@@ -133,6 +157,101 @@ export default function SessionScriptLiveDelivery({
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
+
+  // ---- Log an intervention against THIS run --------------------------
+  // The picklists a coach needs to log one: the roster they coach, and the
+  // ACTIVE protocols (a retired or draft protocol is not a live plan to
+  // execute against). Both load independently of the script plan above --
+  // a failed script-plan read must not also hide this control.
+  const [logAthletes, setLogAthletes] = useState<InterventionAthleteOption[]>([]);
+  const [logAthletesState, setLogAthletesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [logProtocols, setLogProtocols] = useState<InterventionProtocolOption[]>([]);
+  const [logProtocolsState, setLogProtocolsState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+        if (!response.ok) throw new Error('athletes');
+        const payload = (await response.json()) as { items?: InterventionAthleteOption[] };
+        setLogAthletes(payload.items ?? []);
+        setLogAthletesState('loaded');
+      } catch {
+        setLogAthletes([]);
+        setLogAthletesState('unavailable');
+      }
+    })();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-protocols`, { credentials: 'include' });
+        if (!response.ok) throw new Error('protocols');
+        const payload = (await response.json()) as { items?: InterventionProtocolOption[] };
+        setLogProtocols((payload.items ?? []).filter((p) => p.status === 'active'));
+        setLogProtocolsState('loaded');
+      } catch {
+        setLogProtocols([]);
+        setLogProtocolsState('unavailable');
+      }
+    })();
+  }, []);
+
+  const [logOpen, setLogOpen] = useState(false);
+  const [logAthleteId, setLogAthleteId] = useState('');
+  const [logProtocolId, setLogProtocolId] = useState('');
+  const [logBusy, setLogBusy] = useState(false);
+  const [logError, setLogError] = useState('');
+  const [loggedInterventions, setLoggedInterventions] = useState<LoggedIntervention[]>([]);
+
+  // A protocol authored for one specific athlete never applies to another --
+  // the server enforces this too (startExecution), but narrowing the list
+  // here means a coach cannot even select a mismatched pair.
+  const availableProtocols = logProtocols.filter(
+    (protocol) => !protocol.athlete_id || protocol.athlete_id === logAthleteId,
+  );
+
+  const logIntervention = useCallback(async () => {
+    if (logBusy) return;
+    if (!logAthleteId || !logProtocolId) {
+      setLogError('Pick an athlete and a protocol first.');
+      return;
+    }
+    setLogBusy(true);
+    setLogError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        // The link this whole control exists for: session_run_id ties the
+        // execution to the run that is live right now, on the row the
+        // server already has pilot_intervention_executions_session_run_fk for.
+        body: JSON.stringify({
+          athlete_id: logAthleteId,
+          protocol_id: logProtocolId,
+          session_run_id: run.run_id,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        item?: { execution_id: string; created_at: string };
+        error?: string;
+      };
+      if (!response.ok || !payload.item) {
+        setLogError(payload.error || `The server refused to log the intervention (${response.status}).`);
+        return;
+      }
+      const athleteName = logAthletes.find((a) => a.athlete_id === logAthleteId)?.full_name ?? logAthleteId;
+      const protocolTitle = logProtocols.find((p) => p.protocol_id === logProtocolId)?.title ?? logProtocolId;
+      setLoggedInterventions((items) => [
+        { execution_id: payload.item!.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: payload.item!.created_at },
+        ...items,
+      ]);
+      setLogProtocolId('');
+    } catch {
+      setLogError('Network error -- the intervention was not logged.');
+    } finally {
+      setLogBusy(false);
+    }
+  }, [logAthleteId, logAthletes, logBusy, logProtocolId, logProtocols, run.run_id]);
 
   // A run can stop being live underneath this screen (finished on another
   // device, or settled by a race). The recovery is always the same: ask the
@@ -406,6 +525,107 @@ export default function SessionScriptLiveDelivery({
           </ol>
         </>
       )}
+
+      {/* Logging an intervention against THIS run. A protocol run once here is
+          tied to the run in progress via session_run_id -- the same link
+          startExecution has always accepted, just never had a caller for
+          during a live session. Closing out adherence and actual exposure
+          still happens on the execution ledger; this only starts the link. */}
+      <div className="mt-[var(--s6)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
+        {!logOpen ? (
+          <button type="button" onClick={() => setLogOpen(true)} className="btn btn--ghost">
+            Log an intervention...
+          </button>
+        ) : (
+          <div className="space-y-[var(--s3)]">
+            <p className="t-label">Log an intervention delivered in this session</p>
+            <p className="t-body text-[color:var(--bone-300)]">
+              This ties the execution to the session run in progress. Adherence, actual exposure
+              and close-out are recorded afterward on The Work.
+            </p>
+
+            {logAthletesState === 'unavailable' || logProtocolsState === 'unavailable' ? (
+              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                {logAthletesState === 'unavailable' && logProtocolsState === 'unavailable'
+                  ? 'The athlete roster and the protocol list could not be loaded, so nothing can be logged from here.'
+                  : logAthletesState === 'unavailable'
+                    ? 'The athlete roster could not be loaded, so nothing can be logged from here.'
+                    : 'The protocol list could not be loaded, so nothing can be logged from here.'}
+              </p>
+            ) : (
+              <div className="grid gap-[var(--s3)] sm:grid-cols-2">
+                <label className="field">
+                  <span className="t-label">Athlete</span>
+                  <select
+                    className="select"
+                    value={logAthleteId}
+                    onChange={(event) => { setLogAthleteId(event.target.value); setLogProtocolId(''); }}
+                    disabled={logAthletesState === 'loading'}
+                  >
+                    <option value="">Select an athlete...</option>
+                    {logAthletes.map((athlete) => (
+                      <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="t-label">Protocol (its intended exposure becomes the frozen plan)</span>
+                  <select
+                    className="select"
+                    value={logProtocolId}
+                    onChange={(event) => setLogProtocolId(event.target.value)}
+                    disabled={logProtocolsState === 'loading'}
+                  >
+                    <option value="">Select a protocol...</option>
+                    {availableProtocols.map((protocol) => (
+                      <option key={protocol.protocol_id} value={protocol.protocol_id}>
+                        {protocol.title} (v{protocol.version})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+
+            {logError && (
+              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                {logError}
+              </p>
+            )}
+
+            {loggedInterventions.length > 0 && (
+              <ul className="space-y-[var(--s2)]">
+                {loggedInterventions.map((item) => (
+                  <li key={item.execution_id} className="flex flex-wrap items-center gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)]">
+                    <span className="badge badge--cleared"><i aria-hidden="true">✓</i>logged</span>
+                    <span className="t-body text-[color:var(--bone-200)]">{item.protocol_title}</span>
+                    <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{item.athlete_name}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="flex flex-wrap gap-[var(--s3)]">
+              <button
+                type="button"
+                onClick={() => void logIntervention()}
+                disabled={logBusy || logAthletesState !== 'loaded' || logProtocolsState !== 'loaded'}
+                className="btn disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {logBusy ? 'Logging...' : 'Log intervention'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLogOpen(false); setLogError(''); }}
+                disabled={logBusy}
+                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Done logging
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Ending the session. */}
       <div className="mt-[var(--s6)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">

@@ -1,12 +1,46 @@
 import { randomUUID } from 'node:crypto';
+
+import type { PoolClient } from 'pg';
+
 import {
   BOARD_MINIMUM_COHORT_SIZE,
   boardCountMetric,
   type BoardCountMetric,
 } from './boardSummary';
 import { query, queryOne, withTransaction } from './db';
+import {
+  fileEscalation,
+  type SafetyEscalationSeverity,
+  type SafetyEscalationTargetRole,
+} from './escalationLadder';
 
 const COMPLIANCE_SEVERITIES = ['critical', 'high', 'medium', 'low'] as const;
+
+// Maps pilot.compliance_rules.escalation_level to escalationLadder.ts's
+// SafetyEscalationTargetRole. 'coach' and 'admin' map onto rungs that
+// already exist on the ladder ('admin' maps to 'organization_admin', the
+// canonical modern name -- ORGANIZATION_ROLE_MODEL.md notes 'admin' is only
+// legacy-compatible with it, and it is also fileEscalation's own documented
+// safety-critical default). 'board' and 'parent' are deliberately absent:
+// see SafetyEscalationTargetRole's own doc comment in escalationLadder.ts
+// for the full reasoning (k-anonymity for board, non-disclosure to
+// guardians for parent) -- a rule seeded/authored with either level does
+// not auto-escalate here, which is a reported gap, not silently widened.
+const RULE_ESCALATION_LEVEL_TO_TARGET_ROLE: Partial<Record<ComplianceRule['escalation_level'], SafetyEscalationTargetRole>> = {
+  coach: 'coach',
+  admin: 'organization_admin',
+};
+
+// pilot.compliance_rules/compliance_violations use ('critical','high','medium','low');
+// escalationLadder.ts inherits pilot.shadow_near_misses's ('low','moderate','high','critical')
+// -- the migration's own doc calls these out as different, unreconciled
+// vocabularies. 'medium' is the one value without a same-named counterpart.
+const COMPLIANCE_SEVERITY_TO_ESCALATION_SEVERITY: Record<typeof COMPLIANCE_SEVERITIES[number], SafetyEscalationSeverity> = {
+  critical: 'critical',
+  high: 'high',
+  medium: 'moderate',
+  low: 'low',
+};
 
 // severity is a text column, so `order by severity desc` sorts alphabetically
 // and puts 'medium' above 'critical'. Rank the vocabulary explicitly instead.
@@ -106,6 +140,69 @@ function violationMetric(
   return { status: gated.status, count: Number(recordCountInput) };
 }
 
+/**
+ * Files the pull-surface notification escalationLadder.ts exists for,
+ * alongside a just-created violation, when the violated rule's
+ * escalation_level maps to a supported SafetyEscalationTargetRole. A rule
+ * whose escalation_level is 'board' or 'parent' -- or whose rule_id does
+ * not resolve inside this organization -- is a deliberate no-op here; see
+ * RULE_ESCALATION_LEVEL_TO_TARGET_ROLE's doc comment.
+ *
+ * Runs on the same transaction client as the violation insert (fileEscalation
+ * accepts one for exactly this reason): a violation severe enough for its
+ * rule to demand escalation must never commit without that escalation, or
+ * vice versa, matching trainingHolds.ts:placeTrainingHold's own pairing of
+ * its state-owning insert with a ladder notification.
+ */
+async function fileComplianceEscalationIfConfigured(
+  client: PoolClient,
+  params: {
+    organizationId: string;
+    ruleId: string;
+    athleteId: string;
+    severity: typeof COMPLIANCE_SEVERITIES[number];
+    detectedByAccountId: string;
+    violationId: string;
+  },
+): Promise<void> {
+  const ruleResult = await client.query<{ rule_name: string; escalation_level: ComplianceRule['escalation_level'] }>(
+    `select rule_name, escalation_level from pilot.compliance_rules
+     where organization_id = $1 and rule_id = $2`,
+    [params.organizationId, params.ruleId],
+  );
+  const rule = ruleResult.rows[0];
+  if (!rule) {
+    return;
+  }
+
+  const escalatedToRole = RULE_ESCALATION_LEVEL_TO_TARGET_ROLE[rule.escalation_level];
+  if (!escalatedToRole) {
+    return;
+  }
+
+  await fileEscalation(
+    {
+      organizationId: params.organizationId,
+      sourceType: 'compliance_violation',
+      sourceId: params.violationId,
+      athleteId: params.athleteId,
+      severity: COMPLIANCE_SEVERITY_TO_ESCALATION_SEVERITY[params.severity],
+      reason:
+        `Compliance rule "${rule.rule_name}" was violated (severity: ${params.severity}). `
+        + 'The violation record carries the evidence and details; resolving this escalation does not resolve the violation.',
+      escalatedToRole,
+      triggeredBy: 'system',
+      metadata: {
+        violation_id: params.violationId,
+        rule_id: params.ruleId,
+        escalation_level: rule.escalation_level,
+        detected_by_account_id: params.detectedByAccountId,
+      },
+    },
+    client,
+  );
+}
+
 export async function createComplianceViolation(params: {
   organizationId: string;
   ruleId: string;
@@ -123,31 +220,45 @@ export async function createComplianceViolation(params: {
   if (!(COMPLIANCE_SEVERITIES as readonly string[]).includes(params.severity)) {
     throw new Error(`Unsupported severity: must be one of ${COMPLIANCE_SEVERITIES.join(', ')}`);
   }
+  const severity = params.severity as typeof COMPLIANCE_SEVERITIES[number];
 
   const violationId = `violation_${Date.now()}_${randomUUID().split('-')[0]}`;
   const now = new Date().toISOString();
 
-  const result = await query<ComplianceViolation>(
-    `insert into pilot.compliance_violations (
-      violation_id, organization_id, rule_id, video_session_id, athlete_id,
-      detected_by_account_id, violation_timestamp, severity, details, evidence_path, status, escalation_status
-    ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', 'pending')
-    returning *`,
-    [
-      violationId,
-      params.organizationId,
-      params.ruleId,
-      params.videoSessionId,
-      params.athleteId,
-      params.detectedByAccountId,
-      now,
-      params.severity,
-      JSON.stringify(params.details),
-      params.evidencePath || null,
-    ],
-  );
+  return withTransaction(async (client) => {
+    const result = await client.query<ComplianceViolation>(
+      `insert into pilot.compliance_violations (
+        violation_id, organization_id, rule_id, video_session_id, athlete_id,
+        detected_by_account_id, violation_timestamp, severity, details, evidence_path, status, escalation_status
+      ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', 'pending')
+      returning *`,
+      [
+        violationId,
+        params.organizationId,
+        params.ruleId,
+        params.videoSessionId,
+        params.athleteId,
+        params.detectedByAccountId,
+        now,
+        params.severity,
+        JSON.stringify(params.details),
+        params.evidencePath || null,
+      ],
+    );
 
-  return result[0];
+    const violation = result.rows[0];
+
+    await fileComplianceEscalationIfConfigured(client, {
+      organizationId: params.organizationId,
+      ruleId: params.ruleId,
+      athleteId: params.athleteId,
+      severity,
+      detectedByAccountId: params.detectedByAccountId,
+      violationId: violation.violation_id,
+    });
+
+    return violation;
+  });
 }
 
 export async function escalateViolation(params: {
@@ -229,6 +340,27 @@ const TRANSITION_CONTRACT: Record<ComplianceViolationTransition, {
   resolve: { target: 'resolved', allowedSources: ['acknowledged', 'escalated'] },
   dismiss: { target: 'dismissed', allowedSources: ['new', 'acknowledged'] },
 };
+
+/**
+ * The statuses that mean a violation is still live -- somebody's open problem
+ * rather than a closed record. 'resolved' and 'dismissed' are the two terminal
+ * targets in TRANSITION_CONTRACT above and no transition leads back out of
+ * either, so every other status the column's check constraint allows is open.
+ *
+ * Exported because a second consumer needs exactly this definition and must
+ * not invent its own: Coach Intelligence's Morning Read (coachIntelligence.ts,
+ * register module 111) lists still-open violations on a coach's own roster. A
+ * digest that decided for itself what "open" means would drift from this
+ * module the first time the lifecycle grew a status -- and it would drift
+ * silently, on the surface a coach reads instead of the ledger, either by
+ * counting a dismissed violation as live or, far worse, by dropping an
+ * escalated one out of a safety list.
+ */
+export const COMPLIANCE_VIOLATION_OPEN_STATUSES: ReadonlyArray<ComplianceViolation['status']> = [
+  'new',
+  'acknowledged',
+  'escalated',
+];
 
 /**
  * Move a violation through its existing lifecycle. Compare-and-set on the

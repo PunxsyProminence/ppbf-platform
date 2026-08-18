@@ -274,7 +274,7 @@
       "group": "Screens",
       "name": "Athlete Kiosk",
       "subtitle": "Gym-floor check-in: cleared and locked states, 19.1px type, 55px targets",
-      "bytes": 7654
+      "bytes": 7657
     },
     {
       "path": "screens/board-workspace.html",
@@ -298,6 +298,13 @@
       "bytes": 9035
     },
     {
+      "path": "screens/floor-card.html",
+      "group": "Screens",
+      "name": "Floor Card",
+      "subtitle": "The athlete's own locker bay and bench — earned gear, ringside. The space itself is the first thing you earn.",
+      "bytes": 27292
+    },
+    {
       "path": "screens/guardian-portal.html",
       "group": "Screens",
       "name": "Guardian Portal",
@@ -313,9 +320,9 @@
     }
   ],
   "counts": {
-    "previews": 18,
+    "previews": 19,
     "foundations": 9,
     "components": 3,
-    "screens": 6
+    "screens": 7
   }
 }

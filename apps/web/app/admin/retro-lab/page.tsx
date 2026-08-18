@@ -9,7 +9,7 @@ export default async function AdminRetroLabPage() {
   await requirePageRole(['organization_admin', 'platform_owner']);
 
   return (
-    <main className="min-h-screen bg-[#09090b]">
+    <main className="min-h-screen bg-[var(--hide-950)]">
       <PunxsyEcosystemCore />
       <DevToolsQAConsole />
     </main>

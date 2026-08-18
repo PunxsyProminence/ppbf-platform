@@ -6,7 +6,7 @@ import { query, queryOne } from './db';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
-import { createShadowResearchRequirement, listShadowResearchRequirements } from './shadowResearch';
+import { createShadowResearchRequirement, listShadowResearchRequirements, type ShadowResearchRequirementRow } from './shadowResearch';
 import { writeShadowTelemetryEvent } from './shadowTelemetry';
 
 // Below this cosine similarity, the best semantic match is noise rather than
@@ -307,6 +307,12 @@ function buildClaimNarrative(results: ShadowLibrarySearchResult[]): string {
   return `Library-backed answer from current SHADOW evidence: ${snippetSummary}${snippetSummary.endsWith('.') ? '' : '.'} Primary sources: ${sourceSummary}.`;
 }
 
+interface ShadowClaimResearchRequirement {
+  id: number;
+  researchRequirement: string;
+  knowledgeGap: string;
+}
+
 async function ensureClaimResearchRequirement(input: {
   organizationId: string;
   actorAccountId: string;
@@ -317,10 +323,13 @@ async function ensureClaimResearchRequirement(input: {
   status: ShadowLibraryClaimStatus;
   evidenceCount: number;
   distinctSourceCount: number;
-}): Promise<number | null> {
+}): Promise<ShadowClaimResearchRequirement | null> {
   if (input.status === 'supported') {
     return null;
   }
+
+  const researchRequirement = `Strengthen SHADOW Library evidence for ${input.scope} claim`;
+  const knowledgeGap = `Question lacks sufficient SHADOW Library evidence: ${input.question}. Evidence count: ${input.evidenceCount}. Distinct sources: ${input.distinctSourceCount}.`;
 
   const openItems = await listShadowResearchRequirements(input.organizationId, { status: 'open' });
   const duplicate = openItems.find((item) => {
@@ -329,17 +338,18 @@ async function ensureClaimResearchRequirement(input: {
   });
 
   if (duplicate) {
-    return duplicate.research_requirement_id;
+    return { id: duplicate.research_requirement_id, researchRequirement, knowledgeGap };
   }
 
-  return createShadowResearchRequirement({
+  const id = await createShadowResearchRequirement({
     organizationId: input.organizationId,
     sourceEventName: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
     sourceEntityType: 'shadow_library_claim',
     sourceEntityId: `${input.scope}:${input.subjectId ?? 'global'}:${Date.now()}`,
-    researchRequirement: `Strengthen SHADOW Library evidence for ${input.scope} claim`,
-    knowledgeGap: `Question lacks sufficient SHADOW Library evidence: ${input.question}. Evidence count: ${input.evidenceCount}. Distinct sources: ${input.distinctSourceCount}.`,
+    researchRequirement,
+    knowledgeGap,
     evidenceLabel: input.subjectId,
+    subjectId: input.subjectId,
     sourceStatus: input.status === 'unsupported' ? 'missing' : 'weak',
     sourceConfidenceTier: 'INSUFFICIENT',
     sourceVerificationState: 'unknown',
@@ -354,6 +364,8 @@ async function ensureClaimResearchRequirement(input: {
       status: input.status,
     },
   });
+
+  return { id, researchRequirement, knowledgeGap };
 }
 
 function buildCoverageGapResearchFields(row: ShadowCoverageComputationRow, coverageState: ShadowCoverageState) {
@@ -377,13 +389,24 @@ async function ensureCoverageGapResearchRequirement(input: {
   actorRole: string;
   row: ShadowCoverageComputationRow;
   coverageState: ShadowCoverageState;
+  /**
+   * The org's open research requirements, fetched ONCE by the caller
+   * (recomputeShadowCapabilityCoverage evaluates every capability rule in
+   * one pass, and every row's dedup check reads the same list -- refetching
+   * it per row was a full-list query for every non-covered rule instead of
+   * one for the whole recompute). Each row here corresponds to a distinct
+   * capability_map_id/capability_key, so no row's newly-created requirement
+   * can ever be a duplicate a LATER row in the same pass needs to see: the
+   * list snapshotted before the loop is exactly the set every row needs to
+   * check against.
+   */
+  openItems: readonly ShadowResearchRequirementRow[];
 }): Promise<void> {
   if (input.coverageState === 'covered' || input.coverageState === 'unknown') {
     return;
   }
 
-  const openItems = await listShadowResearchRequirements(input.organizationId, { status: 'open' });
-  const duplicate = openItems.some((item) => {
+  const duplicate = input.openItems.some((item) => {
     const metadata = (item.metadata ?? {}) as Record<string, unknown>;
     return metadata.capability_key === input.row.capability_key && metadata.coverage_state === input.coverageState;
   });
@@ -1247,7 +1270,7 @@ export async function createShadowLibraryClaim(input: {
     confidence = 0.12;
   }
 
-  const researchRequirementId = await ensureClaimResearchRequirement({
+  const claimResearchRequirement = await ensureClaimResearchRequirement({
     organizationId: input.organizationId,
     actorAccountId: input.actorAccountId,
     actorRole: input.actorRole,
@@ -1277,7 +1300,13 @@ export async function createShadowLibraryClaim(input: {
       status,
       evidence_count: evidence.length,
       distinct_source_count: distinctSourceCount,
-      research_requirement_id: researchRequirementId,
+      research_requirement_id: claimResearchRequirement?.id ?? null,
+      // Research Intake Cards (getShadowResearchProjection) reads these two
+      // keys straight off the event payload -- without them, the card the
+      // widened filter above now surfaces would render "Not provided" for
+      // both fields instead of the actual gap.
+      research_requirement: claimResearchRequirement?.researchRequirement ?? null,
+      knowledge_gap: claimResearchRequirement?.knowledgeGap ?? null,
     },
   });
 
@@ -1301,7 +1330,7 @@ export async function createShadowLibraryClaim(input: {
     evidenceCount: evidence.length,
     distinctSourceCount,
     evidence,
-    researchRequirementId,
+    researchRequirementId: claimResearchRequirement?.id ?? null,
   };
 }
 
@@ -1380,32 +1409,43 @@ export async function recomputeShadowCapabilityCoverage(input: {
     [input.organizationId],
   );
 
-  for (const row of rows) {
-    let coverageState: ShadowCoverageState;
-    if (row.matched_sources <= 0) {
-      coverageState = 'uncovered';
-    } else if (row.matched_sources < row.minimum_source_count) {
-      coverageState = 'partial';
-    } else {
-      coverageState = 'covered';
-    }
+  if (rows.length > 0) {
+    const states = rows.map((row) => {
+      if (row.matched_sources <= 0) return 'uncovered' as const;
+      if (row.matched_sources < row.minimum_source_count) return 'partial' as const;
+      return 'covered' as const;
+    });
 
+    // One statement for every rule's coverage_state instead of one UPDATE
+    // per rule: a curator's taxonomy is typically tens of rules, re-evaluated
+    // in full on every recompute call, so this was N round trips for a
+    // write that has no per-row failure mode to isolate (unlike, say,
+    // rosterImport's per-row create -- every row here is an unconditional
+    // update to a row that provably exists, since it came from cm itself).
     await query(
-      `update pilot.shadow_library_capability_map
-       set coverage_state = $3,
+      `update pilot.shadow_library_capability_map as cm
+       set coverage_state = v.coverage_state,
            last_evaluated_at = now(),
            updated_at = now()
-       where organization_id = $1 and capability_map_id = $2`,
-      [input.organizationId, row.capability_map_id, coverageState],
+       from unnest($2::text[], $3::text[]) as v(capability_map_id, coverage_state)
+       where cm.organization_id = $1 and cm.capability_map_id = v.capability_map_id`,
+      [input.organizationId, rows.map((row) => row.capability_map_id), states],
     );
 
-    await ensureCoverageGapResearchRequirement({
-      organizationId: input.organizationId,
-      actorAccountId: input.actorAccountId,
-      actorRole: input.actorRole,
-      row,
-      coverageState,
-    });
+    // Fetched ONCE for the whole pass -- see ensureCoverageGapResearchRequirement's
+    // own comment on why every row in this pass may safely share one snapshot.
+    const openItems = await listShadowResearchRequirements(input.organizationId, { status: 'open' });
+
+    for (const [index, row] of rows.entries()) {
+      await ensureCoverageGapResearchRequirement({
+        organizationId: input.organizationId,
+        actorAccountId: input.actorAccountId,
+        actorRole: input.actorRole,
+        row,
+        coverageState: states[index],
+        openItems,
+      });
+    }
   }
 
   await writeShadowTelemetryEvent({

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { apiBase } from '@/lib/apiBase';
+import { useFocusOnStepChange } from '@/src/lib/useFocusOnStepChange';
 import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
 // Single source of truth with the server policy: validatePinPolicy enforces
@@ -71,6 +72,11 @@ function ActivatePageContent() {
   const router = useRouter();
 
   const [stage, setStage] = useState<Stage>('code');
+  // Each stage swaps in a whole new <form> with no focus moved to it -- the
+  // fix targets the first field of the new stage (or its heading, for the
+  // no-more-fields 'done' stage) so the transition is keyboard-reachable
+  // and announced.
+  useFocusOnStepChange(stage === 'done' ? 'activation-done-heading' : stage === 'pin' ? 'new-pin' : 'activation-code');
   const [code, setCode] = useState('');
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -306,7 +312,7 @@ function ActivatePageContent() {
              when it says you are good to go. */
           <section className="mat-paper flex flex-col gap-[var(--s5)] rounded-[var(--r-lg)] border-2 border-[color:var(--cleared)] p-[var(--s6)] text-center">
             <p className="text-[length:var(--t-3xl)] leading-none text-[color:var(--cleared)]" aria-hidden="true">✓</p>
-            <h2 className="t-command text-[length:var(--t-lg)]">You&rsquo;re all set</h2>
+            <h2 id="activation-done-heading" tabIndex={-1} className="t-command text-[length:var(--t-lg)]">You&rsquo;re all set</h2>
 
             {accountId && (
               <div className="rounded-[var(--r-sm)] border border-[color:rgba(0,0,0,.12)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s4)]">

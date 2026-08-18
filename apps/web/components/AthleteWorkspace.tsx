@@ -2723,6 +2723,19 @@ export default function AthleteWorkspace() {
                 Open Your Progression
               </Link>
             </article>
+            {/* /athlete/dashboard/sparring existed with a real, tested,
+                API-backed form (rounds, contact, punch output feeding the
+                same SHADOW formulas this tab is named for) and no link to it
+                anywhere in the app -- reachable only by typing the URL or
+                using site search. This card is the only thing that changed;
+                the page itself and its own naming are untouched. */}
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Combat Telemetry Log</p>
+              <p className="t-muted mt-[var(--s2)]">Log rounds, contact, and punch output from a sparring session. Feeds the same SHADOW formulas your coach reviews.</p>
+              <Link href="/athlete/dashboard/sparring" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                Open Combat Telemetry Log
+              </Link>
+            </article>
           </div>
         </details>
 

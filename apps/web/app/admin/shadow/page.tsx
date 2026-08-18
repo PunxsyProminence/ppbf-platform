@@ -335,6 +335,7 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
         type="button"
         onClick={() => void handleToggle()}
         className="btn--lever"
+        aria-expanded={expanded}
       >
         {expanded ? 'Hide Document Security Review' : 'Document Security Review'}
       </button>

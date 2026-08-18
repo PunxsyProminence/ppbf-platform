@@ -12,6 +12,7 @@ import {
   requireGuardianLinkForParentInvite,
   type GuardianAthleteLink,
   type InvitableStaffRole,
+  type VolunteerRosterAssignment,
 } from '@/src/server/pilot/staffProvisioning';
 
 export const runtime = 'nodejs';
@@ -82,6 +83,15 @@ export async function POST(request: NextRequest) {
         full_name?: string;
         relationship_to_athlete?: string;
       };
+      volunteer?: {
+        volunteer_id?: string;
+        full_name?: string;
+        role_focus?: string;
+        availability?: string;
+        certification_status?: string;
+        background_check_status?: string;
+        notes?: string | null;
+      };
     };
 
     const loginEmail = body.login_email?.trim() || '';
@@ -105,12 +115,30 @@ export async function POST(request: NextRequest) {
     // to mint a parent account that resolves nobody.
     requireGuardianLinkForParentInvite(role, guardian);
 
+    // Optional -- createOrUpdateMicrosoftStaffAccount creates or links the
+    // pilot.volunteers roster row for a volunteer invite regardless of
+    // whether this is present, so a caller that sends nothing still gets the
+    // account/roster link closed. This just lets a caller name a roster
+    // detail, or an existing roster row to attach to, when it has one.
+    const volunteer: VolunteerRosterAssignment | undefined = body.volunteer
+      ? {
+          volunteerId: body.volunteer.volunteer_id?.trim() || undefined,
+          fullName: body.volunteer.full_name,
+          roleFocus: body.volunteer.role_focus,
+          availability: body.volunteer.availability,
+          certificationStatus: body.volunteer.certification_status,
+          backgroundCheckStatus: body.volunteer.background_check_status,
+          notes: body.volunteer.notes,
+        }
+      : undefined;
+
     const result = await createOrUpdateMicrosoftStaffAccount({
       loginEmail,
       organizationId: principal.organizationId,
       role,
       accountIdHint: body.account_id?.trim() || undefined,
       guardian,
+      volunteer,
     });
 
     await writePilotAuditEvent({
@@ -133,6 +161,7 @@ export async function POST(request: NextRequest) {
               guardian_athlete_id: result.guardianLink.athleteId,
             }
           : {}),
+        ...(result.volunteerLink ? { volunteer_id: result.volunteerLink.volunteerId } : {}),
       },
     });
 
@@ -146,6 +175,7 @@ export async function POST(request: NextRequest) {
       guardian_link: result.guardianLink
         ? { parent_id: result.guardianLink.parentId, athlete_id: result.guardianLink.athleteId }
         : null,
+      volunteer_link: result.volunteerLink ? { volunteer_id: result.volunteerLink.volunteerId } : null,
       requires_entra_guest_invite: true,
     });
   } catch (error) {

@@ -762,15 +762,23 @@ export async function upsertGuardian(params: {
   phone?: string;
   email?: string;
 }): Promise<void> {
+  // account_id, phone and email are optional in this signature -- both
+  // callers omit them when the caller-supplied payload simply did not carry
+  // one, not to mean "clear it". Overwriting unconditionally, as this used to
+  // do, meant naming an EXISTING parent_id with a shorter payload silently
+  // nulled a real guardian's account link and contact details rather than
+  // leaving them alone. coalesce against the current row so an omitted field
+  // preserves what is already on file; full_name has no optional caller path
+  // (both call sites always supply one) and keeps overwriting as before.
   await query(
     `insert into pilot.parents
      (organization_id, parent_id, account_id, full_name, phone, email)
      values ($1,$2,$3,$4,$5,$6)
      on conflict (organization_id, parent_id) do update set
-       account_id = excluded.account_id,
+       account_id = coalesce(excluded.account_id, pilot.parents.account_id),
        full_name = excluded.full_name,
-       phone = excluded.phone,
-       email = excluded.email,
+       phone = coalesce(excluded.phone, pilot.parents.phone),
+       email = coalesce(excluded.email, pilot.parents.email),
        updated_at = now()`,
     [params.organizationId, params.parentId, params.accountId ?? null, params.fullName, params.phone ?? null, params.email ?? null],
   );

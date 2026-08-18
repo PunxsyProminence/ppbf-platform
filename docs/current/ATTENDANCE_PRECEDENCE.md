@@ -174,7 +174,8 @@ figure that looks plausible. A test is the only thing that catches it.
   column heading is worth renaming so it cannot be read as days attended. Not
   changed here: renaming an exported column changes a file someone may already
   be reconciling against, which is the owner's call rather than mine.
-- Whether the ~coach-facing `recorded_absences_since_last_visit` in
-  `passbook.ts` should be switched to the view. Left alone here because
-  changing a shipped coach-facing number is outside CT-13's scope, and its
-  inflation only occurs where duplicate rows exist.
+- ~~Whether the coach-facing `recorded_absences_since_last_visit` in
+  `passbook.ts` should be switched to the view.~~ RESOLVED, same day: commit
+  `f09d78a9` switched the query to `count(distinct attendance_date)`, so the
+  duplicate-row inflation this bullet described no longer occurs. The number
+  is already correct; nothing further to decide here.

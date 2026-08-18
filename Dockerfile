@@ -1,5 +1,11 @@
 # Stage 1: Dependencies base
-FROM node:20-alpine AS base
+# Matches ci.yml/apply-migrations.yml's node-version: 22 -- this was 20,
+# meaning the build CI validates (npm run typecheck/test/build under 22) and
+# the build that actually ships (this stage's npm ci + npm run build) ran
+# under different Node majors. 22 is proven working for this exact codebase
+# by every CI run; not build-tested locally (no docker daemon in this
+# sandbox), so CI's own image build is the real verification.
+FROM node:22-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
 # Install from the committed root workspace lockfile with `npm ci` so the

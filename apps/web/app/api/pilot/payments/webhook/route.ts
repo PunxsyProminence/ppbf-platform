@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import {
   markAccountDisconnected,
   readPaymentPlatformConfig,
@@ -23,6 +24,27 @@ export const runtime = 'nodejs';
 // subscriptions) arrive with the checkout slice, behind the owner's
 // compliance sign-off -- until then every other event type is acknowledged
 // and deliberately ignored.
+
+// A lost audit row must not report an already-committed disconnection as a
+// webhook failure -- same non-fatal-audit doctrine as parent/consent's
+// auditConsentEvent. Without this guard, markAccountDisconnected's write
+// commits, the unguarded audit write below throws, Next.js returns an
+// unhandled 500 (this route has no top-level try/catch of its own), Stripe
+// retries the same event, and the retry's WHERE status='connected' clause
+// now matches zero rows -- so every subsequent retry reports 400 "Account
+// not on file" for an event that actually succeeded on the first delivery.
+async function auditDisconnectionEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try {
+    await writePilotAuditEvent(event);
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({
+      event: 'pilot-payments-webhook-audit-write-failed',
+      ...(code ? { code } : {}),
+    });
+  }
+}
 
 export async function POST(request: NextRequest) {
   const config = readPaymentPlatformConfig();
@@ -68,7 +90,7 @@ export async function POST(request: NextRequest) {
   }
 
   for (const row of affected) {
-    await writePilotAuditEvent({
+    await auditDisconnectionEvent({
       event_type: 'payment_account_disconnected',
       actor_account_id: null,
       actor_role: null,

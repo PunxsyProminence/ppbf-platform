@@ -1,13 +1,26 @@
 import {
   ARCHIVAL_MIN_INTERVAL_MS,
   ARCHIVE_COLD_DAYS,
+  archiveOldData,
   createShadowArchivalSweep,
   resolveArchiveConfig,
   type ArchiveConfig,
   type ArchiveResult,
 } from './shadowArchival';
+import { query } from './db';
+
+jest.mock('./db', () => ({ query: jest.fn() }));
+
+const mockQuery = query as jest.Mock;
 
 const ok: ArchiveResult = { success: true, archivedCount: 4, aggregatedMonths: 2 };
+
+const baseConfig: ArchiveConfig = {
+  hotDays: 30,
+  coldDays: 180,
+  blobConnectionString: '', // falsy: skips the Azure Blob path entirely, no SDK mock needed
+  containerName: 'ppbf-pilot-shadow-archive',
+};
 
 describe('archive configuration', () => {
   test('is absent without a storage destination, so nothing is deleted unarchived', () => {
@@ -120,5 +133,64 @@ describe('archival sweep', () => {
     await sweep();
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ containerName: 'cold', coldDays: ARCHIVE_COLD_DAYS });
+  });
+});
+
+// Monthly-stats aggregation used to be one SELECT-then-conditional-INSERT
+// round trip per organization with SHADOW activity; it is now one grouped
+// upsert. These prove the batched query, not the per-org loop it replaced.
+describe('archiveOldData: monthly aggregation', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  test('aggregates every organization with last month\'s activity in ONE grouped upsert, not one query per org', async () => {
+    mockQuery
+      .mockResolvedValueOnce([]) // old-data select: nothing to archive/delete
+      .mockResolvedValueOnce([{ organization_id: 'org-1' }, { organization_id: 'org-2' }]); // grouped upsert RETURNING
+
+    const result = await archiveOldData(baseConfig);
+
+    expect(result).toEqual({ success: true, archivedCount: 0, aggregatedMonths: 2 });
+    // Exactly two calls total: the old-data select and the one grouped
+    // aggregation upsert -- never a `SELECT DISTINCT organization_id` plus
+    // a per-org round trip.
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    const [aggregateSql] = mockQuery.mock.calls[1];
+    expect(aggregateSql).toContain('GROUP BY organization_id');
+    expect(aggregateSql).toContain('ON CONFLICT (organization_id, month)');
+  });
+
+  test('archives and deletes old records, and the aggregation still runs afterward', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ created_at: '2020-01-01' }, { created_at: '2020-01-02' }]) // old-data select
+      .mockResolvedValueOnce([]) // DELETE
+      .mockResolvedValueOnce([{ organization_id: 'org-1' }]); // grouped upsert
+
+    const result = await archiveOldData(baseConfig);
+
+    expect(result).toEqual({ success: true, archivedCount: 2, aggregatedMonths: 1 });
+    expect(mockQuery).toHaveBeenCalledTimes(3);
+    const [deleteSql] = mockQuery.mock.calls[1];
+    expect(deleteSql).toContain('DELETE FROM pilot.shadow_chat_audit');
+  });
+
+  test('reports success:false without throwing when the aggregation query itself fails', async () => {
+    mockQuery
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('relation "pilot.shadow_monthly_stats" does not exist'));
+
+    const result = await archiveOldData(baseConfig);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('relation "pilot.shadow_monthly_stats" does not exist');
+  });
+
+  test('no organizations had activity last month: zero rows back, zero months aggregated', async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const result = await archiveOldData(baseConfig);
+
+    expect(result).toEqual({ success: true, archivedCount: 0, aggregatedMonths: 0 });
   });
 });

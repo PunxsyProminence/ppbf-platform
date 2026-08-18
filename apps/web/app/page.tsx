@@ -172,7 +172,7 @@ export default function HomePage() {
             The Room
           </h2>
           <p className="t-body mt-[var(--s3)] max-w-[68ch]">
-            One building in Big Run, run on donations. Come see it before you commit to anything —
+            One building in Punxsutawney, run on donations. Come see it before you commit to anything —
             that is the right way round.
           </p>
           <div className="mt-[var(--s5)] grid gap-[var(--s5)] sm:grid-cols-2 lg:grid-cols-3">

@@ -42,11 +42,29 @@ export interface GoogleDriveWriteResult {
   webViewLink?: string
 }
 
+/**
+ * The three destinations are independently optional, so each result is null
+ * when that destination is switched off.
+ *
+ * `null` rather than an absent key, deliberately: the key stays present so a
+ * caller cannot tell "this destination is off" apart from "this build predates
+ * the field" by shape alone, and `writtenTo` states the answer positively so
+ * nobody has to infer it from three null checks.
+ */
 export interface DocumentIngestResult {
   status: 'ok'
   fileName: string
   classification: IntakeClassification
-  dataverse: DataverseWriteResult
-  sharepoint: SharePointWriteResult
-  googleDrive: GoogleDriveWriteResult
+  /**
+   * Destinations this document was actually written to.
+   *
+   * Never empty on a returned result: getPipelineConfig() refuses a pipeline
+   * with no ready destination, so the request fails before any destination
+   * write is attempted. Note the route reads and parses the PDF first, so the
+   * refusal happens after the upload is read, not before it.
+   */
+  writtenTo: string[]
+  dataverse: DataverseWriteResult | null
+  sharepoint: SharePointWriteResult | null
+  googleDrive: GoogleDriveWriteResult | null
 }

@@ -22,6 +22,7 @@ interface ExecutionRow {
   protocol_version: number;
   protocol_title: string | null;
   status: 'in_progress' | 'completed' | 'stopped' | 'superseded';
+  session_run_id: string | null;
   planned_exposure: Record<string, number>;
   planned_task_context: string;
   actual_exposure: Record<string, number>;
@@ -300,6 +301,9 @@ export default function InterventionExecutionsPage() {
                         {row.athlete_name ?? row.athlete_id} · {row.created_at.slice(0, 10)}
                         {row.version > 1 ? ` · corrected (v${row.version})` : ''}
                       </span>
+                      {row.session_run_id && (
+                        <span className="t-label" title={row.session_run_id}>Logged during a live session</span>
+                      )}
                     </div>
 
                     <div className="mt-[var(--s2)] grid gap-[var(--s2)] md:grid-cols-2">

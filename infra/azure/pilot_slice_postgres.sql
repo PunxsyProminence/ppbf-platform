@@ -726,7 +726,7 @@ create index if not exists idx_safety_gate_evaluations_org_gate
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident')),
+  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
@@ -1032,6 +1032,11 @@ create table if not exists pilot.shadow_research_requirements (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   resolved_at timestamptz null,
+  -- Mirrors pilot.shadow_library_documents.subject_id: text, nullable, no
+  -- foreign key. See pilot_slice_postgres_research_requirement_subject_
+  -- migration.sql for the ALTER an existing database applies to gain this
+  -- column and for why it carries no FK.
+  subject_id text null,
   unique (organization_id, source_event_name, source_entity_type, source_entity_id)
 );
 

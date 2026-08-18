@@ -117,6 +117,35 @@ test('closing out posts an explicit adherence state and structured actual exposu
   expect(posted.actual_exposure).not.toHaveProperty('difficulty');
 });
 
+test('an execution links to the session run it was logged against, and one with no link shows no such claim', async () => {
+  const capture = { patches: [] as unknown[] };
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/intervention-executions') && init?.method === 'PATCH') {
+      capture.patches.push(JSON.parse(String(init.body)));
+      return { ok: true, json: async () => ({ item: {} }) } as Response;
+    }
+    if (url.includes('/intervention-executions')) {
+      return {
+        ok: true,
+        json: async () => ({
+          items: [
+            { ...EXECUTION, execution_id: 'ex-linked', session_run_id: 'ssrun_1' },
+            { ...EXECUTION, execution_id: 'ex-unlinked', session_run_id: null },
+          ],
+        }),
+      } as Response;
+    }
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<InterventionExecutionsPage />);
+  });
+
+  expect(await screen.findAllByText('Logged during a live session')).toHaveLength(1);
+});
+
 test('a non-positive actual exposure never leaves the page', async () => {
   const capture = { patches: [] as unknown[] };
   global.fetch = mockFetch(capture);

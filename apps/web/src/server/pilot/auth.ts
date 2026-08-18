@@ -117,21 +117,32 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     [accountId],
   );
 
+  // Every rejection below logs a reason code (never the PIN) before
+  // returning null. Nothing else does: the durable rate-limit bucket this
+  // route also checks is deleted once it is more than 15 minutes old
+  // (rateLimit.ts), so an attacker spacing guesses out, or spreading them
+  // across accounts, previously left zero trace anywhere once that window
+  // passed -- no forensic trail for a suspected brute-force against a
+  // minor's account.
   if (!data?.active_flag) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'unknown_or_inactive_account' });
     return null;
   }
 
   const organizationId = data.organization_id || getPilotDefaultOrganizationId();
   if (!data.is_platform_owner && data.organization_status && data.organization_status !== 'active') {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'organization_not_active' });
     return null;
   }
 
   if (!data.pin_hash) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'no_pin_set' });
     return null;
   }
 
   const pinIsValid = await verifyPin(pin, data.pin_hash);
   if (!pinIsValid) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'wrong_pin' });
     return null;
   }
 
@@ -142,6 +153,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   // login page's default tab used to state the rule separately, and the page
   // had it wrong -- it offered a PIN form to everyone.
   if (!usesPin({ role: data.role })) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'role_not_pin_eligible' });
     return null;
   }
 
@@ -632,10 +644,16 @@ export async function changeOwnPin(accountId: string, currentPin: string, newPin
     // athlete-only rule, and the drift guard found it after two rounds of
     // reading the file missed it.
     if (!row?.active_flag || !row.pin_hash || !usesPin({ role: row.role })) {
+      console.warn('pilot-auth change-pin rejected', { accountId, reason: 'ineligible_account' });
       throw new Error('Unauthorized');
     }
 
     if (!(await verifyPin(currentPin, row.pin_hash))) {
+      // The route reaching this is gated only on a live session cookie, not
+      // on the PIN itself -- a stolen-but-live session is enough to guess
+      // here repeatedly, which is exactly the scenario a forensic trail
+      // needs to be reconstructable for.
+      console.warn('pilot-auth change-pin rejected', { accountId, reason: 'wrong_current_pin' });
       throw new Error('Unauthorized: current PIN is incorrect');
     }
 
@@ -1175,6 +1193,72 @@ export async function transferOrganizationAdmin(
 // different, explicit operation -- it must never be a side effect of
 // assigning an admin. active_flag is deliberately untouched: promoting a
 // deactivated account must not silently reactivate it.
+/**
+ * Grants or revokes `has_master_shadow_access` -- the standing
+ * cross-organization privilege flag on `pilot.accounts`.
+ *
+ * Before this function existed, the column had no product provisioning path
+ * at all. It is read by both login paths (loginWithAccountIdAndPin and
+ * loginWithMicrosoftEmail) and by resolvePrincipal on every request, and the
+ * PIN login route echoes it in the JSON response body -- but nothing in the
+ * application ever set it. The only way an account ever held it was a direct
+ * database write against a column that defaults to false.
+ *
+ * This is a platform-wide attribute of the account, not a per-organization
+ * one -- pilot.organization_memberships has nothing comparable, and neither
+ * does pilot.accounts.role -- so unlike setAccountActiveStatus this does not
+ * take an organization_id to scope the match. account_id alone is the primary
+ * key of pilot.accounts.
+ *
+ * Callers are NOT re-checked here. Gating who may call this lives at the
+ * route layer via requireRole(['platform_owner']), matching every other
+ * platform-level cross-org grant already in this codebase (see
+ * promoteAccountToOrganizationAdmin, transferOrganizationAdmin, and
+ * setOrganizationStatus, all gated the same way, all one layer up from their
+ * own db function).
+ *
+ * Athlete and parent targets are refused outright, at this layer, so no
+ * future caller of this function can skip the check by forgetting to repeat
+ * it. Those two roles are minor-linked and scoped to self/family by design;
+ * there is no legitimate reason for a child's or guardian's account to carry
+ * a platform-wide cross-organization export privilege.
+ *
+ * No session revocation on revoke: resolvePrincipal reads
+ * has_master_shadow_access live from the database on every request rather
+ * than caching it on the session token, so a revoke here takes effect on the
+ * very next request without needing to invalidate anything.
+ */
+export async function setAccountMasterShadowAccess(
+  accountId: string,
+  granted: boolean,
+): Promise<{ accountId: string; role: PilotRole; organizationId: string | null; hasMasterShadowAccess: boolean }> {
+  const result = await queryOne<{
+    account_id: string;
+    role: PilotRole;
+    organization_id: string | null;
+    has_master_shadow_access: boolean;
+  }>(
+    `update pilot.accounts
+     set has_master_shadow_access = $2,
+         updated_at = now()
+     where account_id = $1
+       and role not in ('athlete', 'parent')
+     returning account_id, role, organization_id, has_master_shadow_access`,
+    [accountId, granted],
+  );
+
+  if (!result) {
+    throw new Error('Not found: no such account, or its role cannot hold cross-organization access');
+  }
+
+  return {
+    accountId: result.account_id,
+    role: result.role,
+    organizationId: result.organization_id,
+    hasMasterShadowAccess: result.has_master_shadow_access,
+  };
+}
+
 export async function promoteAccountToOrganizationAdmin(accountId: string, organizationId: string): Promise<void> {
   await withTransaction(async (client) => {
     const rows = await client.query<{ account_id: string }>(

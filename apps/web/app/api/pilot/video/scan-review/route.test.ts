@@ -272,6 +272,21 @@ describe('POST /api/pilot/video/review-link', () => {
     }));
   });
 
+  test('the response carrying the link is not storable by any cache', async () => {
+    // The link is a bearer credential: for 15 minutes whoever holds the string
+    // watches a minor's quarantined footage with no session behind it. Every
+    // issuance is audited above, and a cached copy is a second holder that no
+    // audit row names -- so the response must not be stored, by the browser or
+    // by any intermediary on the way back.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+
+    const res = await REVIEW_LINK(req({ video_session_id: 'vs-1' }, 'review-link'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+
   test('refuses to hand out a link for an infected file', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGetVideo.mockResolvedValue(video({ status: 'infected' }));
