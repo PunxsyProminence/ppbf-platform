@@ -17,7 +17,9 @@ something that merged this morning.
 
 **New gotcha found and fixed, worth knowing if a PR you rebased seems to hang with no CI:** retargeting a PR's base via the GitHub API (`update_pull_request`) fires an `edited` event, not `synchronize` — and `ci.yml`'s `on: pull_request: branches: [main]` only listens to the *default* types (opened/synchronize/reopened), not `edited`. So #418 and #419 sat "ready for review" with real green-locally content and **zero check runs** against their head SHA (confirmed via `get_status`/`get_check_runs` showing `total_count: 0`), because the base-retarget-after-#415-merged was the only event that had fired. Fixed by pushing a trivial commit to each (an empty commit for #418; a `commit-tree`-built empty-diff commit for #419, done without needing its worktree) to force a real `synchronize`. Both now show `validate` genuinely `in_progress`. If you retarget a PR's base and it doesn't seem to pick up CI, check `get_check_runs` before assuming it's fine — a "ready" PR with a stale base can look done and never have been tested against its current head at all.
 
-**Still pending as of this note:** waiting on `validate` to go green on #418 and #419 (just started), then merge in order #418 → #419 → #420, re-checking `merged`/`mergeable_state` fresh immediately before each merge attempt per the standing serial-merge discipline — the other session has independently merged #421/#416/#467/#464/#415/#456 during this same window, so do not assume any of these three are still unmerged without checking first.
+**UPDATE 2026-08-18 ~21:44 UTC — all three merged, the whole stack is closed.** #418 merged as `cef08cae`. Merging #418 immediately made #419's `mergeable_state` go `dirty` (its base sha was one merge behind) — rebased #419 onto the new `main` (git auto-recognized #418's squashed content and skipped it, zero real conflicts), re-verified (517/6512, 6 pg-suites/90, migration-coverage 3/130, all matching the PR's own numbers exactly), pushed as `2cb33607`, CI green, merged as `b8c9fac0`. Retargeting #420's base from `claude/ppbf-platform-film-study-video` to `main` then showed a *misleadingly large* diff (39 files/8 commits) — that's expected (the branch was still forked from #419's pre-merge tip, not the squash commit) and is not itself a conflict signal; **do not `git rebase origin/main` plain on a PR like this** — it replays the *entire* original commit chain including already-merged ancestors and hits real conflicts on content that's actually fine. Use `git rebase --onto origin/main <old-fork-point> <branch>` instead, where `<old-fork-point>` is the exact commit #420's own unique commit was built on top of (found via `git log --oneline <branch> -8` and matching subject lines against what's now on `main`) — that replayed cleanly to #420's true 1-commit/4-file diff. Re-verified (517/6522, targeted 33/33, no migrations touched so no pg/coverage re-run needed), pushed as `0cf8446a`, CI green, merged as `e24555c3`.
+
+**The full #415→#418→#419→#420 stack is on `main`.** Temporary rebase worktrees/branches (`wt-419-rebase`, `wt-420-rebase`, and their local branches) have been removed. Nothing left to do here.
 
 ## LIVE, 2026-08-18 ~16:38 UTC — two sessions are both merging right now
 
@@ -861,10 +863,14 @@ a writer or a reader.
 
 ---
 
-## Closed — 37, merged (#410 CI in flight, #415 pending reset — see notes above, neither merged yet)
+## Closed — 41, merged
 
 | Gap | Closed by |
 |---|---|
+| Staff credential documents had no self-upload, admin verification, or public status surface | #415 |
+| Roster imports silently dropped or misfiled non-athlete rows (coaches, volunteers, board members) | #418 |
+| Film Study queue could only approve/reject, with no coach feedback loop, revision history, or per-org video release policy; coach-side release had no watch-confirmation gate | #419 |
+| Interval frame sampling for Film Study wasted budget on empty footage, with no measured alternative | #420 |
 | No UI path could place or lift a training hold on a child — the #1 priority in this whole audit | #467 |
 | A quarantined minor's video could be approved (made playable) with one unwatched click | #421 |
 | Owner-approved background art was undeployed; 3 routes bypassed the family/warm-ground rule | #416 |
