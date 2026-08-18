@@ -17,6 +17,21 @@ session arriving now: **do not start a new sweep of the open-PR list until
 you have re-fetched it fresh** — several rows below may already be stale by
 the time you read them.
 
+**PR #447 closed as superseded, not merged.** It was a 9-commit bundle from a
+capability-network audit, ~2 days stale. Checking it against current `main`
+before touching anything found 8 of its 9 commits already independently
+shipped via other merged PRs (#450, #439, #438, #440, #448, #443, #445,
+#441) — and its video-scan escalation commit isn't just duplicated, it's
+**contradicted** by the merged #439 (narrower verdict set, hard-fixed
+severity vs. #439's per-verdict severity). Its `docs/handoffs/HANDOFF_*.md`
+files are also near-duplicates of the `docs/HANDOFF_*.md` files #437 already
+landed at the repo root. **One piece was genuinely non-redundant and is
+still worth building**: a compliance-rules route plus an "Escalate to
+Compliance" UI action on the Film Study review queue (commit `b65d490e` on
+the now-closed branch, `claude/artifact-code-session-7piryt`, if anyone
+wants to hand-port it fresh off current `main` rather than dig it out of
+history). See the closing comment on #447 for the full table.
+
 **A real branch-contamination problem, found by an agent bringing PR #415 up
 to date, needs a human decision before anyone touches that branch again.**
 `origin/claude/ppbf-platform-orientation-qg4j3b` (PR #415, "staff
