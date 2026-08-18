@@ -128,6 +128,23 @@ beforeAll(async () => {
   await migrateClient.query(
     await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_video_sessions_migration.sql'), 'utf8'),
   );
+  // The coach-reported migration widens this same table (origin, the reporter,
+  // the correction column, the 'corrected' verdict). The module writes and
+  // reads those columns, so this suite exercises the schema the code actually
+  // targets rather than a version of it that no longer exists.
+  await migrateClient.query(
+    await fs.readFile(
+      path.join(INFRA_DIR, 'pilot_slice_postgres_film_study_coach_reported_migration.sql'),
+      'utf8',
+    ),
+  );
+  // Corrections append a revision row, so this suite needs the table too.
+  await migrateClient.query(
+    await fs.readFile(
+      path.join(INFRA_DIR, 'pilot_slice_postgres_film_study_revisions_migration.sql'),
+      'utf8',
+    ),
+  );
   for (const orgId of [ORG_ID, OTHER_ORG_ID]) {
     await migrateClient.query(
       `insert into pilot.organizations (organization_id, organization_name, status)

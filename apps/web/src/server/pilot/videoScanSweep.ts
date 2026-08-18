@@ -19,6 +19,8 @@ import { scanVideoSession } from './videoScan';
 import {
   claimNextVideoSessionForScan,
   isTerminalScanDecision,
+  markVideoSessionsUnconfigured,
+  rearmUnconfiguredVideoSessions,
   scanRetryBackoffSeconds,
   settleVideoSessionScan,
 } from './videoSessions';
@@ -87,6 +89,8 @@ export interface VideoScanSweepResult {
   scanned: number;
   promoted: number;
   blocked: number;
+  /** Rows parked as 'unconfigured' because no gate exists to produce a verdict. */
+  unconfigured?: number;
   skippedReason?: 'not_configured' | 'nothing_due';
 }
 
@@ -105,8 +109,29 @@ export async function sweepQuarantinedVideos(options: {
 } = {}): Promise<VideoScanSweepResult> {
   const config = resolveVideoScanConfig(options.env);
   if (!isVideoScanConfigured(config)) {
-    return { scanned: 0, promoted: 0, blocked: 0, skippedReason: 'not_configured' };
+    // Settle due videos as 'unconfigured' rather than leaving them 'pending'.
+    //
+    // This state exists precisely for "no gate to ask", and the coach release
+    // route allows it under every policy -- but nothing could ever write it.
+    // decideVideoScanOutcome only returns 'hold' when zero gates are enabled,
+    // and this function used to return before calling it, so the one situation
+    // the state was designed for was the one situation it could not be reached
+    // in. A no-scanner environment left every upload at 'pending', which the
+    // release route refuses, so no video could be released by machine OR by
+    // coach. Third instance of the same shape after #122 and #49: a terminal
+    // state nothing can reach.
+    //
+    // Settling is terminal and unbounded-safe: an 'unconfigured' row is no
+    // longer claimable, so each video is written once rather than burning an
+    // attempt per tick -- which is what the early return was protecting.
+    const marked = await markVideoSessionsUnconfigured();
+    return { scanned: 0, promoted: 0, blocked: 0, unconfigured: marked, skippedReason: 'not_configured' };
   }
+
+  // A scanner was turned on after videos were parked as 'unconfigured'. Put
+  // them back in the queue, or they would sit outside the claim set forever
+  // and never be scanned by the gate that now exists.
+  await rearmUnconfiguredVideoSessions();
 
   const maxScans = Math.max(1, options.maxScans ?? DEFAULT_MAX_SCANS_PER_SWEEP);
   const result: VideoScanSweepResult = { scanned: 0, promoted: 0, blocked: 0 };

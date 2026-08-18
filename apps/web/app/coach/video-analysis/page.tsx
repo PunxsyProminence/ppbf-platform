@@ -22,6 +22,14 @@ interface VideoSession {
   created_at: string;
 }
 
+// The roster read behind every athlete picker on this page. Mirrors the shape
+// app/api/pilot/athletes/list returns, trimmed to the two columns a picker and
+// a display label need.
+interface AthleteOption {
+  athlete_id: string;
+  full_name: string;
+}
+
 interface ShadowObservationItem {
   id: string;
   source: 'event' | 'telemetry';
@@ -47,10 +55,18 @@ interface FilmStudyProposal {
   proposal_id: string;
   athlete_id: string;
   video_session_id: string;
+  // 'coach_reported' is an observation a coach entered because the model never
+  // proposed it. Those rows carry no inference run, so the two model columns
+  // below are null on them rather than filled with a stand-in.
+  origin: 'model_proposed' | 'coach_reported';
   observation_text: string;
-  model_deployment: string;
-  frames_analyzed: number;
-  review_state: 'pending_review' | 'accepted' | 'rejected';
+  model_deployment: string | null;
+  frames_analyzed: number | null;
+  review_state: 'pending_review' | 'accepted' | 'rejected' | 'corrected';
+  // The newest correction pass, or null before the first one. 'corrected' is a
+  // working state rather than an exit -- the proposal stays in the queue and
+  // can be reworked until it reads right, then accepted.
+  corrected_observation_text: string | null;
   created_at: string;
 }
 
@@ -142,8 +158,14 @@ export default function CoachVideoAnalysisPage() {
   const [videoError, setVideoError] = useState('');
   const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
   const [observationError, setObservationError] = useState('');
+  const [athletes, setAthletes] = useState<AthleteOption[]>([]);
   const [releasingVideoId, setReleasingVideoId] = useState<string | null>(null);
   const [previewingVideoId, setPreviewingVideoId] = useState<string | null>(null);
+  // Which videos this reviewer has actually opened for review. A SET of ids
+  // rather than "is the player open right now": activeVideo is a single slot,
+  // so opening a second video would otherwise silently retract the first
+  // one's inspection and re-lock a Release the coach had earned.
+  const [previewedVideoIds, setPreviewedVideoIds] = useState<Set<string>>(new Set());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -159,6 +181,12 @@ export default function CoachVideoAnalysisPage() {
   const [proposals, setProposals] = useState<FilmStudyProposal[]>([]);
   const [proposalsError, setProposalsError] = useState('');
   const [resolvingProposalId, setResolvingProposalId] = useState<string | null>(null);
+  const [correctionDrafts, setCorrectionDrafts] = useState<Record<string, string>>({});
+  const [missedAthleteId, setMissedAthleteId] = useState('');
+  const [missedVideoSessionId, setMissedVideoSessionId] = useState('');
+  const [missedObservation, setMissedObservation] = useState('');
+  const [missedSubmitting, setMissedSubmitting] = useState(false);
+  const [missedError, setMissedError] = useState('');
 
   const [validation, setValidation] = useState<FilmStudyValidationReport | null>(null);
   const [validationSummary, setValidationSummary] = useState('');
@@ -294,22 +322,52 @@ export default function CoachVideoAnalysisPage() {
     }
   };
 
-  const resolveProposal = async (proposal: FilmStudyProposal, verdict: 'accepted' | 'rejected') => {
+  const resolveProposal = async (
+    proposal: FilmStudyProposal,
+    verdict: 'accepted' | 'rejected' | 'corrected',
+  ) => {
+    // A correction without replacement wording would settle as 'corrected'
+    // while reading, downstream, as agreement. Refused here as well as in the
+    // server module so the coach sees why nothing happened.
+    const correctedText = (correctionDrafts[proposal.proposal_id] ?? '').trim();
+    if (verdict === 'corrected' && !correctedText) {
+      setProposalsError('Write the corrected observation before recording a correction.');
+      return;
+    }
+
     setResolvingProposalId(proposal.proposal_id);
     try {
       const res = await fetch(`${apiBase()}/api/pilot/shadow/film-study/proposals`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proposal_id: proposal.proposal_id, verdict }),
+        body: JSON.stringify({
+          proposal_id: proposal.proposal_id,
+          verdict,
+          ...(verdict === 'corrected' ? { corrected_observation_text: correctedText } : {}),
+        }),
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? `Could not record verdict (${res.status}).`);
       }
-      // The settled proposal leaves the pending queue either way -- accepting
-      // and rejecting are both an exit, not just accepting.
-      setProposals((current) => current.filter((p) => p.proposal_id !== proposal.proposal_id));
+
+      if (verdict === 'corrected') {
+        // A correction is a PASS, not an exit. The proposal stays in the queue
+        // so the coach can rework it again, or accept once the wording is
+        // finally right -- dropping it here would make "correct until it is
+        // right" impossible to actually do.
+        loadProposals();
+      } else {
+        // Accepting and rejecting are both exits, so the row leaves the queue.
+        setProposals((current) => current.filter((p) => p.proposal_id !== proposal.proposal_id));
+      }
+
+      setCorrectionDrafts((current) => {
+        const next = { ...current };
+        delete next[proposal.proposal_id];
+        return next;
+      });
       setProposalsError('');
       // This verdict IS one more data point in the measurement above, so the
       // panel is re-read rather than left showing the figure from before the
@@ -319,6 +377,48 @@ export default function CoachVideoAnalysisPage() {
       setProposalsError(err instanceof Error ? err.message : 'Could not record verdict.');
     } finally {
       setResolvingProposalId(null);
+    }
+  };
+
+  /**
+   * The missed detection. Without this the queue only ever holds what the
+   * model produced, so a model that proposes one easy observation per video
+   * and gets it accepted is indistinguishable from one that finds everything.
+   */
+  const submitMissedObservation = async () => {
+    const athleteId = missedAthleteId.trim();
+    const videoSessionId = missedVideoSessionId.trim();
+    const observationText = missedObservation.trim();
+    if (!athleteId || !videoSessionId || !observationText) {
+      setMissedError('Athlete, video and the observation are all required.');
+      return;
+    }
+
+    setMissedSubmitting(true);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/shadow/film-study/proposals`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          video_session_id: videoSessionId,
+          observation_text: observationText,
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Could not record the observation (${res.status}).`);
+      }
+      setMissedObservation('');
+      setMissedError('');
+      // It lands pending like anything else, so it appears in the queue above
+      // rather than silently counting itself as settled.
+      loadProposals();
+    } catch (err) {
+      setMissedError(err instanceof Error ? err.message : 'Could not record the observation.');
+    } finally {
+      setMissedSubmitting(false);
     }
   };
 
@@ -356,6 +456,40 @@ export default function CoachVideoAnalysisPage() {
       }
     })();
   }, []);
+
+  // Athlete options for the pickers on this page, loaded once. A coach reads
+  // the whole gym roster from this route, so the picker is the coach's own
+  // athletes by name instead of a UUID they were expected to know. A viewer
+  // whose role gets an empty or refused list simply sees no options -- the
+  // upload and observation writes are the real gate.
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { items?: AthleteOption[] };
+        if (controller.signal.aborted) return;
+        setAthletes(data.items ?? []);
+      } catch {
+        // Silent: the picker degrades to empty, and the rest of the page still
+        // reads. A failed roster load is not a failed video library.
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  // Both the library and the review queue store an athlete_id, and a UUID
+  // tells a coach nothing about which of their athletes a row is about. The
+  // roster read above is the only place a name exists on this page, so ids
+  // resolve through it -- falling back to the raw id rather than an empty
+  // string, because a row about an athlete the roster read never returned must
+  // still be identifiable enough to ask about.
+  const athleteLabel = (athleteId: string): string =>
+    athletes.find((athlete) => athlete.athlete_id === athleteId)?.full_name ?? athleteId;
 
   const handleUpload = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -400,6 +534,10 @@ export default function CoachVideoAnalysisPage() {
   // was a click made blind -- a release that cannot see the footage is the
   // rubber stamp intake/document-link already warned about for documents.
   // The link is a 15-minute SAS and every issuance is audited.
+  //
+  // Merely OFFERING the watch was still a rubber stamp with a nicer surface:
+  // an ungated Release meant nothing ever obliged the reviewer to look. So
+  // this is now the precondition for Release, not an option beside it.
   const previewForRelease = async (videoId: string, title: string) => {
     setPreviewingVideoId(videoId);
     try {
@@ -412,6 +550,9 @@ export default function CoachVideoAnalysisPage() {
       const data = (await res.json().catch(() => ({}))) as { url?: string; title?: string; error?: string };
       if (!res.ok || !data.url) throw new Error(data.error ?? `Could not open video (${res.status})`);
       setActiveVideo({ url: data.url, title: data.title ?? title });
+      // Recorded only here, after the link actually resolved -- a fetch that
+      // failed is not an inspection, and it must not unlock Release.
+      setPreviewedVideoIds((current) => new Set(current).add(videoId));
       setVideoError('');
     } catch (err) {
       setVideoError(err instanceof Error ? err.message : 'Failed to open video for review');
@@ -421,6 +562,16 @@ export default function CoachVideoAnalysisPage() {
   };
 
   const releaseVideo = async (videoId: string) => {
+    // Release is the irreversible direction: it makes footage of a minor
+    // playable for the athlete and their guardians, and nothing on this page
+    // puts it back in quarantine. The reversible half of this control -- the
+    // preview -- carries no confirm, for the same reason the portrait review
+    // only confirms the reject.
+    const confirmed = window.confirm(
+      'Release this video? It becomes playable for the athlete and their guardians, and this page cannot put it back.',
+    );
+    if (!confirmed) return;
+
     setReleasingVideoId(videoId);
     try {
       const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}/release`, {
@@ -499,8 +650,14 @@ export default function CoachVideoAnalysisPage() {
                 <input id="upload-title" type="text" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Sparring Round 3 — July 16" className="input" />
               </div>
               <div className="field">
-                <label htmlFor="upload-athlete" className="t-label">Athlete ID (optional)</label>
-                <input id="upload-athlete" type="text" value={uploadAthleteId} onChange={(e) => setUploadAthleteId(e.target.value)} placeholder="Link to specific athlete" className="input" />
+                <label htmlFor="upload-athlete" className="t-label">Athlete (optional)</label>
+                <select id="upload-athlete" className="select" value={uploadAthleteId}
+                  onChange={(e) => setUploadAthleteId(e.target.value)}>
+                  <option value="">Not linked to one athlete…</option>
+                  {athletes.map((athlete) => (
+                    <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                  ))}
+                </select>
               </div>
               <div className="field">
                 <label htmlFor="upload-notes" className="t-label">Notes</label>
@@ -550,7 +707,7 @@ export default function CoachVideoAnalysisPage() {
                     </div>
                     <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                       {v.file_name} · {formatBytes(v.file_size_bytes)}
-                      {v.athlete_id ? ` · Athlete: ${v.athlete_id}` : ''}
+                      {v.athlete_id ? ` · Athlete: ${athleteLabel(v.athlete_id)}` : ''}
                     </p>
                     <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{formatGymStamp(v.created_at)}</p>
                     {v.status === 'quarantined' ? (
@@ -558,6 +715,15 @@ export default function CoachVideoAnalysisPage() {
                         {canRelease(v)
                           ? 'Held for review. Release it to make it playable for the athlete and their guardians.'
                           : 'Held for review by the coach who uploaded it.'}
+                      </p>
+                    ) : null}
+                    {/* Law 3: the gate greys the Release button out, and grey
+                        is only colour. The requirement has to be readable as
+                        words too, or a reviewer is left guessing why the
+                        control in front of them does nothing. */}
+                    {canRelease(v) && !previewedVideoIds.has(v.video_session_id) ? (
+                      <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                        Watch it first — Release stays unavailable until you have opened this video for review.
                       </p>
                     ) : null}
                     {filmStudyJobs[v.video_session_id] ? (
@@ -572,7 +738,7 @@ export default function CoachVideoAnalysisPage() {
                         <button onClick={() => { void previewForRelease(v.video_session_id, v.title); }} disabled={previewingVideoId === v.video_session_id} className="btn btn--ghost disabled:opacity-50">
                           {previewingVideoId === v.video_session_id ? 'Opening...' : 'Watch first'}
                         </button>
-                        <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id} className="btn disabled:opacity-50">
+                        <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id || !previewedVideoIds.has(v.video_session_id)} className="btn disabled:opacity-50">
                           {releasingVideoId === v.video_session_id ? 'Releasing...' : 'Release'}
                         </button>
                       </>
@@ -672,17 +838,61 @@ export default function CoachVideoAnalysisPage() {
               {proposals.map((p) => (
                 <div key={p.proposal_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
                   <p className="t-data text-[color:var(--bone-300)]">
-                    Athlete: {p.athlete_id} · {p.frames_analyzed} frame(s) · {p.model_deployment}
+                    {p.origin === 'coach_reported'
+                      ? `Athlete: ${athleteLabel(p.athlete_id)} · reported by a coach — the model did not propose this`
+                      : `Athlete: ${athleteLabel(p.athlete_id)} · ${p.frames_analyzed} frame(s) · ${p.model_deployment}`}
                   </p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
-                  <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{formatGymStamp(p.created_at)}</p>
-                  <div className="mt-[var(--s3)] flex gap-[var(--s3)]">
+                  {/* The model's original is never overwritten, so both readings
+                      stay side by side: what it proposed, and what the coach has
+                      made of it so far. */}
+                  {p.corrected_observation_text ? (
+                    <>
+                      <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
+                        Corrected to:
+                      </p>
+                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
+                        {p.corrected_observation_text}
+                      </p>
+                    </>
+                  ) : null}
+                  <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
+                    {formatGymStamp(p.created_at)}
+                    {p.review_state === 'corrected' ? ' · being reworked — correct again, or accept once it reads right' : ''}
+                  </p>
+                  <div className="field mt-[var(--s3)]">
+                    <label htmlFor={`correction-${p.proposal_id}`} className="t-data text-[color:var(--bone-400)]">
+                      Corrected observation (only needed if you are correcting)
+                    </label>
+                    <textarea
+                      id={`correction-${p.proposal_id}`}
+                      value={correctionDrafts[p.proposal_id] ?? ''}
+                      onChange={(e) => {
+                        const { value } = e.target;
+                        setCorrectionDrafts((current) => ({ ...current, [p.proposal_id]: value }));
+                      }}
+                      rows={2}
+                      placeholder="Reword what the model got nearly right..."
+                      className="textarea"
+                    />
+                  </div>
+                  <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                     <button
                       onClick={() => { void resolveProposal(p, 'accepted'); }}
                       disabled={resolvingProposalId === p.proposal_id}
                       className="btn disabled:opacity-50"
                     >
                       {resolvingProposalId === p.proposal_id ? 'Recording...' : 'Accept'}
+                    </button>
+                    {/* The third exit: rejection used to be the only thing a
+                        coach who was nearly in agreement could reach, and it
+                        threw away what they knew. */}
+                    <button
+                      onClick={() => { void resolveProposal(p, 'corrected'); }}
+                      disabled={resolvingProposalId === p.proposal_id}
+                      className="btn btn--ghost disabled:opacity-50"
+                    >
+                      {resolvingProposalId === p.proposal_id ? 'Recording...' : 'Correct'}
                     </button>
                     <button
                       onClick={() => { void resolveProposal(p, 'rejected'); }}
@@ -696,6 +906,73 @@ export default function CoachVideoAnalysisPage() {
               ))}
             </div>
           )}
+        </section>
+
+        <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+          <h2 className="t-eyebrow">Record Something The Model Missed</h2>
+          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+            The queue above only ever shows what Film Study proposed, so it cannot see what Film Study failed to
+            say. If you watched a clip and the model said nothing about something that mattered, record it here.
+            It joins the review queue like any other observation and waits for a verdict.
+          </p>
+          <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2">
+            <div className="field">
+              <label htmlFor="missed-athlete" className="t-data text-[color:var(--bone-400)]">Athlete</label>
+              <select id="missed-athlete" className="select" value={missedAthleteId}
+                onChange={(e) => setMissedAthleteId(e.target.value)}>
+                <option value="">Select an athlete…</option>
+                {athletes.map((athlete) => (
+                  <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                ))}
+              </select>
+            </div>
+            {/* The video is picked from the library this page already loaded,
+                not typed. There is no roster-style read to hang a picker on --
+                the videos in state ARE the org's video sessions -- and an
+                observation is only ever about footage the coach just watched
+                here, so the list is exactly the right set. Titles repeat
+                across sessions, hence the file name beside each one. */}
+            <div className="field">
+              <label htmlFor="missed-video" className="t-data text-[color:var(--bone-400)]">Video session</label>
+              <select id="missed-video" className="select" value={missedVideoSessionId}
+                onChange={(e) => setMissedVideoSessionId(e.target.value)}>
+                <option value="">Select a video…</option>
+                {videos.map((v) => (
+                  <option key={v.video_session_id} value={v.video_session_id}>{v.title} · {v.file_name}</option>
+                ))}
+              </select>
+              {videos.length === 0 ? (
+                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                  No videos in the library yet, so there is nothing to record an observation against.
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="field mt-[var(--s3)]">
+            <label htmlFor="missed-observation" className="t-data text-[color:var(--bone-400)]">
+              What did you see that the model did not raise?
+            </label>
+            <textarea
+              id="missed-observation"
+              value={missedObservation}
+              onChange={(e) => setMissedObservation(e.target.value)}
+              rows={3}
+              placeholder="Describe what you observed, in the same terms you would use with the athlete..."
+              className="textarea"
+            />
+          </div>
+          {missedError ? (
+            <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{missedError}</p>
+          ) : null}
+          <div className="mt-[var(--s3)]">
+            <button
+              onClick={() => { void submitMissedObservation(); }}
+              disabled={missedSubmitting}
+              className="btn disabled:opacity-50"
+            >
+              {missedSubmitting ? 'Recording...' : 'Add to review queue'}
+            </button>
+          </div>
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">

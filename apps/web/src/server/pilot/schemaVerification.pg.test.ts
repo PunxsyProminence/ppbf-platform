@@ -210,7 +210,19 @@ describe('the pre-deploy schema verifier', () => {
       expect((result.missing as { columns: string[] }).columns).toContain('athletes.deleted_at');
       expect(code).not.toBe(0);
     } finally {
+      // Restoring the column alone is NOT a restore. Dropping it cascaded to
+      // idx_athletes_active_org, a partial index defined `where deleted_at is
+      // null`, and re-adding the column does not bring the index back -- so
+      // every test after this one ran against a permanently degraded schema.
+      // Nothing caught it because no later test ran a full verifier pass
+      // expecting OK, which is exactly the blind spot this suite exists to
+      // close.
       await client.query(`alter table pilot.athletes add column deleted_at timestamptz null`);
+      await client.query(
+        `create index if not exists idx_athletes_active_org
+           on pilot.athletes(organization_id, athlete_id)
+           where deleted_at is null`,
+      );
     }
   });
 
@@ -230,6 +242,55 @@ describe('the pre-deploy schema verifier', () => {
       await client.query(
         await fs.readFile(
           path.join(INFRA_DIR, 'pilot_slice_postgres_research_triage_view_migration.sql'),
+          'utf8',
+        ),
+      );
+    }
+  });
+
+  test('a superseded constraint is not expected, but its replacement is', async () => {
+    // Widening a vocabulary means dropping a constraint and adding it back
+    // under a new name, in its own migration -- how the readiness `method`
+    // check, the film-study review_state check and the correction check were
+    // each widened. The verifier used to expect EVERY name ever added,
+    // including the ones deliberately replaced, so a correctly migrated
+    // database reported the superseded name as missing. Because this gate runs
+    // before a deploy, that is a false failure that would have blocked every
+    // deploy after the next widening.
+    const rows = await client.query(
+      `select conname from pg_constraint
+       where conrelid = 'pilot.shadow_film_study_proposals'::regclass
+         and conname like 'pilot_film_study_proposals_correction_check%'`,
+    );
+    const names = rows.rows.map((row) => row.conname as string);
+
+    // The old name is genuinely gone from the database...
+    expect(names).not.toContain('pilot_film_study_proposals_correction_check');
+    expect(names).toContain('pilot_film_study_proposals_correction_check_v2');
+    // ...and the verifier passes anyway, because it read the drop.
+    const { result } = await runVerifier();
+    expect(result.event).toBe('schema.verify.ok');
+  });
+
+  test('dropping the REPLACEMENT still fails -- supersession did not blind the gate', async () => {
+    // The dangerous half of the fix above: removing names from the expected set
+    // could have made the verifier stop noticing a constraint that genuinely
+    // should exist. A verifier that cannot detect a missing migration is worse
+    // than the attestation it replaced, because it looks like a control.
+    await client.query(
+      `alter table pilot.shadow_film_study_proposals
+       drop constraint pilot_film_study_proposals_correction_check_v2`,
+    );
+    try {
+      const { code, result } = await runVerifier();
+      expect(result.event).toBe('schema.verify.failed');
+      expect((result.missing as { constraints: string[] }).constraints)
+        .toContain('pilot_film_study_proposals_correction_check_v2');
+      expect(code).not.toBe(0);
+    } finally {
+      await client.query(
+        await fs.readFile(
+          path.join(INFRA_DIR, 'pilot_slice_postgres_film_study_revisions_migration.sql'),
           'utf8',
         ),
       );

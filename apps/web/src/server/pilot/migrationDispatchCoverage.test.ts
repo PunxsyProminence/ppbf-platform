@@ -143,5 +143,9 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // pilot.shadow_medical_administrative_status, which shadow-decision-loop
     // creates. Applied first, a rebuild dies on ALTER against a missing table.
     expect(at('medical-clearance-expiry')).toBeGreaterThan(at('shadow-decision-loop'));
+    // film-study-coach-reported widens shadow_film_study_proposals -- adding
+    // origin, the reporter, the correction column and the 'corrected' verdict
+    // -- against the table film-study-proposals creates.
+    expect(at('film-study-coach-reported')).toBeGreaterThan(at('film-study-proposals'));
   });
 });

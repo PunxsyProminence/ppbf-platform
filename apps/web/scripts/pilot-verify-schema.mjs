@@ -110,6 +110,31 @@ export function expectedObjectsFrom(sqlFiles) {
       for (const match of statement.matchAll(/add constraint (\w+)/g)) {
         constraints.add(match[1]);
       }
+
+      // A constraint a later migration SUPERSEDES is not expected to exist.
+      //
+      // Widening a vocabulary by dropping a constraint and adding it back
+      // under a new name is this repository's sanctioned pattern -- it is how
+      // the readiness `method` check, the film-study review_state check and
+      // the correction check were each widened, in their own migrations, so
+      // the decision is recorded rather than edited into an existing file.
+      //
+      // Without this the verifier expected every name ever added, including
+      // the ones deliberately replaced, and reported the superseded name as a
+      // missing object. That is a false failure on a correctly migrated
+      // database -- and because this gate runs before a deploy, it would have
+      // blocked every deploy after the next widening rather than catching
+      // anything real.
+      //
+      // Files are walked in the same sorted order the rebuild applies them, so
+      // add-then-drop resolves to dropped and drop-then-re-add resolves to
+      // present. A migration that drops a constraint whose FILENAME sorts
+      // after the one adding it back would still be misread; nothing in the
+      // tree does that today, and the alternative is teaching this script the
+      // workflow's dependency order, which would be a second copy of it.
+      for (const match of statement.matchAll(/drop constraint (?:if exists )?(\w+)/g)) {
+        constraints.delete(match[1]);
+      }
     }
   }
 
