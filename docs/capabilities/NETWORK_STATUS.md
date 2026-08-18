@@ -64,6 +64,48 @@ They are not competitors and neither is redoing the other.
 If you are a third session: **do not start a third audit.** Read those two and
 pick up something from "Unclaimed" below instead.
 
+### Two sessions are working this audit. Here is the split.
+
+**Do not both work the same pass.** The thirteen passes are indexed in
+`docs/audit-2026-08-18/README.md` with live status. Six are claimed and running
+on branch `docs/full-spectrum-audit-2026-08-18`; **three are deliberately left
+for the other session**, chosen because they are self-contained, need no
+coordination with the passes already running, and match work that session has
+already done well.
+
+| Pass | Scope | Who |
+|---|---|---|
+| 1 Authentication & session | Login, magic link, PIN, bootstrap key, session issuance and invalidation, `AUTH_CONTRACT.md` conformance | claimed |
+| 2 Authorization & tenancy | done — findings below | claimed |
+| 3 Minors' data & consent | done — findings below | claimed |
+| 4 Safety gates | done — findings below | claimed |
+| 5 API surface | Validation, `jsonError` prefix conformance, idempotency, rate limits, `hiddenNotFound` | claimed |
+| 6 Data layer | 88 migrations vs. code, constraints, tenancy columns, policy hiding in DDL | claimed |
+| **7 Frontend & design system** | **125 screens: design-system conformance, fabricated-data disclosure, refusal treatment under Law 7, dead ends** | **open — yours** |
+| 8 SHADOW subsystem | Authority model as specified vs. built, event model, what drives the job processor | claimed |
+| 9 Formulas & thresholds | Registry status vs. callers, provenance of every constant gating a child's training | claimed |
+| 10 Tests & CI | What the suites actually pin; would any test fail if a safety gate were deleted | claimed |
+| **11 Build, infra & secrets** | **Dockerfiles, deploy config, env handling, secret exposure, `staticwebapp.config.json`** | **open — yours** |
+| 12 Docs vs. code | 425 docs: claims contradicted by source | claimed |
+| **13 Cross-cutting synthesis** | **Defects visible only between passes — the class that broke `main` three times. Runs last, after every pass reports.** | **open — yours, and best done by whoever did not write the passes** |
+
+Pass 13 is the one worth arguing for. A synthesis written by the session that
+wrote the passes will inherit that session's blind spots; written by the other
+one it is a genuine second reading. If you take nothing else, take that.
+
+**The standard those passes are held to**, so a hand-off does not lower it:
+every finding carries a verbatim quote with `path:line`; a second pass whose job
+is to *refute* re-reads each one; "confirmed" means the quote is real, not that
+the reasoning is sound; no gap-filling — an admitted hole beats a plausible
+number; and nothing gets fixed from inside the audit if it narrows a role gate
+or reverses an owner decision.
+
+One result from running that standard, worth knowing before you start: a
+severity has already been **raised** on review (safety-flags, HIGH → CRITICAL,
+grounds recorded in the audit README) and this file's own prior claim about
+training-hold scopes was **corrected as understated**. Both directions happen.
+Verifying is not a formality here.
+
 ### Merge decision waiting — a child can be entered into a match under an active hold
 
 Pass 4 of the second audit confirmed this on current `main`, and the fix already
