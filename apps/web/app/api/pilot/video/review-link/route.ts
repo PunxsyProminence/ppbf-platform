@@ -62,6 +62,13 @@ export async function POST(request: NextRequest) {
       shadow_mirror: false,
     });
 
+    // The SAS URL below is a bearer credential: for the next 15 minutes anyone
+    // holding the string can watch a minor's quarantined footage, without a
+    // session and without appearing in this route's audit trail. A cached copy
+    // -- in the browser or in any shared cache on the way back -- hands that
+    // credential to a second holder nobody recorded, so the response carrying
+    // it must not be stored. Same header the portrait routes use for the same
+    // reason (profile/README.md Gate 4).
     return NextResponse.json({
       ok: true,
       video_session_id: videoSessionId,
@@ -73,7 +80,7 @@ export async function POST(request: NextRequest) {
       scan_detail: video.scan_detail,
       url,
       expires_in_minutes: LINK_EXPIRY_MINUTES,
-    });
+    }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } });
   } catch (error) {
     if (error instanceof VideoScanReviewRefused) {
       return NextResponse.json({ error: error.message, reason: error.reason }, { status: error.status });
