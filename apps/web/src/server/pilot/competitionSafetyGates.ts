@@ -1,6 +1,6 @@
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
 import { ConflictError, ForbiddenError } from './errors';
-import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGateMatrix';
+import { getSafetyGateDefinition, recordSafetyGateEvaluation, type SafetyGateDefinition } from './safetyGateMatrix';
 import { findContactEventBlockingHold } from './trainingHolds';
 import { getAthleteWaiverStatus, type TrackedWaiverType, type WaiverStatus } from './waiverCompliance';
 
@@ -156,7 +156,7 @@ async function recordTrainingHoldEvaluation(input: {
   metadata: Record<string, unknown>;
   evaluatedAt: string;
 }): Promise<void> {
-  let gate = null;
+  let gate: SafetyGateDefinition | null = null;
   try {
     gate = await getSafetyGateDefinition(input.organizationId, TRAINING_HOLD_GATE_KEY);
   } catch (error) {
