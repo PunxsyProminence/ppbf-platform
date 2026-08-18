@@ -136,8 +136,12 @@ confirmed against a verbatim quote; open the file before acting.
 - **A hold does not cancel registrations that already exist.** The STOP rung is
   checked once at registration and never again; attendance check-in re-checks
   only that the registration exists. Placing a hold on a child today does
-  nothing about the sessions they are already on the roster for, and no
-  coach-facing screen shows the hold at the door.
+  nothing about the sessions they are already on the roster for. *Corrected on
+  verification:* an earlier version of this bullet also said no coach-facing
+  screen shows the hold at the door. **That was false** — `CoachWorkspace.tsx:895`
+  fetches open escalations and renders `training_hold` cards naming the athlete,
+  and `/coach/progression-intelligence` is a second hold reader. A coach is not
+  blind to it. Downgraded HIGH → MEDIUM.
 - **`/admin/safety-review` double-counts** one compliance violation twice and
   every hold twice in its headline number. This is the *second* instance of the
   collision class that was caught pre-merge on the Morning Read digest — which
@@ -152,10 +156,17 @@ confirmed against a verbatim quote; open the file before acting.
 - **`readinessMath.ts` has zero callers** — already known — but the *mechanism*
   is new: the stored readiness score is taken raw from the request body, so the
   clamp and the delta-RPE lock exist in a module nothing calls.
-- **`assertShadowAuthority` cannot deny at any of its three call sites.** Every
-  caller passes `restrictionConflict: false` and no action string matches its
-  forbidden list, so it records `allowed: true` for every medical and waiver
-  write. It is an audit logger wearing the name of a gate.
+- **`assertShadowAuthority` is inert at two of its three call sites** — the
+  medical and waiver intake writes, which are the two that matter. *Corrected on
+  verification:* this file previously said it could not deny at **any** of the
+  three. That headline was falsified. `review-action/route.ts:86-88` computes
+  `lowRisk: action !== 'promote'` rather than asserting it, so `action:'promote'`
+  with `automation_mode:'automatic'` genuinely denies. The substance survives,
+  the "anywhere" did not.
+- **That one working denial branch is evadable.** `automation_mode` is
+  unvalidated at two of three sites and carries no column CHECK, so sending
+  `"Automatic"` instead of `"automatic"` slips past it. Found by the pass
+  verifying the finding above, not by the pass that made it.
 - **A covering coach can lift a `medical` hold.** Coach Coverage was already
   recorded here as granting youth-contact access with no clearance check; the
   consequence not previously drawn is that the same assertion admits coverage
@@ -272,6 +283,23 @@ drives the SHADOW job queue in production — nothing in `.github/workflows/` or
 `apps/web` calls `shadow/jobs/process`. That second one bounds the Film Study
 finding in either direction and is the most useful single question anyone with
 production access could answer for this audit.
+
+### Verification is running, and it is moving things — in both directions
+
+Every finding here is re-read by a pass whose job is to **refute** it. The first
+of those has reported, on pass 4's ten findings: **zero retracted, two
+downgraded, one narrowed, one corrected — and four of the ten carried a factual
+error in their supporting text.**
+
+Two of those errors had already been written into this file and are corrected
+above rather than quietly edited: a coach *is* shown training holds, and
+`assertShadowAuthority` is inert at two sites rather than all three. If you read
+this file before now, those are the two rows that changed.
+
+The refutation pass also found two findings the pass it was checking had missed
+entirely. That is the argument for running one at all, and it is why **a
+"confirmed" row here means the quote is real, not that the reasoning is sound.**
+Open the file before acting on any of it.
 
 The escalation register is now fully enumerated — eight writer call paths across
 seven source types, six readers, and one declared source type
