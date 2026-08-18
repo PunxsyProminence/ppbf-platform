@@ -131,6 +131,34 @@ unrelated third party. It is still an egress whose data-handling posture this
 repository cannot establish, which is why it still matters under the codebase's
 own doctrine.
 
+### Snapshot at usage reset — three fixes in flight, unmerged, do not duplicate
+
+Written right before a session usage reset, so state is not lost. If you are
+picking this up: check these before starting anything new.
+
+**PR #465** (video consent gate) and **PR #466** (guardian overwrite fix) —
+both fixed through real review rounds (Codex + Copilot on #465, Copilot on
+#466), both CI pending as of this snapshot, neither merged. Do not open a
+competing fix for either finding; check the PR's current state first.
+
+**Three more fixes were dispatched to background agents, each in its own
+isolated worktree, none finished as of this snapshot:**
+
+- `fix/safety-flags-athlete-scope` — closing the any-coach safety-flag bypass
+  (the CRITICAL raised on review), mirroring `training-holds`' scope check.
+- `test/contact-clearance-hold-gate-coverage` — closing the test-coverage gap
+  where deleting the contact-clearance/hold gates on the observations route
+  leaves the whole suite green.
+- `feat/training-hold-place-lift-control` — wiring a real UI control to place
+  or lift a training hold, the single highest-leverage item from the unified
+  ranking (nothing in the product can currently do this). Draft PR, per the
+  visual-review convention.
+
+**If you are a session picking this up after the reset:** check
+`gh pr list --state open` for these three branch names before assuming any of
+them needs starting from scratch — an agent may have completed and opened its
+PR after this snapshot was written, or may still be running.
+
 ### RESOLVED — fixed and merged: PR #465
 
 Gates the vision content screen on `assertGuardianMediaConsent`, mirroring
