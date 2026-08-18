@@ -296,6 +296,8 @@ described.
 | Pass | Verification | Status |
 |---|---|---|
 | 2 — Authorization | spot-checked by hand (below); full refutation pass not yet run | partial |
+| 6, 7, 9 | `VERIFY-06-07-09.md` | **done — 40 re-checked, 2 downgraded, 0 retracted, 16 corrected** |
+| 15, 16, 17 | `VERIFY-15-16-17.md` | **done — 1 downgraded, 0 retracted, 5 with factual defects, 8 citations drifted** |
 | 3 — Minors' data & consent | `VERIFY-03-minors-consent.md` | **done — 4 downgraded, 0 retracted** |
 | 4 — Safety gates | `VERIFY-04-safety-gates.md` | **done — 2 downgraded, 1 narrowed, 1 corrected, 0 retracted** |
 
@@ -525,6 +527,60 @@ Method, stated because it bounds the above: 440 markdown files in scope, 22 read
 in full, 19 in substantial part, 440 machine-scanned, **399 never opened** —
 all of `docs/archive/`, all of `docs/capabilities/work/`, and 192 module files
 beyond their status field.
+
+### The console stamp count: I gave you two wrong numbers. Here is the checked one.
+
+**Five of six capability consoles carry a fabricated-data disclosure on current
+`origin/main`. The one that carries none is `/admin/retro-lab`.** I verified this
+myself after telling the owner two different things.
+
+The sequence is worth writing down because it is a case study in how these
+mistakes happen:
+
+1. I originally reported that **all six** carried the stamp, taking it from
+   `HANDOFF_VISUALS.md`, which says so.
+2. Pass 7 reported **one of six**, and I passed that on as a correction of my own
+   earlier claim.
+3. The refutation pass found **five of six**, and that PR #422 had added the stamp
+   plus disclaimer to four of them with regression tests.
+4. My own first check returned **zero of six** — because I grepped the
+   `page.tsx` files, and each console page is a fourteen-to-twenty-one line shell
+   that renders a component. The disclosure lives in the component.
+
+So: pass 7 was **correct at the commit it read** (`04dd116b`); the count changed
+because work merged, not because the pass erred. My "correction" to the owner was
+the actual error — I treated a stale-but-honest count as a refutation of a claim
+that was nearly right. And my first attempt to settle it was wrong in the other
+direction because I grepped the wrong layer.
+
+Verified per console, disclosure hits in the rendering component:
+`MacroCommandCenter` 2 · `BoardViewportSwitcher` 3 · `MediaAndCommsHub` 2 ·
+`CurriculumProgressionEngine` 2 · `FloorOperationsDesk` 2 ·
+**`DevToolsQAConsole` 0**.
+
+The finding is therefore downgraded HIGH → LOW, and the real remaining item is
+narrow: `/admin/retro-lab` needs the disclosure its five siblings have.
+
+### One finding contained a quotation that does not exist
+
+The most serious defect type this audit has produced, and it is worth more
+attention than any single severity label. Pass 7's P7-05 cites `errors.ts` and
+quotes *"so a caller can branch on the code rather than the prose"*. **That string
+does not appear in that file.** I confirmed it independently: zero hits.
+
+Every other quote checked across three refutation passes was character-exact.
+This one was invented. It is the reason rule 1 of this audit's standard exists,
+and the reason a "confirmed" verdict here means *the quote is real* rather than
+*the reasoning is sound* — a reader who trusted that quote would have been
+reasoning from a sentence nobody wrote.
+
+Alongside it: **eight citations whose line numbers had drifted** (every quoted
+string findable, none at the printed line), and **six wrong counts** — "all four
+are inside `dataDeletion.ts`" (a script also filters, and one does it correctly);
+"two foreign keys" (66 of 127 account FKs lack an action); eleven inputs (twelve);
+six CSS classes (seven); sixteen unsupported registry entries (seventeen); "only
+non-test occurrences" (three). And one finding argues at length about what a line
+says while citing a line fifteen lines away, which is prose about colour tokens.
 
 ### The Postgres teardown diagnosis I published was wrong
 
