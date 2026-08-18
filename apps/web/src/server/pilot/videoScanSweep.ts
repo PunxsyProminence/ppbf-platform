@@ -13,6 +13,7 @@
 // rather than of a message somebody had to successfully send.
 
 import { fileEscalation, type SafetyEscalationSeverity } from './escalationLadder';
+import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
 import { emitShadowEvent } from './shadowEvents';
 import { scanVideoSession } from './videoScan';
 import {
@@ -117,10 +118,42 @@ export async function sweepQuarantinedVideos(options: {
       break;
     }
 
+    // The content screen sends frames of this footage to an external vision
+    // deployment -- the exact action Film Study gates on
+    // assertGuardianMediaConsent, under the same reasoning: this must not be
+    // a side door around that gate. So a video with a named athlete does not
+    // get vision-screened until a guardian has consented to media analysis.
+    //
+    // Consent-missing does not mean the scan is skipped, and it does not mean
+    // 'blocked' -- both would either promote nothing forever (a config no
+    // operator chose) or treat "we haven't asked yet" as "we looked and it's
+    // wrong" (a claim nobody made). It means content is 'off' for THIS scan,
+    // exactly like an operator who never turned vision on: the malware gate
+    // still runs and can still promote the video on its own, which is the
+    // same fallback this module already gives every org with no vision
+    // deployment configured at all -- a per-video instance of an existing
+    // global state, not a new one.
+    //
+    // A video with no athlete_id (the unattributed team-upload case this
+    // sweep already treats specially for escalation filing) has no guardian
+    // to ask, so it is unaffected here -- closing that gap is its own,
+    // separate piece of work.
+    let contentSkippedForConsent = false;
+    let effectiveConfig = config;
+    if (config.content === 'vision' && claim.athlete_id) {
+      try {
+        await assertGuardianMediaConsent(claim.organization_id, claim.athlete_id);
+      } catch (error) {
+        if (!(error instanceof GuardianConsentMissingError)) throw error;
+        contentSkippedForConsent = true;
+        effectiveConfig = { ...config, content: 'off' };
+      }
+    }
+
     const scan = await scanVideoSession({
       blobPath: claim.blob_path,
       attempts: claim.scan_attempts,
-      config,
+      config: effectiveConfig,
       maxAttempts: DEFAULT_MAX_SCAN_ATTEMPTS,
     });
 
@@ -143,6 +176,7 @@ export async function sweepQuarantinedVideos(options: {
         attempts: claim.scan_attempts,
         duration_ms: scan.durationMs,
         scanned_at: new Date().toISOString(),
+        ...(contentSkippedForConsent ? { content_skipped_reason: 'guardian_consent_missing' } : {}),
       },
       retryInSeconds: terminal ? 0 : scanRetryBackoffSeconds(claim.scan_attempts),
       terminal,
