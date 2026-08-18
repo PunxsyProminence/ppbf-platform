@@ -175,6 +175,46 @@ confirmed against a verbatim quote; open the file before acting.
   three exhaustive maps, one of which has no fallback. This is the same shape as
   the `Record<SuggestionRule, …>` drift that broke `main` three times.
 
+### The one that changes how much green CI is worth here
+
+**The only route that records contact for a child carries two safety gates that
+no test exercises. Deleting both calls leaves all 482 suites and 5,997 tests
+green**, and neither lint nor typecheck refuses it — unused imports are warnings,
+and `npm run lint` already exits 0 with eleven of them.
+
+The route has no sibling test at all, and its sole test posts a non-contact
+observation kind, so both gates short-circuit before doing anything. The route's
+own comment says the ordering is load-bearing — that the check "runs BEFORE the
+observation is stored, so a failure here aborts the whole request rather than
+quietly persisting contact nobody was alerted to". The invariant is written down
+and enforced by nothing.
+
+The wider result is more useful than the single finding, and it is not a gloomy
+one: **every gate *module* in this repository is genuinely well tested.**
+`trainingHolds.pg.test.ts` runs the real scheduler function against real rows and
+proves the block, the atomicity and the lift. Three of six gate families are
+protected at both the logic and the call site. The gap is not the gates — it is
+the two-line *wiring* that connects them to the running application.
+
+So the honest summary for anyone reviewing a PR here: **a reviewer who trusts
+green CI is right about the modules and wrong about the wiring.**
+
+Two more from the same pass, worth knowing before you write a test:
+`guardianConsent.test.ts:53-66` asserts `ok: true` for a guardian with
+`covers_video: false` — so closing the consent-scope gap means editing two tests
+that currently encode the gap as correct behaviour. And 70 of 228 API routes are
+loaded by no test at all, including `shadow/medical-status`, which is the setter
+for the status the contact gate reads.
+
+**On CI:** `ci.yml` is one job of thirteen ordered steps with nothing advisory
+and no `continue-on-error` anywhere. Typecheck runs before the tests, so a
+typecheck failure means no test executes — exactly the shape of the three
+broken-`main` incidents. There is **no workflow-level substitute** for "require
+branches to be up to date": no `merge_group`, no CODEOWNERS, no rulesets, and
+`cancel-in-progress` reacts to pushes on the PR rather than to `main` moving.
+The repository setting is the only fix. Zero skipped tests, zero `.only`, zero
+snapshots — genuinely clean on that axis.
+
 ### Findings from pass 2 (authorization) — a second thing needing a decision today
 
 **`/api/pilot/safety-flags` has no athlete-scope check** — not at the route, and
@@ -392,13 +432,29 @@ daily — **needs an owner decision, do not just implement it.**
 `SafetyEscalationSourceType`, on the page whose own header says a red flag
 "lands here, and only here". Both new filers merged today. Clean, small fix.
 
-**93 Postgres test suites share a racy teardown.** `kill('SIGTERM')` is Postgres
-*smart* shutdown, which waits for clients to disconnect; a lingering connection
-means it never exits, a 15-second bail-out resolves anyway, and the data
-directory is deleted while the server is still writing — `ENOTEMPTY` on
-`pg_wal`. `test:migrations` runs ~95 of these sequentially, so every PR gets ~95
-chances to fail for no reason. Fix is `SIGINT` (fast shutdown) plus
-`fs.rm(..., { maxRetries, retryDelay })`, which retries exactly this errno.
+**93 Postgres test suites leak their data directory — and the diagnosis this
+file used to carry was wrong.** It said SIGTERM is Postgres *smart* shutdown, a
+lingering client keeps the server alive, a 15-second bail-out resolves anyway,
+the directory is deleted mid-write, `ENOTEMPTY` on `pg_wal`, fix with `SIGINT`
+plus `fs.rm` retries. Traced end to end against the code as it stands, almost
+every link fails: there is **no shared helper** (the teardown is copy-pasted into
+93 files, so a one-line fix is a 93-file change); SIGTERM goes to a **Node
+wrapper**, not to Postgres; `embedded-postgres` **already sends `SIGINT`**, so
+the recommended fix was already the behaviour; `pg.stop()` resolved in **14 ms**
+in an instrumented probe, so the 15-second bail-out is never reached; and
+**`ENOTEMPTY` appears nowhere in this repository.**
+
+The real defect: `embedded-postgres` registers `AsyncExitHook(gracefulShutdown)`,
+and `async-exit-hook` claims SIGTERM for itself and calls `process.exit` on the
+next tick after its hook resolves. One SIGTERM starts two shutdowns, the
+library's wins, and the wrapper's own `fs.rm` of a ~200 MB tree never completes —
+its `catch` never fires because there is no error, only a dead process. Measured:
+a suite without a parent-side `fs.rm` left 263 MB behind after a fully *passing*
+run; one with it left nothing. 69 of 94 suites leak.
+
+The old diagnosis was specific, mechanistic, plausible and confidently written —
+and it was reasoning rather than reading. Worth keeping the retraction visible as
+a caution about the rest of this file.
 
 **A comment claims an invariant the code does not hold.** `coachIntelligence.ts`
 says shared constants make two attendance rules "never drift apart"; they use
