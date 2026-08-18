@@ -36,6 +36,41 @@ async function auditLoginEvent(event: Parameters<typeof writePilotAuditEvent>[0]
   }
 }
 
+// Rate limiting is a GUARD, not the operation. rateLimit.ts's withDurableClient
+// is written to swallow its own database errors and report not-limited -- but
+// this route must not depend on an invariant held one module away, where a
+// refactor can drop it and nothing on the login path would notice. If a durable
+// lookup ever throws past it, the honest fallback is the volatile limiter.
+//
+// Failing this CLOSED returns a 500 to every athlete at once on a single
+// database blip, and to every coach trying to reach safety records with them --
+// a far worse outage than the brute force the limiter guards against.
+async function durableLimitOrOpen(key: string): Promise<{ isLimited: boolean; delayMs?: number }> {
+  try {
+    return await checkDurableRateLimit(key);
+  } catch {
+    // No error object: a pg connection failure can carry the host and
+    // credentials in its message, and this is an anonymous pre-auth path.
+    console.error({ event: 'pilot-auth-login-durable-rate-limit-unavailable' });
+    return { isLimited: false };
+  }
+}
+
+// Recording a failure and clearing a bucket are bookkeeping either side of a
+// decision that has already been made, so neither may change the answer the
+// caller gets. An unreachable store must not turn a rejected PIN into a 500,
+// nor -- worse -- an ACCEPTED one: clearDurableRateLimit runs after the session
+// token is minted but before the cookie is attached, so a throw there told an
+// athlete who typed the correct PIN that the server was broken and issued them
+// no session. Same non-fatal doctrine as auditLoginEvent above.
+async function durableBookkeeping(work: () => Promise<unknown>): Promise<void> {
+  try {
+    await work();
+  } catch {
+    console.error({ event: 'pilot-auth-login-durable-rate-limit-write-failed' });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { account_id?: string; pin?: string };
@@ -59,14 +94,15 @@ export async function POST(request: NextRequest) {
     // nothing else survived a restart.
     //
     // Either limiter saying "limited" is enough. A durable lookup that cannot
-    // reach the database returns not-limited rather than throwing, so a blip
-    // degrades to the volatile limiter instead of locking every athlete out
-    // -- failing this check closed would be a worse outage than the brute
-    // force it guards against.
+    // reach the database degrades to not-limited via durableLimitOrOpen rather
+    // than throwing, so a blip falls back on the volatile limiter instead of
+    // locking every athlete out. Note the volatile checks below still run and
+    // still bite: failing open on the durable half must not switch rate
+    // limiting off altogether and hand out an unlimited 6-digit PIN budget.
     const accountLimitCheck = checkRateLimit(accountKey);
     const ipLimitCheck = checkRateLimit(ipKey);
-    const durableAccountCheck = await checkDurableRateLimit(accountKey);
-    const durableIpCheck = await checkDurableRateLimit(ipKey);
+    const durableAccountCheck = await durableLimitOrOpen(accountKey);
+    const durableIpCheck = await durableLimitOrOpen(ipKey);
 
     if (durableAccountCheck.isLimited || durableIpCheck.isLimited) {
       return NextResponse.json(
@@ -95,8 +131,8 @@ export async function POST(request: NextRequest) {
     if (!loginResult) {
       // Both records: the durable helpers write the volatile entry too, so
       // these two calls cover both stores.
-      await recordDurableFailedAttempt(accountKey);
-      await recordDurableFailedAttempt(ipKey);
+      await durableBookkeeping(() => recordDurableFailedAttempt(accountKey));
+      await durableBookkeeping(() => recordDurableFailedAttempt(ipKey));
 
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
@@ -104,8 +140,8 @@ export async function POST(request: NextRequest) {
     // Successful login: clear both stores, so a legitimate athlete who
     // fat-fingered their PIN a few times is not still throttled by a durable
     // row after they get it right.
-    await clearDurableRateLimit(accountKey);
-    await clearDurableRateLimit(ipKey);
+    await durableBookkeeping(() => clearDurableRateLimit(accountKey));
+    await durableBookkeeping(() => clearDurableRateLimit(ipKey));
 
     // Use the authenticated role from the database, never override it
     const finalRole = loginResult.principal.role;

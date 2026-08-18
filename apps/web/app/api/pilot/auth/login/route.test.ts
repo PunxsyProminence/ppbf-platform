@@ -155,7 +155,21 @@ describe('POST /api/pilot/auth/login', () => {
 // restart. /auth/activate already used both limiters; login did not.
 describe('POST /api/pilot/auth/login durable rate limiting', () => {
   beforeEach(() => {
+    // All three durable helpers are reset here, not just the check: the
+    // outage tests below install rejections, and jest.clearAllMocks() clears
+    // recorded calls WITHOUT clearing implementations, so a leftover
+    // mockRejectedValue would otherwise leak into the next test.
+    //
+    // mockLogin is reset for the same reason, one queue further along. A test
+    // whose request is rejected before it reaches loginWithAccountIdAndPin
+    // leaves its unconsumed mockResolvedValueOnce sitting in the queue, and
+    // clearAllMocks does not drain that either -- so the NEXT test silently
+    // receives the previous test's principal. That shifted the results of
+    // these outage tests by one and has to stay fixed.
+    mockLogin.mockReset();
     mockCheckDurable.mockResolvedValue({ isLimited: false });
+    mockRecordDurable.mockResolvedValue({ delayMs: 1000 });
+    mockClearDurable.mockResolvedValue(undefined);
   });
 
   test('a durable lockout blocks the attempt even when the in-memory store is empty', async () => {
@@ -182,23 +196,102 @@ describe('POST /api/pilot/auth/login durable rate limiting', () => {
     expect(mockLogin).not.toHaveBeenCalled();
   });
 
-  // The property that matters most. A rate-limit lookup is a guard, not the
-  // operation: if the durable store is unreachable it must degrade to the
-  // volatile limiter, never deny. Failing this closed would lock every
-  // athlete out of the platform on a database blip -- a far worse outage
-  // than the brute force it guards against.
-  test('a durable store outage does not lock anyone out', async () => {
+  // The property that matters most -- and the one this test previously only
+  // claimed to cover. It re-stated the beforeEach default of
+  // { isLimited: false }, so it was the happy path wearing an outage's name
+  // and never simulated an unreachable store at all.
+  //
+  // A rate-limit lookup is a guard, not the operation. If the durable store
+  // cannot be reached the route must degrade to the volatile limiter, never
+  // deny: failing this closed locks every athlete out at once, along with
+  // every coach reaching safety records, on a single database blip -- a far
+  // worse outage than the brute force it guards against.
+  //
+  // rateLimit.ts's withDurableClient is written to swallow its own errors and
+  // report not-limited, so today a rejection should not escape it. That is
+  // precisely why the route is pinned independently here: this route's
+  // fail-open promise must not rest on an invariant held one module away,
+  // where a refactor can quietly drop it and nothing on the login path
+  // would notice.
+  const outage = () => new Error('connect ECONNREFUSED 10.0.0.4:5432');
+
+  test('a durable store outage on the pre-auth check does not lock anyone out', async () => {
     mockCheckRateLimit.mockReturnValue({ isLimited: false });
-    // checkDurableRateLimit swallows its own errors and reports not-limited.
-    mockCheckDurable.mockResolvedValue({ isLimited: false });
+    mockCheckDurable.mockRejectedValue(outage());
     mockLogin.mockResolvedValueOnce({
-      principal: { accountId: 'acct-outage', role: 'athlete', organizationId: 'org-1' },
       token: 'tok',
+      principal: {
+        accountId: 'acct-outage',
+        role: 'athlete',
+        organizationId: 'org-1',
+        athleteId: 'ath-1',
+        sessionToken: 'tok',
+        authProvider: 'ppbf_local',
+      },
     });
 
     const res = await POST(request('acct-outage'));
 
     expect(res.status).toBe(200);
+    expect(res.cookies.get('ppbf_pilot_session')?.value).toBe('tok');
+    expect(mockLogin).toHaveBeenCalled();
+  });
+
+  // Failing open on the DURABLE store must not switch rate limiting off
+  // altogether. Without this, the cure for the lockout above would hand an
+  // attacker an unlimited 6-digit PIN budget the moment the database became
+  // unreachable. The volatile limiter is the documented fallback, so it has
+  // to still bite while the durable half is down.
+  test('a durable store outage still leaves the volatile limiter in force', async () => {
+    mockCheckDurable.mockRejectedValue(outage());
+    mockCheckRateLimit.mockReturnValue({ isLimited: true, delayMs: 30_000 });
+
+    const res = await POST(request('acct-outage-limited'));
+
+    expect(res.status).toBe(429);
+    expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  // The success path. clearDurableRateLimit runs AFTER the PIN was accepted
+  // and a session token was minted, but BEFORE the cookie is attached -- so
+  // an unreachable store there returns a 500 to someone who has already
+  // authenticated, and issues them no session. Identical in shape to the
+  // audit-write failure guarded above: clearing a bucket is bookkeeping, not
+  // the operation, and must not be able to revoke a login that succeeded.
+  test('a durable store outage while clearing counters still issues the session', async () => {
+    mockCheckRateLimit.mockReturnValue({ isLimited: false });
+    mockClearDurable.mockRejectedValue(outage());
+    mockLogin.mockResolvedValueOnce({
+      token: 'tok-clear',
+      principal: {
+        accountId: 'acct-outage-clear',
+        role: 'coach',
+        organizationId: 'org-1',
+        athleteId: null,
+        sessionToken: 'tok-clear',
+        authProvider: 'ppbf_local',
+      },
+    });
+
+    const res = await POST(request('acct-outage-clear'));
+
+    expect(res.status).toBe(200);
+    expect(res.cookies.get('ppbf_pilot_session')?.value).toBe('tok-clear');
+  });
+
+  // The failure path. A wrong PIN during an outage must still read as a wrong
+  // PIN. If the durable write escapes, the 401 becomes a 500 that tells an
+  // athlete the server is broken when in fact they mistyped, and tells an
+  // attacker that the rate limiter is down.
+  test('a durable store outage while recording a failure still returns 401', async () => {
+    mockCheckRateLimit.mockReturnValue({ isLimited: false });
+    mockRecordDurable.mockRejectedValue(outage());
+    mockLogin.mockResolvedValueOnce(null);
+
+    const res = await POST(request('acct-outage-bad-pin'));
+
+    expect(res.status).toBe(401);
+    expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
   });
 
   test('the volatile limiter still blocks on its own', async () => {
