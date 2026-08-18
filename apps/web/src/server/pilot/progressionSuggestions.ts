@@ -391,6 +391,28 @@ export async function getGapSuggestions(
 // to the athlete/parent via GET /api/pilot/progression/assignments -- so
 // this rule contributes no rows to getGapJustifications rather than reaching
 // for an approximate substitute.
+//
+// transfer_check_failed and competition_loss_unresolved are empty for exactly
+// the same reason, and between them they are the case that proves the Record's
+// exhaustiveness is worth keeping. Rule 4's evidence (metric_kind,
+// controlled_makes/misses, live_makes/misses) comes from the false-progress
+// readout over pilot.training_attempts; Rule 5's (loss_count, the lesson note,
+// the competition name and date) comes from pilot.external_competition_entries.
+// Neither is anything the Performance Analytics rollup carries. Reaching for a
+// rollup field that merely correlates with a transfer failure or a competition
+// loss would be inventing a justification the rule never actually read.
+//
+// Both were added by PRs that were green in isolation and broke main on merge,
+// which is worth stating plainly here: three of the five rules now in this
+// union arrived that way. See the "not done" note in the PR that added this
+// comment -- the durable fix is a branch-protection setting, not more code.
+//
+// The map is typed Record<SuggestionRule, ...> rather than Partial<...> on
+// purpose: a new rule cannot be added to the union without the compiler
+// stopping here and forcing a decision about what an athlete or parent is
+// shown as its justification. That is a deliberate speed bump on a
+// minor-facing disclosure surface, so if a future rule has no rollup
+// evidence, map it to [] as these two are -- do not loosen the type.
 
 const DETECTED_FROM_RULE_PREFIX = 'deterministic_rule:';
 
@@ -411,6 +433,8 @@ export const RULE_JUSTIFICATION_FIELDS: Readonly<Record<SuggestionRule, readonly
   ],
   training_days_dropping: ['training_days', 'training_days_early', 'training_days_late'],
   assignments_stalled: [],
+  transfer_check_failed: [],
+  competition_loss_unresolved: [],
 };
 
 /** Extracts the rule name from a gap's stored detected_from, or null when the
