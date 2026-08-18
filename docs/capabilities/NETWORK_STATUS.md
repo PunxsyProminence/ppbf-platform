@@ -131,6 +131,36 @@ unrelated third party. It is still an egress whose data-handling posture this
 repository cannot establish, which is why it still matters under the codebase's
 own doctrine.
 
+### RESOLVED, and found to be systemic: PR #471 (`profile/roster` deleted_at)
+
+Closed, and **wider than reported**: the roster route had *two* `pilot.athletes`
+queries missing `deleted_at is null` (own-roster and `?scope=organization`),
+not the one the finding named. Both fixed, matching the house convention
+(inline, alias-qualified, placed last before `order by` — same shape as
+`shadowConversations.ts`/`shadowFeedback.ts`). Regression-proved: reverting
+the filter fails 8 of 10 new tests.
+
+**The finding that matters more than the fix**: grepping `deleted_at` across
+`apps/web/src/server/pilot/*.ts` turns up exactly three files, all in
+`shadow*`. **No non-shadow module filters `athletes.deleted_at` on read at
+all** — including three more `pilot.athletes` reads in `profileDb.ts` and the
+`entities.ts` reads behind `/api/pilot/athletes/list`. This is not a bug local
+to one route; it looks like the retention migration added the column and the
+index (`idx_athletes_active_org … where deleted_at is null`, its own comment
+calling that "the active-record path, which is every read") without anyone
+auditing existing readers against it. Left alone per this PR's scope and
+flagged for its own ticket — likely a shared helper plus a convention test
+modeled on `organizationScope.convention.test.ts`, asserting every
+`pilot.athletes` read carries the predicate.
+
+**Also landed**: two Copilot-review findings on PR #469 (safety-flags) fixed
+in a follow-up commit — a whitespace-only `person_account_id` could bypass the
+new coach guard (guard checked `.trim()`, write used the raw value) and reach
+`raiseSafetyFlag` as a real subject; and the PATCH handler's blanket catch
+around the assignment gate turned every failure, including a database outage,
+into the same hidden 404 a real refusal produces. Both fixed and tested,
+14/14 real-Postgres, 6216/6216 full suite.
+
 ### RESOLVED — SAS URLs are no longer cacheable: PR #470
 
 Four routes returned a Shared Access Signature URL to a minor's video or
