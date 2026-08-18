@@ -23,7 +23,7 @@ pass 3 was right about that — but the route was never the driver. Section
 2. Read `docs/audit-2026-08-18/README.md` and `git log --oneline origin/main -40`
    for de-duplication, plus the relevant sections of `PASS-03-minors-consent.md`
    for the Film Study consent finding this pass was asked to bound.
-3. Enumerated the SHADOW surface mechanically: 186 files matching `shadow` under
+3. Enumerated the SHADOW surface mechanically: 178 TypeScript files matching `shadow` under
    `apps/web`, then read the authority, event, job-queue, job-worker,
    job-processor, read-model, metrics, library-claim, medical-status and
    archival modules in full.

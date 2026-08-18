@@ -107,7 +107,7 @@ admitted gap.
 | 5 | API surface | All 228 routes: input validation, `jsonError` prefix conformance, idempotency, rate limiting, `hiddenNotFound` | **running** | `PASS-05-api-surface.md` |
 | 6 | Data layer | 88 migrations vs. code, constraints, tenancy columns, policy hiding in DDL, N+1 | **running** | `PASS-06-data-layer.md` |
 | 7 | Frontend & design system | 125 screens + 86 components: fabricated-data disclosure, Law 2 / Law 7 conformance, invented classes, dead ends | **running** | `PASS-07-frontend.md` |
-| 8 | SHADOW subsystem | Authority model specified vs. built, event model, **what actually drives the job processor** | **running** | `PASS-08-shadow.md` |
+| 8 | SHADOW subsystem | Authority model specified vs. built, event model, **what actually drives the job processor** | **done** | `PASS-08-shadow.md` |
 | 9 | Formulas & thresholds | Registry status vs. callers, provenance of every constant gating a child's training | **running** | `PASS-09-formulas.md` |
 | 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | **done** | `PASS-10-tests-ci.md` |
 | 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **running** | `PASS-11-infra-secrets.md` |
@@ -199,6 +199,11 @@ partial by definition rather than final.
 | F-24 | MEDIUM | `automation_mode` is unvalidated at two of three SHADOW call sites with no column CHECK, so the single working denial branch is evadable by sending `"Automatic"` instead of `"automatic"` | verify-4 | **New — found by the refutation pass, not the pass it was verifying** |
 | F-25 | LOW | `/coach/progression-intelligence` is a second coach-facing hold reader that pass 4 did not list | verify-4 | New — found by the refutation pass |
 | F-26 | HIGH | `profile/roster` does not filter `athletes.deleted_at`, so a withdrawn child stays on the live coach roster — name, date of birth and portrait — for the whole retention window | verify-3 | **New — found by the refutation pass, not the pass it was verifying** |
+| S-01 | HIGH | `pilot.shadow_medical_administrative_status` is read by three gates. Its sole writer is reachable by **any assigned coach**, `sourceReference` is optional free-text, there is **no expiry** (bare equality on the latest row), and there is **no `assertShadowAuthority` call at all** — on the one route whose job is clearing a child, while that check's own denylist names `clear`, `concussion` and `sparring` | 8 | New |
+| S-02 | MEDIUM | `SHADOW_PHASE1_HARDENING_CHECKLIST.md:40` claims authority tests that do not exist — both route tests `jest.mock` the module to a no-op | 8 | New |
+| S-03 | MEDIUM | `createShadowLibraryClaim` returns hardcoded `confidence = 0.78 / 0.46 / 0.12` derived from a row count, contradicting the doctrine's own "must not fabricate certainty" | 8 | New |
+| S-04 | MEDIUM | The SHADOW spec says there is no production video-analysis backend; there is one, sending minors' frames to a vision model. A later section corrects five other rows and not this one | 8 | New |
+| S-05 | LOW | 32 `shadow_mirror: false` opt-outs, only four with a stated rationale; guardian consent withdrawal never enters the SHADOW spine, contradicting the doctrine | 8 | New |
 | D-01 | **CRITICAL** | `DATA_RETENTION.md` gives photos, videos, medical records, waivers and training notes their own deletion windows. The only deletion code touches `pilot.athletes` and `pilot.accounts`. **Video is not reachable from any deletion path even in principle** — verified by hand below | 12 | New |
 | D-02 | HIGH | The named daily script `pilot:cleanup-expired-data` does not exist, and the job that does (`retention-cleanup.yml`) is hard-wired so a *scheduled* run can never delete | 12 | New |
 | D-03 | HIGH | `/admin/data-deletion`, cited twice as the admin's console, has no page, no nav entry and no caller; the promised "reversible for 1 year" restore has no code at all | 12 | New |
@@ -226,6 +231,51 @@ partial by definition rather than final.
 | F-21 | HIGH | A coach can overwrite another family's guardian record — `upsertGuardian`'s `on conflict … do update` rewrites `account_id`, phone and email, and repointing `account_id` hands a chosen account guardian reach over every child that record carries, siblings included | 2 | New extension of the escalated `parent_id` finding |
 | F-22 | MEDIUM | `multidiscipline` and `competence-cohorts` call `requireRole(principal, ['coach','admin'])`, which is exact-match, so every provisioned `organization_admin` gets a 403 on a child's grappling-exposure history. Tests miss it because they drive the legacy `'admin'` value | 2 | New |
 | F-23 | MEDIUM | `DELETE /api/pilot/achievements/mentorships` authorizes only the mentor side, and does so *after* `endMentorship` has committed its UPDATE — an unauthorized coach closes the pairing and then receives the 403 | 2 | New |
+
+### The question I most wanted answered, answered — and my inference from it was wrong
+
+**What drives the SHADOW job processor:** an in-process `setTimeout` loop inside
+the running Next.js server, started by `apps/web/instrumentation.ts` via
+`startShadowJobWorker`, gated on `PPBF_SHADOW_WORKER_ENABLED === 'true'` — which
+`deploy-production.yml:437` and `deploy-staging.yml:278` both set to `true` on
+the Azure Container App. Cadence is the 30-second default; neither workflow
+overrides it.
+
+I had reported "nothing in `.github/workflows/` or `apps/web` calls
+`shadow/jobs/process`" as evidence that nothing drives the queue. The fact was
+true and the inference was wrong: **the route was never the driver.** Its own
+header says so at line 3 — *"The routine drain is the in-process worker loop (see
+instrumentation.ts and shadowJobWorker.ts)"*. I had the answer one file away and
+drew the opposite conclusion from an absence.
+
+Worth recording where the belief came from, because it is a live hazard for
+anyone reading this repo: `docs/SHADOW_CHAT_FUNCTIONALITY_AUDIT_2026-07-28.md:363`
+states that nothing drains the queue. That was **true when written** and false
+since the flag flipped on 2026-07-30. A dated audit is not wrong, it is stale —
+and this one has now misled two passes of a later audit.
+
+**On the Film Study window, this pass bounded the finding in both directions
+rather than only the alarming one**, which is the behaviour the standard is for.
+The common-case window shrinks from unbounded to ~30 seconds — but the 24-hour
+job TTL plus three lease-expiry retries leave a long tail, with no consent
+re-check on any attempt. It explicitly declined to raise the severity on the
+strength of a fact that narrowed the exposure.
+
+**`assertShadowAuthority`: pass 4's claim confirmed, with a better formulation
+than either of us had.** A denial *is* reachable at `review-action`, so "cannot
+deny at any of its three call sites" is literally false at one. The corrected
+claim: **it cannot deny for any input the system controls** — the one reachable
+denial requires the caller to volunteer a flag no shipped client sends, and doing
+so would deny their own request. Two sharpenings neither earlier pass had: the
+check runs *before* `assertActorCanAccessAthlete`, so the governance table
+records `allowed: true` on medical writes the next line may refuse; and its
+forbidden list guards exactly the risk it never sees.
+
+**No CRITICAL from this pass, and that is a result rather than an omission** —
+both candidates came back HIGH after refutation, with the reasoning stated in
+each. Refutation partly succeeded on S-01: the gate is detective rather than
+preventive, its own remediation text tells the reader to ask a coach, and the
+write is audited in-transaction. That is why it is HIGH and not CRITICAL.
 
 ### Checked by hand: a minor's video is not reachable by any deletion path
 

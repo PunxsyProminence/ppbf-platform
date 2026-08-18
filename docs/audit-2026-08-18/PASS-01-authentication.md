@@ -995,7 +995,16 @@ Stated as holes, not guessed.
    suggests nothing for it and offers no generator, unlike `athlete_id` which is
    sequential `ath-NNN`. If the gym's convention is a stage name known to
    teammates, the HIGH-1 chain and the starting-PIN MEDIUM both get materially
-   easier. **What would settle it:** a `select account_id from pilot.accounts
+   easier. What I *can* say is that it is not treated as a secret inside a gym:
+   the roster CSV export deliberately includes it —
+   `apps/web/app/api/pilot/admin/export/roster/route.ts:25-27` reads
+   `"The athlete's sign-in id is included because an admin reconstructing a
+   roster elsewhere needs it; the credential on that id is not this file's
+   business and must never be."` (`PASS-15-egress.md` row 13 covers that export).
+   That is a correct separation of concerns, and it means the id is known to
+   every org admin and to anyone holding an exported file — but it says nothing
+   about whether an id is *guessable* by someone with neither.
+   **What would settle it:** a `select account_id from pilot.accounts
    where role = 'athlete'` against production, read by someone authorized to do
    so. Nobody in this session can see that.
 

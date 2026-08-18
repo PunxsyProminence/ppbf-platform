@@ -358,7 +358,7 @@ Three things make this worse than "an admin uploads a document".
 The classifier's own rule table tells you what it expects to receive:
 `['safety', 'incident', 'injury']`, `['parent', 'guardian', 'family']`,
 `['athlete', 'round', 'sparring', 'workout']`
-(`classifier.ts:11-53`). An incident note, a guardian form, a medical release.
+(`classifier.ts:11-54`). An incident note, a guardian form, a medical release.
 Nothing filters, redacts or classifies before transmission — `classifyPdfText`
 runs *for routing*, not for gating, and the extracted text is sent regardless of
 what it matched.
@@ -679,7 +679,7 @@ platform that gets a great deal of this right.
   (`assertSenderIsExpected`); the Graph error *body* is never logged because it
   echoes the recipient, and only an error code matching a shape an email address
   cannot have is passed through (`graphMailer.ts:92-102`). The body names no
-  child, no gym record and no third party (`magicLink.ts:148-158`).
+  child, no gym record and no third party (`magicLink.ts:148-160`).
 - **The research-bridge export is genuinely de-identified**, not merely
   described as such: subject-linked rows are filtered out by key
   (`researchBridgeExport.ts:60-63`), ids are opaque SHA-256 digests
