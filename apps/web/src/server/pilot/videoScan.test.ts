@@ -1,5 +1,5 @@
-import { readMalwareVerdict, VIDEO_CONTENT_SCREEN_PROMPT, VIDEO_SCAN_MAX_FRAMES } from './videoScan';
-import { getPilotVideoBlobTags } from './blob';
+import { readMalwareVerdict, scanVideoSession, VIDEO_CONTENT_SCREEN_PROMPT, VIDEO_SCAN_MAX_FRAMES } from './videoScan';
+import { getPilotVideoBlobTags, downloadPilotVideoFile } from './blob';
 
 jest.mock('./blob', () => ({
   getPilotVideoBlobTags: jest.fn(),
@@ -69,5 +69,50 @@ describe('content screen prompt', () => {
     // these ever converged the platform would pay the dense-sampling cost
     // twice for every video that is never analyzed.
     expect(VIDEO_SCAN_MAX_FRAMES).toBeLessThan(90);
+  });
+});
+
+describe('scanVideoSession — skipContentScreen (guardian consent missing)', () => {
+  const mockedDownload = downloadPilotVideoFile as jest.MockedFunction<typeof downloadPilotVideoFile>;
+
+  beforeEach(() => {
+    mockedTags.mockReset();
+    mockedDownload.mockReset();
+  });
+
+  test('does not touch the network at all, and reports content as null rather than making the gate disappear', async () => {
+    // Regression for PR #465 (found independently by Codex and Copilot):
+    // skipContentScreen must leave the content gate ENABLED in the returned
+    // gatesEnabled list -- it is a "no verdict yet" signal, not a "this gate
+    // does not exist" one. Collapsing the two, on an environment with malware
+    // scanning off (both deploy workflows leave it unset), would zero out
+    // gatesEnabled entirely and resolve to 'hold' -- a state the claim query
+    // never reclaims, so a video would stop being scanned forever even after
+    // the guardian later consents.
+    const result = await scanVideoSession({
+      blobPath: 'org-1/vs-1/clip.mp4',
+      attempts: 0,
+      config: { malware: 'off', content: 'vision' },
+      skipContentScreen: true,
+    });
+
+    expect(mockedDownload).not.toHaveBeenCalled();
+    expect(result.content).toBeNull();
+    expect(result.gatesEnabled).toEqual(['content']);
+    expect(result.decision).not.toBe('hold');
+    // 'retry' (reclaimable, backs off, re-checks consent next attempt) is the
+    // expected outcome on the first few attempts; either way, never 'hold'.
+    expect(['retry', 'needs_human_review']).toContain(result.decision);
+  });
+
+  test('a genuinely unconfigured environment still resolves to hold -- skipContentScreen only matters when a gate is actually enabled', async () => {
+    const result = await scanVideoSession({
+      blobPath: 'org-1/vs-1/clip.mp4',
+      attempts: 0,
+      config: { malware: 'off', content: 'off' },
+      skipContentScreen: true,
+    });
+
+    expect(result.decision).toBe('hold');
   });
 });

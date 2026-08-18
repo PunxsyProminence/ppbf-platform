@@ -3,8 +3,13 @@ import { scanVideoSession } from './videoScan';
 import { claimNextVideoSessionForScan, settleVideoSessionScan } from './videoSessions';
 import { emitShadowEvent } from './shadowEvents';
 import { fileEscalation } from './escalationLadder';
+import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
 
 jest.mock('./videoScan', () => ({ scanVideoSession: jest.fn() }));
+jest.mock('./guardianConsent', () => {
+  const actual = jest.requireActual('./guardianConsent');
+  return { ...actual, assertGuardianMediaConsent: jest.fn() };
+});
 jest.mock('./videoSessions', () => {
   // Only the two database functions are doubled. scanRetryBackoffSeconds and
   // isTerminalScanDecision are pure and are used FOR REAL here, so a backoff or
@@ -25,6 +30,7 @@ const mockedClaim = claimNextVideoSessionForScan as jest.MockedFunction<typeof c
 const mockedSettle = settleVideoSessionScan as jest.MockedFunction<typeof settleVideoSessionScan>;
 const mockedEmit = emitShadowEvent as jest.MockedFunction<typeof emitShadowEvent>;
 const mockedFileEscalation = fileEscalation as jest.MockedFunction<typeof fileEscalation>;
+const mockedAssertConsent = assertGuardianMediaConsent as jest.MockedFunction<typeof assertGuardianMediaConsent>;
 
 const CONTENT_ON = { PPBF_VIDEO_CONTENT_SCAN: 'vision' };
 
@@ -59,6 +65,11 @@ beforeEach(() => {
   mockedSettle.mockResolvedValue(true);
   mockedEmit.mockResolvedValue(undefined);
   mockedFileEscalation.mockResolvedValue({} as Awaited<ReturnType<typeof fileEscalation>>);
+  mockedAssertConsent.mockReset();
+  // Default: consent present, matching every existing test's assumption from
+  // before this check existed. Tests below override this to simulate the
+  // missing-consent path specifically.
+  mockedAssertConsent.mockResolvedValue(undefined);
 });
 
 describe('sweepQuarantinedVideos', () => {
@@ -266,5 +277,94 @@ describe('sweepQuarantinedVideos', () => {
     expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({
       attempts: 7, blobPath: 'org-1/vs-1/clip.mp4',
     }));
+  });
+
+  describe('guardian media consent gates the content screen', () => {
+    test('checks consent for the claim\'s own athlete before running the content screen', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedAssertConsent).toHaveBeenCalledWith('org-1', 'ath-1');
+    });
+
+    test('passes skipContentScreen, WITHOUT disabling the gate in config, when the guardian has not consented', async () => {
+      // Forcing config.content to 'off' here would, on an environment with
+      // malware scanning also off (both deploy workflows leave it unset),
+      // zero out every enabled gate -- decideVideoScanOutcome resolves that
+      // to 'hold', which writes scan_state 'unconfigured', a state
+      // claimNextVideoSessionForScan never reclaims. The video would stop
+      // being scanned forever, even after the guardian later consents. So
+      // config.content must stay 'vision' -- only skipContentScreen carries
+      // the missing-consent signal, keeping this on the ordinary
+      // pending/retry path.
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedAssertConsent.mockRejectedValue(new GuardianConsentMissingError('ath-1', ['parent-1']));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      const result = await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      // The scan still ran -- consent-missing is not an error the sweep
+      // propagates.
+      expect(result.scanned).toBe(1);
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({
+        config: { malware: 'off', content: 'vision' },
+        skipContentScreen: true,
+      }));
+    });
+
+    test('does not set skipContentScreen when the guardian has consented', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: false }));
+    });
+
+    test('records why the content gate was skipped in scan_detail', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedAssertConsent.mockRejectedValue(new GuardianConsentMissingError('ath-1', ['parent-1']));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'promote', gatesEnabled: [], gatesPassed: [] }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_missing');
+    });
+
+    test('a real error checking consent is not swallowed as a missing-consent result', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedAssertConsent.mockRejectedValue(new Error('db unavailable'));
+
+      await expect(sweepQuarantinedVideos({ env: CONTENT_ON })).rejects.toThrow('db unavailable');
+      expect(mockedScan).not.toHaveBeenCalled();
+    });
+
+    test('does not check consent, and does not gate content, for a video with no athlete_id', async () => {
+      // The unattributed team-upload case this sweep already treats specially
+      // for escalation filing: there is no guardian to ask, so nothing here
+      // changes for it. Closing that separate gap is its own piece of work.
+      mockedClaim.mockResolvedValueOnce({ ...CLAIM, athlete_id: null }).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedAssertConsent).not.toHaveBeenCalled();
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({
+        config: { malware: 'off', content: 'vision' },
+      }));
+    });
+
+    test('does not check consent when the content gate is off', async () => {
+      const MALWARE_ONLY = { PPBF_VIDEO_MALWARE_SCAN: 'defender_index_tags' };
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry', gatesEnabled: ['malware'] }));
+
+      await sweepQuarantinedVideos({ env: MALWARE_ONLY });
+
+      expect(mockedAssertConsent).not.toHaveBeenCalled();
+    });
   });
 });
