@@ -113,17 +113,62 @@ admitted gap.
 | 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **done** | `PASS-11-infra-secrets.md` |
 | 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **done** | `PASS-12-docs-vs-code.md` |
 | 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | queued, runs last | — |
-| 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB | **not done — the only pass with no output** | — |
+| 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB | **done — all 7 of 7 traced** | `PASS-14-flows.md` |
 | 15 | Data egress & integrations | **What data about a child leaves this system, to whom, and what stands between it and the door** — model calls, SAS URLs, email, exports, telemetry, logs | **done** | `PASS-15-egress.md` |
 | 16 | Research, data library & evidence | Source lifecycle, evidence registry, Knowledge Graph, `assessment_protocols`, UI claims vs. implemented hand-offs | **done** | `PASS-16-research-library.md` |
 | 17 | Resilience & failure behaviour | **Does each safety gate fail closed or fail open?** Swallowed errors, permissive defaults, non-transactional multi-step safety writes, retries that double-write | **done** | `PASS-17-resilience.md` |
 
-## Status: 15 of 17 passes reported. Pass 14 is the one gap, and it is a real gap.
+## The finding that reframes the rest: nothing in the product can place a training hold
 
-Sixteen passes were run. **Fifteen wrote their reports; pass 14 (role journeys)
-did not** — its agent died twice, the second time before writing a line. Pass 13
-(cross-cutting synthesis) was never started here because it is reserved for the
-other session and runs last.
+Pass 14 traced all seven journeys and returned nine HIGHs. This is the one that
+matters most, and I verified it independently rather than relaying it.
+
+**No screen in this platform places or lifts a training hold.**
+`POST /api/pilot/training-holds` with `action: 'place'` has **zero client
+callers.** Every client reference to that endpoint is a `GET`:
+
+```
+`${apiBase()}/api/pilot/training-holds?athlete_id=…&status=active`   (GET)
+```
+
+in `coach/progression-intelligence/page.tsx:342` and
+`coach/sports-medicine/page.tsx:97`. The only `action: 'place'` anywhere in UI
+code belongs to `coach/floor-groups/page.tsx:154`, which is a different endpoint
+placing an athlete in a floor group. The pass tried four separate refutations —
+no place-payload fields in any `.tsx`, no second server caller, no raw SQL
+outside the module and its tests — and all four failed.
+
+**Why this reframes much of the audit.** The training hold is the stopping
+mechanism. It is enforced at class registration. It is now enforced at competition
+entry too, because PR #452 merged. It is read by six surfaces. Every earlier
+finding about holds — that they do not cancel existing registrations, that scopes
+overstate enforcement, that a covering coach can lift one — assumed holds get
+created. **Nothing in the product can create one.**
+
+Pass 14's own summary of the worst break puts it better than a severity label
+can: a coach files a critical incident, it is recorded correctly, deduplicated,
+severity-floored, and lands in the admin queue — the guardian cannot be told,
+and the admin has no control anywhere in the product that pauses that child's
+training. Two individually correct modules, `trainingHolds.ts` and
+`escalationLadder.ts`, with nothing between them and no door into either.
+
+That is this codebase's demonstrated failure mode — the seam between two correct
+modules — and it took the one pass that traced whole journeys to see it. Which is
+the argument for having re-run it after two agent deaths.
+
+**A methodological note that matters.** Pass 14 read every quote from
+`origin/main` at `0485cf81` using `git grep <rev>`, because the audit branch is
+based on `04dd116b` and is **73 `apps/web` files behind**. Had it read the
+checked-out tree it would have reported #452 and #458 as broken. Earlier passes
+did not all do this, which is a real caveat on their findings.
+
+## All 17 passes now have output; pass 13 remains open by design
+
+Seventeen passes were defined; sixteen have run and written reports. Pass 14
+succeeded on its third attempt after two agent deaths — the fix was instructing it
+to write incrementally from its first tool call rather than gather-then-write.
+Pass 13 (cross-cutting synthesis) is still open and still reserved for the other
+session.
 
 Six passes lost their summarising agent to a capacity limit *after* writing their
 file, so their findings were read out of the files directly rather than relayed.
@@ -131,11 +176,12 @@ That is recorded because it changes the confidence: those six have not had an
 author walk me through what mattered, so their severity ordering is mine from the
 text rather than theirs.
 
-**The gap matters and is not being papered over.** Pass 14 was the only pass that
-traced whole journeys end to end — guardian withdraws consent, coach places a
-hold, athlete is enrolled — and the seam between two correct modules is precisely
-this codebase's demonstrated failure mode. Its absence is the largest known hole
-in this audit. It needs re-running.
+Pass 14's verdicts: **three journeys broken** (placing a hold — no entry point;
+the incident *response* half; coach off-boarding), **five silently incomplete**,
+and **two complete** — competition entry at the moment of entry, where it
+records F-01 as *"confirmed closed, and closed better than the finding asked"*,
+and the incident filing and escalation ladder, which it calls the strongest
+safety code it read.
 
 ## Two things need a human today, and neither is a code change
 
@@ -327,6 +373,15 @@ partial by definition rather than final.
 | E-04 | MEDIUM | `shadowFilmStudy.ts:4-10` states the opposite of what the module does — it says film_study stays UNAVAILABLE, while the processor's exclusion set is empty. This is the docstring an auditor would read to answer "does a child's face leave?" | 15 | New |
 | E-05 | MEDIUM | Four SAS-bearing responses set no `Cache-Control`, while every sibling minor-data response sets `no-store` | 15 | New |
 | E-06 | MEDIUM | Every athlete-scoped SHADOW turn ships that child's verbatim near-miss incident text to the model, and a minor can trigger it about themselves | 15 | New |
+| J1-A | **HIGH** | **No screen in the platform places or lifts a training hold.** `action: 'place'` has zero client callers; all client references are GETs. **Hand-verified** | 14 | New — reframes every other hold finding |
+| J1-B | HIGH | Attendance check-in consults no hold and raises no flag — `attendance*.ts` contains no `hold` reference at all | 14 | New |
+| J2-A | HIGH | The consent-withdrawal sweep is keyed on one `athlete_id`, so group footage filed under another child stays published — while the confirm dialog promises "**Anything** already published of {childName} will be retracted … immediately" | 14 | New |
+| J2-B | HIGH | A video uploaded with no `athlete_id` skips the access check, every consent read, the withdrawal sweep **and** the safety escalation | 14 | New |
+| J4-A | HIGH | `registerForClassTransactionally` reads no waiver, guardian link or clearance. `general` and `medical_release` waivers gate nothing | 14 | New |
+| J5-A | HIGH | A guardian is never told about an incident — `/parent/safety` excludes `safety_escalations` wholesale, on reasoning written entirely about `athlete_voice`, 1 of 9 source types | 14 | New |
+| J5-B | HIGH | Filing an incident changes nothing, and the queue's three actions cannot either | 14 | New |
+| J6-A | HIGH | The PA Act 153 clearance register — module, migration, view, pg test, apply script — is imported by nothing; all five exports have zero non-test callers | 14 | Corroborates a `NETWORK_STATUS` row with a full inventory |
+| J6-B | HIGH | A gym admin cannot off-board a coach: deactivation requires `platform_owner`. `/admin/people:140` renders a `Deactivated` badge for a state it cannot set | 14 | New |
 | X-01 | HIGH | **Two credentials remain readable in public git history** — fixed on `main`, never removed from `origin`, because `main` was squash-rewritten while the pre-fix branch commits stayed. Needs rotation, not a code change | 11 | New |
 | X-02 | HIGH | Soft delete is written, indexed for, and **filtered by nothing** — a "deleted" child stays visible everywhere for two years, and a "deleted" guardian keeps logging in | 6 | New — independently reaches the same place as F-26 |
 | X-03 | HIGH | The retention hard-delete **cannot succeed**: two foreign keys with no `on delete` action block both halves of the purge, in one transaction | 6 | New — explains D-01's mechanism from the schema side |
