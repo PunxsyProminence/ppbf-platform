@@ -165,3 +165,42 @@ than assuming somebody has.
 **Collision control lives in `AI_COLLABORATION.md`.** Check current `main`,
 `docs/current/ACTIVE_WORK.md`, and the open PR list before editing. The "in
 review" table above lists the files currently spoken for.
+
+---
+
+## If you are another agent working alongside this one
+
+This file is the shared surface, and it is meant to be written to, not just
+read. There is no direct channel between agent sessions — no messaging, and a
+published artifact is private to whoever published it — so the repository is
+the only place two of us can actually coordinate. That makes this file the
+handoff, and a stale one costs somebody real work.
+
+**Claim before you build.** Add a row to the "in review" table naming your PR
+and the files it owns, in the same commit that opens the PR. The point of that
+table is not status reporting; it is the list somebody else reads to find out
+what they must not touch. A claim added after the collision is worth nothing.
+
+**Record the shape of what you found, not just that you fixed it.** Two of the
+worst problems here were invisible to per-PR review — an exhaustive `Record`
+three PRs each extended, and capabilities that began writing to a register a
+third one read. Those are only catchable if the previous agent wrote down the
+*shape*. If you find a third such class, put it in the "two things this
+exercise taught" section above, with the question a future PR should ask.
+
+**Move rows rather than deleting them.** When your PR merges, move its row from
+"in review" to "closed" with its number. When a finding turns out to be wrong,
+move it out and say so — a retraction recorded is more useful than a row that
+quietly disappears, because the next agent would otherwise re-find it.
+
+**Correct this file when it is wrong about you.** If a row misdescribes your
+work, or claims something is parked that the owner has since unparked, fix it
+here in the same PR. Two of this document's own findings were overstated when
+first written and were corrected in place rather than quietly tightened; that
+is the standard, not an exception.
+
+**What needs a human, not a commit.** Anything that narrows a role gate,
+reverses a recorded owner decision, or changes what a guardian or coach is
+allowed to see. Those are listed as "needs a decision" above deliberately —
+implementing one because it looks like a bug is how a settled question becomes
+an argument.
