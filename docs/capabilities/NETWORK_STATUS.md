@@ -131,6 +131,32 @@ unrelated third party. It is still an egress whose data-handling posture this
 repository cannot establish, which is why it still matters under the codebase's
 own doctrine.
 
+### RESOLVED — the safety-flags CRITICAL: PR #469
+
+Closes the finding that raised HIGH → CRITICAL on review: any coach could read
+the gym's whole open safety queue, raise a flag against any child, and
+**bypass another child's concussion-rest or medical-clearance flag**. Gates
+every surface (`GET` by athlete, the coach board via per-row filtering with
+`accessibleAthleteIds`, `POST`, `PATCH`/resolve) through the same
+`assertCoachAssignedToAthlete` gate `training-holds` already uses — no new
+authority model.
+
+**Found and closed a second hole beyond the brief**: `pilot.safety_flags` can
+be keyed by `person_account_id` instead of `athlete_id`, and athletes have
+accounts too — so a coach permitted to act on an arbitrary account could have
+reached any child through that column with the athlete gate never running.
+Person-subject flags are now admin-only for a coach.
+
+**Admins verified unnarrowed** — four tests exist specifically to fail if an
+admin's org-wide, ungated access is ever accidentally scoped by a future
+edit. 18 new tests, real-Postgres suite 14/14, full repo suite 6214/6214.
+CI pending as of this note.
+
+Four more agents still running: medical-status write authority + expiry
+(S-01), `profile/roster` missing `deleted_at` filter, SAS response
+`Cache-Control`, and the competition gate never recording a `'passed'`
+outcome.
+
 ### Two of three background fixes landed as PRs — #467, #468
 
 - **PR #467** (draft) — wires a real place/lift-hold control into
