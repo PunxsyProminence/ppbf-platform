@@ -4,7 +4,7 @@ import { POST } from './route';
 import { assertActiveParentAccount, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { createCoachObservation, linkGuardianAthlete, upsertGuardian } from '@/src/server/pilot/intake';
+import { createCoachObservation, createReadiness, linkGuardianAthlete, upsertGuardian } from '@/src/server/pilot/intake';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 // The register reconciliation (Wave 9) found this route's coach_note write
@@ -34,12 +34,19 @@ jest.mock('@/src/server/pilot/shadowAuthority', () => {
 
 jest.mock('@/src/server/pilot/intake', () => {
   const actual = jest.requireActual('@/src/server/pilot/intake');
-  return { ...actual, createCoachObservation: jest.fn(), upsertGuardian: jest.fn(), linkGuardianAthlete: jest.fn() };
+  return {
+    ...actual,
+    createCoachObservation: jest.fn(),
+    upsertGuardian: jest.fn(),
+    linkGuardianAthlete: jest.fn(),
+    createReadiness: jest.fn(),
+  };
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockCreate = createCoachObservation as jest.Mock;
+const mockCreateReadiness = createReadiness as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockAssertActiveParent = assertActiveParentAccount as jest.Mock;
 const mockUpsertGuardian = upsertGuardian as jest.Mock;
@@ -205,4 +212,79 @@ test('a guardian_link write with no account_id skips account validation but stil
   expect(response.status).toBe(200);
   expect(mockAssertActiveParent).not.toHaveBeenCalled();
   expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
+});
+
+// pilot.readiness.score is a NOT NULL column a coach-facing triage board
+// (readinessBoard.ts) reads as ground truth. A missing or non-numeric score
+// used to be silently coerced to a stored 0 via Number(value || 0) -- a
+// fabricated "adjust the plan" reading for an athlete nobody measured. These
+// pin the refusal instead.
+const READINESS_BODY = {
+  entity_type: 'readiness',
+  athlete_id: 'ath-1',
+  payload: { score: 6.5, category: 'general', measured_at: '2026-08-17T12:00:00Z' },
+};
+
+test('a readiness score is stored as the number given, not coerced or defaulted', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  // afterEach only clears call history, not implementations (jest.clearAllMocks,
+  // not resetAllMocks) -- an earlier test's mockAccess.mockRejectedValue would
+  // otherwise leak forward and turn this into a false 404. Each test below
+  // arranges its own precondition rather than trusting file order.
+  mockAccess.mockResolvedValue(undefined);
+  mockCreateReadiness.mockResolvedValue('readiness-1');
+
+  const response = await POST(postRequest(READINESS_BODY));
+  const payload = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(payload).toMatchObject({ ok: true, entity_type: 'readiness', entity_id: 'readiness-1' });
+  expect(mockCreateReadiness).toHaveBeenCalledWith({
+    organizationId: 'org-1',
+    athleteId: 'ath-1',
+    score: 6.5,
+    category: 'general',
+    measuredAt: '2026-08-17T12:00:00Z',
+    method: 'staff_entered_intake',
+    recordedByAccountId: 'acct-coach-1',
+  });
+});
+
+test('a missing readiness score is refused, never fabricated as 0', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockAccess.mockResolvedValue(undefined);
+
+  const response = await POST(
+    postRequest({ ...READINESS_BODY, payload: { category: 'general', measured_at: '2026-08-17T12:00:00Z' } }),
+  );
+  const payload = await response.json();
+
+  expect(response.status).toBe(400);
+  expect(String(payload.error)).toMatch(/Unsupported payload\.score/);
+  expect(mockCreateReadiness).not.toHaveBeenCalled();
+});
+
+test('a non-numeric readiness score is refused, never coerced by Number()', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockAccess.mockResolvedValue(undefined);
+
+  const response = await POST(
+    postRequest({ ...READINESS_BODY, payload: { ...READINESS_BODY.payload, score: 'not-a-number' } }),
+  );
+  const payload = await response.json();
+
+  expect(response.status).toBe(400);
+  expect(String(payload.error)).toMatch(/Unsupported payload\.score/);
+  expect(mockCreateReadiness).not.toHaveBeenCalled();
+});
+
+test('a zero readiness score is a real, legitimate reading -- accepted, not mistaken for absence', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockAccess.mockResolvedValue(undefined);
+  mockCreateReadiness.mockResolvedValue('readiness-2');
+
+  const response = await POST(postRequest({ ...READINESS_BODY, payload: { ...READINESS_BODY.payload, score: 0 } }));
+
+  expect(response.status).toBe(200);
+  expect(mockCreateReadiness).toHaveBeenCalledWith(expect.objectContaining({ score: 0 }));
 });

@@ -25,6 +25,27 @@ function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
 }
 
+// pilot.readiness.score is NOT NULL and read straight into a coach-facing
+// triage board (readinessBoard.ts). Number(value || 0) used to turn a
+// missing or malformed score into a real, stored 0 -- which the board reads
+// as RED, "adjust the plan", for an athlete nobody actually measured. A
+// missing reading must stay missing, not become a fabricated alarm.
+function requireFiniteNumber(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    // "Unsupported" is jsonError's recognized prefix for a client-supplied
+    // field that is missing, wrong-typed, or otherwise invalid (see
+    // "Unsupported guardian.pin" elsewhere) -- anything else falls into the
+    // generic 500 branch, which scrubs the message and would hide a
+    // legitimate validation refusal behind an opaque server error. The
+    // message names both failure modes this guard actually rejects --
+    // missing/wrong-typed and non-finite (NaN, Infinity) -- since "must be a
+    // number" alone reads as though only the type was checked (Copilot
+    // review, PR #423).
+    throw new Error(`Unsupported ${field}: must be a finite number, and cannot be missing`);
+  }
+  return value;
+}
+
 export async function POST(request: NextRequest) { // NOSONAR
   try {
     const principal = await requirePrincipal(request);
@@ -123,7 +144,7 @@ export async function POST(request: NextRequest) { // NOSONAR
       entityId = await createReadiness({
         organizationId: principal.organizationId,
         athleteId,
-        score: Number(body.payload.score || 0),
+        score: requireFiniteNumber(body.payload.score, 'payload.score'),
         category: asString(body.payload.category, 'general'),
         measuredAt: asString(body.payload.measured_at, new Date().toISOString()),
         method: 'staff_entered_intake',

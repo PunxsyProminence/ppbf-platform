@@ -9,8 +9,14 @@ import { query } from './db';
 // false in both halves. No formula writes to pilot.readiness: the only
 // production write path is intake.ts#createReadiness, and every score it
 // stores was typed by a member of staff during intake review.
-// readinessMath.ts#calculateReadinessL14 exists, carries uncited coefficients,
-// and is dead code -- its only caller is its own unit test.
+//
+// readinessMath.ts#calculateReadinessL14 -- the one formula on record for
+// this exact shape, registered as LEGACY-READINESS in formulas/registry.ts
+// ("sleep x1.25 - soreness x0.45 + discipline x0.3") -- is not merely unused,
+// it is deliberately unwired: registered `experimental_unsupported` with
+// "must not clear, restrict, or prescribe training", which is precisely what
+// the GREEN/YELLOW/RED triage below does. Wiring it in would violate that
+// registration, so its only caller stays its own unit test.
 //
 // So a score reaching this board is a staff judgement, not a measurement, and
 // the band it maps to is a triage colour over a human's opinion. Each entry
