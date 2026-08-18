@@ -38,6 +38,11 @@ function VideoReviewConsoleContent() {
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState('');
+  // Which videos this reviewer has actually opened. `activeReviewLink` holds a
+  // single slot and is cleared after a decision, so it can only answer "is the
+  // player on screen right now" -- it cannot answer "did you ever look at this
+  // one", which is the question the Approve gate has to ask.
+  const [inspectedVideoIds, setInspectedVideoIds] = useState<Set<string>>(new Set());
 
   const loadQuarantinedVideos = useCallback(async () => {
     setError('');
@@ -106,6 +111,9 @@ function VideoReviewConsoleContent() {
         scanDetail: payload.scan_detail,
         expiresInMinutes: payload.expires_in_minutes,
       });
+      // Recorded only after the link actually resolves: a failed attempt is not
+      // an inspection, and must not unlock Approve.
+      setInspectedVideoIds((prev) => new Set(prev).add(videoSessionId));
     } catch (linkErr) {
       setError(linkErr instanceof Error ? linkErr.message : 'Could not generate review link');
     } finally {
@@ -114,6 +122,19 @@ function VideoReviewConsoleContent() {
   }
 
   async function handleDecision(videoSessionId: string, decision: 'approve' | 'block') {
+    // Approving is the irreversible direction: it takes footage of a minor out
+    // of quarantine and makes it playable. Blocking only keeps the status quo,
+    // so it is deliberately NOT confirmed -- the guard belongs on the release,
+    // not on the refusal. (Before this, video-compliance demanded a typed reason
+    // to REJECT while approve went through on one click, which had the friction
+    // exactly backwards.)
+    if (decision === 'approve') {
+      const confirmed = window.confirm(
+        'Approve this video and set it to ready? It becomes playable to everyone with access to the athlete’s footage. This is footage of a minor — confirm you have watched it.',
+      );
+      if (!confirmed) return;
+    }
+
     setError('');
     setActionNotice('');
     setSubmittingId(videoSessionId);
@@ -203,6 +224,7 @@ function VideoReviewConsoleContent() {
               <ul className="mt-[var(--s3)] space-y-[var(--s4)]">
                 {videos.map((video) => {
                   const isLinkActive = activeReviewLink?.videoSessionId === video.video_session_id;
+                  const isInspected = inspectedVideoIds.has(video.video_session_id);
                   const isBusy = submittingId === video.video_session_id;
 
                   return (
@@ -290,11 +312,21 @@ function VideoReviewConsoleContent() {
                           />
                         </div>
 
+                        {/* Words, not just a disabled control (Law 3): a greyed
+                            button with no sentence leaves the reviewer guessing
+                            why they cannot proceed. */}
+                        {!isInspected && (
+                          <p className="t-body" data-testid={`approve-gate-${video.video_session_id}`}>
+                            Watch the video before approving it — use “Inspect / Watch Video” above.
+                            Blocking it does not require watching.
+                          </p>
+                        )}
+
                         <div className="flex flex-wrap gap-[var(--s3)] pt-[var(--s2)]">
                           <button
                             type="button"
                             onClick={() => handleDecision(video.video_session_id, 'approve')}
-                            disabled={isBusy}
+                            disabled={isBusy || !isInspected}
                             className="btn disabled:opacity-50"
                           >
                             {isBusy ? 'Submitting...' : 'Approve Video (Set Ready)'}
