@@ -100,6 +100,14 @@ export default function HomePage() {
               <a href="#programs" className="btn text-sm sm:text-base">
                 Learn About Our Programs
               </a>
+              {/* /public is the intake form -- "the only unauthenticated
+                  write in the app" per that page's own comments -- and
+                  until now nothing on this homepage pointed at it. Filled
+                  brass, same as Programs: this is the other action a
+                  visiting parent came here for, not the member sign-in. */}
+              <Link href="/public#interest-intake" className="btn text-sm sm:text-base">
+                Tell Us You&apos;re Interested
+              </Link>
               <Link href="/login" className="btn btn--ghost text-sm sm:text-base">
                 Log In
               </Link>
@@ -278,10 +286,13 @@ export default function HomePage() {
             <p className="t-body text-center mt-[var(--s4)] max-w-[68ch] mx-auto" style={{ fontSize: 'var(--t-md)' }}>
               We&apos;re here to help. Reach out with any questions about our programs, enrollment, or how Punxsy Prominence can serve your family.
             </p>
-            <div className="flex justify-center mt-[var(--s6)]">
+            <div className="flex flex-wrap items-center justify-center gap-[var(--s3)] mt-[var(--s6)]">
               <a href="mailto:admin@punxsyprominence.org" className="btn">
                 Get in Touch
               </a>
+              <Link href="/public#interest-intake" className="btn btn--ghost">
+                Tell Us You&apos;re Interested
+              </Link>
             </div>
           </div>
         </section>
