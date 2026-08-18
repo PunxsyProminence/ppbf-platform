@@ -2,16 +2,25 @@ import { buildRosterCsv } from '@/app/api/pilot/admin/export/roster/csv';
 import { applyRosterImport, parseCsv, parseRosterCsv, planRosterImport, type RosterImportRow, type RosterRowPlan } from './rosterImport';
 import { query } from './db';
 import { insertAthleteIfAbsent } from './entities';
+import { insertClubMemberIfAbsent } from './clubMembers';
 
 jest.mock('./db', () => ({ query: jest.fn() }));
 jest.mock('./entities', () => ({ insertAthleteIfAbsent: jest.fn() }));
+jest.mock('./clubMembers', () => ({ insertClubMemberIfAbsent: jest.fn() }));
 
 const mockQuery = query as jest.Mock;
+// Two names for the same mock: the batch-insert tests below (ported from the
+// perf-batching PR) call it mockInsertIfAbsent, the club-members tests call
+// it mockInsertAthlete. Both stay so neither test block needs renaming.
 const mockInsertIfAbsent = insertAthleteIfAbsent as jest.Mock;
+const mockInsertAthlete = insertAthleteIfAbsent as jest.Mock;
+const mockInsertClubMember = insertClubMemberIfAbsent as jest.Mock;
 
 beforeEach(() => {
   jest.resetAllMocks();
   mockQuery.mockResolvedValue([]);
+  mockInsertAthlete.mockResolvedValue(true);
+  mockInsertClubMember.mockResolvedValue(true);
 });
 
 describe('parseCsv', () => {
@@ -64,6 +73,28 @@ describe('parseRosterCsv', () => {
       athlete_id: 'ath-1',
       full_name: 'A Name',
       date_of_birth: '2012-03-14',
+    });
+  });
+
+  // The real membership export's own Member ID / Mbr Type / address headers.
+  // NOTE: the export splits the name into Last Name/First Name/MI columns
+  // rather than one "Full name" column -- this importer still requires a
+  // combined full-name column, unchanged by this extension (see the roster
+  // import report's open question about name splitting).
+  it('accepts the real membership export headers', () => {
+    const parsed = parseRosterCsv(
+      'Member ID,Full name,Address,City,State,Zip,Mbr Type\n'
+      + 'mbr-1,Jason Neale,1 Main St,Punxsutawney,PA,15767,Non-Athlete\n',
+    );
+    expect(parsed.fatal).toBe('');
+    expect(parsed.rows[0]).toMatchObject({
+      athlete_id: 'mbr-1',
+      full_name: 'Jason Neale',
+      address_line1: '1 Main St',
+      city: 'Punxsutawney',
+      state: 'PA',
+      postal_code: '15767',
+      member_type: 'Non-Athlete',
     });
   });
 
@@ -157,6 +188,11 @@ describe('planRosterImport', () => {
     gym_status: '',
     emergency_contact_note: '',
     coach_account_id: '',
+    member_type: '',
+    address_line1: '',
+    city: '',
+    state: '',
+    postal_code: '',
     ...over,
   });
 
@@ -219,6 +255,164 @@ describe('planRosterImport', () => {
     expect(plan.rows.map((r) => r.line)).toEqual([1, 2, 3]);
     expect(plan.rows[1].outcome).toBe('reject');
   });
+
+  // The real 30-row membership export this importer round-trips with: most
+  // rows are Athlete, but the gym owner and other adults are Non-Athlete --
+  // a member with no training record at all. None of the athlete-only
+  // requirements apply to them.
+  it('accepts a Non-Athlete row with no date of birth, weight class or gym status', async () => {
+    const plan = await planRosterImport('org-1', [
+      row({ athlete_id: 'mbr-1', date_of_birth: '', member_type: 'Non-Athlete' }),
+    ]);
+    expect(plan.counts).toEqual({ create: 1, skip_exists: 0, reject: 0 });
+  });
+
+  it('accepts the fitness-only membership categories from the real export', async () => {
+    const plan = await planRosterImport('org-1', [
+      row({ athlete_id: 'mbr-1', date_of_birth: '', member_type: 'Junior Fitness Non-Contact' }),
+      row({ athlete_id: 'mbr-2', date_of_birth: '', member_type: 'Adult Fitness Non-Contact' }),
+    ]);
+    expect(plan.counts).toEqual({ create: 2, skip_exists: 0, reject: 0 });
+  });
+
+  it('rejects a membership type outside the known vocabulary', async () => {
+    const plan = await planRosterImport('org-1', [row({ member_type: 'Board Member' })]);
+    expect(plan.rows[0].outcome).toBe('reject');
+    expect(plan.rows[0].reason).toMatch(/Non-Athlete/);
+  });
+
+  // A blank member_type column (every roster that predates this feature)
+  // must keep meaning "Athlete" -- the athlete-only checks still apply.
+  it('still requires a date of birth when member_type is blank', async () => {
+    const plan = await planRosterImport('org-1', [row({ date_of_birth: '', member_type: '' })]);
+    expect(plan.rows[0].outcome).toBe('reject');
+    expect(plan.rows[0].reason).toMatch(/date of birth/i);
+  });
+
+  // A non-athlete member id must never be silently overwritten either --
+  // the same "never overwrite" property the athlete path already has.
+  it('never plans to overwrite a non-athlete member already on the roster', async () => {
+    mockQuery.mockImplementation((sql: string) => {
+      if (sql.includes('pilot.club_members')) {
+        return Promise.resolve([{ member_id: 'mbr-1' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const plan = await planRosterImport('org-1', [
+      row({ athlete_id: 'mbr-1', date_of_birth: '', member_type: 'Non-Athlete' }),
+    ]);
+
+    expect(plan.counts).toEqual({ create: 0, skip_exists: 1, reject: 0 });
+  });
+
+  it('checks pilot.club_members for a collision in addition to pilot.athletes', async () => {
+    await planRosterImport('org-1', [row()]);
+    const queriedTables = mockQuery.mock.calls.map((call) => call[0] as string);
+    expect(queriedTables.some((sql) => sql.includes('pilot.athletes'))).toBe(true);
+    expect(queriedTables.some((sql) => sql.includes('pilot.club_members'))).toBe(true);
+  });
+});
+
+describe('applyRosterImport', () => {
+  const row = (over: Partial<Record<string, string>> = {}) => ({
+    athlete_id: 'ath-1',
+    full_name: 'A Name',
+    date_of_birth: '2012-03-14',
+    weight_class: '',
+    gym_status: '',
+    emergency_contact_note: '',
+    coach_account_id: '',
+    member_type: '',
+    address_line1: '',
+    city: '',
+    state: '',
+    postal_code: '',
+    ...over,
+  });
+
+  it('creates the athlete only when the file has no membership/address data', async () => {
+    const rows = [row()];
+    const plan = await planRosterImport('org-1', rows);
+
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
+
+    expect(mockInsertAthlete).toHaveBeenCalledTimes(1);
+    expect(mockInsertClubMember).not.toHaveBeenCalled();
+    expect(result.counts).toEqual({ create: 1, skip_exists: 0, reject: 0 });
+  });
+
+  // membership_type does not belong on pilot.athletes -- it lives on
+  // pilot.club_members, linked by athlete_id, for an Athlete-type row too.
+  it('creates a linked club_members row for an Athlete row that carries an address', async () => {
+    const rows = [row({ address_line1: '12 High St', city: 'Punxsutawney', state: 'PA', postal_code: '15767' })];
+    const plan = await planRosterImport('org-1', rows);
+
+    await applyRosterImport('org-1', rows, plan, 'admin-1');
+
+    expect(mockInsertAthlete).toHaveBeenCalledTimes(1);
+    expect(mockInsertClubMember).toHaveBeenCalledTimes(1);
+    expect(mockInsertClubMember.mock.calls[0][1]).toMatchObject({
+      member_id: 'ath-1',
+      athlete_id: 'ath-1',
+      full_name: null,
+      membership_type: 'athlete',
+      address_line1: '12 High St',
+      city: 'Punxsutawney',
+      state: 'PA',
+      postal_code: '15767',
+      created_by_account_id: 'admin-1',
+    });
+  });
+
+  // The design's core case: an adult with a home address and no training
+  // record at all -- e.g. the owner, listed Non-Athlete on the real roster.
+  it('creates a club_members-only row for a Non-Athlete row, never touching pilot.athletes', async () => {
+    const rows = [row({
+      athlete_id: 'mbr-owner',
+      full_name: 'Jason Neale',
+      date_of_birth: '',
+      member_type: 'Non-Athlete',
+      address_line1: '1 Main St',
+      city: 'Punxsutawney',
+      state: 'PA',
+      postal_code: '15767',
+    })];
+    const plan = await planRosterImport('org-1', rows);
+
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
+
+    expect(mockInsertAthlete).not.toHaveBeenCalled();
+    expect(mockInsertClubMember).toHaveBeenCalledTimes(1);
+    expect(mockInsertClubMember.mock.calls[0][1]).toMatchObject({
+      member_id: 'mbr-owner',
+      athlete_id: null,
+      full_name: 'Jason Neale',
+      membership_type: 'non_athlete',
+    });
+    expect(result.counts).toEqual({ create: 1, skip_exists: 0, reject: 0 });
+  });
+
+  // Same race-lost honesty as the athlete path: planning said create, the
+  // insert says otherwise, the outcome reported must be the true one.
+  it('reports skip_exists when a non-athlete member insert loses a race', async () => {
+    mockInsertClubMember.mockResolvedValue(false);
+    const rows = [row({ athlete_id: 'mbr-1', date_of_birth: '', member_type: 'Non-Athlete' })];
+    const plan = await planRosterImport('org-1', rows);
+
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
+
+    expect(result.counts).toEqual({ create: 0, skip_exists: 1, reject: 0 });
+  });
+
+  it('never writes a club_members row for a legacy athlete-only file', async () => {
+    const rows = [row(), row({ athlete_id: 'ath-2', full_name: 'Another' })];
+    const plan = await planRosterImport('org-1', rows);
+
+    await applyRosterImport('org-1', rows, plan, 'admin-1');
+
+    expect(mockInsertClubMember).not.toHaveBeenCalled();
+  });
 });
 
 // applyRosterImport batches every `create` row into one insert instead of
@@ -235,6 +429,16 @@ describe('applyRosterImport', () => {
     gym_status: '',
     emergency_contact_note: '',
     coach_account_id: '',
+    // Blank member_type/address fields, matching a legacy roster that
+    // predates the club_members columns entirely -- every row here is
+    // batch-eligible (a plain athlete, per resolveMemberType's own
+    // documented blank-means-athlete rule), which is what this whole
+    // describe block exists to exercise.
+    member_type: '',
+    address_line1: '',
+    city: '',
+    state: '',
+    postal_code: '',
     ...over,
   });
 
@@ -251,7 +455,7 @@ describe('applyRosterImport', () => {
     const rows = [row({ athlete_id: '' })];
     const plan = { rows: [planned({ outcome: 'reject', reason: 'No athlete id.' })], counts: { create: 0, skip_exists: 0, reject: 1 } };
 
-    const result = await applyRosterImport('org-1', rows, plan);
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
 
     expect(result.counts).toEqual({ create: 0, skip_exists: 0, reject: 1 });
     expect(mockQuery).not.toHaveBeenCalled();
@@ -263,7 +467,7 @@ describe('applyRosterImport', () => {
     const rows = [row()];
     const plan = { rows: [planned()], counts: { create: 1, skip_exists: 0, reject: 0 } };
 
-    const result = await applyRosterImport('org-1', rows, plan);
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
 
     expect(result.rows[0]).toMatchObject({ outcome: 'create', reason: '' });
     expect(mockInsertIfAbsent).toHaveBeenCalledTimes(1);
@@ -282,7 +486,7 @@ describe('applyRosterImport', () => {
       counts: { create: 3, skip_exists: 0, reject: 0 },
     };
 
-    const result = await applyRosterImport('org-1', rows, plan);
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
 
     expect(mockQuery).toHaveBeenCalledTimes(1);
     expect(mockInsertIfAbsent).not.toHaveBeenCalled();
@@ -307,7 +511,7 @@ describe('applyRosterImport', () => {
       counts: { create: 3, skip_exists: 0, reject: 0 },
     };
 
-    const result = await applyRosterImport('org-1', rows, plan);
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
 
     expect(result.counts).toEqual({ create: 2, skip_exists: 1, reject: 0 });
     const raced = result.rows.find((r) => r.athlete_id === 'ath-2');
@@ -331,7 +535,7 @@ describe('applyRosterImport', () => {
       counts: { create: 3, skip_exists: 0, reject: 0 },
     };
 
-    const result = await applyRosterImport('org-1', rows, plan);
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
 
     // The failed batch is the ONE query call; recovery is per-row from there.
     expect(mockQuery).toHaveBeenCalledTimes(1);
@@ -363,7 +567,7 @@ describe('applyRosterImport', () => {
       counts: { create: 2, skip_exists: 0, reject: 2 },
     };
 
-    const result = await applyRosterImport('org-1', rows, plan);
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
 
     expect(result.rows.map((r) => r.line)).toEqual([1, 2, 3, 4]);
     expect(result.rows.map((r) => r.outcome)).toEqual(['reject', 'create', 'reject', 'create']);

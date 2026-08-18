@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, committed: false, ...plan });
     }
 
-    const result = await applyRosterImport(principal.organizationId, parsed.rows, plan);
+    const result = await applyRosterImport(principal.organizationId, parsed.rows, plan, principal.accountId);
 
     // Audited as one event naming counts and the ids created, not one event per
     // athlete: forty rows would otherwise bury every other event of that
