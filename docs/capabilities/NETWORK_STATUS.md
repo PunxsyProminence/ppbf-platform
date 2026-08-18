@@ -5,6 +5,20 @@ Written for an agent picking up work who needs to know what is already done,
 already in review, or deliberately parked — before spending an afternoon on
 something that merged this morning.
 
+## LIVE, 2026-08-18 ~20:47 UTC — #415→#418→#419→#420 stack rebased and verified; #415 already merged by the other session
+
+**#415 merged.** Confirmed via `pull_request_read`: `merged: true, merged_by: PunxsyProminence` — the other concurrent session merged it before this one could, exactly the race this file has been tracking all day. No action needed on #415 itself; the reset to `bc1e6967` and the rescue branch (`origin/rescue/415-stray-commits`) both did their job.
+
+**#418, #419, #420 are all rebased onto current `main` (via #415), fully verified, pushed, and marked ready.** Sequential rebase, same discipline as #410→#423 earlier in this file:
+
+- **#418** (`claude/ppbf-platform-club-members`, head `79003de2`) — real architectural reconciliation in `rosterImport.ts` against an already-merged perf PR's batched-INSERT restructuring (not a mechanical rebase — see the PR body for the split-routing design). Full suite 517/6476, both features' own tests together 36/36, `clubMembers.pg.test.ts` 6/6, migration-coverage guards 3/127. Base retargeted to `main`.
+- **#419** (`claude/ppbf-platform-film-study-video`, head `6e687013`) — a background agent found the PR body's "5 commits" claim was stale; the real branch carried a 6th (`9213fdaa`, requiring the reviewer to have watched before releasing a minor's footage — confirmed as the legitimate coach-side half of already-merged #421, which had explicitly deferred it here). No architectural conflicts despite real overlap risk with merged #465/#470. Full suite 517/6512, 6 `.pg.test.ts` files 90/90, migration-coverage guards 3/130. PR body rewritten, base retargeted to `main`.
+- **#420** (`claude/ppbf-platform-ffmpeg-barrels`, head `b8091a62`) — a second background agent verified the PR body's "1 commit" claim was accurate this time (unlike #419), rebased cleanly onto #419's new tip with zero conflicts (narrow 4-file diff, no overlap with anything else in the stack). Full suite 517/6522, targeted tests 33/33, migration-coverage guards 3/130. Stays based on `claude/ppbf-platform-film-study-video` (not `main`) since #419 hasn't merged yet — retarget after #419 merges.
+
+**New gotcha found and fixed, worth knowing if a PR you rebased seems to hang with no CI:** retargeting a PR's base via the GitHub API (`update_pull_request`) fires an `edited` event, not `synchronize` — and `ci.yml`'s `on: pull_request: branches: [main]` only listens to the *default* types (opened/synchronize/reopened), not `edited`. So #418 and #419 sat "ready for review" with real green-locally content and **zero check runs** against their head SHA (confirmed via `get_status`/`get_check_runs` showing `total_count: 0`), because the base-retarget-after-#415-merged was the only event that had fired. Fixed by pushing a trivial commit to each (an empty commit for #418; a `commit-tree`-built empty-diff commit for #419, done without needing its worktree) to force a real `synchronize`. Both now show `validate` genuinely `in_progress`. If you retarget a PR's base and it doesn't seem to pick up CI, check `get_check_runs` before assuming it's fine — a "ready" PR with a stale base can look done and never have been tested against its current head at all.
+
+**Still pending as of this note:** waiting on `validate` to go green on #418 and #419 (just started), then merge in order #418 → #419 → #420, re-checking `merged`/`mergeable_state` fresh immediately before each merge attempt per the standing serial-merge discipline — the other session has independently merged #421/#416/#467/#464/#415/#456 during this same window, so do not assume any of these three are still unmerged without checking first.
+
 ## LIVE, 2026-08-18 ~16:38 UTC — two sessions are both merging right now
 
 **If you are reading this in the next hour or so: STOP and check `gh pr list`
