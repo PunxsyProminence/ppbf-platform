@@ -528,11 +528,18 @@ export async function getShadowResearchProjection(
     .map((event): ShadowResearchProjectionItem | null => {
       const payload = (event.payload ?? {}) as Record<string, unknown>;
       const eventName = event.event_name.toUpperCase();
+      // 'GAP' catches SHADOW_LIBRARY_CLAIM_GAP_DETECTED (the Library Q&A
+      // chat's auto-logged knowledge gap) and SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED --
+      // neither contains INTAKE/EVIDENCE/RESEARCH/UPLOAD, so both silently
+      // fell out of this panel despite each one opening a research
+      // requirement that's already visible in Operational Research
+      // Requirements below, on this same page.
       const isResearchLike =
         eventName.includes('INTAKE')
         || eventName.includes('EVIDENCE')
         || eventName.includes('RESEARCH')
-        || eventName.includes('UPLOAD');
+        || eventName.includes('UPLOAD')
+        || eventName.includes('GAP');
 
       if (!isResearchLike) {
         return null;

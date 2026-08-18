@@ -9,7 +9,7 @@
 // while requests are still in flight, or offer a guardian a way to log a
 // completion (that is the athlete's or a coach's act).
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import ParentProgressionVisibilityPage from './page';
@@ -129,6 +129,128 @@ test("the child's real gap, drill, and verified work render read-only", async ()
 
   // Read-only: no completion-logging affordance exists for a guardian.
   expect(screen.queryByRole('button', { name: /log/i })).toBeNull();
+});
+
+// REQUEST ORDERING. Two children, one tap between them, and two fetch chains
+// in flight at once. The header prints the name of the child currently
+// SELECTED; the gaps, drills and logged work come from whichever chain wrote
+// state last. Before the abort guard those could disagree, and a guardian
+// would read one child's development record under their sibling's name.
+describe('request ordering when the guardian switches child', () => {
+  const SECOND_GAP = {
+    gap_id: 'gap-2',
+    athlete_id: 'athlete-002',
+    gap_type: 'tactical',
+    gap_description: 'Guard drops after the third round.',
+    severity: 'medium',
+    status: 'identified',
+    created_at: '2026-08-02T12:00:00.000Z',
+  };
+
+  test("a slow answer for the child left behind never lands on the selected child's record", async () => {
+    // The first child's gaps read is held open until the assertion below has
+    // already seen the second child's record on screen -- that is precisely
+    // the out-of-order arrival this guard exists for.
+    let releaseFirstChild: () => void = () => {};
+    const firstChildAnswered = new Promise<void>((resolve) => {
+      releaseFirstChild = resolve;
+    });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return jsonOk({ items: [CHILD, SECOND_CHILD] });
+      if (url.includes('/progression/gaps')) {
+        if (url.includes('athlete_id=athlete-001')) {
+          await firstChildAnswered;
+          return jsonOk({ items: [GAP] });
+        }
+        return jsonOk({ items: [SECOND_GAP] });
+      }
+      return jsonOk({ items: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<ParentProgressionVisibilityPage />);
+
+    // Wait until the first child's read is genuinely in flight before switching.
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => String(call[0]).includes('athlete_id=athlete-001')),
+      ).toBe(true),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
+    await screen.findByText('Guard drops after the third round.');
+
+    // Now the first child's answer arrives -- last, and for the wrong child.
+    await act(async () => {
+      releaseFirstChild();
+    });
+
+    expect(screen.queryByText('Rear foot stays flat through the cross.')).toBeNull();
+    expect(screen.getByText('Guard drops after the third round.')).toBeTruthy();
+    expect(screen.getByText("Riley Doe's Progression")).toBeTruthy();
+  });
+
+  test('the superseded chain does not settle the page while the selected child is still loading', async () => {
+    // Both chains in flight, and the FIRST one answers first. Its finally
+    // block clearing progressionLoading is its own kind of wrong answer: this
+    // page renders content -- or "No progression gaps on record" -- the moment
+    // loading goes false, so a superseded chain settling the page presents the
+    // child left behind, or a claim that the selected child has nothing, as a
+    // finished read.
+    let releaseFirstChild: () => void = () => {};
+    let releaseSecondChild: () => void = () => {};
+    const firstChildAnswered = new Promise<void>((resolve) => {
+      releaseFirstChild = resolve;
+    });
+    const secondChildAnswered = new Promise<void>((resolve) => {
+      releaseSecondChild = resolve;
+    });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return jsonOk({ items: [CHILD, SECOND_CHILD] });
+      if (url.includes('/progression/gaps')) {
+        if (url.includes('athlete_id=athlete-002')) {
+          await secondChildAnswered;
+          return jsonOk({ items: [SECOND_GAP] });
+        }
+        await firstChildAnswered;
+        return jsonOk({ items: [GAP] });
+      }
+      return jsonOk({ items: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<ParentProgressionVisibilityPage />);
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => String(call[0]).includes('athlete_id=athlete-001')),
+      ).toBe(true),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => String(call[0]).includes('athlete_id=athlete-002')),
+      ).toBe(true),
+    );
+
+    await act(async () => {
+      releaseFirstChild();
+    });
+
+    expect(screen.queryByText('Rear foot stays flat through the cross.')).toBeNull();
+    expect(screen.queryByText('No progression gaps on record')).toBeNull();
+    expect(screen.getByText(/Loading progression data/)).toBeTruthy();
+
+    await act(async () => {
+      releaseSecondChild();
+    });
+
+    await screen.findByText('Guard drops after the third round.');
+  });
 });
 
 test('switching children refetches progression for the selected athlete only', async () => {

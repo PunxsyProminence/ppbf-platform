@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
+import {
+  BOARD_MINIMUM_COHORT_SIZE,
+  boardCountMetric,
+  safeCount,
+  type BoardCountMetric,
+} from './boardSummary';
 import { query, queryOne } from './db';
 
 // Wrestling league minimal skeleton (owner decision 2026-08-15: build both
@@ -275,4 +281,87 @@ export async function listLeagueRoster(organizationId: string, seasonId: string)
      order by a.full_name asc`,
     [organizationId, seasonId],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Board aggregate (capability-network audit, 2026-08-17): the board role has
+// no read access anywhere above -- LEAGUE_READ_ROLES is coach/
+// organization_admin/admin only, deliberately unchanged by this section. A
+// board member cannot list a season, an event, or a roster row, and never
+// will through this function. This is the board's ONE window into the
+// league: organization-wide counts, following boardSummary.ts's aggregate
+// pattern exactly (see ORGANIZATION_ROLE_MODEL.md's Board section).
+// ---------------------------------------------------------------------------
+
+export interface BoardWrestlingLeagueSummary {
+  scope: 'organization_aggregate';
+  minimumCohortSize: number;
+  generatedAt: string;
+  // Season status counts are an organizational scheduling fact -- not tied
+  // to any one athlete -- so they carry no cohort floor, unlike
+  // rosteredAthletes below.
+  seasonsByStatus: {
+    planned: number;
+    active: number;
+    completed: number;
+  };
+  // How many athletes are currently rostered onto a league season,
+  // k-anonymity-gated exactly like boardSummary.ts's activeAthletes: a
+  // cohort under BOARD_MINIMUM_COHORT_SIZE reports 'insufficient_data' and
+  // a null count rather than a small real number.
+  rosteredAthletes: BoardCountMetric;
+}
+
+interface BoardWrestlingLeagueSummaryRow {
+  seasons_planned: number;
+  seasons_active: number;
+  seasons_completed: number;
+  rostered_entry_count: number;
+  rostered_athlete_count: number;
+}
+
+/**
+ * Board's only window into the wrestling league. Never reads a season,
+ * event, or roster ROW -- only these organization-wide counts. Mirrors
+ * escalationLadder.ts's getBoardEscalationSummary and
+ * compliance.ts's getOrganizationViolationSummary(audience: 'board') exactly:
+ * every athlete-linked figure passes through boardCountMetric.
+ */
+export async function getBoardWrestlingLeagueSummary(
+  organizationId: string,
+): Promise<BoardWrestlingLeagueSummary> {
+  const row = await queryOne<BoardWrestlingLeagueSummaryRow>(
+    `select
+       (select count(*) from pilot.wrestling_league_seasons
+          where organization_id = $1 and status = 'planned')::int as seasons_planned,
+       (select count(*) from pilot.wrestling_league_seasons
+          where organization_id = $1 and status = 'active')::int as seasons_active,
+       (select count(*) from pilot.wrestling_league_seasons
+          where organization_id = $1 and status = 'completed')::int as seasons_completed,
+       (select count(*) from pilot.wrestling_league_roster_entries
+          where organization_id = $1 and status = 'active')::int as rostered_entry_count,
+       (select count(distinct athlete_id) from pilot.wrestling_league_roster_entries
+          where organization_id = $1 and status = 'active')::int as rostered_athlete_count`,
+    [organizationId],
+  );
+
+  const safe = row ?? {
+    seasons_planned: 0,
+    seasons_active: 0,
+    seasons_completed: 0,
+    rostered_entry_count: 0,
+    rostered_athlete_count: 0,
+  };
+
+  return {
+    scope: 'organization_aggregate',
+    minimumCohortSize: BOARD_MINIMUM_COHORT_SIZE,
+    generatedAt: new Date().toISOString(),
+    seasonsByStatus: {
+      planned: safeCount(safe.seasons_planned),
+      active: safeCount(safe.seasons_active),
+      completed: safeCount(safe.seasons_completed),
+    },
+    rosteredAthletes: boardCountMetric(safe.rostered_entry_count, safe.rostered_athlete_count),
+  };
 }

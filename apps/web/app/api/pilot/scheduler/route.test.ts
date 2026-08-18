@@ -144,12 +144,34 @@ describe('POST /api/pilot/scheduler register_class', () => {
 
   test('200 on a first registration', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
-    mockRegister.mockResolvedValueOnce({ outcome: 'registered' });
+    mockRegister.mockResolvedValueOnce({ outcome: 'registered', membershipFlags: [] });
 
     const res = await POST(registerRequest());
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toMatchObject({ ok: true, status: 'registered' });
+    await expect(res.json()).resolves.toMatchObject({ ok: true, status: 'registered', membership_flags: [] });
+  });
+
+  // Non-blocking membership flag (capability-network audit finding): a
+  // lapsed/ended membership never refuses the registration -- the response
+  // still comes back 200/registered -- but the coach/admin who registered
+  // this athlete needs to see it, so it rides along in the response body.
+  test('200 on registration still carries membership_flags when the athlete has a lapsed/ended membership', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockRegister.mockResolvedValueOnce({
+      outcome: 'registered',
+      membershipFlags: [{ membership_id: 'mem-1', program_name: 'Youth Boxing', status: 'lapsed' }],
+    });
+
+    const res = await POST(registerRequest());
+    const payload = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(payload).toMatchObject({
+      ok: true,
+      status: 'registered',
+      membership_flags: [{ membership_id: 'mem-1', program_name: 'Youth Boxing', status: 'lapsed' }],
+    });
   });
 
   // #82 STOP: the hold refusal carries the hold's own words -- the

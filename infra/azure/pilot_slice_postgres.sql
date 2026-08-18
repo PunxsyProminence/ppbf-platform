@@ -1032,6 +1032,11 @@ create table if not exists pilot.shadow_research_requirements (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   resolved_at timestamptz null,
+  -- Mirrors pilot.shadow_library_documents.subject_id: text, nullable, no
+  -- foreign key. See pilot_slice_postgres_research_requirement_subject_
+  -- migration.sql for the ALTER an existing database applies to gain this
+  -- column and for why it carries no FK.
+  subject_id text null,
   unique (organization_id, source_event_name, source_entity_type, source_entity_id)
 );
 
