@@ -2,7 +2,9 @@
 
 **Date:** 2026-08-17
 **Scope:** Entire application — every role tier from Omega (platform_owner) down to the public visitor. UX/UI completeness, navigation flow, capability status, frontend↔backend wiring, database/infrastructure layer, the SHADOW AI subsystem, needed research, and the inventory of forms/materials the organization needs.
-**Method:** Twelve parallel research passes (frontend/UX census, backend/API wiring, the 200+ module capability tracker, role/auth wiring per tier, forms & materials inventory, SHADOW AI status, database schema, CI/testing/deployment health, design-system completeness, a dedicated fabricated-data sweep, synthesis of four prior internal audits dated 2026-07-18 through 2026-08-07, and a sweep of the organization's Google Drive), each independently verified against current source rather than trusted at face value, plus direct spot-verification of the highest-stakes claims. **No code was changed.** This is a read-only audit.
+**Method:** Twelve parallel research passes (frontend/UX census, backend/API wiring, the 200+ module capability tracker, role/auth wiring per tier, forms & materials inventory, SHADOW AI status, database schema, CI/testing/deployment health, design-system completeness, a dedicated fabricated-data sweep, synthesis of four prior internal audits dated 2026-07-18 through 2026-08-07, and a sweep of the organization's Google Drive), each independently verified against current source rather than trusted at face value, plus direct spot-verification of the highest-stakes claims. **No code was changed** in producing the original report below; a small set of follow-up fixes were made afterward and are tracked in the addendum at the bottom of this document.
+
+> **Addendum, 2026-08-17 23:3x UTC — cross-referenced against the concurrent capability-network audit.** A separate, independently-run capability-network audit (8 agents, 34 capabilities mapped as a read/write graph, published as its own report) was underway in parallel with this one, on the same `origin/main`. Its findings substantially overlap with and extend this report's — see **§13 Addendum** at the end of this document for the reconciliation and the status of every fix made in response to either report.
 
 **How to read this document:** findings are marked with a severity tag — 🔴 **HIGH** (integrity/safety-relevant, fix soon), 🟡 **MEDIUM** (real defect, not urgent), 🔵 **LOW/INFO** (housekeeping, or a positive finding worth recording). Per this repo's own `MASTER_INDEX.md` doctrine, current source beats prose — every claim below was checked against live code, schema, or a directly-read document, not against memory of a past audit.
 
@@ -300,4 +302,39 @@ Several documents in the repo and Drive currently **overstate or misstate** the 
 
 ---
 
-*Prepared as a read-only audit; no application code was modified in producing this report. Findings are traceable to specific files/routes/tables cited throughout — ask for any section to be expanded with exact file:line references from the underlying research passes.*
+## 13. Addendum — reconciliation with the concurrent capability-network audit, and follow-up fix status
+
+A separate capability-network audit ran concurrently with this one (8 agents mapping 34 capabilities as a read/write graph, plus a cross-cluster pass and a verbatim-quote validation step; published as its own report, status pinned to `origin/main` at `04dd116b` and open PRs as of 2026-08-17 23:30 UTC). Rather than duplicate its content here, this section reconciles the two and records what this session actually fixed in response to both.
+
+### Not duplicated — already fixed, in review, or owned elsewhere
+
+Checked against `is:open`/recently-merged PRs before touching anything. The following findings from this report are already closed or actively in review by other sessions and were deliberately **not** re-fixed here:
+
+- Board-dashboard and macro-analytics fabricated data, the production resource-group name bug, and the magic-link origin bug — **PR #422** (green CI, clean, ready to merge — not merged by this session; merging another session's PR wasn't this session's call to make unilaterally).
+- Document-ingest reporting "configured" without checking real destinations — **PR #412** (has a merge conflict to resolve).
+- Nine other capability-network findings (Coach Intelligence missing safety-escalation/compliance-violation signals, video-scan-refusal auto-escalation, Film Study consent gate, compliance auto-escalation, competition/league withdrawal actions, research submission-review panel, volunteer-roster/login link, transfer-check-failed progression rule) — **PR #447**.
+- Twelve additional findings the capability-network report lists as closed since publication (film-study consent, video-scan escalation, competition-loss progression linkage, transfer-failure gaps, performance-analytics role gate, research-source UI, competition/league withdrawal, session-run link, volunteer/login link, cross-org privilege flag, shadow-job authorization N+1, incident double-filing) — **PRs #438, #439, #441, #442, #443, #444, #445, #446, #448, #449, #431, #433**, all merged.
+- Eight more in the capability-network audit's own "in review" list (competition-entry consent gates #452, Morning Read safety-register blind spot #450, Film Study rejected-proposal citability #459, cross-athlete progression race #460, portrait-review-without-image #461, revenue-center fabrication #462, the gate-inventory documentation set #463, and an unopened branch for lapsed-membership flagging).
+
+### Fixed by this session, in this PR
+
+- The inert `pilot.compliance_records` entry in `privacyTiers.ts`'s public-surface denylist (real fix — see the "Fixed" commit in this PR).
+- Four stale documentation files corrected to match current source (`FRONTEND_STYLE_CONTRACT.md`, `DATA_RETENTION.md`, `MULTI_ORG_MIGRATION_RUNBOOK.md`, `PAGE_MAP.md`).
+- Three additional bounded fixes picked up from the capability-network audit's "found since" and "still open — unclaimed" sections, none claimed by any other open PR at the time of picking them up:
+  - The stale `Source` column on `/admin/escalations` rendering blank for the newest safety-escalation source types.
+  - A login-route test named for verifying durable-store-outage tolerance that never actually simulated an outage.
+  - A misleading invariant claim in `coachIntelligence.ts` — two attendance rules documented as "never drift apart" that in fact used different comparison operators and disagreed at the exact-half boundary.
+
+  (Status of each — fixed, or found to need a different call than a code fix — is recorded in this PR's own description and commit history, since agent work on these was still in flight when this addendum was written. Check the PR for final disposition.)
+
+### Escalated, not fixed — needs an owner decision
+
+The capability-network audit surfaced one finding more urgent than anything in the original report's own punch list, and it is **not** fixed here on purpose: **guardian links accept an unvalidated `parent_id`.** The athlete side of a guardian-link write is access-checked (`assertActorCanAccessAthlete`); the parent/guardian side is not checked at all. A coach with legitimate standing on one athlete in an organization can attach *any* guardian account in that same organization to that athlete, and the attached guardian's account then reads the child's training holds, messages, and safety surfaces. Cross-organization attachment is blocked by existing checks; cross-family attachment within one organization is not. The correct fix narrows a role gate coaches use routinely, which is exactly the class of change this repo's own contributor guardrails reserve for an explicit owner decision rather than an autonomous fix — so it is reported here, not patched.
+
+### What this reconciliation adds beyond either report alone
+
+The capability-network audit's most important methodological finding is worth repeating here rather than only in its own document: **parallel delivery produces defects neither audit, nor any single PR's CI, can see** — an exhaustive `Record<Union, …>` type broke `main` three times in one day because a union grew on one branch while its exhaustive map grew on another, invisible to per-PR review and passing CI on each branch individually; two auto-escalation features merged the same day and would have double-filed one incident into a coach's digest under two different vocabularies had the collision not been caught before merge. Both are structural risks (a missing "require branches up to date before merging" repository setting, and no habit yet of asking "who else reads this register" before adding a writer to it), not code defects this report's per-file findings would have surfaced on their own. Worth carrying into whatever process governs future parallel-agent work on this repository.
+
+---
+
+*Prepared as a read-only audit; no application code was modified in producing the original report above. A small number of follow-up fixes made afterward, and one escalated-not-fixed finding, are recorded in this addendum. Findings are traceable to specific files/routes/tables cited throughout — ask for any section to be expanded with exact file:line references from the underlying research passes.*
