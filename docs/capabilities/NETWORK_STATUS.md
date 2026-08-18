@@ -58,10 +58,17 @@ is confirmed redundant — already shipped as merged PR #450. **Before any
 reset, all three have been saved to `origin/rescue/415-stray-commits`**
 (pushed, points at the branch's current tip `8412311f`) so nothing is lost
 regardless of what happens to `claude/ppbf-platform-orientation-qg4j3b`
-next. #415 can now be safely force-reset to `bc1e6967` whenever someone
-does it — the owner has approved that action. #415, and the #418→#419→#420
-stack on top of it, remain on hold only because two sessions are active on
-this repo at once; not for lack of a safe path forward anymore.
+next. **#415 has been reset and is now in flight.** Force-reset to
+`bc1e6967`, merged with current `main` (two purely-additive conflicts in
+`apply-migrations.yml`/`package.json`, same union-both-sides pattern as
+every other conflict in this batch), full suite green (516/6457), pushed,
+marked ready for review, CI running. Will merge once green, then #418 gets
+rebased with `git rebase --onto main
+bc1e6967132e8e940cd37e0b3ffec10920c050f8 claude/ppbf-platform-club-members`
+(only #418's own commit(s) replay onto the new main), then #419 onto
+#418's new tip, then #420 onto #419's new tip — same sequential pattern as
+#410→#423 earlier in this file. If you pick this up mid-stack, check
+`gh pr list` for current state before touching any of #415/#418/#419/#420.
 
 **Status as of `origin/main` at `3f961545`, 2026-08-18 09:18 UTC.** This file
 carries the commit it was written against because it will go stale. Check
