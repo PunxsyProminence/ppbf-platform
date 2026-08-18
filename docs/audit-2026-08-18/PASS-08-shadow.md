@@ -126,7 +126,7 @@ what makes a source-only reading conclude nothing drives it.
 
 **5. The production workflow records when and why it was turned on.**
 
-`.github/workflows/deploy-production.yml:332-344`:
+`.github/workflows/deploy-production.yml:332-338`:
 
 ```
       # PPBF_SHADOW_WORKER_ENABLED is stated explicitly (set-env-vars cannot
@@ -136,7 +136,6 @@ what makes a source-only reading conclude nothing drives it.
       # SHA 7cfde83): gate step 14 enqueued a background Heavy Bag, the
       # instrumentation worker drained job 324e7a76, and the answer read back
       # through the sessions API as message 1497ba24 with matching citations
-      # and evidence tier.
 ```
 
 **6. The deployment shape supports a long-lived loop.** `apps/web/next.config.ts`
@@ -499,11 +498,11 @@ not CRITICAL.** Three mitigations are real:
 1. **The design intends a coach to set it.** The gate's own remediation text
    says so — `apps/web/src/server/pilot/contactClearanceGate.ts:14-16`:
 
-   ```
-   const DEFAULT_LESSON =
-     "Ask your coach or gym admin to set an explicit 'cleared' medical administrative status "
-     + 'on file for this athlete before contact continues.';
-   ```
+```
+const DEFAULT_LESSON =
+  "Ask your coach or gym admin to set an explicit 'cleared' medical administrative status "
+  + 'on file for this athlete before contact continues.';
+```
 
    The record is named *administrative*, not clinical. A coach recording "the
    office has a clearance on file" is a defensible design, and I am not going to
@@ -848,7 +847,7 @@ widening the role list later does not silently open it.
 `apps/web/src/server/pilot/shadowArchival.ts:114`:
 
 ```
-           0 AS avg_effectiveness_score, -- would come from recommendation tracking
+         0 AS avg_effectiveness_score, -- would come from recommendation tracking
 ```
 
 A repo-wide grep for `shadow_monthly_stats` outside tests returns only two
@@ -918,7 +917,7 @@ B, and the shadow event at `:487` will carry the case id, not the mismatch.
 
 ---
 
-### [LOW] M-5 — The "New Patterns" tile counts library sources, not patterns
+### [LOW] L-6 — The "New Patterns" tile counts library sources, not patterns
 
 `apps/web/app/admin/shadow/page.tsx:489`:
 
@@ -1035,8 +1034,8 @@ size deserves its working parts named.
 - **The metrics module already fixed one label-versus-population defect and
   documented it.** `shadowMetrics.ts:26-30` records that `recommendationsMade`
   was renamed to `reviewedOutcomes` precisely because the count was review
-  throughput rendered as output volume. That is the standard M-5 below falls
-  short of.
+  throughput rendered as output volume. That is the standard L-6 falls short
+  of.
 - **Unavailable metrics explain themselves rather than rendering an em dash.**
   `shadowMetrics.ts:177-192` populates `unavailableReasons` with codes including
   `RATING_INPUT_NOT_BUILT`, with a comment explaining that no shipped client

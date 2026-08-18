@@ -99,7 +99,7 @@ see Pass 3.
 | # | Egress path | What leaves | To whom | Authorised by | Consent checked when | Audited? |
 |---|---|---|---|---|---|---|
 | 1 | **Video content screen** — `videoScan.ts:143` `analyzeFramesWithVision` via `videoScanSweep.ts` | up to **12 JPEG frames** of a minor's uploaded video, base64-inlined in a chat-completions body | Azure OpenAI vision deployment (`AZURE_AI_ENDPOINT`, Microsoft) | **nobody** — a background sweep on the worker tick; no principal exists | **never** | verdict only (`scan_detail`, `video.scan_settled` event). No record that frames were transmitted, no actor |
-| 2 | **Film Study** — `shadowJobProcessor.ts:900` `analyzeFramesWithVision` | up to **90 JPEG frames** of a minor, plus the athlete UUID in the job payload | same vision deployment | job-time re-validation of the enqueuing coach (account, org, role, athlete access) | **at enqueue only** (`shadow/video-analysis/route.ts:106`); never re-checked at execution | job row + `shadow_film_study_proposals`; no egress-specific audit event |
+| 2 | **Film Study** — `shadowJobProcessor.ts:901` `analyzeFramesWithVision` | up to **90 JPEG frames** of a minor, plus the athlete UUID in the job payload | same vision deployment | job-time re-validation of the enqueuing coach (account, org, role, athlete access) | **at enqueue only** (`shadow/video-analysis/route.ts:106`); never re-checked at execution | job row + `shadow_film_study_proposals`; no egress-specific audit event |
 | 3 | **SHADOW chat (sync)** — `shadow/chat/route.ts` → Azure chat completions | the caller's free-text message, up to 10 prior turns, the athlete UUID, and **verbatim recorded near-miss incident text** for that child | same Azure OpenAI endpoint | `requirePrincipal` + `assertActorCanAccessAthlete` | **never** | yes — `pilot.shadow_chat_audit` (org, user, role, athlete_id, topic, state; message body redacted) |
 | 4 | **SHADOW chat (background)** — `shadowJobProcessor.ts:382` `callAI` | the same, sliced to 12,000 chars of authorized context | same | job-time re-validation | **never** | yes, same table, `<state:queued>` |
 | 5 | **Heavy Bag (sync)** — `shadowHeavyBag.ts:109` | same as #3, routed to a per-request deployment | same | as #3 | **never** | as #3 |
@@ -194,7 +194,7 @@ and `analyzeFramesWithVision` puts each frame on the wire as an image data URI:
 > `    ...options.frames.map((frame) => ({`
 > `      type: 'image_url',`
 > `      image_url: { url: \`data:image/jpeg;base64,${frame.toString('base64')}\` },`
-> — `apps/web/src/server/pilot/shadowFilmStudy.ts:202-205`
+> — `apps/web/src/server/pilot/shadowFilmStudy.ts:206-208`
 
 A repo-wide grep for `guardianConsent|GuardianMediaConsent|consent` across
 `videoScanSweep.ts`, `videoScan.ts`, `videoScanPolicy.ts`, `videoSessions.ts`
@@ -242,7 +242,7 @@ redacted here) and the worker started by:
 3. *Is it audited after all?* Partly, and I decline to claim otherwise. The
    sweep writes `gates_enabled`/`gates_passed`/`content_verdict` into
    `scan_detail` and emits a `video.scan_settled` event
-   (`videoScanSweep.ts`, settle block). So there *is* a durable record that the
+   (`videoScanSweep.ts:131-146`, the `settleVideoSessionScan` detail block). So there *is* a durable record that the
    content gate ran. What there is not is any record framed as a disclosure —
    no actor, no recipient, no "N frames of athlete X were transmitted to
    deployment Y at time T". The finding rests on the **absent consent check**,
@@ -260,7 +260,7 @@ redacted here) and the worker started by:
 has actively withheld media consent, has their child's face sent to a
 third-party inference endpoint within roughly thirty seconds of a coach pressing
 Upload. The frames are deleted from the container afterwards
-(`videoScan.ts:158`, a `finally` block — verified) but they left the building
+(`videoScan.ts:157-159`, a `finally` block — verified) but they left the building
 first, and the guardian's consent decision — granted, withheld, or never asked —
 had no bearing on it whatsoever.
 
@@ -317,7 +317,7 @@ between attempt one and attempt two changes nothing.
 
 **Refutation attempted.** I looked for the consent re-check the publish path
 already has — `assertGuardianMediaConsentWithClient` with `for share`, which
-exists precisely to serialise against a withdrawal (`guardianConsent.ts:150-183`).
+exists precisely to serialise against a withdrawal (`guardianConsent.ts:154-183`).
 It is called from `publications/publish` and `admin/video-compliance` and from
 nowhere on the async path: grepping `assertGuardianMediaConsent` across
 `shadowJobProcessor.ts`, `shadowJobQueue.ts`, `shadowJobWorker.ts` and
@@ -431,7 +431,7 @@ Both sentences are false on current `main`. The unavailable set is empty:
 > — `apps/web/src/server/pilot/shadowJobProcessor.ts:80`
 
 and the module powers three things, not one: the diagnostic (synthetic frames
-only), the Film Study executor (`shadowJobProcessor.ts:900`), and the content
+only), the Film Study executor (`shadowJobProcessor.ts:901`), and the content
 screen that runs on every upload (`videoScan.ts:143`). The third is not
 mentioned in the header at all.
 
@@ -527,7 +527,7 @@ into the same handler and pins the subject to the caller's own athlete id:
 > — `apps/web/app/api/pilot/athlete/chat/route.ts:12`
 
 > `        ...(principal.role === 'athlete' ? { athleteId: principal.athleteId } : {}),`
-> — `apps/web/app/api/pilot/athlete/chat/route.ts:24`
+> — `apps/web/app/api/pilot/athlete/chat/route.ts:23`
 
 So a child asking SHADOW a training question causes their own recorded near-miss
 history — the platform's record of times they were nearly hurt — to be
@@ -545,11 +545,11 @@ I record them rather than omitting them:
    A child's concussion question is answered locally and is not sent anywhere.
 2. The turn **is** audited — `pilot.shadow_chat_audit` records org, user, role,
    `athlete_id`, topic and state, with the message body deliberately replaced by
-   `` `<redacted:${effectiveTopic}>` `` (`shadow/chat/route.ts:1226-1233`). So the
+   `` `<redacted:${effectiveTopic}>` `` (`shadow/chat/route.ts:1231-1232`). So the
    *fact* of an athlete-scoped external call is recoverable. That is why this is
    MEDIUM, not CRITICAL.
 3. `assertActorCanAccessAthlete` runs before the context is built
-   (`shadowChat.ts:384-395`), so the near-miss text belongs to a child the caller
+   (`shadowChat.ts:388-399`), so the near-miss text belongs to a child the caller
    may already read.
 
 What survives all three: no consent state is consulted, and no guardian-facing
@@ -626,8 +626,8 @@ The wall payload carries athlete display names, gated per athlete by
 
 **Refutation attempted, and the wall came out clean.** I checked whether the wall
 is actually an exposure and it is not: the org id is never taken from the caller
-(`wall/route.ts:49`), `athlete_id` never appears, names default to initials, the
-read is IP-budgeted (`wall/route.ts:38`), it carries `Cache-Control: no-store`,
+(`wall/route.ts:48`), `athlete_id` never appears, names default to initials, the
+read is IP-budgeted (`wall/route.ts:39`), it carries `Cache-Control: no-store`,
 and its catch deliberately avoids `jsonError` so no diagnostic reaches a screen
 in a public room. The defect is the *claim*, not the route.
 
@@ -660,7 +660,7 @@ platform that gets a great deal of this right.
   `getPilotProfileContainerName` appears at no SAS call site.
 - **The roster CSV export is the best-governed egress in the platform.**
   Organization admin only with `platform_owner` deliberately excluded
-  (`export/roster/route.ts:127-132`); a Microsoft-authenticated session required;
+  (`export/roster/route.ts:128-132`); a Microsoft-authenticated session required;
   org id taken from the session and never the query; the column set is a
   separate allowlist read by key rather than by iterating the row, so a widened
   query cannot widen the file (`csv.ts:1-12`); formula-injection guarded; and the
@@ -695,21 +695,21 @@ platform that gets a great deal of this right.
   crosses this boundary in either direction.
 - **`jsonError` cannot leak internals.** The 500 branch replaces the message
   entirely and logs only a sanitized class name and a pattern-validated code
-  (`http.ts:154-171`).
+  (`http.ts:153-171`).
 - **High-risk chat classifications never reach the model** (`chat/route.ts:355`),
   and the AI provider's response body is never read, persisted, returned or
   logged on failure — stated and implemented at both call sites
-  (`shadowFilmStudy.ts:231`, `shadowJobProcessor.ts:409`).
+  (`shadowFilmStudy.ts:234`, `shadowJobProcessor.ts:406`).
 - **Extracted video frames never persist.** Both the Film Study executor
-  (`shadowJobProcessor.ts:948-952`) and the content screen
+  (`shadowJobProcessor.ts:949-953`) and the content screen
   (`videoScan.ts:157-159`) remove the temp directory in a `finally`, on every
   path out.
 - **The Film Study diagnostic uses synthesised footage only** — `testsrc2` via
   lavfi, "nothing is read from disk or network"
-  (`shadowFilmStudy.ts:65-67`) — so the measurement path sends no real child's
+  (`shadowFilmStudy.ts:67-69`) — so the measurement path sends no real child's
   frames anywhere.
 - **`/api/pilot/admin/athlete-pin-directory` returns `has_pin` as a boolean,
-  never a PIN or a hash** (`route.ts:35`).
+  never a PIN or a hash** (`athlete-pin-directory/route.ts:37`).
 - **Logging discipline is, with the two exceptions in E-07, excellent**: 68 of
   70 call sites log a fixed event name plus a validated code or class. No SAS
   URL, no request body, no provider response body and no athlete name appears in
@@ -733,7 +733,7 @@ Stated as holes rather than filled in, and each paired with what would settle it
 2. **The actual environment-variable set on the deployed apps.** I read the two
    deploy workflows, which are what *writes* the variables — but `az containerapp
    update --set-env-vars` cannot unset, and the workflow comments say so
-   explicitly (`deploy-production.yml:305-307`). A stale `DATAVERSE_*`,
+   explicitly (`deploy-production.yml:305-306`). A stale `DATAVERSE_*`,
    `GRAPH_*` or `GOOGLE_SERVICE_ACCOUNT_JSON` set by hand at any point in the
    past would still be live and would make E-03 active rather than latent.
    *Settled by*: `az containerapp show --query properties.template.containers[].env`

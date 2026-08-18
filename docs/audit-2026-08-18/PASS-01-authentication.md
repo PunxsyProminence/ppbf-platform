@@ -372,7 +372,7 @@ permanently. What one correct header grants:
 4. *Is it ever called by the deploy?* No. I grepped both workflows; the only
    `bootstrap` hits are the env-var assignments. Nothing invokes the endpoint.
    So it is armed for an operation that is never performed.
-5. *Did a prior pass report this?* `PASS-02-authorization.md:988` records that
+5. *Did a prior pass report this?* `PASS-02-authorization.md:988-989` records that
    both routes "require `PPBF_PILOT_BOOTSTRAP_KEY` behind a shared durable
    per-IP rate-limit bucket". It does not analyse what the key grants, and it
    does not note that the route is permanently live in production. This finding
@@ -394,7 +394,7 @@ patch to apply from inside an audit.**
 
 The helper's contract, as written:
 
-> `apps/web/src/server/pilot/http.ts:45-53` —
+> `apps/web/src/server/pilot/http.ts:45-51` —
 > ```
 > // Microsoft-authenticated principal requirement for privileged operations.
 > // PIN/local sessions are explicitly restricted to athlete self-service and
@@ -435,7 +435,7 @@ access. The `auth_provider = 'magic_link'` value exists in the vocabulary
 (`authProviders.ts:30`) but nothing in the application ever writes it.
 
 **Refutation result: no exploitable route today.** The finding is that the
-guarantee the helper's name, its comment, and `PASS-02-authorization.md:73-74`
+guarantee the helper's name, its comment, and `PASS-02-authorization.md:73-75`
 ("which is what keeps a PIN session out of user-management routes") all state is
 narrower than it reads: it excludes `ppbf_local` sessions, and nothing more. The
 next route that reaches for it expecting "this person completed Entra sign-in
