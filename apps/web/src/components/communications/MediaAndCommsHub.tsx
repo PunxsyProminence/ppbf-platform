@@ -36,6 +36,12 @@ export default function MediaAndCommsHub() {
       <header className="border-b border-zinc-800 pb-3">
         <h1 className="text-sm uppercase tracking-[0.2em] text-slate-200">Media, Film, and Communications Hub</h1>
         <p className="mt-2 text-xs text-zinc-500">Layers 16, 24, 30 and Directory Ingestors</p>
+        <p className="mt-3"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+        <p className="mt-2 text-xs text-zinc-400">
+          Every contact, media item, and release status below is fabricated sample data. Nothing on
+          this page reads or writes real records — do not act on anything it shows, and never treat
+          an entry here as consent to publish a minor&apos;s image.
+        </p>
       </header>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">

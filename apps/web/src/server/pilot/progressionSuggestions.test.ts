@@ -359,9 +359,23 @@ describe('buildGapJustifications', () => {
     expect(result).toHaveLength(0);
   });
 
+  // This list is maintained BY HAND on purpose, and it is the second half of
+  // the speed bump RULE_JUSTIFICATION_FIELDS's Record type creates: adding a
+  // rule to SuggestionRule breaks the compiler there and breaks this
+  // assertion here, so nobody can extend the rule vocabulary without making
+  // an explicit decision about what an athlete or parent is shown as that
+  // rule's justification. transfer_check_failed maps to [] because its
+  // evidence comes from pilot.training_attempts, not the Performance
+  // Analytics rollup -- see the module comment.
   test('the field allowlist is exhaustive over the rule vocabulary and never spans rules', () => {
     expect(Object.keys(RULE_JUSTIFICATION_FIELDS).sort()).toEqual(
-      ['assignments_stalled', 'readiness_falling', 'training_days_dropping'].sort(),
+      [
+        'assignments_stalled',
+        'competition_loss_unresolved',
+        'readiness_falling',
+        'training_days_dropping',
+        'transfer_check_failed',
+      ].sort(),
     );
     const readinessFields = new Set(RULE_JUSTIFICATION_FIELDS.readiness_falling);
     const trainingFields = new Set(RULE_JUSTIFICATION_FIELDS.training_days_dropping);

@@ -52,7 +52,11 @@ interface BoardSummaryRow {
   approved_review_count: number;
 }
 
-function safeCount(value: unknown): number {
+// Exported so any other board aggregate validates its plain (non-gated)
+// counts the same paranoid way -- e.g. an organizational scheduling fact
+// like a season or competition count, which is never athlete-linked and so
+// never passes through boardCountMetric's k-anonymity gate at all.
+export function safeCount(value: unknown): number {
   const count = typeof value === 'number' ? value : Number(value);
   if (!Number.isSafeInteger(count) || count < 0) {
     throw new Error('BOARD_SUMMARY_INVALID_AGGREGATE');

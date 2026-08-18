@@ -181,6 +181,148 @@ describe('active training hold visibility (#5)', () => {
   });
 });
 
+// REQUEST ORDERING WHEN THE COACH CHANGES ATHLETE.
+//
+// Every read on this page is keyed to the selected athlete, and none of them
+// were cancelled when that selection changed: two athletes' reads ran at once
+// and whichever answered last wrote the screen. The hold banner is the one
+// that hurts most -- an athlete with no hold answering after an athlete who
+// has one leaves a coach assigning contact work to a child their own gym has
+// paused.
+describe('request ordering when the coach changes athlete', () => {
+  const CONTACT_HOLD = {
+    scope: 'contact_only',
+    reason_category: 'medical',
+    athlete_explanation: 'Waiting on a doctor note before contact resumes.',
+  };
+
+  const SECOND_GAP = {
+    ...GAP,
+    gap_id: 'gap-2',
+    athlete_id: 'athlete-002',
+    gap_description: 'Guard drops after the third round.',
+  };
+
+  async function selectAthlete(id: string) {
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: id } });
+    });
+  }
+
+  test("a slow no-hold answer for the previous athlete cannot clear the selected athlete's hold banner", async () => {
+    let releaseFirstHoldRead: () => void = () => {};
+    const firstHoldAnswered = new Promise<void>((resolve) => {
+      releaseFirstHoldRead = resolve;
+    });
+
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/training-holds')) {
+        if (url.includes('athlete_id=athlete-001')) {
+          await firstHoldAnswered;
+          return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        }
+        return { ok: true, json: async () => ({ ok: true, holds: [CONTACT_HOLD] }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    await selectAthlete('athlete-001');
+    await selectAthlete('athlete-002');
+
+    await screen.findByText('Active Training Hold');
+
+    // The first athlete's "no active hold" finally arrives, last.
+    await act(async () => {
+      releaseFirstHoldRead();
+    });
+
+    expect(screen.getByText('Active Training Hold')).toBeTruthy();
+    expect(screen.getByText(/CONTACT WORK is currently paused/)).toBeTruthy();
+  });
+
+  test("the previous athlete's hold banner does not stand over the newly selected athlete", async () => {
+    // The mirror image, and the reason the hold is stored with the athlete it
+    // was read for: a banner left up through a switch tells a coach that THIS
+    // athlete is paused when the claim was about somebody else.
+    let releaseSecondHoldRead: () => void = () => {};
+    const secondHoldAnswered = new Promise<void>((resolve) => {
+      releaseSecondHoldRead = resolve;
+    });
+
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/training-holds')) {
+        if (url.includes('athlete_id=athlete-002')) {
+          await secondHoldAnswered;
+          return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        }
+        return { ok: true, json: async () => ({ ok: true, holds: [CONTACT_HOLD] }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    await selectAthlete('athlete-001');
+    await screen.findByText('Active Training Hold');
+
+    await selectAthlete('athlete-002');
+
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+
+    await act(async () => {
+      releaseSecondHoldRead();
+    });
+
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
+
+  test("a slow gaps answer for the previous athlete never lands under the selected athlete", async () => {
+    let releaseFirstGapsRead: () => void = () => {};
+    const firstGapsAnswered = new Promise<void>((resolve) => {
+      releaseFirstGapsRead = resolve;
+    });
+
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/progression/gaps')) {
+        if (url.includes('athlete_id=athlete-001')) {
+          await firstGapsAnswered;
+          return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+        }
+        return { ok: true, json: async () => ({ items: [SECOND_GAP] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    await selectAthlete('athlete-001');
+    await selectAthlete('athlete-002');
+
+    await screen.findByText('Guard drops after the third round.');
+
+    await act(async () => {
+      releaseFirstGapsRead();
+    });
+
+    expect(screen.queryByText('Rear foot stays flat through the cross.')).toBeNull();
+    expect(screen.getByText('Guard drops after the third round.')).toBeTruthy();
+  });
+});
+
 // Deterministic gap suggestions (owner decision 2026-08-15). A suggestion is
 // a machine's unconfirmed observation: it must render on the coach's board,
 // become a real gap only through the coach's confirm (filed with the rule

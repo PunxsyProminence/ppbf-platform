@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { query, queryOne } from './db';
 import { getExecution } from './interventionExecutions';
+import type { FilmStudyProposalReviewState } from './shadowFilmStudyProposals';
 
 // Intervention evidence + outcome review (register module 026 slice 3) --
 // the loop-closing layer: typed evidence links with semantic roles, and
@@ -15,6 +16,18 @@ import { getExecution } from './interventionExecutions';
 // athlete scope. Nothing is flattened into a universal observations
 // table, and no causal claim is made anywhere in this module: the ledger
 // preserves provenance for later inference, it does not infer.
+//
+// Film study is the one source whose row can be inadmissible for a reason
+// that has nothing to do with scope. Every other kind here is a record of
+// something that actually happened to the athlete; a film-study row is a
+// MODEL'S CLAIM about a child that a human may not have accepted, or may
+// have explicitly refused. So that kind carries a second condition --
+// review state -- described at ADMISSIBLE_FILM_STUDY_REVIEW_STATES below.
+//
+// Every gate on this capability, what each one refuses with, and what is
+// deliberately NOT gated, is written up in
+// app/api/pilot/coach/intervention-review/README.md (documentation only --
+// nothing imports it).
 
 export const EVIDENCE_ROLES = [
   'baseline', 'during_intervention', 'immediate_post', 'retention',
@@ -28,10 +41,73 @@ export const EVIDENCE_SOURCE_KINDS = [
 export type EvidenceRole = (typeof EVIDENCE_ROLES)[number];
 export type EvidenceSourceKind = (typeof EVIDENCE_SOURCE_KINDS)[number];
 
+/**
+ * Which Film Study review states may be cited as formal evidence about a
+ * child. An ALLOW-LIST, not a deny-list, and that direction is the point.
+ *
+ * A Film Study proposal is a vision model's observation about an identifiable
+ * minor. shadowFilmStudyProposals.ts exists precisely so that observation
+ * never touches an athlete record until a human coach attests to it (#103,
+ * owner-approved 2026-07-31), and it guarantees BOTH terminal verdicts stay
+ * reachable -- 'rejected' is how a coach says "the model is wrong about this
+ * child". Until this list existed, the film_study query below read only
+ * organization and athlete, so a rejected observation -- and an unreviewed
+ * one -- was exactly as citable as an accepted one: a coach could reject a
+ * claim on Monday and it could still stand on Friday as formal evidence that
+ * an intervention on that child worked. The rejection was recorded and then
+ * ignored by the one query that most needed to read it.
+ *
+ * Naming what IS admissible, rather than what is not, is what keeps this
+ * correct as the vocabulary grows. PR #419 is extending Film Study proposals
+ * with further verdict kinds and a revision chain. Every state it adds is
+ * inadmissible here the moment it appears, and stays inadmissible until
+ * somebody deliberately writes it into this list. That is the only safe
+ * default, because a deny-list fails silently: the symptom is not a crash or a
+ * test going red, it is a new kind of unattested claim about a child quietly
+ * becoming citable, with nothing anywhere to say it happened.
+ *
+ * `as const satisfies` follows credentialPolicy.ts's MICROSOFT_ROLES: it
+ * binds this list to the proposals module's own union, so a state renamed or
+ * removed there breaks the typecheck here instead of decaying into a clause
+ * that silently matches nothing.
+ */
+export const ADMISSIBLE_FILM_STUDY_REVIEW_STATES = [
+  // A coach read the observation and put their name on it. Nothing else
+  // qualifies: 'pending_review' has no human behind it yet, and 'rejected'
+  // has a human explicitly saying no.
+  'accepted',
+] as const satisfies readonly FilmStudyProposalReviewState[];
+
+/**
+ * The same rule as a plain predicate, so admissibility can be read, reasoned
+ * about and tested without a database. The SQL clause below is generated from
+ * the same constant, so the two cannot drift apart -- a state added to the
+ * list changes both, and nothing changes only one.
+ */
+export function isAdmissibleFilmStudyReviewState(state: unknown): boolean {
+  return typeof state === 'string'
+    && (ADMISSIBLE_FILM_STUDY_REVIEW_STATES as readonly string[]).includes(state);
+}
+
+/**
+ * Rendered as SQL literals rather than a bound parameter on purpose: every
+ * EVIDENCE_SOURCES query takes the same three parameters, and callers --
+ * including the pg contract test, which executes these strings directly --
+ * pass exactly those three. The interpolated values are this module's own
+ * closed constants and never touch caller input. Shape borrowed from
+ * drillVersioning.ts's decline guard, which inlines its own fixed state list
+ * the same way (`review_state in ('proposed', 'under_review')`).
+ */
+const ADMISSIBLE_FILM_STUDY_REVIEW_STATES_SQL = ADMISSIBLE_FILM_STUDY_REVIEW_STATES
+  .map((state) => `'${state}'`)
+  .join(', ');
+
 /** Per-kind existence/scope queries. Every source must belong to the same
  * organization AND the same athlete as the execution it evidences --
  * cross-athlete and cross-org links are refused as not-found, and an
- * activity row without an athlete cannot evidence one. Parameters:
+ * activity row without an athlete cannot evidence one. Film study carries
+ * the extra admissibility condition above: a proposal no coach has accepted
+ * is treated exactly like a proposal that does not exist. Parameters:
  * $1 organization, $2 source id, $3 athlete. */
 export const EVIDENCE_SOURCES: Record<EvidenceSourceKind, string> = {
   training_attempt: `select 1 from pilot.training_attempts
@@ -41,7 +117,8 @@ export const EVIDENCE_SOURCES: Record<EvidenceSourceKind, string> = {
   assessment: `select 1 from pilot.assessments
     where organization_id = $1 and assessment_id::text = $2 and athlete_id = $3`,
   film_study: `select 1 from pilot.shadow_film_study_proposals
-    where organization_id = $1 and proposal_id::text = $2 and athlete_id = $3`,
+    where organization_id = $1 and proposal_id::text = $2 and athlete_id = $3
+      and review_state in (${ADMISSIBLE_FILM_STUDY_REVIEW_STATES_SQL})`,
   activity_log: `select 1 from pilot.activity_log
     where organization_id = $1 and activity_id = $2 and athlete_id = $3`,
 };
@@ -107,8 +184,18 @@ export interface OutcomeReviewRow {
 
 /** Links one piece of typed evidence to an execution. The execution must
  * be a current (non-superseded) record in the caller's org; the source
- * must exist in the same org for the same athlete. Every other outcome is
- * a hidden not-found. */
+ * must exist in the same org for the same athlete, and -- for film study --
+ * must be in an admissible review state. Every other outcome is a hidden
+ * not-found.
+ *
+ * The admissibility check is the source query itself rather than a second
+ * lookup, deliberately. One round trip means there is no window in which a
+ * proposal passes a check and is then linked, and a caller that reaches
+ * EVIDENCE_SOURCES directly (the pg contract test does) inherits the rule
+ * instead of having to remember it. It also keeps the refusal
+ * indistinguishable from "no such proposal", which errors.ts records as the
+ * deliberate choice for these per-record lookups: a caller must not be able
+ * to probe this route to learn that a proposal about a child exists. */
 export async function linkEvidence(input: {
   organizationId: string;
   executionId: string;

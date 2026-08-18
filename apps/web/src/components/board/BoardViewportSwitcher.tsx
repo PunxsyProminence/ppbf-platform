@@ -97,6 +97,12 @@ export default function BoardViewportSwitcher() {
           Fiduciary Board Command Center [V-BOARD-PUBLIC]
         </h1>
         <p className="mt-2 text-xs text-zinc-500">Layers 22 and 23 | Governance Role Switchboard</p>
+        <p className="mt-3"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+        <p className="mt-2 text-xs text-zinc-400">
+          Every financial figure, governance metric, and compliance statement below is fabricated
+          sample data. Nothing on this page reads or writes real records — do not act on anything it
+          shows, and never carry a number from this page into a board packet or a filing.
+        </p>
       </header>
 
       <nav className="mt-4 grid gap-2 sm:grid-cols-3">

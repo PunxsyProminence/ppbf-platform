@@ -143,7 +143,20 @@ export default function ParentHub() {
   // assembled here because the server decides what a guardian may see -- the
   // ring name and the coach's face on it have both been through the visibility
   // gate before they arrive.
-  const [childCard, setChildCard] = useState<FightCardPayload | null>(null);
+  //
+  // Stored WITH the id of the child it was fetched for, and matched against
+  // the current selection at render -- the same shape RabbitHole.tsx uses to
+  // keep one anchor's lessons off another anchor's card. This card carries a
+  // named child's face, their handwritten ring name and the coach who is with
+  // them; rendering it under a sibling's name is the wrong child's identity,
+  // not a stale field. Absence is honest here -- a guardian whose card read
+  // has not answered yet, or failed, simply has no card on the page -- so the
+  // previous child's card comes down the moment the selection changes instead
+  // of hanging there until the new one arrives.
+  const [childCard, setChildCard] = useState<{ athleteId: string; card: FightCardPayload | null }>({
+    athleteId: '',
+    card: null,
+  });
   const [childrenLoading, setChildrenLoading] = useState(true);
   const [childrenError, setChildrenError] = useState<string | null>(null);
   const [childrenRetryNonce, setChildrenRetryNonce] = useState(0);
@@ -268,7 +281,19 @@ export default function ParentHub() {
   }
 
   // Fetch parent's children (athletes) from API
+  //
+  // The Retry button below bumps childrenRetryNonce, so this effect can run
+  // again while its previous run is still in flight -- two roster reads, and
+  // whichever lands last decides both the child list and the default
+  // selection. Same AbortController guard as the per-child card read further
+  // down: the superseded run is cancelled, and the aborted re-checks stop a
+  // response that was already in the pipe from writing the list, the
+  // selection, the error, or the spinner. The spinner is the one that would
+  // bite hardest -- an aborted run's finally clearing childrenLoading would
+  // put the empty "No children found" state on screen while the live read is
+  // still working.
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       try {
         setChildrenLoading(true);
@@ -276,9 +301,11 @@ export default function ParentHub() {
         const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
           method: 'GET',
           credentials: 'include',
+          signal: controller.signal,
         });
+        if (controller.signal.aborted) return;
         if (!response.ok) throw new Error('Failed to load children');
-        
+
         const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string }> };
         const items = data.items || [];
         
@@ -308,7 +335,7 @@ export default function ParentHub() {
           try {
             const cardResponse = await fetch(
               `${apiBase()}/api/pilot/profile/card?athlete_id=${encodeURIComponent(child.id)}`,
-              { method: 'GET', credentials: 'include' },
+              { method: 'GET', credentials: 'include', signal: controller.signal },
             );
             if (!cardResponse.ok) return;
             const payload = (await cardResponse.json()) as { card?: FightCardPayload };
@@ -317,9 +344,11 @@ export default function ParentHub() {
             child.initials = payload.card.initials;
             child.photoAvailable = payload.card.photoAvailable;
           } catch {
-            // Plate.
+            // Plate. An abort lands here too, and the plate is the correct
+            // rendering for a portrait nobody managed to read.
           }
         }));
+        if (controller.signal.aborted) return;
 
         setChildren(childList);
         // Functional update so the default selection does not read activeChildId
@@ -327,43 +356,74 @@ export default function ParentHub() {
         // loading spinner every time the parent switches child.
         setActiveChildId((current) => current || childList[0]?.id || current);
       } catch (error) {
+        // A cancelled roster read is not a failed one -- it says nothing about
+        // whether this guardian has children, so it must not empty the list or
+        // put an error banner over a read that is still running.
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
         setChildrenError(error instanceof Error ? error.message : 'Failed to load children');
         setChildren([]);
       } finally {
-        setChildrenLoading(false);
+        if (!controller.signal.aborted) setChildrenLoading(false);
       }
     })();
+    return () => controller.abort();
   }, [childrenRetryNonce]);
 
   /* The active child's card, refetched on every switch. Refetched rather than
      cached from the list read so a ring name a coach cleared thirty seconds ago
      is gone the next time the guardian looks at it -- a takedown that survives
-     only until the next full page load is not a takedown. */
+     only until the next full page load is not a takedown.
+
+     REQUEST ORDERING. A guardian with two children switches between them with
+     one tap, and the two card reads then race: the earlier request is not
+     cancelled, so on a slow connection the FIRST child's card can arrive after
+     the second child's and overwrite it, leaving one child's face, ring name
+     and coach printed under their sibling's name. The AbortController closes
+     it from both ends -- effect cleanup aborts the superseded request so it
+     never lands, and the signal.aborted re-checks below mean a response that
+     was already in the pipe when we aborted still cannot write state.
+
+     Cleanup also covers unmount, which this effect previously had nothing for.
+     This is the same guard, in the same shape, as the coach surface these
+     records are shared with (app/coach/progression-intelligence) and the
+     guardian's own progression page (app/parent/progression-visibility). */
   useEffect(() => {
     if (!activeChildId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setChildCard(null);
+      setChildCard({ athleteId: '', card: null });
       return;
     }
+    const controller = new AbortController();
     void (async () => {
       try {
         const response = await fetch(
           `${apiBase()}/api/pilot/profile/card?athlete_id=${encodeURIComponent(activeChildId)}`,
-          { method: 'GET', credentials: 'include' },
+          { method: 'GET', credentials: 'include', signal: controller.signal },
         );
+        if (controller.signal.aborted) return;
         if (!response.ok) {
-          setChildCard(null);
+          setChildCard({ athleteId: activeChildId, card: null });
           return;
         }
         const payload = (await response.json()) as { card?: FightCardPayload };
-        setChildCard(payload.card ?? null);
-      } catch {
-        setChildCard(null);
+        if (controller.signal.aborted) return;
+        setChildCard({ athleteId: activeChildId, card: payload.card ?? null });
+      } catch (error) {
+        // A cancelled read is not a failure and must not write anything: the
+        // guardian has already moved to another child, and "no card" for THIS
+        // child was never observed. A genuine failure still falls through to
+        // the plate, which is what a card that cannot be read looks like.
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
+        setChildCard({ athleteId: activeChildId, card: null });
       }
     })();
+    return () => controller.abort();
   }, [activeChildId]);
 
   const activeChild = children.find(c => c.id === activeChildId);
+  // Only the card that was read for the child now selected. See the note on
+  // the childCard state for why the match happens here.
+  const shownCard = childCard.athleteId === activeChildId ? childCard.card : null;
   const hasLiveChildMetrics = activeChild?.attendancePercent !== null && Boolean(activeChild?.currentProgress);
   const activeAttendanceEntries = attendanceEntries.filter((entry) => entry.childId === activeChildId);
   const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
@@ -645,7 +705,7 @@ export default function ParentHub() {
                   the question a guardian actually has: who is with my child.
                   Both the portrait and the ring name on it have already been
                   through the visibility gate server-side. */}
-              {childCard && <FightCard card={childCard} />}
+              {shownCard && <FightCard card={shownCard} />}
 
               {/* The paper version. Scoped to the child currently selected, and
                   the print route re-checks the guardian link server-side before

@@ -138,6 +138,11 @@ export default function CurriculumProgressionEngine() {
       <header className="border-b border-zinc-800 pb-3">
         <h1 className="text-sm uppercase tracking-[0.2em] text-slate-200">Dual-Track and Curriculum Engine</h1>
         <p className="mt-2 text-xs text-zinc-500">Layers 05, 31, 35, 36</p>
+        <p className="mt-3"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+        <p className="mt-2 text-xs text-zinc-400">
+          Every athlete, badge, progression, and curriculum figure below is fabricated sample data.
+          Nothing on this page reads or writes real records — do not act on anything it shows.
+        </p>
       </header>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
