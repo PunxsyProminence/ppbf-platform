@@ -111,7 +111,7 @@ admitted gap.
 | 9 | Formulas & thresholds | Registry status vs. callers, provenance of every constant gating a child's training | **running** | `PASS-09-formulas.md` |
 | 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | **done** | `PASS-10-tests-ci.md` |
 | 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **running** | `PASS-11-infra-secrets.md` |
-| 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **running** | `PASS-12-docs-vs-code.md` |
+| 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **done** | `PASS-12-docs-vs-code.md` |
 | 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | queued, runs last | — |
 | 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB: enrolment, consent withdrawal, placing a hold, competition entry, incident, guardian visibility, coach onboarding | **running** | `PASS-14-flows.md` |
 | 15 | Data egress & integrations | **What data about a child leaves this system, to whom, and what stands between it and the door** — model calls, SAS URLs, email, exports, telemetry, logs | **running** | `PASS-15-egress.md` |
@@ -199,6 +199,12 @@ partial by definition rather than final.
 | F-24 | MEDIUM | `automation_mode` is unvalidated at two of three SHADOW call sites with no column CHECK, so the single working denial branch is evadable by sending `"Automatic"` instead of `"automatic"` | verify-4 | **New — found by the refutation pass, not the pass it was verifying** |
 | F-25 | LOW | `/coach/progression-intelligence` is a second coach-facing hold reader that pass 4 did not list | verify-4 | New — found by the refutation pass |
 | F-26 | HIGH | `profile/roster` does not filter `athletes.deleted_at`, so a withdrawn child stays on the live coach roster — name, date of birth and portrait — for the whole retention window | verify-3 | **New — found by the refutation pass, not the pass it was verifying** |
+| D-01 | **CRITICAL** | `DATA_RETENTION.md` gives photos, videos, medical records, waivers and training notes their own deletion windows. The only deletion code touches `pilot.athletes` and `pilot.accounts`. **Video is not reachable from any deletion path even in principle** — verified by hand below | 12 | New |
+| D-02 | HIGH | The named daily script `pilot:cleanup-expired-data` does not exist, and the job that does (`retention-cleanup.yml`) is hard-wired so a *scheduled* run can never delete | 12 | New |
+| D-03 | HIGH | `/admin/data-deletion`, cited twice as the admin's console, has no page, no nav entry and no caller; the promised "reversible for 1 year" restore has no code at all | 12 | New |
+| D-04 | MEDIUM | Waivers and medical records, documented as 3 years, actually die at the athlete's 2-year clock via FK cascade — **earlier** than documented | 12 | New |
+| D-05 | MEDIUM | `docs/AGENT_EXECUTION_POLICY.md` declares itself read-first and binding and contradicts `AGENT_KERNEL.md` on three rules; unmarked, and referenced by zero files | 12 | New |
+| D-06 | MEDIUM | Capability module 082, marked DONE, says `conditioning_only` holds mean "reduced permitted intensity"; the scope appears in no predicate anywhere, only three display labels | 12 | Corroborates F-06 from a different direction |
 | T-01 | **CRITICAL** | The only path that records contact for a child carries two gates — `flagContactWithoutClearance` and `flagContactDuringHold`. The route has no sibling test, and its sole test posts a non-contact kind, so both gates short-circuit and are never exercised. **Deleting both calls leaves all 482 suites and 5,997 tests green** | 10 | New |
 | T-02 | HIGH | 69 of 94 Postgres suites leak a full PGDATA per run — 263 MB measured for one suite | 10 | New |
 | T-03 | HIGH | `test:migrations` is a 94-link `&&` chain; one failure skips every later suite, including the gate proofs (training-holds is entry 47, safety-gate-matrix 41, safety-escalations 42) | 10 | New |
@@ -220,6 +226,48 @@ partial by definition rather than final.
 | F-21 | HIGH | A coach can overwrite another family's guardian record — `upsertGuardian`'s `on conflict … do update` rewrites `account_id`, phone and email, and repointing `account_id` hands a chosen account guardian reach over every child that record carries, siblings included | 2 | New extension of the escalated `parent_id` finding |
 | F-22 | MEDIUM | `multidiscipline` and `competence-cohorts` call `requireRole(principal, ['coach','admin'])`, which is exact-match, so every provisioned `organization_admin` gets a 403 on a child's grappling-exposure history. Tests miss it because they drive the legacy `'admin'` value | 2 | New |
 | F-23 | MEDIUM | `DELETE /api/pilot/achievements/mentorships` authorizes only the mentor side, and does so *after* `endMentorship` has committed its UPDATE — an unauthorized coach closes the pairing and then receives the 403 | 2 | New |
+
+### Checked by hand: a minor's video is not reachable by any deletion path
+
+Pass 12's CRITICAL rests on one structural claim, so I read the DDL myself
+rather than relaying it. It holds.
+`infra/azure/pilot_slice_postgres_video_sessions_migration.sql:65-80` declares:
+
+```
+create table if not exists pilot.video_sessions (
+  video_session_id text primary key,
+  organization_id text not null,
+  uploaded_by_account_id text not null,
+  athlete_id text null,
+```
+
+`athlete_id` is a bare `text null` with **no `references pilot.athletes`**, and
+the table has **no `deleted_at` column**. Other tables reference
+`video_sessions` — `publications` cascades *from* it — but `video_sessions`
+itself references nothing, so deleting an athlete cannot reach the video by
+cascade, and there is no soft-delete column to mark it with either.
+
+The consequence is the part that matters for a nonprofit holding footage of
+children. `DATA_RETENTION.md` is not a design sketch: it is linked from
+`MASTER_INDEX.md` beside the backup runbooks, carries a compliance scope and a
+privacy-officer sign-off, and reads as operational policy. A guardian asking
+what happens to video of their child would be given a two-year answer. Nothing
+deletes it, ever.
+
+**The pass's most useful output is the other half of its ledger**, and it is
+reassuring: 17 documents and claims verified **TRUE** and listed by name so the
+next reader knows what can be trusted — including both root contract files.
+`AUTH_CONTRACT.md` matches on role enum, cookie flags and endpoints;
+`ORGANIZATION_ROLE_MODEL.md`'s board boundary holds at every checked point. **No
+contract file states a safety rule the code violates.** Six documents are
+contradicted, five of them non-safety. The retention policy is an outlier, not
+the house style — which is exactly the distinction that decides whether this is
+one document to fix or a systemic problem.
+
+Method, stated because it bounds the above: 440 markdown files in scope, 22 read
+in full, 19 in substantial part, 440 machine-scanned, **399 never opened** —
+all of `docs/archive/`, all of `docs/capabilities/work/`, and 192 module files
+beyond their status field.
 
 ### The Postgres teardown diagnosis I published was wrong
 
