@@ -1,4 +1,5 @@
 import { insertAthleteIfAbsent } from './entities';
+import { insertClubMemberIfAbsent, type ClubMembershipType } from './clubMembers';
 import { query } from './db';
 
 /**
@@ -28,6 +29,22 @@ import { query } from './db';
  * sign in. The PIN is issued afterwards through the PIN console, deliberately:
  * a bulk import that also minted forty credentials would be forty children able
  * to sign in before anyone had spoken to them.
+ *
+ * IT ALSO ACCEPTS NON-ATHLETE MEMBERS. A real dues-paying roster is not
+ * athletes only -- the gym owner and other adults appear on it as
+ * "Non-Athlete" (or one of the fitness-only categories) with a home address
+ * and no training record. A row's `member_type` column decides the path: an
+ * "Athlete" row (or a blank member_type, for backward compatibility with a
+ * roster that has no such column) goes through the athlete-creation path
+ * exactly as before; any other recognised member type creates a
+ * pilot.club_members row ONLY -- no pilot.athletes row, no dob/weight
+ * class/gym status/coach requirement, because none of those apply to a
+ * person who is not training. Every row, athlete or not, gets a
+ * pilot.club_members row whenever the file supplies membership/address data
+ * for it, so an "Athlete" row's address and membership type live on that
+ * shared table rather than being bolted onto pilot.athletes, which stays
+ * training-specific. See pilot_slice_postgres_club_members_migration.sql for
+ * the full reasoning.
  */
 
 /** A row as the operator's spreadsheet gives it, before validation. */
@@ -39,6 +56,16 @@ export interface RosterImportRow {
   gym_status: string;
   emergency_contact_note: string;
   coach_account_id: string;
+  /**
+   * The roster's own "Mbr Type" column, raw (e.g. "Non-Athlete"), before
+   * normalisation. Blank means "Athlete", for compatibility with a roster
+   * that predates this column entirely.
+   */
+  member_type: string;
+  address_line1: string;
+  city: string;
+  state: string;
+  postal_code: string;
 }
 
 export type RosterRowOutcome = 'create' | 'skip_exists' | 'reject';
@@ -89,7 +116,54 @@ const HEADER_ALIASES: Readonly<Record<string, keyof RosterImportRow>> = {
   'coach account id': 'coach_account_id',
   coach_account_id: 'coach_account_id',
   coach: 'coach_account_id',
+  // The real membership export's own id column names the roster entry, not
+  // specifically an athlete -- it fills the same field 'id' already does,
+  // because both an athlete row and a non-athlete member row are identified
+  // by one id space in this file.
+  'member id': 'athlete_id',
+  member_id: 'athlete_id',
+  'mbr type': 'member_type',
+  'member type': 'member_type',
+  member_type: 'member_type',
+  'membership type': 'member_type',
+  address: 'address_line1',
+  'address line 1': 'address_line1',
+  address_line1: 'address_line1',
+  city: 'city',
+  state: 'state',
+  zip: 'postal_code',
+  'zip code': 'postal_code',
+  'postal code': 'postal_code',
+  postal_code: 'postal_code',
 };
+
+/**
+ * Raw "Mbr Type" spellings from the real export, mapped to the vocabulary
+ * pilot.club_members.membership_type stores. Compared case-insensitively
+ * with surrounding whitespace removed, matching HEADER_ALIASES' convention.
+ */
+const MEMBER_TYPE_ALIASES: Readonly<Record<string, ClubMembershipType>> = {
+  athlete: 'athlete',
+  'non-athlete': 'non_athlete',
+  'non athlete': 'non_athlete',
+  'junior fitness non-contact': 'junior_fitness_non_contact',
+  'junior fitness non contact': 'junior_fitness_non_contact',
+  'adult fitness non-contact': 'adult_fitness_non_contact',
+  'adult fitness non contact': 'adult_fitness_non_contact',
+};
+
+const MEMBER_TYPE_LABEL = 'Athlete, Non-Athlete, Junior Fitness Non-Contact or Adult Fitness Non-Contact';
+
+/**
+ * Resolves a row's raw member_type to the stored vocabulary. Blank resolves
+ * to 'athlete' -- a roster with no Mbr Type column at all is an all-athlete
+ * roster, exactly what this importer already accepted before this column
+ * existed. `null` means the value was present but not recognised.
+ */
+function resolveMemberType(raw: string): ClubMembershipType | null {
+  if (!raw) return 'athlete';
+  return MEMBER_TYPE_ALIASES[raw.trim().toLowerCase()] ?? null;
+}
 
 /**
  * pilot.athletes.gym_status is plain text with no database constraint, so this
@@ -227,6 +301,11 @@ export function parseRosterCsv(text: string): ParsedRoster {
       gym_status: '',
       emergency_contact_note: '',
       coach_account_id: '',
+      member_type: '',
+      address_line1: '',
+      city: '',
+      state: '',
+      postal_code: '',
     };
     header.forEach((field, column) => {
       if (field) {
@@ -249,6 +328,16 @@ function rejectionReason(row: RosterImportRow, seen: Set<string>): string {
   }
   if (seen.has(row.athlete_id)) {
     return 'This athlete id appears more than once in the file.';
+  }
+  const memberType = resolveMemberType(row.member_type);
+  if (memberType === null) {
+    return `Membership type must be ${MEMBER_TYPE_LABEL}, not "${row.member_type}".`;
+  }
+  // Everything below is athlete-specific: a "not training" member type (e.g.
+  // Non-Athlete) has no dob, weight class, gym status or coach requirement,
+  // because none of those apply to a person who isn't an athlete here.
+  if (memberType !== 'athlete') {
+    return '';
   }
   // pilot.athletes.dob is `date not null`, so a missing one is not an
   // omission the import can absorb -- it is a row Postgres will refuse. It is
@@ -282,13 +371,26 @@ export async function planRosterImport(
   rows: readonly RosterImportRow[],
 ): Promise<RosterImportPlan> {
   const ids = rows.map((row) => row.athlete_id).filter((id) => id !== '');
-  const existingRows = ids.length
+  // Checked against BOTH tables an id can land in: an athlete-type row that
+  // collides with an existing pilot.athletes row, or any row (athlete-type
+  // or not) that collides with an existing pilot.club_members row. Either
+  // collision must be reported and left alone, never silently overwritten.
+  const existingAthleteRows = ids.length
     ? await query<{ athlete_id: string }>(
       'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = any($2::text[])',
       [organizationId, ids],
     )
     : [];
-  const existing = new Set(existingRows.map((row) => row.athlete_id));
+  const existingMemberRows = ids.length
+    ? await query<{ member_id: string }>(
+      'select member_id from pilot.club_members where organization_id = $1 and member_id = any($2::text[])',
+      [organizationId, ids],
+    )
+    : [];
+  const existing = new Set([
+    ...existingAthleteRows.map((row) => row.athlete_id),
+    ...existingMemberRows.map((row) => row.member_id),
+  ]);
 
   const seen = new Set<string>();
   const planned: RosterRowPlan[] = rows.map((row, index) => {
@@ -327,12 +429,30 @@ interface CreatableRow {
   row: RosterImportRow;
 }
 
+/** True when a row carries anything for pilot.club_members to store. A file
+ * with no member_type/address columns at all (every legacy roster) leaves
+ * every row false, so no club_members row is ever written for it -- this
+ * extension changes nothing for a file that predates it. */
+function hasClubMemberData(row: RosterImportRow): boolean {
+  return Boolean(
+    row.member_type.trim()
+    || row.address_line1.trim()
+    || row.city.trim()
+    || row.state.trim()
+    || row.postal_code.trim(),
+  );
+}
+
 /**
- * Attempts every `create` row in ONE multi-row insert instead of one round
- * trip per row -- the common case, a roster where every row is valid, is
- * every bit as create-only and collision-safe as the row-by-row version
- * (same ON CONFLICT DO NOTHING, same "returning tells you what actually
- * landed" logic), just in a single statement.
+ * Attempts every eligible `create` row in ONE multi-row insert instead of one
+ * round trip per row -- the common case, a roster where every row is a plain
+ * athlete with no club_members data, is every bit as create-only and
+ * collision-safe as the row-by-row version (same ON CONFLICT DO NOTHING, same
+ * "returning tells you what actually landed" logic), just in a single
+ * statement. It only knows how to write pilot.athletes, so a row needing a
+ * pilot.club_members write (a non-athlete member type, or an athlete row that
+ * also carries club-member data) is never handed to this function -- see the
+ * batchEligible split in applyRosterImport.
  *
  * A single multi-row INSERT is all-or-nothing for anything ON CONFLICT does
  * NOT absorb (a bad foreign key, a type Postgres refuses) -- one such row
@@ -388,48 +508,112 @@ async function createAthletesBatch(
 }
 
 /**
- * The original row-by-row import, kept verbatim as the fallback path: one
- * insert per row, so one bad row is reported and skipped while the rest of
- * the file still lands. Used directly when there is nothing to batch
- * (0 or 1 creatable row -- no round trips to save), and as the recovery
- * path when createAthletesBatch's single statement fails.
+ * The original row-by-row import, extended to also create club_members rows.
+ * One insert per row, so one bad row is reported and skipped while the rest
+ * of the file still lands. Used directly for any row that needs
+ * pilot.club_members handling (a non-athlete member type, or an athlete row
+ * that also carries club-member data) -- the batch path above only knows how
+ * to insert into pilot.athletes -- and as the recovery path when
+ * createAthletesBatch's single statement fails for the pure-athlete rows it
+ * was given.
+ *
+ * The insert can still lose a race it passed in planning, which is why the
+ * return value of insertAthleteIfAbsent / insertClubMemberIfAbsent is honoured
+ * rather than assumed: a row planned as `create` that finds the id taken is
+ * reported as a collision, not as a creation that did not happen.
+ *
+ * `createdByAccountId` is the operator running the import (pilot.club_members
+ * requires an actor, matching every other admin-authored record in this
+ * schema); the route supplies it from the authenticated principal.
  */
 async function createAthletesSequentially(
   organizationId: string,
   toCreate: readonly CreatableRow[],
   now: string,
+  createdByAccountId: string,
 ): Promise<RosterRowPlan[]> {
   const applied: RosterRowPlan[] = [];
 
   for (const { planned, row } of toCreate) {
-    try {
-      const created = await insertAthleteIfAbsent(organizationId, {
-        athlete_id: row.athlete_id,
-        full_name: row.full_name,
-        // Guaranteed present and a calendar day by rejectionReason above; the
-        // column is `date not null`.
-        dob: row.date_of_birth,
-        weight_class: row.weight_class,
-        // 'training' rather than 'active': an imported athlete is on the
-        // roster, not yet cleared to compete, and the gym should say so
-        // deliberately rather than inherit it from a blank cell.
-        gym_status: row.gym_status || 'training',
-        emergency_contact: row.emergency_contact_note,
-        active_flag: true,
-        coach_id: row.coach_account_id,
-        created_at: now,
-        updated_at: now,
-      });
+    // resolveMemberType cannot return null here: a row that reached `create`
+    // already passed rejectionReason, which rejects an unrecognised value.
+    const memberType = resolveMemberType(row.member_type) ?? 'athlete';
 
-      applied.push(
-        created
-          ? { ...planned, outcome: 'create', reason: '' }
-          : {
+    try {
+      if (memberType === 'athlete') {
+        const created = await insertAthleteIfAbsent(organizationId, {
+          athlete_id: row.athlete_id,
+          full_name: row.full_name,
+          // Guaranteed present and a calendar day by rejectionReason above;
+          // the column is `date not null`.
+          dob: row.date_of_birth,
+          weight_class: row.weight_class,
+          // 'training' rather than 'active': an imported athlete is on the
+          // roster, not yet cleared to compete, and the gym should say so
+          // deliberately rather than inherit it from a blank cell.
+          gym_status: row.gym_status || 'training',
+          emergency_contact: row.emergency_contact_note,
+          active_flag: true,
+          coach_id: row.coach_account_id,
+          created_at: now,
+          updated_at: now,
+        });
+
+        if (!created) {
+          applied.push({
             ...planned,
             outcome: 'skip_exists',
             reason: 'Already on the roster by the time this ran. Left exactly as it is.',
-          },
-      );
+          });
+          continue;
+        }
+
+        // The athlete row is the one that matters for the reported outcome;
+        // the club_members row is supplementary and only written when the
+        // file actually supplied membership/address data for this person.
+        // full_name stays null here on purpose -- it lives on pilot.athletes,
+        // never duplicated (pilot_club_members_name_check enforces this).
+        if (hasClubMemberData(row)) {
+          await insertClubMemberIfAbsent(organizationId, {
+            member_id: row.athlete_id,
+            athlete_id: row.athlete_id,
+            full_name: null,
+            membership_type: 'athlete',
+            address_line1: row.address_line1,
+            city: row.city,
+            state: row.state,
+            postal_code: row.postal_code,
+            created_by_account_id: createdByAccountId,
+          });
+        }
+
+        applied.push({ ...planned, outcome: 'create', reason: '' });
+      } else {
+        // A non-athlete member type never touches pilot.athletes: no dob, no
+        // weight class, no gym status, no coach -- none of those describe a
+        // person who is not training here.
+        const created = await insertClubMemberIfAbsent(organizationId, {
+          member_id: row.athlete_id,
+          athlete_id: null,
+          full_name: row.full_name,
+          membership_type: memberType,
+          address_line1: row.address_line1,
+          city: row.city,
+          state: row.state,
+          postal_code: row.postal_code,
+          created_by_account_id: createdByAccountId,
+        });
+
+        applied.push(
+          created
+            ? { ...planned, outcome: 'create', reason: '' }
+            : {
+              ...planned,
+              outcome: 'skip_exists',
+              reason: 'Already on the roster by the time this ran. Left exactly as it is.',
+            },
+        );
+      }
     } catch (error) {
       // One row's failure must not discard the rest of the file, and must not
       // be reported as a success.
@@ -445,28 +629,35 @@ async function createAthletesSequentially(
 }
 
 /**
- * Creates the athletes the plan says to create.
+ * Creates the athletes and/or club members the plan says to create.
  *
- * Every `create` row is attempted as one batched insert (createAthletesBatch)
- * when there is more than one -- collapsing what used to be up to
- * MAX_ROWS round trips into one for the common case, a roster with no bad
- * rows. Row-by-row isolation, the actual safety property, is preserved
- * exactly: createAthletesSequentially (the original per-row code) runs
- * whenever there's nothing to batch, or as the automatic fallback if the
- * batch statement itself fails, so a spreadsheet with one bad row in it
- * still gets every other row created and that one row reported, never the
- * whole file discarded.
+ * Every batch-eligible `create` row -- a plain athlete row with no
+ * club_members data -- is attempted as one batched insert
+ * (createAthletesBatch) when there is more than one, collapsing what used to
+ * be up to MAX_ROWS round trips into one for the common case, a roster with
+ * no bad rows and no club members. Anything the batch path cannot express (a
+ * non-athlete member type, or an athlete row that also carries club-member
+ * data) always goes through createAthletesSequentially instead, which is
+ * also the automatic fallback if the batch statement itself fails. Either
+ * way, row-by-row isolation is preserved exactly: a spreadsheet with one bad
+ * row in it still gets every other row created and that one row reported,
+ * never the whole file discarded.
  *
  * The insert can still lose a race it passed in planning, which is why the
  * return value is honoured rather than assumed: a row planned as `create`
  * that finds the id taken is reported as a collision, not as a creation
  * that did not happen. Re-running the same file is always safe because
  * creation is create-only.
+ *
+ * `createdByAccountId` is the operator running the import (pilot.club_members
+ * requires an actor, matching every other admin-authored record in this
+ * schema); the route supplies it from the authenticated principal.
  */
 export async function applyRosterImport(
   organizationId: string,
   rows: readonly RosterImportRow[],
   plan: RosterImportPlan,
+  createdByAccountId: string,
 ): Promise<RosterImportPlan> {
   const byLine = new Map(plan.rows.map((row) => [row.line, row]));
   const now = new Date().toISOString();
@@ -484,23 +675,38 @@ export async function applyRosterImport(
     toCreate.push({ planned, row });
   });
 
-  let createdRows: RosterRowPlan[];
-  if (toCreate.length === 0) {
-    createdRows = [];
-  } else if (toCreate.length === 1) {
-    createdRows = await createAthletesSequentially(organizationId, toCreate, now);
-  } else {
+  // Only a plain athlete row with no club_members data at all can go through
+  // the batched insert -- it only knows how to write pilot.athletes. A
+  // non-athlete member type, or an athlete row that also carries
+  // club-member data, needs the per-row path so the club_members write
+  // actually happens.
+  const batchEligibleSet = new Set(
+    toCreate.filter(
+      ({ row }) => (resolveMemberType(row.member_type) ?? 'athlete') === 'athlete' && !hasClubMemberData(row),
+    ),
+  );
+  const batchEligible = toCreate.filter((entry) => batchEligibleSet.has(entry));
+  const sequentialOnly = toCreate.filter((entry) => !batchEligibleSet.has(entry));
+
+  let batchedRows: RosterRowPlan[] = [];
+  if (batchEligible.length === 1) {
+    batchedRows = await createAthletesSequentially(organizationId, batchEligible, now, createdByAccountId);
+  } else if (batchEligible.length > 1) {
     try {
-      createdRows = await createAthletesBatch(organizationId, toCreate, now);
+      batchedRows = await createAthletesBatch(organizationId, batchEligible, now);
     } catch {
-      createdRows = await createAthletesSequentially(organizationId, toCreate, now);
+      batchedRows = await createAthletesSequentially(organizationId, batchEligible, now, createdByAccountId);
     }
   }
 
+  const sequentialRows = sequentialOnly.length > 0
+    ? await createAthletesSequentially(organizationId, sequentialOnly, now, createdByAccountId)
+    : [];
+
   // rows/passthrough/toCreate are all built from one forward pass over
-  // `rows`, so both halves already carry the original line numbers -- sort
-  // the merge back into file order rather than re-deriving it.
-  const applied = [...passthrough, ...createdRows].sort((a, b) => a.line - b.line);
+  // `rows`, so every subset already carries the original line numbers --
+  // sort the merge back into file order rather than re-deriving it.
+  const applied = [...passthrough, ...batchedRows, ...sequentialRows].sort((a, b) => a.line - b.line);
 
   return {
     rows: applied,
