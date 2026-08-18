@@ -5,6 +5,39 @@ Written for an agent picking up work who needs to know what is already done,
 already in review, or deliberately parked — before spending an afternoon on
 something that merged this morning.
 
+## LIVE, 2026-08-18 ~16:38 UTC — two sessions are both merging right now
+
+**If you are reading this in the next hour or so: STOP and check `gh pr list`
+before merging anything.** Another session (not this one) merged #421, #416,
+and #467 directly in the last few minutes while this session was mid-way
+through its own pass over the same open-PR backlog. Neither session
+coordinated the timing — this file is being updated after the fact, not
+before, which is exactly the gap it exists to close. If you are a third
+session arriving now: **do not start a new sweep of the open-PR list until
+you have re-fetched it fresh** — several rows below may already be stale by
+the time you read them.
+
+**A real branch-contamination problem, found by an agent bringing PR #415 up
+to date, needs a human decision before anyone touches that branch again.**
+`origin/claude/ppbf-platform-orientation-qg4j3b` (PR #415, "staff
+credentials") should end at commit `bc1e6967` per the PR's own description
+(which says the branch "was trimmed back to its original three
+staff-credentials commits"). It does not — the live branch carries four more
+commits past that point: a no-op merge of `main`, then three real,
+**unrelated** commits (a research-classification taxonomy layer axis, a
+SHADOW-library-to-SharePoint mirror, and a Coach Intelligence
+safety-escalations digest change) that have nothing to do with staff
+credentials and do not exist anywhere in `origin/main`'s history. PR #418
+(the next PR stacked on #415) has its own base recorded as `bc1e6967`
+exactly, confirming that's the intended tip and the three trailing commits
+are stray — most likely the other concurrent session committing to this
+branch by mistake instead of its own. **Do not force-push this branch to
+reset it without checking whether those three commits represent real,
+otherwise-unlanded work first** — they may need to be recovered onto a
+different branch before #415 is cleaned up. Left untouched for now; #415,
+and the #418→#419→#420 stack on top of it, are on hold until this is
+resolved.
+
 **Status as of `origin/main` at `3f961545`, 2026-08-18 09:18 UTC.** This file
 carries the commit it was written against because it will go stale. Check
 `git log` and the open PR list before trusting any row.
