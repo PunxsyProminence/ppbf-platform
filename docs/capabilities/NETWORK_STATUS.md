@@ -122,6 +122,57 @@ confirmed against a verbatim quote; open the file before acting.
   three exhaustive maps, one of which has no fallback. This is the same shape as
   the `Record<SuggestionRule, …>` drift that broke `main` three times.
 
+### Findings from pass 3 (minors' data and consent) — also do not re-find these
+
+Pass 3 found **no live exposure** — nothing here means a child is exposed right
+now, and it is worth saying that plainly rather than leaving it implied. What it
+found is a set of gaps that need a deliberate act, a race window, or an unlikely
+sequence to bite. That is a materially different thing from the pass 4 CRITICAL,
+which needs one authenticated request.
+
+- **Film Study checks guardian consent at enqueue and never again.** This is the
+  one to act on. The async job re-validates only the *actor's role* and then
+  reads the child's video by blob path; the consent-withdrawal sweep touches
+  publications and the research library and cancels no running job. So a
+  guardian can withdraw consent, be truthfully told published media was
+  retracted, and have frames of their child sent to an external vision service
+  afterwards. It matters more than its severity label suggests because **every
+  other consent path in this codebase closes this race correctly** — `for share`
+  locks, re-verification inside the claim transaction. This is an outlier, not
+  the house pattern, which means fixing it is matching the existing standard
+  rather than inventing one.
+- **Consent scope is enforced by nothing, and defaults to permissive.** This
+  file already recorded `covers_video` and `public_use_allowed` as a documented
+  MVP cut. What is new: `covers_video` defaults `true` in three places,
+  *including on every non-media waiver row*, and the guardian-facing UI presents
+  these as controls. Collecting a switch that does nothing is one problem;
+  defaulting it to "yes" is another.
+- **A coach can silently overwrite an existing guardian's `pilot.parents`
+  binding**, severing a real parent from their own child's consent-withdrawal
+  path. This is the same "one side checked, the other not" shape as the known
+  `parent_id` finding, on the same route. **Both are owner decisions — they
+  narrow a role gate coaches use daily, and they should be decided together
+  rather than one at a time.** Do not implement either.
+- **60-minute unaudited SAS bearer URLs to minors' video, minted in bulk.**
+  Anyone holding the URL has the video for an hour, and nothing records who
+  minted or used it.
+- **A hard-deleted athlete record silently reclassifies a surviving account from
+  minor to staff**, releasing the portrait to every coach and admin. Whether
+  this has already happened depends on whether the retention purge has ever run
+  in `APPLY` mode, which needs Actions run history nobody in these sessions can
+  see.
+- **`DATA_RETENTION.md` promises deletion that no code performs.** Per-category
+  deletion of photos, videos, medical records and waivers is documented; no blob
+  byte is ever deleted. A second, unguarded copy of the destructive purge exists
+  with zero callers.
+
+**Two things pass 3 could not establish, recorded as holes rather than guessed:**
+whether the retention purge has ever run in `APPLY` mode, and what actually
+drives the SHADOW job queue in production — nothing in `.github/workflows/` or
+`apps/web` calls `shadow/jobs/process`. That second one bounds the Film Study
+finding in either direction and is the most useful single question anyone with
+production access could answer for this audit.
+
 The escalation register is now fully enumerated — eight writer call paths across
 seven source types, six readers, and one declared source type
 (`safety_gate_evaluation`) with no writer at all. That table is in
