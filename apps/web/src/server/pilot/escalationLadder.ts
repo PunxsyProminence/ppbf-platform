@@ -26,7 +26,28 @@ import { query, queryOne, withTransaction } from './db';
  */
 
 export type SafetyEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
-export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold' | 'incident' | 'video_scan' | 'compliance_violation';
+/**
+ * The runtime array is the actual source of truth; the type is derived from
+ * it (not the other way around) so a caller that needs every value at
+ * runtime -- e.g. a test asserting the /admin/escalations "Source" column
+ * has a label for each one -- has one real list to iterate instead of
+ * hand-copying the type's members and risking the exact drift this existed
+ * to prevent. Keep in sync with the 'source_type' check constraint in
+ * infra/azure/pilot_slice_postgres.sql and
+ * pilot_slice_postgres_safety_escalations_migration.sql.
+ */
+export const SAFETY_ESCALATION_SOURCE_TYPES = [
+  'near_miss',
+  'pain_report',
+  'safety_gate_evaluation',
+  'repeated_pattern',
+  'athlete_voice',
+  'training_hold',
+  'incident',
+  'video_scan',
+  'compliance_violation',
+] as const;
+export type SafetyEscalationSourceType = typeof SAFETY_ESCALATION_SOURCE_TYPES[number];
 export type SafetyEscalationStatus = 'open' | 'acknowledged' | 'resolved';
 /**
  * Who an escalation is filed against. Deliberately excludes 'board' and
