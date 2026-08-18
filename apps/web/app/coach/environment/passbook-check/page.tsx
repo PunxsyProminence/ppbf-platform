@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { GYM_ADDRESS, GYM_NAME } from '@/components/PrintSheet';
 
 export default function PassbookCheckPage() {
   const [usaBoxingId, setUsaBoxingId] = useState('');
@@ -41,8 +42,12 @@ export default function PassbookCheckPage() {
           </section>
         </div>
 
+        {/* Reuses PrintSheet's GYM_NAME/GYM_ADDRESS rather than its own copy of
+            either -- this exact literal (in a different capitalization the
+            original address fix's grep missed) was still the office address,
+            not the training location, until this pass. */}
         <footer className="t-muted pb-[var(--s5)]">
-          Punxsy Prominence Boxing and Fitness, Registered Office: 204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715
+          {GYM_NAME}, Registered Office: {GYM_ADDRESS}
         </footer>
       </div>
     </RoleStandaloneView>

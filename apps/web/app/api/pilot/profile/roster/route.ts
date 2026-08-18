@@ -48,6 +48,16 @@ export async function GET(request: NextRequest) {
     // and it changes WHICH ROWS come back -- never what may be seen on one.
     const wholeOrganization = url.searchParams.get('scope') === 'organization';
 
+    // `a.deleted_at is null` on both branches, and it is not a performance
+    // filter. A withdrawn athlete is soft-deleted: the row stays for the
+    // retention window so the purge can run against it later, which means
+    // every read path has to exclude it or the withdrawal never reaches the
+    // screen. Without this the roster kept a child who had left the gym --
+    // name, date of birth and portrait -- in front of every coach for two
+    // years after the family asked to be removed. The retention migration
+    // indexes for exactly this predicate
+    // (idx_athletes_active_org ... where deleted_at is null) because the
+    // active-record path is meant to be every read.
     const rows = wholeOrganization
       ? await query<RosterRow>(
         `select a.athlete_id, acc.account_id, a.full_name, a.dob, a.coach_id
@@ -55,6 +65,7 @@ export async function GET(request: NextRequest) {
            left join pilot.accounts acc
              on acc.organization_id = a.organization_id and acc.athlete_id = a.athlete_id
           where a.organization_id = $1
+            and a.deleted_at is null
           order by a.full_name asc`,
         [principal.organizationId],
       )
@@ -64,6 +75,7 @@ export async function GET(request: NextRequest) {
            left join pilot.accounts acc
              on acc.organization_id = a.organization_id and acc.athlete_id = a.athlete_id
           where a.organization_id = $1 and a.coach_id = $2
+            and a.deleted_at is null
           order by a.full_name asc`,
         [principal.organizationId, principal.accountId],
       );

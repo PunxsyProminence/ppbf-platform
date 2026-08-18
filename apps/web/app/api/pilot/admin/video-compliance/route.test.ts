@@ -171,6 +171,26 @@ describe('GET /api/pilot/admin/video-compliance', () => {
     });
   });
 
+  test('the queue response carrying SAS stream urls is not storable by any cache', async () => {
+    // Each stream_url is a bearer credential to a minor's footage, and this
+    // queue hands out a batch of them in one response -- so a copy retained by
+    // the browser or by an intermediary is a batch disclosure that outlives the
+    // org-admin check above.
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockImplementation(async (_org, filters) =>
+      (filters as { status?: string } | undefined)?.status === 'pending_review' ? [publication()] as never : [] as never);
+    mockGetAthlete.mockResolvedValueOnce({ athlete_id: 'ath-1', full_name: 'Sample Athlete' } as never);
+    mockGetSubjectIdentity.mockResolvedValueOnce({ accountId: 'acct-coach', fullName: 'Coach Alice', athleteId: null } as never);
+    mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: 'ath-1', blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
+
+    const response = await GET(request('/api/pilot/admin/video-compliance'));
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { items: Array<{ stream_url: string | null }> };
+    expect(payload.items[0].stream_url).toBe('https://blob.example/sas');
+    expect(response.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+
   test('published and retracted rows are listed for the lifecycle levers, without SAS urls', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
     mockList.mockImplementation(async (_org, filters) => {

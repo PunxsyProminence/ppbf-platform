@@ -37,10 +37,23 @@ function gates(overrides: Partial<Parameters<typeof assertAthleteMayBeEnteredInC
   });
 }
 
-/** The state where every gate passes, so each test only alters its own gate. */
+/** The seeded training_hold gate row a migrated organization has. */
+const GATE_ROW = { gate_key: 'training_hold', enforcement: 'block' };
+
+/**
+ * The state where every gate passes, so each test only alters its own gate.
+ *
+ * The gate row is part of that baseline. It used to be left unstubbed, which
+ * made mockGetGate resolve undefined for every test that did not set it -- so
+ * every recording assertion in this file was passing against a gym whose
+ * safety-gate migration had never run. A "records nothing" expectation is
+ * vacuous under that stub; the pre-migration case is tested deliberately
+ * further down instead.
+ */
 function allClear() {
   mockAssertAccess.mockResolvedValue(undefined);
   mockFindHold.mockResolvedValue(null);
+  mockGetGate.mockResolvedValue(GATE_ROW);
   mockWaiverStatus.mockResolvedValue('signed');
 }
 
@@ -59,9 +72,6 @@ describe('the still-works case', () => {
     expect(mockAssertAccess).toHaveBeenCalledWith(ADMIN, 'ath-1');
     expect(mockFindHold).toHaveBeenCalledWith('org-1', 'ath-1');
     expect(mockWaiverStatus).toHaveBeenCalledWith('org-1', 'ath-1', 'travel');
-    // A passing gate records nothing: this mirrors the scheduler's
-    // training_hold branch, which records only the block.
-    expect(mockRecordEvaluation).not.toHaveBeenCalled();
   });
 
   test('a conditioning-only hold does not reach this function, so entry proceeds', async () => {
@@ -83,6 +93,9 @@ describe('gate 1 -- coach scoping', () => {
     // consent state is even READ for an actor who may not act on this child.
     expect(mockFindHold).not.toHaveBeenCalled();
     expect(mockWaiverStatus).not.toHaveBeenCalled();
+    // And nothing is written to the child's gate history either. An actor with
+    // no standing on this child cannot leave a row on their record.
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
   });
 });
 
@@ -148,6 +161,97 @@ describe('gate 2 -- training holds', () => {
 
   test('a database fault that is not a missing table is not swallowed', async () => {
     mockFindHold.mockResolvedValue(HOLD);
+    mockGetGate.mockRejectedValue(Object.assign(new Error('connection terminated'), { code: '08006' }));
+
+    await expect(gates()).rejects.toThrow('connection terminated');
+  });
+});
+
+// The other half of the same audit trail. Recording only refusals left
+// pilot.safety_gate_evaluations accumulating nothing but 'blocked' rows for
+// this gate_key, and getGuardianGateSummary shows a guardian only the MOST
+// RECENT outcome per gate -- so one hold placed and later lifted read as
+// `training_hold: blocked` on that child's record permanently, no matter how
+// many times the gate was checked and cleared afterwards.
+describe('gate 2 -- the clearance is recorded too', () => {
+  test('a cleared hold check is recorded as passed against the training_hold gate', async () => {
+    await expect(gates()).resolves.toBeUndefined();
+
+    expect(mockGetGate).toHaveBeenCalledWith('org-1', 'training_hold');
+    expect(mockRecordEvaluation).toHaveBeenCalledTimes(1);
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      gateKey: 'training_hold',
+      athleteId: 'ath-1',
+      outcome: 'passed',
+      contextId: 'comp-1',
+      evaluatedByAccountId: 'acct-admin',
+      evaluatedByRole: 'organization_admin',
+      evaluatedAt: '2026-08-17T12:00:00.000Z',
+      metadata: { event_kind: 'external_competition' },
+    }));
+    // The reason distinguishes a clearance from a refusal in a history read
+    // back as text, not only by its outcome column.
+    expect(mockRecordEvaluation.mock.calls[0][0].reason).toMatch(/no active hold covering contact/i);
+  });
+
+  test('a league roster add records its own event kind', async () => {
+    await expect(gates({ kind: 'wrestling_league_season', contextId: 'season-1' })).resolves.toBeUndefined();
+
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'passed',
+      contextId: 'season-1',
+      metadata: { event_kind: 'wrestling_league_season' },
+    }));
+  });
+
+  test('exactly one outcome is recorded per check -- never both', async () => {
+    mockFindHold.mockResolvedValue({
+      hold_id: 'hold-1',
+      scope: 'all_training',
+      athlete_explanation: 'Rest your ribs.',
+      lift_condition_text: 'A pain-free week.',
+    });
+
+    await expect(gates()).rejects.toBeInstanceOf(ForbiddenError);
+
+    expect(mockRecordEvaluation).toHaveBeenCalledTimes(1);
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'blocked' }));
+    expect(mockRecordEvaluation).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'passed' }));
+  });
+
+  test('the clearance is recorded even when the travel waiver then refuses the entry', async () => {
+    mockWaiverStatus.mockResolvedValue('missing');
+
+    await expect(gates()).rejects.toBeInstanceOf(ConflictError);
+
+    // This gate passed, and that is what the row says. Withholding it until
+    // every later gate also passed would blank the hold history of exactly the
+    // children a different gate stopped.
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({
+      gateKey: 'training_hold',
+      outcome: 'passed',
+    }));
+  });
+
+  test('a pre-migration safety_gates table still lets the entry through, recording nothing', async () => {
+    mockGetGate.mockRejectedValue(Object.assign(new Error('relation does not exist'), { code: '42P01' }));
+
+    // Same best-effort posture as the refusal path: a gym whose safety-gate
+    // migration has not run yet must still be able to enter a cleared child.
+    // An audit-write side effect does not get to fail competition entry.
+    await expect(gates()).resolves.toBeUndefined();
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
+
+  test('an organization with no training_hold gate row records nothing and still proceeds', async () => {
+    mockGetGate.mockResolvedValue(null);
+
+    await expect(gates()).resolves.toBeUndefined();
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
+
+  test('a database fault that is not a missing table is not swallowed on the pass path either', async () => {
     mockGetGate.mockRejectedValue(Object.assign(new Error('connection terminated'), { code: '08006' }));
 
     await expect(gates()).rejects.toThrow('connection terminated');

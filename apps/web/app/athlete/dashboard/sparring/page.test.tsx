@@ -8,9 +8,21 @@
 // recover from, because the message tells them not to re-enter it.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 
 import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/types';
 import SparringTelemetryPage from './page';
+
+// This page gained a role gate it previously lacked (every sibling athlete
+// route already had one; this was the one place a signed-out visitor could
+// load the full form). RoleStandaloneView pulls in RoleSessionGate, which
+// calls next/navigation's useRouter -- not mounted in this test's render
+// tree -- so it's stubbed to a pass-through the same way
+// progression-intelligence/page.test.tsx already does for the same reason.
+jest.mock('@/components/RoleStandaloneView', () => ({
+  __esModule: true,
+  default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
+}));
 
 const SESSION_PATH = '/api/pilot/auth/session';
 

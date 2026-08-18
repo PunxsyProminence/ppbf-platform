@@ -85,22 +85,25 @@ const NO_SERVER_EVIDENCE_TIER: ShadowEvidenceTier = 'RESEARCH_NEEDED';
 // Darkest (most evidenced) to lightest (least evidenced) -- "the bigger the
 // shadow, the more authentic the message."
 const EVIDENCE_TIER_STYLES: Record<ShadowEvidenceTier, string> = {
-  PROVEN: 'border border-zinc-700 bg-black text-slate-100',
-  EMERGING: 'border border-zinc-800 bg-[#0f0f12] text-slate-200',
-  EXPERIMENTAL: 'border border-zinc-800 bg-[#111113] text-slate-300',
-  RESEARCH_NEEDED: 'border border-zinc-700 bg-[#18181b] text-slate-300',
+  PROVEN: 'border border-[color:var(--brass-800)] bg-[var(--hide-900)] text-[color:var(--bone-100)]',
+  EMERGING: 'border border-[color:var(--brass-900)] bg-[var(--hide-800)] text-[color:var(--bone-200)]',
+  EXPERIMENTAL: 'border border-[color:var(--brass-900)] bg-[var(--hide-700)] text-[color:var(--bone-300)]',
+  RESEARCH_NEEDED: 'border border-[color:var(--brass-800)] bg-[var(--hide-600)] text-[color:var(--bone-300)]',
 };
 
 // Law 7 gives a refusal ink, and the sheet resolves .stamp's ink per ground:
-// stamp-red on paper/canvas, locked-ink on the leathers. A message bubble is
-// neither -- its ground is the evidence-tier fill above -- and the leather
-// panel around it would force the light ink onto the one LIGHT bubble
-// (RESEARCH_NEEDED), where it cannot read. Stated per tier instead.
+// stamp-red on paper/canvas, locked-ink on the leathers. This map used to
+// exist because the tier fills above were near-black hexes rather than
+// materials, so no single ink could be stated for all four -- except every
+// entry then held the identical value (#dc2626, an off-palette red), so the
+// per-tier shape was carrying nothing. Now that all four tiers are leather,
+// the sheet's own leather answer applies uniformly: --locked-ink. Kept as a
+// map only because the call sites index it per message.
 const STAMP_INK_BY_TIER: Record<ShadowEvidenceTier, string> = {
-  PROVEN: '#dc2626',
-  EMERGING: '#dc2626',
-  EXPERIMENTAL: '#dc2626',
-  RESEARCH_NEEDED: '#dc2626',
+  PROVEN: 'var(--locked-ink)',
+  EMERGING: 'var(--locked-ink)',
+  EXPERIMENTAL: 'var(--locked-ink)',
+  RESEARCH_NEEDED: 'var(--locked-ink)',
 };
 
 function getEvidenceTierLabel(tier: ShadowEvidenceTier): string {
@@ -1071,12 +1074,12 @@ function ShadowChatPageContent() {
   // Role denial does not need capabilities; show it as soon as auth is known.
   if (authChecked && !chatRoleAllowed) {
     return (
-      <main className="min-h-screen bg-[#09090b] font-mono text-slate-300">
-        <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 border border-zinc-800 px-6">
+      <main className="room--office min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+        <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 border border-[color:var(--brass-900)] px-6">
           <div className="text-center">
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">SHADOW</p>
-            <h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-slate-200">Not available for this role</h1>
-            <p className="mt-4 max-w-md text-sm text-slate-400">
+            <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p>
+            <h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Not available for this role</h1>
+            <p className="mt-4 max-w-md text-sm text-[color:var(--bone-400)]">
               Your signed-in role ({userRole || 'unknown'}) cannot use SHADOW chat.
               You are still signed in — return to your dashboard or sign out.
             </p>
@@ -1084,14 +1087,14 @@ function ShadowChatPageContent() {
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/dashboard"
-              className="border border-zinc-700 bg-zinc-900 px-4 py-2 text-xs uppercase tracking-[0.1em] text-slate-200"
+              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-4 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
             >
               Dashboard
             </Link>
             <button
               type="button"
               onClick={handleLogout}
-              className="border border-zinc-700 bg-zinc-900 px-4 py-2 text-xs uppercase tracking-[0.1em] text-slate-200"
+              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-4 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
             >
               Logout
             </button>
@@ -1103,11 +1106,11 @@ function ShadowChatPageContent() {
 
   if (!authChecked || !capabilitiesLoaded) {
     return (
-      <main className="min-h-screen bg-[#09090b] font-mono text-slate-300">
-        <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-zinc-800 rounded-none px-6">
+      <main className="room--office min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+        <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6">
           <div className="text-center">
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Secure Session</p>
-            <h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-slate-200">Opening SHADOW</h1>
+            <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">Secure Session</p>
+            <h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Opening SHADOW</h1>
           </div>
         </div>
       </main>
@@ -1115,24 +1118,24 @@ function ShadowChatPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[#09090b] font-mono text-slate-300">
-      <header className="border-b border-zinc-800">
+    <main className="room--office min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+      <header className="border-b border-[color:var(--brass-900)]">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-5">
           <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{getModeHeadingLabel(mode)}</p>
-            <h1 className="mt-2 text-xl uppercase tracking-[0.14em] text-slate-200">{heading}</h1>
-            <p className="mt-2 text-sm text-slate-400">{intro}</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">{getModeHeadingLabel(mode)}</p>
+            <h1 className="mt-2 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">{heading}</h1>
+            <p className="mt-2 text-sm text-[color:var(--bone-400)]">{intro}</p>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-right">
             <div>
-              <p className="text-xs uppercase tracking-[0.1em] text-slate-500">Role: {roleLabel}</p>
-              {context ? <p className="text-xs uppercase tracking-[0.1em] text-slate-500">Context: {context}</p> : null}
-              <p className="mt-2 text-xs uppercase tracking-[0.12em] text-slate-300">LIVE</p>
+              <p className="text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">Role: {roleLabel}</p>
+              {context ? <p className="text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">Context: {context}</p> : null}
+              <p className="mt-2 text-xs uppercase tracking-[0.12em] text-[color:var(--bone-300)]">LIVE</p>
             </div>
             <button
               type="button"
               onClick={handleLogout}
-              className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-200"
+              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
             >
               Logout
             </button>
@@ -1141,27 +1144,27 @@ function ShadowChatPageContent() {
       </header>
 
       <div className="mx-auto w-full max-w-5xl px-6 py-6">
-        <section className="mb-4 grid gap-4 border border-zinc-800 bg-[#0b0b0e] p-4 md:grid-cols-3">
+        <section className="mb-4 grid gap-4 border border-[color:var(--brass-900)] bg-[var(--hide-900)] p-4 md:grid-cols-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Scope</p>
-            <p className="mt-2 text-sm text-slate-300">{scopeSummary}</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Scope</p>
+            <p className="mt-2 text-sm text-[color:var(--bone-300)]">{scopeSummary}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Authority Boundary</p>
-            <p className="mt-2 text-sm text-slate-300">SHADOW can improve learning and generate research. SHADOW cannot clear, diagnose, prescribe, or override human authority.</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Authority Boundary</p>
+            <p className="mt-2 text-sm text-[color:var(--bone-300)]">SHADOW can improve learning and generate research. SHADOW cannot clear, diagnose, prescribe, or override human authority.</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">When Evidence Is Weak</p>
-            <p className="mt-2 text-sm text-slate-300">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">When Evidence Is Weak</p>
+            <p className="mt-2 text-sm text-[color:var(--bone-300)]">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
           </div>
         </section>
 
         {unlockHints.some((hint) => hint.closeToUnlocking) ? (
           <section
             aria-label="SHADOW features close to unlocking"
-            className="mb-4 border border-zinc-800 bg-[#0b0b0e] p-4"
+            className="mb-4 border border-[color:var(--brass-900)] bg-[var(--hide-900)] p-4"
           >
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">
+            <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">
               {unlockHints.filter((hint) => hint.closeToUnlocking).length} feature
               {unlockHints.filter((hint) => hint.closeToUnlocking).length === 1 ? '' : 's'} close to unlocking
             </p>
@@ -1170,12 +1173,12 @@ function ShadowChatPageContent() {
 
         <section
           aria-label="Saved SHADOW sessions"
-          className="mb-4 border border-zinc-800 bg-[#0b0b0e] p-4"
+          className="mb-4 border border-[color:var(--brass-900)] bg-[var(--hide-900)] p-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Saved sessions</p>
-              <p className="mt-2 text-sm text-slate-400">
+              <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Saved sessions</p>
+              <p className="mt-2 text-sm text-[color:var(--bone-400)]">
                 Your server-stored conversation history. Chat content is not stored in this browser.
               </p>
             </div>
@@ -1183,20 +1186,20 @@ function ShadowChatPageContent() {
               type="button"
               onClick={handleNewChat}
               disabled={isLoading}
-              className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               New chat
             </button>
           </div>
 
           {sessionNotice ? (
-            <p role="status" className="mt-3 text-sm text-slate-300">{sessionNotice}</p>
+            <p role="status" className="mt-3 text-sm text-[color:var(--bone-300)]">{sessionNotice}</p>
           ) : null}
 
           {sessionsLoading ? (
-            <p className="mt-3 text-sm text-slate-500">Loading saved sessions...</p>
+            <p className="mt-3 text-sm text-[color:var(--bone-400)]">Loading saved sessions...</p>
           ) : savedSessions.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">No saved sessions yet.</p>
+            <p className="mt-3 text-sm text-[color:var(--bone-400)]">No saved sessions yet.</p>
           ) : (
             <div className="mt-3 grid max-h-[233px] gap-3 overflow-y-auto md:grid-cols-2">
               {savedSessions.map((session) => {
@@ -1210,8 +1213,8 @@ function ShadowChatPageContent() {
                     key={session.conversationId}
                     className={`border transition ${
                       selected
-                        ? 'border-slate-500 bg-zinc-900'
-                        : 'border-zinc-800 bg-[#09090b] hover:border-zinc-700'
+                        ? 'border-[color:var(--brass-700)] bg-[var(--hide-900)]'
+                        : 'border-[color:var(--brass-900)] bg-[var(--hide-950)] hover:border-[color:var(--brass-800)]'
                     }`}
                   >
                     {renaming ? (
@@ -1232,13 +1235,13 @@ function ShadowChatPageContent() {
                           maxLength={120}
                           autoFocus
                           disabled={busy}
-                          className="min-h-[34px] w-full border border-zinc-700 bg-black px-3 py-1 text-xs text-slate-200"
+                          className="min-h-[34px] w-full border border-[color:var(--brass-800)] bg-[var(--hide-950)] px-3 py-1 text-xs text-[color:var(--bone-200)]"
                         />
                         <div className="mt-2 flex gap-3">
                           <button
                             type="submit"
                             disabled={busy || !renameDraft.trim()}
-                            className="border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs uppercase tracking-[0.1em] text-slate-200 disabled:opacity-50"
+                            className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)] disabled:opacity-50"
                           >
                             {busy ? 'Saving…' : 'Save'}
                           </button>
@@ -1246,7 +1249,7 @@ function ShadowChatPageContent() {
                             type="button"
                             onClick={() => setRenamingSessionId(undefined)}
                             disabled={busy}
-                            className="border border-zinc-700 bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-slate-400 disabled:opacity-50"
+                            className="border border-[color:var(--brass-800)] bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)] disabled:opacity-50"
                           >
                             Cancel
                           </button>
@@ -1261,19 +1264,19 @@ function ShadowChatPageContent() {
                           disabled={isLoading || busy}
                           className="w-full px-3 py-2 text-left disabled:opacity-50"
                         >
-                          <span className="block truncate text-sm font-semibold text-slate-200">
+                          <span className="block truncate text-sm font-semibold text-[color:var(--bone-200)]">
                             {restoring ? 'Restoring…' : session.title}
                           </span>
-                          <span className="mt-1 block text-xs uppercase tracking-[0.08em] text-slate-500">
+                          <span className="mt-1 block text-xs uppercase tracking-[0.08em] text-[color:var(--bone-400)]">
                             {session.sessionType.replaceAll('_', ' ')} · {formatGymDateNumeric(session.updatedAt)}
                           </span>
                         </button>
-                        <div className="flex items-center gap-3 border-t border-zinc-800 px-3 py-2">
+                        <div className="flex items-center gap-3 border-t border-[color:var(--brass-900)] px-3 py-2">
                           <button
                             type="button"
                             onClick={() => beginRenameSession(session)}
                             disabled={busy || isLoading}
-                            className="border border-zinc-700 bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-slate-400 transition hover:text-slate-200 disabled:opacity-50"
+                            className="border border-[color:var(--brass-800)] bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)] transition hover:text-[color:var(--bone-200)] disabled:opacity-50"
                           >
                             Rename
                           </button>
@@ -1284,7 +1287,7 @@ function ShadowChatPageContent() {
                             className={`border px-2 py-1 text-xs uppercase tracking-[0.1em] transition disabled:opacity-50 ${
                               armedDelete
                                 ? 'border-red-700 bg-red-950 text-red-400'
-                                : 'border-zinc-700 bg-transparent text-slate-400 hover:text-slate-200'
+                                : 'border-[color:var(--brass-800)] bg-transparent text-[color:var(--bone-400)] hover:text-[color:var(--bone-200)]'
                             }`}
                           >
                             {busy && armedDelete ? 'Deleting…' : armedDelete ? 'Confirm delete' : 'Delete'}
@@ -1293,7 +1296,7 @@ function ShadowChatPageContent() {
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteId(undefined)}
-                              className="border border-zinc-700 bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-slate-400"
+                              className="border border-[color:var(--brass-800)] bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]"
                             >
                               Keep
                             </button>
@@ -1308,15 +1311,15 @@ function ShadowChatPageContent() {
           )}
         </section>
 
-        <section className="bg-[#09090b] font-mono text-slate-300 rounded-none border border-zinc-800 p-4">
-          <details className="mb-3 border border-zinc-800 bg-[#0b0b0e] px-3 py-2">
-            <summary className="cursor-pointer text-xs uppercase tracking-[0.1em] text-slate-400">
+        <section className="bg-[var(--hide-950)] font-mono text-[color:var(--bone-300)] rounded-none border border-[color:var(--brass-900)] p-4">
+          <details className="mb-3 border border-[color:var(--brass-900)] bg-[var(--hide-900)] px-3 py-2">
+            <summary className="cursor-pointer text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">
               What the evidence labels mean
             </summary>
             <ul className="mt-2 space-y-1">
               {EVIDENCE_TIER_ORDER.map((tier) => (
-                <li key={tier} className="text-xs text-slate-400">
-                  <span className="font-bold uppercase text-slate-300">{getEvidenceTierLabel(tier)}:</span>{' '}
+                <li key={tier} className="text-xs text-[color:var(--bone-400)]">
+                  <span className="font-bold uppercase text-[color:var(--bone-300)]">{getEvidenceTierLabel(tier)}:</span>{' '}
                   {EVIDENCE_TIER_MEANINGS[tier]}
                 </li>
               ))}
@@ -1331,21 +1334,21 @@ function ShadowChatPageContent() {
                 <div
                   className={`max-w-[80%] border px-4 py-3 transition-colors ${
                     msg.type === 'user'
-                      ? 'border-slate-600 bg-slate-700 text-slate-100'
-                      : `border-zinc-800 bg-black text-slate-300 ${EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]}`
+                      ? 'border-[color:var(--brass-700)] bg-[var(--hide-700)] text-[color:var(--bone-100)]'
+                      : `border-[color:var(--brass-900)] bg-[var(--hide-900)] text-[color:var(--bone-300)] ${EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]}`
                   }`}
                 >
                   <p className={`text-sm leading-relaxed ${msg.text.includes('⚠️ CRITICAL LOG ERROR') ? 'animate-pulse text-[#b91c1c]' : ''}`}>{msg.text}</p>
                   {msg.type === 'shadow' && msg.evidenceTier ? (
                     <p
-                      className="mt-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
+                      className="mt-2 text-xs font-bold uppercase tracking-[0.12em] text-[color:var(--bone-400)]"
                       title={EVIDENCE_TIER_MEANINGS[msg.evidenceTier]}
                     >
                       Evidence: {getEvidenceTierLabel(msg.evidenceTier)}
                     </p>
                   ) : null}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'EVIDENCE_RETRIEVAL_UNAVAILABLE' ? (
-                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-slate-400">
+                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">
                       Evidence lookup temporarily unavailable -- graded without it.
                     </p>
                   ) : null}
@@ -1361,11 +1364,11 @@ function ShadowChatPageContent() {
                     </p>
                   ) : null}
                   {msg.type === 'shadow' && msg.citations?.length ? (
-                    <div className="mt-2 border-t border-zinc-800 pt-2">
-                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Sources</p>
+                    <div className="mt-2 border-t border-[color:var(--brass-900)] pt-2">
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Sources</p>
                       <ul className="mt-1 space-y-1">
                         {msg.citations.map((citation) => (
-                          <li key={citation.evidenceId} className="text-xs leading-relaxed text-slate-400">
+                          <li key={citation.evidenceId} className="text-xs leading-relaxed text-[color:var(--bone-400)]">
                             [{citation.token}] {citation.sourceTitle} — {citation.documentName}
                           </li>
                         ))}
@@ -1384,7 +1387,7 @@ function ShadowChatPageContent() {
                       </p>
                     ) : (
                       <p className="mt-2">
-                        <span className="border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs uppercase tracking-[0.1em] text-slate-400">
+                        <span className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">
                           {msg.state}
                         </span>
                       </p>
@@ -1398,25 +1401,25 @@ function ShadowChatPageContent() {
                       >
                         Human Handoff Required
                       </span>
-                      <p className="mt-2 text-xs leading-relaxed text-slate-300">{msg.handoff}</p>
+                      <p className="mt-2 text-xs leading-relaxed text-[color:var(--bone-300)]">{msg.handoff}</p>
                     </div>
                   ) : null}
                   {msg.tier ? (
-                    <div className="mt-3 space-y-2 border-t border-zinc-800 pt-2">
+                    <div className="mt-3 space-y-2 border-t border-[color:var(--brass-900)] pt-2">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs uppercase tracking-[0.08em] text-slate-500">
+                        <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--bone-400)]">
                           {msg.tier === 'heavy_bag' ? 'Heavy Bag' : 'Quick Round'}
                           {getProfileTierLabel(msg.profileTier)}
                           {msg.isAsync ? ' · Processing...' : ''}
                         </p>
-                        {msg.feedbackSent ? <p className="text-xs text-slate-400">Feedback recorded.</p> : null}
+                        {msg.feedbackSent ? <p className="text-xs text-[color:var(--bone-400)]">Feedback recorded.</p> : null}
                       </div>
                     </div>
                   ) : null}
                   {msg.type === 'shadow' ? (
-                    <div className="mt-3 border-t border-zinc-800 pt-3">
-                      <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Human-in-the-loop RLHF</p>
-                      <label htmlFor={`feedback-reason-${msg.id}`} className="mt-2 block text-xs text-slate-400">
+                    <div className="mt-3 border-t border-[color:var(--brass-900)] pt-3">
+                      <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Human-in-the-loop RLHF</p>
+                      <label htmlFor={`feedback-reason-${msg.id}`} className="mt-2 block text-xs text-[color:var(--bone-400)]">
                         Specify precise reason for evaluation rating *
                       </label>
                       <textarea
@@ -1425,14 +1428,14 @@ function ShadowChatPageContent() {
                         onChange={(event) => setFeedbackReasons((prev) => ({ ...prev, [msg.id]: event.target.value }))}
                         disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
                         rows={3}
-                        className="mt-1 w-full border border-zinc-700 bg-[#09090b] px-2 py-1 text-xs text-slate-200 disabled:opacity-60"
+                        className="mt-1 w-full border border-[color:var(--brass-800)] bg-[var(--hide-950)] px-2 py-1 text-xs text-[color:var(--bone-200)] disabled:opacity-60"
                       />
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           type="button"
                           onClick={() => void sendFeedback(msg.id, true)}
                           disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
-                          className="border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-2 py-1 text-xs text-[color:var(--bone-200)] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           [👍 Output Metrics Valid / Intact]
                         </button>
@@ -1440,21 +1443,21 @@ function ShadowChatPageContent() {
                           type="button"
                           onClick={() => void sendFeedback(msg.id, false)}
                           disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
-                          className="border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-2 py-1 text-xs text-[color:var(--bone-200)] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           [👎 Confusing / Missing Rule Layers]
                         </button>
                       </div>
                     </div>
                   ) : null}
-                  <p className="mt-2 text-xs text-slate-600">{msg.timestamp}</p>
+                  <p className="mt-2 text-xs text-[color:var(--bone-400)]">{msg.timestamp}</p>
                 </div>
               </div>
             ))}
             {isLoading ? (
               <div className="flex justify-start">
-                <div className="border border-zinc-800 bg-black px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.1em] text-slate-500">SHADOW {heavyBagMode ? 'Heavy Bag' : 'Quick Round'} processing...</p>
+                <div className="border border-[color:var(--brass-900)] bg-[var(--hide-900)] px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">SHADOW {heavyBagMode ? 'Heavy Bag' : 'Quick Round'} processing...</p>
                 </div>
               </div>
             ) : null}
@@ -1466,7 +1469,7 @@ function ShadowChatPageContent() {
               {Object.values(modelStatus).map((model) => (
                 <span
                   key={model.displayName}
-                  className={`border px-3 py-1 text-xs uppercase tracking-[0.08em] ${model.available ? 'border-slate-500 text-slate-300' : 'border-zinc-700 text-slate-500'}`}
+                  className={`border px-3 py-1 text-xs uppercase tracking-[0.08em] ${model.available ? 'border-[color:var(--brass-700)] text-[color:var(--bone-300)]' : 'border-[color:var(--brass-800)] text-[color:var(--bone-400)]'}`}
                   title={`${model.tier} tier -- ${model.available ? 'live' : 'not deployed yet'}`}
                 >
                   {model.available ? '● ' : '○ '}{model.displayName}
@@ -1483,7 +1486,7 @@ function ShadowChatPageContent() {
                 disabled={Boolean(restoringSessionId)}
                 aria-pressed={heavyBagMode}
                 title={heavyBagMode ? 'Switch to Quick Round' : 'Switch to Heavy Bag Session (deep reasoning)'}
-                className={`border px-3 py-2 text-xs uppercase tracking-[0.1em] disabled:cursor-not-allowed disabled:opacity-60 ${heavyBagMode ? 'border-slate-500 bg-slate-900 text-slate-200' : 'border-zinc-700 bg-zinc-900 text-slate-300'}`}
+                className={`border px-3 py-2 text-xs uppercase tracking-[0.1em] disabled:cursor-not-allowed disabled:opacity-60 ${heavyBagMode ? 'border-[color:var(--brass-700)] bg-[var(--hide-900)] text-[color:var(--bone-200)]' : 'border-[color:var(--brass-800)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'}`}
               >
                 {heavyBagMode ? 'Heavy Bag' : 'Quick'}
               </button>
@@ -1493,8 +1496,8 @@ function ShadowChatPageContent() {
                 title="Queue this Heavy Bag question for background processing -- the answer is added to this conversation when ready, instead of holding the page for the full generation."
                 className={`flex cursor-pointer items-center gap-1 border px-3 text-xs font-bold uppercase tracking-[0.1em] transition ${
                   backgroundHeavyBag
-                    ? 'border-slate-500 bg-slate-900 text-slate-200'
-                    : 'border-zinc-700 bg-zinc-900 text-slate-400 hover:border-zinc-500'
+                    ? 'border-[color:var(--brass-700)] bg-[var(--hide-900)] text-[color:var(--bone-200)]'
+                    : 'border-[color:var(--brass-800)] bg-[var(--hide-900)] text-[color:var(--bone-400)] hover:border-[color:var(--brass-600)]'
                 }`}
               >
                 <input
@@ -1513,12 +1516,12 @@ function ShadowChatPageContent() {
               onChange={(e) => setUserInput(e.target.value)}
               disabled={Boolean(restoringSessionId)}
               placeholder="What do you need to know?"
-              className="min-w-[220px] flex-1 border border-zinc-700 bg-black px-3 py-2 text-sm text-slate-200"
+              className="min-w-[220px] flex-1 border border-[color:var(--brass-800)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)]"
             />
             <button
               type="submit"
               disabled={isLoading || Boolean(restoringSessionId)}
-              className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isLoading ? '...' : 'Ask'}
             </button>
@@ -1526,31 +1529,31 @@ function ShadowChatPageContent() {
         </section>
 
         <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/shadow?context=SHADOW" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/shadow?context=SHADOW" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             SHADOW CHAT
           </Link>
-          <Link href="/research/chat" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/research/chat" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             The Library
           </Link>
-          <Link href="/research" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/research" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             Research Intake
           </Link>
-          <Link href="/admin/shadow" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/admin/shadow" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             The Office
           </Link>
-          <Link href="/operations" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/operations" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             Operations
           </Link>
-          <Link href="/coach/video-analysis" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/coach/video-analysis" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             AI Video Analysis (Planned)
           </Link>
-          <Link href="/board/compliance-monitoring" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/board/compliance-monitoring" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             Compliance Monitoring (Planned)
           </Link>
-          <Link href="/athlete/progression-intelligence" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/athlete/progression-intelligence" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             Progression Intelligence (Planned)
           </Link>
-          <Link href="/source-control/publication-workflow" className="border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs uppercase tracking-[0.1em] text-slate-300">
+          <Link href="/source-control/publication-workflow" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
             Publication Workflow (Planned)
           </Link>
         </div>
@@ -1561,7 +1564,7 @@ function ShadowChatPageContent() {
 
 export default function ShadowChatPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-[#09090b] font-mono text-slate-300"><div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-zinc-800 rounded-none px-6"><div className="text-center"><p className="text-xs uppercase tracking-[0.14em] text-slate-500">SHADOW</p><h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-slate-200">Loading scope</h1></div></div></main>}>
+    <Suspense fallback={<main className="room--office min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]"><div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6"><div className="text-center"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p><h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Loading scope</h1></div></div></main>}>
       <ShadowChatPageContent />
     </Suspense>
   );
