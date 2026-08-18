@@ -27,11 +27,19 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   analyzeFramesWithVision,
   extractFrames,
+  extractRepresentativeFrames,
+  extractSceneFrames,
+  extractTiledFrames,
   FILM_STUDY_FRAME_INTERVAL_SECONDS,
   FILM_STUDY_MAX_FRAMES_PER_JOB,
+  FILM_STUDY_SCENE_THRESHOLD_PERCENT,
+  FILM_STUDY_THUMBNAIL_WINDOW_FRAMES,
+  FILM_STUDY_TILE_COLUMNS,
+  FILM_STUDY_TILE_ROWS,
   getVisionDeploymentName,
   isFilmStudyVisionConfigured,
   synthesizeTestClip,
+  type ExtractedFrames,
 } from '@/src/server/pilot/shadowFilmStudy';
 
 export const runtime = 'nodejs';
@@ -78,6 +86,62 @@ export async function POST(request: NextRequest) {
       });
       const frameStats = await Promise.all(extraction.framePaths.map((framePath) => fs.stat(framePath)));
       const totalFrameBytes = frameStats.reduce((sum, stat) => sum + stat.size, 0);
+
+      // Measure the alternative extraction strategies on the SAME clip so
+      // their timings are comparable to the baseline above. A strategy
+      // failing is a finding the diagnostic exists to surface (same stance
+      // as the vision block below), not a route error. Note the synthetic
+      // clip has no hard cuts, so the scene strategy's frame_count here
+      // measures the guaranteed-frame-0 floor plus decode/scoring time —
+      // its selectivity only shows on real footage.
+      const measureStrategy = async (
+        run: () => Promise<ExtractedFrames>,
+      ): Promise<Record<string, unknown>> => {
+        try {
+          const result = await run();
+          const stats = await Promise.all(result.framePaths.map((framePath) => fs.stat(framePath)));
+          const totalBytes = stats.reduce((sum, stat) => sum + stat.size, 0);
+          return {
+            ok: true,
+            extract_ms: result.extractMs,
+            frame_count: result.framePaths.length,
+            avg_frame_bytes: Math.round(totalBytes / result.framePaths.length),
+          };
+        } catch (strategyError) {
+          return {
+            ok: false,
+            error: strategyError instanceof Error && /^SHADOW_[A-Z0-9_]{3,72}$/.test(strategyError.message)
+              ? strategyError.message
+              : 'SHADOW_FILM_FFMPEG_FAILED',
+          };
+        }
+      };
+      const strategies = {
+        thumbnail: {
+          window_frames: FILM_STUDY_THUMBNAIL_WINDOW_FRAMES,
+          ...await measureStrategy(() => extractRepresentativeFrames({
+            clipPath: clip.clipPath,
+            directory: tempDir,
+            maxFrames: MAX_VISION_FRAMES,
+          })),
+        },
+        tile: {
+          tile_columns: FILM_STUDY_TILE_COLUMNS,
+          tile_rows: FILM_STUDY_TILE_ROWS,
+          ...await measureStrategy(() => extractTiledFrames({
+            clipPath: clip.clipPath,
+            directory: tempDir,
+          })),
+        },
+        scene: {
+          threshold_percent: FILM_STUDY_SCENE_THRESHOLD_PERCENT,
+          ...await measureStrategy(() => extractSceneFrames({
+            clipPath: clip.clipPath,
+            directory: tempDir,
+            maxFrames: MAX_VISION_FRAMES,
+          })),
+        },
+      };
 
       let vision: Record<string, unknown>;
       if (!includeVision || !isFilmStudyVisionConfigured()) {
@@ -131,6 +195,7 @@ export async function POST(request: NextRequest) {
           frame_count: extraction.framePaths.length,
           avg_frame_bytes: Math.round(totalFrameBytes / extraction.framePaths.length),
         },
+        strategies,
         vision,
       };
       console.log('SHADOW film-study diagnostic', {
