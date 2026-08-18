@@ -30,6 +30,42 @@ the file yourself before acting on any row below.
 
 ---
 
+## URGENT — every child's video has already been sent to a vision model, unconsented
+
+Read this before anything else on this page. Verified by hand, element by
+element, not relayed from an agent.
+
+`videoScan.ts:131-147` downloads a minor's uploaded video, extracts up to twelve
+frames, and posts them to the Azure OpenAI vision deployment via
+`analyzeFramesWithVision`. Grepping `consent` across the four modules in that
+path — `videoScanSweep.ts`, `videoScan.ts`, `videoScanPolicy.ts`,
+`videoSessions.ts` — returns **zero hits in all four**.
+
+It is not an optional path. `videoScanPolicy.ts:174-176` states it itself:
+*"Every enabled gate reported an affirmative pass. This is the ONLY path to a
+readable video."* And it is on in production: `deploy-production.yml:441` sets
+`PPBF_VIDEO_CONTENT_SCAN=vision`, worker enabled at `:437`.
+
+**The codebase already knows this call needs consent.**
+`shadow/video-analysis/route.ts:106` calls `assertGuardianMediaConsent` under a
+comment that names the principle exactly: *"Film Study opens the same footage to
+AI analysis and must not be a side door around that gate."* The content screen
+makes the same kind of call on the same footage with no gate — and because it is
+the mandatory route to `status='ready'`, **every video that Film Study's consent
+gate is ever asked about has already been through a vision model.** The gate
+guards a door the data went through first.
+
+**This reframes the Film Study finding recorded further down this page.** That
+row treats a ~30-second race on a consent re-check as the problem. The real
+problem is that consent was already moot by the time that gate is reached. The
+row is left in place with this correction rather than rewritten, because the
+sequence of how this was understood is itself worth knowing.
+
+**Do not fix this unilaterally.** It changes what the platform does with every
+upload, and it needs an owner decision on whether the content screen runs before
+consent, after it, or not at all. It also needs a factual answer prepared for any
+guardian who asks where footage of their child has been.
+
 ## Live right now — two audits running, plus one thing that needs a merge
 
 Written 2026-08-18. This section is the coordination surface between the
