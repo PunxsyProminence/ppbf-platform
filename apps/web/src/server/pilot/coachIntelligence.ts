@@ -11,9 +11,23 @@ import { READINESS_YELLOW_MIN } from './readinessBoard';
 // by urgency; the coach decides what any of it means.
 //
 // Thresholds are named constants pinned by tests. Where an equivalent
-// threshold already exists elsewhere it is IMPORTED, not restated, so the
-// two rules can never drift apart (attendance reuses the gap-suggestion
-// constants; the RED band reuses the readiness board's).
+// threshold already exists elsewhere it is IMPORTED, not restated
+// (attendance reuses the gap-suggestion constants; the RED band reuses the
+// readiness board's).
+//
+// Sharing the constant is NOT by itself an invariant. The comparison built
+// around it is written out separately in each module, so the two attendance
+// rules can still drift on their boundary -- and did: this digest tested
+// `late < early * RATIO` while the suggestion engine tested `<=`, so an
+// athlete whose attendance exactly halved (early 4, late 2) raised a
+// progression suggestion and stayed silent here. A coach was told nothing
+// about a child the system had already flagged.
+//
+// What actually holds the two together is a test, not the shared constant:
+// 'the fading filter agrees with the suggestion engine on every boundary'
+// in coachIntelligence.test.ts runs the same rollup rows through
+// deriveSuggestions and through this digest and fails if either side moves.
+// A change to either comparison must keep that test green.
 
 /** Item 1: a gap identified this long ago with no drill ever assigned. */
 export const STALLED_GAP_DAYS = 14;
@@ -124,7 +138,9 @@ export async function getCoachIntelligence(
   const fading = rollup
     .filter((row) =>
       row.training_days_early >= TRAINING_DAYS_MIN_EARLY
-      && row.training_days_late < row.training_days_early * TRAINING_DAYS_DROP_RATIO)
+      // <=, matching rule 2 in progressionSuggestions.ts: a habit the newer
+      // half has "lost at least half of" includes losing exactly half.
+      && row.training_days_late <= row.training_days_early * TRAINING_DAYS_DROP_RATIO)
     .map((row) => ({
       athlete_id: row.athlete_id,
       athlete_name: nameById.get(row.athlete_id) ?? row.athlete_id,
