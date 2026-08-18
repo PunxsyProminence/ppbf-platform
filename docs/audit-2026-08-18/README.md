@@ -105,18 +105,62 @@ admitted gap.
 | 3 | Minors' data & consent | Waivers, guardian links, consent scope enforcement, profile visibility, photo/video exposure | not started | — |
 | 4 | Safety gates | Training holds, clearances, contact exposure, escalation ladder, competition entry | **done** | `PASS-04-safety-gates.md` |
 | 5 | API surface | All 228 routes: input validation, `jsonError` prefix conformance, idempotency, rate limiting, `hiddenNotFound` | **done** | `PASS-05-api-surface.md` |
-| 6 | Data layer | 88 migrations vs. code, constraints, tenancy columns, policy hiding in DDL, N+1 | **running** | `PASS-06-data-layer.md` |
-| 7 | Frontend & design system | 125 screens + 86 components: fabricated-data disclosure, Law 2 / Law 7 conformance, invented classes, dead ends | **running** | `PASS-07-frontend.md` |
+| 6 | Data layer | 88 migrations vs. code, constraints, tenancy columns, policy hiding in DDL, N+1 | **done** | `PASS-06-data-layer.md` |
+| 7 | Frontend & design system | 125 screens + 86 components: fabricated-data disclosure, Law 2 / Law 7 conformance, invented classes, dead ends | **done** | `PASS-07-frontend.md` |
 | 8 | SHADOW subsystem | Authority model specified vs. built, event model, **what actually drives the job processor** | **done** | `PASS-08-shadow.md` |
-| 9 | Formulas & thresholds | Registry status vs. callers, provenance of every constant gating a child's training | **running** | `PASS-09-formulas.md` |
+| 9 | Formulas & thresholds | Registry status vs. callers, provenance of every constant gating a child's training | **done** | `PASS-09-formulas.md` |
 | 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | **done** | `PASS-10-tests-ci.md` |
-| 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **running** | `PASS-11-infra-secrets.md` |
+| 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **done** | `PASS-11-infra-secrets.md` |
 | 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **done** | `PASS-12-docs-vs-code.md` |
 | 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | queued, runs last | — |
-| 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB: enrolment, consent withdrawal, placing a hold, competition entry, incident, guardian visibility, coach onboarding | **running** | `PASS-14-flows.md` |
+| 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB | **not done — the only pass with no output** | — |
 | 15 | Data egress & integrations | **What data about a child leaves this system, to whom, and what stands between it and the door** — model calls, SAS URLs, email, exports, telemetry, logs | **done** | `PASS-15-egress.md` |
-| 16 | Research, data library & evidence | Source lifecycle, evidence registry, Knowledge Graph, `assessment_protocols`, UI claims vs. implemented hand-offs | **running** | `PASS-16-research-library.md` |
-| 17 | Resilience & failure behaviour | **Does each safety gate fail closed or fail open?** Swallowed errors, permissive defaults, non-transactional multi-step safety writes, retries that double-write | **running** | `PASS-17-resilience.md` |
+| 16 | Research, data library & evidence | Source lifecycle, evidence registry, Knowledge Graph, `assessment_protocols`, UI claims vs. implemented hand-offs | **done** | `PASS-16-research-library.md` |
+| 17 | Resilience & failure behaviour | **Does each safety gate fail closed or fail open?** Swallowed errors, permissive defaults, non-transactional multi-step safety writes, retries that double-write | **done** | `PASS-17-resilience.md` |
+
+## Status: 15 of 17 passes reported. Pass 14 is the one gap, and it is a real gap.
+
+Sixteen passes were run. **Fifteen wrote their reports; pass 14 (role journeys)
+did not** — its agent died twice, the second time before writing a line. Pass 13
+(cross-cutting synthesis) was never started here because it is reserved for the
+other session and runs last.
+
+Six passes lost their summarising agent to a capacity limit *after* writing their
+file, so their findings were read out of the files directly rather than relayed.
+That is recorded because it changes the confidence: those six have not had an
+author walk me through what mattered, so their severity ordering is mine from the
+text rather than theirs.
+
+**The gap matters and is not being papered over.** Pass 14 was the only pass that
+traced whole journeys end to end — guardian withdraws consent, coach places a
+hold, athlete is enrolled — and the seam between two correct modules is precisely
+this codebase's demonstrated failure mode. Its absence is the largest known hole
+in this audit. It needs re-running.
+
+## Two things need a human today, and neither is a code change
+
+**1. Rotate two PINs.** `deploy-staging.yml` twice carried a PIN as a literal.
+Both were fixed on `main`, but neither fix removed the credential from `origin` —
+`main`'s history was squash-rewritten while the pre-fix branch commits were left
+in place, and **the repository is public**, so a plain `git clone` still fetches
+them. `PILOT_ADMIN_PIN` (5 digits) and `PILOT_SHADOW_ATHLETE_PIN` (6 digits).
+Commit SHAs and line numbers are in `PASS-11-infra-secrets.md`; **the values are
+withheld there and appear nowhere in these files, not even partially.** Rotate
+both, then delete or rewrite the stale remote branches. The second one is worth
+acting on twice over, because the fix commit's own message already described the
+risk exactly — *"the gate athlete PIN was a literal in a public repo"*, against a
+publicly reachable staging login, on an account provisioned active with
+`must_change_pin=false`. The fix was right; it just never reached the history.
+
+**2. Decide what the video content screen does about consent.** See the URGENT
+section below. It changes what the platform does with every upload, so it is not
+a unilateral fix.
+
+## Resolved during the audit
+
+**PR #452 merged as `951030e1`** — the competition-entry hold bypass, this audit's
+only CRITICAL with a fix already waiting. Ten other PRs merged alongside it.
+Recorded here rather than quietly dropped from the findings table: F-01 is closed.
 
 ## URGENT — read this one first
 
@@ -283,6 +327,21 @@ partial by definition rather than final.
 | E-04 | MEDIUM | `shadowFilmStudy.ts:4-10` states the opposite of what the module does — it says film_study stays UNAVAILABLE, while the processor's exclusion set is empty. This is the docstring an auditor would read to answer "does a child's face leave?" | 15 | New |
 | E-05 | MEDIUM | Four SAS-bearing responses set no `Cache-Control`, while every sibling minor-data response sets `no-store` | 15 | New |
 | E-06 | MEDIUM | Every athlete-scoped SHADOW turn ships that child's verbatim near-miss incident text to the model, and a minor can trigger it about themselves | 15 | New |
+| X-01 | HIGH | **Two credentials remain readable in public git history** — fixed on `main`, never removed from `origin`, because `main` was squash-rewritten while the pre-fix branch commits stayed. Needs rotation, not a code change | 11 | New |
+| X-02 | HIGH | Soft delete is written, indexed for, and **filtered by nothing** — a "deleted" child stays visible everywhere for two years, and a "deleted" guardian keeps logging in | 6 | New — independently reaches the same place as F-26 |
+| X-03 | HIGH | The retention hard-delete **cannot succeed**: two foreign keys with no `on delete` action block both halves of the purge, in one transaction | 6 | New — explains D-01's mechanism from the schema side |
+| X-04 | HIGH | `/simulator` renders invented coaching guidance graded on the Layer 11 safety ladder, ungated and undisclosed | 7 | New |
+| X-05 | HIGH | `/operations` stamps "Signed & Active" over safety guarantees that two other passes of this same audit found unenforced | 7 | New |
+| X-06 | HIGH | The recorded basis for the "leave the consoles alone" decision is measurably wrong — **one of six carries the stamp, not six** | 7 | New — corrects a premise I relied on when advising you |
+| X-07 | HIGH | `/operations` presents LEGACY-READINESS as a signed, certified, active mathematical gate, to every role in the gym | 9 | New |
+| X-08 | HIGH | The one readiness number that actually changes a child's training is a **client-side constant, defaulting to GREEN** | 9 | New |
+| X-09 | HIGH | "Readiness to Train" is stored in a column named `rpe` and displayed to the child as "effort" | 9 | New |
+| X-10 | HIGH | "Approve + verify" is one click by one person, and the screen shows nothing that could be verified | 16 | New |
+| X-11 | HIGH | The Library grades a claim "Backed by approved Library evidence" by **counting citations**, bypassing the codebase's own quality rule, and the UI drops the quality fields | 16 | New |
+| X-12 | HIGH | Capability coverage counts sources nobody approved — including sources a reviewer **rejected** and sources withdrawn for retraction | 16 | New |
+| X-13 | HIGH | **Any organisation member, including an athlete**, can mark a research requirement "Resolved" with no evidence at all | 16 | New |
+| X-14 | HIGH | A blocked video of a child files its safety escalation exactly once; if that write fails the escalation is **lost forever** | 17 | New |
+| X-15 | HIGH | A job retried after lease expiry **re-sends a child's video frames** to the external vision service, with consent checked only at the original enqueue | 17 | New — the long tail behind E-01/F-11 |
 | P-01 | HIGH | `POST /api/pilot/audit/get` returns `select *` over `pilot.audit_events` behind a **one-entry** coach denylist. 56 entity types are written; three carry payloads a coach should not enumerate gym-wide — `account` details include `login_email` and guardian link ids, `intake_case` includes reviewers' free-text notes, `parent_barrier_report` includes a named athlete's family hardship category. The narrow gate exists and this route goes around it | 5 | New — not in pass 2 (among its 175 unopened), not in `NETWORK_STATUS.md`, not in the last 40 commits |
 | P-02 | MEDIUM | `intake/domain-upsert` writes the SHADOW authority record — `allowed: true`, caller-authored `action`, named child — **before** `assertActorCanAccessAthlete` runs | 5 | New; corroborates S-01's ordering point from a second direction |
 | P-03 | MEDIUM | Film Study vision jobs enqueue with no dedup, so duplicate AI runs occur on the same minor's footage | 5 | New |
