@@ -128,7 +128,7 @@ described.
 |---|---|---|
 | 2 — Authorization | spot-checked by hand (below); full refutation pass not yet run | partial |
 | 3 — Minors' data & consent | `VERIFY-03-minors-consent.md` | **running** |
-| 4 — Safety gates | `VERIFY-04-safety-gates.md` | **running** |
+| 4 — Safety gates | `VERIFY-04-safety-gates.md` | **done — 2 downgraded, 1 narrowed, 1 corrected, 0 retracted** |
 
 The refutation passes are instructed to assume each finding is wrong until the
 file proves otherwise, to argue every severity *down*, and to treat a pass that
@@ -187,15 +187,17 @@ partial by definition rather than final.
 | ID | Severity | Finding | Pass | Status |
 |---|---|---|---|---|
 | F-01 | CRITICAL | Competition entry and league roster consult no safety record at all — a child under an active `all_training` hold can be entered with one authenticated request | 4 | **Known. Fixed by PR #452, which is green and not a draft. Needs a merge, not new work.** |
-| F-02 | HIGH | A hold does not cancel registrations that already exist; the STOP rung is checked once at registration and never again | 4 | New |
-| F-03 | MEDIUM | `/admin/safety-review` double-counts one compliance violation and every hold in its headline number | 4 | New — second instance of the Morning Read collision class |
+| F-02 | ~~HIGH~~ **MEDIUM** | A hold does not cancel registrations that already exist; the STOP rung is checked once at registration and never again | 4 | New — **downgraded on verification, and a sub-claim of mine was false: see below** |
+| F-03 | ~~MEDIUM~~ **LOW** | `/admin/safety-review` double-counts one compliance violation and every hold in its headline number | 4 | New — downgraded on verification |
 | F-04 | MEDIUM | `raiseConductConcern` bypasses the incident severity floor and the #433 dedup; same route has no athlete-scope check | 4 | New |
 | F-05 | LOW | `/admin/escalations` stale source-type union | 4 | Known; fixed on the PR #456 branch |
 | F-06 | MEDIUM | All three hold scopes overstate enforcement, not only `conditioning_only` | 4 | Half known — this audit's own prior claim was understated and is corrected |
 | F-07 | LOW | A `training_hold` gate can be recorded `blocked` but never `passed`, so a guardian sees "Not clear" permanently after one refused registration | 4 | New |
 | F-08 | MEDIUM | `readinessMath.ts` has zero callers; the stored readiness score is taken raw from the request body, so the clamp and delta-RPE lock live in a module nothing calls | 4 | New mechanism behind a known finding |
 | F-09 | LOW | `TrainingHoldScope` defined five times, feeding three exhaustive maps, one with no fallback | 4 | New — same shape as the drift that broke `main` three times |
-| F-10 | MEDIUM | `assertShadowAuthority` cannot deny at any of its three call sites; it records `allowed: true` for every medical and waiver write | 4 | New |
+| F-10 | MEDIUM | `assertShadowAuthority` is inert at **two of its three** call sites | 4 | New — **the original "all three" headline was falsified on verification; see below** |
+| F-24 | MEDIUM | `automation_mode` is unvalidated at two of three SHADOW call sites with no column CHECK, so the single working denial branch is evadable by sending `"Automatic"` instead of `"automatic"` | verify-4 | **New — found by the refutation pass, not the pass it was verifying** |
+| F-25 | LOW | `/coach/progression-intelligence` is a second coach-facing hold reader that pass 4 did not list | verify-4 | New — found by the refutation pass |
 | F-11 | HIGH | Film Study checks guardian consent at enqueue and never again; the async job re-validates only the actor's role, then reads the child's video by blob path. A guardian can withdraw consent, be truthfully told published media was retracted, and have frames of their child sent to an external vision service afterwards | 3 | New — **the most important finding of this audit so far** |
 | F-12 | HIGH | Consent scope is collected and presented to guardians as control but enforced by nothing, with `covers_video` defaulting `true` in three places including on every non-media waiver row | 3 | Known as an MVP cut; the default and its breadth are new |
 | F-13 | HIGH | A coach can silently overwrite an existing guardian's `pilot.parents` binding, severing a real parent from their own child's consent withdrawal | 3 | New — **owner decision, narrows a role gate** |
@@ -209,6 +211,51 @@ partial by definition rather than final.
 | F-21 | HIGH | A coach can overwrite another family's guardian record — `upsertGuardian`'s `on conflict … do update` rewrites `account_id`, phone and email, and repointing `account_id` hands a chosen account guardian reach over every child that record carries, siblings included | 2 | New extension of the escalated `parent_id` finding |
 | F-22 | MEDIUM | `multidiscipline` and `competence-cohorts` call `requireRole(principal, ['coach','admin'])`, which is exact-match, so every provisioned `organization_admin` gets a 403 on a child's grappling-exposure history. Tests miss it because they drive the legacy `'admin'` value | 2 | New |
 | F-23 | MEDIUM | `DELETE /api/pilot/achievements/mentorships` authorizes only the mentor side, and does so *after* `endMentorship` has committed its UPDATE — an unauthorized coach closes the pairing and then receives the 403 | 2 | New |
+
+### What the pass-4 refutation changed, including two things I told the owner that were wrong
+
+The refutation pass retracted nothing but moved four of ten findings, and
+**four of the ten carried a factual error in their supporting text.** That is the
+result the standard was written to produce, and it lands on my own reporting
+first.
+
+**F-02 was overstated, and I repeated the false part.** The mechanism holds — no
+cron, job, trigger or delete against `pilot.scheduler_registrations` exists
+anywhere, so a hold genuinely does not cancel registrations already made. But
+the pass wrote, and I passed on, that no coach-facing surface shows the hold at
+the door. That is false. `CoachWorkspace.tsx:895` fetches
+`/api/pilot/escalations?status=open` and renders `training_hold: 'Training hold'`
+cards naming the athlete, and `/coach/progression-intelligence` is a second hold
+reader neither the pass nor I listed. A coach is not blind to the hold. **HIGH →
+MEDIUM.**
+
+**F-10's headline was falsified.** Pass 4 claimed `assertShadowAuthority` cannot
+deny at *any* of its three call sites, and that is what I wrote into
+`NETWORK_STATUS.md`. The refutation pass enumerated the sites independently —
+the count of three is right — and found `review-action/route.ts:86-88` computes
+`lowRisk: action !== 'promote'` rather than asserting it, so `action: 'promote'`
+with `automation_mode: 'automatic'` genuinely denies. The gate is inert at **two
+of three** sites, not three. The substance survives: the medical and waiver
+intake writes are the inert ones, which is the part that matters. But "cannot
+deny anywhere" was wrong and is corrected on the shared surface too.
+
+**F-03 downgraded MEDIUM → LOW.** **F-06 confirmed with a correction**: the
+"all three scopes overstate enforcement" claim is right — and my earlier
+`conditioning_only`-only record was the narrower truth — but its consequence
+paragraph is contradicted twice over and its grep count was 11 against 15 actual
+source hits.
+
+**F-01 held under every attack**, which is worth saying plainly given it is the
+CRITICAL. No `middleware.ts` exists in `apps/web`; `grep -rn "create trigger"
+infra/` returns exactly three triggers repo-wide, none on the competition or
+roster tables; the only entry constraints are two composite foreign keys and a
+uniqueness index. The quotes are byte-exact at the cited lines.
+
+The refutation pass also **found two things the pass it was checking had
+missed**, which is the strongest argument for running it at all. The substantive
+one is F-24: `automation_mode` is unvalidated at two of three sites with no
+column CHECK, so the one denial branch that does work can be evaded by sending
+`"Automatic"` instead of `"automatic"`.
 
 ### On F-20, and why I moved it
 
