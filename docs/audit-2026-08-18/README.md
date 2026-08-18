@@ -112,11 +112,59 @@ admitted gap.
 | 10 | Tests & CI | What the 281 unit + 93 pg suites actually pin, tests that assert nothing, the pg teardown race, CI gates | **done** | `PASS-10-tests-ci.md` |
 | 11 | Build, infra & secrets | Dockerfiles, CI/CD exposure, **secrets in tree and in git history**, `staticwebapp.config.json` | **done** | `PASS-11-infra-secrets.md` |
 | 12 | Docs vs. code | 425 docs: claims contradicted by source, contract files, stale-but-unmarked | **done** | `PASS-12-docs-vs-code.md` |
-| 13 | Cross-cutting synthesis | Defects visible only between passes — the class that broke `main` three times | queued, runs last | — |
+| 13a | Cross-cutting synthesis: collisions | Defects visible only between two-or-more passes together | **done — 5 of 6 directed hunts confirmed, 1 more found unprompted** | `PASS-13a-collisions.md` |
+| 13b | Cross-cutting synthesis: unified ranking | One independent severity ranking across all 157 findings, owing no pass's label any loyalty | **running** | — |
 | 14 | Role journeys & flow | Seven journeys traced UI → API → domain → DB | **done — all 7 of 7 traced** | `PASS-14-flows.md` |
 | 15 | Data egress & integrations | **What data about a child leaves this system, to whom, and what stands between it and the door** — model calls, SAS URLs, email, exports, telemetry, logs | **done** | `PASS-15-egress.md` |
 | 16 | Research, data library & evidence | Source lifecycle, evidence registry, Knowledge Graph, `assessment_protocols`, UI claims vs. implemented hand-offs | **done** | `PASS-16-research-library.md` |
 | 17 | Resilience & failure behaviour | **Does each safety gate fail closed or fail open?** Swallowed errors, permissive defaults, non-transactional multi-step safety writes, retries that double-write | **done** | `PASS-17-resilience.md` |
+
+## The sentence no single pass could write
+
+Pass 13a read all sixteen passes and the four verification files together, hunting
+specifically for defects invisible from any one report — the same *shape* of thing
+that broke `main` three times, where a union grew on one branch and its exhaustive
+map grew on another. It confirmed four of six directed collision hunts, ruled one
+out cleanly, found one that partially holds and partially doesn't, and surfaced one
+more nobody asked it to look for.
+
+**Its own headline, verbatim, because it is better than anything I could compress
+it to:**
+
+> Before this gym opens to real children, the product has no way for a human to
+> make a child's training stop, an easy and unaudited way for a coach to say a
+> child is cleared to keep going, and — on the one subsystem that already runs on
+> every real upload — no consent gate standing between a child's face and an
+> external inference service; and the audit's own verification work confirms that
+> none of this has harmed a real child yet, which is exactly why it is still
+> fixable before it does.
+
+No pass states that sentence. Pass 14 states the first clause, pass 8 the second,
+pass 15 — corrected by its own refutation — the third in its true, less alarming
+form. It is the one sentence in 157 findings that changes what "a lot of MEDIUMs
+and one CRITICAL" means as a readiness-to-operate summary, and it is timed to the
+week that matters: before the doors open, not after.
+
+**Thirteen-plus call sites collapse to one root cause and one fix — and one that
+looks the same does not, checked directly rather than assumed.** Pass 2's F-20 (the
+CRITICAL I raised on review), its own eleven-route family, and pass 8's H-1 are the
+same missing primitive at a thirteenth call site: a coach admitted by role with no
+check that they have any standing on the named child, in a codebase that already
+has the right call, already uses it correctly on four sibling routes, and already
+wrote the missing sentence into a comment (`training-holds/route.ts:131`, "no
+org-wide hold roster"). Pass 5's P-01 looks like the same shape and **is not** — it
+is a bulk read across 56 entity types with no single athlete to scope to, defended
+by an incomplete denylist rather than an absent relationship check. The pass says
+so explicitly rather than folding it in for a bigger number: *"reporting them as
+one collapsed root cause would overstate what the passes actually show."*
+
+**Ruled out, and checked rather than assumed:** the platform-owner bootstrap key
+does not appear anywhere in the git history that found the two exposed PINs. A
+negative result recorded as plainly as a positive one.
+
+**No deletion promise in `DATA_RETENTION.md` can currently be kept — not only the
+video one.** The retention purge's own foreign-key block fires on the first real
+guardian, not on video specifically.
 
 ## The finding that reframes the rest: nothing in the product can place a training hold
 
