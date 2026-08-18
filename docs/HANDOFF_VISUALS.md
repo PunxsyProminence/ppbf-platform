@@ -5,8 +5,10 @@ A standing brief for an agent that owns this platform's visual layer. Sibling of
 access, pasted code, and no stake in believing us. This one assumes the opposite:
 you can read the tree, run the checks, and open a PR.
 
-Read `AGENT_KERNEL.md` first, then `docs/AI_COLLABORATION.md` for collision
-control, then `design-system/ppbf.css` and `design-system/README.md`.
+Read `AGENT_KERNEL.md` first, then `docs/capabilities/NETWORK_STATUS.md` (what
+has already merged, what is in review and whose files are therefore spoken for,
+and what is parked), then `docs/AI_COLLABORATION.md` for collision control, then
+`design-system/ppbf.css` and `design-system/README.md`.
 
 ## Before you start
 

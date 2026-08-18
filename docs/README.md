@@ -14,6 +14,11 @@ This folder contains project documentation, architecture decisions, and guides.
 Standing briefs for an agent picking up one lane of this platform. Collision
 control for all of them is `AI_COLLABORATION.md`.
 
+**Start with `capabilities/NETWORK_STATUS.md`** whichever lane you are on: what
+the capability audit found, what has already merged, what is in review (and so
+whose files not to touch), and what is deliberately parked. It exists so nobody
+spends an afternoon on something that merged this morning.
+
 - `HANDOFF_VISUALS.md` — the visual layer: design-system conformance, refusal
   states, and the outstanding illustration assets.
 - `HANDOFF_RESEARCH.md` — the questions code cannot close: clearance
