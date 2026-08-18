@@ -4,7 +4,7 @@ import { POST } from './route';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { createCoachObservation } from '@/src/server/pilot/intake';
+import { createCoachObservation, linkGuardianAthlete, upsertGuardian } from '@/src/server/pilot/intake';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 // The register reconciliation (Wave 9) found this route's coach_note write
@@ -34,13 +34,20 @@ jest.mock('@/src/server/pilot/shadowAuthority', () => {
 
 jest.mock('@/src/server/pilot/intake', () => {
   const actual = jest.requireActual('@/src/server/pilot/intake');
-  return { ...actual, createCoachObservation: jest.fn() };
+  return {
+    ...actual,
+    createCoachObservation: jest.fn(),
+    upsertGuardian: jest.fn(),
+    linkGuardianAthlete: jest.fn(),
+  };
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockCreate = createCoachObservation as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockUpsertGuardian = upsertGuardian as jest.Mock;
+const mockLinkGuardianAthlete = linkGuardianAthlete as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -121,4 +128,65 @@ test('a missing payload is a 400-class refusal, not a write of empty strings', a
 
   expect(response.status).toBeGreaterThanOrEqual(400);
   expect(mockCreate).not.toHaveBeenCalled();
+});
+
+// Capability audit: a coach's standing on one athlete does not extend to
+// choosing which guardian gets attached to it (the cross-family-within-an-org
+// gap -- see the doc comment on this branch in route.ts). These two tests
+// pin the fix: an org admin's existing guardian_link write is unchanged, and
+// a coach hitting the same branch is refused before either intake write runs.
+const GUARDIAN_LINK_BODY = {
+  entity_type: 'guardian_link',
+  athlete_id: 'ath-1',
+  payload: {
+    parent_id: 'parent-1',
+    full_name: 'Jamie Guardian',
+    phone: '555-0100',
+    relationship_to_athlete: 'mother',
+  },
+};
+
+test('an organization admin can still create a guardian link -- no regression', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockUpsertGuardian.mockResolvedValue(undefined);
+  mockLinkGuardianAthlete.mockResolvedValue(undefined);
+
+  const response = await POST(postRequest(GUARDIAN_LINK_BODY));
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(body).toMatchObject({ ok: true, entity_type: 'guardian_link', entity_id: 'parent-1:ath-1' });
+  expect(mockUpsertGuardian).toHaveBeenCalledWith({
+    organizationId: 'org-1',
+    parentId: 'parent-1',
+    accountId: undefined,
+    fullName: 'Jamie Guardian',
+    phone: '555-0100',
+    email: undefined,
+  });
+  expect(mockLinkGuardianAthlete).toHaveBeenCalledWith({
+    organizationId: 'org-1',
+    parentId: 'parent-1',
+    athleteId: 'ath-1',
+    relationshipToAthlete: 'mother',
+  });
+  expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+    entity_type: 'intake_guardian_link',
+    organization_id: 'org-1',
+  }));
+});
+
+test('a coach cannot create a guardian link -- cross-family attachment is refused, not a 500', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+  mockAccess.mockResolvedValue(undefined);
+
+  const response = await POST(postRequest(GUARDIAN_LINK_BODY));
+  const body = await response.json();
+
+  expect(response.status).toBe(403);
+  expect(body).toMatchObject({ error: expect.stringContaining('Forbidden') });
+  expect(mockUpsertGuardian).not.toHaveBeenCalled();
+  expect(mockLinkGuardianAthlete).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
 });

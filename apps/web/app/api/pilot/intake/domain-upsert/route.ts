@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
@@ -131,6 +131,29 @@ export async function POST(request: NextRequest) { // NOSONAR
         noteText: asString(body.payload.note_text),
       });
     } else if (entityType === 'guardian_link') {
+      // assertActorCanAccessAthlete (above) only confirms the actor may touch
+      // THIS athlete; parent_id is otherwise validated for nothing but
+      // non-emptiness (see intake.ts:711-732 for the sibling gap on the same
+      // field, fixed today in f9dff27e). A coach's standing on one athlete
+      // does not extend to choosing which guardian gets attached to it -- a
+      // coach assigned to Athlete A could name ANY other family's parent_id
+      // (say, Athlete B's guardian) here, and that guardian's account would
+      // inherit guardian_links' read reach into Athlete A's training holds,
+      // messages, and safety surfaces, despite having no relationship to that
+      // family. This is the cross-family-within-an-organization gap
+      // identified in the internal capability audit. organization_id is
+      // always taken from the session, never request input, so
+      // cross-ORGANIZATION attachment is already blocked structurally by the
+      // (organization_id, parent_id) composite key -- this closes the
+      // within-org case that key cannot see. Organization admins already see
+      // the whole org, so restricting this write to them costs no legitimate
+      // workflow: a repo-wide search found no coach-facing caller of this
+      // entity_type (the admin-only guardian-linking UI drives
+      // /api/pilot/admin/staff instead).
+      if (!isOrganizationAdminRole(principal.role)) {
+        throw new Error('Forbidden: only an organization admin can link a guardian to an athlete');
+      }
+
       const parentId = asString(body.payload.parent_id);
       if (!parentId) {
         throw new Error('Missing parent_id for guardian link');
