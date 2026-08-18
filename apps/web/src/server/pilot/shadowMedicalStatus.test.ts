@@ -218,4 +218,43 @@ describe('the expiry a clearance is written with', () => {
     const [, params] = clientQuery.mock.calls[0];
     expect(params[params.length - 1]).toBeNull();
   });
+
+  // The route's own parseExpiresAt refuses an expiry that is not already
+  // strictly in the future, but it checks against JS Date.now() before
+  // assertShadowAuthority and this INSERT run -- so an expiry only seconds
+  // out can still lapse in that gap and hit the database's own CHECK
+  // instead, which compares against the effective_at the INSERT assigns.
+  // Without translation that surfaces as an opaque 500 (Copilot review,
+  // PR #473); this pins it as the caller-supplied-value problem it is.
+  test('a CHECK violation on expires_at vs effective_at is reported as an unsupported value, not a raw 500', async () => {
+    const checkViolation = Object.assign(new Error('check constraint violated'), {
+      code: '23514',
+      constraint: 'shadow_medical_status_expires_after_effective_check',
+    });
+    const clientQuery = jest.fn().mockRejectedValue(checkViolation);
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+    await expect(setMedicalAdministrativeStatus({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      status: 'cleared',
+      expiresAt: '2026-08-18T12:00:01.000Z',
+      setByAccountId: 'coach-1',
+      setByRole: 'coach',
+    })).rejects.toThrow('Unsupported expiresAt');
+  });
+
+  test('any other database error from the insert is not swallowed or reworded', async () => {
+    const outage = Object.assign(new Error('connection terminated unexpectedly'), { code: '57P01' });
+    const clientQuery = jest.fn().mockRejectedValue(outage);
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+    await expect(setMedicalAdministrativeStatus({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      status: 'cleared',
+      setByAccountId: 'coach-1',
+      setByRole: 'coach',
+    })).rejects.toThrow('connection terminated unexpectedly');
+  });
 });

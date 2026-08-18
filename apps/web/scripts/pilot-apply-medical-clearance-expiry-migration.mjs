@@ -93,7 +93,7 @@ const READINESS_QUERY = `
       select 1
       from pg_constraint
       where conname = 'shadow_medical_status_expires_after_effective_check'
-        and conrelid = 'pilot.shadow_medical_administrative_status'::regclass
+        and conrelid = to_regclass('pilot.shadow_medical_administrative_status')
     ) as constraint_ready,
     exists (
       select 1

@@ -134,22 +134,42 @@ export async function setMedicalAdministrativeStatus(input: {
   setByRole: string;
 }): Promise<ShadowMedicalAdministrativeStatusRow> {
   return withTransaction(async (client) => {
-    const result = await client.query<ShadowMedicalAdministrativeStatusRow>(
-      `insert into pilot.shadow_medical_administrative_status
-       (organization_id, athlete_id, status, restriction_flags, source_reference, set_by_account_id, set_by_role, expires_at)
-       values ($1,$2,$3,$4::jsonb,$5,$6,$7,$8::timestamptz)
-       returning status_id, organization_id, athlete_id, status, restriction_flags, source_reference, set_by_account_id, set_by_role, effective_at, expires_at::text, created_at`,
-      [
-        input.organizationId,
-        input.athleteId,
-        input.status,
-        JSON.stringify(input.restrictionFlags ?? {}),
-        input.sourceReference ?? null,
-        input.setByAccountId,
-        input.setByRole,
-        input.expiresAt ?? null,
-      ],
-    );
+    let result;
+    try {
+      result = await client.query<ShadowMedicalAdministrativeStatusRow>(
+        `insert into pilot.shadow_medical_administrative_status
+         (organization_id, athlete_id, status, restriction_flags, source_reference, set_by_account_id, set_by_role, expires_at)
+         values ($1,$2,$3,$4::jsonb,$5,$6,$7,$8::timestamptz)
+         returning status_id, organization_id, athlete_id, status, restriction_flags, source_reference, set_by_account_id, set_by_role, effective_at, expires_at::text, created_at`,
+        [
+          input.organizationId,
+          input.athleteId,
+          input.status,
+          JSON.stringify(input.restrictionFlags ?? {}),
+          input.sourceReference ?? null,
+          input.setByAccountId,
+          input.setByRole,
+          input.expiresAt ?? null,
+        ],
+      );
+    } catch (error) {
+      // The route's own parseExpiresAt already refuses an expiry that is not
+      // strictly in the future -- but that check runs against JS Date.now()
+      // before assertShadowAuthority and this INSERT, so an expiry only a
+      // couple of seconds out can still lapse in that gap (request latency,
+      // clock skew) and reach here instead. The database's own CHECK, which
+      // compares against the effective_at this INSERT assigns via its
+      // default, is the last word and the more trustworthy one. Reported as
+      // the caller-supplied-value problem it is (400), not a raw 500
+      // (Copilot review, PR #473).
+      if (
+        (error as { code?: unknown }).code === '23514'
+        && (error as { constraint?: unknown }).constraint === 'shadow_medical_status_expires_after_effective_check'
+      ) {
+        throw new Error('Unsupported expiresAt: the stated expiry is no longer after the moment this clearance takes effect.');
+      }
+      throw error;
+    }
 
     const row = result.rows[0];
     if (!row) {
