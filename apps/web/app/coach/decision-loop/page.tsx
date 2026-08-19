@@ -460,7 +460,7 @@ export default function DecisionLoopReviewPage() {
       routeLabel="/coach/decision-loop"
       allowedRoles={['coach', 'admin']}
       showShellHeader={false}
-      room="clinic"
+      room="floor"
     >
       <div className="text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-6xl">

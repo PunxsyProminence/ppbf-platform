@@ -212,28 +212,21 @@ function renderedRoom(href: string): Resolution {
 /**
  * Routes where the two disagree and the PAGE is the one that is wrong.
  *
- * These are not tolerances. Each is a page whose room contradicts what the
- * screen is for, recorded here only because this branch may not edit pages --
- * a second agent owns app/**\/page.tsx. Each entry states the page edit that
- * removes it, and the test below FAILS if the drift is gone, so the line
- * cannot outlive the fix.
+ * EMPTY, and it should stay that way. It held two entries when this file was
+ * written -- /simulator painting office inside the file-room pipeline, and
+ * /coach/decision-loop painting clinic over seven panels of coaching work --
+ * recorded rather than fixed only because that branch could not edit
+ * app/**\/page.tsx. Both pages have since been moved to the room their door
+ * files them under, and the tests below took the entries with them: the
+ * 'drops a PAGE_IS_WRONG entry as soon as the page is fixed' check fails on
+ * any line that outlives its fix.
+ *
+ * These are not tolerances. An entry is a page whose room contradicts what
+ * the screen is for, and it is only ever the right move when the drift is
+ * real, agreed, and out of reach of the change being made. Anything else is
+ * a page to fix.
  */
-const PAGE_IS_WRONG: Record<string, { paints: Room; shouldPaint: Room; why: string }> = {
-  '/simulator': {
-    paints: 'office',
-    shouldPaint: 'file',
-    why: 'stage 4 of the knowledge pipeline (DevelopmentPipelineBanner currentStage="simulator"): '
-      + 'research, evidence, knowledge-graph and audit are all file, and the page reads no gym record '
-      + 'and touches no athlete. The map now says file; the page still says room--office.',
-  },
-  '/coach/decision-loop': {
-    paints: 'clinic',
-    shouldPaint: 'floor',
-    why: 'six of its nine panels are recommendations, decisions, outcomes, a behaviour note and a message '
-      + 'home -- "coaching decisions" is the gym floor\'s stated purpose. Medical status appears as a gate '
-      + 'on one panel, which is not enough to make the surface clinic work.',
-  },
-};
+const PAGE_IS_WRONG: Record<string, { paints: Room; shouldPaint: Room; why: string }> = {};
 
 /**
  * Routes that paint no room at all.
@@ -247,22 +240,62 @@ const PAGE_IS_WRONG: Record<string, { paints: Room; shouldPaint: Room; why: stri
  * Parent-facing routes are deliberately absent: RoleStandaloneView drops the
  * room on its canvas branch, so those are resolved as 'canvas' above and are
  * correct with no room.
+ *
+ * FOUR HAVE LEFT. /dashboard and the three /operations surfaces were bare ink
+ * under ink-tuned content -- mat-leather panels, t-* type, brass chips -- so
+ * hanging the office wall behind them was a class on one line and nothing
+ * else. What remains is not a backlog of the same kind of edit. Each entry
+ * below now says which of the two reasons keeps it here:
+ *
+ *   NO MARKUP    -- the page returns a redirect or hands its whole surface to
+ *                   something that brings its own ground. There is nowhere to
+ *                   put a room and nothing a room would do.
+ *   NEEDS A SLICE -- the room is DECIDED (the door says it, and the reason is
+ *                   written out below), but the page's type and panels are
+ *                   still tuned for the ground it is on. Moving the ground
+ *                   without converting the content is the readability trap
+ *                   roleGround.ts names and app/parent/safety/page.tsx
+ *                   documents: hard-coded canvas ink lands dark-on-dark the
+ *                   moment a wall goes up behind it. The conversion is the
+ *                   work, and the room comes free at the end of it.
+ *   FAMILY GROUND -- T7: a family or signed-out surface takes the warm plate
+ *                   or none, never another room's wall.
  */
 const UNPAINTED: Record<string, string> = {
-  '/dashboard': 'redirect hub -- one riveted frame on bare ink, seen for under a second',
-  '/admin/safety-escalations': 'redirect() to /admin/escalations, renders nothing',
-  '/admin/consent': 'legacy canvas-tan palette, never converted to a room',
-  '/print': 'PrintRoom renders print sheets, which carry their own paper ground',
-  '/operations': 'bare ink ground',
-  '/operations/external-competition': 'bare ink ground',
-  '/operations/wrestling-league': 'bare ink ground',
-  '/notices': '.on-canvas',
-  '/parent/consent': 'guardian page, room deliberately dropped (see the comment in the page)',
-  '/parent/safety': 'guardian page, room deliberately dropped (see the comment in the page)',
-  '/public': '.on-canvas, and the only surface a signed-out visitor sees',
-  '/help': '.on-canvas',
-  '/store': 'legacy canvas-tan palette',
-  '/retro-lab': 'design lab on canvas-tan -- component samples, not a gym surface',
+  '/admin/safety-escalations':
+    'NO MARKUP -- the whole page is redirect("/admin/escalations"); it returns no JSX',
+  '/print':
+    'NO MARKUP -- the page is a gate around PrintRoom, and print sheets carry their own '
+    + 'paper ground. A wall behind paper that is about to leave the building on a printer '
+    + 'is a wall nobody sees',
+  '/admin/consent':
+    'NEEDS A SLICE -- office. Its clinic siblings are the audits (/admin/waiver-status asks '
+    + 'who is MISSING a waiver, /admin/athlete-consent who lacks media consent); this screen '
+    + 'records that a guardian signed and gates nothing, which the page says of itself in so '
+    + 'many words. Recording is desk work. Still on the legacy canvas-tan palette, and its '
+    + 'cards set no ink of their own, so a room would recolour every one of them at once',
+  '/notices':
+    'NEEDS A SLICE -- office, and named in the room\'s purpose line. Staff-gated (admin, '
+    + 'coach, platform_owner, board), so .on-canvas is the wrong ground for its audience, but '
+    + 'the header hard-codes --hide-800 and --hide-950 ink for that canvas and would go '
+    + 'dark-on-dark against a plank wall. The mat-paper cards would survive; the header would not',
+  '/store':
+    'NEEDS A SLICE -- legacy canvas-tan with --black type, and open to families and '
+    + 'signed-out visitors, so the ground is an audience question (T7) before it is a room one',
+  '/retro-lab':
+    'NEEDS A SLICE -- the door says floor, but this is the component showroom on canvas-tan, '
+    + 'not a gym surface. A room here would put a brick wall behind samples of the things that '
+    + 'are supposed to be shown against it',
+  '/help':
+    'FAMILY GROUND -- .on-canvas, open to every role and to nobody signed in at all. The door '
+    + 'files it under office, which settles nothing: T7 is about who is reading, and a parent '
+    + 'reads this one',
+  '/public':
+    'FAMILY GROUND -- .on-canvas, and the only surface a signed-out visitor sees',
+  '/parent/consent':
+    'FAMILY GROUND -- guardian page, room deliberately dropped (see the comment in the page)',
+  '/parent/safety':
+    'FAMILY GROUND -- guardian page, room deliberately dropped (see the comment in the page)',
 };
 
 /* ---------------------------------------------------------------- checks -- */

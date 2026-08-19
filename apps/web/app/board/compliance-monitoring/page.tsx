@@ -150,9 +150,15 @@ export default function BoardComplianceMonitoringPage() {
     // Listing 'board' alone refused the owner from a register its own API
     // returns to them.
     <RoleSessionGate allowedRoles={['board', 'platform_owner']}>
-      {/* The clinic room: this is the safeguarding register, so it stands in
-          the room the sheet gives to clearance and safety, on the ink ground
-          the pattern requires (a room never sits on canvas). */}
+      {/* The board room. This screen did paint the clinic once, and the class
+          was moved to board when the twelve mis-filed screens were realigned;
+          the sentence describing the clinic was left behind, so the page has
+          been carrying a comment that contradicts the wall above it. The
+          board room is right: this is a board workspace reading aggregate
+          counts with no athlete named anywhere, which is that room's stated
+          purpose, while the clinic is where clearances and holds are actually
+          worked. It stands on the ink ground the pattern requires (a room
+          never sits on canvas). */}
       <main className="room room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto max-w-7xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">

@@ -56,8 +56,13 @@ export default function DashboardEntryPage() {
     /* Ink ground (Law 6): this is a staff-side routing hub, not a family
        surface. Most visitors see it for under a second before the redirect
        lands, so it reads as one riveted brass frame around a leather panel —
-       the same wayfinding chassis the consoles use — rather than a bare page. */
-    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+       the same wayfinding chassis the consoles use — rather than a bare page.
+
+       The front office, which is what the door has always said: the bell, the
+       surface a session starts on. It painted no room at all, so a door
+       labelled "the front desk" opened onto bare ink. The frame is mat-leather
+       on ink already, so it hangs on the plank wall unchanged. */
+    <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-[610px] flex-col items-stretch justify-center px-[var(--s5)] py-[var(--s6)]">
         <div className="frame">
           <span className="rivet rivet--tl" />

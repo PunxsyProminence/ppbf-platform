@@ -269,7 +269,10 @@ export default function ExternalCompetitionPlatformPage() {
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
-      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      {/* Front office: forms and tables recording where the gym is taking
+          athletes and who is entered. Records and roster work, which is the
+          office's stated purpose -- the training itself is the floor's. */}
+      <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
             <p className="t-eyebrow tracking-[0.18em]">Operations Workspace</p>
