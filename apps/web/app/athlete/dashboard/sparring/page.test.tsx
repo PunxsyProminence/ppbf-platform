@@ -2,10 +2,14 @@
  * @jest-environment jsdom
  */
 
-// The Deep-Track submit path reports to the athlete whether their session was
-// kept. Telling someone their work was "partially saved" -- and stamping a save
-// time -- when the server accepted nothing is the one failure they cannot
-// recover from, because the message tells them not to re-enter it.
+// The submit path reports to the athlete whether their session was kept.
+// Telling someone some of their work saved -- and stamping a save time -- when
+// the server accepted nothing is the one failure they cannot recover from,
+// because the message tells them not to put it in again.
+//
+// The strings matched below are the athlete-facing ones and they are matched
+// loosely on purpose: what is pinned is that the three outcomes stay three
+// distinguishable messages, not the exact wording of any of them.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -54,13 +58,13 @@ async function renderAndSubmit(observationOk: (index: number) => boolean) {
   global.fetch = mockFetch(observationOk) as unknown as typeof fetch;
   const { container } = render(<SparringTelemetryPage />);
 
-  const submit = await screen.findByRole('button', { name: 'Log Combat Session' });
+  const submit = await screen.findByRole('button', { name: 'Log This Session' });
   await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
 
   fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 }
 
-describe('Deep-Track sparring submission status', () => {
+describe('sparring log submission status', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
@@ -68,25 +72,25 @@ describe('Deep-Track sparring submission status', () => {
   test('a submission the server rejected entirely is not reported as saved', async () => {
     await renderAndSubmit(() => false);
 
-    await screen.findByText(/Nothing was saved/);
-    expect(screen.queryByText(/partially saved/)).toBeNull();
+    await screen.findByText(/Nothing saved/);
+    expect(screen.queryByText(/Some of it saved/)).toBeNull();
     // The stamp is the athlete's only evidence a record exists, so it must not
     // move when no record was created.
-    expect(screen.getByText('Not submitted yet')).toBeTruthy();
+    expect(screen.getByText('Nothing logged yet')).toBeTruthy();
   });
 
   test('a submission the server partly accepted is reported as partial and stamped', async () => {
     await renderAndSubmit((index) => index > 0);
 
-    await screen.findByText(/partially saved/);
-    expect(screen.queryByText('Not submitted yet')).toBeNull();
+    await screen.findByText(/Some of it saved, some did not/);
+    expect(screen.queryByText('Nothing logged yet')).toBeNull();
   });
 
   test('a fully accepted submission is reported as saved and stamped', async () => {
     await renderAndSubmit(() => true);
 
-    await screen.findByText(/Telemetry saved and sent to the SHADOW formula engine/);
-    expect(screen.queryByText('Not submitted yet')).toBeNull();
+    await screen.findByText('Saved. Your coach sees it.');
+    expect(screen.queryByText('Nothing logged yet')).toBeNull();
   });
 
   // The rounds field is TOTAL session rounds. Sending it as 'contact_rounds'
@@ -98,10 +102,10 @@ describe('Deep-Track sparring submission status', () => {
     submittedObservations.length = 0;
     const { container } = render(<SparringTelemetryPage />);
 
-    const submit = await screen.findByRole('button', { name: 'Log Combat Session' });
+    const submit = await screen.findByRole('button', { name: 'Log This Session' });
     await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
 
-    fireEvent.change(screen.getByLabelText('Contact Level'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('How hard the contact was'), { target: { value: '0' } });
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 
     await waitFor(() => expect(submittedObservations.length).toBeGreaterThan(0));
@@ -131,11 +135,11 @@ describe('Deep-Track sparring submission status', () => {
     submittedObservations.length = 0;
     const { container } = render(<SparringTelemetryPage />);
 
-    const submit = await screen.findByRole('button', { name: 'Log Combat Session' });
+    const submit = await screen.findByRole('button', { name: 'Log This Session' });
     await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
 
-    fireEvent.change(screen.getByLabelText('Body Weight (kg, optional)'), { target: { value: '61.5' } });
-    fireEvent.change(screen.getByLabelText('Recovery Notes'), { target: { value: 'Right wrist sore.' } });
+    fireEvent.change(screen.getByLabelText('Your weight (kg, if you want)'), { target: { value: '61.5' } });
+    fireEvent.change(screen.getByLabelText('Anything your coach should know'), { target: { value: 'Right wrist sore.' } });
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 
     await waitFor(() => expect(submittedObservations.length).toBeGreaterThan(0));

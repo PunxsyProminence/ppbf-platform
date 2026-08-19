@@ -147,8 +147,8 @@ export default function SparringTelemetryPage() {
   const [bodyWeightKg, setBodyWeightKg] = useState('');
   const [recoveryNotes, setRecoveryNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [lastSubmitted, setLastSubmitted] = useState('Not submitted yet');
-  const [statusMessage, setStatusMessage] = useState('Ready for combat telemetry capture.');
+  const [lastSubmitted, setLastSubmitted] = useState('Nothing logged yet');
+  const [statusMessage, setStatusMessage] = useState('Nothing logged yet. Fill this in after you spar.');
 
   useEffect(() => {
     void (async () => {
@@ -168,11 +168,11 @@ export default function SparringTelemetryPage() {
     event.preventDefault();
 
     if (!athleteId) {
-      setStatusMessage('Athlete session not found. Sign in again to log a session.');
+      setStatusMessage('You are not signed in any more. Sign in again and this will save.');
       return;
     }
     if (punchesLanded > punchesAttempted) {
-      setStatusMessage('Punches landed cannot exceed punches attempted.');
+      setStatusMessage('You cannot land more than you threw. Check those two numbers.');
       return;
     }
 
@@ -198,22 +198,22 @@ export default function SparringTelemetryPage() {
       });
 
       if (savedCount === 0) {
-        setStatusMessage('Nothing was saved. No part of this session reached the SHADOW formula engine -- '
-          + 'check your connection and log it again.');
+        setStatusMessage('Nothing saved. None of this got through -- check your connection '
+          + 'and put it in again.');
         return;
       }
 
       const timestamp = formatGymTimeOfDay(new Date()) ?? '';
       setLastSubmitted(timestamp);
       const savedMessage = safetyReviewRaised
-        ? 'Telemetry saved. Because there is no current medical clearance on file for this athlete, '
-          + 'a safety review has been raised for your coach. The session was still recorded -- do not re-enter it.'
+        ? 'Saved. There is no current medical clearance on file for this athlete, so '
+          + 'your coach has been asked to look at it. What you wrote is kept -- do not put it in again.'
           + (safetyReviewLesson ? ` ${safetyReviewLesson}` : '')
-        : 'Telemetry saved and sent to the SHADOW formula engine for coach review.';
+        : 'Saved. Your coach sees it.';
 
       setStatusMessage(ok
         ? savedMessage
-        : 'Telemetry partially saved. Some metrics may be missing from coach review.');
+        : 'Some of it saved, some did not. Your coach may not see every number -- tell them.');
     } finally {
       setIsSubmitting(false);
     }
@@ -247,28 +247,41 @@ export default function SparringTelemetryPage() {
        allowed, matching how multi-role pages elsewhere name themselves
        (Evidence Review, Decision Loop Review) rather than naming one role. */
     <RoleStandaloneView roleLabel="Sparring Log" routeLabel="/athlete/dashboard/sparring" allowedRoles={['athlete', 'coach', 'admin']} showShellHeader={false} room="floor">
-      <header className="flex flex-wrap items-center justify-between gap-[var(--s4)] border-b-[3px] border-[color:var(--brass-500)] bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s4)]">
+      {/* The night console's voice was on a child's sparring screen. "Combat
+          Telemetry Log", "SHADOW formula engine surface", "Track D/E ·
+          Deep-Track" -- telemetry is the After Hours room's own Feel word, and
+          this is the gym floor: brick, caged lamps, and a coach in the corner
+          saying short things. roleLabel above has said "Sparring Log" all
+          along; the page now agrees with it.
+
+          bg-[var(--hide-950)] is off the band too. It is not the dead
+          page-level kind -- this header is a CHILD of the room, so the ink
+          really did paint over the brick the room hangs, on the one strip
+          across the top of the screen. The brass rule below it is what
+          separates the header from the form; it never needed a second ground
+          to do that. */}
+      <header className="flex flex-wrap items-center justify-between gap-[var(--s4)] border-b-[3px] border-[color:var(--brass-500)] px-[var(--s5)] py-[var(--s4)]">
         <div>
-          <p className="t-eyebrow">Track D/E · Deep-Track</p>
-          <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Combat Telemetry Log</h1>
+          <p className="t-eyebrow">Your Corner</p>
+          <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Sparring Log</h1>
         </div>
-        <span className="plaque">SHADOW formula engine surface</span>
+        <span className="plaque">Your coach reads this</span>
       </header>
 
       <form onSubmit={onSubmit} className="px-[var(--s5)] py-[var(--s6)]">
         <div className="grid items-start gap-[var(--s5)] lg:grid-cols-[var(--split-major)_var(--split-minor)]">
           <section className="mat-leather--raised grid gap-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s6)]">
             <div className="grid gap-[var(--s2)]">
-              <h2 className="t-command m-0" style={{ fontSize: 'var(--t-lg)' }}>Session Capture</h2>
+              <h2 className="t-command m-0" style={{ fontSize: 'var(--t-lg)' }}>What happened today</h2>
               <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                Log rounds, contact, punch output, focus, and weight for the coach review pipeline. Every field here
-                feeds a real SHADOW formula -- this is the high-effort, high-quality-feedback path.
+                Rounds, contact, what you threw, what landed, what you took, and how you felt after. It takes a
+                couple of minutes and it is the most useful thing you can hand your coach.
               </p>
             </div>
 
             <div className="grid gap-[var(--s5)] sm:grid-cols-2">
               <div className="field">
-                <label htmlFor="roundsCompleted" className="t-label">Total Rounds Completed</label>
+                <label htmlFor="roundsCompleted" className="t-label">Rounds you finished</label>
                 <input
                   id="roundsCompleted"
                   type="number"
@@ -281,7 +294,7 @@ export default function SparringTelemetryPage() {
               </div>
 
               <div className="field">
-                <label htmlFor="opponentStance" className="t-label">Opponent Stance</label>
+                <label htmlFor="opponentStance" className="t-label">Their stance</label>
                 <select
                   id="opponentStance"
                   value={opponentStance}
@@ -296,7 +309,7 @@ export default function SparringTelemetryPage() {
             </div>
 
             <div className="grid gap-[var(--s3)]">
-              <label htmlFor="contactLevel" className="t-label">Contact Level</label>
+              <label htmlFor="contactLevel" className="t-label">How hard the contact was</label>
               <div className="flex flex-wrap items-center justify-between gap-[var(--s4)]">
                 <input
                   id="contactLevel"
@@ -317,7 +330,7 @@ export default function SparringTelemetryPage() {
 
             <div className="grid gap-[var(--s5)] sm:grid-cols-3">
               <div className="field">
-                <label htmlFor="punchType" className="t-label">Primary Punch Type</label>
+                <label htmlFor="punchType" className="t-label">Punch you threw most</label>
                 <select
                   id="punchType"
                   value={punchType}
@@ -330,7 +343,7 @@ export default function SparringTelemetryPage() {
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="punchesAttempted" className="t-label">Attempted</label>
+                <label htmlFor="punchesAttempted" className="t-label">Thrown</label>
                 <input
                   id="punchesAttempted"
                   type="number"
@@ -355,7 +368,7 @@ export default function SparringTelemetryPage() {
 
             <div className="grid gap-[var(--s5)] sm:grid-cols-2">
               <div className="field">
-                <label htmlFor="punchesAbsorbed" className="t-label">Punches Absorbed</label>
+                <label htmlFor="punchesAbsorbed" className="t-label">Punches you took</label>
                 <input
                   id="punchesAbsorbed"
                   type="number"
@@ -366,7 +379,7 @@ export default function SparringTelemetryPage() {
                 />
               </div>
               <div className="field">
-                <label htmlFor="bodyWeight" className="t-label">Body Weight (kg, optional)</label>
+                <label htmlFor="bodyWeight" className="t-label">Your weight (kg, if you want)</label>
                 <input
                   id="bodyWeight"
                   type="number"
@@ -387,17 +400,17 @@ export default function SparringTelemetryPage() {
                 onChange={(event) => setFocusAchieved(event.target.checked)}
                 className="h-[21px] w-[21px] accent-[var(--brass-600)]"
               />
-              <span>Today&apos;s technical focus was achieved</span>
+              <span>I did the thing we were working on</span>
             </label>
 
             <div className="field">
-              <label htmlFor="recoveryNotes" className="t-label">Recovery Notes</label>
+              <label htmlFor="recoveryNotes" className="t-label">Anything your coach should know</label>
               <textarea
                 id="recoveryNotes"
                 value={recoveryNotes}
                 onChange={(event) => setRecoveryNotes(event.target.value)}
                 maxLength={RECOVERY_NOTES_MAX_LENGTH}
-                placeholder="How the athlete felt afterward, recovery plan, anything the coach should know..."
+                placeholder="How you felt after, anything that hurt, anything you want to work on..."
                 className="textarea input--kiosk h-[89px]"
               />
             </div>
@@ -407,13 +420,13 @@ export default function SparringTelemetryPage() {
               disabled={isSubmitting || !athleteId}
               className="btn btn--kiosk disabled:cursor-not-allowed disabled:opacity-50 disabled:grayscale"
             >
-              {isSubmitting ? 'Saving…' : 'Log Combat Session'}
+              {isSubmitting ? 'Saving…' : 'Log This Session'}
             </button>
           </section>
 
           <aside className="mat-leather grid gap-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
             <div className="grid gap-[var(--s2)]">
-              <p className="t-eyebrow m-0">SHADOW formula status</p>
+              <p className="t-eyebrow m-0">Where this stands</p>
               <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{statusMessage}</p>
             </div>
 
@@ -423,7 +436,7 @@ export default function SparringTelemetryPage() {
                 <p className="t-data m-0 mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>{totalRoundsCompleted}</p>
               </div>
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="t-label m-0">Stance</p>
+                <p className="t-label m-0">Their stance</p>
                 <p className="t-data m-0 mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>{opponentStance}</p>
               </div>
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
@@ -431,15 +444,14 @@ export default function SparringTelemetryPage() {
                 <p className="t-data m-0 mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>{contactLevelLabel}</p>
               </div>
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="t-label m-0">Last save</p>
+                <p className="t-label m-0">Last saved</p>
                 <p className="t-data m-0 mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>{lastSubmitted}</p>
               </div>
             </div>
 
             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-200)]">
-              This is Deep-Track: rounds, contact level, punch accuracy, focus attainment, and weight all become real
-              inputs to SHADOW&apos;s formula engine (Accuracy, Connect Differential, Contact Exposure, Focus
-              Attainment Rate, 7-Day Weight Change) the moment you submit.
+              Nothing here is graded and nothing here is shared with the other kids. Your coach reads it, and
+              over time it is how the two of you can see what is actually changing instead of guessing.
             </div>
           </aside>
         </div>

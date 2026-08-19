@@ -64,6 +64,22 @@ export interface TrainingSession {
  */
 export const MILESTONES = [5, 13, 34, 89, 233] as const;
 
+/**
+ * What counts as a hard session, so the wall has a hard session to answer.
+ *
+ * RPE is a 1-10 self-report the athlete already gives at check-in and which is
+ * already on every row of this card, so nothing new is measured or asked for
+ * here: 8 is the rung where "I worked" becomes "that was hard". It is
+ * deliberately the ATHLETE's own number — the card never decides somebody's
+ * session was hard when they said it was not.
+ *
+ * This is not a score, a target or a badge. Nothing is unlocked by reaching it
+ * and nothing is withheld below it. The only consequence is which of the gym's
+ * own lines stands beside the card, which is why a threshold is acceptable
+ * here at all.
+ */
+export const HARD_SESSION_RPE = 8;
+
 export interface TrainingCardProps {
   sessions: readonly TrainingSession[];
   /** Shown in the header. Optional so the card works before a name loads. */
@@ -85,16 +101,23 @@ export default function TrainingCard({
   maxStamps = 60,
   athleteId,
 }: TrainingCardProps) {
-  const { completed, ordered, shown, truncated } = useMemo(() => {
+  const { completed, ordered, shown, truncated, hardSession } = useMemo(() => {
     const completedCount = sessions.filter((s) => s.completed_flag).length;
     // The API returns date desc; a card reads oldest-first, left to right.
     const asc = [...sessions].sort((a, b) => a.date.localeCompare(b.date));
     const visible = asc.length > maxStamps ? asc.slice(asc.length - maxStamps) : asc;
+    /* THE MOMENT, not the state. The wall answers the session that was just
+       logged — the newest row — and only while it is still the newest one. The
+       next ordinary session takes the line down again by itself, so nothing
+       here can become a banner that sits on the card forever. */
+    const latest = asc.length > 0 ? asc[asc.length - 1] : null;
     return {
       completed: completedCount,
       ordered: asc,
       shown: visible,
       truncated: asc.length - visible.length,
+      hardSession:
+        latest && latest.completed_flag && latest.rpe >= HARD_SESSION_RPE ? latest : null,
     };
   }, [sessions, maxStamps]);
 
@@ -215,13 +238,32 @@ export default function TrainingCard({
         </p>
       )}
 
-      {/* Words on the wall, and only at a moment.
-          The source ships EMPTY on purpose — the lines belong to this gym's
-          coaches and nobody else can write them, so this renders nothing at
-          all until the owner adds them (gymSayings.ts says how). It is placed
-          beside the seal rather than at the top of the card because a sign
-          that is always there is wallpaper inside a week. */}
-      {pressed !== null && <WordsOnTheWall context="at-a-milestone" seed={pressed} />}
+      {/* Words on the wall, and only at a moment. It is placed beside the seal
+          rather than at the top of the card because a sign that is always
+          there is wallpaper inside a week.
+
+          TWO MOMENTS, ONE SIGN. The component has always taken two of them and
+          this card only ever passed one, so the three lines the owner tagged
+          'after-hard-session' could not render anywhere in the application:
+          no caller asked for that context. Worse, the milestone seed is a
+          member of MILESTONES — a five-element domain — so pickSaying's hash
+          could only ever select five distinct lines out of the twelve, five
+          times in an athlete's whole career.
+
+          A hard session is seeded by its OWN session id instead. That is a
+          domain as wide as the ledger, so every line eligible for the moment
+          is reachable, while the choice stays deterministic per session: the
+          same session shows the same line to the athlete, to a screen reader
+          and to a printout, today and next week.
+
+          The seal wins when both are true on the same render. Crossing a
+          milestone on a hard night is the bigger of the two moments, and two
+          signs on one card is a wall of them. */}
+      {pressed !== null ? (
+        <WordsOnTheWall context="at-a-milestone" seed={pressed} />
+      ) : hardSession !== null ? (
+        <WordsOnTheWall context="after-hard-session" seed={hardSession.session_id} />
+      ) : null}
 
       {/* The two quiet asides. Both are one dry line and neither can observe
           an absence: the first is handed a cumulative count, the second a pair

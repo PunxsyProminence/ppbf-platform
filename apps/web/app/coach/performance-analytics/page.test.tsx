@@ -103,3 +103,86 @@ test('switching the window refetches with the selected window_days', async () =>
     expect(seenUrls[seenUrls.length - 1]).toContain('window_days=90');
   });
 });
+
+/* ------------------------------------------------------------ the floor --- */
+
+/**
+ * This page was the only <table> on any gym-floor route: eight columns, one
+ * row per athlete, in whatever order the API returned, with nothing saying
+ * which row to read first. The room DNA forbids board tables here and asks for
+ * cards by urgency, so what these pin is the order and the reason, not the
+ * markup for its own sake -- a card list sorted by nothing is the same table
+ * with the lines rubbed out.
+ */
+
+const STEADY = { ...ITEM, athlete_id: 'ath-steady', full_name: 'Steady Sam', open_gaps: 0, sessions_total: 3, sessions_completed: 3, active_assignments: 0, avg_assignment_completion: null };
+const FALLING = { ...STEADY, athlete_id: 'ath-falling', full_name: 'Falling Fran', readiness_early_avg: 7.5, readiness_late_avg: 6.0 };
+const GAPS = { ...STEADY, athlete_id: 'ath-gaps', full_name: 'Gappy Gus', open_gaps: 3 };
+const MISSED = { ...STEADY, athlete_id: 'ath-missed', full_name: 'Missed Mo', sessions_total: 5, sessions_completed: 3 };
+
+function cardNames(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('li')].map(
+    (card) => card.querySelector('span')?.textContent ?? '',
+  );
+}
+
+test('the roster is cards, not a board table', async () => {
+  global.fetch = mockFetch(() => okWith([ITEM]));
+
+  const { container } = render(<PerformanceAnalyticsPage />);
+  await screen.findByText('Jordan Doe');
+  expect(container.querySelector('table')).toBeNull();
+  expect(container.querySelectorAll('li')).toHaveLength(1);
+});
+
+test('the worst card is first, and the one asking for nothing is last', async () => {
+  global.fetch = mockFetch(() => okWith([STEADY, MISSED, GAPS, FALLING]));
+
+  const { container } = render(<PerformanceAnalyticsPage />);
+  await screen.findByText('Falling Fran');
+
+  // Readiness falling outranks open gaps outranks a booked session nobody
+  // completed; an athlete this window has nothing to say about sorts last.
+  expect(cardNames(container)).toEqual(['Falling Fran', 'Gappy Gus', 'Missed Mo', 'Steady Sam']);
+});
+
+test('each card says which figure put it where it is', async () => {
+  global.fetch = mockFetch(() => okWith([STEADY, GAPS, FALLING, MISSED]));
+
+  render(<PerformanceAnalyticsPage />);
+  await screen.findByText('Falling Fran');
+
+  // Law 3: the rung is never colour alone. Every badge carries a glyph and
+  // says the reason in words.
+  expect(screen.getByText('readiness falling')).toBeTruthy();
+  expect(screen.getByText('3 open gaps')).toBeTruthy();
+  expect(screen.getByText('2 booked, not completed')).toBeTruthy();
+  expect(screen.getByText('Nothing in this window asking for you')).toBeTruthy();
+});
+
+test('a rollup never paints the safety gate\'s locked red', async () => {
+  // Law 2: saturated colour is a safety/status claim. Arithmetic over session
+  // counts and check-ins can say "look here first"; it cannot say "this person
+  // may not participate", which is what badge--locked means everywhere else.
+  global.fetch = mockFetch(() => okWith([FALLING, GAPS, MISSED, STEADY]));
+
+  const { container } = render(<PerformanceAnalyticsPage />);
+  await screen.findByText('Falling Fran');
+
+  expect(container.querySelector('.badge--locked')).toBeNull();
+});
+
+test('the same payload always lands in the same order', async () => {
+  // A list that reshuffles between two loads of identical data is a list a
+  // coach cannot trust to have read.
+  global.fetch = mockFetch(() => okWith([GAPS, { ...GAPS, athlete_id: 'ath-gaps-2', full_name: 'Aaron Gaps' }]));
+
+  const first = render(<PerformanceAnalyticsPage />);
+  await screen.findByText('Aaron Gaps');
+  const order = cardNames(first.container);
+  first.unmount();
+
+  const second = render(<PerformanceAnalyticsPage />);
+  await screen.findAllByText('Aaron Gaps');
+  expect(cardNames(second.container)).toEqual(order);
+});

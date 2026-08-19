@@ -256,7 +256,20 @@ export default function SchedulerPage() {
 
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
-      <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)]">
+      {/* data-surface="kiosk" -- Law 5, and the same one-attribute device
+          app/athlete/layout.tsx uses. This is a CHECK-IN surface: an athlete
+          taps "Check In" on it in gloves or wraps, and a parent taps it on a
+          phone in a loud room. It reads as an athlete screen and behaves like
+          one, but it lives outside /athlete/*, so the 55px floor stopped at
+          its door and every one of its controls sat at the 44px desk number.
+          The attribute is on the element the whole page already passes
+          through, so it covers what is here now and whatever gets added next.
+
+          The globals.css floor covers button / select / the named input types.
+          It deliberately does not reach `a` or `textarea`, so those state
+          min-h-[var(--tap)] at the call site, the way
+          CoachRecognitionPad.tsx already does. */}
+      <main data-surface="kiosk" className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-7xl space-y-[var(--s5)]">
           <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow">Unified Scheduler</p>
@@ -273,11 +286,11 @@ export default function SchedulerPage() {
                 Role: {role || 'loading'}
               </span>
               {roleCanOverrideAttendance(role) ? (
-                <Link href="/admin/attendance" className="btn btn--ghost">
+                <Link href="/admin/attendance" className="btn btn--ghost min-h-[var(--tap)]">
                   Attendance Dashboard
                 </Link>
               ) : null}
-              <Link href="/operations" className="btn btn--ghost">
+              <Link href="/operations" className="btn btn--ghost min-h-[var(--tap)]">
                 Back to Operations
               </Link>
             </div>
@@ -469,7 +482,7 @@ export default function SchedulerPage() {
                     value={coachingGoals}
                     onChange={(e) => setCoachingGoals(e.target.value)}
                     placeholder="Goals and focus areas"
-                    className="textarea h-[89px]"
+                    className="textarea min-h-[var(--tap)] h-[89px]"
                   />
                   <button
                     type="button"
@@ -536,11 +549,17 @@ export default function SchedulerPage() {
                     <option value="excused">Excused</option>
                   </select>
 
+                  {/* This was a bare textarea with a hand-rolled border and
+                      no minimum height of any kind -- 80px of box on the one
+                      control a coach writes in standing up. The same file
+                      already uses .textarea correctly a few dozen lines above;
+                      @layer base does not floor a textarea, so the tap height
+                      is stated here. */}
                   <textarea
                     value={attendanceNote}
                     onChange={(e) => setAttendanceNote(e.target.value)}
                     placeholder="Attendance notes"
-                    className="h-20 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm"
+                    className="textarea min-h-[var(--tap)] h-[89px]"
                   />
 
                   <button
@@ -593,7 +612,7 @@ export default function SchedulerPage() {
                               )
                             }
                             disabled={actionInFlight}
-                            className="mt-1 min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                            className="mt-1 min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                           >
                             Mark Parent Reviewed
                           </button>
@@ -663,7 +682,7 @@ export default function SchedulerPage() {
                                 );
                               }}
                               disabled={actionInFlight}
-                              className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                              className="min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                             >
                               Approve &amp; Assign
                             </button>
@@ -680,7 +699,7 @@ export default function SchedulerPage() {
                                 )
                               }
                               disabled={actionInFlight}
-                              className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                              className="min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                             >
                               Decline
                             </button>

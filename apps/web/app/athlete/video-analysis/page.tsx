@@ -19,7 +19,12 @@ interface ShadowObservationItem {
   created_at: string;
 }
 
-const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
+/* NOT BUILT YET, said the way the athlete workspace already says it. The
+   pipe-delimited status enum this used to render -- 'PLANNED | ML REQUIRED |
+   NOT YET AUTOMATED' -- is a release-board cell, on a child's screen, telling
+   them nothing they can act on. The fact is unchanged: nothing scores their
+   technique automatically, and nothing here pretends to. */
+const ML_PLACEHOLDER = 'Not built. Nothing here watches your film and scores it.';
 
 interface VideoSession {
   video_session_id: string;
@@ -37,6 +42,30 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * The review state, in words a kid can act on.
+ *
+ * This used to render `Review State: {item.review_state}` -- a stored enum,
+ * underscores and all, shown to a child on their own screen. The enum is not
+ * renamed on the way here and no state is hidden; each one is simply said out
+ * loud. 'unknown' is a real member of the union and gets the honest reading
+ * rather than a guess.
+ */
+function reviewStateLine(state: ShadowObservationItem['review_state']): string {
+  switch (state) {
+    case 'pending_review':
+      return 'Waiting on a coach to look at it.';
+    case 'approved':
+      return 'A coach looked at it and agreed.';
+    case 'rejected':
+      return 'A coach looked at it and set it aside.';
+    case 'promoted':
+      return 'A coach took this one further.';
+    default:
+      return 'Nobody has said either way yet.';
+  }
+}
+
 export default function AthleteVideoAnalysisPage() {
   const [videos, setVideos] = useState<VideoSession[]>([]);
   const [videoError, setVideoError] = useState('');
@@ -49,11 +78,11 @@ export default function AthleteVideoAnalysisPage() {
     void (async () => {
       try {
         const res = await fetch(`${apiBase()}/api/pilot/video/list`, { credentials: 'include' });
-        if (!res.ok) throw new Error('Failed to load film library');
+        if (!res.ok) throw new Error('Your film did not load. Try again in a minute.');
         const data = (await res.json()) as { items: VideoSession[] };
         setVideos(data.items ?? []);
       } catch (err) {
-        setVideoError(err instanceof Error ? err.message : 'Failed to load film library');
+        setVideoError(err instanceof Error ? err.message : 'Your film did not load. Try again in a minute.');
       }
     })();
     void (async () => {
@@ -64,11 +93,11 @@ export default function AthleteVideoAnalysisPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 30 }),
         });
-        if (!response.ok) throw new Error('Unable to load SHADOW observation projection.');
+        if (!response.ok) throw new Error('observations unavailable');
         const payload = (await response.json()) as { items?: ShadowObservationItem[] };
         setObservations(payload.items ?? []);
       } catch {
-        setObservationError('Unable to load SHADOW observation projection.');
+        setObservationError('This part did not load. Nothing is lost — try again in a minute.');
       }
     })();
   }, []);
@@ -77,11 +106,11 @@ export default function AthleteVideoAnalysisPage() {
     setLoadingVideoId(videoId);
     try {
       const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`, { credentials: 'include' });
-      if (!res.ok) throw new Error('Could not load video');
+      if (!res.ok) throw new Error('That round would not open. Try it again.');
       const data = (await res.json()) as { stream_url: string; title: string };
       setActiveVideo({ url: data.stream_url, title: data.title });
     } catch (err) {
-      setVideoError(err instanceof Error ? err.message : 'Failed to open video');
+      setVideoError(err instanceof Error ? err.message : 'That round would not open. Try it again.');
     } finally {
       setLoadingVideoId(null);
     }
@@ -96,10 +125,10 @@ export default function AthleteVideoAnalysisPage() {
           twice -- one screen, one room. */}
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
-          <p className="t-eyebrow">Film Review</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Athlete Film Lane</h1>
+          <p className="t-eyebrow">Film</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Film</h1>
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-            Watch footage your coach has released for your sessions.
+            Rounds your coach has put up for you to watch back.
           </p>
         </header>
 
@@ -118,7 +147,7 @@ export default function AthleteVideoAnalysisPage() {
         ) : null}
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-          <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>Your Film Library</h2>
+          <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>Your rounds</h2>
           {videoError ? (
             <div className="alert alert--critical" role="alert">
               <span className="alert-icon" aria-hidden="true">✕</span>
@@ -130,7 +159,7 @@ export default function AthleteVideoAnalysisPage() {
           ) : null}
           {!videoError && videos.length === 0 ? (
             <p className="mt-[var(--s4)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-              No film yet. Footage appears here once your coach releases it.
+              No film yet. It shows up here when your coach puts some up.
             </p>
           ) : (
             <div className="mt-[var(--s4)] space-y-[var(--s3)]">
@@ -155,7 +184,7 @@ export default function AthleteVideoAnalysisPage() {
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-          <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>SHADOW Signal Stream</h2>
+          <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>What SHADOW noticed</h2>
           <div className="mt-[var(--s4)] space-y-[var(--s3)]">
             {observationError ? (
               <div className="alert alert--critical" role="alert">
@@ -169,17 +198,17 @@ export default function AthleteVideoAnalysisPage() {
             {observations.slice(0, 5).map((item) => (
               <article key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{item.label}</p>
-                <p className="t-muted mt-[var(--s2)]">Review State: {item.review_state}</p>
+                <p className="t-muted mt-[var(--s2)]">{reviewStateLine(item.review_state)}</p>
               </article>
             ))}
             {!observationError && observations.length === 0 ? (
-              <p className="t-muted">No observations available.</p>
+              <p className="t-muted">Nothing noticed yet.</p>
             ) : null}
           </div>
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-          <h2 className="t-label m-0">AI/ML Scoring — Planned</h2>
+          <h2 className="t-label m-0">Automatic scoring — not built</h2>
           <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2">
             {['Skill Recognition', 'Technique Scoring'].map((p) => (
               <div key={p} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
@@ -192,7 +221,7 @@ export default function AthleteVideoAnalysisPage() {
 
         <div className="flex flex-wrap gap-[var(--s4)]">
           <Link href="/athlete/dashboard" className="btn btn--ghost min-h-[var(--tap)]">
-            Back to Athlete Workspace
+            Back to your dashboard
           </Link>
         </div>
       </div>

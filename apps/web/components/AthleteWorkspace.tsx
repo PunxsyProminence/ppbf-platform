@@ -1523,9 +1523,14 @@ export default function AthleteWorkspace() {
         {/* HEADER */}
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
           <div>
-            <p className="t-eyebrow">Athlete Development Workspace</p>
+            {/* Coach in the corner, not a product manager. "Athlete
+                Development Workspace" and "execute daily work... achieve SMART
+                goals" is the voice of a spec, on the one screen a kid thinks
+                of as theirs. Same information, said the way it would be said
+                across the floor. */}
+            <p className="t-eyebrow">Your Floor</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>My Training Dashboard</h1>
-            <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Track readiness, execute daily work, develop your boxing skills, and achieve SMART goals.</p>
+            <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today&apos;s work, and keep your goals where you can see them.</p>
             {/* The motto strip is gone from here, from the coach workspace, from
                 the parent hub and from the funding centre -- the same six words
                 at --t-xs, four times, always directly above the fold.
@@ -1565,8 +1570,8 @@ export default function AthleteWorkspace() {
             what a board by the door holds. See Chalkboard.tsx. */}
         <Chalkboard placement="athlete_workspace" />
 
-        {/* Daily Reminder, the role summary, the training card, achievements,
-            "Off the screen", and "What's Coming" all moved to the foot of the
+        {/* The role summary, the training card, achievements, "Off the
+            screen", and "What's Coming" all moved to the foot of the
             page, below the tab content -- same reasoning already applied to
             the gym wall (see its comment below): these are ambient/summary
             content, not something an athlete opens this dashboard to act on,
@@ -2248,14 +2253,21 @@ export default function AthleteWorkspace() {
                   same "supported / active member" values for every athlete
                   regardless of their actual status, which is a billing- and
                   eligibility-adjacent misstatement, not a placeholder. Show
-                  unavailable honestly until real fields exist. Mirrors the same
-                  correction already applied in ParentHub.tsx. */}
+                  unavailable honestly until real fields exist.
+
+                  The HONESTY is unchanged; only the voice is. "Unavailable -
+                  not yet tracked" is a field status read out to a child, and
+                  this file already had the right grammar for an honest empty a
+                  few hundred lines up -- "Nothing on your floor yet. Check in
+                  and today's work gets built." A coach says nobody has written
+                  it down; a console reports a null column. Both refuse to
+                  invent a value, which is the part that matters. */}
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]">
-                <p className="text-[length:var(--t-sm)]"><strong>Current Track:</strong> <span className="text-[color:var(--bone-400)]">Unavailable - not yet tracked</span></p>
-                <p className="text-[length:var(--t-sm)] text-[color:var(--bone-400)]"><strong>Program Membership:</strong> <span>Unavailable - not yet tracked</span></p>
-                <p className="text-[length:var(--t-sm)] text-[color:var(--bone-400)]"><strong>Participation Status:</strong> <span>Unavailable - not yet tracked</span></p>
-                <p className="text-[length:var(--t-sm)] text-[color:var(--bone-400)]"><strong>Support Status:</strong> <span>Unavailable - not yet tracked</span></p>
-                <p className="text-[length:var(--t-sm)] text-[color:var(--bone-400)]"><strong>Community Service Credits:</strong> <span>Unavailable - not yet tracked</span></p>
+                <p className="text-[length:var(--t-md)]"><strong>Your track:</strong> <span className="text-[color:var(--bone-400)]">Nobody has written this down yet.</span></p>
+                <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]"><strong>Your programme:</strong> <span>Nobody has written this down yet.</span></p>
+                <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]"><strong>Where you stand:</strong> <span>Nobody has written this down yet.</span></p>
+                <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]"><strong>Support:</strong> <span>Nobody has written this down yet.</span></p>
+                <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]"><strong>Hours you have put in for the gym:</strong> <span>Nobody has written this down yet.</span></p>
               </div>
             </div>
           )}
@@ -2642,11 +2654,29 @@ export default function AthleteWorkspace() {
           )}
         </div>
 
-        <div className={PANEL}>
-          <p className="t-eyebrow">Daily Reminder</p>
-          <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
-          {backendSyncMessage ? <p className="mt-[var(--s3)] t-data" style={{ fontSize: 'var(--t-xs)' }} role="status">{backendSyncMessage}</p> : null}
-        </div>
+        {/* THE ANTI-EGG IS GONE. This box was headed "Daily Reminder" and held
+            a permanent, unattributed line -- "Show up. Do the hard rounds. Own
+            the details. Progress is earned through consistent grit and
+            disciplined effort." -- on the screen every single time an athlete
+            opened it. That is precisely the wallpaper gymSayings.ts exists to
+            forbid: nobody at this gym said it, nobody's name is under it, and
+            it is a flatter rewrite of the owner's own line #4, "SHOW UP. DO
+            THE WORK. GO HOME BETTER.", which is attributed and which appears
+            at a moment instead of forever. The gym's voice on this page is the
+            chalkboard a few hundred pixels up, where a person writes a line by
+            hand and rubs it out when they feel like it.
+
+            What is left is the one true thing the box carried: the last word
+            from the backend about what just saved. It appears when there is
+            one and the box is not there when there is not -- an empty panel
+            reserved for a message is still furniture. Read at --t-md rather
+            than the --t-xs it used to sit at, because an athlete reads this
+            standing up on the floor (Law 5). */}
+        {backendSyncMessage ? (
+          <div className={PANEL}>
+            <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{backendSyncMessage}</p>
+          </div>
+        ) : null}
 
         {/* ROLE SUMMARY PANEL */}
         {/* Class times and registrations live behind the unified scheduler;
@@ -2656,7 +2686,7 @@ export default function AthleteWorkspace() {
           readiness={currentReadiness}
           tasksDue={tasksDue}
           goalsActive={goalsActive}
-          upcomingSession="Unavailable - not yet tracked"
+          upcomingSession="Nothing posted yet."
           unreadMessages={0}
         />
 
@@ -2710,10 +2740,10 @@ export default function AthleteWorkspace() {
           <summary className="t-label cursor-pointer">More in your workspace</summary>
           <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Athlete Film Lane</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Your Film</p>
               <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
               <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Film Lane
+                Open Your Film
               </Link>
             </article>
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
@@ -2730,10 +2760,10 @@ export default function AthleteWorkspace() {
                 using site search. This card is the only thing that changed;
                 the page itself and its own naming are untouched. */}
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Combat Telemetry Log</p>
-              <p className="t-muted mt-[var(--s2)]">Log rounds, contact, and punch output from a sparring session. Feeds the same SHADOW formulas your coach reviews.</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Sparring Log</p>
+              <p className="t-muted mt-[var(--s2)]">Write down a sparring session -- rounds, contact, what you threw and what landed. Your coach reads it.</p>
               <Link href="/athlete/dashboard/sparring" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Combat Telemetry Log
+                Open Sparring Log
               </Link>
             </article>
           </div>
