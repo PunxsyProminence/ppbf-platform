@@ -32,10 +32,11 @@ const FAKE: readonly GymSaying[] = [
 ];
 
 describe('the shipped source', () => {
-  it('carries no sayings at all', () => {
-    // The owner supplies the real ones. Until then the wall is bare, which is
-    // honest; a wall of quotes scraped off the internet is not.
-    expect(GYM_SAYINGS).toEqual([]);
+  it('carries the owner-approved lines, and only those', () => {
+    // Owner-approved 2026-08-19 (Drive doc 2026-08-19_EGGS-LOAD-FIRST-12.md,
+    // "Jason execute pack") — twelve lines, no more, no fewer, until the
+    // owner adds to them again.
+    expect(GYM_SAYINGS).toHaveLength(12);
   });
 
   it('has no stock boxing quote hiding in it', () => {
@@ -64,8 +65,9 @@ describe('the shipped source', () => {
 
 describe('WordsOnTheWall', () => {
   it('renders nothing at all when there is nothing true to say', () => {
-    // The shipped state. An empty wall, not an empty box with a border.
-    const { container } = render(<WordsOnTheWall context="at-a-milestone" seed={13} />);
+    // An empty source (an explicit test seam, not the shipped state now that
+    // the owner has filled it) — an empty wall, not an empty box with a border.
+    const { container } = render(<WordsOnTheWall context="at-a-milestone" seed={13} source={[]} />);
     expect(container.innerHTML).toBe('');
   });
 
