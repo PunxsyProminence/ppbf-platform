@@ -27,6 +27,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
@@ -38,6 +39,19 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-video-sessions-pg-test-${Date.now(
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_video_sessions_migration.sql';
+const MIGRATION_RUNNER_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-apply-video-sessions-migration.mjs',
+);
+
+// Jest's CJS transform rewrites a bare `import()` into `require()`, which
+// cannot load an ESM .mjs runner. Building the import through `new Function`
+// keeps a real dynamic import in the emitted code, which Node honors under
+// --experimental-vm-modules (the flag every test:migrations:* script already
+// passes). Same pattern as activityLog.pg.test.ts.
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
 
 // Verbatim from apps/web/app/api/pilot/video/upload/route.ts. Copied rather
 // than imported because the statement lives inside a Next route handler; if
@@ -73,6 +87,7 @@ const LEGACY_TABLE = `
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -143,6 +158,17 @@ beforeAll(async () => {
   });
 
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+
+
+  const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
+
+  applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
+
+    client: Client,
+
+    sql: string,
+
+  ) => Promise<void>;
 });
 
 afterAll(async () => {
@@ -402,6 +428,57 @@ describe('video_sessions migration against real Postgres', () => {
       const names = indexes.rows.map((r: { indexname: string }) => r.indexname);
       expect(names).toContain('idx_video_sessions_org_created');
       expect(names).toContain('idx_video_sessions_athlete');
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The runner's OWN readiness assertion, not just the SQL it applies.
+//
+// Every case above applies `migrationSql` with a plain `client.query`, which
+// proves the schema and proves nothing about
+// scripts/pilot-apply-video-sessions-migration.mjs's READINESS_QUERY -- the
+// assertion that gates the dispatch, and the code whose first real execution
+// is against a live environment at the most expensive possible moment. #488
+// is what that costs: an assertion that could not pass on ANY database,
+// found only by a staging dispatch it then blocked.
+//
+// The query is never restated here. `applyMigrationTransaction` is imported
+// out of the shipped runner and executes the shipped READINESS_QUERY, so
+// this cannot stay green while the runner rots.
+describe('video sessions runner readiness assertion', () => {
+  // Fails closed, but NOT through its own sentinel. READINESS_QUERY selects
+  // straight out of pilot.video_sessions -- the table this migration creates
+  // -- so against a database the migration has not reached, Postgres raises
+  // `relation "pilot.video_sessions" does not exist` before assertReadiness()
+  // ever sees a row. The dispatch still refuses, which is the property that
+  // matters, but the operator gets a raw Postgres error rather than
+  // VIDEO_SESSIONS_TABLE_NOT_READY. Asserting what actually ships instead of
+  // what the runner appears to promise; expecting the sentinel here would be
+  // asserting a fiction. Reported separately -- the fix is a runner change.
+  test('the real runner REFUSES a database where the migration never ran', async () => {
+    const client = await freshDatabase('vidsess_rdy_no');
+    try {
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /relation "pilot.video_sessions" does not exist/,
+      );
+      // Whatever the message, nothing was left behind: the transaction rolled
+      // back, so a refused readiness check never half-migrates a database.
+      const table = await client.query(`select to_regclass('pilot.video_sessions') as t`);
+      expect(table.rows[0].t).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the real runner ACCEPTS a correctly migrated database, and a re-apply stays a no-op', async () => {
+    const client = await freshDatabase('vidsess_rdy_ok');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      // The `all` chain re-runs every migration on every dispatch (#489), so
+      // the second pass has to survive its own first pass.
+      await applyMigrationTransaction(client, migrationSql);
     } finally {
       await client.end();
     }
