@@ -50,6 +50,18 @@ const INVITABLE_ROLES = [
   { value: 'board', label: 'Board' },
 ];
 
+const DEMOTE_ROLES = [
+  { value: 'coach', label: 'Coach' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'staff', label: 'Staff' },
+  { value: 'volunteer', label: 'Volunteer' },
+  { value: 'parent', label: 'Parent / Guardian' },
+  { value: 'athlete', label: 'Athlete' },
+];
+
+const ORG_STATUSES = ['active', 'inactive', 'suspended', 'pending'] as const;
+type OrgStatus = (typeof ORG_STATUSES)[number];
+
 async function postJson(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const response = await fetch(`${apiBase()}${path}`, {
     method: 'POST',
@@ -94,6 +106,28 @@ export default function PlatformConsole() {
 
   const [athleteAccountId, setAthleteAccountId] = useState('');
   const [athleteRosterId, setAthleteRosterId] = useState('');
+
+  // Promote an existing account, already a member of the selected gym, to
+  // organization_admin -- POST /api/pilot/platform/organizations/assign-admin.
+  const [promoteAccountId, setPromoteAccountId] = useState('');
+
+  // Swap the gym's admin seat -- POST /api/pilot/platform/organizations/transfer-admin.
+  // The outgoing admin does not go anywhere without a landing role, so the
+  // form requires one; the six values are exactly what the API accepts.
+  const [transferFromAccountId, setTransferFromAccountId] = useState('');
+  const [transferToAccountId, setTransferToAccountId] = useState('');
+  const [transferDemoteRole, setTransferDemoteRole] = useState(DEMOTE_ROLES[0].value);
+
+  // Suspend or restore any non-athlete account in the selected gym --
+  // POST /api/pilot/platform/users/status. The API itself refuses an athlete
+  // target (that credential belongs to the gym's own admin), so this form
+  // does not need to pre-filter by role -- the refusal reason comes back
+  // from the server and is shown as-is.
+  const [statusAccountId, setStatusAccountId] = useState('');
+
+  // Grants/revokes has_master_shadow_access -- a standing, platform-wide
+  // (not gym-scoped) privilege flag -- POST /api/pilot/platform/users/master-shadow-access.
+  const [shadowAccountId, setShadowAccountId] = useState('');
 
   useEffect(() => {
     if (!hasPlatformAccess) {
@@ -196,6 +230,148 @@ export default function PlatformConsole() {
       setAthleteRosterId('');
     } catch (error) {
       showFeedback('error', error instanceof Error ? error.message : 'Failed to create account');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function promoteToOrganizationAdmin() {
+    const accountId = promoteAccountId.trim();
+    if (!selectedOrgId) {
+      showFeedback('error', 'Choose a gym first');
+      return;
+    }
+    if (!accountId) {
+      showFeedback('error', 'Enter the account ID to promote');
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      await postJson('/api/pilot/platform/organizations/assign-admin', {
+        account_id: accountId,
+        organization_id: selectedOrgId,
+      });
+      showFeedback('success', `${accountId} is now the organization admin. Their sessions were revoked, so they will need to sign in again.`);
+      setPromoteAccountId('');
+    } catch (error) {
+      showFeedback('error', error instanceof Error ? error.message : 'Failed to promote that account');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function transferOrganizationAdminSeat() {
+    const fromAccountId = transferFromAccountId.trim();
+    const toAccountId = transferToAccountId.trim();
+    if (!selectedOrgId) {
+      showFeedback('error', 'Choose a gym first');
+      return;
+    }
+    if (!fromAccountId || !toAccountId) {
+      showFeedback('error', 'Enter both the current admin and the incoming admin');
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      await postJson('/api/pilot/platform/organizations/transfer-admin', {
+        organization_id: selectedOrgId,
+        from_account_id: fromAccountId,
+        to_account_id: toAccountId,
+        demote_role: transferDemoteRole,
+      });
+      showFeedback(
+        'success',
+        `${toAccountId} is now the organization admin. ${fromAccountId} was moved to ${transferDemoteRole}. Both accounts' sessions were revoked.`,
+      );
+      setTransferFromAccountId('');
+      setTransferToAccountId('');
+    } catch (error) {
+      showFeedback('error', error instanceof Error ? error.message : 'Failed to transfer the admin seat');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function changeOrganizationStatus(status: OrgStatus) {
+    if (!selectedOrgId) {
+      showFeedback('error', 'Choose a gym first');
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      await postJson('/api/pilot/platform/organizations/status', {
+        organization_id: selectedOrgId,
+        status,
+      });
+      showFeedback(
+        'success',
+        status === 'active'
+          ? `${selectedOrgId} is active again.`
+          : `${selectedOrgId} is now ${status}. Every session scoped to this gym was revoked.`,
+      );
+      setOrganizations((current) =>
+        current.map((org) => (org.organization_id === selectedOrgId ? { ...org, status } : org)),
+      );
+    } catch (error) {
+      showFeedback('error', error instanceof Error ? error.message : 'Failed to change gym status');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function changeAccountStatus(activeFlag: boolean) {
+    const accountId = statusAccountId.trim();
+    if (!selectedOrgId) {
+      showFeedback('error', 'Choose a gym first');
+      return;
+    }
+    if (!accountId) {
+      showFeedback('error', 'Enter the account ID');
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      await postJson('/api/pilot/platform/users/status', {
+        organization_id: selectedOrgId,
+        account_id: accountId,
+        active_flag: activeFlag,
+      });
+      showFeedback(
+        'success',
+        activeFlag ? `${accountId} is active again.` : `${accountId} is disabled. Their sessions were revoked.`,
+      );
+    } catch (error) {
+      showFeedback('error', error instanceof Error ? error.message : 'Failed to change that account’s status');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function changeMasterShadowAccess(granted: boolean) {
+    const accountId = shadowAccountId.trim();
+    if (!accountId) {
+      showFeedback('error', 'Enter the account ID');
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      await postJson('/api/pilot/platform/users/master-shadow-access', {
+        account_id: accountId,
+        granted,
+      });
+      showFeedback(
+        'success',
+        granted
+          ? `${accountId} now holds master SHADOW access across every organization.`
+          : `${accountId}’s master SHADOW access was revoked.`,
+      );
+    } catch (error) {
+      showFeedback('error', error instanceof Error ? error.message : 'Failed to change master SHADOW access');
     } finally {
       setIsBusy(false);
     }
@@ -387,6 +563,181 @@ export default function PlatformConsole() {
             >
               {isBusy ? 'Working...' : 'Create Account Shell'}
             </button>
+          </div>
+        </section>
+
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Organization Admin</h2>
+          <p className="t-body mt-[var(--s3)]">
+            Promote an existing member of the selected gym to organization admin, or hand the seat from
+            one admin to another in a single step. Every account involved has its sessions revoked.
+          </p>
+
+          <div className="mt-[var(--s5)] space-y-[var(--s3)] border-t border-[color:var(--hide-700)] pt-[var(--s4)]">
+            <p className="t-eyebrow">Promote to organization admin</p>
+            <label className="field">
+              <span className="t-label">Account ID (already a member of this gym)</span>
+              <input
+                type="text"
+                value={promoteAccountId}
+                onChange={(event) => setPromoteAccountId(event.target.value)}
+                placeholder="account-id"
+                className="input font-mono"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={isBusy || !selectedOrgId}
+              onClick={() => void promoteToOrganizationAdmin()}
+              className="btn btn--ghost w-full disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isBusy ? 'Working...' : 'Promote To Organization Admin'}
+            </button>
+          </div>
+
+          <div className="mt-[var(--s5)] space-y-[var(--s3)] border-t border-[color:var(--hide-700)] pt-[var(--s4)]">
+            <p className="t-eyebrow">Transfer the admin seat</p>
+            <label className="field">
+              <span className="t-label">Current admin&apos;s account ID</span>
+              <input
+                type="text"
+                value={transferFromAccountId}
+                onChange={(event) => setTransferFromAccountId(event.target.value)}
+                placeholder="current-admin-account-id"
+                className="input font-mono"
+              />
+            </label>
+            <label className="field">
+              <span className="t-label">Incoming admin&apos;s account ID</span>
+              <input
+                type="text"
+                value={transferToAccountId}
+                onChange={(event) => setTransferToAccountId(event.target.value)}
+                placeholder="incoming-admin-account-id"
+                className="input font-mono"
+              />
+            </label>
+            <label className="field">
+              <span className="t-label">Move the outgoing admin to</span>
+              <select
+                value={transferDemoteRole}
+                onChange={(event) => setTransferDemoteRole(event.target.value)}
+                className="select"
+              >
+                {DEMOTE_ROLES.map((role) => (
+                  <option key={role.value} value={role.value}>{role.label}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={isBusy || !selectedOrgId}
+              onClick={() => void transferOrganizationAdminSeat()}
+              className="btn btn--ghost w-full disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isBusy ? 'Working...' : 'Transfer Admin Seat'}
+            </button>
+          </div>
+        </section>
+
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Organization Status</h2>
+          <p className="t-body mt-[var(--s3)]">
+            {selectedOrgId
+              ? `${selectedOrgId} is currently ${organizations.find((org) => org.organization_id === selectedOrgId)?.status ?? 'unknown'}.`
+              : 'Choose a gym above to change its status.'}
+            {' '}Setting anything other than active revokes every session scoped to this gym.
+          </p>
+          <div className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2">
+            {ORG_STATUSES.map((status) => (
+              <button
+                key={status}
+                type="button"
+                disabled={isBusy || !selectedOrgId}
+                onClick={() => void changeOrganizationStatus(status)}
+                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Set {status}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Account Status</h2>
+          <p className="t-body mt-[var(--s3)]">
+            Disable or restore any coach, staff, volunteer, board, or admin account in the selected gym.
+            Athlete accounts are refused here by design — that credential belongs to the gym&apos;s own
+            admin.
+          </p>
+          <div className="mt-[var(--s4)] space-y-[var(--s3)]">
+            <label className="field">
+              <span className="t-label">Account ID</span>
+              <input
+                type="text"
+                value={statusAccountId}
+                onChange={(event) => setStatusAccountId(event.target.value)}
+                placeholder="account-id"
+                className="input font-mono"
+              />
+            </label>
+            <div className="grid gap-[var(--s3)] sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={isBusy || !selectedOrgId}
+                onClick={() => void changeAccountStatus(false)}
+                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Disable Account
+              </button>
+              <button
+                type="button"
+                disabled={isBusy || !selectedOrgId}
+                onClick={() => void changeAccountStatus(true)}
+                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Restore Account
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Master SHADOW Access</h2>
+          <p className="t-body mt-[var(--s3)]">
+            Grants or revokes a standing, platform-wide privilege flag — not scoped to the gym selected
+            above. Athlete and parent accounts are refused by the server; there is no legitimate reason
+            for a minor-linked account to hold cross-organization access.
+          </p>
+          <div className="mt-[var(--s4)] space-y-[var(--s3)]">
+            <label className="field">
+              <span className="t-label">Account ID</span>
+              <input
+                type="text"
+                value={shadowAccountId}
+                onChange={(event) => setShadowAccountId(event.target.value)}
+                placeholder="account-id"
+                className="input font-mono"
+              />
+            </label>
+            <div className="grid gap-[var(--s3)] sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => void changeMasterShadowAccess(true)}
+                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Grant Access
+              </button>
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => void changeMasterShadowAccess(false)}
+                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Revoke Access
+              </button>
+            </div>
           </div>
         </section>
       </div>

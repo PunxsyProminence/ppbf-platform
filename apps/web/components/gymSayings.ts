@@ -4,11 +4,13 @@
  * ============================================================================
  *
  * ┌──────────────────────────────────────────────────────────────────────────┐
- * │  THIS FILE SHIPS EMPTY, ON PURPOSE. IT IS NOT UNFINISHED.                 │
+ * │  THIS FILE SHIPPED EMPTY UNTIL THE OWNER FILLED IT. THAT WAS NEVER A       │
+ * │  PLACEHOLDER STATE — IT WAS THE POINT.                                    │
  * │                                                                          │
- * │  The lines that go here are the ones the coaches at THIS gym actually     │
- * │  say. Nobody who has not stood on that floor can write them, and this     │
- * │  file will not pretend otherwise by borrowing somebody else's.            │
+ * │  The lines below are the ones the owner confirmed 2026-08-19 (Drive doc   │
+ * │  2026-08-19_EGGS-LOAD-FIRST-12.md). Nobody who has not stood on that      │
+ * │  floor could have written them, and this file did not pretend otherwise   │
+ * │  by borrowing somebody else's in the meantime.                            │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * WHY NOT JUST PUT SOME BOXING QUOTES IN AND SWAP THEM LATER
@@ -88,13 +90,26 @@ export interface GymSaying {
 }
 
 /**
- * THE SOURCE. Empty until the owner fills it — see the header.
+ * THE SOURCE. Owner-approved 2026-08-19 — the gym's own first 12 lines.
  *
- * A test asserts this is either empty or entirely owner-written, so a stock
- * quote cannot arrive in a later patch without somebody deliberately deleting
- * the test that says it must not.
+ * A test asserts every entry here is attributable and free of stock boxing
+ * quotes, so a scraped-off-the-internet line cannot arrive in a later patch
+ * without somebody deliberately deleting the test that says it must not.
  */
-export const GYM_SAYINGS: readonly GymSaying[] = [];
+export const GYM_SAYINGS: readonly GymSaying[] = [
+  { line: 'OBSERVE. DECIDE. EXECUTE. REPEAT.', said_by: 'the wall', shown: ['anywhere'] },
+  { line: "POOR MAN'S SPORT", said_by: 'the wall', shown: ['anywhere'] },
+  { line: 'SAFETY FIRST. KIDS FIRST.', said_by: 'the wall', shown: ['anywhere'] },
+  { line: 'SHOW UP. DO THE WORK. GO HOME BETTER.', said_by: 'the wall', shown: ['after-hard-session'] },
+  { line: "THE WORK DOESN'T LIE", said_by: 'the wall', shown: ['after-hard-session'] },
+  { line: 'KEEP THE STANDARD. KEEP THE KIDS.', said_by: 'the wall', shown: ['anywhere'] },
+  { line: 'HANDS UP. HEAD CLEAR.', said_by: 'the wall', shown: ['after-hard-session'] },
+  { line: 'NO HYPE. JUST WORK.', said_by: 'the wall', shown: ['anywhere'] },
+  { line: 'SHADOW NOTICES THE PATTERN', said_by: 'the wall', shown: ['at-a-milestone'] },
+  { line: 'CHECK IN. THEN WORK.', said_by: 'the wall', shown: ['anywhere'] },
+  { line: 'STEEL TOWN. STEADY HANDS.', said_by: 'the wall', shown: ['anywhere'] },
+  { line: 'WE BUILD PEOPLE, NOT JUST FIGHTERS.', said_by: 'the wall', shown: ['at-a-milestone'] },
+];
 
 /**
  * The sayings eligible for a moment. 'anywhere' matches every context; a line
