@@ -159,3 +159,71 @@ describe('self-heal against the server when no session is cached', () => {
     expect(mockLoadAuthoritative).not.toHaveBeenCalled();
   });
 });
+
+/* ==========================================================================
+   P0.2 — A REFUSAL IS THE WHOLE SCREEN
+
+   docs/shadow-ui/PRODUCTION-FAST-TRACK.md: the SHADOW deny screen is "Title +
+   body + Dashboard + Logout only -- no library, no mode badge, no chat, no
+   Master Mode". app/shadow/page.tsx renders exactly that, and this bar used to
+   overrule it from above: the full signed-in chassis sat on top of every
+   refusal, including the Corridor -- which opens a `room--board` panel naming
+   every board door a board member holds, the "Board chrome on deny"
+   ROOM-PURPOSE-DNA.md forbids -- plus a second Dashboard (labelled Bell) and a
+   second Logout beside the two the refusal already offers.
+
+   Nothing guarded any of this before these tests.
+   ========================================================================== */
+
+describe('the deny screen keeps this bar out of it', () => {
+  it('offers a refused session nothing at all to press', () => {
+    mockUsePathname.mockReturnValue('/shadow');
+    renderAs('board');
+
+    // The mark, and nothing else. Not a second Dashboard, not a second Logout.
+    expect(screen.getByText('PPBF')).toBeTruthy();
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('gives it no corridor, so no board door is named on a deny', () => {
+    mockUsePathname.mockReturnValue('/shadow');
+    renderAs('board');
+
+    expect(screen.queryByRole('button', { name: /after hours/i })).toBeNull();
+    expect(screen.queryByText('board')).toBeNull();
+  });
+
+  it.each(['tell us', 'jump', 'sound'])('drops the %s control too', (label) => {
+    mockUsePathname.mockReturnValue('/shadow');
+    renderAs('board');
+
+    expect(screen.queryByRole('button', { name: new RegExp(label, 'i') })).toBeNull();
+  });
+
+  // The two halves of "only on a refusal". Either one failing means the branch
+  // has become route-wide or role-wide, and somebody has lost their session bar
+  // on a working surface -- the exact bug the self-heal effect above exists for.
+  it('leaves the full bar alone for a role SHADOW admits, on the same route', () => {
+    mockUsePathname.mockReturnValue('/shadow');
+    renderAs('coach');
+
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /after hours/i })).toBeTruthy();
+  });
+
+  it('leaves the full bar alone for the board everywhere the board belongs', () => {
+    mockUsePathname.mockReturnValue('/board');
+    renderAs('board');
+
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Bell' })).toBeTruthy();
+  });
+
+  it('is not fooled by a route the map has never heard of', () => {
+    mockUsePathname.mockReturnValue('/nowhere-at-all');
+    renderAs('board');
+
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
+  });
+});

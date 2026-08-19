@@ -11,6 +11,7 @@ import {
   subscribeRoleSession,
 } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
+import { isRefusalSurface } from "./buildingMap";
 import FeedbackBox from "./FeedbackBox";
 import Corridor from "./Corridor";
 import CardCatalog from "./CardCatalog";
@@ -123,8 +124,28 @@ export default function GlobalRoleHeader() {
     return null;
   }
 
-  // Minimal bar pre-auth and on login
-  if (!session || pathname === "/login") {
+  /* A REFUSAL IS A WHOLE SCREEN, AND THIS BAR IS PART OF IT.
+     P0.2 (docs/shadow-ui/PRODUCTION-FAST-TRACK.md) says the SHADOW deny screen
+     is "Title + body + Dashboard + Logout only -- no library, no mode badge, no
+     chat, no Master Mode". The page had that exactly right and this bar
+     overruled it from above: the full signed-in chassis rendered over every
+     refusal, including the Corridor, which opens a `room--board` panel naming
+     every board door a board member holds. ROOM-PURPOSE-DNA.md forbids that in
+     as many words -- "Forbidden: Board chrome on deny". Beside it the bar put a
+     second Dashboard (labelled Bell) and a second Logout next to the pair the
+     refusal already offers, plus the catalog, the sound switch, Tell Us and
+     Operations, on a screen whose whole content is meant to be a refusal.
+
+     So a refusal gets the same bar a signed-out visitor gets: the mark, and
+     nothing to press. That is the branch immediately below rather than a second
+     minimal header, because two ways to draw "no controls here" is how one of
+     them drifts. Which surfaces refuse in place is buildingMap.ts's answer, not
+     this component's -- see `refusesInPlace` there. It decides chrome only; the
+     page's own guard is still the thing that refuses. */
+  const refusedHere = isRefusalSurface(session?.role ?? null, pathname);
+
+  // Minimal bar pre-auth, on login, and on a screen refusing this session.
+  if (!session || pathname === "/login" || refusedHere) {
     return (
       <header className={SHELL}>
         <div className={BAR}>

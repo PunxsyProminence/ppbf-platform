@@ -410,8 +410,16 @@ function ShadowChatPageContent() {
     };
   }, [router]);
 
+  /* chatRoleAllowed, not just authChecked: the capabilities endpoint answers
+     with the names of this platform's authority model -- crossOrganizationRead,
+     canAccessProtectedHealthInformation, canReviewChatSafetyTelemetry, and the
+     tier in `mode`. A denied role is shown none of it (the refusal below
+     returns before any of this renders) but was still SENT all of it, on a
+     request this page made on its behalf. The route now refuses that role too;
+     this stops the page asking on the one path where the answer can only be a
+     refusal. */
   useEffect(() => {
-    if (!authChecked) return;
+    if (!authChecked || !chatRoleAllowed) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -477,7 +485,7 @@ function ShadowChatPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [authChecked, userRole, context, subject]);
+  }, [authChecked, chatRoleAllowed, userRole, context, subject]);
 
   useEffect(() => {
     if (!capabilitiesLoaded || !allowedSessionTypes.includes('heavy_bag')) return;
@@ -502,8 +510,12 @@ function ShadowChatPageContent() {
     };
   }, [capabilitiesLoaded, allowedSessionTypes]);
 
+  /* Same reason as the effect above, and belt-and-braces with it: capabilities
+     never load on the deny path now, so this could not fire anyway -- but a
+     refusal screen must not depend on an upstream flag staying false to keep
+     from listing somebody's conversations. */
   useEffect(() => {
-    if (!capabilitiesLoaded) return;
+    if (!capabilitiesLoaded || !chatRoleAllowed) return;
     const controller = new AbortController();
 
     void listOwnedShadowSessions(apiBase(), controller.signal)
@@ -535,7 +547,7 @@ function ShadowChatPageContent() {
       });
 
     return () => controller.abort();
-  }, [capabilitiesLoaded, router]);
+  }, [capabilitiesLoaded, chatRoleAllowed, router]);
 
   useEffect(() => () => {
     restoreRequestIdRef.current += 1;
