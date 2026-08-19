@@ -20,11 +20,11 @@ import {
 // fail: it closes the key/label/archiveCode PAIRING gap and the doc-drift gap
 // with one comparison. A wrong pairing on either side now fails here.
 //
-// NOTE ON SCOPE. This proves the constant matches the DOCUMENT. It cannot prove
-// either matches the archive: section 1 of that document is an unconfirmed
-// proposal with no manifest, export, or connector record in this repository, so
-// archiveCode is a documentation crosswalk, not verified archive conformance.
-// The test names below say only what is actually asserted.
+// NOTE ON SCOPE. This proves the constant matches the owner-approved TARGET
+// TAXONOMY in the document. It cannot prove the selected nonprofit SharePoint
+// library physically contains those folders or that application uploads route
+// into them. Exact site/library/root identifiers and archive conformance remain
+// a separate verification gate.
 
 const ARCHITECTURE_DOC = path.resolve(
   __dirname,
@@ -73,7 +73,7 @@ describe('research classification taxonomy', () => {
     );
   });
 
-  test('carries the documentation archive codes R01 through R19, in order and without repetition', () => {
+  test('carries the target archive codes R01 through R19, in order and without repetition', () => {
     const expectedCodes = Array.from({ length: 19 }, (_value, index) => (
       `R${String(index + 1).padStart(2, '0')}`
     ));
