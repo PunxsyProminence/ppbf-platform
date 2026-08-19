@@ -137,6 +137,43 @@ async function freshDatabase(name: string): Promise<Client> {
   return client;
 }
 
+/**
+ * A database in the state a dispatch against a stale environment actually
+ * meets: the base schema exactly as it ships, nothing dropped.
+ *
+ * `freshDatabase` above drops subject_id back off to reproduce a database
+ * that predates the column. That is the right fixture for testing the ALTER,
+ * but it is NOT the state the readiness assertion was failing to detect --
+ * pilot_slice_postgres.sql declares subject_id, so on any database built from
+ * it the column is present whether or not this migration ever ran, and the
+ * column-shape clauses reported READY on a database the migration never
+ * reached. This helper is what makes that state testable.
+ */
+async function baseSchemaOnlyDatabase(name: string): Promise<Client> {
+  const admin = new Client({ connectionString: connectionStringFor('postgres') });
+  await admin.connect();
+  await admin.query(`drop database if exists ${name}`);
+  await admin.query(`create database ${name}`);
+  await admin.end();
+
+  const client = new Client({ connectionString: connectionStringFor(name) });
+  await client.connect();
+  await client.query(baseSchemaSql);
+  for (const orgId of [ORG_ID, OTHER_ORG_ID]) {
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ($1, $1, 'active') on conflict do nothing`,
+      [orgId],
+    );
+  }
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ($1, 'coach', $2, 'microsoft') on conflict do nothing`,
+    [COACH_ID, ORG_ID],
+  );
+  return client;
+}
+
 async function insertAthlete(client: Client, organizationId: string, athleteId: string): Promise<void> {
   await client.query(
     `insert into pilot.athletes
@@ -494,6 +531,100 @@ describe('research requirement subject migration against real Postgres', () => {
 describe('research requirement subject runner readiness assertion', () => {
   test('the real runner REFUSES a database where the migration never ran', async () => {
     const client = await freshDatabase('resreq_rdy_no');
+    try {
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /RESEARCH_REQUIREMENT_SUBJECT_NOT_READY/,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  // THE HOLE THIS BRANCH CLOSED. The test above reaches its refusal by
+  // dropping subject_id, which no database built from today's base schema
+  // can be in. On a REAL base-schema-only database the column is present, the
+  // three column-shape clauses were all satisfied, and the runner committed a
+  // green attestation for an environment whose backfill had never run --
+  // every legacy row still scoped by the old heuristic, and the parent-facing
+  // athlete filter still returning nothing for them. Confirmed against the
+  // pre-change runner: this state returned ACCEPT.
+  test('the real runner REFUSES a base-schema-only database whose backfill never ran', async () => {
+    const client = await baseSchemaOnlyDatabase('resreq_rdy_base_only');
+    try {
+      await insertAthlete(client, ORG_ID, 'ath-unbackfilled');
+      await insertLegacyRequirement(client, {
+        sourceEntityId: 'ath-unbackfilled',
+        evidenceLabel: 'ath-unbackfilled',
+      });
+
+      // The column is there. That is the whole point -- presence of the
+      // column is what the old assertion mistook for the migration.
+      const column = await client.query(
+        `select 1 from information_schema.columns
+         where table_schema = 'pilot' and table_name = 'shadow_research_requirements'
+           and column_name = 'subject_id'`,
+      );
+      expect(column.rowCount).toBe(1);
+
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /RESEARCH_REQUIREMENT_SUBJECT_NOT_READY/,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  // A backfill assertion must not fire on a row the backfill deliberately
+  // leaves alone. An org-wide capability-gap row names no athlete in any of
+  // the three legacy fields, so subject_id staying null is the correct
+  // outcome, not a missing migration.
+  test('a row with no athlete-shaped candidate does not make a base-schema-only database look unmigrated', async () => {
+    const client = await baseSchemaOnlyDatabase('resreq_rdy_base_only_nonathlete');
+    try {
+      await insertLegacyRequirement(client, {
+        sourceEntityId: 'capability-38',
+        evidenceLabel: 'video-scan-classification',
+        metadata: { subject_id: 'not-an-athlete' },
+      });
+
+      await expect(applyMigrationTransaction(client, 'select 1')).resolves.toBeUndefined();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the real runner ACCEPTS the same database once the migration has run, twice over', async () => {
+    const client = await baseSchemaOnlyDatabase('resreq_rdy_base_only_fixed');
+    try {
+      await insertAthlete(client, ORG_ID, 'ath-backfilled');
+      const id = await insertLegacyRequirement(client, {
+        sourceEntityId: 'ath-backfilled',
+        evidenceLabel: 'ath-backfilled',
+      });
+
+      await applyMigrationTransaction(client, migrationSql);
+      // The `all` chain re-runs every migration on every dispatch (#489), so
+      // the second pass has to survive its own first pass.
+      await applyMigrationTransaction(client, migrationSql);
+
+      const row = await client.query(
+        'select subject_id from pilot.shadow_research_requirements where research_requirement_id = $1',
+        [id],
+      );
+      expect(row.rows[0]).toEqual({ subject_id: 'ath-backfilled' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  // A missing column must reach assertReadiness() rather than raising out of
+  // the query itself: the backfill clause reads subject_id through
+  // to_jsonb(rr) precisely so the operator gets the sentinel instead of a raw
+  // Postgres 'column does not exist' error. This is the profile-identity
+  // failure mode (documented in unexercisedMigrationRunners.pg.test.ts) not
+  // being reintroduced here.
+  test('a database missing the column still fails with the sentinel, not a raw Postgres error', async () => {
+    const client = await freshDatabase('resreq_rdy_no_column_sentinel');
     try {
       await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
         /RESEARCH_REQUIREMENT_SUBJECT_NOT_READY/,
