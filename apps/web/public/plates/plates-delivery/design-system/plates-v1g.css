@@ -1,0 +1,11 @@
+/* Plate Set v1-g — override .png paths with .jpg (load AFTER ppbf.css) */
+.room--office { --plate: url("/plates/plate-01-office-01.jpg"); }
+.room--floor  { --plate: url("/plates/plate-02a-floor-landscape-01.jpg"); }
+.room--board  { --plate: url("/plates/plate-04-board-01.jpg"); }
+.room--file   { --plate: url("/plates/plate-05-file-01.jpg"); }
+.room--clinic { --plate: url("/plates/plate-03-clinic-01.jpg"); }
+.room--night  { --plate: url("/plates/plate-06-night-01.jpg"); }
+@media (orientation: portrait) {
+  .room--floor { --plate: url("/plates/plate-02b-floor-portrait-01.jpg"); }
+}
+.on-canvas { --plate: url("/plates/plate-07-warm-ground-01.jpg"); }
