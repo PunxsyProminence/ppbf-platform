@@ -56,8 +56,10 @@ Older retro/design briefs remain useful as rationale/reference but do not overri
 - [docs/SHADOW_EVENT_MODEL.md](docs/SHADOW_EVENT_MODEL.md)
 - [docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md](docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md)
 - [docs/SHADOW_ML_ARCHITECTURE_SPEC.md](docs/SHADOW_ML_ARCHITECTURE_SPEC.md)
+- [docs/SHADOW_RESEARCH_ARCHITECTURE.md](docs/SHADOW_RESEARCH_ARCHITECTURE.md) — governed originals, archive taxonomy, source-of-truth boundaries, and archive-to-Library contract
 - [docs/RESEARCH_EVIDENCE_REGISTRY.md](docs/RESEARCH_EVIDENCE_REGISTRY.md)
 - [docs/SHADOW_RESEARCH_INTAKE_IMPORT.md](docs/SHADOW_RESEARCH_INTAKE_IMPORT.md)
+- [docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md](docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md)
 
 Dated SHADOW audits are point-in-time evidence only; verify any open finding against current source before building from it.
 
