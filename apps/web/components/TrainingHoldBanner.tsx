@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import RefusalStamp from './RefusalStamp';
 
 /**
  * The athlete-facing face of a training hold (capability #82).
@@ -13,11 +14,18 @@ import { apiBase } from '@/lib/apiBase';
  * insertion into the workspace.
  *
  * The language contract: this shows ONLY the athlete-safe projection the
- * training-holds route builds -- the explanation written for the athlete
- * and what earns the lift. Never the staff reason, never the category, and
- * NON-PUNITIVE by construction: the copy frames the pause as care with a
- * path back, not a sanction. A hold a child reads as a punishment teaches
- * them not to report the thing that caused it.
+ * training-holds route builds -- the explanation written for the athlete,
+ * who placed it, and what earns the lift. Never the staff reason, never the
+ * category, and NON-PUNITIVE by construction: the copy frames the pause as
+ * care with a path back, not a sanction. A hold a child reads as a
+ * punishment teaches them not to report the thing that caused it.
+ *
+ * Owner decision, 2026-08-19: an individual coach's name IS now included --
+ * "so they have a point of contact to investigate why". Until this date the
+ * projection deliberately withheld it (see git history on this file); the
+ * mark now renders through the real <RefusalStamp kind="training_hold" />
+ * rather than the bare glyph/label constants that stood in while coachName
+ * had nowhere real to come from.
  */
 
 interface AthleteFacingHold {
@@ -26,6 +34,7 @@ interface AthleteFacingHold {
   lift_condition_text: string;
   placed_at: string;
   expires_at: string | null;
+  placed_by_name: string;
 }
 
 const SCOPE_HEADLINE: Record<AthleteFacingHold['scope'], string> = {
@@ -58,25 +67,20 @@ export default function TrainingHoldBanner() {
   if (!hold) return null;
 
   return (
-    <section
-      role="status"
-      className="mat-paper rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s5)] space-y-[var(--s3)]"
-    >
-      <p className="t-eyebrow">A note from your coaches</p>
+    <section className="space-y-[var(--s3)]">
       <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
         {SCOPE_HEADLINE[hold.scope] ?? SCOPE_HEADLINE.all_training}
       </h2>
-      <p className="text-[length:var(--t-md)] leading-relaxed">{hold.athlete_explanation}</p>
-      {hold.lift_condition_text ? (
-        <p className="text-[length:var(--t-md)] leading-relaxed">
-          <span className="font-bold">The way back: </span>
-          {hold.lift_condition_text}
-        </p>
-      ) : null}
-      <p className="text-[length:var(--t-md)] leading-relaxed opacity-80">
-        This is not a punishment — it is your coaches looking out for you. Talk to your coach or the gym
-        admin if anything about it is unclear.
-      </p>
+      <RefusalStamp
+        kind="training_hold"
+        coachExplanation={hold.athlete_explanation}
+        coachName={hold.placed_by_name}
+        // The route only requires an explanation, never a lift condition --
+        // an honest fallback that still points at a real point of contact,
+        // never a fabricated condition standing in for one that was never
+        // written.
+        endsWhen={hold.lift_condition_text || `Ask ${hold.placed_by_name} what has to happen next.`}
+      />
     </section>
   );
 }
