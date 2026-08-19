@@ -282,6 +282,95 @@ describe('safety gate matrix against real Postgres', () => {
     }
   });
 
+  // THE HOLE THIS BRANCH CLOSED. The negative control above only catches an
+  // organization with NO gates at all. Every database that took the earlier
+  // revision of this migration -- the one that shipped
+  // contact_medical_clearance alone, before #82 added training_hold to
+  // DEFAULT_SAFETY_GATES and to the migration -- is seeded, just not fully.
+  // The readiness query named contact_medical_clearance and only that, so it
+  // reported READY against exactly that database, and the gate that BLOCKS
+  // class registration for an athlete under a training hold was missing while
+  // the dispatch printed a pass. Confirmed against the pre-change runner:
+  // this state returned ACCEPT.
+  test('the readiness check REFUSES a database seeded by the earlier revision (contact gate only)', async () => {
+    const client = await freshDatabase('ppbf_test_gate_readiness_half', { applyGateMigration: false });
+    try {
+      for (const organizationId of [ORG_A, ORG_B]) {
+        await client.query(
+          `insert into pilot.safety_gates
+             (organization_id, gate_id, gate_key, name, category, enforcement, requirement_text)
+           values ($1, $2, 'contact_medical_clearance', 'Contact Requires Medical Clearance',
+                   'medical', 'flag', 'Needs a cleared medical status before contact.')`,
+          [organizationId, `gate_${organizationId}_contact_medical_clearance`],
+        );
+      }
+
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /SAFETY_GATE_MATRIX_NOT_READY/,
+      );
+
+      // And the reason is the missing gate, not a missing table.
+      const gates = await gatesFor(client, ORG_A);
+      expect(gates.map((gate) => gate.gate_key)).toEqual(['contact_medical_clearance']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the readiness check ACCEPTS a migrated database, and survives a second apply', async () => {
+    const client = await freshDatabase('ppbf_test_gate_readiness_ok', { applyGateMigration: false });
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      // The `all` chain re-runs every migration on every dispatch (#489), so
+      // the second pass has to survive its own first pass.
+      await applyMigrationTransaction(client, migrationSql);
+
+      for (const organizationId of [ORG_A, ORG_B]) {
+        await expect(gatesFor(client, organizationId)).resolves.toHaveLength(2);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The assertion is keyed on gate_key alone on purpose. A gym may rename a
+  // gate or switch it off, and the migration's seed guard is a not-exists on
+  // gate_key, so it would never write over an edited row -- an assertion on
+  // name/enforcement/active_flag would therefore strand every later dispatch
+  // on a state no re-apply can reach.
+  test('a gym that renamed and deactivated both gates is still READY', async () => {
+    const client = await freshDatabase('ppbf_test_gate_readiness_edited');
+    try {
+      await client.query(
+        `update pilot.safety_gates set name = 'Renamed By Gym', active_flag = false where organization_id = $1`,
+        [ORG_A],
+      );
+
+      await expect(applyMigrationTransaction(client, migrationSql)).resolves.toBeUndefined();
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The seeding statements skip '__platform__' (a shelf, not a gym), so
+  // requiring it to be seeded would report NOT READY forever.
+  test('the reserved __platform__ organization is not required to be seeded', async () => {
+    const client = await freshDatabase('ppbf_test_gate_readiness_platform', { applyGateMigration: false });
+    try {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ('__platform__', '__platform__', 'active') on conflict do nothing`,
+      );
+
+      await expect(applyMigrationTransaction(client, migrationSql)).resolves.toBeUndefined();
+
+      const platformGates = await gatesFor(client, '__platform__');
+      expect(platformGates).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the migration creates both tables and seeds the default gate for every existing org', async () => {
     const client = await freshDatabase('ppbf_test_gate_fresh');
     try {

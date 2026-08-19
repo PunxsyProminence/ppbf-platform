@@ -90,7 +90,43 @@ const READINESS_QUERY = `
         and table_name = 'shadow_research_requirements'
         and column_name = 'source_entity_id'
         and is_nullable = 'NO'
-    ) as old_columns_untouched_ready
+    ) as old_columns_untouched_ready,
+    -- The clauses above report on the COLUMN, and the base schema
+    -- (pilot_slice_postgres.sql) now declares subject_id directly. So on any
+    -- database built from the base schema they are satisfied whether or not
+    -- this migration ever ran, and the attestation proved nothing. What this
+    -- migration actually contributes beyond the base schema is the BACKFILL,
+    -- so that is what is asserted here: the exact predicate the migration's
+    -- UPDATE selects on, negated. If a single row is still left with a null
+    -- subject_id while one of the three legacy fields names an athlete in
+    -- that row's own organization, the backfill did not run and the runner
+    -- must refuse.
+    --
+    -- subject_id is read through to_jsonb(rr) rather than as rr.subject_id on
+    -- purpose: a missing column would make rr.subject_id a parse error that
+    -- RAISES before assertReadiness() is ever reached, so the operator would
+    -- get a raw Postgres error instead of the sentinel that column_ready
+    -- above exists to report. Through to_jsonb the query parses either way
+    -- and a missing column simply reads as null, which fails this clause.
+    not exists (
+      select 1
+      from pilot.shadow_research_requirements rr
+      left join pilot.athletes matched_meta
+        on matched_meta.organization_id = rr.organization_id
+       and matched_meta.athlete_id = nullif(rr.metadata->>'subject_id', '')
+      left join pilot.athletes matched_label
+        on matched_label.organization_id = rr.organization_id
+       and matched_label.athlete_id = nullif(rr.evidence_label, '')
+      left join pilot.athletes matched_entity
+        on matched_entity.organization_id = rr.organization_id
+       and matched_entity.athlete_id = rr.source_entity_id
+      where to_jsonb(rr) ->> 'subject_id' is null
+        and coalesce(
+          matched_meta.athlete_id,
+          matched_label.athlete_id,
+          matched_entity.athlete_id
+        ) is not null
+    ) as subject_backfill_ready
 `;
 
 function assertReadiness(row) {
