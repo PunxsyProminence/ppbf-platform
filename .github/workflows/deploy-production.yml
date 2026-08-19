@@ -429,6 +429,80 @@ jobs:
       # on the way and no link is ever sent. Guardian sign-in is the only way
       # a parent reaches the platform at all, so this fails the deploy rather
       # than shipping a login that is quietly one hundred percent broken.
+      # ─────────────────────────────────────────────────────────────────────
+      # Validate Production AI Configuration
+      #
+      # deploy-staging.yml has a "Validate Staging AI Configuration" step that
+      # checks these same three names before every staging deploy; this
+      # workflow sourced them as unvalidated secretrefs with no equivalent
+      # check, so a bad value in the azure-ai-* secrets would sail straight
+      # into production. This step closes that gap the same way "Verify
+      # Production Schema Matches This Commit" above reads a secret before
+      # trusting it: resolve the actual value from the Container App's secret
+      # store and check it before it is ever handed to `az containerapp
+      # update`.
+      #
+      # Endpoint and API version are asserted EXACTLY, same as staging: this
+      # platform is verified against exactly one Azure OpenAI resource
+      # (shadow-ai) and exactly one API version, and a wrong value here would
+      # silently send every SHADOW turn in production to an endpoint or API
+      # surface nobody tested.
+      #
+      # Deployment name is deliberately NOT checked against staging's
+      # whitelist (gpt-5.6-luna-shadow, gpt-5-mini-shadow). Those are
+      # staging's current quick-tier names (shadowRouter.ts MODEL_REGISTRY);
+      # nothing in this tree -- no doc, no PRODUCTION_STATE.json entry, no
+      # workflow log -- records what production's azure-ai-deployment-name
+      # secret is actually set to, and it is read here as a secretref
+      # specifically because this workflow has never been able to see it.
+      # Guessing a whitelist for a production gate is worse than not having
+      # one: a wrong guess would refuse a legitimate value on every future
+      # deploy until someone diagnosed why. So this checks non-empty plus a
+      # generic Azure-deployment-name shape only.
+      #
+      # KNOWN LIMITATION (see PR body): once an owner confirms production's
+      # real allowed deployment name(s), replace the shape check below with
+      # an exact whitelist, matching the staging step.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Validate Production AI Configuration
+        run: |
+          AI_ENDPOINT="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-ai-endpoint \
+            --query value -o tsv)"
+          AI_DEPLOYMENT_NAME="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-ai-deployment-name \
+            --query value -o tsv)"
+          AI_API_VERSION="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-ai-api-version \
+            --query value -o tsv)"
+
+          test -n "$AI_ENDPOINT"
+          test -n "$AI_DEPLOYMENT_NAME"
+          test -n "$AI_API_VERSION"
+
+          case "$AI_ENDPOINT" in
+            https://shadow-ai.cognitiveservices.azure.com|https://shadow-ai.cognitiveservices.azure.com/) ;;
+            *) echo "azure-ai-endpoint '$AI_ENDPOINT' is not the approved SHADOW endpoint."; exit 1 ;;
+          esac
+
+          if [ "$AI_API_VERSION" != "2024-12-01-preview" ]; then
+            echo "azure-ai-api-version is '$AI_API_VERSION', expected '2024-12-01-preview'."
+            exit 1
+          fi
+
+          # Sane-format check only -- see the comment above this step for why
+          # this is not an exact whitelist like staging's.
+          if ! printf '%s' "$AI_DEPLOYMENT_NAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$'; then
+            echo "azure-ai-deployment-name '$AI_DEPLOYMENT_NAME' does not look like a plausible Azure OpenAI deployment name."
+            exit 1
+          fi
+
       - name: Deploy Tested Digest to Azure Container App (Production)
         env:
           PPBF_APP_ORIGIN: ${{ vars.PPBF_APP_ORIGIN }}
