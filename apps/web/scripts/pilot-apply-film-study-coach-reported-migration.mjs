@@ -117,10 +117,21 @@ const READINESS_QUERY = `
       where conrelid = to_regclass('pilot.shadow_film_study_proposals')
         and conname = 'pilot_film_study_proposals_attested_v2'
     ) as attestation_ready,
+    -- Either name satisfies this: film-study-revisions, later in the same
+    -- 'all' chain, drops ..._correction_check and replaces it with
+    -- ..._correction_check_v2. Asserting only the original name means this
+    -- runner cannot pass on any database that has reached the end of the
+    -- chain -- the correctly-migrated end state is the one it would reject.
+    -- What actually has to be true is that corrected_observation_text is
+    -- governed by a correction check, not which revision of it is in force.
     exists (
       select 1 from pg_constraint
       where conrelid = to_regclass('pilot.shadow_film_study_proposals')
-        and conname = 'pilot_film_study_proposals_correction_check'
+        and contype = 'c'
+        and conname in (
+          'pilot_film_study_proposals_correction_check',
+          'pilot_film_study_proposals_correction_check_v2'
+        )
     ) as correction_check_ready,
     exists (
       select 1 from pg_indexes
