@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
@@ -31,6 +32,26 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-one-percent-club-pg-test-${Date.no
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_one_percent_club_migration.sql';
+const MIGRATION_RUNNER_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-apply-one-percent-club-migration.mjs',
+);
+// The achievements migration is this file's prerequisite, and its runner had
+// no suite driving it anywhere in the repository, so its readiness assertion
+// is exercised here too rather than left to a dispatch to discover.
+const ACHIEVEMENTS_RUNNER_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-apply-achievements-migration.mjs',
+);
+
+// Jest's CJS transform rewrites a bare `import()` into `require()`, which
+// cannot load an ESM .mjs runner. Building the import through `new Function`
+// keeps a real dynamic import in the emitted code, which Node honors under
+// --experimental-vm-modules (the flag every test:migrations:* script already
+// passes). Same pattern as activityLog.pg.test.ts.
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
 
 const ORG_ID = 'org-club';
 const OTHER_ORG_ID = 'org-elsewhere';
@@ -42,6 +63,8 @@ const OTHER_ORG_ATHLETE_ID = 'ath-elsewhere-1';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
+let applyAchievementsMigration: (client: Client, sql: string) => Promise<void>;
 let achievementsSql: string;
 let baseSchemaSql: string;
 
@@ -143,6 +166,18 @@ beforeAll(async () => {
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   achievementsSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_achievements_migration.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+
+  const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
+  applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
+    client: Client,
+    sql: string,
+  ) => Promise<void>;
+
+  const achievementsRunner = await nativeDynamicImport(pathToFileURL(ACHIEVEMENTS_RUNNER_PATH).href);
+  applyAchievementsMigration = achievementsRunner.applyMigrationTransaction as (
+    client: Client,
+    sql: string,
+  ) => Promise<void>;
 });
 
 afterAll(async () => {
@@ -328,6 +363,81 @@ describe('1% Club migration', () => {
         [ORG_ID],
       );
       expect(remainingVotes.rows).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The runner's OWN readiness assertion, not just the SQL it applies.
+//
+// Every case above applies `migrationSql` with a plain `client.query`, which
+// proves the schema and proves nothing about
+// scripts/pilot-apply-one-percent-club-migration.mjs's READINESS_QUERY -- the
+// assertion that gates the dispatch, and the code whose first real execution
+// is against a live environment at the most expensive possible moment. #488
+// is what that costs: an assertion that could not pass on ANY database,
+// found only by a staging dispatch it then blocked.
+//
+// The query is never restated here. `applyMigrationTransaction` is imported
+// out of the shipped runner and executes the shipped READINESS_QUERY, so
+// this cannot stay green while the runner rots.
+describe('one percent club runner readiness assertion', () => {
+  test('the real runner REFUSES a database where the migration never ran', async () => {
+    const client = await freshDatabase('onepct_rdy_no');
+    try {
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /ONE_PERCENT_CLUB_NOT_READY/,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the real runner ACCEPTS a correctly migrated database, and a re-apply stays a no-op', async () => {
+    const client = await freshDatabase('onepct_rdy_ok');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      // The `all` chain re-runs every migration on every dispatch (#489), so
+      // the second pass has to survive its own first pass.
+      await applyMigrationTransaction(client, migrationSql);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The achievements runner's readiness assertion has the exact shape that
+// failed in #488: eleven of its clauses match pg_get_constraintdef() output
+// against literal quoted vocabulary terms, and five more assert the ABSENCE
+// of scoring/severity columns. Nothing in the repository executed it. It is
+// this suite's prerequisite migration, so it is executed here.
+describe('achievements runner readiness assertion', () => {
+  test('the real achievements runner REFUSES a database where its migration never ran', async () => {
+    const client = await freshDatabase('onepct_ach_no');
+    try {
+      // freshDatabase() applies the achievements migration, so one of the
+      // tables its readiness check demands has to come back off to reach the
+      // pre-migration state a dispatch actually meets.
+      await client.query('drop table if exists pilot.recognitions cascade');
+      await expect(applyAchievementsMigration(client, 'select 1')).rejects.toThrow(
+        /ACHIEVEMENTS_NOT_READY/,
+      );
+      // Refusing rolled back rather than leaving the table half-restored.
+      const table = await client.query(`select to_regclass('pilot.recognitions') as t`);
+      expect(table.rows[0].t).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the real achievements runner ACCEPTS a correctly migrated database, and a re-apply stays a no-op', async () => {
+    const client = await freshDatabase('onepct_ach_ok');
+    try {
+      // The `all` chain re-runs every migration on every dispatch (#489), so
+      // the runner has to survive finding its own work already done.
+      await applyAchievementsMigration(client, achievementsSql);
+      await applyAchievementsMigration(client, achievementsSql);
     } finally {
       await client.end();
     }

@@ -21,6 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
@@ -36,6 +37,20 @@ const TEST_DB_NAME = 'ppbf_test_org_video_policy';
 const ORG_ID = 'org-video';
 const OTHER_ORG_ID = 'org-video-other';
 const ADMIN_ID = 'acct-video-admin';
+
+const MIGRATION_RUNNER_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-apply-organization-video-policy-migration.mjs',
+);
+
+// Jest's CJS transform rewrites a bare `import()` into `require()`, which
+// cannot load an ESM .mjs runner. Building the import through `new Function`
+// keeps a real dynamic import in the emitted code, which Node honors under
+// --experimental-vm-modules (the flag every test:migrations:* script already
+// passes). Same pattern as activityLog.pg.test.ts.
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -244,5 +259,70 @@ describe('the ceiling is not configurable', () => {
   test('the loosened posture adds in-flight verdicts and nothing else', () => {
     expect(policy.releasableScanStates('coach_attested').sort())
       .toEqual(['needs_human_review', 'pending', 'scanning', 'unconfigured']);
+  });
+});
+
+// The runner's OWN readiness assertion, not just the SQL it applies.
+//
+// The suite above migrates one database in beforeAll with a plain
+// `client.query` and then tests the module on top of it. That proves the
+// schema and proves nothing about scripts/pilot-apply-organization-video-policy-migration.mjs's
+// READINESS_QUERY -- the assertion that gates the actual dispatch, and the
+// only code in this migration whose first real execution is against a live
+// environment at the most expensive possible moment.
+//
+// #488 is what that costs: a readiness check that searched
+// pg_get_constraintdef() for the literal `between 1 and 5` could not pass on
+// ANY database, because Postgres deparses a CHECK from the parsed tree and
+// emits `>= 1 AND <= 5`. The schema was correct the whole time. Only a real
+// staging dispatch found it.
+//
+// The query is never restated here -- `applyMigrationTransaction` is imported
+// out of the shipped runner and executes the shipped READINESS_QUERY, so this
+// cannot stay green while the runner rots. It brings its own disposable
+// database so the migrated one the module tests run against is untouched.
+describe('organization video policy runner readiness assertion', () => {
+  async function runnerDatabase(name: string): Promise<Client> {
+    const admin = new Client({ connectionString: connectionStringFor('postgres') });
+    await admin.connect();
+    await admin.query(`drop database if exists ${name}`);
+    await admin.query(`create database ${name}`);
+    await admin.end();
+
+    const client = new Client({ connectionString: connectionStringFor(name) });
+    await client.connect();
+      await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+    return client;
+  }
+
+  async function loadRunner(): Promise<(client: Client, sql: string) => Promise<void>> {
+    const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
+    return runnerModule.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>;
+  }
+
+  test('the real runner REFUSES a database where the migration never ran', async () => {
+    const applyMigrationTransaction = await loadRunner();
+    const client = await runnerDatabase('ppbf_test_org_vp_rdy_no');
+    try {
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /ORGANIZATION_VIDEO_POLICY_NOT_READY/,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the real runner ACCEPTS a correctly migrated database, and a re-apply stays a no-op', async () => {
+    const applyMigrationTransaction = await loadRunner();
+    const client = await runnerDatabase('ppbf_test_org_vp_rdy_ok');
+    try {
+      const migrationSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_organization_video_policy_migration.sql'), 'utf8');
+      await applyMigrationTransaction(client, migrationSql);
+      // The `all` chain re-runs every migration on every dispatch (#489), so
+      // the second pass has to survive its own first pass.
+      await applyMigrationTransaction(client, migrationSql);
+    } finally {
+      await client.end();
+    }
   });
 });

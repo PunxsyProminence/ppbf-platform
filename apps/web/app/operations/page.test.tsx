@@ -231,3 +231,57 @@ test('the removed override token is not advertised anywhere on the hub', async (
   expect(screen.queryByText(/BREAK MY 40% RULE/)).toBeNull();
   expect(screen.queryByText(/GRIND STATE ENGAGED/)).toBeNull();
 });
+
+// THE FALSE CERTIFICATION PANEL. Mission Control used to carry a panel titled
+// "System Diagnostics and SHADOW Certification" that ended in a green stamp
+// reading "Signed & Active" over "Certification Status: Signed and Active".
+// Nothing signed it: every claim in it was a module-level const in page.tsx —
+// no signer, no timestamp, no build id, nothing fetched. It also mis-stated the
+// platform. Its "Mathematical Gate Validation" block presented the readiness
+// equation as a live safety gate, while formulas/registry.ts registers that
+// exact formula (LEGACY-READINESS) as 'experimental_unsupported' because
+// "Coefficients, input scales, fairness, and clinical/safety validity are
+// unproven. It must not clear, restrict, or prescribe training." It claimed a
+// 5.0 protective threshold that does not exist (the real constants are
+// READINESS_GREEN_MIN = 7 / READINESS_YELLOW_MIN = 4, and they are display
+// triage colours, not constraints), and "12-role viewport segregation" against
+// a ClubRole union of 16.
+//
+// This is the surface staff use to ask whether the platform is safe to run on,
+// so a fabricated safety certification is the worst possible thing to leave on
+// it. These tests fail if any of it comes back.
+describe('the hub certifies nothing it cannot show a signer for', () => {
+  test('no safety-certification stamp is rendered', async () => {
+    await renderPage();
+
+    expect(document.querySelector('.stamp--green')).toBeNull();
+    expect(screen.queryByText(/signed\s*&\s*active/i)).toBeNull();
+    expect(screen.queryByText(/certification status/i)).toBeNull();
+    expect(document.body.textContent).not.toMatch(/\bcertification\b/i);
+    expect(document.body.textContent).not.toMatch(/\bsigned\b/i);
+  });
+
+  test('no unsupported formula is presented as an active safety gate', async () => {
+    await renderPage();
+
+    expect(screen.queryByRole('heading', { name: /mathematical gate validation/i })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/sleep\s*x\s*1\.25/i);
+    expect(document.body.textContent).not.toMatch(/delta rpe\s*=/i);
+  });
+
+  test('no invented threshold or role count is stated', async () => {
+    await renderPage();
+
+    expect(document.body.textContent).not.toMatch(/below 5\.0/i);
+    expect(document.body.textContent).not.toMatch(/12-role/i);
+    expect(document.body.textContent).not.toMatch(/viewport segregation/i);
+  });
+
+  test('the fabricated build and preset signals are gone', async () => {
+    await renderPage();
+
+    expect(document.body.textContent).not.toMatch(/production build v21\.1/i);
+    expect(document.body.textContent).not.toMatch(/ultra-dense winter grit/i);
+    expect(document.body.textContent).not.toMatch(/verified_by_jason/i);
+  });
+});
