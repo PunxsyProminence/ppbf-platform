@@ -9,6 +9,9 @@ import BoardSummaryPanel from '@/app/board/BoardSummaryPanel';
 import {
   BOARD_AGGREGATE_BOUNDARY_STATEMENT,
   BOARD_PLANNED_STAMP,
+  BOARD_RECORD_NOT_HELD,
+  BOARD_TAB_PLANNED_STAMP,
+  boardTabStatus,
   boardWorkspaceCards,
   boardWorkspaceTabs,
   resolveBoardSeatAccess,
@@ -32,7 +35,6 @@ interface ModuleGroup {
 const cardStatusLabel: Record<BoardCardStatus, string> = {
   built: 'Available now',
   planned: BOARD_PLANNED_STAMP,
-  boundary: 'Enforced boundary',
 };
 
 const seatAccessNotice: Record<BoardSeatAccessMode, string> = {
@@ -148,9 +150,16 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             class cannot be re-coloured by a utility. */}
         <header className="on-plaster flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
           <div className="space-y-[var(--s3)]">
-            <p className="t-eyebrow tracking-[0.35em]">Board Workspace Framework</p>
+            {/* "Board Workspace Framework" and "One workspace shell with
+                seat-specific visibility" described the implementation to the
+                fiduciary reading it. What a seat holder needs to know is what
+                this page can show them and what it cannot. */}
+            <p className="t-eyebrow tracking-[0.35em]">Board Seat</p>
             <h1 className="t-command text-[length:var(--t-2xl)] md:text-[length:var(--t-3xl)]">{seat.seatLabel} Workspace</h1>
-            <p className="t-body max-w-[80ch]">One board workspace shell with seat-specific visibility for nonprofit governance, mission stewardship, and strategic oversight.</p>
+            <p className="t-body max-w-[80ch]">
+              Organization-level figures, the duties this seat carries, and a plain account of which governance
+              records the platform holds. Most of the catalogue below is not built, and every card says so.
+            </p>
           </div>
           <div className="plaque">{seat.seatLabel}</div>
         </header>
@@ -170,13 +179,16 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           </p>
         </section>
 
+        {/* Four tiles in the material and voice of the count tiles below, two
+            of them facts about the organization and two of them slogans.
+            'Mission-Focused Governance' and 'Community Impact Oversight' state
+            nothing and are gone; what is left is the charity's standing, which
+            belongs on a plaque rather than on furniture that reports. */}
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
           <p className="t-eyebrow">Nonprofit Identity</p>
-          <div className="mt-[var(--s3)] grid gap-[var(--s2)] md:grid-cols-2 xl:grid-cols-4">
-            {['Veteran-Founded', '501(c)(3) Public Charity', 'Mission-Focused Governance', 'Community Impact Oversight'].map((item) => (
-              <div key={item} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)] t-command">
-                {item}
-              </div>
+          <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+            {['Veteran-Founded', '501(c)(3) Public Charity'].map((fact) => (
+              <span key={fact} className="plaque">{fact}</span>
             ))}
           </div>
         </section>
@@ -185,23 +197,46 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           <BoardSummaryPanel variant="workspace" heading="Organization Aggregate" />
         </div>
 
+        {/* Eight of these ten tabs hold nothing but placeholders, and the
+            strip used to render every one of them identically -- a fiduciary
+            found out which by clicking. The stamp is derived from the same
+            card catalogue the panel below renders, so the two cannot disagree.
+
+            The stamp's ink is set inline on the active tab only: .stamp takes
+            currentColor for both its border and its text, .mat-leather .stamp
+            resolves that to --locked-ink for the leather ground this strip
+            stands on, and the active tab is brass. An unlayered rule at (0,2,0)
+            is not something a utility class can outrank. */}
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
           <p className="t-eyebrow">Governance Modules</p>
-          <div className="mt-[var(--s4)] grid gap-[var(--s2)] sm:grid-cols-3 xl:grid-cols-9">
-            {boardWorkspaceTabs.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`min-h-[44px] rounded-[var(--r-sm)] border px-[var(--s3)] text-[length:var(--t-sm)] font-bold transition ${
-                  activeTab === tab
-                    ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
-                    : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+          <div className="mt-[var(--s4)] grid gap-[var(--s2)] sm:grid-cols-2 md:grid-cols-5">
+            {boardWorkspaceTabs.map((tab) => {
+              const isActive = activeTab === tab;
+              const planned = boardTabStatus(tab) === 'planned';
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  aria-pressed={isActive}
+                  className={`flex min-h-[44px] flex-col items-start justify-center gap-[var(--s1)] rounded-[var(--r-sm)] border px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] font-bold transition ${
+                    isActive
+                      ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                      : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
+                  }`}
+                >
+                  <span>{tab}</span>
+                  {planned ? (
+                    <span
+                      className="stamp stamp--flat stamp--sm"
+                      style={isActive ? { color: 'var(--hide-950)' } : undefined}
+                    >
+                      {BOARD_TAB_PLANNED_STAMP}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -262,38 +297,20 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             </article>
 
             <BoardSeatEvidence seat={seat.slug} />
-
-            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-              <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-                <h2 className="t-command">Board intelligence unavailable</h2>
-                {/* Law 7: a governance refusal is pressed in ink, not narrated. */}
-                <span className="stamp stamp--flat">
-                  <span aria-hidden="true">✕ </span>
-                  <span>Disabled</span>
-                </span>
-              </div>
-              <p className="t-body mt-[var(--s3)]">Board chat and generated background summaries remain disabled. Only the authenticated organization-aggregate summary API is available.</p>
-              <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
-                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                  <p className="t-eyebrow">Generation status</p>
-                  <p className="t-body mt-[var(--s3)]">Disabled. No model call or background Board job is available.</p>
-                </div>
-                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                  <p className="t-eyebrow">Data Boundary</p>
-                  <ul className="t-body mt-[var(--s3)] space-y-[var(--s1)]">
-                    <li>- Athlete data is not surfaced in board SHADOW.</li>
-                    <li>- Coach data is not surfaced in board SHADOW.</li>
-                    <li>- Parent records are not surfaced in board SHADOW.</li>
-                    <li>- Admin-only controls are not surfaced in board SHADOW.</li>
-                  </ul>
-                </div>
-              </div>
-            </article>
+            {/* A permanent "Board intelligence unavailable" article stood here,
+                narrating a denial across four bullets. It was honest and it
+                still had to go: the room's rule is not that this wall argues
+                with SHADOW, it is that the word does not appear on it. The
+                aggregate boundary above says what reaches this role, and it
+                says it twice per seat -- here and on the hub. */}
           </div>
 
           <aside className="grid gap-[var(--s5)]">
             <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-              <h2 className="t-command">Not stored by this platform</h2>
+              {/* The shared constant rather than a hand-copied second version
+                  of the same sentence -- the seat catalogue's four dead count
+                  fields were the only thing carrying it before. */}
+              <h2 className="t-command">{BOARD_RECORD_NOT_HELD}</h2>
               <p className="t-body mt-[var(--s3)]">
                 None of the following exists as a record here, for this seat or any other. There is no figure to load and none is being withheld.
               </p>
@@ -329,9 +346,10 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             </section>
 
             <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]">
-              <h2 className="t-command">One workspace shell</h2>
+              <h2 className="t-command">What differs between seats</h2>
               <p className="t-body mt-[var(--s3)]">
-                Every seat runs the same workspace. What differs between seats is which of them may open a given page, and the seat description on it.
+                Which pages a seat may open, and the duties described on them. The figures do not: every seat reads
+                the same organization-level aggregate, because that is the only thing this role is served.
               </p>
             </section>
           </aside>

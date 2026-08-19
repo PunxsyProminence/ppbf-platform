@@ -262,7 +262,11 @@ export default function ResearchSubmissionReviewPage() {
               className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]"
             >
               <div>
-                <p className={PAPER_LABEL}>{requirement.source_event_name}</p>
+                {/* PAPER_LABEL sets --hide-600, which is a paper ink. This
+                    label stands on mat-leather, where the sheet's own .t-label
+                    (bone-300) is the tuned voice; the paper ink was dark on
+                    dark. */}
+                <p className="t-label">{requirement.source_event_name}</p>
                 <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
                   {requirement.research_requirement}
                 </h2>
@@ -300,8 +304,16 @@ export default function ResearchSubmissionReviewPage() {
                         </span>
                       </div>
 
+                      {/* .t-muted pins --bone-400, tuned for leather; this
+                          article is mat-paper, and the sheet restates
+                          t-body/t-label/t-command/t-eyebrow for paper but not
+                          t-muted, so these three lines were bone on paper at
+                          about 2:1. They take the typed paper voice and the
+                          caption ink the rest of this card already uses. */}
                       {submission.applicability_state !== 'unreviewed' && submission.review_note ? (
-                        <p className="t-muted mt-[var(--s3)]">Review note: {submission.review_note}</p>
+                        <p className="t-typed mt-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--hide-600)]">
+                          Review note: {submission.review_note}
+                        </p>
                       ) : null}
 
                       <div className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgba(51,41,27,.26)] pt-[var(--s4)]">
@@ -328,8 +340,16 @@ export default function ResearchSubmissionReviewPage() {
                             </button>
                           ))}
                         </div>
-                        {busy ? <p className="t-muted" role="status">Saving…</p> : null}
-                        {!busy && message ? <p className="t-muted" role="status">{message}</p> : null}
+                        {busy ? (
+                          <p className="t-typed text-[length:var(--t-sm)] text-[color:var(--hide-600)]" role="status">
+                            Saving…
+                          </p>
+                        ) : null}
+                        {!busy && message ? (
+                          <p className="t-typed text-[length:var(--t-sm)] text-[color:var(--hide-600)]" role="status">
+                            {message}
+                          </p>
+                        ) : null}
                       </div>
                     </article>
                   );

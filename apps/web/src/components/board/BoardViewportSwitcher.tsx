@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { formatGymNumber } from '@/src/lib/gymTime';
 
-type GovernanceView = 'PRESIDENT' | 'TREASURER' | 'SECRETARY';
+type GovernanceView = 'President' | 'Treasurer' | 'Secretary';
 
 type PolicyReviewRow = {
   id: string;
@@ -59,60 +59,66 @@ const meetingMinutesQueue: MinutesQueueRow[] = [
 
 const macroRiskPoints = [74, 68, 72, 59, 64, 49, 46];
 
-const DISABLED_CAPABILITY_CARD =
-  'Capability 17 - Fee & Waiver Pipeline: DEFERRED BY NON-PROFIT BOARD ORDER. Production Build v21.0 Database locked to Free-Tier Google Sheets structure.';
+const DEFERRED_CAPABILITY =
+  'Fee and waiver pipeline: deferred by board order. Nothing is built behind it, and no fee or waiver record is stored anywhere in the platform.';
 
+const PANEL = 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]';
+const SHEET = 'mat-paper mt-[var(--s4)] overflow-x-auto rounded-[var(--r-sm)] p-[var(--s4)]';
+
+/* This prototype was the one surface in the board tree written in another
+   room's clothes: bg-black, thirty border-zinc-800 rules, text-slate-*, a
+   one-off #b91c1c, and mono console copy -- [V-BOARD-PUBLIC] eight times,
+   "Layers 22 and 23", "L17", "L22". The board room is painted wainscot,
+   plaster, dark ink and formal quiet, so it now stands on leather panels in
+   the t-* voices with no build tags in rendered copy.
+
+   The fabricated-data declaration is unchanged and deliberately so: it is the
+   one thing on this page that is true, and boardViewportSwitcherHonesty.test
+   holds it word for word.
+
+   The "Mandatory Reason for Manual Override" prompt is gone rather than
+   restyled. Its Acknowledge button called setTrainingMinutes((value) => value)
+   -- it accepted a fiduciary rationale and did nothing with it, on a page that
+   stores nothing at all. A control that silently discards what it asks for is
+   worse than no control. */
 export default function BoardViewportSwitcher() {
-  const [activeView, setActiveView] = useState<GovernanceView>('PRESIDENT');
-  const [trainingMinutes, setTrainingMinutes] = useState(8720);
-  const [showOverridePrompt, setShowOverridePrompt] = useState(false);
-  const [overrideReason, setOverrideReason] = useState('');
+  const [activeView, setActiveView] = useState<GovernanceView>('President');
 
   const projectedGrantTotal = useMemo(
     () => grantPipelines.reduce((total, row) => total + row.projectedUsd, 0),
     [],
   );
 
+  const trainingMinutes = 8720;
   const currentCapacity = useMemo(() => {
     const baselineMinutes = 9200;
     return Math.round((trainingMinutes / baselineMinutes) * 100);
   }, [trainingMinutes]);
 
-  function triggerOverridePrompt() {
-    setShowOverridePrompt(true);
-  }
-
-  function acknowledgeOverrideReason() {
-    if (overrideReason.trim().length === 0) {
-      return;
-    }
-    setShowOverridePrompt(false);
-    setTrainingMinutes((value) => value);
-  }
-
   return (
-    <section className="mx-auto w-full max-w-7xl bg-black border border-zinc-800 rounded-none p-4">
-      <header className="border-b border-zinc-800 pb-3">
-        <h1 className="text-sm uppercase tracking-[0.2em] text-slate-200">
-          Fiduciary Board Command Center [V-BOARD-PUBLIC]
-        </h1>
-        <p className="mt-2 text-xs text-zinc-500">Layers 22 and 23 | Governance Role Switchboard</p>
-        <p className="mt-3"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-        <p className="mt-2 text-xs text-zinc-400">
+    <section className="mat-leather mx-auto w-full max-w-7xl rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+      <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
+        <p className="t-eyebrow tracking-[0.28em]">Board Workspace</p>
+        <h1 className="t-command mt-[var(--s2)] text-[length:var(--t-xl)]">Seat View Prototype</h1>
+        <p className="mt-[var(--s4)]"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+        <p className="t-body mt-[var(--s4)] max-w-[80ch]">
           Every financial figure, governance metric, and compliance statement below is fabricated
           sample data. Nothing on this page reads or writes real records — do not act on anything it
           shows, and never carry a number from this page into a board packet or a filing.
         </p>
       </header>
 
-      <nav className="mt-4 grid gap-2 sm:grid-cols-3">
-        {(['PRESIDENT', 'TREASURER', 'SECRETARY'] as GovernanceView[]).map((view) => (
+      <nav aria-label="Seat view" className="mt-[var(--s5)] grid gap-[var(--s2)] sm:grid-cols-3">
+        {(['President', 'Treasurer', 'Secretary'] as GovernanceView[]).map((view) => (
           <button
             key={view}
             type="button"
             onClick={() => setActiveView(view)}
-            className={`border border-zinc-800 rounded-none px-3 py-2 text-xs tracking-[0.15em] ${
-              activeView === view ? 'bg-zinc-900 text-slate-100' : 'bg-black text-zinc-400 hover:text-slate-200'
+            aria-pressed={activeView === view}
+            className={`min-h-[44px] rounded-[var(--r-sm)] border px-[var(--s4)] text-[length:var(--t-sm)] font-bold uppercase tracking-[0.09em] transition ${
+              activeView === view
+                ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
             }`}
           >
             {view}
@@ -120,182 +126,162 @@ export default function BoardViewportSwitcher() {
         ))}
       </nav>
 
-      {activeView === 'PRESIDENT' ? (
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <section className="bg-black border border-zinc-800 rounded-none p-3">
-            <h2 className="text-xs uppercase tracking-[0.2em] text-slate-200">
-              Macro Organizational Risk Graph [V-BOARD-PUBLIC]
-            </h2>
-            <div className="mt-3 grid grid-cols-7 gap-2">
+      {activeView === 'President' ? (
+        <div className="mt-[var(--s5)] grid gap-[var(--s4)] lg:grid-cols-2">
+          <section className={PANEL}>
+            <h2 className="t-command text-[length:var(--t-md)]">Organizational risk trend</h2>
+            <p className="t-muted mt-[var(--s2)]">Seven weeks, most recent last.</p>
+            <div className="mt-[var(--s4)] grid grid-cols-7 gap-[var(--s2)]">
               {macroRiskPoints.map((value, index) => (
-                <div key={`${value}-${index}`} className="flex flex-col items-center gap-2">
-                  <div className="w-full border border-zinc-700 bg-zinc-950" style={{ height: `${Math.max(24, value)}px` }} />
-                  <span className="text-[10px] text-zinc-500">W{index + 1}</span>
+                <div key={`${value}-${index}`} className="flex flex-col items-center gap-[var(--s2)]">
+                  <div
+                    className="w-full rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.34)]"
+                    style={{ height: `${Math.max(24, value)}px` }}
+                  />
+                  <span className="t-data text-[length:var(--t-xs)]">W{index + 1}</span>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className="bg-black border border-zinc-800 rounded-none p-3">
-            <h2 className="text-xs uppercase tracking-[0.2em] text-slate-200">
-              Policy Review Queue [V-BOARD-PUBLIC]
-            </h2>
-            <table className="mt-3 w-full border-collapse text-xs">
-              <thead>
-                <tr className="border border-zinc-800">
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Policy</th>
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Risk</th>
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {policyReviewQueue.map((row) => (
-                  <tr key={row.id} className="border border-zinc-800">
-                    <td className="border border-zinc-800 p-2">{row.policy}</td>
-                    <td className="border border-zinc-800 p-2">{row.riskScore}</td>
-                    <td className="border border-zinc-800 p-2">{row.status}</td>
+          <section className={PANEL}>
+            <h2 className="t-command text-[length:var(--t-md)]">Policy review queue</h2>
+            <div className={SHEET}>
+              <table className="ledger">
+                <caption className="text-left">Policy Review</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Policy</th>
+                    <th scope="col">Risk</th>
+                    <th scope="col">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {policyReviewQueue.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.policy}</td>
+                      <td>{row.riskScore}</td>
+                      <td>{row.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>
       ) : null}
 
-      {activeView === 'TREASURER' ? (
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <section className="bg-black border border-zinc-800 rounded-none p-3">
-            <h2 className="text-xs uppercase tracking-[0.2em] text-slate-200">
-              Corporate Budgets [V-BOARD-PUBLIC]
-            </h2>
-            <table className="mt-3 w-full border-collapse text-xs">
-              <thead>
-                <tr className="border border-zinc-800">
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Unit</th>
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Allocated</th>
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Spent</th>
-                </tr>
-              </thead>
-              <tbody>
-                {budgetRows.map((row) => (
-                  <tr key={row.id} className="border border-zinc-800">
-                    <td className="border border-zinc-800 p-2">{row.unit}</td>
-                    <td className="border border-zinc-800 p-2">${formatGymNumber(row.allocatedUsd)}</td>
-                    <td className="border border-zinc-800 p-2">${formatGymNumber(row.spentUsd)}</td>
+      {activeView === 'Treasurer' ? (
+        <div className="mt-[var(--s5)] grid gap-[var(--s4)] lg:grid-cols-2">
+          <section className={PANEL}>
+            <h2 className="t-command text-[length:var(--t-md)]">Unit budgets</h2>
+            <div className={SHEET}>
+              <table className="ledger">
+                <caption className="text-left">Allocation Against Spend</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Unit</th>
+                    <th scope="col">Allocated</th>
+                    <th scope="col">Spent</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {budgetRows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.unit}</td>
+                      <td>${formatGymNumber(row.allocatedUsd)}</td>
+                      <td>${formatGymNumber(row.spentUsd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
 
-          <section className="bg-black border border-zinc-800 rounded-none p-3">
-            <h2 className="text-xs uppercase tracking-[0.2em] text-slate-200">
-              Grant Funding Pipelines [V-BOARD-PUBLIC]
-            </h2>
-            <table className="mt-3 w-full border-collapse text-xs">
-              <thead>
-                <tr className="border border-zinc-800">
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Grant</th>
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Stage</th>
-                  <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Projected</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grantPipelines.map((row) => (
-                  <tr key={row.id} className="border border-zinc-800">
-                    <td className="border border-zinc-800 p-2">{row.grant}</td>
-                    <td className="border border-zinc-800 p-2">{row.stage}</td>
-                    <td className="border border-zinc-800 p-2">${formatGymNumber(row.projectedUsd)}</td>
+          <section className={PANEL}>
+            <h2 className="t-command text-[length:var(--t-md)]">Grant funding pipeline</h2>
+            <div className={SHEET}>
+              <table className="ledger">
+                <caption className="text-left">Projected Awards</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Grant</th>
+                    <th scope="col">Stage</th>
+                    <th scope="col">Projected</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="mt-3 text-[11px] text-zinc-500">Pipeline projection total: ${formatGymNumber(projectedGrantTotal)}</p>
+                </thead>
+                <tbody>
+                  {grantPipelines.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.grant}</td>
+                      <td>{row.stage}</td>
+                      <td>${formatGymNumber(row.projectedUsd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <article className="stat mt-[var(--s4)]">
+              <p className="stat-label">Pipeline Projection Total</p>
+              <p className="stat-val">${formatGymNumber(projectedGrantTotal)}</p>
+              <p className="stat-note">Sum of the three sample rows above</p>
+            </article>
           </section>
 
-          <section className="lg:col-span-2 bg-black border border-zinc-800 rounded-none p-3">
-            <h2 className="text-xs uppercase tracking-[0.2em] text-[#b91c1c]">
-              L17 Disabled Capability Card [V-BOARD-PUBLIC]
-            </h2>
-            <p className="mt-2 border border-zinc-800 bg-black p-2 text-xs text-zinc-300">{DISABLED_CAPABILITY_CARD}</p>
+          <section className={`${PANEL} lg:col-span-2`}>
+            <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+              <h2 className="t-command text-[length:var(--t-md)]">Deferred capability</h2>
+              {/* Law 7: a deferral is pressed in ink. The one-off #b91c1c this
+                  heading used to carry was the only raw hex in the board tree,
+                  and red is the safety ladder's, not a status label's. */}
+              <span className="stamp stamp--flat">Deferred</span>
+            </div>
+            <p className="t-body mt-[var(--s3)] max-w-[80ch]">{DEFERRED_CAPABILITY}</p>
           </section>
         </div>
       ) : null}
 
-      {activeView === 'SECRETARY' ? (
-        <section className="mt-4 bg-black border border-zinc-800 rounded-none p-3">
-          <h2 className="text-xs uppercase tracking-[0.2em] text-slate-200">
-            Meeting Minutes Approval Queue [V-BOARD-PUBLIC]
-          </h2>
-          <table className="mt-3 w-full border-collapse text-xs">
-            <thead>
-              <tr className="border border-zinc-800">
-                <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Meeting</th>
-                <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Date</th>
-                <th className="border border-zinc-800 p-2 text-left font-medium text-zinc-400">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {meetingMinutesQueue.map((row) => (
-                <tr key={row.id} className="border border-zinc-800">
-                  <td className="border border-zinc-800 p-2">{row.meeting}</td>
-                  <td className="border border-zinc-800 p-2">{row.date}</td>
-                  <td className="border border-zinc-800 p-2">{row.approvalStatus}</td>
+      {activeView === 'Secretary' ? (
+        <section className={`${PANEL} mt-[var(--s5)]`}>
+          <h2 className="t-command text-[length:var(--t-md)]">Meeting minutes approval queue</h2>
+          <div className={SHEET}>
+            <table className="ledger">
+              <caption className="text-left">Minutes Awaiting Approval</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Meeting</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {meetingMinutesQueue.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.meeting}</td>
+                    <td>{row.date}</td>
+                    <td>{row.approvalStatus}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       ) : null}
 
-      <section className="mt-4 bg-black border border-zinc-800 rounded-none p-3">
-        <h2 className="text-xs uppercase tracking-[0.2em] text-slate-200">
-          L22 Grant Reporting [V-BOARD-PUBLIC]
-        </h2>
-        <p className="mt-2 text-sm text-slate-100">Total Training Floor Minutes: {formatGymNumber(trainingMinutes)}</p>
-        <p className="mt-1 text-[11px] text-zinc-500">Capacity index: {currentCapacity}%</p>
-        <label htmlFor="training-floor-minutes" className="mt-3 block text-[11px] text-zinc-400">
-          Locked Counter Input [V-BOARD-PUBLIC]
-        </label>
-        <input
-          id="training-floor-minutes"
-          readOnly
-          value={trainingMinutes}
-          onClick={triggerOverridePrompt}
-          onFocus={triggerOverridePrompt}
-          className="mt-1 w-full border border-zinc-800 bg-black p-2 text-xs text-zinc-300"
-        />
-
-        {showOverridePrompt ? (
-          <div className="mt-3 border border-zinc-800 bg-black p-3">
-            <label htmlFor="override-reason" className="block text-xs text-slate-200">
-              Mandatory Reason for Manual Override
-            </label>
-            <input
-              id="override-reason"
-              value={overrideReason}
-              onChange={(event) => setOverrideReason(event.target.value)}
-              className="mt-2 w-full border border-zinc-700 bg-black p-2 text-xs text-zinc-200"
-              placeholder="State fiduciary rationale"
-            />
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={acknowledgeOverrideReason}
-                className="border border-zinc-700 px-3 py-1 text-xs text-slate-200 hover:bg-zinc-900"
-              >
-                Acknowledge
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowOverridePrompt(false)}
-                className="border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:text-slate-200"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : null}
+      <section className={`${PANEL} mt-[var(--s5)]`}>
+        <h2 className="t-command text-[length:var(--t-md)]">Grant reporting</h2>
+        <div className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2">
+          <article className="stat">
+            <p className="stat-label">Training Floor Minutes</p>
+            <p className="stat-val">{formatGymNumber(trainingMinutes)}</p>
+            <p className="stat-note">Sample figure; nothing counts this</p>
+          </article>
+          <article className="stat">
+            <p className="stat-label">Capacity Index</p>
+            <p className="stat-val">{currentCapacity}%</p>
+            <p className="stat-note">Sample figure against a 9,200 minute baseline</p>
+          </article>
+        </div>
       </section>
     </section>
   );

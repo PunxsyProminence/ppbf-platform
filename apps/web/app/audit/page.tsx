@@ -101,8 +101,13 @@ function AuditTrace() {
             <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
               The Ledger
             </h1>
+            {/* The ledger has no 'why' field. pilot.audit_events records the
+                event type, the actor, the entity and a details blob -- what
+                happened and who did it. Its own building-map hint says exactly
+                that; this line used to promise a reason nothing stores. */}
             <p className="t-body mt-[var(--s3)] max-w-[64ch]">
-              Track who changed what and why, then hand approved trace flows to Source Control for promotion.
+              The continuity ledger: what happened and who did it. No reason is recorded against an event, because
+              nothing asks for one.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-[var(--s3)]">
@@ -128,8 +133,15 @@ function AuditTrace() {
           ))}
         </section>
 
+        {/* .t-body pins a bone ink tuned for leather, and this line stands
+            directly on the room's cork wall with no panel under it. The ink
+            goes on a child span for the same cascade reason /evidence
+            documents: ppbf.css is unlayered, so a utility on the .t-body
+            element itself loses and never lands. */}
         {loadState === 'loading' && (
-          <p className="t-body">Loading the audit trail...</p>
+          <p className="t-body" aria-busy="true">
+            <span className="text-[color:var(--hide-900)]">Loading the audit trail...</span>
+          </p>
         )}
 
         {/* A failed read and an empty trail must never look the same: one means

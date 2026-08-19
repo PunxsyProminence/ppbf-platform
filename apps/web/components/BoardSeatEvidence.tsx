@@ -24,20 +24,59 @@ interface ComplianceRule {
   escalation_level: string;
 }
 
+// The response also carries `message` and `author_name`, and this type leaves
+// both out on purpose. `message` is free text a coach or admin typed -- the
+// write path trims it and rejects empty, and validates nothing else -- and
+// `author_name` is a named individual. Both used to render verbatim on this
+// page, three sections below the paragraph stating that board access is
+// "organization-level and aggregate-only". A gym notice reading
+// "Congratulations to Maya R. on her first bout" is exactly the athlete detail
+// this surface refuses everywhere else. Off the type, nothing can put them
+// back by hand.
 interface Announcement {
   announcement_id: string;
-  message: string;
-  author_name: string;
   author_role: string;
   created_at: string;
 }
 
-const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+// The read window, named once so the request and the caption under the tiles
+// cannot drift apart.
+const NOTICE_READ_LIMIT = 25;
 
-function formatWhen(value: string): string {
-  const parsed = new Date(value);
-  return formatGymDateNumeric(parsed) ?? 'Date unavailable';
+interface NoticeAggregate {
+  total: number;
+  byRole: { role: string; count: number }[];
+  earliest: string | null;
+  latest: string | null;
 }
+
+function aggregateNotices(notices: Announcement[]): NoticeAggregate {
+  const counts = new Map<string, number>();
+  let earliest: number | null = null;
+  let latest: number | null = null;
+
+  for (const notice of notices) {
+    const role = notice.author_role || 'Role not recorded';
+    counts.set(role, (counts.get(role) ?? 0) + 1);
+
+    const at = new Date(notice.created_at).getTime();
+    if (Number.isFinite(at)) {
+      if (earliest === null || at < earliest) earliest = at;
+      if (latest === null || at > latest) latest = at;
+    }
+  }
+
+  return {
+    total: notices.length,
+    byRole: [...counts.entries()]
+      .map(([role, count]) => ({ role, count }))
+      .sort((a, b) => b.count - a.count || a.role.localeCompare(b.role)),
+    earliest: earliest === null ? null : formatGymDateNumeric(new Date(earliest)) ?? null,
+    latest: latest === null ? null : formatGymDateNumeric(new Date(latest)) ?? null,
+  };
+}
+
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSlug }>) {
   const [rules, setRules] = useState<ComplianceRule[] | null>(null);
@@ -71,7 +110,7 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
           headers: { 'Content-Type': 'application/json' },
           // The register claims full publication history, so it reads the
           // authoring view rather than only currently-live gym notices.
-          body: JSON.stringify({ view: 'authoring', limit: 25 }),
+          body: JSON.stringify({ view: 'authoring', limit: NOTICE_READ_LIMIT }),
           signal: controller.signal,
         });
         if (!response.ok) throw new Error('unavailable');
@@ -145,28 +184,47 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
 
   if (!notices) return null;
 
+  const aggregate = aggregateNotices(notices);
+  const span = aggregate.earliest && aggregate.latest
+    ? `${aggregate.earliest} to ${aggregate.latest}`
+    : 'Dates not recorded';
+
   return (
     <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
       <h2 className="t-command text-[length:var(--t-md)]">Board communications register</h2>
       <p className="t-body mt-[var(--s2)]">
-        Every notice published to this organization, with its author. This is the platform&apos;s only
-        standing governance record — it is notices, not minutes, and no resolution or vote is recorded
-        anywhere here.
+        How many notices have been published to this organization, and by which author role. This is the
+        platform&apos;s only standing governance record — it is notices, not minutes, and no resolution or vote is
+        recorded anywhere here.
+      </p>
+      <p className="t-body mt-[var(--s3)]">
+        The text of a notice and the name of the person who wrote it stay outside this role, the same way every other
+        record does.
       </p>
 
       {notices.length === 0 ? (
         <p className="t-body mt-[var(--s4)]">No notices have been published.</p>
       ) : (
-        <ul className="mt-[var(--s4)] space-y-[var(--s3)]">
-          {notices.map((notice) => (
-            <li key={notice.announcement_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
-              <p className="t-body">{notice.message}</p>
-              <p className="t-data mt-[var(--s2)] uppercase tracking-[0.12em]">
-                {notice.author_name} &middot; {notice.author_role} &middot; {formatWhen(notice.created_at)}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2 xl:grid-cols-3">
+            <article className="stat">
+              <p className="stat-label">Notices Published</p>
+              <p className="stat-val">{aggregate.total}</p>
+              <p className="stat-note">{span}</p>
+            </article>
+            {aggregate.byRole.map((entry) => (
+              <article key={entry.role} className="stat">
+                <p className="stat-label">Published By {entry.role}</p>
+                <p className="stat-val">{entry.count}</p>
+                <p className="stat-note">Author role, not author</p>
+              </article>
+            ))}
+          </div>
+          <p className="t-muted mt-[var(--s4)]">
+            This register reads the {NOTICE_READ_LIMIT} most recent notices, so a longer publication history may sit
+            behind these counts.
+          </p>
+        </>
       )}
     </article>
   );

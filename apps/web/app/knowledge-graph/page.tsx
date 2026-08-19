@@ -32,6 +32,11 @@ const REVIEW_STATE_BADGES: Record<ShadowKnowledgeNode['review_state'], { classNa
 export default function KnowledgeGraphPage() {
   const [nodes, setNodes] = useState<ShadowKnowledgeNode[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
+  // Before the projection resolved, this page asserted "No SHADOW knowledge
+  // projection data exists for this organization yet" -- a claim about the
+  // organization made while the request was still open. Same fix /research
+  // already carries.
+  const [projectionLoading, setProjectionLoading] = useState(true);
 
   useEffect(() => {
     void (async () => {
@@ -53,6 +58,8 @@ export default function KnowledgeGraphPage() {
       } catch (error) {
         setNodes([]);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load SHADOW knowledge projection.');
+      } finally {
+        setProjectionLoading(false);
       }
     })();
   }, []);
@@ -123,7 +130,17 @@ export default function KnowledgeGraphPage() {
           </section>
         ) : null}
 
-        {!errorMessage && nodes.length === 0 ? (
+        {!errorMessage && projectionLoading ? (
+          <section aria-busy="true" className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
+            {/* .working pins --brass-300 (tuned for leather, ~1.2:1 on paper).
+                --brass-800 is the rung .mat-paper already restates .t-eyebrow
+                to for the same reason; the ◴ glyph is a ::before on this
+                element, so the ink is set here rather than on a child. */}
+            <span className="working" style={{ color: 'var(--brass-800)' }}>Loading knowledge projection...</span>
+          </section>
+        ) : null}
+
+        {!errorMessage && !projectionLoading && nodes.length === 0 ? (
           <section className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
             <p className="font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.13em] text-[color:var(--hide-600)]">Empty State</p>
             <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
@@ -132,7 +149,11 @@ export default function KnowledgeGraphPage() {
           </section>
         ) : null}
 
-        <div className="grid gap-[var(--s5)] lg:grid-cols-2">
+        {/* Observation -> Pattern -> Finding -> Validated Lesson is a
+            direction of travel, which is the room's stated motion. A 2x2 block
+            hid it: the reader had to know the order to see one. Four columns
+            read left to right and put the order on screen. */}
+        <div className="grid gap-[var(--s5)] sm:grid-cols-2 lg:grid-cols-4">
           {[
             { title: 'Observation', items: grouped.observation },
             { title: 'Pattern', items: grouped.pattern },
@@ -163,8 +184,16 @@ export default function KnowledgeGraphPage() {
                           </span>
                         </div>
                         {/* Law 4: entity identifiers are auditable records -- mono voice. */}
-                        <p className="t-data mt-[var(--s2)] !text-[color:var(--hide-800)]">
-                          {item.entity_type} / {item.entity_id}
+                        {/* The ink goes on a child span. `!text-[...]` is the
+                            v3 important-modifier form and Tailwind v4 emits
+                            nothing for it, so .t-data's bone-200 stayed on the
+                            paper slip at about 1.05:1. A span carries no
+                            .t-data of its own, so its utility wins -- the same
+                            fix /evidence documents for .t-body. */}
+                        <p className="t-data mt-[var(--s2)]">
+                          <span className="text-[color:var(--hide-800)]">
+                            {item.entity_type} / {item.entity_id}
+                          </span>
                         </p>
                       </article>
                     );
