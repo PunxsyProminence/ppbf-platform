@@ -46,6 +46,11 @@ export default function EvidenceReviewPage() {
   const [queue, setQueue] = useState<ReviewQueue>({ sources: [], documents: [] });
   const [error, setError] = useState('');
   const [busyKey, setBusyKey] = useState('');
+  // Before the first read resolved, this page asserted both of its empty
+  // sentences at once -- an admin opening it saw "No sources" and "No
+  // documents" while the request was still in flight. /research already
+  // solved this; the aria-busy note is the same one it renders.
+  const [loading, setLoading] = useState(true);
 
   const fetchQueue = useCallback(async (): Promise<ReviewQueue> => {
     const response = await fetch(`${apiBase()}/api/pilot/shadow/evidence/review?limit=200`, {
@@ -62,7 +67,7 @@ export default function EvidenceReviewPage() {
       (loadError: unknown) => {
         setError(loadError instanceof Error ? loadError.message : 'Unable to load evidence.');
       },
-    );
+    ).finally(() => setLoading(false));
   }, [fetchQueue]);
 
   const update = async (payload: Record<string, string>) => {
@@ -131,6 +136,13 @@ export default function EvidenceReviewPage() {
           <p className="t-body mt-[var(--s3)] max-w-[64ch]">
             Only approved, verified, fully indexed documents can support SHADOW citations.
           </p>
+          {/* The read returns the whole library with anything pending sorted
+              to the top -- it is not filtered to a queue. Saying so is what
+              makes the empty states below mean what they say. */}
+          <p className="t-muted mt-[var(--s3)] max-w-[64ch]">
+            Every source and document held for this organization is listed, with anything awaiting review sorted
+            first.
+          </p>
         </header>
 
         {error ? (
@@ -142,6 +154,17 @@ export default function EvidenceReviewPage() {
           </div>
         ) : null}
 
+        {loading ? (
+          <section aria-busy="true" className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
+            {/* .working pins --brass-300, which is tuned for leather and
+                measures about 1.2:1 on paper. --brass-800 is the rung
+                .mat-paper already restates .t-eyebrow to for exactly this
+                reason (6.49:1); the glyph is a ::before on this element, so
+                the ink has to be set here rather than on a child. */}
+            <span className="working" style={{ color: 'var(--brass-800)' }}>Loading the evidence library...</span>
+          </section>
+        ) : null}
+
         <section className="space-y-[var(--s4)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             <span className="text-[color:var(--hide-900)]">Sources</span>
@@ -151,8 +174,13 @@ export default function EvidenceReviewPage() {
               Tailwind text-[…] utility on the same element loses the cascade
               and never lands -- this line was rendering bone-on-cork at
               2.34:1. A span carries no .t-body of its own, so it wins. */}
-          {queue.sources.length === 0 ? (
-            <p className="t-body"><span className="text-[color:var(--hide-800)]">No sources are awaiting review.</span></p>
+          {!loading && queue.sources.length === 0 ? (
+            <p className="t-body">
+              <span className="text-[color:var(--hide-800)]">
+                No sources have been recorded for this organization yet. This is an empty library, not a cleared
+                queue.
+              </span>
+            </p>
           ) : null}
           {queue.sources.map((source) => {
             const badge = APPROVAL_BADGES[source.approval_state];
@@ -192,8 +220,13 @@ export default function EvidenceReviewPage() {
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             <span className="text-[color:var(--hide-900)]">Documents</span>
           </h2>
-          {queue.documents.length === 0 ? (
-            <p className="t-body"><span className="text-[color:var(--hide-800)]">No documents are awaiting review.</span></p>
+          {!loading && queue.documents.length === 0 ? (
+            <p className="t-body">
+              <span className="text-[color:var(--hide-800)]">
+                No documents have been recorded for this organization yet. This is an empty library, not a cleared
+                queue.
+              </span>
+            </p>
           ) : null}
           {queue.documents.map((document) => {
             const badge = APPROVAL_BADGES[document.approval_state];
@@ -208,8 +241,19 @@ export default function EvidenceReviewPage() {
                         {badge.label}
                       </span>
                     </div>
+                    {/* chunk_count counts every chunk row for the document
+                        regardless of state (listShadowLibraryReviewQueue does
+                        a plain count over shadow_library_chunks), so calling
+                        them 'indexed' contradicted the ingest_state printed
+                        two words earlier -- 'chunking · 14 indexed chunks'
+                        named as indexed exactly the chunks the retrieval gate
+                        would refuse. Indexing is confirmed by
+                        index_completed_at and by nothing else, so that is the
+                        field that gets to say so. */}
                     <p className="t-muted mt-[var(--s2)]">
-                      {document.ingest_state} · {document.chunk_count} indexed chunks
+                      {document.ingest_state} · {document.chunk_count} chunk
+                      {document.chunk_count === 1 ? '' : 's'} stored ·{' '}
+                      {document.index_completed_at ? 'indexing confirmed' : 'indexing not confirmed'}
                     </p>
                     <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                       {document.approval_state} / {document.verification_state}

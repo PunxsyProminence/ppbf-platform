@@ -74,31 +74,85 @@ describe('the safety director sees the written standard', () => {
 });
 
 describe('the secretary sees the communications register', () => {
-  test('notices render with their author, and are not claimed to be minutes', async () => {
+  // The register counts; it does not quote. A notice body is free text a coach
+  // typed -- the write path trims it and rejects empty, and checks nothing else
+  // -- and the author is a named individual. Both used to render verbatim on a
+  // page that says three sections higher that board access is
+  // "organization-level and aggregate-only".
+  const NOTICES = [
+    {
+      announcement_id: 'a1',
+      message: 'Congratulations to Maya R. on her first bout.',
+      author_name: 'Coach Jason',
+      author_role: 'coach',
+      created_at: '2026-07-30T12:00:00.000Z',
+    },
+    {
+      announcement_id: 'a2',
+      message: 'Gym closed Monday for the holiday.',
+      author_name: 'Dana Whitfield',
+      author_role: 'admin',
+      created_at: '2026-07-28T12:00:00.000Z',
+    },
+    {
+      announcement_id: 'a3',
+      message: 'Sparring moved to the back room.',
+      author_name: 'Coach Jason',
+      author_role: 'coach',
+      created_at: '2026-07-26T12:00:00.000Z',
+    },
+  ];
+
+  function mockNotices() {
     const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {
       if (typeof init?.body === 'string') {
         expect(JSON.parse(init.body)).toMatchObject({ view: 'authoring', limit: 25 });
       }
-      return jsonResponse({
-        ok: true,
-        announcements: [
-          {
-            announcement_id: 'a1',
-            message: 'Gym closed Monday for the holiday.',
-            author_name: 'Coach Jason',
-            author_role: 'coach',
-            created_at: '2026-07-30T12:00:00.000Z',
-          },
-        ],
-      });
+      return jsonResponse({ ok: true, announcements: NOTICES });
     });
     global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  test('counts notices by author role, and is not claimed to be minutes', async () => {
+    mockNotices();
 
     render(<BoardSeatEvidence seat="secretary" />);
 
-    expect(await screen.findByText('Gym closed Monday for the holiday.')).toBeTruthy();
-    expect(screen.getByText(/Coach Jason/)).toBeTruthy();
+    expect(await screen.findByText('Notices Published')).toBeTruthy();
+    expect(screen.getByText('Published By coach')).toBeTruthy();
+    expect(screen.getByText('Published By admin')).toBeTruthy();
+    // Three notices: two from a coach, one from an admin.
+    expect(screen.getAllByText('2')).toHaveLength(1);
+    expect(screen.getAllByText('3')).toHaveLength(1);
     expect(screen.getByText(/it is notices, not minutes/i)).toBeTruthy();
+  });
+
+  test('no notice body and no author name reaches the board page', async () => {
+    // The mutation this catches is the obvious one: somebody putting the list
+    // back because a count is less useful than the text. On this surface that
+    // is the whole point -- the aggregate boundary is the feature.
+    mockNotices();
+
+    render(<BoardSeatEvidence seat="secretary" />);
+    await screen.findByText('Notices Published');
+
+    for (const notice of NOTICES) {
+      expect(screen.queryByText(notice.message)).toBeNull();
+      expect(screen.queryByText(new RegExp(notice.author_name))).toBeNull();
+    }
+    expect(document.body.textContent).not.toMatch(/Maya|Jason|Dana/);
+  });
+
+  test('the cadence is stated from the records read, not asserted', async () => {
+    mockNotices();
+
+    render(<BoardSeatEvidence seat="secretary" />);
+
+    // Earliest and latest of the three, so a board reads the span the count
+    // covers rather than assuming it is current.
+    expect(await screen.findByText(/7\/26\/2026 to 7\/30\/2026/)).toBeTruthy();
+    expect(screen.getByText(/reads the 25 most recent notices/i)).toBeTruthy();
   });
 
   test('requests the authoring view rather than only live notices', async () => {

@@ -13,19 +13,18 @@ export interface BoardSeatConfig {
   seatLabel: string;
   roleDescription: string;
   primaryResponsibilities: string[];
-  openTasksCount: string;
-  pendingReviewsCount: string;
-  meetingItemsCount: string;
-  complianceItemsCount: string;
 }
 
 // The board surface holds no governance work records: there is no board task
 // table, no policy-review queue, no meeting calendar and no risk register in
-// pilot. A seat therefore has no counter behind it, and the four seat fields
-// below say so outright. A tile is only allowed to carry a figure the platform
-// can actually produce -- a placeholder that reads like a failed load tells a
-// fiduciary a number exists somewhere, which is the one thing these must never
-// do.
+// pilot. A seat therefore has no counter behind it.
+//
+// Every seat used to carry four count fields -- openTasksCount,
+// pendingReviewsCount, meetingItemsCount, complianceItemsCount -- all set to
+// this string on all eight seats and rendered by nothing at all. Half a
+// feature is worse than none of one, so the fields are gone and the sentence
+// they were carrying is now rendered where it belongs: the workspace's own
+// "not stored" panel, which lists exactly which records do not exist.
 export const BOARD_RECORD_NOT_HELD = 'Not stored by this platform';
 
 // Repeated verbatim on every seat workspace. This must stay character-identical
@@ -46,80 +45,48 @@ export const boardSeatConfigs: BoardSeatConfig[] = [
     seatLabel: 'President',
     roleDescription: 'Mission stewardship, governance leadership, and executive accountability for a veteran-founded 501(c)(3) public charity.',
     primaryResponsibilities: ['Mission stewardship', 'Strategic direction', 'Board effectiveness', 'Executive accountability'],
-    openTasksCount: BOARD_RECORD_NOT_HELD,
-    pendingReviewsCount: BOARD_RECORD_NOT_HELD,
-    meetingItemsCount: BOARD_RECORD_NOT_HELD,
-    complianceItemsCount: BOARD_RECORD_NOT_HELD,
   },
   {
     slug: 'chair',
     seatLabel: 'Board Chair',
     roleDescription: 'Governance oversight, meeting governance quality, committee leadership, and board development.',
     primaryResponsibilities: ['Governance oversight', 'Meeting governance', 'Committee leadership', 'Board development'],
-    openTasksCount: BOARD_RECORD_NOT_HELD,
-    pendingReviewsCount: BOARD_RECORD_NOT_HELD,
-    meetingItemsCount: BOARD_RECORD_NOT_HELD,
-    complianceItemsCount: BOARD_RECORD_NOT_HELD,
   },
   {
     slug: 'vice-chair',
     seatLabel: 'Vice Chair',
     roleDescription: 'Succession planning, governance continuity, leadership development, and committee coordination.',
     primaryResponsibilities: ['Succession planning', 'Governance continuity', 'Leadership development', 'Committee coordination'],
-    openTasksCount: BOARD_RECORD_NOT_HELD,
-    pendingReviewsCount: BOARD_RECORD_NOT_HELD,
-    meetingItemsCount: BOARD_RECORD_NOT_HELD,
-    complianceItemsCount: BOARD_RECORD_NOT_HELD,
   },
   {
     slug: 'treasurer',
     seatLabel: 'Treasurer',
     roleDescription: 'Financial stewardship, grant oversight, reserve monitoring, and funding sustainability governance.',
     primaryResponsibilities: ['Financial stewardship', 'Grant oversight', 'Reserve monitoring', 'Funding sustainability'],
-    openTasksCount: BOARD_RECORD_NOT_HELD,
-    pendingReviewsCount: BOARD_RECORD_NOT_HELD,
-    meetingItemsCount: BOARD_RECORD_NOT_HELD,
-    complianceItemsCount: BOARD_RECORD_NOT_HELD,
   },
   {
     slug: 'secretary',
     seatLabel: 'Secretary',
     roleDescription: 'Governance records stewardship, board action register integrity, and annual filing calendar management.',
     primaryResponsibilities: ['Governance records', 'Board action register', 'Annual filing calendar', 'Document integrity'],
-    openTasksCount: BOARD_RECORD_NOT_HELD,
-    pendingReviewsCount: BOARD_RECORD_NOT_HELD,
-    meetingItemsCount: BOARD_RECORD_NOT_HELD,
-    complianceItemsCount: BOARD_RECORD_NOT_HELD,
   },
   {
     slug: 'safety-director',
     seatLabel: 'Program & Safety Director',
     roleDescription: 'Youth protection leadership, program compliance governance, risk management, and safety governance oversight.',
     primaryResponsibilities: ['Youth protection', 'Program compliance', 'Risk management', 'Safety governance'],
-    openTasksCount: BOARD_RECORD_NOT_HELD,
-    pendingReviewsCount: BOARD_RECORD_NOT_HELD,
-    meetingItemsCount: BOARD_RECORD_NOT_HELD,
-    complianceItemsCount: BOARD_RECORD_NOT_HELD,
   },
   {
     slug: 'community-director',
     seatLabel: 'Community & Development Director',
     roleDescription: 'Community impact stewardship, partner development, fundraising oversight, and volunteer engagement governance.',
     primaryResponsibilities: ['Community impact', 'Partner development', 'Fundraising oversight', 'Volunteer engagement'],
-    openTasksCount: BOARD_RECORD_NOT_HELD,
-    pendingReviewsCount: BOARD_RECORD_NOT_HELD,
-    meetingItemsCount: BOARD_RECORD_NOT_HELD,
-    complianceItemsCount: BOARD_RECORD_NOT_HELD,
   },
   {
     slug: 'at-large',
     seatLabel: 'Director-at-Large',
     roleDescription: 'Independent oversight with strategic project reviews and board accountability support.',
     primaryResponsibilities: ['Independent oversight', 'Strategic projects', 'Special reviews', 'Board accountability'],
-    openTasksCount: BOARD_RECORD_NOT_HELD,
-    pendingReviewsCount: BOARD_RECORD_NOT_HELD,
-    meetingItemsCount: BOARD_RECORD_NOT_HELD,
-    complianceItemsCount: BOARD_RECORD_NOT_HELD,
   },
 ];
 
@@ -161,15 +128,17 @@ export type BoardWorkspaceTab =
   | 'Resolutions'
   | 'Committees'
   | 'Compliance'
-  | 'Documents'
-  | 'SHADOW';
+  | 'Documents';
 
 // 'built' is reserved for a card whose data a board member can load today.
 // 'planned' carries the stamp and is the honest default: an unstamped card in
 // the same visual treatment as a working one reads as shipped, and most of this
-// catalogue describes modules no backend serves. 'boundary' states a limit the
-// server enforces rather than a feature at all.
-export type BoardCardStatus = 'built' | 'planned' | 'boundary';
+// catalogue describes modules no backend serves.
+//
+// A third state, 'boundary', existed only for the SHADOW tab's three cards and
+// went with them. The boundary is stated once, in fiduciary voice, by
+// BOARD_AGGREGATE_BOUNDARY_STATEMENT -- it was never a kind of card.
+export type BoardCardStatus = 'built' | 'planned';
 
 export interface BoardWorkspaceCard {
   title: string;
@@ -190,7 +159,6 @@ export const boardWorkspaceTabs: BoardWorkspaceTab[] = [
   'Committees',
   'Compliance',
   'Documents',
-  'SHADOW',
 ];
 
 // Two cards are backed by a route a board session can actually call:
@@ -264,12 +232,29 @@ export const boardWorkspaceCards: Record<BoardWorkspaceTab, BoardWorkspaceCard[]
     { title: 'Version Tracking', detail: 'Document review and publication workflow.', status: 'planned' },
     { title: 'Retention Controls', detail: 'Governance record lifecycle controls visible to the relevant seats.', status: 'planned' },
   ],
-  SHADOW: [
-    { title: 'Governance generation unavailable', detail: 'Board chat and background generation are disabled for this role.', status: 'boundary' },
-    { title: 'Data boundary', detail: 'No athlete data, coach data, or parent records reach this board view. Board seat assignment is the one administrative control a seat carries, and only the president holds it.', status: 'boundary' },
-    { title: 'Aggregate-only API', detail: 'Only organization-level counts, rates, and suppressed status buckets are served.', status: 'boundary' },
-  ],
 };
+
+// An eleventh tab used to read 'SHADOW' and hold three cards narrating what
+// board SHADOW will not do. Every word of it was true and none of it belonged:
+// the room's rule is not "say no to SHADOW here", it is that the word does not
+// appear on this wall at all. BOARD_AGGREGATE_BOUNDARY_STATEMENT states the
+// same limit in fiduciary voice and every seat page renders it -- once on the
+// hub, once on the workspace. Nothing enforced is lost; the enforcement was
+// never in the copy.
+
+export type BoardTabStatus = 'partly-built' | 'planned';
+
+// The tab strip rendered eleven identical buttons over a catalogue that is
+// mostly placeholder, so a fiduciary only found that out by clicking. This is
+// not a new fact -- it is read off the cards declared above, so a tab cannot
+// say 'planned' while holding something built, or the reverse.
+export function boardTabStatus(tab: BoardWorkspaceTab): BoardTabStatus {
+  return boardWorkspaceCards[tab].some((card) => card.status === 'built')
+    ? 'partly-built'
+    : 'planned';
+}
+
+export const BOARD_TAB_PLANNED_STAMP = 'Planned';
 
 export type BoardSeatAccessMode = 'seat-holder' | 'governance-oversight' | 'platform-observer';
 

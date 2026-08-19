@@ -145,3 +145,45 @@ test('an unbuilt module carries the placeholder stamp in the same view as a buil
   expect(screen.getAllByText('Available now').length).toBeGreaterThan(0);
   expect(screen.getAllByText('PLANNED | FRONT-END PLACEHOLDER | BACKEND REQUIRED').length).toBeGreaterThan(0);
 });
+
+test('a tab with nothing behind it says so in the strip, before it is opened', () => {
+  // Eight of the ten tabs are entirely placeholder, and the strip used to
+  // render all of them identically -- a fiduciary found out which by clicking
+  // through them one at a time.
+  renderSeat('treasurer', { role: 'board', seats: ['treasurer'] });
+
+  const tabs = screen.getAllByRole('button').filter((node) => node.getAttribute('aria-pressed') !== null);
+  expect(tabs).toHaveLength(10);
+
+  const stamped = tabs.filter((tab) => tab.textContent?.includes('Planned')).map((tab) => tab.textContent);
+  expect(stamped).toEqual([
+    'GovernancePlanned', 'StrategyPlanned', 'MeetingsPlanned', 'TasksPlanned',
+    'PoliciesPlanned', 'ResolutionsPlanned', 'CommitteesPlanned', 'DocumentsPlanned',
+  ]);
+
+  // The two tabs that can load something are the two that escape the stamp.
+  expect(tabs.find((tab) => tab.textContent === 'Overview')).toBeDefined();
+  expect(tabs.find((tab) => tab.textContent === 'Compliance')).toBeDefined();
+});
+
+test('the word SHADOW does not appear on a board wall', () => {
+  // The room's purpose line forbids the ask-SHADOW surface here outright. An
+  // eleventh tab named SHADOW, and a permanent article narrating the denial
+  // across four bullets, were both honest and both put the word on this wall
+  // on every seat page. The boundary is stated instead, in fiduciary voice.
+  renderSeat('treasurer', { role: 'board', seats: ['treasurer'] });
+
+  expect(document.body.textContent).not.toMatch(/shadow/i);
+  expect(screen.getByText(BOARD_AGGREGATE_BOUNDARY_STATEMENT)).toBeDefined();
+});
+
+test('the identity panel carries the two facts and neither slogan', () => {
+  renderSeat('president', { role: 'board', seats: ['president'] });
+
+  expect(screen.getByText('Veteran-Founded')).toBeDefined();
+  expect(screen.getByText('501(c)(3) Public Charity')).toBeDefined();
+  // 'Mission-Focused Governance' and 'Community Impact Oversight' said nothing
+  // and said it in the same material and voice as the count tiles.
+  expect(screen.queryByText('Mission-Focused Governance')).toBeNull();
+  expect(screen.queryByText('Community Impact Oversight')).toBeNull();
+});

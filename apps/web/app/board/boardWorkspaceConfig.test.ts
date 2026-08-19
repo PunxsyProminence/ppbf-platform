@@ -13,12 +13,19 @@ import { join } from 'node:path';
 // board surface shipped forty of them: 'Unavailable' beside 'Reserve
 // Monitoring' tells a fiduciary a reserve figure exists and merely failed to
 // load. Nothing on this surface stores a reserve at all.
+//
+// The seat catalogue used to answer that with four count fields per seat, all
+// set to BOARD_RECORD_NOT_HELD and rendered by nothing. Those are gone; the
+// check that replaced them is that no seat carries a count-shaped field at
+// all, which is a stronger statement than any string test on one.
 
 import {
   BOARD_AGGREGATE_BOUNDARY_STATEMENT,
   BOARD_PLANNED_STAMP,
   BOARD_RECORD_NOT_HELD,
+  BOARD_TAB_PLANNED_STAMP,
   boardSeatConfigs,
+  boardTabStatus,
   boardWorkspaceCards,
   boardWorkspaceTabs,
   readBoardSeatsFromSession,
@@ -102,19 +109,26 @@ describe('seat configuration', () => {
     expect(new Set(ALL_SEATS).size).toBe(8);
   });
 
-  test('states outright that no governance record is stored, and never fakes a figure', () => {
+  test('carries no count field at all, faked or otherwise', () => {
+    // A seat has nothing to count: pilot holds no board task table, no
+    // policy-review queue, no meeting calendar and no risk register. The four
+    // *Count fields were dead weight rendered by nothing, and the mutation
+    // this guards against is somebody adding one back with a number in it.
     for (const seat of boardSeatConfigs) {
-      for (const field of [
-        seat.openTasksCount,
-        seat.pendingReviewsCount,
-        seat.meetingItemsCount,
-        seat.complianceItemsCount,
-      ]) {
-        expect(field).toBe(BOARD_RECORD_NOT_HELD);
-        expect(field).not.toMatch(/^Unavailable$/);
-        expect(field).not.toMatch(/^[\d.,%-]+$/);
+      for (const key of Object.keys(seat)) {
+        expect(key).not.toMatch(/count/i);
+      }
+      for (const value of Object.values(seat)) {
+        for (const entry of Array.isArray(value) ? value : [value]) {
+          expect(String(entry)).not.toMatch(/^Unavailable$/);
+          expect(String(entry)).not.toMatch(/^[\d.,%-]+$/);
+        }
       }
     }
+  });
+
+  test('the not-held sentence is still stated once, for the panel that renders it', () => {
+    expect(BOARD_RECORD_NOT_HELD).toBe('Not stored by this platform');
   });
 
   test('does not call a 501(c)(3) veteran-owned', () => {
@@ -163,7 +177,7 @@ describe('workspace card catalogue', () => {
     const unbacked = everyCard.filter((card) => card.status !== 'built');
     expect(unbacked.length).toBeGreaterThan(40);
     for (const card of unbacked) {
-      expect(['planned', 'boundary']).toContain(card.status);
+      expect(card.status).toBe('planned');
     }
   });
 
@@ -185,6 +199,39 @@ describe('workspace card catalogue', () => {
 
   test('the stamp is the one the workspace renders', () => {
     expect(BOARD_PLANNED_STAMP).toBe('PLANNED | FRONT-END PLACEHOLDER | BACKEND REQUIRED');
+    expect(BOARD_TAB_PLANNED_STAMP).toBe('Planned');
+  });
+
+  test('the word SHADOW does not appear anywhere in the board catalogue', () => {
+    // Not a taste rule. The board room's purpose line forbids the ask-SHADOW
+    // surface outright, and an eleventh tab named for it -- even one whose
+    // three cards only said no -- put the word on the wall on every seat page.
+    const catalogue = [
+      ...boardWorkspaceTabs,
+      ...everyCard.flatMap((card) => [card.title, card.detail]),
+    ].join(' ');
+    expect(catalogue).not.toMatch(/shadow/i);
+  });
+});
+
+describe('per-tab status', () => {
+  test('is read off the cards, so a tab cannot disagree with its own panel', () => {
+    for (const tab of boardWorkspaceTabs) {
+      const hasBuilt = boardWorkspaceCards[tab].some((card) => card.status === 'built');
+      expect(boardTabStatus(tab)).toBe(hasBuilt ? 'partly-built' : 'planned');
+    }
+  });
+
+  test('only the two tabs with a loadable card escape the stamp', () => {
+    // The mutation worth catching is a tab strip that stops stamping: nine of
+    // eleven tabs were 100% placeholder and every button looked the same, so a
+    // fiduciary only learned which by clicking.
+    const planned = boardWorkspaceTabs.filter((tab) => boardTabStatus(tab) === 'planned');
+    expect(planned).toEqual([
+      'Governance', 'Strategy', 'Meetings', 'Tasks', 'Policies', 'Resolutions', 'Committees', 'Documents',
+    ]);
+    expect(boardTabStatus('Overview')).toBe('partly-built');
+    expect(boardTabStatus('Compliance')).toBe('partly-built');
   });
 });
 
@@ -195,10 +242,6 @@ describe('legacy fiction', () => {
       ...boardSeatConfigs.flatMap((seat) => [
         seat.seatLabel,
         seat.roleDescription,
-        seat.openTasksCount,
-        seat.pendingReviewsCount,
-        seat.meetingItemsCount,
-        seat.complianceItemsCount,
         ...seat.primaryResponsibilities,
       ]),
       ...boardWorkspaceTabs.flatMap((tab) => boardWorkspaceCards[tab].map((card) => card.title)),

@@ -127,8 +127,8 @@ export default function BoardComplianceMonitoringPage() {
   // live critical or high count wears the saturated band with its glyph
   // (Law 3), the same idiom the coach panel uses for injury flags.
   const severityTiles = [
-    { label: 'Critical', metric: severityCounts?.critical, glyph: '✕', tone: 'rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)]' },
-    { label: 'High', metric: severityCounts?.high, glyph: '▲', tone: 'rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)]' },
+    { label: 'Critical', metric: severityCounts?.critical, glyph: '✕', tone: 'flex flex-col gap-[var(--s2)] rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)] px-[var(--s5)]' },
+    { label: 'High', metric: severityCounts?.high, glyph: '▲', tone: 'flex flex-col gap-[var(--s2)] rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)] px-[var(--s5)]' },
     { label: 'Medium', metric: severityCounts?.medium, glyph: null, tone: null },
     { label: 'Low', metric: severityCounts?.low, glyph: null, tone: null },
   ];
@@ -141,8 +141,14 @@ export default function BoardComplianceMonitoringPage() {
     { label: 'Dismissed', metric: statusCounts?.dismissed },
   ];
 
-  const NEUTRAL_TILE = 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]';
-  const VALUE = 'mt-[var(--s3)] font-mono text-[length:var(--t-xl)] font-bold text-[color:var(--bone-100)]';
+  // .stat / .stat-val / .stat-label are the sheet's count tile, and
+  // BoardSummaryPanel already renders the hub's figures with them. These two
+  // constants were a second implementation of the same object, so the hub's
+  // tiles and this register's tiles were visibly different things standing in
+  // one room. The saturated severity band stays a local class because it is a
+  // status treatment, not a tile.
+  const NEUTRAL_TILE = 'stat';
+  const VALUE = 'stat-val';
 
   return (
     // platform_owner is admitted to match BoardRoleGate in app/board/layout.tsx
@@ -227,20 +233,20 @@ export default function BoardComplianceMonitoringPage() {
               );
               return (
                 <article key={tile.label} className={flagged && tile.tone ? tile.tone : NEUTRAL_TILE}>
-                  <h2 className="t-label flex items-center gap-[var(--s2)]">
+                  <h2 className="stat-label flex items-center gap-[var(--s2)]">
                     {flagged ? <span aria-hidden="true">{tile.glyph}</span> : null}
                     <span>{tile.label}</span>
                   </h2>
                   {suppressed ? (
                     // k-anonymity withholding is a static ink stamp (Law 7),
                     // never an empty cell and never a zero.
-                    <p className="mt-[var(--s3)]">
+                    <p>
                       <span className="stamp stamp--flat">{display.value}</span>
                     </p>
                   ) : (
                     <p className={VALUE}>{display.value}</p>
                   )}
-                  <p className="t-muted mt-[var(--s2)]">{display.note}</p>
+                  <p className="stat-note">{display.note}</p>
                 </article>
               );
             })}
@@ -280,15 +286,15 @@ export default function BoardComplianceMonitoringPage() {
                 const suppressed = !isLoading && tile.metric?.status === 'insufficient_data';
                 return (
                   <article key={tile.label} className={NEUTRAL_TILE}>
-                    <p className="t-label">{tile.label}</p>
+                    <p className="stat-label">{tile.label}</p>
                     {suppressed ? (
-                      <p className="mt-[var(--s3)]">
+                      <p>
                         <span className="stamp stamp--flat">{display.value}</span>
                       </p>
                     ) : (
                       <p className={VALUE}>{display.value}</p>
                     )}
-                    <p className="t-muted mt-[var(--s2)]">{display.note}</p>
+                    <p className="stat-note">{display.note}</p>
                   </article>
                 );
               })}

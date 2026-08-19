@@ -499,7 +499,11 @@ export default function ResearchIntakePage() {
 
         {!errorMessage && projectionLoading ? (
           <section aria-busy="true" className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
-            <span className="working">Loading research projection...</span>
+            {/* .working pins --brass-300 (tuned for leather, ~1.2:1 on paper).
+                --brass-800 is the rung .mat-paper already restates .t-eyebrow
+                to for the same reason; the ◴ glyph is a ::before on this
+                element, so the ink is set here rather than on a child. */}
+            <span className="working" style={{ color: 'var(--brass-800)' }}>Loading research projection...</span>
           </section>
         ) : null}
 

@@ -12,10 +12,17 @@ export default function BoardHubPage() {
             why the header composes the same ladder by hand. */}
         <header className="on-plaster flex flex-col gap-[var(--s4)] border-b-4 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
           <div className="space-y-[var(--s3)]">
-            <p className="t-eyebrow tracking-[0.35em]">Board Hub</p>
-            <h1 className="t-command text-[length:var(--t-2xl)] md:text-[length:var(--t-3xl)]">One board governance framework</h1>
+            {/* "One board governance framework" and "role-aware visibility"
+                described the build to the board rather than telling it what it
+                is looking at. The room's own best copy is the register's "Read
+                this zero correctly": say what the figure is, and say what it
+                is not. */}
+            <p className="t-eyebrow tracking-[0.35em]">Board Workspace</p>
+            <h1 className="t-command text-[length:var(--t-2xl)] md:text-[length:var(--t-3xl)]">Board Hub</h1>
             <p className="t-body max-w-[80ch]">
-              Board Hub is the board seat directory, governance control surface, and mission oversight launcher. Every seat opens the same board workspace shell with role-aware visibility for nonprofit governance.
+              The organization&rsquo;s figures at the level a board is served them, and the way in to each seat. Every
+              seat reads the same aggregate; what a seat holds is which pages it may open and the duties recorded
+              against it.
             </p>
           </div>
         </header>

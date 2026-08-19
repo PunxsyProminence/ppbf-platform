@@ -161,21 +161,26 @@ export default function ResearchQAChatPage() {
             </h1>
             <p className="t-muted mt-[var(--s2)]">Ask. Learn. Document. No fancy talk.</p>
           </div>
+          {/* '● LIVE' was a static string: nothing here checks a connection,
+              a session or a service, so the indicator was on whether or not
+              anything was. Replaced with the one thing this header can state
+              and the page enforces -- askLibrary answers from approved
+              evidence or says it has none. */}
           <div className="text-right">
-            <p className="t-label">PPBF Fight Card</p>
-            <p className="plaque mt-[var(--s2)]">● LIVE</p>
+            <p className="t-label">Answers Drawn From</p>
+            <p className="plaque mt-[var(--s2)]">APPROVED EVIDENCE ONLY</p>
           </div>
         </div>
       </header>
 
       <div className="mx-auto grid w-full max-w-[1200px] gap-[var(--s5)] p-[var(--s5)] lg:grid-cols-[var(--split-major)_var(--split-minor)]">
-        {/* CHAT: the riveted frame holds the conversation. */}
-        <section aria-label="Library conversation" className="frame self-start">
-          <span className="rivet rivet--tl" />
-          <span className="rivet rivet--tr" />
-          <span className="rivet rivet--bl" />
-          <span className="rivet rivet--br" />
-          <div className="frame-in mat-leather p-[var(--s5)]">
+        {/* A riveted frame is Front Office furniture. The file room's is pins
+            and dossiers, which is what /research and /research/review already
+            stand on, so the conversation is a leather desk blotter pinned to
+            the cork rather than a riveted case. */}
+        <section aria-label="Library conversation" className="relative self-start">
+          <span className="pin pin--brass" aria-hidden="true" />
+          <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
             {/* Messages */}
             <div
               role="log"
