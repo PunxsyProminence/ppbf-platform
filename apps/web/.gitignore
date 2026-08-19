@@ -47,3 +47,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Materialized plate JPEGs (generated from .b64 sidecars)
+# Sources (*.jpg.b64) stay in repo; run npm run plates:materialize after clone
+/public/plates/*.jpg

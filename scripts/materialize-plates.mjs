@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /**
- * Decode Plate Set v1-g: writes JPGs from sibling .b64 files in public/plates.
- * Prefer: npm run plates:materialize  (same effect + magic-byte safety)
+ * Materialize Plate Set v1-g JPEGs from .b64 sidecars.
+ * Run after clone / in CI / before build: npm run plates:materialize
+ * or: node scripts/materialize-plates.mjs
+ *
+ * Writes apps/web/public/plates/*.jpg from sibling *.jpg.b64 files.
+ * Missing b64 = skip (gradients still work). Magic-byte check for safety.
  */
 import fs from "fs";
 import path from "path";
@@ -12,6 +16,7 @@ const dir = path.join(
   "..",
   "apps/web/public/plates"
 );
+
 const names = [
   "plate-01-office-01.jpg",
   "plate-02a-floor-landscape-01.jpg",
@@ -22,6 +27,8 @@ const names = [
   "plate-06-night-01.jpg",
   "plate-07-warm-ground-01.jpg",
 ];
+
+fs.mkdirSync(dir, { recursive: true });
 let n = 0;
 for (const name of names) {
   const b64path = path.join(dir, name + ".b64");
@@ -32,11 +39,12 @@ for (const name of names) {
   const raw = fs.readFileSync(b64path, "utf8").replace(/\s/g, "");
   const buf = Buffer.from(raw, "base64");
   if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) {
-    console.error("not jpeg", name);
+    console.error("not jpeg", name, "magic", buf.slice(0, 4).toString("hex"));
     process.exit(1);
   }
   fs.writeFileSync(path.join(dir, name), buf);
-  console.log("wrote", name, buf.length);
+  console.log("wrote", name, buf.length, "bytes");
   n++;
 }
-console.log("decoded", n, "plates");
+console.log("Plate Set v1-g ready:", n, "files in", dir);
+if (n < 8) process.exitCode = 1;
