@@ -5,13 +5,12 @@
 // that table out of the shipped markdown and asserts it equals this constant,
 // so the two cannot drift apart.
 //
-// `archiveCode` IS AN UNVERIFIED DOCUMENTATION CROSSWALK, NOT ARCHIVE TRUTH.
-// It points at folder names in section 1 of that document, which is an
-// unconfirmed proposal: no manifest, export, connector record, or configuration
-// value anywhere in this repository corroborates that those folders exist or
-// are named that way, and no code in this repository reads or writes them. Do
-// not build routing, filing, or upload behavior on `archiveCode` as though the
-// destination were established.
+// `archiveCode` IS THE OWNER-APPROVED TARGET TAXONOMY CROSSWALK, NOT PROOF OF
+// PHYSICAL SHAREPOINT CONFORMANCE. The permanent governed archive is the
+// nonprofit Microsoft SharePoint workspace, but the exact site, document
+// library, root folder, stable IDs, and existing folder structure remain
+// pending verification. Do not build routing, filing, or upload behavior on
+// `archiveCode` until that technical target is verified.
 //
 // R00 (Unsorted Drop) and R98 (Duplicate Hold) are workflow states, not subject
 // domains, so neither belongs in this list -- by code and by key alike. Note
