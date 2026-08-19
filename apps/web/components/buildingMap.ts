@@ -75,6 +75,21 @@ export interface Door {
   keywords?: string;
   /** One line shown under the label in the catalog. */
   hint?: string;
+  /**
+   * The page REFUSES A ROLE ON THIS SAME URL instead of redirecting it away.
+   *
+   * Almost every guarded surface here sends a role it does not want somewhere
+   * else, so nobody ever reads a refusal standing on the door. A handful
+   * deliberately do not: they render a title, a reason, and the two ways out.
+   * P0.2 in docs/shadow-ui/PRODUCTION-FAST-TRACK.md says that screen is
+   * "Title + body + Dashboard + Logout only", which is a statement about the
+   * WHOLE screen — and the global session bar is part of the screen.
+   *
+   * Marking the door lets the one component mounted on every route
+   * (GlobalRoleHeader) recognise a refusal without knowing anything about the
+   * page. Still advisory: it decides chrome, never access.
+   */
+  refusesInPlace?: true;
 }
 
 const BOARD_GATE: readonly ClubRole[] = ['board', 'platform_owner'];
@@ -82,10 +97,20 @@ const ADMIN_GATE: readonly ClubRole[] = ['admin', 'platform_owner'];
 /* The client-side spelling of SHADOW_PROJECTION_READ_ROLES: every seat inside
    an organization, plus Omega for the read. 'admin' covers organization_admin
    (mapPilotRoleToClubRole collapses the pair); 'board' is absent because
-   ORGANIZATION_MEMBER_ROLES does not carry it. */
+   ORGANIZATION_MEMBER_ROLES does not carry it.
+
+   It is also, member for member, the client spelling of SHADOW_CHAT_ROLES in
+   app/shadow/page.tsx and of the requireRole list on the chat and sessions
+   routes -- not by coincidence: all three are ORGANIZATION_MEMBER_ROLES plus
+   platform_owner written out. The SHADOW door below uses it rather than
+   standing up a second copy of the same seven roles. */
 const MEMBER_GATE: readonly ClubRole[] = [
   'athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer',
 ];
+
+/* /shadow/scout's own guard, which that page calls `canAccessAdmin`: everybody
+   else is sent back to /shadow. organization_admin collapses into 'admin'. */
+const SCOUT_GATE: readonly ClubRole[] = ['admin', 'coach', 'platform_owner'];
 
 export const BUILDING: readonly Door[] = [
   // ---------------------------------------------------------------- office --
@@ -416,10 +441,23 @@ export const BUILDING: readonly Door[] = [
     keywords: 'compliance safeguarding policy certification safety' },
 
   // ----------------------------------------------------------------- night --
-  { href: '/shadow', label: 'Shadow', room: 'night', roles: OPEN,
+  /* Both of these were `roles: OPEN`, which is the one thing the header of this
+     file says a row must never be: a door the corridor advertises and the page
+     then bounces you off. Neither is ungated. /shadow refuses any role outside
+     SHADOW_CHAT_ROLES in place, and /shadow/scout redirects anyone outside its
+     own admin check -- so a board member was shown an After Hours room holding
+     two doors, and both of them bounce that role.
+
+     That is not only a courtesy bug. ROOM-PURPOSE-DNA.md lists "Ask SHADOW
+     chat" first under the board room's FORBIDDEN, and its own checklist asks
+     "Does board show chat? YES -> delete". The audiences below are read off
+     the two guards; hiding the rows does not gate anything, and the guards
+     remain the authority. */
+  { href: '/shadow', label: 'Shadow', room: 'night', roles: MEMBER_GATE,
+    refusesInPlace: true,
     keywords: 'layer 20 shadow refusal ai assistant research needed',
     hint: 'Layer 20 — asks, and refuses when it should.' },
-  { href: '/shadow/scout', label: 'Shadow Scout', room: 'night', roles: OPEN,
+  { href: '/shadow/scout', label: 'Shadow Scout', room: 'night', roles: SCOUT_GATE,
     keywords: 'scout discover shadow' },
   { href: '/admin/shadow', label: 'Shadow Console', room: 'night', roles: ADMIN_GATE,
     keywords: 'shadow admin intake metrics feedback moderation' },
@@ -520,4 +558,64 @@ export function doorForPath(pathname: string): Door | null {
     }
   }
   return best;
+}
+
+/* ==========================================================================
+   WHERE AN EASTER EGG MAY STAND
+
+   docs/shadow-ui/ROOM-PURPOSE-DNA.md answers "Easter eggs?" for all six rooms
+   and the answer is only twice yes: the gym floor is their PRIMARY HOME, and
+   the front office takes them as chalk, notices and photographs. The other
+   four say NEVER in capitals -- board, file, clinic, and after hours on a
+   deny. docs/shadow-ui/EGGS-LOAD-FIRST-12.md says the same thing from the
+   other end: "Never load onto: board, file, clinic, shadow deny."
+
+   This matters here rather than only in the pages because the two components
+   that carry eggs -- the card catalog's bell and the gym's noticing lines --
+   are mounted by the global header on EVERY route, with no idea which room
+   they are standing in. One predicate, read from the room, is what keeps a
+   flourish out of a governance screen and a clinic.
+   ========================================================================== */
+
+/** The two rooms whose DNA permits an easter egg. */
+export const EGG_ROOMS: readonly Room[] = ['office', 'floor'];
+
+export function roomAllowsEggs(room: Room | null | undefined): boolean {
+  return room !== null && room !== undefined && EGG_ROOMS.includes(room);
+}
+
+/**
+ * May the surface at this path carry an egg?
+ *
+ * A path with no door answers NO, deliberately. Four of the six rooms forbid
+ * eggs outright, so "somewhere the map has never heard of" is much more likely
+ * to be one of those than one of the two that allow them; and the cost of the
+ * two answers is not symmetric — a missing flourish is nothing, a joke in a
+ * clinic is the thing the DNA is written to prevent.
+ */
+export function pathAllowsEggs(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  return roomAllowsEggs(doorForPath(pathname)?.room);
+}
+
+/**
+ * Is this session standing on a door that refuses it WHERE IT STANDS?
+ *
+ * True only for a door marked `refusesInPlace` whose audience excludes the
+ * session's role — i.e. the session is reading a refusal, not a surface. The
+ * global session bar goes minimal on that answer so the refusal screen is the
+ * title, the body, and the two ways out, and nothing else (P0.2).
+ *
+ * Advisory, like every other use of `roles` in this file: a wrong answer here
+ * costs a header, never a permission. A signed-out visitor is false — the bar
+ * is already minimal for them by its own pre-auth branch.
+ */
+export function isRefusalSurface(
+  role: ClubRole | null,
+  pathname: string | null | undefined,
+): boolean {
+  if (!role || !pathname) return false;
+  const door = doorForPath(pathname);
+  if (!door?.refusesInPlace || door.roles === OPEN) return false;
+  return !door.roles.includes(role);
 }

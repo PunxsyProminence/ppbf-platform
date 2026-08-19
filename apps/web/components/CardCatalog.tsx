@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
@@ -9,6 +9,7 @@ import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from '
 import {
   ROOM_LABEL,
   doorsByRoom,
+  pathAllowsEggs,
   searchDoors,
   type Door,
 } from './buildingMap';
@@ -78,6 +79,22 @@ interface Act {
   /** Signed-out sessions get no session acts. */
   needsSession?: boolean;
   /**
+   * An easter egg, and therefore a thing with a ROOM.
+   *
+   * docs/shadow-ui/ROOM-PURPOSE-DNA.md answers "Easter eggs?" room by room:
+   * the gym floor is their primary home, the front office takes them, and the
+   * board room, file room, clinic and after hours all say NEVER. This palette
+   * is mounted by the global header on every route (GlobalRoleHeader.tsx), so
+   * without this flag the bell was offered to a board member reading a
+   * governance screen and to an admin working the clearance ladder in the
+   * clinic — the exact thing that document exists to stop.
+   *
+   * It is a flag rather than a filter written into the row because the rule is
+   * about the ROOM, not about the act: see pathAllowsEggs in buildingMap.ts,
+   * which is the one place the DNA is read.
+   */
+  egg?: boolean;
+  /**
    * What happens to the drawer afterwards. Deliberately DATA rather than
    * something `run` does itself: closing reads the focus-restore ref, and an
    * act list built during render must not contain closures that touch refs —
@@ -101,6 +118,12 @@ function actMatches(act: Act, query: string): boolean {
 
 export default function CardCatalog() {
   const router = useRouter();
+  /* Which room this palette is standing in. The parent already keys this
+     component on the pathname, so reading it here costs nothing and adds no
+     re-render — and it is the only thing that tells a globally-mounted drawer
+     whether it is on the gym floor or in the board room. */
+  const pathname = usePathname();
+  const eggsAllowed = pathAllowsEggs(pathname);
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const role = session?.role ?? null;
   /* Destructured rather than held as one object: useGymSound returns a fresh
@@ -164,6 +187,8 @@ export default function CardCatalog() {
         // Not advertised. Found by typing "bell", which is exactly what
         // somebody looking for the front desk types.
         hidden: true,
+        // ...and only in the two rooms whose DNA allows one. See `egg` above.
+        egg: true,
         label: 'Ring the bell',
         hint: 'For no reason at all.',
         keywords: 'bell ring gong round chime start end',
@@ -247,8 +272,8 @@ export default function CardCatalog() {
       },
     ];
 
-    return all.filter((act) => !act.needsSession || role !== null);
-  }, [soundEnabled, soundStatus, playSound, setSoundEnabled, role, router]);
+    return all.filter((act) => (!act.needsSession || role !== null) && (!act.egg || eggsAllowed));
+  }, [soundEnabled, soundStatus, playSound, setSoundEnabled, role, router, eggsAllowed]);
 
   /* ---- results ---------------------------------------------------------- */
   const doors = useMemo(() => searchDoors(role, query), [role, query]);
@@ -279,9 +304,22 @@ export default function CardCatalog() {
     setSaid(null);
     /* Read here rather than in an effect on [open]: both of these touch a
        clock and localStorage, and they belong to the gesture that opened the
-       drawer, not to a render pass. */
-    setNotice(catalogNod(recordCatalogOpen()) ?? beforeDawnNote(new Date()));
-  }, []);
+       drawer, not to a render pass.
+
+       Both lines are eggs — "Before six. Somebody always is." and "Fifth time.
+       You know where the drawer is now." are the gym noticing, which is the
+       floor's voice and not the board room's — so in a room that forbids eggs
+       nothing is read AND nothing is recorded. Skipping recordCatalogOpen is
+       deliberate: the nod fires on the fifth open and only ever once, so
+       counting opens in a room that can never show it would spend the egg
+       where nobody can see it. The count advances in the rooms the nod
+       belongs to, and the person still gets their line there. */
+    setNotice(
+      eggsAllowed
+        ? catalogNod(recordCatalogOpen()) ?? beforeDawnNote(new Date())
+        : null,
+    );
+  }, [eggsAllowed]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

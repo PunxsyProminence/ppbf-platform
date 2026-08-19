@@ -5,12 +5,16 @@
 
 import {
   BUILDING,
+  EGG_ROOMS,
   OPEN,
   ROOM_ORDER,
   ROOM_LABEL,
   ROOM_BLURB,
   doorForPath,
   doorsByRoom,
+  isRefusalSurface,
+  pathAllowsEggs,
+  roomAllowsEggs,
   searchDoors,
   visibleDoors,
 } from './buildingMap';
@@ -132,6 +136,47 @@ describe('visibleDoors', () => {
     expect(hrefs).toContain('/board/treasurer');
     expect(hrefs).not.toContain('/admin');
   });
+
+  /* ROOM-PURPOSE-DNA.md puts "Ask SHADOW chat" first under the board room's
+     FORBIDDEN, and its differentiation checklist asks "Does board show chat?
+     YES -> delete". Both SHADOW doors were `roles: OPEN`, so a board member's
+     corridor and card catalog listed an After Hours room holding the two of
+     them -- and both bounce on arrival: /shadow refuses the role where it
+     stands, /shadow/scout redirects. Exactly the door this file's own header
+     says the corridor must never advertise. */
+  it('advertises neither SHADOW door to the board', () => {
+    const hrefs = visibleDoors('board').map((d) => d.href);
+    expect(hrefs).not.toContain('/shadow');
+    expect(hrefs).not.toContain('/shadow/scout');
+  });
+
+  it('advertises neither SHADOW door to a board seat either', () => {
+    const hrefs = visibleDoors('board-treasurer').map((d) => d.href);
+    expect(hrefs).not.toContain('/shadow');
+    expect(hrefs).not.toContain('/shadow/scout');
+  });
+
+  it('leaves the board no After Hours room at all', () => {
+    expect(doorsByRoom('board').map((g) => g.room)).not.toContain('night');
+  });
+
+  // The other half of the same change: hiding a door from the board must not
+  // have hidden it from the roles whose own gate lets them through it.
+  it.each(['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer', 'platform_owner'] as const)(
+    'still shows SHADOW chat to %s, whom SHADOW_CHAT_ROLES admits',
+    (role) => {
+      expect(visibleDoors(role).map((d) => d.href)).toContain('/shadow');
+    },
+  );
+
+  it('shows the scout report to exactly the roles its own guard admits', () => {
+    for (const role of ['admin', 'coach', 'platform_owner'] as const) {
+      expect(visibleDoors(role).map((d) => d.href)).toContain('/shadow/scout');
+    }
+    for (const role of ['athlete', 'parent', 'staff', 'volunteer', 'board'] as const) {
+      expect(visibleDoors(role).map((d) => d.href)).not.toContain('/shadow/scout');
+    }
+  });
 });
 
 describe('doorsByRoom', () => {
@@ -223,5 +268,90 @@ describe('doorForPath', () => {
 
   it('returns null for a path in no room', () => {
     expect(doorForPath('/nowhere-at-all')).toBeNull();
+  });
+});
+
+/* ==========================================================================
+   WHERE AN EASTER EGG MAY STAND
+
+   The card catalog's bell and the gym's noticing lines are mounted globally by
+   GlobalRoleHeader, so the predicate below is the only thing standing between
+   a flourish and a governance screen, a clinic, or a deny.
+   ========================================================================== */
+
+describe('the rooms that may carry an egg', () => {
+  it('says yes to the two rooms ROOM-PURPOSE-DNA.md says yes to, and no to the four that say NEVER', () => {
+    expect([...EGG_ROOMS].sort()).toEqual(['floor', 'office']);
+    for (const room of ROOM_ORDER) {
+      expect(roomAllowsEggs(room)).toBe(room === 'office' || room === 'floor');
+    }
+  });
+
+  it('reads the room off the path, which is all a globally-mounted egg knows', () => {
+    expect(pathAllowsEggs('/dashboard')).toBe(true);        // office
+    expect(pathAllowsEggs('/schedule')).toBe(true);         // floor -- primary home
+    expect(pathAllowsEggs('/board')).toBe(false);           // board  -- NEVER
+    expect(pathAllowsEggs('/research')).toBe(false);        // file   -- NEVER
+    expect(pathAllowsEggs('/admin/escalations')).toBe(false); // clinic -- NEVER
+    expect(pathAllowsEggs('/shadow')).toBe(false);          // night  -- NEVER on deny
+  });
+
+  it('says no in EVERY door of the four forbidden rooms, not just the ones named above', () => {
+    for (const door of BUILDING) {
+      if (door.room === 'office' || door.room === 'floor') continue;
+      expect(pathAllowsEggs(door.href)).toBe(false);
+    }
+  });
+
+  it('follows a nested route to the door it hangs off', () => {
+    // No door of its own; the longest matching prefix is /board/treasurer.
+    expect(pathAllowsEggs('/board/treasurer/2026')).toBe(false);
+    expect(pathAllowsEggs('/admin/organizations/test')).toBe(true); // office
+  });
+
+  it('answers no for a path in no room at all, and for no path', () => {
+    expect(pathAllowsEggs('/nowhere-at-all')).toBe(false);
+    expect(pathAllowsEggs('')).toBe(false);
+    expect(pathAllowsEggs(null)).toBe(false);
+    expect(pathAllowsEggs(undefined)).toBe(false);
+  });
+});
+
+describe('isRefusalSurface', () => {
+  // P0.2: the deny screen is title + body + Dashboard + Logout ONLY, which is
+  // a statement about the whole screen -- the global session bar included.
+  it('is true for a role SHADOW refuses where it stands', () => {
+    expect(isRefusalSurface('board', '/shadow')).toBe(true);
+  });
+
+  it('is false for a role that surface admits', () => {
+    for (const role of ['coach', 'athlete', 'admin', 'platform_owner'] as const) {
+      expect(isRefusalSurface(role, '/shadow')).toBe(false);
+    }
+  });
+
+  it('is false on a door that redirects rather than refusing in place', () => {
+    // /shadow/scout sends the wrong role to /shadow; nobody reads a refusal
+    // standing on it, so nothing there needs its chrome stripped.
+    expect(isRefusalSurface('athlete', '/shadow/scout')).toBe(false);
+  });
+
+  it('is false for a signed-out visitor, who already has the pre-auth bar', () => {
+    expect(isRefusalSurface(null, '/shadow')).toBe(false);
+  });
+
+  it('is false on an ordinary surface and on a path in no room', () => {
+    expect(isRefusalSurface('board', '/board')).toBe(false);
+    expect(isRefusalSurface('board', '/dashboard')).toBe(false);
+    expect(isRefusalSurface('board', '/nowhere-at-all')).toBe(false);
+    expect(isRefusalSurface('board', null)).toBe(false);
+  });
+
+  it('marks /shadow, and marks nothing that has no audience to be outside of', () => {
+    const marked = BUILDING.filter((d) => d.refusesInPlace);
+    expect(marked.map((d) => d.href)).toContain('/shadow');
+    // A door with no gate cannot refuse anybody, so marking one would be a
+    // header that goes minimal for a session nothing is refusing.
+    for (const door of marked) expect(door.roles).not.toBe(OPEN);
   });
 });
