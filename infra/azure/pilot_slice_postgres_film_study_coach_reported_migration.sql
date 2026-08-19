@@ -187,10 +187,26 @@ begin
   -- A correction must carry the corrected wording, and nothing else may.
   -- Without the second half, a rejected row could quietly hold replacement
   -- text nobody would ever read.
+  -- Guarded on the WIDENED name as well as its own, because
+  -- pilot_slice_postgres_film_study_revisions_migration.sql (later in the
+  -- `all` chain) DROPS this constraint and replaces it with
+  -- ..._correction_check_v2, which additionally permits a settled
+  -- accepted/rejected proposal to keep the corrected wording. Without this
+  -- guard a re-dispatch of `all` -- which the workflow performs wholesale on
+  -- the stated premise that every migration re-applies as a no-op -- would
+  -- find the v2-only name absent, re-add this NARROWER check, and fail
+  -- validating it against exactly the rows v2 exists to allow. Those rows are
+  -- not hypothetical: resolveFilmStudyProposal carries corrected_observation_text
+  -- forward on an accept, so any proposal a coach corrected and then accepted
+  -- is one. Re-adding a superseded constraint is wrong regardless; the widened
+  -- one is already in force and already covers this column.
   if not exists (
     select 1 from pg_constraint
     where conrelid = 'pilot.shadow_film_study_proposals'::regclass
-      and conname = 'pilot_film_study_proposals_correction_check'
+      and conname in (
+        'pilot_film_study_proposals_correction_check',
+        'pilot_film_study_proposals_correction_check_v2'
+      )
   ) then
     alter table pilot.shadow_film_study_proposals
       add constraint pilot_film_study_proposals_correction_check

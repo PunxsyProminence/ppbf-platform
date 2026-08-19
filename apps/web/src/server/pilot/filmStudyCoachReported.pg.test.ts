@@ -224,6 +224,108 @@ afterAll(async () => {
   });
 });
 
+// Re-dispatching the `all` migration chain against a database that has already
+// reached the end of it.
+//
+// apply-migrations.yml runs the whole chain wholesale, on the stated premise
+// that "each is idempotent, so re-running an already-applied migration is a
+// no-op". For this runner that premise was false. film-study-revisions, which
+// runs LATER in the same chain, drops pilot_film_study_proposals_correction_check
+// and replaces it with ..._v2, which additionally allows a settled
+// accepted/rejected proposal to keep the corrected wording. On the next
+// dispatch this migration found only the v2 name present, re-added the
+// superseded NARROWER constraint, and Postgres validated it against the very
+// rows v2 exists to permit.
+//
+// Those rows are the normal product of the documented flow, not an edge case:
+// resolveFilmStudyProposal deliberately carries corrected_observation_text
+// forward on an accept ("settling must not erase the wording the coach worked
+// to get right"), so every corrected-then-accepted proposal is one. A single
+// such row was enough to fail the whole chain from this point on.
+//
+// Nothing here exercised that, because every other case applies the SQL once
+// against a fresh database and never re-applies it over a chain-complete one.
+describe('re-applying over an already-migrated database', () => {
+  const RERUN_DB = 'ppbf_test_film_coach_rerun';
+
+  test('the real runner re-applies as a no-op after film-study-revisions has widened the correction check', async () => {
+    const admin = new Client({ connectionString: connectionStringFor('postgres') });
+    await admin.connect();
+    await admin.query(`drop database if exists ${RERUN_DB}`);
+    await admin.query(`create database ${RERUN_DB}`);
+    await admin.end();
+
+    const client = new Client({ connectionString: connectionStringFor(RERUN_DB) });
+    await client.connect();
+    try {
+      // The chain-complete end state, in chain order.
+      await client.query(await readMigration(BASE_SQL));
+      await client.query(await readMigration(PROPOSALS_SQL));
+      await client.query(await readMigration(COACH_REPORTED_SQL));
+      await client.query(await readMigration(REVISIONS_SQL));
+      await seedTenancy(client);
+
+      // Exactly what the widened constraint exists to allow: corrected, then
+      // accepted, keeping the wording the coach settled on.
+      await client.query(
+        `insert into pilot.shadow_film_study_proposals
+           (proposal_id, organization_id, athlete_id, video_session_id, observation_text,
+            evidence_id, model_deployment, frames_analyzed, origin, review_state,
+            reviewed_by_account_id, reviewed_by_role, reviewed_at, corrected_observation_text)
+         values ($1, $2, $3, $4, 'Guard drops after the jab.', 'ev-rerun', 'dep-a', 60,
+                 'model_proposed', 'accepted', $5, 'coach', now(), 'Lead hand drops only in round three.')`,
+        [crypto.randomUUID(), ORG_ID, ATHLETE_ID, VIDEO_ID, COACH_ID],
+      );
+
+      // The re-apply itself. This is the half that broke: Postgres validated
+      // the re-added narrower constraint against the row above and raised
+      // 23514, so the runner never even reached its readiness check.
+      await expect(client.query(await readMigration(COACH_REPORTED_SQL))).resolves.toBeDefined();
+
+      // Then the runner's OWN post-apply assertion, read out of the runner
+      // source rather than restated here -- a restated copy could stay correct
+      // while the shipped one rots, which is the exact failure mode being
+      // regression-tested (see the same pattern in athleteCheckIns.pg.test.ts).
+      // Jest's CJS transform cannot import the ESM runner directly, so the
+      // query is extracted textually.
+      const runnerSource = await fs.readFile(
+        path.resolve(__dirname, '../../../scripts/pilot-apply-film-study-coach-reported-migration.mjs'),
+        'utf8',
+      );
+      const match = runnerSource.match(/const READINESS_QUERY = `([\s\S]*?)`;/);
+      expect(match).not.toBeNull();
+
+      const readiness = await client.query(match![1]);
+      // assertReadiness() demands every field be true.
+      expect(Object.entries(readiness.rows[0]).filter(([, v]) => v !== true)).toEqual([]);
+
+      // The widened constraint is still the one in force: the re-run must not
+      // resurrect the superseded one alongside it.
+      const constraints = await client.query(
+        `select conname from pg_constraint
+         where conrelid = to_regclass('pilot.shadow_film_study_proposals')
+           and conname like 'pilot_film_study_proposals_correction_check%'
+         order by conname`,
+      );
+      expect(constraints.rows.map((r) => r.conname)).toEqual([
+        'pilot_film_study_proposals_correction_check_v2',
+      ]);
+
+      // And the row that provoked all of this is untouched.
+      const kept = await client.query(
+        `select review_state, corrected_observation_text from pilot.shadow_film_study_proposals
+         where evidence_id = 'ev-rerun'`,
+      );
+      expect(kept.rows[0]).toEqual({
+        review_state: 'accepted',
+        corrected_observation_text: 'Lead hand drops only in round three.',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('the gap is real, and the migration closes it', () => {
   test('before the migration there is nowhere to record a missed detection', async () => {
     const legacy = new Client({ connectionString: connectionStringFor(LEGACY_DB_NAME) });
