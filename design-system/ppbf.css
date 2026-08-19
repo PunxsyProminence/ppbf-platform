@@ -436,6 +436,40 @@ body.ppbf {
   color: #33291B;
   box-shadow: 0 4px 12px rgba(0,0,0,.5);
 }
+/* .t-eyebrow pins --brass-400, tuned for dark leather -- the same rung the
+   .on-canvas and .on-plaster blocks below already restate for a light
+   ground. .mat-paper is a light ground in its own right (paper on hide, not
+   canvas or plaster) and had no restatement of its own: brass-400 on
+   --paper measures ~1.76:1, below even the 3:1 floor for an 11px label. One
+   rung down to --brass-800 clears 6.49:1, the same fix already applied
+   elsewhere for the identical reason -- found while wiring TrainingHoldBanner
+   and RefusalStamp's training_hold record, both of which print "A note from
+   your coaches" as a .t-eyebrow inside a .mat-paper box. */
+.mat-paper .t-eyebrow { color: var(--brass-800); }
+/* .t-command (--bone-100) and .t-body (--bone-200) are the same story --
+   both tuned for dark leather, both near-invisible on --paper (~1.05:1,
+   worse than the eyebrow above) -- but neither gets the general .mat-paper
+   restatement here. .mat-paper appears 100+ times across the app (change-pin
+   already routes around exactly this gap rather than fix it -- see that
+   page's own comment) and a blanket .mat-paper .t-command / .t-body rule is
+   real design-system work this branch did not set out to do and has not
+   audited for. Scoped instead to the training-hold stamp surfaces this
+   branch DOES own (TrainingHoldBanner.tsx, parent/safety/page.tsx), both of
+   which now carry data-refusal-stamp="training_hold" on their wrapper. The
+   general .mat-paper fix for t-command/t-body is a real follow-up, tracked
+   as a finding in this branch's PR rather than done silently here. */
+[data-refusal-stamp="training_hold"] .mat-paper .t-command,
+[data-refusal-stamp="training_hold"] .mat-paper .t-body {
+  color: #241B12;
+}
+/* .t-label (--bone-400) is the same story again, on the Sports Medicine
+   clearance board's own hold box ("Lifts when: ..."): ~2.0:1 on --paper,
+   still short of the 4.5:1 an 11px label owes. Reuses .on-canvas's own
+   .t-label ink (#4A3B26) rather than inventing a fourth value -- canvas-warm
+   and paper are close enough in luminance that the same rung clears both. */
+[data-refusal-stamp="training_hold"] .mat-paper .t-label {
+  color: #4A3B26;
+}
 /* Ragged lower edge, no image asset */
 .note-torn {
   clip-path: polygon(0 0, 100% 0, 100% 94%,
@@ -616,6 +650,23 @@ body.ppbf {
 .stamp--brass   { color: var(--brass-600); }
 .stamp--flat    { rotate: 0deg; }
 .stamp--lg      { font-size: 17px; padding: 9px 15px; border-width: 4px; }
+
+/* Kiosk-scale ink (Law 5). The plain .stamp sits at --t-sm (15px) with no
+   minimum footprint -- fine on a desk screen, too small for the gym-floor
+   tablet the Refusal Stamp family (RefusalStamp.tsx) is built to render on,
+   where a stamp is often the whole content of the screen a kid is looking
+   at. Same move as .btn--kiosk / .input--kiosk: bump type to the --t-md
+   kiosk floor and give the mark a real --tap-sized footprint, glyph and
+   label both included via flex, without inventing a new type voice or
+   colour of its own. */
+.stamp--kiosk {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-md);
+  min-height: var(--tap);
+  padding: var(--s3) var(--s5);
+}
 
 /* A stamp is ink pressed into paper, so the colours above are the ones that
    belong on the warm ground: --stamp-red measures 5.78:1 on canvas. On the

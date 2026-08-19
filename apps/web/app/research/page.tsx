@@ -78,6 +78,7 @@ const GENERAL_SOURCE_TYPES = [
 
 export default function ResearchIntakePage() {
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
+  const [projectionLoading, setProjectionLoading] = useState(true);
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [requirementDraft, setRequirementDraft] = useState({
@@ -155,6 +156,8 @@ export default function ResearchIntakePage() {
       } catch (error) {
         setItems([]);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load SHADOW research projection.');
+      } finally {
+        setProjectionLoading(false);
       }
     })();
   }, []);
@@ -475,7 +478,13 @@ export default function ResearchIntakePage() {
           </section>
         ) : null}
 
-        {!errorMessage && items.length === 0 ? (
+        {!errorMessage && projectionLoading ? (
+          <section aria-busy="true" className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
+            <span className="working">Loading research projection...</span>
+          </section>
+        ) : null}
+
+        {!errorMessage && !projectionLoading && items.length === 0 ? (
           <section className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
             <p className={PAPER_LABEL}>Empty State</p>
             <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">

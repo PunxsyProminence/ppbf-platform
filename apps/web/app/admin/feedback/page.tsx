@@ -263,7 +263,7 @@ export default function FeedbackTriagePage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
-      <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-5xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>

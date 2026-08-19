@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import RefusalStamp from '@/components/RefusalStamp';
 
 type TrainingHoldScope = 'all_training' | 'contact_only' | 'conditioning_only';
 
@@ -13,6 +14,7 @@ interface AthleteFacingHold {
   lift_condition_text: string;
   placed_at: string;
   expires_at: string | null;
+  placed_by_name: string;
 }
 
 interface GateSummaryRow {
@@ -134,24 +136,24 @@ export default function GuardianSafetyPage() {
                   <p className="t-eyebrow">{item.athlete_name ?? item.athlete_id}</p>
 
                   {item.hold ? (
-                    <div
-                      role="status"
-                      className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)] space-y-[var(--s2)]"
-                    >
+                    <div className="mt-[var(--s3)] space-y-[var(--s2)]">
+                      {/* Same shared mark TrainingHoldBanner.tsx and the Sports Medicine
+                          board render for the same real thing (Room DNA: the stamp does
+                          not change by room). Owner decision, 2026-08-19: a guardian now
+                          reads the same coach name their child does -- a real point of
+                          contact, not an unattributed note. */}
                       <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
                         {SCOPE_HEADLINE[item.hold.scope] ?? SCOPE_HEADLINE.all_training}
                       </h2>
-                      <p className="t-body leading-relaxed">{item.hold.athlete_explanation}</p>
-                      {item.hold.lift_condition_text ? (
-                        <p className="t-body leading-relaxed">
-                          <span className="font-bold">The way back: </span>
-                          {item.hold.lift_condition_text}
-                        </p>
-                      ) : null}
-                      <p className="t-body leading-relaxed opacity-80">
-                        This is not a punishment -- it is your child&rsquo;s coaches looking out for them. Talk to
-                        the coach or gym admin if anything about it is unclear.
-                      </p>
+                      <RefusalStamp
+                        kind="training_hold"
+                        coachExplanation={item.hold.athlete_explanation}
+                        coachName={item.hold.placed_by_name}
+                        endsWhen={
+                          item.hold.lift_condition_text ||
+                          `Ask ${item.hold.placed_by_name} what has to happen next.`
+                        }
+                      />
                     </div>
                   ) : (
                     <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training pause on file right now.</p>

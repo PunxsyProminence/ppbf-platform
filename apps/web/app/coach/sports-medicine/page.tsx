@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 // The coach's clearance board (owner decision 2026-08-15): clearance status
@@ -364,38 +365,57 @@ export default function SportsMedicinePage() {
                       </p>
                     ) : null}
                     {row.hold ? (
-                      <div className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s3)]">
-                        <p className="t-eyebrow">Active Training Hold — {row.hold.scope.replaceAll('_', ' ')}</p>
-                        <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{row.hold.athlete_explanation}</p>
-                        {row.hold.lift_condition_text ? (
-                          <p className="t-label mt-[var(--s2)]">Lifts when: {row.hold.lift_condition_text}</p>
-                        ) : null}
-                        {row.hold.hold_id ? (
-                          <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
-                            <div className="field grow">
-                              <label className="t-label" htmlFor={`lift-note-${row.athlete_id}`}>
-                                Lift note (optional)
-                              </label>
-                              <input
-                                id={`lift-note-${row.athlete_id}`}
-                                className="input"
-                                value={liftNotes[row.athlete_id] ?? ''}
-                                onChange={(event) =>
-                                  setLiftNotes((current) => ({ ...current, [row.athlete_id]: event.target.value }))
-                                }
-                              />
+                      <div data-refusal-stamp="training_hold" className="mt-[var(--s3)]">
+                        {/* Same brass, non-punitive mark as the floor room's
+                            TrainingHoldBanner and the guardian's safety page
+                            (Room DNA: the clinic room's cooler chrome does not
+                            change the stamp itself). Still the bare glyph/label
+                            here, not the family surfaces' full RefusalStamp:
+                            this staff roster is one row per athlete over
+                            listTrainingHolds' raw TrainingHoldRow, not the
+                            athlete-safe projection those two now resolve a
+                            placed_by_name through (2026-08-19 decision) --
+                            staff already knows who's placing/lifting a hold
+                            from the roster itself, so adding a per-row name
+                            lookup here is a separate, un-asked-for slice, not
+                            a gap this owner decision covers. */}
+                        <span className="stamp stamp--brass stamp--flat stamp--kiosk">
+                          <i aria-hidden="true">{TRAINING_HOLD_GLYPH}</i>
+                          <span>{TRAINING_HOLD_LABEL}</span>
+                        </span>
+                        <div className="mat-paper mt-[var(--s2)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s3)]">
+                          <p className="t-eyebrow">Active Training Hold — {row.hold.scope.replaceAll('_', ' ')}</p>
+                          <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{row.hold.athlete_explanation}</p>
+                          {row.hold.lift_condition_text ? (
+                            <p className="t-label mt-[var(--s2)]">Lifts when: {row.hold.lift_condition_text}</p>
+                          ) : null}
+                          {row.hold.hold_id ? (
+                            <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+                              <div className="field grow">
+                                <label className="t-label" htmlFor={`lift-note-${row.athlete_id}`}>
+                                  Lift note (optional)
+                                </label>
+                                <input
+                                  id={`lift-note-${row.athlete_id}`}
+                                  className="input"
+                                  value={liftNotes[row.athlete_id] ?? ''}
+                                  onChange={(event) =>
+                                    setLiftNotes((current) => ({ ...current, [row.athlete_id]: event.target.value }))
+                                  }
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn--ghost"
+                                disabled={busy}
+                                aria-busy={busy}
+                                onClick={() => void liftHold(row.athlete_id, row.hold?.hold_id ?? '')}
+                              >
+                                {busy ? 'Lifting…' : 'Lift this hold'}
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              className="btn btn--ghost"
-                              disabled={busy}
-                              aria-busy={busy}
-                              onClick={() => void liftHold(row.athlete_id, row.hold?.hold_id ?? '')}
-                            >
-                              {busy ? 'Lifting…' : 'Lift this hold'}
-                            </button>
-                          </div>
-                        ) : null}
+                          ) : null}
+                        </div>
                       </div>
                     ) : openFor === row.athlete_id ? (
                       <div className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">

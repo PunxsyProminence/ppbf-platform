@@ -4,6 +4,7 @@ import { GET } from './route';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getGuardianGateSummary } from '@/src/server/pilot/safetyGateMatrix';
 import { getActiveTrainingHold } from '@/src/server/pilot/trainingHolds';
 
@@ -20,6 +21,10 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
   guardianAthleteIds: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/profileDb', () => ({
+  getSubjectIdentity: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/safetyGateMatrix', () => ({
   getGuardianGateSummary: jest.fn(),
 }));
@@ -33,6 +38,7 @@ const mockGuardianAthleteIds = jest.mocked(guardianAthleteIds);
 const mockGetAthleteById = jest.mocked(getAthleteById);
 const mockGetActiveTrainingHold = jest.mocked(getActiveTrainingHold);
 const mockGetGuardianGateSummary = jest.mocked(getGuardianGateSummary);
+const mockGetSubjectIdentity = jest.mocked(getSubjectIdentity);
 
 function principal(overrides: Record<string, unknown> = {}) {
   return {
@@ -55,6 +61,14 @@ beforeEach(() => {
   mockGetAthleteById.mockResolvedValue({ athlete_id: 'ath-1', full_name: 'Jordan T.' } as never);
   mockGetActiveTrainingHold.mockResolvedValue(null);
   mockGetGuardianGateSummary.mockResolvedValue([]);
+  mockGetSubjectIdentity.mockResolvedValue({
+    accountId: 'acct-coach',
+    fullName: 'Coach Neale',
+    athleteId: null,
+    dob: null,
+    coachAccountId: null,
+    memberSince: '2026-01-01T00:00:00Z',
+  });
 });
 
 test('returns hold and gate status for every linked athlete', async () => {
@@ -95,6 +109,7 @@ test('returns hold and gate status for every linked athlete', async () => {
         lift_condition_text: 'Bring a signed clearance note.',
         placed_at: '2026-08-01T00:00:00.000Z',
         expires_at: null,
+        placed_by_name: 'Coach Neale',
       },
       gates: [
         { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'flagged', evaluated_at: '2026-08-01T00:00:00.000Z' },

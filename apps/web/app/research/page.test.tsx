@@ -237,3 +237,38 @@ describe('general research intake', () => {
     ]);
   });
 });
+
+// The projection fetch starts `items` at [] before its request ever resolves,
+// so an unguarded "items.length === 0" empty state renders on the very first
+// paint and is indistinguishable from the projection actually being empty --
+// a loading state that lies about being an empty state. This pins a real
+// pending state in between.
+test('a still-loading projection shows a pending state, not the empty state, until it resolves', async () => {
+  let resolveProjection: (value: Response) => void = () => {};
+  const projectionPromise = new Promise<Response>((resolve) => {
+    resolveProjection = resolve;
+  });
+
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/research-projection')) {
+      return projectionPromise;
+    }
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  expect(screen.getByText('Loading research projection...')).toBeTruthy();
+  expect(screen.queryByText('Empty State')).toBeNull();
+
+  await act(async () => {
+    resolveProjection({ ok: true, json: async () => ({ items: [] }) } as Response);
+    await projectionPromise;
+  });
+
+  await screen.findByText('Empty State');
+  expect(screen.queryByText('Loading research projection...')).toBeNull();
+});

@@ -9,6 +9,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import {
   TRAINING_HOLD_REASON_CATEGORIES,
   TRAINING_HOLD_SCOPES,
@@ -35,9 +36,18 @@ const TEXT_FIELD_MAX = 2000;
  * grant for -- assertCoachAssignedToAthlete admits both); organization
  * admins may place and lift any. Athletes and their guardians read their
  * OWN hold in an athlete-safe projection -- explanation, lift condition,
- * scope -- never reason_text, which is staff-facing detail. Board and
- * platform_owner get nothing here: a hold names one child, and both roles
- * are aggregate-only by doctrine.
+ * scope, and now who placed it -- never reason_text, which is staff-facing
+ * detail. Board and platform_owner get nothing here: a hold names one
+ * child, and both roles are aggregate-only by doctrine.
+ *
+ * Owner decision, 2026-08-19: the placer's name IS included in the
+ * athlete-safe projection (previously withheld -- see git history) so an
+ * athlete or guardian reading a hold has a real point of contact to ask
+ * about it, not just an unattributed note. Resolved through the same
+ * getSubjectIdentity() every other staff-facing-name lookup in the app
+ * uses, so a coach whose account has no email shows as their account id
+ * rather than a fabricated name -- the same honest-gap behavior
+ * getSubjectIdentity documents for itself.
  */
 
 interface AthleteFacingHold {
@@ -46,15 +56,18 @@ interface AthleteFacingHold {
   lift_condition_text: string;
   placed_at: string;
   expires_at: string | null;
+  placed_by_name: string;
 }
 
-function athleteFacing(hold: TrainingHoldRow): AthleteFacingHold {
+async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Promise<AthleteFacingHold> {
+  const placer = await getSubjectIdentity(organizationId, hold.placed_by_account_id);
   return {
     scope: hold.scope,
     athlete_explanation: hold.athlete_explanation,
     lift_condition_text: hold.lift_condition_text,
     placed_at: hold.placed_at,
     expires_at: hold.expires_at,
+    placed_by_name: placer?.fullName ?? hold.placed_by_account_id,
   };
 }
 
@@ -102,7 +115,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ ok: true, hold: null });
       }
       const hold = await getActiveTrainingHold(principal.organizationId, principal.athleteId);
-      return NextResponse.json({ ok: true, hold: hold ? athleteFacing(hold) : null });
+      return NextResponse.json({ ok: true, hold: hold ? await athleteFacing(principal.organizationId, hold) : null });
     }
 
     if (role === 'parent') {
@@ -113,7 +126,7 @@ export async function GET(request: NextRequest) {
         throw new Error('Forbidden: parent not linked to athlete');
       }
       const hold = await getActiveTrainingHold(principal.organizationId, athleteId);
-      return NextResponse.json({ ok: true, hold: hold ? athleteFacing(hold) : null });
+      return NextResponse.json({ ok: true, hold: hold ? await athleteFacing(principal.organizationId, hold) : null });
     }
 
     if (!isStaff(role)) {
