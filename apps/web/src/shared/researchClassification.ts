@@ -1,9 +1,22 @@
-// The controlled general-research classification taxonomy, aligned to the
-// current governed Microsoft archive domains R01-R19.
+// The controlled general-research classification taxonomy.
+//
+// This list is the code half of the crosswalk table in section 5 of
+// docs/SHADOW_RESEARCH_ARCHITECTURE.md. researchClassification.test.ts parses
+// that table out of the shipped markdown and asserts it equals this constant,
+// so the two cannot drift apart.
+//
+// `archiveCode` IS AN UNVERIFIED DOCUMENTATION CROSSWALK, NOT ARCHIVE TRUTH.
+// It points at folder names in section 1 of that document, which is an
+// unconfirmed proposal: no manifest, export, connector record, or configuration
+// value anywhere in this repository corroborates that those folders exist or
+// are named that way, and no code in this repository reads or writes them. Do
+// not build routing, filing, or upload behavior on `archiveCode` as though the
+// destination were established.
 //
 // R00 (Unsorted Drop) and R98 (Duplicate Hold) are workflow states, not subject
-// domains, so neither belongs in this list. The archive code is metadata for a
-// human-correctable crosswalk; this module does not move files or route uploads.
+// domains, so neither belongs in this list -- by code and by key alike. Note
+// that "duplicate" here would mean archive lineage hold, which is a different
+// thing from the `duplicate` applicability verdict in /research/review.
 //
 // Classification remains organizational filing, not evidence doctrine: it
 // carries no authority-tier meaning, changes no review gate, and promotes

@@ -8,11 +8,28 @@ Start with [SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md) fo
 
 The research system deliberately separates three layers:
 
-1. **Governed originals and provenance** — `admin@punxsyprominence.org / OneDrive / Library Intake`, using `_CONTROL`, R00, R01-R19, and R98.
+1. **Governed originals and provenance** — *proposed, unconfirmed.*
+   `SHADOW_RESEARCH_ARCHITECTURE.md` §1 describes `admin@punxsyprominence.org / OneDrive /
+   Library Intake` with `_CONTROL`, R00, R01-R19, and R98, on the strength of a 2026-08-19
+   agent-connector observation for which no artifact exists in this repository. Open,
+   owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345)
+   instead names **SharePoint** `SHADOW AIML / 02 - Source Materials / Penn State Library
+   Intake / ...` and remains the durable contract. The only Microsoft destination this
+   repository's code writes to is a third thing again — a SharePoint site drive at
+   `PPBF/Intake` (`apps/web/src/server/document-intake/sharepoint.ts`). Do not treat any of
+   the three as settled; see §1 and §3 of the architecture document.
 2. **Reviewer-facing evidence reference package** — `apps/web/seed-data/research-evidence/2026-08-07/`; this package is not loaded into the database.
 3. **Loadable SHADOW corpus** — `apps/web/seed-data/shadow-research/2026-08-07/`; this is the current importer's default seed directory.
 
-The repository also contains `apps/web/seed-data/shadow-research/2026-08-08/`. Its Penn State and multidiscipline integration artifacts remain proposed/reference material unless a separate approved import and runtime verification establishes a later state.
+The repository also contains `apps/web/seed-data/shadow-research/2026-08-08/`. **This importer
+cannot load it**: it supplies only one of the five required seed files, and `EXPECTED_COUNTS`
+would reject it on row counts even if the rest were present. As a SHADOW research corpus it is
+unimported and unloadable.
+
+That is not the same as "nothing in the package is live". The package's warm-up-decay stop rule
+reached the operational drill seed by a different route — `seed_drill_stop_rules.csv`, loaded by
+`npm run seed:drill-library` — on a separate, recorded 2026-08-08 owner decision. See
+[SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md) §8 for the full provenance.
 
 Presence in Microsoft, Google Drive, GitHub, or a seed directory does not by itself make evidence citable.
 
@@ -26,7 +43,12 @@ Presence in Microsoft, Google Drive, GitHub, or a seed directory does not by its
 - 30 capability coverage records
 - 229 open research requirements
 
-These are derived records. Licensed publisher PDFs remain in the governed internal Microsoft archive and must not be committed to public GitHub.
+These are derived records, and "derived" is doing real work: the chunk rows carry licensed
+publisher **content** as extracted claim text. Whole publisher PDFs stay in the governed archive
+and must never be committed here — but the absence of `.pdf` files in this repository is not
+evidence that licensed content is absent from it. Govern by content, not by file extension.
+This is a private repository; that is why the extracts are currently tolerable, not why they are
+unlimited.
 
 ## Safety boundaries
 

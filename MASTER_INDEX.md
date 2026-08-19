@@ -56,7 +56,7 @@ Older retro/design briefs remain useful as rationale/reference but do not overri
 - [docs/SHADOW_EVENT_MODEL.md](docs/SHADOW_EVENT_MODEL.md)
 - [docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md](docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md)
 - [docs/SHADOW_ML_ARCHITECTURE_SPEC.md](docs/SHADOW_ML_ARCHITECTURE_SPEC.md)
-- [docs/SHADOW_RESEARCH_ARCHITECTURE.md](docs/SHADOW_RESEARCH_ARCHITECTURE.md) — governed originals, archive taxonomy, source-of-truth boundaries, and archive-to-Library contract
+- [docs/SHADOW_RESEARCH_ARCHITECTURE.md](docs/SHADOW_RESEARCH_ARCHITECTURE.md) — archive taxonomy, source-of-truth boundaries, and archive-to-Library contract. **Its §1 archive tree is PROPOSED, not confirmed**: no manifest, export, or connector record in this repository corroborates it, and it names a different store (OneDrive) than open owner-authored issue #345 (SharePoint), which remains the durable contract. Its §5 taxonomy crosswalk and §4 ENFORCED markers are checked against code; its §1 is not.
 - [docs/RESEARCH_EVIDENCE_REGISTRY.md](docs/RESEARCH_EVIDENCE_REGISTRY.md)
 - [docs/SHADOW_RESEARCH_INTAKE_IMPORT.md](docs/SHADOW_RESEARCH_INTAKE_IMPORT.md)
 - [docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md](docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md)
