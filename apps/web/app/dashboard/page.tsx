@@ -61,8 +61,13 @@ export default function DashboardEntryPage() {
        The front office, which is what the door has always said: the bell, the
        surface a session starts on. It painted no room at all, so a door
        labelled "the front desk" opened onto bare ink. The frame is mat-leather
-       on ink already, so it hangs on the plank wall unchanged. */
-    <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+       on ink already, so it hangs on the plank wall unchanged.
+
+       .room--lit-center because this is a single panel standing in the middle
+       of an otherwise empty room: the generic .room::before throws two pools
+       at the top corners, which lights the wall either side of the one thing
+       on it. One lamp overhead puts the light where the panel is. */
+    <main className="room room--office room--lit-center min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-[610px] flex-col items-stretch justify-center px-[var(--s5)] py-[var(--s6)]">
         <div className="frame">
           <span className="rivet rivet--tl" />
@@ -75,7 +80,7 @@ export default function DashboardEntryPage() {
               The Bell
             </h1>
             <p className="t-body mx-auto mt-[var(--s4)] max-w-[52ch]">
-              Your verified server session decides where you land.
+              One moment — we are checking who you are and sending you to your own page.
             </p>
             {retryable && (
               <div className="mt-[var(--s5)] grid justify-items-center gap-[var(--s4)]">

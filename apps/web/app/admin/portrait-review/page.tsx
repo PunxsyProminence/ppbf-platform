@@ -208,13 +208,19 @@ export default function PortraitReviewPage() {
               <div className="empty-msg">No portraits are waiting for review right now.</div>
             </div>
           ) : (
-            <section className="mat-leather mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)]">
-              <table className="w-full text-left">
+            /* A ruled sheet on the desk, with the photograph pinned to the
+                same sheet. .ledger is the office's own record furniture --
+                rules, head rule, and the mono voice Law 4 gives anything
+                auditable -- so the hand-rolled px/py/border on every row is
+                gone with it. */
+            <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
+              <table className="ledger">
+                <caption className="text-left">Portraits awaiting review</caption>
                 <thead>
-                  <tr className="t-eyebrow border-b border-[color:var(--hide-700)]">
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Name</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Uploaded</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Actions</th>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Uploaded</th>
+                    <th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -227,15 +233,21 @@ export default function PortraitReviewPage() {
 
                     return (
                       <Fragment key={item.account_id}>
-                        <tr className="border-b border-[color:var(--hide-800)] last:border-b-0 align-top">
-                          <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.full_name}</td>
-                          <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.uploaded_at)}</td>
-                          <td className="px-[var(--s4)] py-[var(--s3)]">
+                        <tr>
+                          <td>{item.full_name}</td>
+                          <td>{formatDate(item.uploaded_at)}</td>
+                          <td>
                             <div className="flex flex-col gap-[var(--s2)]">
+                              {/* .btn--ghost is bone text on a translucent black
+                                  wash: it was tuned against leather and goes
+                                  grey-on-grey on a light ground, which is what
+                                  the sheet now is. A lever carries its own dark
+                                  surface, and the two decisions beside it are
+                                  already levers. */}
                               <button
                                 type="button"
                                 onClick={() => setShownAccountId(isShown ? null : item.account_id)}
-                                className="btn btn--ghost min-h-[44px]"
+                                className="btn--lever min-h-[44px]"
                               >
                                 {isShown ? 'Hide portrait' : 'Show portrait'}
                               </button>
@@ -276,10 +288,15 @@ export default function PortraitReviewPage() {
                           // Actions cell: this is the object under review, and a
                           // face too small to judge is the same rubber stamp
                           // with a picture next to it.
-                          <tr className="border-b border-[color:var(--hide-800)] last:border-b-0">
-                            <td colSpan={3} className="px-[var(--s4)] pb-[var(--s4)]">
-                              <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.3)] bg-[var(--hide-950)] p-[var(--s4)]">
-                                <p className="t-label text-[color:var(--brass-500)]">
+                          <tr>
+                            <td colSpan={3}>
+                              {/* The photograph is pinned to the same sheet as
+                                  the row it belongs to. It used to sit in a
+                                  near-black box; on paper that box would have
+                                  taken .mat-paper's dark inks for .t-label and
+                                  .t-body and printed them on ink. */}
+                              <div className="rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s4)]">
+                                <p className="t-label">
                                   Portrait under review — {item.full_name}
                                 </p>
                                 {/* A bare <img>, not next/image, for the reason

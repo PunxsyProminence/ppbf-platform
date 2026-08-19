@@ -192,7 +192,7 @@ function signInStatus(
  */
 function WrongRoleNotice() {
   return (
-    <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+    <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
         <p className="t-eyebrow">Different Console</p>
         <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>People is managed per gym</h1>
@@ -813,7 +813,10 @@ function PeopleConsoleContent() {
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          {/* The desk lamp over the roster. .lamp draws the shade and the pool
+              of light under it, and had no app usage at all. */}
+          <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
           <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
               <p className="t-eyebrow">People</p>
@@ -978,18 +981,54 @@ function PeopleConsoleContent() {
               <span className="rivet rivet--tr" />
               <span className="rivet rivet--bl" />
               <span className="rivet rivet--br" />
-              <div className="frame-in mat-leather">
+              {/* The roster is THE office table, and it was a <ul>: a stack of
+                  rows with hand-rolled dividers, the one list in the building
+                  that most obviously wants ruling. .ledger on .mat-paper is
+                  what an office keeps a register on. .pap rides along because
+                  .mat-paper restates the t-* inks for a light ground and .pap
+                  restates the .empty ones, and the empty roster lives here. */}
+              <div className="frame-in mat-paper pap">
               {loading ? (
                 <p className="t-body p-[var(--s5)]">Loading your gym roster...</p>
               ) : members.length === 0 ? (
-                <div className="space-y-[var(--s3)] p-[var(--s5)] text-center">
-                  <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Nobody here yet.</p>
-                  <p className="t-body">
+                /* "Nobody here yet" is the empty state ROOM-PURPOSE-DNA names
+                   for this room by name, and it was hand-rolled in raw
+                   utilities while seventeen sibling pages used .empty. It is on
+                   the system now, and it carries the invite button the DNA also
+                   names -- an empty roster that only tells you to go and do it
+                   somewhere else is not a front desk. */
+                <div className="empty">
+                  <div className="empty-glyph" aria-hidden="true">⌾</div>
+                  <div className="empty-title">Nobody here yet.</div>
+                  <p className="empty-msg">
                     Start by adding a coach, or create your first athlete account.
                   </p>
+                  <div className="empty-action">
+                    <button type="button" onClick={() => setTab('invite-staff')} className="btn">
+                      Add A Coach Or Guardian
+                    </button>
+                    <button type="button" onClick={() => setTab('add-athlete')} className="btn btn--ghost">
+                      Add An Athlete
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <ul className="divide-y divide-[color:var(--hide-700)]">
+                /* The scroller is a child of .frame-in, which sets
+                   overflow:hidden unlayered -- a layered overflow-x utility on
+                   the same element would never win. */
+                <div className="overflow-x-auto">
+                <table className="ledger">
+                  <caption className="text-left">Everyone in this gym</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Person</th>
+                      <th scope="col">Role</th>
+                      <th scope="col">Sign-in</th>
+                      <th scope="col">Sees</th>
+                      <th scope="col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
                   {members.map((member) => {
                     const isGuardian = member.role === 'parent';
                     const memberLinks = guardianLinksByAccount.get(member.account_id) || [];
@@ -998,33 +1037,33 @@ function PeopleConsoleContent() {
                     const isPinAthlete = member.auth_provider === 'ppbf_local' && member.role === 'athlete';
 
                     return (
-                      <li key={member.account_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] px-[var(--s4)] py-[var(--s4)]">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{member.login_email || member.account_id}</p>
-                          <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                            {roleLabel(member.role)}
-                            {member.athlete_id && <> · Athlete ID {member.athlete_id}</>}
-                          </p>
-                          <p className="mt-[var(--s2)]">
-                            <span
-                              className={`badge ${
-                                status.tone === 'ok'
-                                  ? 'badge--cleared'
-                                  : status.tone === 'pending'
-                                    ? 'badge--restricted'
-                                    : 'badge--locked'
-                              }`}
-                            >
-                              <i>{status.tone === 'ok' ? '✓' : status.tone === 'pending' ? '▲' : '✕'}</i>
-                              {status.label}
-                            </span>
-                          </p>
-
+                      <tr key={member.account_id}>
+                        <td className="font-bold">{member.login_email || member.account_id}</td>
+                        <td>
+                          {roleLabel(member.role)}
+                          {member.athlete_id && <span className="ledger-id"> · Athlete ID {member.athlete_id}</span>}
+                        </td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              status.tone === 'ok'
+                                ? 'badge--cleared'
+                                : status.tone === 'pending'
+                                  ? 'badge--restricted'
+                                  : 'badge--locked'
+                            }`}
+                          >
+                            <i>{status.tone === 'ok' ? '✓' : status.tone === 'pending' ? '▲' : '✕'}</i>
+                            {status.label}
+                          </span>
+                        </td>
+                        <td>
                           {/* Exactly which children this adult can open. A
                               guardian row without it says nothing about the
                               only thing the account does. */}
+                          {!isGuardian && <span aria-hidden="true">—</span>}
                           {isGuardian && guardianLinksAvailable && memberLinks.length > 0 && (
-                            <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
+                            <ul className="space-y-[var(--s1)]">
                               {memberLinks.map((link) => {
                                 const confirming =
                                   pendingUnlink?.accountId === member.account_id
@@ -1033,10 +1072,10 @@ function PeopleConsoleContent() {
                                 return (
                                   <li
                                     key={link.athlete_id}
-                                    className="t-muted flex flex-wrap items-center gap-[var(--s2)]"
+                                    className="flex flex-wrap items-center gap-[var(--s2)]"
                                   >
                                     <span>
-                                      Sees <span className="font-semibold text-[color:var(--bone-100)]">{link.athlete_full_name}</span>{' '}
+                                      Sees <span className="font-bold">{link.athlete_full_name}</span>{' '}
                                       ({link.relationship_to_athlete})
                                     </span>
                                     {confirming ? (
@@ -1055,11 +1094,16 @@ function PeopleConsoleContent() {
                                         >
                                           Confirm Remove
                                         </button>
+                                        {/* .btn--ghost is bone text on a
+                                            translucent black wash, tuned for
+                                            leather; the register is paper now
+                                            and a lever carries its own dark
+                                            surface. */}
                                         <button
                                           type="button"
                                           disabled={busy}
                                           onClick={() => setPendingUnlink(null)}
-                                          className="btn btn--ghost px-[var(--s4)] text-[length:var(--t-xs)] disabled:opacity-50"
+                                          className="btn--lever disabled:opacity-50"
                                         >
                                           Keep
                                         </button>
@@ -1074,7 +1118,7 @@ function PeopleConsoleContent() {
                                             athleteId: link.athlete_id,
                                           })
                                         }
-                                        className="btn btn--ghost px-[var(--s4)] text-[length:var(--t-xs)] disabled:opacity-50"
+                                        className="btn--lever disabled:opacity-50"
                                       >
                                         Remove
                                       </button>
@@ -1086,27 +1130,39 @@ function PeopleConsoleContent() {
                           )}
 
                           {isGuardian && guardianLinksAvailable && memberLinks.length === 0 && (
-                            <p className="mt-[var(--s2)] text-[length:var(--t-xs)] leading-5 text-[color:var(--restricted-ink)]">
+                            /* The state itself is on the Sign-in badge
+                               ("Linked to no athlete — would see nothing"), so
+                               this line is the repair instruction and takes the
+                               register's own ink. --restricted-ink is a light
+                               ink for a dark ground and would have vanished on
+                               the sheet. */
+                            <p className="max-w-[34ch]">
                               This guardian resolves no children, so they sign in to an empty page. Invite the same
                               email address again on “Add Coach, Staff Or Guardian” and name the athlete to repair it.
                             </p>
                           )}
-                        </div>
+                        </td>
 
-                        {isPinAthlete && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void handleResetToStartingPin(member.account_id)}
-                            className="btn btn--ghost shrink-0 disabled:opacity-50"
-                          >
-                            Reset To Starting PIN
-                          </button>
-                        )}
-                      </li>
+                        <td>
+                          {isPinAthlete ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void handleResetToStartingPin(member.account_id)}
+                              className="btn--lever whitespace-nowrap disabled:opacity-50"
+                            >
+                              Reset To Starting PIN
+                            </button>
+                          ) : (
+                            <span aria-hidden="true">—</span>
+                          )}
+                        </td>
+                      </tr>
                     );
                   })}
-                </ul>
+                  </tbody>
+                </table>
+                </div>
               )}
               </div>
             </div>
@@ -1632,7 +1688,7 @@ function PeopleConsoleRoleSwitch() {
 
   if (session.loading) {
     return (
-      <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         <p className="t-body">Loading...</p>
       </main>
     );

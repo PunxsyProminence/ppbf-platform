@@ -78,7 +78,7 @@ export default function PlatformOverview() {
 
   if (!authChecked) {
     return (
-      <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         <p className="t-eyebrow">Loading...</p>
       </main>
     );
@@ -86,7 +86,7 @@ export default function PlatformOverview() {
 
   if (!hasPlatformAccess) {
     return (
-      <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s6)] text-center">
           <p className="t-eyebrow">Access Denied</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Platform Owner Access Required</h1>
@@ -102,7 +102,7 @@ export default function PlatformOverview() {
     <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-5xl space-y-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         <header className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-          <p className="t-eyebrow">Platform Console</p>
+          <p className="t-eyebrow">Platform Desk</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>All Gyms Overview</h1>
           <p className="t-body">
             Every gym on the platform, one row each. Aggregate operational figures only.

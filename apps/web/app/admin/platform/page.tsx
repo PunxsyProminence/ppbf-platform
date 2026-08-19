@@ -379,7 +379,7 @@ export default function PlatformConsole() {
 
   if (!authChecked) {
     return (
-      <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="text-center">
           <p className="t-eyebrow">Checking Access</p>
           <h1 className="t-command mt-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Loading...</h1>
@@ -390,12 +390,12 @@ export default function PlatformConsole() {
 
   if (!hasPlatformAccess) {
     return (
-      <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s6)] text-center">
           <p className="t-eyebrow">Access Denied</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Platform Owner Access Required</h1>
           <p className="t-body">
-            This console is for PPBF platform administrators only.
+            This desk is for PPBF platform administrators only.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-[var(--s4)]">
             <Link href="/login" className="btn">
@@ -414,7 +414,7 @@ export default function PlatformConsole() {
     <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-3xl space-y-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         <header className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-          <p className="t-eyebrow">Platform Console</p>
+          <p className="t-eyebrow">Platform Desk</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Omega</h1>
           <p className="t-body">
             View any gym individually here, or see every gym at once in the overview. Reaches across
@@ -531,8 +531,8 @@ export default function PlatformConsole() {
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Prepare An Athlete Account</h2>
           <p className="t-body mt-[var(--s3)]">
-            Creates the login shell only -- no PIN, cannot sign in yet. The gym&apos;s own admin
-            must finish activation from Admin &gt; People before this athlete can log in.
+            This makes the account only. It has no PIN and cannot sign in yet: the gym&apos;s own admin
+            finishes it from Admin &gt; People before the athlete can log in.
           </p>
           <div className="mt-[var(--s4)] space-y-[var(--s4)]">
             <label className="field">
@@ -561,7 +561,11 @@ export default function PlatformConsole() {
               onClick={() => void createAthleteShell()}
               className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isBusy ? 'Working...' : 'Create Account Shell'}
+              {/* The h2 above already says it in the clerk's words -- "Prepare
+                  An Athlete Account" -- and then the button that does it said
+                  "Create Account Shell", which is what the code calls the row,
+                  not what the desk calls the job. */}
+              {isBusy ? 'Working...' : 'Prepare The Account'}
             </button>
           </div>
         </section>
