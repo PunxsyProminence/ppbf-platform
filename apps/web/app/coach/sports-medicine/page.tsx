@@ -369,11 +369,16 @@ export default function SportsMedicinePage() {
                         {/* Same brass, non-punitive mark as the floor room's
                             TrainingHoldBanner and the guardian's safety page
                             (Room DNA: the clinic room's cooler chrome does not
-                            change the stamp itself). No coachName here either --
-                            this board is staff-facing but, by owner decision
-                            (2026-08-15, see header comment above), still shows
-                            only the athlete-safe projection: no individual
-                            coach identity to hand the stamp. */}
+                            change the stamp itself). Still the bare glyph/label
+                            here, not the family surfaces' full RefusalStamp:
+                            this staff roster is one row per athlete over
+                            listTrainingHolds' raw TrainingHoldRow, not the
+                            athlete-safe projection those two now resolve a
+                            placed_by_name through (2026-08-19 decision) --
+                            staff already knows who's placing/lifting a hold
+                            from the roster itself, so adding a per-row name
+                            lookup here is a separate, un-asked-for slice, not
+                            a gap this owner decision covers. */}
                         <span className="stamp stamp--brass stamp--flat stamp--kiosk">
                           <i aria-hidden="true">{TRAINING_HOLD_GLYPH}</i>
                           <span>{TRAINING_HOLD_LABEL}</span>

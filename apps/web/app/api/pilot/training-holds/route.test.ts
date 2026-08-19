@@ -8,6 +8,7 @@ import {
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import {
   getActiveTrainingHold,
   getTrainingHoldById,
@@ -28,6 +29,10 @@ jest.mock('@/src/server/pilot/audit', () => ({
 
 jest.mock('@/src/server/pilot/guardianAccess', () => ({
   guardianAthleteIds: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/profileDb', () => ({
+  getSubjectIdentity: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -54,6 +59,7 @@ const mockLift = liftTrainingHold as jest.Mock;
 const mockList = listTrainingHolds as jest.Mock;
 const mockPlace = placeTrainingHold as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockGetSubjectIdentity = getSubjectIdentity as jest.Mock;
 
 const FULL_HOLD = {
   hold_id: 'hold-1',
@@ -99,6 +105,17 @@ function postRequest(body: Record<string, unknown>): NextRequest {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Default for the two athlete-facing GET paths, which now resolve the
+  // placer's name through getSubjectIdentity -- individual tests override
+  // when the resolution itself is what's under test.
+  mockGetSubjectIdentity.mockResolvedValue({
+    accountId: 'acct-coach-1',
+    fullName: 'Coach Neale',
+    athleteId: null,
+    dob: null,
+    coachAccountId: null,
+    memberSince: '2026-01-01T00:00:00Z',
+  });
 });
 
 describe('GET /api/pilot/training-holds', () => {
@@ -116,12 +133,25 @@ describe('GET /api/pilot/training-holds', () => {
       lift_condition_text: 'A doctor says you are ready.',
       placed_at: '2026-08-06T12:00:00Z',
       expires_at: null,
+      placed_by_name: 'Coach Neale',
     });
+    expect(mockGetSubjectIdentity).toHaveBeenCalledWith('org-a', 'acct-coach-1');
     // The staff-facing fields never reach the athlete.
     const serialized = JSON.stringify(payload);
     expect(serialized).not.toContain('Concussion');
     expect(serialized).not.toContain('reason_category');
     expect(serialized).not.toContain('placed_by_account_id');
+  });
+
+  test('the placer name falls back to their account id when identity cannot be resolved', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+    mockGetActive.mockResolvedValueOnce(FULL_HOLD);
+    mockGetSubjectIdentity.mockResolvedValueOnce(null);
+
+    const response = await GET(getRequest());
+    const payload = await response.json();
+
+    expect(payload.hold.placed_by_name).toBe('acct-coach-1');
   });
 
   test('an athlete with no hold gets null, and an athlete account without an athlete row too', async () => {

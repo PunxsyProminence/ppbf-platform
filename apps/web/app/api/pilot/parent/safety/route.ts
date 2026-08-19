@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getGuardianGateSummary } from '@/src/server/pilot/safetyGateMatrix';
 import { getActiveTrainingHold, type TrainingHoldRow, type TrainingHoldScope } from '@/src/server/pilot/trainingHolds';
 
@@ -30,6 +31,10 @@ export const runtime = 'nodejs';
  * "an escalation exists" at all could itself be unsafe). Consent status
  * is not embedded either -- it already has its own page (/parent/consent,
  * T-008); this route links out rather than duplicating that read.
+ *
+ * Owner decision, 2026-08-19: placed_by_name is now included here too, kept
+ * in lockstep with training-holds/route.ts's own athleteFacing() so a
+ * guardian reads the exact same point-of-contact name their child does.
  */
 interface AthleteFacingHold {
   scope: TrainingHoldScope;
@@ -37,15 +42,18 @@ interface AthleteFacingHold {
   lift_condition_text: string;
   placed_at: string;
   expires_at: string | null;
+  placed_by_name: string;
 }
 
-function athleteFacing(hold: TrainingHoldRow): AthleteFacingHold {
+async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Promise<AthleteFacingHold> {
+  const placer = await getSubjectIdentity(organizationId, hold.placed_by_account_id);
   return {
     scope: hold.scope,
     athlete_explanation: hold.athlete_explanation,
     lift_condition_text: hold.lift_condition_text,
     placed_at: hold.placed_at,
     expires_at: hold.expires_at,
+    placed_by_name: placer?.fullName ?? hold.placed_by_account_id,
   };
 }
 
@@ -67,7 +75,7 @@ export async function GET(request: NextRequest) {
         return {
           athlete_id: athleteId,
           athlete_name: athlete?.full_name ?? null,
-          hold: hold ? athleteFacing(hold) : null,
+          hold: hold ? await athleteFacing(principal.organizationId, hold) : null,
           gates: gates.map((gate) => ({
             gate_key: gate.gate_key,
             name: gate.name,
