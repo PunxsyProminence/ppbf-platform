@@ -62,11 +62,24 @@ const READINESS_QUERY = `
       where schemaname = 'pilot'
         and indexname = 'idx_athlete_check_ins_one_per_day'
     ) as one_per_day_ready,
-    exists (
-      select 1 from pg_constraint
+    -- The three wellness columns (energy, soreness, focus) are each bounded
+    -- 1 to 5. The migration SQL writes that as a BETWEEN, but Postgres DOES
+    -- NOT store the text it was given: pg_get_constraintdef() deparses from
+    -- the parsed tree, so BETWEEN comes back as a >= and <= pair. The
+    -- previous pattern here searched for the literal lowercase BETWEEN form,
+    -- which Postgres never emits, so this assertion could not pass on any
+    -- database -- the schema was always correct and the check was always
+    -- wrong (staging run 32257652780). Matching the deparsed form instead is
+    -- also the more durable check: it holds whether the SQL is written with
+    -- BETWEEN or with explicit comparisons. Counting 3 rather than using
+    -- exists() keeps it honest if a column silently loses its bound.
+    (
+      select count(*) = 3
+      from pg_constraint
       where conrelid = to_regclass('pilot.athlete_check_ins')
         and contype = 'c'
-        and pg_get_constraintdef(oid) like '%between 1 and 5%'
+        and pg_get_constraintdef(oid) like '%>= 1%'
+        and pg_get_constraintdef(oid) like '%<= 5%'
     ) as wellness_bounds_ready
 `;
 

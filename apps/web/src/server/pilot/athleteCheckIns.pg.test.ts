@@ -194,6 +194,54 @@ function insertCheckIn(client: Client, checkInId: string, overrides: Record<stri
   );
 }
 
+// The runner's OWN readiness assertion, not just the SQL it applies.
+//
+// Every test below applies `migrationSql` directly, which proves the schema
+// but never runs `applyMigrationTransaction` -- so the runner's post-apply
+// verification was untested, and shipped a check that could not pass on any
+// database: it looked for the literal `between 1 and 5`, while Postgres
+// deparses BETWEEN back as `>= 1 AND <= 5`. That reached a real staging
+// dispatch (run 32257652780) and blocked the whole `all` chain behind it.
+//
+// This exercises the real runner against real Postgres so the assertion has
+// to survive the same deparsing the database actually does.
+describe('athlete check-ins runner readiness assertion', () => {
+  test('the real runner accepts a correctly migrated database', async () => {
+    const client = await freshDatabase('checkins_readiness');
+    try {
+      await client.query(migrationSql);
+
+      // The runner's query is READ OUT OF THE RUNNER rather than restated
+      // here. Restating it would let the copy in this test stay correct
+      // while the shipped one rots -- which is the exact failure being
+      // regression-tested, so a duplicated query would defeat the point.
+      const runnerSource = await fs.readFile(
+        path.resolve(__dirname, '../../../scripts/pilot-apply-athlete-check-ins-migration.mjs'),
+        'utf8',
+      );
+      const match = runnerSource.match(/const READINESS_QUERY = `([\s\S]*?)`;/);
+      expect(match).not.toBeNull();
+
+      const readiness = await client.query(match![1]);
+      // Every field true is exactly what assertReadiness() demands.
+      expect(readiness.rows[0]).toEqual({
+        check_ins_ready: true,
+        one_per_day_ready: true,
+        wellness_bounds_ready: true,
+      });
+
+      // And the bound it verifies is a real database fact, not just a string
+      // match -- 0 and 6 are refused after the runner says it is ready.
+      await expect(insertCheckIn(client, 'ci-low', { energy: 0 }))
+        .rejects.toMatchObject({ code: '23514' });
+      await expect(insertCheckIn(client, 'ci-high', { checked_in_on: '2030-02-01', energy: 6 }))
+        .rejects.toMatchObject({ code: '23514' });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('athlete check-ins migration', () => {
   test('creates from nothing, re-applies as a no-op, and enforces one check-in per athlete per day', async () => {
     const client = await freshDatabase('checkins_fresh');
