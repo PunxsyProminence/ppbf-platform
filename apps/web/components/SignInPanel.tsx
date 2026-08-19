@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AnnouncementBanner from '@/components/AnnouncementBanner';
+import RefusalStamp from '@/components/RefusalStamp';
 import { apiBase } from '@/lib/apiBase';
 import {
   clearRoleSession,
@@ -14,6 +15,18 @@ import { createMicrosoftSignInHandler } from '@/src/client/loginPageHelpers';
 import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
 type LoginMethod = 'microsoft' | 'pin' | 'magic_link';
+
+/**
+ * RefusalStamp's `detail` is appended after the stamp's standard sentence,
+ * so a caller-supplied clause that already ends in a period would double up
+ * ("...approved — Invalid account ID or PIN. Please try again or contact
+ * an admin.."). Trimming one trailing period keeps every existing error
+ * string's exact wording while letting it sit naturally inside the stamp's
+ * own sentence.
+ */
+function trimTrailingPeriod(message: string): string {
+  return message.endsWith('.') ? message.slice(0, -1) : message;
+}
 
 /**
  * THE BELL -- the platform's one sign-in flow, in one place.
@@ -48,8 +61,21 @@ export default function SignInPanel({
   const [magicLinkBusy, setMagicLinkBusy] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [magicLinkError, setMagicLinkError] = useState('');
+  // Tracks only whether the current magicLinkError came from an HTTP 429.
+  // Every other magic-link failure (bad address, unreachable server, and so
+  // on) is a genuine refusal, not a WAIT state -- see loginRateLimited below,
+  // the same distinction applies here.
+  const [magicLinkRateLimited, setMagicLinkRateLimited] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState('');
+  // A 429 is a WAIT state, not a refusal: the owner's locked art policy
+  // reserves red/--locked for medical/safety only, and a rate limit is
+  // neither. Every other loginError (wrong PIN length, invalid credentials,
+  // timeout, network failure, ...) is a genuine non-medical refusal. This
+  // flag is the only thing that tells the render below which of the two
+  // RefusalStamp kinds applies -- it is reset at the top of every fresh
+  // attempt and set true only in the 429 branch.
+  const [loginRateLimited, setLoginRateLimited] = useState(false);
 
   const authErrorMessage = (() => {
     const error = searchParams.get('error');
@@ -133,6 +159,7 @@ export default function SignInPanel({
   async function requestMagicLink() {
     const email = magicLinkEmail.trim();
     setMagicLinkError('');
+    setMagicLinkRateLimited(false);
 
     if (!email) {
       setMagicLinkError('Enter your email address.');
@@ -149,6 +176,7 @@ export default function SignInPanel({
       });
 
       if (response.status === 429) {
+        setMagicLinkRateLimited(true);
         setMagicLinkError('Too many requests. Wait a few minutes and try again.');
         return;
       }
@@ -172,6 +200,7 @@ export default function SignInPanel({
   async function loginWithPin() {
     const acctId = loginAccountId.trim();
     const pinCode = loginPin.trim();
+    setLoginRateLimited(false);
 
     if (!acctId || !pinCode) {
       setLoginError('Account ID and PIN are required.');
@@ -215,6 +244,7 @@ export default function SignInPanel({
       };
 
       if (response.status === 429) {
+        setLoginRateLimited(true);
         setLoginError('Too many login attempts. Please wait a few minutes before trying again.');
         return;
       }
@@ -404,13 +434,17 @@ export default function SignInPanel({
                 </p>
               </div>
             )}
+            {/* A 429 here is a WAIT state (kind="wait"), never a refusal --
+                red/--locked is reserved for medically_not_allowed alone.
+                Every other magic-link failure is a genuine, non-medical
+                refusal (kind="cannot_be_done"): brass/bone, same as PIN
+                login's own error treatment below, never the clinic-red
+                these used to share. */}
             {magicLinkError && (
-              <div
-                className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.06)] p-[var(--s4)]"
-                role="alert"
-              >
-                <p className="t-body">{magicLinkError}</p>
-              </div>
+              <RefusalStamp
+                kind={magicLinkRateLimited ? 'wait' : 'cannot_be_done'}
+                detail={magicLinkRateLimited ? 'a few minutes' : trimTrailingPeriod(magicLinkError)}
+              />
             )}
             <button type="submit" disabled={magicLinkBusy} className="btn btn--kiosk">
               {magicLinkBusy ? 'Sending…' : 'Send Sign-In Link'}
@@ -481,16 +515,17 @@ export default function SignInPanel({
                   className="input input--kiosk"
                 />
               </div>
+              {/* A 429 is a WAIT state, not a refusal -- the confirmed bug
+                  this fixes. Everything else here (wrong PIN length, an
+                  invalid account/PIN pair, a session that failed to verify,
+                  timeout, network) is a genuine but non-medical refusal, so
+                  it drops the "Sign-in refused" badge and red/--locked too:
+                  only medically_not_allowed gets that treatment. */}
               {loginError && (
-                <div
-                  className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.06)] p-[var(--s4)]"
-                  role="alert"
-                >
-                  <span className="badge badge--locked">
-                    <i>✕</i>Sign-in refused
-                  </span>
-                  <p className="t-body mt-[var(--s3)]">{loginError}</p>
-                </div>
+                <RefusalStamp
+                  kind={loginRateLimited ? 'wait' : 'cannot_be_done'}
+                  detail={loginRateLimited ? 'a few minutes' : trimTrailingPeriod(loginError)}
+                />
               )}
               <button
                 type="submit"
