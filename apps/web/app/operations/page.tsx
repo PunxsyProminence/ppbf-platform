@@ -157,7 +157,11 @@ const operationsRoles: ClubRole[] = [...roleRoutes.map((route) => route.role), '
 export default function OperationsHubPage() {
   return (
     <RoleSessionGate allowedRoles={operationsRoles}>
-      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      {/* Front office. The hub is a launcher and a notice board -- the role
+          selector, the workspace directory and AnnouncementBanner, which is
+          office chrome by name in ROOM-PURPOSE-DNA -- rather than floor work
+          or a night console. It was on bare ink, which is no room at all. */}
+      <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
             <p className="t-eyebrow tracking-[0.35em]">Mission Control</p>

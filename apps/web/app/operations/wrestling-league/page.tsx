@@ -251,7 +251,9 @@ export default function WrestlingLeagueManagementPage() {
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
-      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      {/* Front office: seasons, events and rosters written down. Roster work
+          is named in the office's purpose; nothing here is coached. */}
+      <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
             <p className="t-eyebrow tracking-[0.18em]">Operations Workspace</p>
