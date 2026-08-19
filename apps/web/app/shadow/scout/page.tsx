@@ -181,7 +181,7 @@ export default function ScoutReportPage() {
   );
 
   return (
-    <main className="room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       {/* HEADER */}
       <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">

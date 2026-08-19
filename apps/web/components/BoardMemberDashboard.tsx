@@ -118,7 +118,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
   // is theirs, so this leaves rather than refusing.
   if (!access.allowed) {
     return (
-      <main className="room--board grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--board grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         {/* Raised leather rather than bare wall: centred content can straddle
             the board room's plaster/wainscot seam, and a panel carries its own
             ground on either side of it. */}
@@ -140,7 +140,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
   }
 
   return (
-    <main className="room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="room room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         {/* The header stands on the board room's plaster upper wall, so it is
             written in dark ink by hand: the .t-* voices pin the light colours

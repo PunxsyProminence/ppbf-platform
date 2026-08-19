@@ -1060,7 +1060,7 @@ function ShadowChatPageContent() {
   // Role denial does not need capabilities; show it as soon as auth is known.
   if (authChecked && !chatRoleAllowed) {
     return (
-      <main className="room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+      <main className="room room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
         <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 border border-[color:var(--brass-900)] px-6">
           <div className="text-center">
             <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p>
@@ -1073,18 +1073,21 @@ function ShadowChatPageContent() {
               You are still signed in — return to your dashboard or sign out.
             </p>
           </div>
+          {/* The two ways out of a denial, on the design system's own control
+              rather than a hand-rolled one. The pair used to carry identical
+              one-off classes with no height on either, and the two did NOT come
+              out the same size: globals.css floors `button` at 44px in @layer
+              base and deliberately exempts `a`, so Logout landed at 44px and
+              Dashboard at roughly 30 -- two controls that read as a pair,
+              built as a pair, rendering as a mismatched pair, on a screen whose
+              entire content is a refusal and these two links. .btn--ghost is
+              the quiet variant this ground already uses everywhere else, and
+              .btn carries the 44px and the stencil voice for both. */}
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/dashboard"
-              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-4 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
-            >
+            <Link href="/dashboard" className="btn btn--ghost">
               Dashboard
             </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-4 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
-            >
+            <button type="button" onClick={handleLogout} className="btn btn--ghost">
               Logout
             </button>
           </div>
@@ -1095,7 +1098,7 @@ function ShadowChatPageContent() {
 
   if (!authChecked || !capabilitiesLoaded) {
     return (
-      <main className="room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+      <main className="room room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6">
           <div className="text-center">
             <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">Secure Session</p>
@@ -1107,7 +1110,7 @@ function ShadowChatPageContent() {
   }
 
   return (
-    <main className="room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+    <main className="room room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
       <header className="border-b border-[color:var(--brass-900)]">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-5">
           <div>
@@ -1547,7 +1550,7 @@ function ShadowChatPageContent() {
 
 export default function ShadowChatPage() {
   return (
-    <Suspense fallback={<main className="room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]"><div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6"><div className="text-center"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p><h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Loading scope</h1></div></div></main>}>
+    <Suspense fallback={<main className="room room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]"><div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6"><div className="text-center"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p><h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Loading scope</h1></div></div></main>}>
       <ShadowChatPageContent />
     </Suspense>
   );

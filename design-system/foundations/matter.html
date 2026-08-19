@@ -32,7 +32,11 @@
     border: 1px solid var(--brass-700); border-radius: 3px; padding: 2px 7px;
   }
   .pick-hd .d { color: var(--bone-400); font-size: var(--t-xs); }
-  .stage { padding: var(--s6) var(--s5); }
+  /* A stage is a boxed sample of a room, not a screen standing in one, so it
+     states its own edges and its own height. .room is min-height:100vh -- it
+     is the wall behind a whole surface -- and six viewport-tall boxes is not
+     what any of these samples is showing. */
+  .stage { padding: var(--s6) var(--s5); min-height: 0; }
   .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s4); }
   .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s4); }
   .swatch { padding: var(--s4); min-height: 130px; font-size: var(--t-xs); line-height: 1.55; }

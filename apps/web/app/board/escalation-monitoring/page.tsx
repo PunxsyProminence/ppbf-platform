@@ -108,7 +108,7 @@ export default function BoardEscalationMonitoringPage() {
     // platform_owner is admitted to match BoardRoleGate in app/board/layout.tsx
     // and the sibling compliance register page.
     <RoleSessionGate allowedRoles={['board', 'platform_owner']}>
-      <main className="room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto max-w-7xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow tracking-[0.22em]">Board Workspace</p>

@@ -172,9 +172,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'metadata must be an object' }, { status: 400 });
     }
 
-    // The classification taxonomy is a shared contract (issue #345): a label
-    // arriving through registration is held to the same 14 domains the
-    // correction PATCH enforces, so no route can file a source outside it.
+    // The classification taxonomy is a shared contract aligned to the
+    // governed R01-R19 subject archive. Registration and correction use the
+    // same validator, so no route can file a source outside the controlled
+    // human-correctable taxonomy.
     const classificationDomain = (body.metadata as Record<string, unknown> | undefined)?.classification_domain;
     if (classificationDomain !== undefined && !isResearchClassificationDomain(classificationDomain)) {
       return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
