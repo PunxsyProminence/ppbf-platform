@@ -144,6 +144,41 @@ test('the submission message renders only under the requirement it belongs to', 
   expect(screen.getAllByText(/answers nothing until evidence review says so/i)).toHaveLength(1);
 });
 
+// Regression: the projection fetch had no loading flag, so `items.length ===
+// 0` rendered the same "Empty State" copy whether the request was still in
+// flight or had genuinely returned zero rows -- a slow load read as "there
+// is nothing here" before the request had even resolved.
+test('a pending projection fetch shows loading copy, never the empty-state copy, until it resolves', async () => {
+  let resolveProjection: (value: Response) => void = () => {};
+  const projectionPromise = new Promise<Response>((resolve) => {
+    resolveProjection = resolve;
+  });
+
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/research-projection')) {
+      return projectionPromise;
+    }
+    if (url.includes('/research-requirements')) {
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }
+    return { ok: false, status: 403, json: async () => ({}) } as Response;
+  }) as unknown as typeof fetch;
+
+  render(<ResearchIntakePage />);
+
+  await screen.findByText('Loading the research projection...');
+  expect(screen.queryByText('No SHADOW research projection items exist for this organization yet.')).toBeNull();
+
+  await act(async () => {
+    resolveProjection({ ok: true, json: async () => ({ items: [] }) } as Response);
+    await projectionPromise;
+  });
+
+  await screen.findByText('No SHADOW research projection items exist for this organization yet.');
+  expect(screen.queryByText('Loading the research projection...')).toBeNull();
+});
+
 // Issue #345 workflow 3: general-research intake. Classification is a
 // human-picked, human-correctable filing label in source metadata. These pin
 // that registration posts the taxonomy key with provenance under

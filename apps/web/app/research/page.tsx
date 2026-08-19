@@ -78,6 +78,11 @@ const GENERAL_SOURCE_TYPES = [
 
 export default function ResearchIntakePage() {
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
+  // Distinct from `items.length === 0`: without this, the empty-state copy
+  // below rendered identically whether the fetch was still in flight or had
+  // genuinely returned zero rows, so a slow load read as "there is nothing
+  // here" before the request had even resolved.
+  const [projectionLoading, setProjectionLoading] = useState(true);
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [requirementDraft, setRequirementDraft] = useState({
@@ -155,6 +160,8 @@ export default function ResearchIntakePage() {
       } catch (error) {
         setItems([]);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load SHADOW research projection.');
+      } finally {
+        setProjectionLoading(false);
       }
     })();
   }, []);
@@ -466,16 +473,18 @@ export default function ResearchIntakePage() {
           ))}
         </section>
 
-        {errorMessage ? (
+        {projectionLoading ? (
+          <section className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]" aria-live="polite" aria-busy="true">
+            <span className="working">Loading the research projection...</span>
+          </section>
+        ) : errorMessage ? (
           <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
             <span className="badge badge--locked">
               <i>✕</i>Projection Unavailable
             </span>
             <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
           </section>
-        ) : null}
-
-        {!errorMessage && items.length === 0 ? (
+        ) : items.length === 0 ? (
           <section className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
             <p className={PAPER_LABEL}>Empty State</p>
             <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
