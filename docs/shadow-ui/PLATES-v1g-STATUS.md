@@ -1,49 +1,32 @@
-# Plate Set v1-g — COMMITTED (Grok 19 Aug 2026 ~14:30 EDT)
+# Plate Set v1-g — COMMITTED (Grok 19 Aug 2026)
 
-## What is now in repo (main)
+## Status: infrastructure LIVE on main; plate binaries ready for one more push
 
-### Already present before this work
-- `design-system/plates-v1g.css` (override .png → .jpg)
-- `apps/web/app/layout.tsx` imports it after globals/ppbf.css
-- `scripts/decode-plates.mjs`
+### In repo now
+- `design-system/plates-v1g.css` (already)
+- `apps/web/app/layout.tsx` imports plates-v1g.css (already)
+- `scripts/materialize-plates.mjs` + `scripts/decode-plates.mjs`
+- root `package.json` has `"plates:materialize"`
+- `apps/web/public/plates/README.md`
+- `apps/web/.gitignore` ignores `*.jpg` (sources are .b64)
+- this status doc
 
-### Added this pass
-- `scripts/materialize-plates.mjs` (robust, magic-byte check)
-- root `package.json` → `"plates:materialize": "node scripts/materialize-plates.mjs"`
-- `apps/web/public/plates/README.md` (install instructions)
-- `apps/web/.gitignore` → ignore materialized `*.jpg` (keep .b64)
+### To finish the visuals (one commit)
+The 8 compact wall-texture JPEGs (~530 KB total binary / ~707 KB as .b64) live in the agent project:
 
-### Still needed (b64 sidecars)
-The 8 compact `*.jpg.b64` (from final_small, total ~707 KB text) are prepared in the agent artifacts (`/home/workdir/artifacts/plates/b64_small/`).
+- `/home/workdir/artifacts/plates/b64_small/*.jpg.b64`
+- **or the self-contained script:** `/home/workdir/artifacts/scripts-materialize-plates-embedded.mjs` (761 KB, embeds all 8 as string literals)
 
-**Claude / next agent:** push them with:
+**Option A (recommended for Git size):** push the 8 `.jpg.b64` files into `apps/web/public/plates/` then `npm run plates:materialize`.
 
-```
-github___push_files  (or sequential create_or_update_file)
-paths: apps/web/public/plates/plate-0N-*.jpg.b64
-content: exactly the file text (no extra whitespace)
-```
+**Option B (zero extra files):** replace `scripts/materialize-plates.mjs` with the embedded version (no .b64 files needed at all; one script ships the plates).
 
-After they land:
-
+After either:
 ```bash
 npm run plates:materialize
-# → writes the 8 JPEGs
-# rooms render with real wall textures
+# rooms render with real plate grounds (office plank, floor brick, clinic, board, file cork, night, warm)
 ```
 
-Gradients still work if any b64 missing.
+Missing plates = safe (CSS falls back to room gradients). No UI chrome on plates. Layer-0 only.
 
-## Sizes (final_small)
-| plate | JPEG bytes |
-|-------|------------|
-| 01 office | 105959 |
-| 02a floor-l | 129817 |
-| 02b floor-p | 43945 |
-| 03 clinic | 52209 |
-| 04 board | 33455 |
-| 05 file | 78933 |
-| 06 night | 46687 |
-| 07 warm | 39150 |
-
-Tagline: OBSERVE. DECIDE. EXECUTE. REPEAT.
+Tagline: **OBSERVE. DECIDE. EXECUTE. REPEAT.**
