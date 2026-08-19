@@ -18,7 +18,7 @@ export default async function CoachReviewQueuePage() {
   await requirePageRole(['coach']);
 
   return (
-    <main className="room--floor min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="room room--floor min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)]">
         <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach Workspace</p>

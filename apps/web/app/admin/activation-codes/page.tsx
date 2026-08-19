@@ -119,7 +119,7 @@ function ActivationCodesConsoleContent() {
   }
 
   return (
-    <main className="room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s5)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+    <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s5)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Gym Admin Activation Control</p>
@@ -268,7 +268,7 @@ function ActivationCodesConsoleContent() {
 
 function WrongRoleNotice() {
   return (
-    <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+    <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
         <p className="t-eyebrow">Different Console</p>
         <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>

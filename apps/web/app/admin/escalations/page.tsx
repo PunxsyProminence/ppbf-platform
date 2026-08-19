@@ -210,7 +210,7 @@ export default function EscalationsPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'coach']}>
-      <main className="room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>

@@ -256,7 +256,7 @@ export default function SchedulerPage() {
 
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
-      <main className="room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)]">
+      <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-7xl space-y-[var(--s5)]">
           <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow">Unified Scheduler</p>
