@@ -19,7 +19,7 @@ admin@punxsyprominence.org
     └── Library Intake/
 ```
 
-The tree was observed through a Microsoft 365 connector on 2026-08-19. It is not the permanent governed archive, and no repository code may treat its path as the production destination.
+The tree below was observed through a Microsoft 365 connector on 2026-08-19. It is not the permanent governed archive, and no repository code may treat its path as the production destination.
 
 ```text
 Library Intake/
@@ -88,7 +88,7 @@ The taxonomy is approved as a cross-system classification contract. Its physical
 
 ## 3. Source-of-truth boundaries
 
-The Microsoft surfaces below are separate rows on purpose. The permanent authority decision, the temporary OneDrive source, the legacy issue path, and the destination used by the current generic uploader are not the same place.
+The Microsoft surfaces below are **separate rows on purpose**. The permanent authority decision, the temporary OneDrive source, the legacy issue path, and the destination used by the current generic uploader are not the same place.
 
 | Layer | Authority and purpose | What it does not do |
 |---|---|---|
@@ -97,12 +97,12 @@ The Microsoft surfaces below are separate rows on purpose. The permanent authori
 | **Microsoft — issue #345 legacy SharePoint pointer** | Historical product-contract pointer to `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...` | Does not prove that path is the selected final nonprofit SharePoint root. |
 | **Microsoft — configurable SharePoint site drive, default `PPBF/Intake`** | The Microsoft destination currently supported by `apps/web/src/server/document-intake/sharepoint.ts` and `config.ts` | Is a generic ingest destination. It is not the governed research archive unless the exact site/library/root is verified and deliberately configured for that purpose. |
 | `/research` | Research requirements, general research registration, source-to-requirement links, answer-state workflow | Does not approve evidence or resolve a gap from submission alone. |
-| `/research/review` | Applicability review of a submission against the requirement it was filed against: `responsive`, `partially_responsive`, `not_responsive`, `duplicate` | Does not verify, approve, index, or make anything citable. A `responsive` verdict does not resolve the requirement. |
+| `/research/review` | Applicability review of a submission against the requirement it was filed against: `responsive`, `partially_responsive`, `not_responsive`, `duplicate` (`apps/web/app/research/review/page.tsx`) | Does not verify, approve, index, or make anything citable — that is `/evidence`. A `responsive` verdict does not resolve the requirement. |
 | `/evidence` | Indexing, evidence review, verification, approval, rejection, and retrieval eligibility | Does not replace the original-source archive. |
 | `pilot.shadow_library_*` | Reviewed source, document, chunk, embedding, and retrieval records | Does not own licensed original files. |
 | `__platform__` SHADOW shelf | Shared platform-wide evidence baseline | Must not contain one gym's private policy as universal evidence. |
 | Organization SHADOW shelf | Organization-specific approved evidence and policy | Must not leak to another organization. |
-| GitHub | Runtime implementation, contracts, derived evidence packages, import tooling, tests, and reproducible metadata | Must not become the original archive. This private repository already contains licensed extracts, so content governance remains necessary. |
+| GitHub | Runtime implementation, contracts, derived evidence packages, import tooling, tests, and reproducible metadata | Must not become the original archive. This is a **private** repository; it holds extensive licensed extracts already (see §9) and that is a content-governance question, not a settled one. |
 | Google Drive | Design-lab work, coaching/skill masters where explicitly designated, handoffs, candidate sources, and—when the generic ingest pipeline is configured—parallel copies | Is not a SHADOW evidence authority and is not the permanent nonprofit research archive. |
 
 **"Duplicate" means two unrelated things.** Do not conflate them:
@@ -112,30 +112,30 @@ The Microsoft surfaces below are separate rows on purpose. The permanent authori
 
 A source can be in R98 and never reviewed, or receive a `duplicate` applicability verdict while sitting in a subject folder. Neither implies the other.
 
-**Google Drive may receive originals in parallel.** `apps/web/app/api/document-ingest/route.ts` uploads the same raw buffer to SharePoint and Google Drive in one `Promise.all` whenever both destinations are configured. Any retention, disposition, or access-review decision about originals must cover both copies. Phase 2 must not preserve that parallel-copy behavior by accident; the approved destination and any optional mirror must be explicit.
+**Google Drive may receive originals in parallel.** `apps/web/app/api/document-ingest/route.ts` uploads the same raw buffer to SharePoint and Google Drive in one `Promise.all` whenever both destinations are configured. Google Drive is correctly *not* an evidence authority, but any retention, disposition, or access-review decision about originals must cover both copies. Phase 2 must not preserve that parallel-copy behavior by accident; the approved destination and any optional mirror must be explicit.
 
 Current executable GitHub code describes implementation behavior. The verified nonprofit SharePoint object will describe original-file custody. Human evidence review determines citability. These authority classes must not be collapsed.
 
 ## 4. Required research flow
 
-About half of this ladder is enforced by code and about half is procedure. Each transition is marked **ENFORCED** or **PROCEDURAL — NOT ENFORCED**.
+**About half of this ladder is enforced by code and about half is procedure.** An unannotated arrow list reads as though the whole chain is machine-guaranteed; it is not. Each transition below is marked **ENFORCED** or **PROCEDURAL — NOT ENFORCED**.
 
 | # | Transition | Enforcement |
 |---|---|---|
 | 1 | source acquired -> preserve original and acquisition provenance in the permanent nonprofit SharePoint archive | **PROCEDURAL — NOT ENFORCED.** The permanent SharePoint target is owner-confirmed, but no research-specific code preserves the governed original there yet. |
 | 2 | -> R00 intake when classification or lineage is unresolved | **PROCEDURAL — NOT ENFORCED.** R00 is an approved target workflow state, but no code reads, creates, or routes to the SharePoint folder. |
-| 3 | -> human subject classification to R01-R19, or R98 duplicate hold | **PROCEDURAL — NOT ENFORCED.** `researchClassification.ts` constrains the set of application keys, but no code moves archive files. The SharePoint folder implementation is pending verification. |
-| 4 | -> register SHADOW Library source as pending review / unverified | **ENFORCED** for the seed path: `import-shadow-research.mjs` refuses rows that arrive approved, verified, or indexed. |
+| 3 | -> human subject classification to R01-R19, or R98 duplicate hold | **PROCEDURAL — NOT ENFORCED.** `apps/web/src/shared/researchClassification.ts` constrains the set of application keys, but no code moves archive files. The SharePoint folder implementation is pending verification. |
+| 4 | -> register SHADOW Library source as pending review / unverified | **ENFORCED** for the seed path: `apps/web/scripts/import-shadow-research.mjs` (~L398-415) fails `SEED_ROW_CLAIMS_TRUSTED_STATE` / `SEED_ROW_CLAIMS_INDEXED` on any row arriving already approved, verified, or indexed. The importer has no route to a trusted state. |
 | 5 | -> optionally link to a research requirement | Optional by design. |
 | 6 | -> create/process document and chunks | **PROCEDURAL — NOT ENFORCED** as an ordering constraint. |
-| 7 | -> generate current-model embeddings | **PROCEDURAL** to perform, but **ENFORCED** as a retrieval precondition. |
-| 8 | -> applicability and duplicate review | **PROCEDURAL — NOT ENFORCED.** `/research/review` provides the surface; later evidence steps are not blocked on a verdict. |
-| 9 | -> index document | **PROCEDURAL** to perform, **ENFORCED** as a retrieval precondition. |
-| 10 | -> human evidence verification and approval in `/evidence` | **ENFORCED.** `shadowLibrary.ts` restricts reviewers and requires approved evidence to be verified. |
-| 11 | -> SHADOW retrieval from organization shelf + `__platform__` shelf | **ENFORCED.** Retrieval requires active, approved, verified, non-suppressed sources; indexed, approved, verified documents; and current-model embeddings. |
-| 12 | -> human resolution of the research requirement when evidence actually answers it | **ENFORCED that submission cannot do it.** Resolution requires an explicit human action. Whether the evidence actually answers the gap remains procedural. |
+| 7 | -> generate current-model embeddings | **PROCEDURAL** to perform, but **ENFORCED** as a retrieval precondition — see row 10. |
+| 8 | -> applicability and duplicate review | **PROCEDURAL — NOT ENFORCED.** `/research/review` (`apps/web/app/research/review/page.tsx`) provides the surface; nothing blocks a later step on a verdict having been recorded. |
+| 9 | -> index document | **PROCEDURAL** to perform, **ENFORCED** as a retrieval precondition — see row 10. |
+| 10 | -> human evidence verification and approval in `/evidence` | **ENFORCED.** `apps/web/src/server/pilot/shadowLibrary.ts`: `requireEvidenceReviewer` (~L241) restricts who may review, and `validateReviewState` (~L237-254) makes approved and verified mutually entailing — "Approved SHADOW evidence must also be verified" — so neither can be set without the other. |
+| 11 | -> SHADOW retrieval from organization shelf + `__platform__` shelf | **ENFORCED.** `shadowLibrary.ts` (~L1078-1099) gates every retrieved chunk on `s.status = 'active'`, `s.approval_state = 'approved'`, `s.verification_state = 'verified'`, `not retrieval_suppressed`, `d.ingest_state = 'indexed'`, `d.index_completed_at is not null`, `d.approval_state = 'approved'`, `d.verification_state = 'verified'`, `c.embedding is not null`, and `c.embedding_model = <current model>`. |
+| 12 | -> human resolution of the research requirement when evidence actually answers it | **ENFORCED that submission cannot do it.** Resolution lives only in `resolveShadowResearchRequirement` (`apps/web/src/server/pilot/shadowResearch.ts:125`), which requires an explicit `resolvedByAccountId`/`resolvedByRole` and is reached only from the deliberate `PATCH` on `app/api/pilot/shadow/research-requirements/route.ts`. No submission, review, approval, or import path calls it. **Whether the evidence actually answers the gap is PROCEDURAL** — the code enforces that a human acts, never that the human is right. |
 
-No individual transition may be inferred from the previous one:
+No individual transition may be inferred from the previous one. In particular:
 
 ```text
 file found != archived
@@ -148,11 +148,13 @@ requirement resolved != PPBF methodology adopted
 methodology adopted != algorithm or safety authority
 ```
 
+The **PROCEDURAL** rows above are exactly where that list is a promise rather than a guarantee. Treat them as the standing gap, not as background text.
+
 ## 5. Controlled subject taxonomy
 
 The application classification taxonomy is defined in `apps/web/src/shared/researchClassification.ts` as `RESEARCH_CLASSIFICATION_DOMAINS`. The table below is the owner-approved target crosswalk for the nonprofit SharePoint archive.
 
-`apps/web/src/shared/researchClassification.test.ts` parses this exact table and asserts it equals the shipped constant. Keep the table's three-column `| R-code | \`key\` | label |` shape.
+`apps/web/src/shared/researchClassification.test.ts` parses this exact table out of this file and asserts it equals the shipped constant, so the two cannot drift apart. **Keep the table's three-column `| R-code | \`key\` | label |` shape** — the test reads it, and a reformat will fail it.
 
 **The crosswalk is approved; physical archive conformance is not yet verified.** Nothing in the running system currently proves that the corresponding R01-R19 folders exist in the selected nonprofit SharePoint library or routes files into them.
 
@@ -178,7 +180,7 @@ The application classification taxonomy is defined in `apps/web/src/shared/resea
 | R18 | `learning_science_skill_acquisition` | Learning science and skill acquisition |
 | R19 | `measurement_assessment_instruments` | Measurement and assessment instruments |
 
-Classification is a human-correctable filing label. It is not an authority tier, an evidence grade, a promotion decision, or an instruction to move a file automatically. R00 and R98 are deliberately absent because they are processing states, not subject domains.
+Classification is a human-correctable filing label. It is not an authority tier, an evidence grade, a promotion decision, or an instruction to move a file automatically. `R00` and `R98` are deliberately absent: they are processing states, not subject domains, and no key or `archiveCode` in the constant may represent either.
 
 ## 6. Provenance and cross-system identity
 
@@ -220,11 +222,19 @@ The repository holds two different research layers:
 
 The repository also contains `apps/web/seed-data/shadow-research/2026-08-08/`, including Penn State and multidiscipline integration artifacts.
 
-**The research importer cannot load that package.** It supplies only one of the five files `import-shadow-research.mjs` requires, and `EXPECTED_COUNTS` pins the loadable corpus to the 2026-08-07 package.
+**The research importer cannot load that package.** It supplies only one (`seed_shadow_library_capability_map.csv`) of the five files `import-shadow-research.mjs` requires; `seed_shadow_library_sources.csv`, `..._documents.csv`, `..._chunks.csv`, and `seed_shadow_research_requirements.csv` are all absent. Even with them, `EXPECTED_COUNTS` (`import-shadow-research.mjs:19`) pins the loadable corpus to the 2026-08-07 package's exact row counts and fails `ROW_COUNT_MISMATCH` on anything else. As a SHADOW research corpus, the 2026-08-08 package is unimported and unloadable.
 
-**One part of the package is already in force operationally.** Its warm-up-decay stop rule appears in 63 of the 674 rows of `apps/web/seed-data/drill-library/seed_drill_stop_rules.csv` and is loaded through the drill-library seed path. That crossing was made on a separate recorded owner decision, not through the research importer.
+**But one part of it is already in force operationally.** §3 of `README_PENNSTATE_INTEGRATION.md` defines a warm-up-decay stop rule. Its verbatim sentence — "Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start)." — sits in 63 of the 674 rows of `apps/web/seed-data/drill-library/seed_drill_stop_rules.csv`, carrying `rule_kind = warmup_decay`. That file is loaded into `pilot.drill_stop_rules` by `npm run seed:drill-library`, which `.github/workflows/seed-reference-data.yml` dispatches. It is operational drill data, not research reference material.
 
-Presence on `main` does not mean a research corpus is imported, indexed, approved, verified, or retrieval-live. Check each artifact's own seed path.
+That crossing was made deliberately and is documented:
+
+- `1b925d65` (2026-08-08) committed the CSV and stated that the 63 `warmup_decay` rows were rejected by `drill_stop_rules_rule_kind_check` and must not be loaded.
+- `67bd6cb7` (2026-08-08) parked the file out of the loader path for that reason.
+- `52f6afb5` (2026-08-08) widened the constraint via `infra/azure/pilot_slice_postgres_drill_vocabulary_widening_migration.sql` and returned the file to the loader path, recording the basis as an owner decision.
+
+So a research-package finding reached the operational drill seed on a separate, recorded owner decision, through the drill-library seed path rather than the research importer — while the package as a research corpus remains unloadable. Both halves are true.
+
+Presence on `main` does not mean imported, indexed, approved, verified, or retrieval-live for the research corpus. It does not follow that nothing in a package is live: check each artifact's own seed path.
 
 ## 9. Non-negotiable evidence boundaries
 
@@ -239,7 +249,7 @@ Presence on `main` does not mean a research corpus is imported, indexed, approve
 - AI synthesis is not primary evidence.
 - Research never creates medical, return-to-play, contact, sparring, safeguarding, weight-management, or eligibility clearance.
 - Research never silently creates algorithm constants, thresholds, weights, promotion rules, or readiness logic.
-- Licensed publisher content is governed by what it is, not by file format. No publisher PDF may be committed to this repository. Existing licensed extracts remain a separate content-governance concern.
+- Licensed publisher **content** is governed by what it is, not by file format. No `.pdf` is committed to this repository, and no publisher PDF may be. Extensive licensed extracts are committed — for example `apps/web/seed-data/shadow-research/2026-08-08/evidence_fragment_PS.csv` and claim-level `text_content` in `seed_shadow_library_chunks.csv`. "No PDFs in the tree" must never be read as "no licensed content in the tree". This is a private repository, which is why those extracts are currently tolerable and not why they are unlimited.
 
 ## 10. Decision status and remaining work
 
@@ -263,6 +273,6 @@ Presence on `main` does not mean a research corpus is imported, indexed, approve
 - explicit disposition of the generic `PPBF/Intake` destination and Google mirror;
 - one synthetic, non-licensed pilot handoff.
 
-The next implementation slice is a research-specific, idempotent archive handoff that reuses authenticated SharePoint upload primitives but adds source hashing, provenance, duplicate/lineage checks, stable archive identity, SHADOW source registration, and pending-review defaults. It must fail closed if the governed original cannot be preserved.
+The next implementation slice is a research-specific, idempotent archive handoff that reuses existing authenticated SharePoint upload primitives but adds source hashing, provenance, duplicate/lineage checks, stable archive identity, SHADOW source registration, and pending-review defaults. It must fail closed if the governed original cannot be preserved.
 
 No bulk file movement, deletion, retirement, permission change, upload configuration, or production action is authorized until the technical target and pilot are verified.
