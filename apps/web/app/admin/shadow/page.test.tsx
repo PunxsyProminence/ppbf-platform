@@ -77,14 +77,76 @@ const feedbackItem = {
   created_at: '2026-07-30T12:00:00.000Z',
 };
 
-function consoleFetchMock() {
+// Enough of OrgMetrics for the SHADOW Intelligence panel to render its
+// readings; the panel binds to the interface by import, so a shape change is a
+// compile error rather than a NaN tile.
+const growthMetrics = {
+  period: 'Last 30 days',
+  effectiveness: {
+    unavailableReasons: {},
+    avgRecommendationScore: 72,
+    libraryUtilization: null,
+    topicsWithGoodCoverage: [],
+    concernedTopics: [],
+  },
+  engagement: {
+    unavailableReasons: {},
+    dailyActiveUsers: 4,
+    avgMessagesPerSession: null,
+    feedbackRate: null,
+    usersByTier: { bronze: 1, silver: 0, gold: 0 },
+    newUsersThisPeriod: 0,
+  },
+  safety: {
+    unavailableReasons: {},
+    highRiskFlagCount: 0,
+    escalationsToHuman: 0,
+    flaggedTopicsNeedingReview: [],
+  },
+  growth: {
+    unavailableReasons: {},
+    avgComplexityProgression: null,
+    profileCompletionRate: null,
+    tierAdvancementCount: null,
+    totalInteractions: 88,
+    positiveOutcomeRate: null,
+    filterRate: 0.125,
+    avgSatisfaction: null,
+    reviewedOutcomes: 3,
+    researchRequirementsCreated: 2,
+    researchRequirementsClosed: 1,
+    newLibraryPatterns: 0,
+  },
+  viewerUnlocks: {
+    strongPersonalization: false,
+    autoLibraryUpdates: false,
+    aggressiveResearchGeneration: false,
+    fineTuningPipelineReady: false,
+  },
+};
+
+const feedbackSummary = {
+  total_responses: 12,
+  helpful_count: 9,
+  satisfaction_rate: 0.75,
+  avg_rating: null,
+};
+
+function consoleFetchMock({ withMetrics = false } = {}) {
   return jest.fn(async (url: string) => {
     const target = String(url);
     if (target.includes('/shadow/review-projection')) {
       return jsonResponse({ ok: true, queue: [queueEntry] });
     }
+    if (target.includes('/shadow/metrics')) {
+      return jsonResponse({ ok: true, metrics: withMetrics ? growthMetrics : null });
+    }
     if (target.includes('/shadow/feedback')) {
-      return jsonResponse({ ok: true, summary: null, items: [feedbackItem] });
+      return jsonResponse({
+        ok: true,
+        summary: withMetrics ? feedbackSummary : null,
+        items: [feedbackItem],
+      });
     }
     if (target.includes('/shadow/telemetry')) {
       return jsonResponse({ ok: true, telemetry: [] });
@@ -107,8 +169,8 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-async function renderConsole(role: PilotSessionState['role']) {
-  const fetchMock = consoleFetchMock();
+async function renderConsole(role: PilotSessionState['role'], options?: { withMetrics: boolean }) {
+  const fetchMock = consoleFetchMock(options);
   mockUsePilotSession.mockReturnValue(session(role));
   global.fetch = fetchMock as unknown as typeof fetch;
   render(<AdminShadowConsolePage />);
@@ -151,4 +213,39 @@ it('records the refusal instead of calling the review route for a platform owner
   expect(
     fetchMock.mock.calls.some(([url]) => String(url).includes('/intake/review-action')),
   ).toBe(false);
+});
+
+// ── After Hours room DNA ────────────────────────────────────────────────────
+
+it('reads its rates off the room instrument and its counts off .stat', async () => {
+  await renderConsole('organization_admin', { withMetrics: true });
+
+  await waitFor(() => expect(document.querySelectorAll('.gauge-bezel').length).toBeGreaterThan(0));
+
+  const captions = [...document.querySelectorAll('.gauge-cap')].map((node) => node.textContent);
+  expect(captions).toContain('Filter Rate');
+  expect(captions).toContain('Satisfaction');
+
+  const values = [...document.querySelectorAll('.gauge-val')].map((node) => node.textContent);
+  expect(values).toContain('12.5%');
+  expect(values).toContain('75.0%');
+
+  // Law 2: the red band is only for a reading with a genuine danger threshold,
+  // and nothing server-side defines one for these rates.
+  expect(document.querySelector('.gauge-arc')).toBeNull();
+
+  // Counts are figures, not dials.
+  const statLabels = [...document.querySelectorAll('.stat-label')].map((node) => node.textContent);
+  expect(statLabels).toContain('Interactions');
+  expect(statLabels).toContain('Research Created');
+  expect(document.querySelectorAll('.stat-val').length).toBeGreaterThan(0);
+});
+
+it('wears the slate instrument panel, not the Front Office rivets', async () => {
+  await renderConsole('organization_admin');
+
+  expect(await screen.findByText('SHADOW Data Intake + Command Console')).toBeTruthy();
+  expect(document.querySelector('.rivet')).toBeNull();
+  expect(document.querySelector('.frame')).toBeNull();
+  expect(document.querySelectorAll('.mat-slate').length).toBeGreaterThan(0);
 });
