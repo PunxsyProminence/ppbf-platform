@@ -75,7 +75,12 @@ function RetroLabPageContent() {
             </div>
             <div className="flex flex-wrap gap-2">
               <ThemeToggle />
-              <Link href="/login" className="brass-plate brass-plate--label no-underline">
+              {/* .brass-plate--label sets pointer-events: none -- it is the
+                  variant for a plate that NAMES something rather than one you
+                  press. On a navigation Link that makes the control literally
+                  unclickable: the only way to /login from this page was the
+                  keyboard. It is a link, so it wears the pressable plate. */}
+              <Link href="/login" className="brass-plate no-underline">
                 Login
               </Link>
               <Link href="/operations" className="leather-tag no-underline">

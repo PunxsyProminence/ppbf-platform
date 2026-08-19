@@ -45,8 +45,15 @@ function CoachRecognitionRoom() {
     return () => controller.abort();
   }, []);
 
+  /* data-surface="kiosk" -- Law 5. This page states its own case in the blurb
+     below: "built to be used with taped hands in the forty seconds you
+     actually have". CoachRecognitionPad already sizes its own two taps at the
+     call site; the attribute carries the same floor to the milestone marker,
+     the mentorship pairing and this header's own link, so the surface is as
+     tall as the page rather than as tall as the controls somebody remembered
+     to mark. */
   return (
-    <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
+    <main data-surface="kiosk" className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach</p>
@@ -56,7 +63,7 @@ function CoachRecognitionRoom() {
             they had done well. This is that, and it is built to be used with taped hands in the
             forty seconds you actually have.
           </p>
-          <Link href="/coach/environment/intake-router" className="btn btn--ghost mt-[var(--s4)]">
+          <Link href="/coach/environment/intake-router" className="btn btn--ghost mt-[var(--s4)] min-h-[var(--tap)]">
             Back to Coach Workspace
           </Link>
         </header>

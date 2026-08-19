@@ -170,7 +170,12 @@ export default function FloorGroupsPage() {
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
-      <main className="room room--floor min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
+      {/* data-surface="kiosk" -- Law 5, same one-attribute device as
+          app/athlete/layout.tsx. This one is genuinely mat-side: the room is
+          split for whoever showed up, while they are standing there waiting to
+          be told where to go. It is not desk work and it is not planned the
+          night before. */}
+      <main data-surface="kiosk" className="room room--floor min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl">
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>

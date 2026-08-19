@@ -234,10 +234,16 @@ export default function AthleteProgressionIntelligencePage() {
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/progression-intelligence" allowedRoles={['athlete']} showShellHeader={false} room="floor">
       <div className="max-w-5xl mx-auto">
         <div className="mb-[var(--s6)]">
-          <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
+          {/* The h1 was already right. Above it sat the capability's register
+              name -- "Closed-Loop Progression Intelligence" -- which is what
+              this is called in /operations, where the people who build it
+              read. On an athlete's own screen it is the night console leaning
+              over a kid's shoulder. The register keeps its name; this page
+              says what it is. */}
+          <p className="t-eyebrow">Drills</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Progression</h1>
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-            Track your assigned drills, complete workouts, and close identified gaps
+            What your coach wants you working on, and somewhere to say when you have done it.
           </p>
         </div>
 

@@ -23,6 +23,8 @@ import WallDisplay, {
   parseTimestamp,
 } from './WallDisplay';
 import type { WallBoard } from '@/src/server/pilot/wallDisplay';
+import * as sayings from './gymSayings';
+import { GYM_SAYINGS } from './gymSayings';
 
 function board(over: Partial<WallBoard> = {}): WallBoard {
   return {
@@ -350,12 +352,36 @@ describe('empty states', () => {
     expect(screen.getByText(/Coach Dan/)).toBeTruthy();
   });
 
-  it('keeps the marquee band and states the ladder when nobody has crossed anything', async () => {
-    // Not an invented number: 5/13/34/89/233 is the ladder itself. A band that
-    // appears and disappears would also reflow the whole board.
+  it('keeps the marquee band and puts one of the gym\'s own lines up when nobody has crossed anything', async () => {
+    // The band never appears and disappears -- that would reflow the whole
+    // board -- and what it says while it is idle is a real saying off the
+    // wall, on the screen the DNA calls the eggs' primary home.
     const { container } = await renderBoard({});
     expect(container.querySelector('.marquee')).not.toBeNull();
-    expect(screen.getByText('5 · 13 · 34 · 89 · 233')).toBeTruthy();
+    const line = container.querySelector('.marquee-idle-line')?.textContent ?? '';
+    expect(GYM_SAYINGS.some((saying) => line.includes(saying.line))).toBe(true);
+  });
+
+  it('says the same thing all day, and a different day may say something else', async () => {
+    // A wall that changes between two loads of the same day is a slot machine
+    // in front of forty people. Deterministic per gym day, never random.
+    const a = await renderBoard({ gym_day: '2026-08-03' });
+    const first = a.container.querySelector('.marquee-idle-line')?.textContent;
+    a.unmount();
+    const b = await renderBoard({ gym_day: '2026-08-03' });
+    expect(b.container.querySelector('.marquee-idle-line')?.textContent).toBe(first);
+  });
+
+  it('falls back to the ladder rather than an empty band if the gym has no lines', async () => {
+    // gymSayings.ts is built to render nothing rather than borrow somebody
+    // else's words, and a blank strip across a television is not an option.
+    const spy = jest.spyOn(sayings, 'pickSaying').mockReturnValue(null);
+    try {
+      await renderBoard({});
+      expect(screen.getByText('5 · 13 · 34 · 89 · 233')).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('puts a crossing up with the name the server decided on, and nothing more', async () => {

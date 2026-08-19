@@ -220,7 +220,9 @@ describe('athlete workspace honesty', () => {
     await renderWorkspace();
 
     expect(screen.queryByText(/Youth Class 4:00 PM/)).toBeNull();
-    expect(screen.getByText('Unavailable - not yet tracked')).toBeTruthy();
+    // The tile refuses to invent a class. What it says instead is the floor's
+    // own honest-empty grammar rather than a field status read out to a child.
+    expect(screen.getByText('Nothing posted yet.')).toBeTruthy();
   });
 
   test('the Schedule tab offers the real scheduler instead of unbookable class rows', async () => {
@@ -901,7 +903,7 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     expect(screen.queryByText(/Video Analysis - Not Built Yet/)).toBeNull();
     expect(screen.queryByText(/Automatic Progress Tracking - Not Built Yet/)).toBeNull();
     expect(screen.queryByText(/Nothing behind them works yet/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Film Lane' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Your Film' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open Your Progression' })).toBeTruthy();
   });
 
@@ -912,7 +914,7 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     // href has to be the real route.
     await renderWorkspace();
 
-    const link = screen.getByRole('link', { name: 'Open Combat Telemetry Log' });
+    const link = screen.getByRole('link', { name: 'Open Sparring Log' });
     expect(link).toBeTruthy();
     expect(link.getAttribute('href')).toBe('/athlete/dashboard/sparring');
   });

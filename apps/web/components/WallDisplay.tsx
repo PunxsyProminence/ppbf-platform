@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import type { WallBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
+import { pickSaying } from './gymSayings';
+
 /**
  * THE WALL — the board on the gym's television.
  *
@@ -342,17 +344,47 @@ function Marquee({ board }: { board: WallBoard }) {
   const items = board.marquee;
 
   if (items.length === 0) {
-    // No crossing in the window. The band stays -- a layout that reflows when
-    // news arrives draws the eye to the wrong thing -- and states the ladder
-    // itself, which is a true thing about the gym rather than an invented
-    // number.
+    /* No crossing in the window. The band stays -- a layout that reflows when
+       news arrives draws the eye to the wrong thing -- and the gym says one of
+       its own lines instead.
+
+       THIS IS THE ROOM THE EGGS ARE FOR. The DNA names this screen in the gym
+       floor's Purpose line and calls the floor the primary home of the words
+       on the wall, and until now this file did not import them at all: the
+       idle band recited the Fibonacci ladder, which is true but is a fact
+       about the software. The ladder stays as the fallback below, for the
+       state the source is built to have -- gymSayings.ts renders nothing
+       rather than borrow somebody else's words, and an empty band on a
+       television is not an option.
+
+       SEEDED BY THE GYM'S OWN DAY, so the line is fixed for the whole day and
+       changes at the gym's midnight. Never random: this screen is on a wall
+       for twelve hours in front of the room, and a sign that says something
+       different every thirty-second poll is a slot machine bolted above the
+       heavy bags. board.gym_day is computed server-side in the gym's own time
+       zone, which also keeps this off the browser clock -- the one thing this
+       prerendered route cannot read during a render without lying for a frame.
+
+       .wallwords is deliberately NOT used here, though it is the same object
+       elsewhere: it paints at --t-lg, a desk size, and this screen's body type
+       starts two rungs above that. The marquee's own idle chrome is the wall's
+       lettering slot, already sized for fifteen feet, and the attribution sits
+       in the label the band already has. */
+    const saying = pickSaying('anywhere', board.gym_day);
     return (
-      <section className="marquee marquee--idle" aria-label="Milestones">
-        <p className="marquee-idle-line">
-          <span className="marquee-idle-label">The ladder</span>
-          <span aria-hidden="true">5 · 13 · 34 · 89 · 233</span>
-          <span className="sr-only">5, 13, 34, 89, 233 sessions</span>
-        </p>
+      <section className="marquee marquee--idle" aria-label={saying ? 'Words on the wall' : 'Milestones'}>
+        {saying ? (
+          <p className="marquee-idle-line">
+            <span className="marquee-idle-label">{saying.said_by}</span>
+            <span>{saying.line}</span>
+          </p>
+        ) : (
+          <p className="marquee-idle-line">
+            <span className="marquee-idle-label">The ladder</span>
+            <span aria-hidden="true">5 · 13 · 34 · 89 · 233</span>
+            <span className="sr-only">5, 13, 34, 89, 233 sessions</span>
+          </p>
+        )}
       </section>
     );
   }
