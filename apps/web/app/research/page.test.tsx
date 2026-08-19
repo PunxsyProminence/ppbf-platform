@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import ResearchIntakePage from './page';
+import { RESEARCH_CLASSIFICATION_DOMAINS } from '@/src/shared/researchClassification';
 
 // Passthrough by default, so the content tests below exercise the page rather
 // than the shell -- the same stub /research/review's suite uses. The guard
@@ -246,6 +247,43 @@ describe('general research intake', () => {
     expect(posted.metadata.classification_domain).toBe('youth_development_safeguarding');
     expect(posted.metadata.provenance).toEqual({ doi_or_pmid: 'PMID: 123', provider: 'Penn State Library' });
     expect(screen.getByText(/Evidence review still decides what becomes citable/)).toBeTruthy();
+  });
+
+  // THE TAXONOMY'S ONLY UI CONSUMER, PINNED. Widening the constant to R01-R19 is
+  // pointless if the page that renders it truncates the list -- and until this
+  // test existed, changing the render to `.slice(0, 14).map(...)` left the whole
+  // suite green while curators lost the ability to file into R15-R19. That is
+  // the exact regression this work exists to prevent, so it gets an assertion
+  // on the rendered <option> list rather than on the constant.
+  //
+  // Asserts the FULL ordered list, not just that R15-R19 are present: a
+  // presence-only check would still pass if a domain in the middle vanished or
+  // the order drifted away from the archive crosswalk the curator reads against.
+  test('the classification select offers every domain in the taxonomy, in order', async () => {
+    global.fetch = mockFetchGeneral({ curator: true, capture: { posts: [], patches: [] } });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('General Research Intake');
+    const select = screen.getByLabelText('Classification domain') as HTMLSelectElement;
+    const options = Array.from(select.options);
+
+    expect(options[0].value).toBe('');
+    expect(options.slice(1).map((option) => option.value))
+      .toEqual(RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => domain.key));
+    expect(options.slice(1).map((option) => option.textContent))
+      .toEqual(RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => domain.label));
+
+    // The reclassification select on an already-registered source renders the
+    // same list from the same constant; if only one of the two were pinned, a
+    // truncation applied to the other would still ship.
+    const correction = screen.getByLabelText(
+      'Correct classification for Nonprofit board best practices',
+    ) as HTMLSelectElement;
+    expect(Array.from(correction.options).slice(1).map((option) => option.value))
+      .toEqual(RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => domain.key));
   });
 
   test('correcting a classification PATCHes the narrow endpoint', async () => {
