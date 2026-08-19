@@ -18,11 +18,8 @@ jest.mock('./security', () => ({
 }));
 
 import {
-  createCoachAccount,
-  createOrRotateAdminAccount,
   createOrUpdateAthleteAccount,
   createOrUpdateMicrosoftPlatformOwnerAccount,
-  createParentAccount,
   promoteAccountToOrganizationAdmin,
   revokeAllSessionsForAccountInOrganization,
   setAccountActiveStatus,
@@ -30,6 +27,11 @@ import {
   transferOrganizationAdmin,
   upsertOrganizationMembership,
 } from './auth';
+import {
+  createCoachAccount,
+  createOrRotateAdminAccount,
+  createParentAccount,
+} from './legacyLocalAccountFixtures';
 import { query, queryOne } from './db';
 
 const mockQuery = query as jest.Mock;

@@ -496,9 +496,11 @@ describe('session revocation regressions (real database, real application code)'
   // lazily-constructed connection pool (see db.ts's getPool()) targets this
   // disposable test database the first time a query actually runs.
   let auth: typeof import('./auth');
+  let legacyFixtures: typeof import('./legacyLocalAccountFixtures');
 
   beforeAll(async () => {
     auth = await import('./auth');
+    legacyFixtures = await import('./legacyLocalAccountFixtures');
   });
 
   async function seedOrganization(orgId: string) {
@@ -684,7 +686,7 @@ describe('session revocation regressions (real database, real application code)'
   test('organization-admin revocation is denied when the membership in that organization is inactive', async () => {
     await seedOrganization('org-inactive-member-primary');
     await seedOrganization('org-inactive-member-target');
-    await auth.createCoachAccount('coach-inactive-member-1', '123456', 'org-inactive-member-primary');
+    await legacyFixtures.createCoachAccount('coach-inactive-member-1', '123456', 'org-inactive-member-primary');
 
     await rawQuery(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
@@ -701,7 +703,7 @@ describe('session revocation regressions (real database, real application code)'
   test('organization-admin revocation is denied when there is no membership at all in that organization', async () => {
     await seedOrganization('org-no-member-primary');
     await seedOrganization('org-no-member-target');
-    await auth.createCoachAccount('coach-no-member-1', '123456', 'org-no-member-primary');
+    await legacyFixtures.createCoachAccount('coach-no-member-1', '123456', 'org-no-member-primary');
 
     await expect(
       auth.revokeAllSessionsForAccountInOrganization('coach-no-member-1', 'org-no-member-target'),
@@ -711,7 +713,7 @@ describe('session revocation regressions (real database, real application code)'
   test('cross-tenant, missing-membership, inactive-membership, and platform-owner denials are all indistinguishable to the caller', async () => {
     await seedOrganization('org-cross-tenant-actor');
     await seedOrganization('org-cross-tenant-target');
-    await auth.createCoachAccount('coach-other-tenant-1', '123456', 'org-cross-tenant-target');
+    await legacyFixtures.createCoachAccount('coach-other-tenant-1', '123456', 'org-cross-tenant-target');
 
     const errors: string[] = [];
 
@@ -721,7 +723,7 @@ describe('session revocation regressions (real database, real application code)'
       errors.push(error instanceof Error ? error.message : String(error));
     }
 
-    await auth.createOrRotateAdminAccount('owner-cross-tenant-1', '123456', 'org-cross-tenant-actor', 'platform_owner');
+    await legacyFixtures.createOrRotateAdminAccount('owner-cross-tenant-1', '123456', 'org-cross-tenant-actor', 'platform_owner');
     try {
       await auth.revokeAllSessionsForAccountInOrganization('owner-cross-tenant-1', 'org-cross-tenant-actor');
     } catch (error) {
@@ -756,8 +758,8 @@ describe('session revocation regressions (real database, real application code)'
   test('coach/admin local PIN login is rejected and writes no session row', async () => {
     await seedOrganization('org-local-pin-deny');
 
-    await auth.createCoachAccount('coach-local-pin-deny-1', '123456', 'org-local-pin-deny');
-    await auth.createOrRotateAdminAccount('admin-local-pin-deny-1', '123456', 'org-local-pin-deny', 'organization_admin');
+    await legacyFixtures.createCoachAccount('coach-local-pin-deny-1', '123456', 'org-local-pin-deny');
+    await legacyFixtures.createOrRotateAdminAccount('admin-local-pin-deny-1', '123456', 'org-local-pin-deny', 'organization_admin');
 
     const coachLogin = await auth.loginWithAccountIdAndPin('coach-local-pin-deny-1', '123456');
     const adminLogin = await auth.loginWithAccountIdAndPin('admin-local-pin-deny-1', '123456');

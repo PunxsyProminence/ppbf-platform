@@ -20,7 +20,6 @@ jest.mock('@/src/server/pilot/staffProvisioning', () => ({
 }));
 jest.mock('@/src/server/pilot/auth', () => ({
   createOrUpdateAthleteAccount: jest.fn(),
-  createParentAccount: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
