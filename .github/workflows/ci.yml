@@ -130,10 +130,21 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: npm run lint
 
+      # `npm test` passes --testPathIgnorePatterns=\.pg\.test\.ts$, so the
+      # ~105 embedded-Postgres migration suites are excluded here on purpose --
+      # they do not belong on every pull request. They run in the step below
+      # when the diff touches migration surface, and against merged `main` in
+      # .github/workflows/pre-release-migrations.yml before a release operator
+      # dispatches apply-migrations.
       - name: Run all fast regression tests
         if: steps.changes.outputs.docs_only != 'true'
         run: npm test
 
+      # Covers this PR's own diff. It is not a release gate: it never runs for
+      # a diff the classifier does not flag, and `test:migrations` chains with
+      # `&&`, so it stops at the first failure. pre-release-migrations.yml is
+      # the gate that runs every suite against merged `main` and reports all
+      # failures.
       - name: Run PostgreSQL migration suite
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.migrations == 'true'
         run: npm run test:migrations
