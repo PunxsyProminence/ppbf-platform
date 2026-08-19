@@ -33,6 +33,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
@@ -44,6 +45,19 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-emergency-contact-note-pg-test-${D
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_emergency_contact_note_migration.sql';
+const MIGRATION_RUNNER_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-apply-emergency-contact-note-migration.mjs',
+);
+
+// Jest's CJS transform rewrites a bare `import()` into `require()`, which
+// cannot load an ESM .mjs runner. Building the import through `new Function`
+// keeps a real dynamic import in the emitted code, which Node honors under
+// --experimental-vm-modules (the flag every test:migrations:* script already
+// passes). Same pattern as activityLog.pg.test.ts.
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
 
 const ORG_ID = 'org-ecn';
 const COACH_ID = 'acct-ecn-coach';
@@ -51,6 +65,7 @@ const COACH_ID = 'acct-ecn-coach';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let baseSchemaSql: string;
 
 function connectionStringFor(database: string): string {
@@ -143,6 +158,12 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+
+  const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
+  applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
+    client: Client,
+    sql: string,
+  ) => Promise<void>;
 });
 
 afterAll(async () => {
@@ -328,6 +349,44 @@ describe('emergency contact note migration against real Postgres', () => {
         ['ath-writepath'],
       );
       expect(row.rows[0]).toEqual({ emergency_contact: note, emergency_contact_note: note });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The runner's OWN readiness assertion, not just the SQL it applies.
+//
+// Every case above applies `migrationSql` with a plain `client.query`, which
+// proves the schema and proves nothing about
+// scripts/pilot-apply-emergency-contact-note-migration.mjs's READINESS_QUERY -- the
+// assertion that gates the dispatch, and the code whose first real execution
+// is against a live environment at the most expensive possible moment. #488
+// is what that costs: an assertion that could not pass on ANY database,
+// found only by a staging dispatch it then blocked.
+//
+// The query is never restated here. `applyMigrationTransaction` is imported
+// out of the shipped runner and executes the shipped READINESS_QUERY, so
+// this cannot stay green while the runner rots.
+describe('emergency contact note runner readiness assertion', () => {
+  test('the real runner REFUSES a database where the migration never ran', async () => {
+    const client = await freshDatabase('emercn_rdy_no');
+    try {
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /EMERGENCY_CONTACT_NOTE_NOT_READY/,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the real runner ACCEPTS a correctly migrated database, and a re-apply stays a no-op', async () => {
+    const client = await freshDatabase('emercn_rdy_ok');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      // The `all` chain re-runs every migration on every dispatch (#489), so
+      // the second pass has to survive its own first pass.
+      await applyMigrationTransaction(client, migrationSql);
     } finally {
       await client.end();
     }
