@@ -3,7 +3,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 
 import SafetyReviewPage from './page';
 
@@ -98,4 +98,39 @@ test('a failed load shows the error state, never a false all-clear', async () =>
 
   await screen.findByText('Database unavailable');
   expect(screen.queryByText('Nothing open right now')).toBeNull();
+});
+
+test('a severity badge carries a glyph, not colour alone (Law 3)', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true,
+      openHolds: [],
+      failingGates: [],
+      openEscalations: [
+        { escalation_id: 'esc-1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', source_type: 'near_miss', severity: 'critical', status: 'open', created_at: '2026-08-01T00:00:00.000Z' },
+        { escalation_id: 'esc-2', athlete_id: 'ath-2', athlete_name: 'Sam R.', source_type: 'near_miss', severity: 'moderate', status: 'open', created_at: '2026-08-01T00:00:00.000Z' },
+      ],
+      openViolations: [],
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  // This page shipped a bare rung while both of its siblings -- the escalation
+  // queue over the same four-value union and the compliance register -- supply
+  // the glyphs, so severity here was carried by colour alone.
+  const critical = await screen.findByText('critical');
+  expect(critical.textContent).toContain('✕');
+  expect(screen.getByText('moderate').textContent).toContain('◉');
+});
+
+test('a failed load is not stamped as a medical emergency', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ error: 'Database unavailable' }, false)) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.className).toContain('alert--warning');
+  expect(alert.className).not.toContain('alert--critical');
+  expect(within(alert).getByText('Attention')).toBeTruthy();
 });

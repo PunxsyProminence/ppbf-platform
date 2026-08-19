@@ -68,11 +68,21 @@ export default function WaiverComplianceAuditPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-      <main className="room room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--clinic min-h-screen">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-            <p className="t-eyebrow">Admin Workspace</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Waiver Compliance</h1>
+          {/* Room DNA (clinic): cabinetry, the green banker's shade, and the
+              blackletter reserved for the clinic masthead at display size only.
+              The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
+              .mat-wood's lit edge; full note on /coach/sports-medicine. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
+            <h1
+              className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
+              style={{ fontSize: 'var(--t-2xl)' }}
+            >
+              Waiver Compliance
+            </h1>
             <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.waivers</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every athlete in the organization against every tracked waiver type -- general, medical release,
@@ -80,11 +90,18 @@ export default function WaiverComplianceAuditPage() {
               time. Photo &amp; media consent has its own dedicated audit with guardian-level detail; that link
               is below.
             </p>
+            {/* A failed read is a network fact. --locked red is what this room
+                says when a clinician or a safeguarding decision has stopped
+                something, so it does not carry this. --restricted does, keeping
+                the glyph and gaining the uppercase label Law 3 asks for. */}
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
-                <span className="alert-msg">{errorMessage}</span>
-              </p>
+              <div role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{errorMessage}</p>
+                </div>
+              </div>
             ) : null}
           </header>
 

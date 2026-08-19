@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import WaiverComplianceAuditPage from './page';
 
@@ -127,3 +127,20 @@ test('a failed load shows the error state, never a false empty state', async () 
   await screen.findByText('Database unavailable');
   expect(screen.queryByText('Nothing in this view')).not.toBeInTheDocument();
 });
+
+
+test('a failed read is not stamped as a medical emergency', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ error: 'Database unavailable' }, false)) as unknown as typeof fetch;
+
+  render(<WaiverComplianceAuditPage />);
+
+  // Room DNA: --locked red is what this room says when a clinician or a
+  // safeguarding decision has stopped something. A read that failed is a
+  // network fact. Law 3 keeps the glyph and the uppercase label doing the
+  // work colour must never do alone.
+  const alert = await screen.findByRole('alert');
+  expect(alert.className).toContain('alert--warning');
+  expect(alert.className).not.toContain('alert--critical');
+  expect(within(alert).getByText('Attention')).toBeTruthy();
+});
+

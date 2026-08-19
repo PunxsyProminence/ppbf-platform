@@ -9,7 +9,7 @@
 // failed read admits flags may exist; an empty healthy read says a flag
 // would appear here.
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import SafetyFlagsBoardPage from './page';
 
@@ -140,3 +140,22 @@ test('an empty healthy read says a flag would appear here', async () => {
   expect(screen.getByText('No open safety flags')).toBeTruthy();
   expect(screen.getByText(/A raised flag would appear here/)).toBeTruthy();
 });
+
+
+test('a failed read is not stamped as a medical emergency', async () => {
+  global.fetch = mockFetch({ ok: false });
+
+  await act(async () => {
+    render(<SafetyFlagsBoardPage />);
+  });
+
+  // Room DNA: --locked red is what this room says when a clinician or a
+  // safeguarding decision has stopped something. A read that failed is a
+  // network fact. Law 3 keeps the glyph and the uppercase label doing the
+  // work colour must never do alone.
+  const alert = await screen.findByRole('alert');
+  expect(alert.className).toContain('alert--warning');
+  expect(alert.className).not.toContain('alert--critical');
+  expect(within(alert).getByText('Attention')).toBeTruthy();
+});
+

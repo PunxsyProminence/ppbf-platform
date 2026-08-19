@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -28,10 +28,19 @@ const SEVERITY_BADGE: Record<ComplianceViolation['severity'], { rung: string; gl
   low: { rung: 'badge--cleared', glyph: '✓' },
 };
 
+// Room DNA (clinic): --locked, the red rung, is what this room says when a
+// clinician or a safeguarding decision has stopped something. `escalated` is
+// neither -- it is a workflow state meaning a human handed the row up the
+// ladder, and it wore the same red as `critical` severity two badges to its
+// left. It drops to --restricted, which is where the comment above already
+// files it ("new/escalated await action"), and takes the ◈ RefusalStamp gives
+// GET_PERMISSION -- "a request handed to someone else, not yet resolved" is
+// exactly what escalated means, and the distinct glyph is what keeps it apart
+// from `new` now that they share a rung. Law 3 was never colour's job alone.
 const STATUS_BADGE: Record<ComplianceViolation['status'], { rung: string; glyph: string }> = {
   new: { rung: 'badge--restricted', glyph: '▲' },
   acknowledged: { rung: 'badge--monitor', glyph: '◉' },
-  escalated: { rung: 'badge--locked', glyph: '✕' },
+  escalated: { rung: 'badge--restricted', glyph: '◈' },
   resolved: { rung: 'badge--cleared', glyph: '✓' },
   dismissed: { rung: 'badge--monitor', glyph: '◉' },
 };
@@ -49,6 +58,23 @@ export default function AdminComplianceCenterPage() {
     onClose: () => setSelectedViolation(null),
   });
   const [escalateToRole, setEscalateToRole] = useState('organization_admin');
+  // Resolving or dismissing a violation on a child's record is a durable
+  // decision with a required reason. It was collected in window.prompt():
+  // browser chrome, no room, no material, no glyph, no kiosk sizing. It now
+  // uses the same dialog shape this page already had -- for Escalate, the
+  // lower-stakes flow of the three.
+  const [closing, setClosing] = useState<{ violation: ComplianceViolation; action: 'resolve' | 'dismiss' } | null>(null);
+  const [closingNote, setClosingNote] = useState('');
+  const [noteRefusal, setNoteRefusal] = useState('');
+  const closeClosingDialog = useCallback(() => {
+    setClosing(null);
+    setClosingNote('');
+    setNoteRefusal('');
+  }, []);
+  const closeDialogRef = useDialogFocusTrap<HTMLDivElement>({
+    open: closing !== null,
+    onClose: closeClosingDialog,
+  });
   // Per-row, not a single scalar: a transition in flight on one violation
   // must never disable another row's buttons.
   const [transitioningIds, setTransitioningIds] = useState<Set<string>>(new Set());
@@ -160,21 +186,21 @@ export default function AdminComplianceCenterPage() {
   // and require a stated reason, same as every sibling console's closing
   // verdicts. The server's CAS is the authority -- a stale click gets the
   // server's refusal, named, not a silent overwrite.
-  const transitionViolation = async (violation: ComplianceViolation, action: 'acknowledge' | 'resolve' | 'dismiss') => {
+  const transitionViolation = async (
+    violation: ComplianceViolation,
+    action: 'acknowledge' | 'resolve' | 'dismiss',
+    reason = '',
+  ) => {
     let note = '';
     if (action !== 'acknowledge') {
-      const entered = window.prompt(
-        action === 'resolve'
-          ? 'How was this violation resolved (required)? This closes the workflow only -- it does not clear the athlete or lift any restriction.'
-          : 'Why is this violation being dismissed (required)? The record is kept, never deleted.',
-        '',
-      );
-      if (entered === null) return;
-      note = entered.trim();
+      note = reason.trim();
       if (!note) {
-        setErrorMessage(`A ${action === 'resolve' ? 'resolution' : 'dismissal'} needs a stated reason -- nothing was recorded.`);
+        // The dialog stays open with the refusal beside the field, rather than
+        // closing and leaving a message somewhere else on the page.
+        setNoteRefusal(`A ${action === 'resolve' ? 'resolution' : 'dismissal'} needs a stated reason — nothing was recorded.`);
         return;
       }
+      closeClosingDialog();
     }
 
     setTransitioningIds((prev) => new Set(prev).add(violation.violation_id));
@@ -230,21 +256,42 @@ export default function AdminComplianceCenterPage() {
       room="clinic"
     >
       <div className="space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-          <p className="t-eyebrow">Compliance Management</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Compliance Center</h1>
+        {/* Room DNA (clinic): cabinetry, the green banker's shade, and the
+            blackletter reserved for the clinic masthead at display size only.
+            The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
+            .mat-wood's lit edge; the full note is on /coach/sports-medicine. */}
+        <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          <p className="t-eyebrow text-[color:var(--brass-200)]">Compliance Management</p>
+          <h1
+            className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
+            style={{ fontSize: 'var(--t-2xl)' }}
+          >
+            Compliance Center
+          </h1>
           <p className="t-body mt-[var(--s3)]">Review, manage, and escalate athlete compliance violations.</p>
+          {/* --locked is a medical or safeguarding fact in this room. A register
+              that would not load, and a transition the server bounced, are
+              neither -- and the correct answer was already twelve lines below,
+              in the .alert--warning the unavailable-metrics notice uses for
+              exactly this. Same rung now, glyph and uppercase label intact. */}
           {errorMessage ? (
-            <p role="alert" className="alert alert--critical">
-              <span className="alert-icon">✕</span>
-              <span className="alert-msg">{errorMessage}</span>
-            </p>
+            <div role="alert" className="alert alert--warning">
+              <span className="alert-icon" aria-hidden="true">▲</span>
+              <div className="alert-body">
+                <p className="alert-title">Attention</p>
+                <p className="alert-msg">{errorMessage}</p>
+              </div>
+            </div>
           ) : null}
           {!errorMessage && !isLoading && !dataAuthoritative ? (
-            <p role="alert" className="alert alert--warning">
-              <span className="alert-icon">▲</span>
-              <span className="alert-msg">Compliance metrics are unavailable and intentionally not shown as zero.</span>
-            </p>
+            <div role="alert" className="alert alert--warning">
+              <span className="alert-icon" aria-hidden="true">▲</span>
+              <div className="alert-body">
+                <p className="alert-title">Attention</p>
+                <p className="alert-msg">Compliance metrics are unavailable and intentionally not shown as zero.</p>
+              </div>
+            </div>
           ) : null}
         </header>
 
@@ -360,7 +407,7 @@ export default function AdminComplianceCenterPage() {
                       ) : null}
                       {v.status === 'acknowledged' || v.status === 'escalated' ? (
                         <button
-                          onClick={() => void transitionViolation(v, 'resolve')}
+                          onClick={() => setClosing({ violation: v, action: 'resolve' })}
                           disabled={transitioningIds.has(v.violation_id)}
                           className="btn--lever min-h-[44px] disabled:opacity-50"
                         >
@@ -369,7 +416,7 @@ export default function AdminComplianceCenterPage() {
                       ) : null}
                       {v.status === 'new' || v.status === 'acknowledged' ? (
                         <button
-                          onClick={() => void transitionViolation(v, 'dismiss')}
+                          onClick={() => setClosing({ violation: v, action: 'dismiss' })}
                           disabled={transitioningIds.has(v.violation_id)}
                           className="btn btn--ghost disabled:opacity-50"
                         >
@@ -384,18 +431,22 @@ export default function AdminComplianceCenterPage() {
           </div>
         </section>
 
-        {/* Escalation Modal */}
+        {/* Escalation Modal.
+            De-riveted: ppbf.css allows "one ceremonial rivet per screen at
+            most" and this dialog wore four, which is Front Office DNA -- a
+            riveted card belongs on the records desk, not in the clinic. The
+            room's own cabinetry carries it instead, and the dialog now matches
+            the closing dialog below it rather than out-dressing it. */}
         {selectedViolation && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black/60 p-[var(--s4)]">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-[var(--s4)]">
             <div
               ref={escalateModalRef}
               role="dialog"
               aria-modal="true"
               aria-labelledby="escalate-violation-heading"
-              className="frame max-w-sm"
+              className="mat-wood w-full max-w-sm rounded-[var(--r-lg)] border border-[color:var(--brass-700)]"
             >
-              <i className="rivet rivet--tl" /><i className="rivet rivet--tr" /><i className="rivet rivet--bl" /><i className="rivet rivet--br" />
-              <div className="frame-in mat-leather p-[var(--s5)]">
+              <div className="p-[var(--s5)]">
                 <h3 id="escalate-violation-heading" className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Escalate Violation</h3>
                 <p className="t-body mb-[var(--s4)]">
                   Athlete: <span className="font-semibold text-[color:var(--bone-100)]">{selectedViolation.athlete_id}</span>
@@ -412,23 +463,91 @@ export default function AdminComplianceCenterPage() {
                   </select>
                 </div>
                 <div className="flex gap-[var(--s4)]">
-                  <button
-                    onClick={handleEscalate}
-                    className="btn flex-1"
-                  >
-                    Escalate
-                  </button>
+                  {/* Cancel first in the DOM: the way out is the first thing a
+                      keyboard user reaches and a screen reader announces. */}
                   <button
                     onClick={() => setSelectedViolation(null)}
-                    className="btn btn--ghost flex-1"
+                    className="btn btn--ghost btn--kiosk flex-1"
                   >
                     Cancel
+                  </button>
+                  <button
+                    onClick={handleEscalate}
+                    className="btn btn--kiosk flex-1"
+                  >
+                    Escalate
                   </button>
                 </div>
               </div>
             </div>
           </div>
         )}
+
+        {/* Resolving or dismissing a violation on a child's record: the durable
+            reason, collected in the room instead of in browser chrome. */}
+        {closing ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-[var(--s4)]">
+            <div
+              ref={closeDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="close-violation-heading"
+              className="mat-wood w-full max-w-lg rounded-[var(--r-lg)] border border-[color:var(--brass-700)] p-[var(--s5)]"
+            >
+              <p className="t-eyebrow text-[color:var(--brass-200)]">
+                {closing.violation.severity} &middot; {closing.violation.rule_id}
+              </p>
+              <h3
+                id="close-violation-heading"
+                className="t-command mt-[var(--s3)]"
+                style={{ fontSize: 'var(--t-lg)' }}
+              >
+                {closing.action === 'resolve' ? 'Resolve this violation' : 'Dismiss this violation'}
+              </h3>
+              <p className="t-body mt-[var(--s3)]">
+                {closing.action === 'resolve'
+                  ? 'This closes the workflow only — it does not clear the athlete and it lifts no restriction. What you write here stays on the record.'
+                  : 'The record is kept, never deleted. What you write here is why nobody acted on it.'}
+              </p>
+              <div className="field mt-[var(--s4)]">
+                <label className="t-label" htmlFor="closing-note">
+                  {closing.action === 'resolve' ? 'How was this resolved (required)' : 'Why is this being dismissed (required)'}
+                </label>
+                <textarea
+                  id="closing-note"
+                  className="textarea input--kiosk"
+                  rows={3}
+                  value={closingNote}
+                  onChange={(event) => {
+                    setClosingNote(event.target.value);
+                    setNoteRefusal('');
+                  }}
+                />
+              </div>
+              {noteRefusal ? (
+                <div role="alert" className="alert alert--warning alert--tight">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
+                  <div className="alert-body">
+                    <p className="alert-title">Attention</p>
+                    <p className="alert-msg">{noteRefusal}</p>
+                  </div>
+                </div>
+              ) : null}
+              <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+                <button type="button" onClick={closeClosingDialog} className="btn btn--ghost btn--kiosk flex-1">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void transitionViolation(closing.violation, closing.action, closingNote)}
+                  className="btn btn--kiosk flex-1"
+                >
+                  {closing.action === 'resolve' ? 'Resolve' : 'Dismiss'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-[var(--s4)]">
           <Link href="/admin/escalations" className="btn btn--ghost">

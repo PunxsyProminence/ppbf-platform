@@ -263,17 +263,36 @@ export default function FeedbackTriagePage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
-      <main className="room room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--clinic min-h-screen">
         <div className="mx-auto w-full max-w-5xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
-            <p className="t-eyebrow">Admin Workspace</p>
-            <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>What People Told Us</h1>
+          {/* Room DNA (clinic): cabinetry, the green banker's shade, and the
+              blackletter reserved for the clinic masthead at display size only.
+              The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
+              .mat-wood's lit edge; full note on /coach/sports-medicine. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          <header className="mat-wood space-y-[var(--s3)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
+            <h1 className="t-gothic text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>What People Told Us</h1>
             <p className="t-body max-w-3xl">
               {scope === 'platform'
                 ? 'Every gym, with the person who wrote each one reduced to their role and their gym. This view shows whether a frustration is one person or a pattern; the gym that received a submission is the one that works it.'
                 : 'Everything this gym has been told, newest first, with anything an athlete wrote about being hurt or frightened at the top.'}
             </p>
-            {errorMessage ? <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">{errorMessage}</p> : null}
+            {/* This was the room's one true Law 3 break: --locked-ink as bare
+                text, with no glyph, no uppercase label and no .alert chassis --
+                colour carrying the whole meaning on its own, in the red this
+                room reserves for a medical or safeguarding fact, over a failed
+                read of the feedback queue. It gets the chassis every other
+                notice in this room now wears, one rung down. */}
+            {errorMessage ? (
+              <div role="alert" className="alert alert--warning">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{errorMessage}</p>
+                </div>
+              </div>
+            ) : null}
           </header>
 
           {safeguarding.length > 0 ? (

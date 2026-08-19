@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 
 interface PendingPublication {
   publication_id: string;
@@ -45,9 +46,34 @@ const DECISION_LABEL: Record<Decision, string> = {
   request_changes: 'Request Changes',
 };
 
-const DECISION_PROMPT: Record<'reject' | 'request_changes', string> = {
-  reject: 'Reason for rejecting this video (required -- the uploader needs to know why):',
-  request_changes: 'What needs to change before this can be approved (required)?',
+/**
+ * The three decisions that require a written reason about footage of a child.
+ * All three used to collect it in window.prompt(): unstyled browser chrome
+ * with no room, no material, no glyph and no kiosk sizing, on the console
+ * that decides whether a minor's video is distributed. They share one dialog
+ * now, built to the shape /admin/compliance-center already uses.
+ */
+type ReasonDecision = 'reject' | 'request_changes' | 'retract';
+
+const REASON_DIALOG: Record<ReasonDecision, { heading: string; label: string; body: string; confirm: string }> = {
+  reject: {
+    heading: 'Reject this video',
+    label: 'Reason for rejecting (required)',
+    body: 'The uploader is told why. Rejecting stops distribution; it does not delete the footage or the record.',
+    confirm: 'Reject',
+  },
+  request_changes: {
+    heading: 'Request changes',
+    label: 'What has to change before this can be approved (required)',
+    body: 'This goes back to whoever submitted it, and it is the only thing they will have to work from.',
+    confirm: 'Request changes',
+  },
+  retract: {
+    heading: 'Retract from distribution',
+    label: 'Reason for retracting (required)',
+    body: 'This lands on the shelf row and in the audit trail. Getting it back means a fresh review and a fresh publish, each re-checking guardian consent — not an undo.',
+    confirm: 'Retract',
+  },
 };
 
 function formatDate(value: string): string {
@@ -69,6 +95,18 @@ export default function VideoCompliancePage() {
   // A generation counter lets a fresher request always win, even if its
   // response arrives before an older, now-stale one's.
   const loadSeq = useRef(0);
+  const [reasonFor, setReasonFor] = useState<{ publicationId: string; decision: ReasonDecision } | null>(null);
+  const [reason, setReason] = useState('');
+  const [reasonRefusal, setReasonRefusal] = useState('');
+  const closeReasonDialog = useCallback(() => {
+    setReasonFor(null);
+    setReason('');
+    setReasonRefusal('');
+  }, []);
+  const reasonDialogRef = useDialogFocusTrap<HTMLDivElement>({
+    open: reasonFor !== null,
+    onClose: closeReasonDialog,
+  });
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
@@ -106,16 +144,17 @@ export default function VideoCompliancePage() {
     })();
   }, [load]);
 
-  async function decide(publicationId: string, decision: Decision) {
+  async function decide(publicationId: string, decision: Decision, reasonText = '') {
     let note = '';
     if (decision !== 'approve') {
-      const entered = window.prompt(DECISION_PROMPT[decision], '');
-      if (entered === null) return;
-      note = entered.trim();
+      note = reasonText.trim();
       if (!note) {
-        setActionMessage(`${DECISION_LABEL[decision]} needs a stated reason -- nothing was recorded.`);
+        // The dialog stays open with the refusal beside the field, rather than
+        // closing and dropping a message somewhere else on the page.
+        setReasonRefusal(`${DECISION_LABEL[decision]} needs a stated reason — nothing was recorded.`);
         return;
       }
+      closeReasonDialog();
     }
 
     setPendingIds((prev) => new Set(prev).add(publicationId));
@@ -183,16 +222,15 @@ export default function VideoCompliancePage() {
   // audit trail); reopen sends a retracted item back into THIS queue, never
   // directly back to published -- fresh review and fresh publish, each with
   // its own consent gate, still stand between it and distribution.
-  async function lifecycle(publicationId: string, decision: 'retract' | 'reopen_review') {
+  async function lifecycle(publicationId: string, decision: 'retract' | 'reopen_review', reasonText = '') {
     let note = '';
     if (decision === 'retract') {
-      const entered = window.prompt('Reason for retracting this publication from distribution (required):', '');
-      if (entered === null) return;
-      note = entered.trim();
+      note = reasonText.trim();
       if (!note) {
-        setActionMessage('Retract needs a stated reason -- nothing was recorded.');
+        setReasonRefusal('Retract needs a stated reason — nothing was recorded.');
         return;
       }
+      closeReasonDialog();
     }
 
     setPendingIds((prev) => new Set(prev).add(publicationId));
@@ -228,22 +266,39 @@ export default function VideoCompliancePage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-      <main className="room room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--clinic min-h-screen">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-            <p className="t-eyebrow">Admin Workspace</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Video Compliance Review</h1>
+          {/* Room DNA (clinic): cabinetry, the green banker's shade, and the
+              blackletter reserved for the clinic masthead at display size only.
+              The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
+              .mat-wood's lit edge; full note on /coach/sports-medicine. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
+            <h1
+              className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
+              style={{ fontSize: 'var(--t-2xl)' }}
+            >
+              Video Compliance Review
+            </h1>
             <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.video_publications</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every submission waits here before it can be published. Check for appropriate content, that every
               visible athlete is covered by consent, and for privacy-violating audio -- then approve, reject, or
               request changes. Every decision is logged with who, when, and why.
             </p>
+            {/* A queue that would not load is a network fact, not a medical or
+                safeguarding one, and --locked red is what this room says for
+                the latter. --restricted carries it, with the glyph kept and
+                the uppercase label Law 3 asks for added. */}
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
-                <span className="alert-msg">{errorMessage}</span>
-              </p>
+              <div role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{errorMessage}</p>
+                </div>
+              </div>
             ) : null}
             {actionMessage ? <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p> : null}
           </header>
@@ -317,7 +372,7 @@ export default function VideoCompliancePage() {
                         <button
                           type="button"
                           disabled={pendingIds.has(item.publication_id)}
-                          onClick={() => void decide(item.publication_id, 'request_changes')}
+                          onClick={() => setReasonFor({ publicationId: item.publication_id, decision: 'request_changes' })}
                           className="btn--lever min-h-[44px] disabled:opacity-50"
                         >
                           Request Changes
@@ -325,7 +380,7 @@ export default function VideoCompliancePage() {
                         <button
                           type="button"
                           disabled={pendingIds.has(item.publication_id)}
-                          onClick={() => void decide(item.publication_id, 'reject')}
+                          onClick={() => setReasonFor({ publicationId: item.publication_id, decision: 'reject' })}
                           className="btn--lever min-h-[44px] disabled:opacity-50"
                         >
                           Reject
@@ -413,7 +468,7 @@ export default function VideoCompliancePage() {
                       <button
                         type="button"
                         disabled={pendingIds.has(row.publication_id)}
-                        onClick={() => void lifecycle(row.publication_id, 'retract')}
+                        onClick={() => setReasonFor({ publicationId: row.publication_id, decision: 'retract' })}
                         className="btn--lever min-h-[44px] disabled:opacity-50"
                       >
                         Retract from distribution
@@ -466,6 +521,77 @@ export default function VideoCompliancePage() {
                 ))}
               </div>
             </section>
+          ) : null}
+
+          {/* One dialog for all three reason-taking decisions about a child's
+              footage. Deliberately unriveted: ppbf.css allows "one ceremonial
+              rivet per screen at most", and a riveted card is Front Office DNA,
+              not this room's. */}
+          {reasonFor ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-[var(--s4)]">
+              <div
+                ref={reasonDialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="video-reason-heading"
+                className="mat-wood w-full max-w-lg rounded-[var(--r-lg)] border border-[color:var(--brass-700)] p-[var(--s5)]"
+              >
+                <p className="t-eyebrow text-[color:var(--brass-200)]">Video Compliance</p>
+                <h2
+                  id="video-reason-heading"
+                  className="t-command mt-[var(--s3)]"
+                  style={{ fontSize: 'var(--t-lg)' }}
+                >
+                  {REASON_DIALOG[reasonFor.decision].heading}
+                </h2>
+                <p className="t-body mt-[var(--s3)]">{REASON_DIALOG[reasonFor.decision].body}</p>
+                <div className="field mt-[var(--s4)]">
+                  <label className="t-label" htmlFor="video-reason-note">
+                    {REASON_DIALOG[reasonFor.decision].label}
+                  </label>
+                  <textarea
+                    id="video-reason-note"
+                    className="textarea input--kiosk"
+                    rows={3}
+                    value={reason}
+                    onChange={(event) => {
+                      setReason(event.target.value);
+                      setReasonRefusal('');
+                    }}
+                  />
+                </div>
+                {reasonRefusal ? (
+                  <div role="alert" className="alert alert--warning alert--tight">
+                    <span className="alert-icon" aria-hidden="true">▲</span>
+                    <div className="alert-body">
+                      <p className="alert-title">Attention</p>
+                      <p className="alert-msg">{reasonRefusal}</p>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+                  {/* Cancel first in the DOM: the way out is the first thing a
+                      keyboard user reaches and a screen reader announces. */}
+                  <button type="button" onClick={closeReasonDialog} className="btn btn--ghost btn--kiosk flex-1">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { publicationId, decision } = reasonFor;
+                      if (decision === 'retract') {
+                        void lifecycle(publicationId, 'retract', reason);
+                        return;
+                      }
+                      void decide(publicationId, decision, reason);
+                    }}
+                    className="btn btn--kiosk flex-1"
+                  >
+                    {REASON_DIALOG[reasonFor.decision].confirm}
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : null}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">

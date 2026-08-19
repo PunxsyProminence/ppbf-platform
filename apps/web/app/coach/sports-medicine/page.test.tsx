@@ -16,7 +16,7 @@
 // board still learns the hold's state from the same GET it always used, not
 // from the write's own response.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import SportsMedicinePage from './page';
@@ -50,6 +50,16 @@ const HOLD = {
   scope: 'sparring',
   athlete_explanation: 'Taking a week off contact while your headache settles.',
   lift_condition_text: 'A symptom-free week and a coach check-in.',
+};
+
+// The route requires the athlete's sentence and does NOT require a lift
+// condition, so this row is a real shape the board has to render, not a
+// hypothetical one.
+const HOLD_NO_LIFT = {
+  hold_id: 'hold-11',
+  scope: 'all_training',
+  athlete_explanation: 'Sitting out this week while your ankle settles.',
+  lift_condition_text: '',
 };
 
 function mockFetch(overrides: Record<string, () => Response | Promise<Response>> = {}) {
@@ -134,6 +144,117 @@ test('an active hold shows its athlete-safe explanation and lift condition', asy
   expect(screen.getByText(/A symptom-free week and a coach check-in/)).toBeTruthy();
 
   await waitFor(() => expect(screen.queryByText(/Loading clearance board/)).toBeNull());
+});
+
+test('a hold with no lift condition still tells the coach what the athlete is told', async () => {
+  // The whole point: this line used to render only when a condition had been
+  // written, so a hold could show a stamp, a scope, an explanation and a Lift
+  // button while saying nothing about what ends it. RefusalStamp throws rather
+  // than render that; TrainingHoldBanner substitutes an honest fallback. This
+  // board now does the latter -- throwing here would take a held child off the
+  // coach's screen entirely.
+  global.fetch = mockFetch({
+    '/training-holds': () => ({ ok: true, json: async () => ({ ok: true, holds: [HOLD_NO_LIFT] }) }) as Response,
+  });
+
+  render(<SportsMedicinePage />);
+
+  await screen.findByText(/Active Training Hold — all training/);
+  expect(screen.getByText(/^Lifts when:/)).toBeTruthy();
+  expect(screen.getByText(/ask whoever placed the hold/)).toBeTruthy();
+  expect(screen.getByText(/Tell them what ends it/)).toBeTruthy();
+});
+
+test('a real lift condition is printed as written, never replaced by the fallback', async () => {
+  global.fetch = mockFetch({
+    '/training-holds': () => ({ ok: true, json: async () => ({ ok: true, holds: [HOLD] }) }) as Response,
+  });
+
+  render(<SportsMedicinePage />);
+
+  await screen.findByText(/Active Training Hold — sparring/);
+  expect(screen.getByText(/A symptom-free week and a coach check-in/)).toBeTruthy();
+  expect(screen.queryByText(/ask whoever placed the hold/)).toBeNull();
+});
+
+/* ---------------------------------------------------------------------------
+   Room DNA: red means a child is in danger, and nothing else.
+   ------------------------------------------------------------------------- */
+
+test('no clearance record on file does not wear the medical red', async () => {
+  global.fetch = mockFetch({
+    '/shadow/medical-status': () => ({ ok: true, json: async () => ({ ok: true, status: null }) }) as Response,
+  });
+
+  render(<SportsMedicinePage />);
+
+  const badge = await screen.findByText('no record');
+  // Clerical gap, not a clinician's refusal. Still an action state -- one rung
+  // down, never cleared.
+  expect(badge.className).toContain('badge--restricted');
+  expect(badge.className).not.toContain('badge--locked');
+});
+
+test('a clinician saying no keeps the medical red', async () => {
+  global.fetch = mockFetch({
+    '/shadow/medical-status': () =>
+      ({
+        ok: true,
+        json: async () => ({ ok: true, status: { status: 'not_cleared', effective_at: '2026-08-01T10:00:00.000Z' } }),
+      }) as Response,
+  });
+
+  render(<SportsMedicinePage />);
+
+  const badge = await screen.findByText('not cleared');
+  expect(badge.className).toContain('badge--locked');
+});
+
+test('a board that would not load is not stamped as a medical emergency', async () => {
+  global.fetch = mockFetch({ '/athletes/list': () => ({ ok: false, json: async () => ({}) }) as Response });
+
+  render(<SportsMedicinePage />);
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.className).toContain('alert--warning');
+  expect(alert.className).not.toContain('alert--critical');
+  // Law 3: the glyph and the uppercase label carry it, not the colour.
+  expect(within(alert).getByText('Attention')).toBeTruthy();
+  expect(screen.getByText(/Unable to load your roster/)).toBeTruthy();
+});
+
+/* ---------------------------------------------------------------------------
+   Room DNA: the clinic is a room, and this page stands in it.
+   ------------------------------------------------------------------------- */
+
+test('the flagship does not paint the Night room over its own wall', async () => {
+  global.fetch = mockFetch();
+
+  const { container } = render(<SportsMedicinePage />);
+  await screen.findByText('Jordan Doe');
+
+  // This page's content is a CHILD of RoleStandaloneView's .room--clinic
+  // element, and nothing on a child is outranked by its ancestor: a
+  // full-viewport `bg-[var(--hide-950)]` here painted night ink over the
+  // cabinetry AND over the plate layer (.room::after sits at z-index:-1),
+  // so the clinic's flagship rendered as the Night room with a green tint.
+  // Nothing about that is visible from a unit test, which is exactly why it
+  // survived two PRs -- so the class itself is what gets held.
+  expect(container.querySelector('[class*="hide-950"]')).toBeNull();
+});
+
+test("the masthead stands on the room's own furniture", async () => {
+  global.fetch = mockFetch();
+
+  const { container } = render(<SportsMedicinePage />);
+
+  // Feel line: varnished cabinetry, cooler green light. Both were declared in
+  // the design system and used by nothing -- nine clinic surfaces, 29 panels,
+  // every one of them the same leather every other room is made of.
+  const heading = await screen.findByRole('heading', { name: 'Clearance Board' });
+  expect(heading.className).toContain('t-gothic');
+  expect(container.querySelector('.mat-wood')).toBeTruthy();
+  expect(container.querySelector('.lamp.lamp--green')).toBeTruthy();
 });
 
 /* ---------------------------------------------------------------------------
@@ -255,6 +376,10 @@ test('a refused placement lands as a stamp carrying the server’s reason, and t
 
   const stamp = await screen.findByText('Hold Not Placed');
   expect(stamp.className).toContain('stamp');
+  // Brass, never the bare .stamp: --stamp-red is the same ink as --locked, and
+  // RefusalStamp's locked art policy gives red to MEDICALLY_NOT_ALLOWED alone.
+  // A write the server bounced is not a medical refusal.
+  expect(stamp.className).toContain('stamp--brass');
   expect(screen.getByText(/lift it first/)).toBeTruthy();
 
   // A refusal is not a crash and not a false claim of protection.
@@ -270,7 +395,10 @@ test('a hold with no athlete sentence is refused before the request is sent', as
   await openPlaceForm();
   fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
 
-  await screen.findByText('Hold Not Placed');
+  const stamp = await screen.findByText('Hold Not Placed');
+  // A client-side required-field message is the furthest thing from a medical
+  // fact, and it was carrying the room's medical red.
+  expect(stamp.className).toContain('stamp--brass');
   expect(screen.getByText(/Write the sentence this athlete reads/)).toBeTruthy();
   expect(harness.posted).toHaveLength(0);
 });

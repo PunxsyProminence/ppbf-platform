@@ -118,11 +118,25 @@ export default function SafetyFlagsBoardPage() {
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
-      <main className="room room--clinic min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--clinic min-h-screen p-[var(--s5)]">
         <div className="mx-auto w-full max-w-4xl">
-          <header className="mb-[var(--s5)]">
-            <p className="t-eyebrow">Safety</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Open Safety Flags</h1>
+          {/* Room DNA (clinic): the room's own varnished cabinetry under the
+              masthead, the green banker's shade the wall's light already
+              implies, and the blackletter the design system reserves for the
+              clinic masthead -- display size only, per the README. The eyebrow
+              states --brass-200 because --brass-400 measures 3.34:1 on
+              .mat-wood's lit top edge; see the full note on
+              /coach/sports-medicine, which also records that the restatement
+              belongs in ppbf.css rather than here. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          <header className="mat-wood mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Safety</p>
+            <h1
+              className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
+              style={{ fontSize: 'var(--t-2xl)' }}
+            >
+              Open Safety Flags
+            </h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Every open flag in the organization, worst first. Resolving one requires a note —
               that note is how the system learns which flags were real. External-rule flags can be
@@ -130,11 +144,17 @@ export default function SafetyFlagsBoardPage() {
             </p>
           </header>
 
+          {/* Room DNA (clinic): red is --locked, and --locked is a medical or
+              safeguarding fact. This banner carries a failed read, a failed
+              write, and the client-side "a note is required" rule -- three
+              things that are not that. --restricted carries them, with the
+              glyph and the uppercase label Law 3 requires still doing the work
+              colour must never do alone. */}
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
-                <p className="alert-title">Failed</p>
+                <p className="alert-title">Attention</p>
                 <p className="alert-msg">{errorMessage}{errorMessage.includes('load') ? ' Flags may exist that are not shown here.' : ''}</p>
               </div>
             </div>
