@@ -16,9 +16,16 @@ PNGs were never committed. Wall textures only (layer 0). No lettering.
 | `plate-06-night-01.jpg` | Night |
 | `plate-07-warm-ground-01.jpg` | Warm / on-canvas family |
 
-CSS: `design-system/ppbf.css` PLATES section uses these `.jpg` paths.
-Missing files are safe — gradient room grounds still render when `.room` is set.
+**Source of truth in repo:** the `.jpg.b64` sidecars (base64 of the full-quality JPEG).
 
-**Install:** Drive folder `Plate-Set-v1` or run `node scripts/decode-plates.mjs` if `.b64` sidecars are present.
+**Materialize (required for build / local / deploy):**
+```bash
+node scripts/decode-plates.mjs
+```
+This writes the 8 `.jpg` files next to the sidecars. Safe to re-run. The web build already runs this automatically before `next build`.
+
+CSS: `design-system/plates-v1g.css` (imported from `apps/web/app/layout.tsx`) overrides any `.png` paths in `ppbf.css` to these `.jpg`.
+
+Missing files are safe — gradient room grounds still render when `.room` is set.
 
 Do not put UI chrome or text on plates.
