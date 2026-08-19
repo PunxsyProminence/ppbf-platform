@@ -1159,8 +1159,27 @@ body.ppbf.on-canvas {
    other material, so the floor tablet still renders them with no network. */
 .room {
   position: relative;
-  min-height: 100%;
-  padding: var(--s6) var(--s5);
+  /* 100vh rather than 100%. Nothing sets a height on html or body, so a
+     percentage min-height resolved against `auto` and did nothing -- while
+     still OUTRANKING the `min-h-screen` every surface in this app states for
+     itself, because this sheet is unlayered and Tailwind's utilities sit in a
+     layer. A room that stops at its content leaves the body's ink ground
+     showing below the wall, which is the seam .wall-room in globals.css has
+     been restating 100vh to close since /wall shipped. Same value Tailwind's
+     own min-h-screen compiles to, so no surface moves.
+
+     A ROOM IS A WALL, NOT A LAYOUT, so there is deliberately no padding here.
+     Every surface that stands in a room already lays out its own edges: the
+     RoleStandaloneView shell hangs a full-bleed band under the session bar and
+     pads the section below it, and the pages that paint a room directly carry
+     their own p-/px-/py-. An unlayered padding on this class does not ADD to
+     any of that -- it replaces it. It insets a full-bleed band away from the
+     wall it is supposed to be nailed to, it flattens the responsive
+     `px-[--s4] sm:px-[--s5]` pairs the admin tables state, and it
+     double-padded /chalkboard and /names, whose inner containers already
+     state px/py. It had no correct consumer anywhere in the building, which
+     is why the one surface that did wear it -- /wall -- had to strip it. */
+  min-height: 100vh;
   color: var(--bone-200);
   background-color: var(--wood-800);
   background-image: var(--grain);

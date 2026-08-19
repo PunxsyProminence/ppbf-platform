@@ -109,7 +109,7 @@ export default function StaffCredentialsUploadPage() {
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin', 'staff', 'volunteer']}>
-      <main className="room--floor min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--floor min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl">
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>

@@ -164,7 +164,7 @@ export default function AdminCustomizePage() {
 
   if (access === 'checking') {
     return (
-      <main className="room--office min-h-screen px-[var(--s5)] py-[var(--s6)]">
+      <main className="room room--office min-h-screen px-[var(--s5)] py-[var(--s6)]">
         <p className="working">Opening the customization drawer</p>
       </main>
     );
@@ -172,7 +172,7 @@ export default function AdminCustomizePage() {
 
   if (access === 'denied') {
     return (
-      <main className="room--office min-h-screen px-[var(--s5)] py-[var(--s6)]">
+      <main className="room room--office min-h-screen px-[var(--s5)] py-[var(--s6)]">
         <div className="mat-leather max-w-[610px] p-[var(--s5)]">
           <p className="t-eyebrow">Customize the gym</p>
           <p className="t-body mt-[var(--s3)]">
@@ -188,7 +188,7 @@ export default function AdminCustomizePage() {
   }
 
   return (
-    <main className="room--office min-h-screen px-[var(--s5)] py-[var(--s6)]">
+    <main className="room room--office min-h-screen px-[var(--s5)] py-[var(--s6)]">
       <header className="mat-leather max-w-[1000px] p-[var(--s5)]">
         <p className="t-eyebrow">Customize the gym</p>
         <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>

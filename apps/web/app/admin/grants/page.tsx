@@ -148,7 +148,7 @@ export default function GrantObligationsPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-      <main className="room--office min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--office min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl">
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Grant Compliance</p>

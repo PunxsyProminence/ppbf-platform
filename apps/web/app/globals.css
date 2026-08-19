@@ -1998,7 +1998,13 @@ h6 {
    accessibility case where the drift itself would be the problem. */
 
 .wall-room {
-  /* .room ships padding and min-height:100%; a television is full bleed. */
+  /* A television is full bleed. .room no longer ships padding, and its
+     min-height is 100vh rather than 100%, so the first two declarations now
+     agree with the design system instead of correcting it. Both are kept
+     deliberately: this surface must stay full bleed whatever a later room
+     change does to the base. The overflow clip is this screen's alone -- the
+     board drifts on a 1200s animation and must not open a scrollbar on a
+     panel nobody can scroll. */
   padding: 0;
   min-height: 100vh;
   overflow: hidden;

@@ -153,7 +153,7 @@ export default function BoardComplianceMonitoringPage() {
       {/* The clinic room: this is the safeguarding register, so it stands in
           the room the sheet gives to clearance and safety, on the ink ground
           the pattern requires (a room never sits on canvas). */}
-      <main className="room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto max-w-7xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow tracking-[0.22em]">Board Workspace</p>

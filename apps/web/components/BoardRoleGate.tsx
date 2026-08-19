@@ -132,7 +132,7 @@ export default function BoardRoleGate({
 
   if (gate.status !== 'authorized') {
     return (
-      <main className="room--board grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--board grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         {/* The gate stands in the board room like everything behind it, and its
             interim states sit on raised leather so they carry their own ground
             wherever the wall's plaster/wainscot seam falls. */}

@@ -141,7 +141,7 @@ function normalizeRosterAthlete(row: unknown): RosterAthlete | null {
  */
 function WrongRoleNotice() {
   return (
-    <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+    <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
         <p className="t-eyebrow">Different Console</p>
         <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Athlete records are managed per gym</h1>
@@ -468,7 +468,7 @@ function AthleteRecordsConsoleContent() {
   }
 
   return (
-    <main className="room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+    <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
           <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
@@ -885,7 +885,7 @@ function AthleteRecordsRoleSwitch() {
 
   if (session.loading) {
     return (
-      <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         <p className="t-body">Loading...</p>
       </main>
     );
