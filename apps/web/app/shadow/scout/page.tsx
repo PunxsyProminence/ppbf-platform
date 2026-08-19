@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { readRoleSession } from '@/components/roleSession';
+import RefusalStamp from '@/components/RefusalStamp';
+import RoleSessionGate from '@/components/RoleSessionGate';
+import type { ClubRole } from '@/components/roleRoutes';
+import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp } from '@/src/lib/gymTime';
 
@@ -63,11 +65,56 @@ interface ScoreboardResponse {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+/**
+ * The gate is the server-verified one the rest of the app uses.
+ *
+ * What stood here instead: a client-side `router.replace` driven by
+ * `readRoleSession()`, which reads an IN-MEMORY cache and nothing else. On any
+ * cold load -- a new tab, a hard refresh, a pasted link -- that cache is empty,
+ * so every user including an admin was sent to /login; `userRole` was a
+ * `useState` with no setter, so it could never recover. And because the
+ * redirect was the whole refusal, a denied role still saw the header and the
+ * "Generate scout report" control render before it landed.
+ *
+ * RoleSessionGate verifies against /api/pilot/auth/session before anything on
+ * this page renders, and the view then refuses IN PLACE -- WRONG DOOR, the same
+ * mark /shadow uses -- for a signed-in role Scout Reports are not scoped for.
+ * That is why the gate names every role the session route can resolve rather
+ * than only the four this report serves: a narrower list would make the gate
+ * redirect and the refusal unreachable, which is the silent teleport this page
+ * already did. The refusal is the room's minimum deny chrome: a stamp, a
+ * sentence, one way back.
+ *
+ * Nothing here relaxes authorization. `canAccessAdmin` still decides whether
+ * ANY report data is requested, so a refused role issues no jobs or metrics
+ * call at all, and every route behind those calls enforces its own role check
+ * server-side regardless of what this page renders.
+ */
+const SHADOW_SESSION_ROLES: ClubRole[] = [
+  'admin',
+  'platform_owner',
+  'coach',
+  'athlete',
+  'parent',
+  'board',
+  'staff',
+  'volunteer',
+];
+
 export default function ScoutReportPage() {
-  const router = useRouter();
-  const [userRole] = useState<string>(() =>
-    typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : '',
+  return (
+    <RoleSessionGate allowedRoles={SHADOW_SESSION_ROLES}>
+      <ScoutReportView />
+    </RoleSessionGate>
   );
+}
+
+function ScoutReportView() {
+  // The raw pilot role, not the ClubRole bucket: organization_admin and
+  // platform_owner both map to 'admin' for routing, but only the first two of
+  // the three may read organization metrics.
+  const pilotSession = usePilotSession();
+  const userRole = pilotSession.role ?? '';
 
   const [jobs, setJobs] = useState<JobStatusResult[]>([]);
   const [scoreboard, setScoreboard] = useState<ScoreboardResponse | null>(null);
@@ -81,17 +128,6 @@ export default function ScoutReportPage() {
 
   const canAccessAdmin = ['admin', 'organization_admin', 'platform_owner', 'coach'].includes(userRole);
   const canViewOrgMetrics = ['admin', 'organization_admin', 'platform_owner'].includes(userRole);
-
-  useEffect(() => {
-    const session = readRoleSession();
-    if (!session) {
-      router.replace('/login');
-      return;
-    }
-    if (!canAccessAdmin) {
-      router.replace('/shadow');
-    }
-  }, [router, canAccessAdmin]);
 
   const loadData = useCallback(async () => {
     setLoadingJobs(true);
@@ -122,12 +158,12 @@ export default function ScoutReportPage() {
   }, [canViewOrgMetrics]);
 
   useEffect(() => {
-    if (!userRole) return undefined;
+    if (!canAccessAdmin) return undefined;
     const timer = window.setTimeout(() => {
       void loadData();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadData, userRole]);
+  }, [loadData, canAccessAdmin]);
 
   // The whole background pipeline existed -- executors, worker, this listing
   // page, even an unlock metric counting completed reports -- while nothing
@@ -180,6 +216,38 @@ export default function ScoutReportPage() {
     && job.output?.resultStatus === 'ok'
   );
 
+  if (pilotSession.loading) {
+    return (
+      <main className="room room--night grid min-h-screen place-items-center bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+        <div className="text-center">
+          <p className="t-eyebrow">Secure Session</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-lg)' }}>Opening Scout</h1>
+        </div>
+      </main>
+    );
+  }
+
+  // A rendered refusal, not a redirect: the gate above already proved who is
+  // signed in, and a role it admits but this report is not scoped for must be
+  // told so on the page rather than watching the controls flash past.
+  if (!canAccessAdmin) {
+    return (
+      <main className="room room--night grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+        <div className="max-w-md text-center">
+          <p className="t-eyebrow">SHADOW</p>
+          <RefusalStamp
+            kind="wrong_door"
+            detail={`your signed-in role (${userRole || 'unknown'}) cannot read Scout Reports`}
+            className="mt-[var(--s3)]"
+          />
+          <div className="mt-[var(--s5)] flex flex-wrap items-center justify-center gap-[var(--s3)]">
+            <Link href="/shadow" className="btn btn--ghost">SHADOW</Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       {/* HEADER */}
@@ -209,10 +277,23 @@ export default function ScoutReportPage() {
       </header>
 
       <div className="mx-auto w-full max-w-[1200px] space-y-[var(--s5)] p-[var(--s5)]">
+        {/* The same authority boundary /shadow states. This page renders
+            model-generated assessment of a person -- strengths, growth areas,
+            recommended topics -- and had no boundary line anywhere on it. */}
+        <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+          <p className="t-eyebrow">Authority Boundary</p>
+          <p className="t-body mt-[var(--s2)]">
+            SHADOW can improve learning and generate research. SHADOW cannot clear, diagnose,
+            prescribe, or override human authority.
+          </p>
+        </section>
+
+        {/* Law 2: --locked is the medical/safeguarding rung. A fetch that
+            failed is not a child in danger -- this reading is --restricted. */}
         {error ? (
-          <div role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
-            <span className="badge badge--locked">
-              <i>✕</i>Load Failed
+          <div role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s4)]">
+            <span className="badge badge--restricted">
+              <i>▲</i>Load Failed
             </span>
             <p className="t-body mt-[var(--s3)]">{error}</p>
           </div>
@@ -221,12 +302,12 @@ export default function ScoutReportPage() {
         {/* METRICS DASHBOARD */}
         {scoreboard ? (
           <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-            <p className="t-eyebrow">Metrics Dashboard — {scoreboard.period}</p>
+            <p className="t-eyebrow">SHADOW Observed — {scoreboard.period}</p>
 
-            {/* Tier Distribution */}
+            {/* Profile tiers */}
             <div className="grid gap-[var(--s4)] md:grid-cols-2">
               <div>
-                <p className="t-label mb-[var(--s3)]">Tier Distribution</p>
+                <p className="t-label mb-[var(--s3)]">Profile Tiers</p>
                 <div className="space-y-[var(--s3)]">
                   {[
                     { label: 'Gold', count: scoreboard.engagement.usersByTier.gold, percent: ((scoreboard.engagement.usersByTier.gold / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
@@ -250,45 +331,50 @@ export default function ScoutReportPage() {
                 </div>
               </div>
 
-              {/* Effectiveness */}
+              {/* Rate readings ride the room's own instrument face. No
+                  .gauge-arc on either: neither reading has a defined
+                  "too high", and Law 2 forbids the red band as decoration. */}
               <div>
-                <p className="t-label mb-[var(--s3)]">Effectiveness Metrics</p>
-                <div className="space-y-[var(--s3)]">
-                  {[
-                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%` },
-                    { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%` },
-                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="mat-leather--raised flex justify-between gap-[var(--s3)] rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)]">
-                      <span className="t-muted">{label}</span>
-                      <span className="t-data text-[color:var(--bone-100)]">{value}</span>
-                    </div>
-                  ))}
+                <p className="t-label mb-[var(--s3)]">Outcome Readings</p>
+                <div className="flex flex-wrap gap-[var(--s4)]">
+                  <RateGauge
+                    caption="Positive Outcome"
+                    percent={scoreboard.growth.positiveOutcomeRate == null ? null : scoreboard.growth.positiveOutcomeRate * 100}
+                  />
+                  <RateGauge
+                    caption="Reviewed Score"
+                    percent={scoreboard.effectiveness.avgRecommendationScore}
+                  />
+                  <div className="stat">
+                    <span className="stat-label">Human Escalations</span>
+                    <span className="stat-val">{scoreboard.safety.escalationsToHuman}</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Engagement Summary */}
+            {/* Volume */}
             <div className="border-t border-[color:var(--hide-600)] pt-[var(--s4)]">
-              <p className="t-label mb-[var(--s3)]">Engagement Summary</p>
+              <p className="t-label mb-[var(--s3)]">Volume</p>
               <div className="grid gap-[var(--s3)] md:grid-cols-3">
                 {[
                   { label: 'Total Interactions', value: scoreboard.growth.totalInteractions },
-                  { label: 'Daily Active Users', value: scoreboard.engagement.dailyActiveUsers },
+                  { label: 'Accounts Active / Day', value: scoreboard.engagement.dailyActiveUsers },
                   { label: 'Avg Messages / Session', value: scoreboard.engagement.avgMessagesPerSession?.toFixed(1) ?? 'Unavailable' },
                 ].map(({ label, value }) => (
-                  <div key={label} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)] text-center">
-                    <p className="t-label">{label}</p>
-                    <p className="t-data mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-100)]">{value}</p>
+                  <div key={label} className="stat">
+                    <span className="stat-label">{label}</span>
+                    <span className="stat-val">{value}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Top Topics */}
+            {/* Topics the server flagged for review -- named for what the field
+                actually holds (concernedTopics), not "top engaged". */}
             {scoreboard.effectiveness.concernedTopics.length > 0 ? (
               <div className="border-t border-[color:var(--hide-600)] pt-[var(--s4)]">
-                <p className="t-label mb-[var(--s3)]">Top Engaged Topics</p>
+                <p className="t-label mb-[var(--s3)]">Topics Needing Review</p>
                 <div className="flex flex-wrap gap-[var(--s3)]">
                   {scoreboard.effectiveness.concernedTopics.map((topic, idx) => (
                     <span key={topic} className="plaque">
@@ -305,18 +391,21 @@ export default function ScoutReportPage() {
         {scoreboard ? (
           <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
             <p className="t-eyebrow">The Scorecard — {scoreboard.period}</p>
-            <div className="mt-[var(--s4)] grid grid-cols-2 gap-[var(--s3)] md:grid-cols-4">
+            <div className="mt-[var(--s4)] flex flex-wrap items-end gap-[var(--s4)]">
               {[
                 { label: 'Total Interactions', value: scoreboard.growth.totalInteractions },
-                { label: 'Positive Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%` },
-                { label: 'Active Users', value: scoreboard.engagement.dailyActiveUsers },
+                { label: 'Accounts Active / Day', value: scoreboard.engagement.dailyActiveUsers },
                 { label: 'Gold Profiles', value: scoreboard.engagement.usersByTier.gold },
               ].map(({ label, value }) => (
-                <div key={label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] text-center">
-                  <p className="t-label">{label}</p>
-                  <p className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">{value}</p>
+                <div key={label} className="stat flex-1 basis-[233px]">
+                  <span className="stat-label">{label}</span>
+                  <span className="stat-val">{value}</span>
                 </div>
               ))}
+              <RateGauge
+                caption="Positive Rate"
+                percent={scoreboard.growth.positiveOutcomeRate == null ? null : scoreboard.growth.positiveOutcomeRate * 100}
+              />
             </div>
             <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s4)]">
               {[
@@ -382,8 +471,8 @@ export default function ScoutReportPage() {
             {generateNotice ? <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{generateNotice}</p> : null}
             {generateError ? (
               <div role="alert" className="mt-[var(--s3)]">
-                <span className="badge badge--locked">
-                  <i>✕</i>Not Queued
+                <span className="badge badge--restricted">
+                  <i>▲</i>Not Queued
                 </span>
                 <p className="t-body mt-[var(--s2)]">{generateError}</p>
               </div>
@@ -479,7 +568,7 @@ export default function ScoutReportPage() {
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (
-                    <p className="t-data mt-[var(--s3)] text-[color:var(--locked-ink)]">Error: {job.error}</p>
+                    <p className="t-data mt-[var(--s3)] text-[color:var(--restricted-ink)]">Error: {job.error}</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'cancelled' ? (
@@ -549,6 +638,36 @@ export default function ScoutReportPage() {
 
       </div>
     </main>
+  );
+}
+
+/**
+ * The room's own instrument face, finally used in the room it was drawn for.
+ * `.gauge` shipped in ppbf.css with a single consumer (an athlete page) and
+ * zero here, while "telemetry" is literally this room's Feel line.
+ *
+ * Deliberately no `.gauge-arc`: ppbf.css limits the red band to readings with a
+ * genuine danger threshold, and nothing server-side defines one for these
+ * rates. A null reading draws no needle at all and says Unavailable, rather
+ * than parking the needle at zero and reporting a measurement nobody took.
+ */
+function RateGauge({ caption, percent }: { readonly caption: string; readonly percent: number | null }) {
+  const known = percent != null && Number.isFinite(percent);
+  const clamped = known ? Math.min(Math.max(percent, 0), 100) : 0;
+  return (
+    <div className="gauge">
+      <div className="gauge-bezel">
+        <div className="gauge-face">
+          <div className="gauge-ticks" />
+          {known ? (
+            <div className="gauge-needle" style={{ ['--deg' as string]: `${clamped * 1.8 - 90}deg` }} />
+          ) : null}
+          <div className="gauge-hub" />
+        </div>
+      </div>
+      <div className="gauge-cap">{caption}</div>
+      <div className="gauge-val">{known ? `${Math.round(clamped)}%` : 'Unavailable'}</div>
+    </div>
   );
 }
 

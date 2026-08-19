@@ -244,38 +244,27 @@ function sanitizeEntryParam(value: string | null): string {
     .slice(0, 80);
 }
 
-function appendContext(base: string, context: string, prefix: string) {
-  if (!context) {
-    return `${base}.`;
-  }
-
-  return `${base} ${prefix} ${context}.`;
-}
-
 // Omega is the cross-organization platform tier. It is deliberately not an
 // alias for 'master': it reads operational signal across organizations but
 // never organization-private athlete records, so it states that scope plainly
 // rather than presenting as an organization admin with a wider reach.
 type ShadowChatMode = 'omega' | 'master' | 'scoped';
 
+// The room's voice is SHADOW OBSERVED / COACH DECIDES -- spare and exact. The
+// welcome states the mode and its scope; it does not introduce itself in the
+// first person or read out a menu of things to ask. The scope sentence is the
+// same scopeSummary the header prints, so the two can never drift apart.
 function buildWelcomeMessage(mode: ShadowChatMode, role: string, context: string, subject: string) {
-  if (mode === 'omega') {
-    const base = 'Omega online. I read operational and aggregate signal across organizations. Ask about platform-wide patterns, capability coverage, evidence gaps, or governance. Organization-private athlete records, medical clearance, and SafeSport content are out of scope for this tier';
-    return appendContext(base, context, 'from');
-  }
-
-  if (mode === 'master') {
-    const base = `Master SHADOW online for ${role || 'admin'}. I speak from the organizational layer. Ask about doctrine, evidence gaps, capability growth, research requirements, or cross-system learning`;
-    return appendContext(base, context, 'from');
-  }
-
-  if (subject) {
-    const base = `${subject}'s SHADOW is active. This scope is for subject-specific learning, observation review, and support within SHADOW doctrine`;
-    return appendContext(base, context, 'from');
-  }
-
-  const base = `Scoped SHADOW online for ${role || 'current role'}. Ask about your role context, learning signals, evidence, or what SHADOW can and cannot support`;
-  return appendContext(base, context, 'from');
+  const { scopeSummary } = buildHeading(mode, subject);
+  const opening = mode === 'omega'
+    ? 'OMEGA ONLINE.'
+    : mode === 'master'
+      ? 'ARCHITECT ONLINE.'
+      : subject
+        ? 'SCOUT ONLINE.'
+        : `SCOUT ONLINE FOR ${role || 'CURRENT ROLE'}.`;
+  const base = `${opening} ${scopeSummary}`;
+  return context ? `${base} Entered from ${context}.` : base;
 }
 
 function buildHeading(mode: ShadowChatMode, subject: string) {
@@ -283,17 +272,22 @@ function buildHeading(mode: ShadowChatMode, subject: string) {
     return { heading: 'OMEGA', intro: 'Cross-organization operational and aggregate intelligence.', scopeSummary: 'Platform tier. No organization-private athlete records.' };
   }
   if (mode === 'master') {
-    return { heading: 'MASTER SHADOW', intro: 'Organizational intelligence, doctrine, and learning oversight.', scopeSummary: 'Master SHADOW for admin/organizational intelligence.' };
+    // The eyebrow above this h1 has always read "Architect" while the h1 read
+    // "MASTER SHADOW" -- two names for one mode, and the second is the Master
+    // vocabulary this room forbids. The mode label is the name.
+    return { heading: 'ARCHITECT', intro: 'Organizational intelligence, doctrine, and learning oversight.', scopeSummary: 'Organizational layer. Doctrine, evidence gaps, and learning oversight.' };
   }
   if (subject) {
-    return { heading: `${subject.toUpperCase()} SHADOW`, intro: `Subject-specific learning scope for ${subject}.`, scopeSummary: `${subject} subject scope.` };
+    return { heading: `${subject.toUpperCase()} SHADOW`, intro: `Subject-specific learning scope for ${subject}.`, scopeSummary: `Subject scope: ${subject}.` };
   }
-  return { heading: 'SHADOW', intro: 'Scoped role-aware SHADOW conversation.', scopeSummary: 'Role-scoped SHADOW view.' };
+  return { heading: 'SHADOW', intro: 'Scoped role-aware SHADOW conversation.', scopeSummary: 'Role-scoped view.' };
 }
 
+// Scout / Architect / Omega -- the three labels this room is allowed to show.
+// No definite article, and never "Master".
 function getModeHeadingLabel(mode: ShadowChatMode): string {
   if (mode === 'omega') return 'Omega';
-  return mode === 'master' ? 'The Architect' : 'The Scout';
+  return mode === 'master' ? 'Architect' : 'Scout';
 }
 
 function getProfileTierLabel(profileTier?: ShadowMessage['profileTier']): string {
@@ -767,7 +761,7 @@ function ShadowChatPageContent() {
   async function sendFeedback(messageId: string, helpful: boolean) {
     const reason = (feedbackReasons[messageId] ?? '').trim();
     if (!reason) {
-      setSessionNotice('Specify precise reason for evaluation rating *');
+      setSessionNotice('A reason is required before rating an answer.');
       return;
     }
     setFeedbackSubmitting((prev) => ({ ...prev, [messageId]: true }));
@@ -1060,16 +1054,16 @@ function ShadowChatPageContent() {
   // Role denial does not need capabilities; show it as soon as auth is known.
   if (authChecked && !chatRoleAllowed) {
     return (
-      <main className="room room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+      <main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-300)]">
         <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 border border-[color:var(--brass-900)] px-6">
           <div className="text-center">
-            <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p>
+            <p className="t-eyebrow">SHADOW</p>
             <RefusalStamp
               kind="wrong_door"
               detail={`your signed-in role (${userRole || 'unknown'}) cannot use SHADOW chat`}
-              className="mt-3"
+              className="mt-[var(--s3)]"
             />
-            <p className="mt-4 max-w-md text-sm text-[color:var(--bone-400)]">
+            <p className="t-muted mt-[var(--s4)] max-w-md">
               You are still signed in — return to your dashboard or sign out.
             </p>
           </div>
@@ -1098,11 +1092,11 @@ function ShadowChatPageContent() {
 
   if (!authChecked || !capabilitiesLoaded) {
     return (
-      <main className="room room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+      <main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-300)]">
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6">
           <div className="text-center">
-            <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">Secure Session</p>
-            <h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Opening SHADOW</h1>
+            <p className="t-eyebrow">Secure Session</p>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-lg)' }}>Opening SHADOW</h1>
           </div>
         </div>
       </main>
@@ -1110,24 +1104,24 @@ function ShadowChatPageContent() {
   }
 
   return (
-    <main className="room room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+    <main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-300)]">
       <header className="border-b border-[color:var(--brass-900)]">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-5">
           <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">{getModeHeadingLabel(mode)}</p>
-            <h1 className="mt-2 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">{heading}</h1>
-            <p className="mt-2 text-sm text-[color:var(--bone-400)]">{intro}</p>
+            <p className="t-eyebrow">{getModeHeadingLabel(mode)}</p>
+            <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>{heading}</h1>
+            <p className="t-muted mt-[var(--s2)]">{intro}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-right">
+          <div className="flex flex-wrap items-center gap-[var(--s4)] text-right">
             <div>
-              <p className="text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">Role: {roleLabel}</p>
-              {context ? <p className="text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">Context: {context}</p> : null}
-              <p className="mt-2 text-xs uppercase tracking-[0.12em] text-[color:var(--bone-300)]">LIVE</p>
+              <p className="t-label">Role: {roleLabel}</p>
+              {context ? <p className="t-label mt-[var(--s1)]">Context: {context}</p> : null}
+              <p className="t-data mt-[var(--s2)] uppercase tracking-[0.12em] text-[color:var(--bone-300)]">LIVE</p>
             </div>
             <button
               type="button"
               onClick={handleLogout}
-              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
+              className="btn btn--ghost"
             >
               Logout
             </button>
@@ -1136,27 +1130,27 @@ function ShadowChatPageContent() {
       </header>
 
       <div className="mx-auto w-full max-w-5xl px-6 py-6">
-        <section className="mb-4 grid gap-4 border border-[color:var(--brass-900)] bg-[var(--hide-900)] p-4 md:grid-cols-3">
+        <section className="mat-leather mb-[var(--s4)] grid gap-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)] md:grid-cols-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Scope</p>
-            <p className="mt-2 text-sm text-[color:var(--bone-300)]">{scopeSummary}</p>
+            <p className="t-eyebrow">Scope</p>
+            <p className="t-body mt-[var(--s2)]">{scopeSummary}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Authority Boundary</p>
-            <p className="mt-2 text-sm text-[color:var(--bone-300)]">SHADOW can improve learning and generate research. SHADOW cannot clear, diagnose, prescribe, or override human authority.</p>
+            <p className="t-eyebrow">Authority Boundary</p>
+            <p className="t-body mt-[var(--s2)]">SHADOW can improve learning and generate research. SHADOW cannot clear, diagnose, prescribe, or override human authority.</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">When Evidence Is Weak</p>
-            <p className="mt-2 text-sm text-[color:var(--bone-300)]">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
+            <p className="t-eyebrow">When Evidence Is Weak</p>
+            <p className="t-body mt-[var(--s2)]">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
           </div>
         </section>
 
         {unlockHints.some((hint) => hint.closeToUnlocking) ? (
           <section
             aria-label="SHADOW features close to unlocking"
-            className="mb-4 border border-[color:var(--brass-900)] bg-[var(--hide-900)] p-4"
+            className="mat-leather mb-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]"
           >
-            <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">
+            <p className="t-eyebrow">
               {unlockHints.filter((hint) => hint.closeToUnlocking).length} feature
               {unlockHints.filter((hint) => hint.closeToUnlocking).length === 1 ? '' : 's'} close to unlocking
             </p>
@@ -1165,12 +1159,12 @@ function ShadowChatPageContent() {
 
         <section
           aria-label="Saved SHADOW sessions"
-          className="mb-4 border border-[color:var(--brass-900)] bg-[var(--hide-900)] p-4"
+          className="mat-leather mb-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <div>
-              <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Saved sessions</p>
-              <p className="mt-2 text-sm text-[color:var(--bone-400)]">
+              <p className="t-eyebrow">Saved sessions</p>
+              <p className="t-muted mt-[var(--s2)]">
                 Your server-stored conversation history. Chat content is not stored in this browser.
               </p>
             </div>
@@ -1178,22 +1172,22 @@ function ShadowChatPageContent() {
               type="button"
               onClick={handleNewChat}
               disabled={isLoading}
-              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
             >
               New chat
             </button>
           </div>
 
           {sessionNotice ? (
-            <p role="status" className="mt-3 text-sm text-[color:var(--bone-300)]">{sessionNotice}</p>
+            <p role="status" className="t-body mt-[var(--s3)]">{sessionNotice}</p>
           ) : null}
 
           {sessionsLoading ? (
-            <p className="mt-3 text-sm text-[color:var(--bone-400)]">Loading saved sessions...</p>
+            <p className="t-muted mt-[var(--s3)]">Loading saved sessions...</p>
           ) : savedSessions.length === 0 ? (
-            <p className="mt-3 text-sm text-[color:var(--bone-400)]">No saved sessions yet.</p>
+            <p className="t-muted mt-[var(--s3)]">No saved sessions yet.</p>
           ) : (
-            <div className="mt-3 grid max-h-[233px] gap-3 overflow-y-auto md:grid-cols-2">
+            <div className="mt-[var(--s3)] grid max-h-[233px] gap-[var(--s3)] overflow-y-auto md:grid-cols-2">
               {savedSessions.map((session) => {
                 const selected = conversationId === session.conversationId;
                 const restoring = restoringSessionId === session.conversationId;
@@ -1203,15 +1197,15 @@ function ShadowChatPageContent() {
                 return (
                   <div
                     key={session.conversationId}
-                    className={`border transition ${
+                    className={`mat-leather--raised rounded-[var(--r-md)] border transition ${
                       selected
-                        ? 'border-[color:var(--brass-700)] bg-[var(--hide-900)]'
-                        : 'border-[color:var(--brass-900)] bg-[var(--hide-950)] hover:border-[color:var(--brass-800)]'
+                        ? 'border-[color:var(--brass-700)]'
+                        : 'border-[color:var(--brass-900)] hover:border-[color:var(--brass-800)]'
                     }`}
                   >
                     {renaming ? (
                       <form
-                        className="px-3 py-2"
+                        className="p-[var(--s3)]"
                         onSubmit={(event) => {
                           event.preventDefault();
                           void commitRenameSession(session);
@@ -1227,13 +1221,13 @@ function ShadowChatPageContent() {
                           maxLength={120}
                           autoFocus
                           disabled={busy}
-                          className="min-h-[34px] w-full border border-[color:var(--brass-800)] bg-[var(--hide-950)] px-3 py-1 text-xs text-[color:var(--bone-200)]"
+                          className="input"
                         />
-                        <div className="mt-2 flex gap-3">
+                        <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                           <button
                             type="submit"
                             disabled={busy || !renameDraft.trim()}
-                            className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)] disabled:opacity-50"
+                            className="btn disabled:opacity-50"
                           >
                             {busy ? 'Saving…' : 'Save'}
                           </button>
@@ -1241,7 +1235,7 @@ function ShadowChatPageContent() {
                             type="button"
                             onClick={() => setRenamingSessionId(undefined)}
                             disabled={busy}
-                            className="border border-[color:var(--brass-800)] bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)] disabled:opacity-50"
+                            className="btn btn--ghost disabled:opacity-50"
                           >
                             Cancel
                           </button>
@@ -1254,32 +1248,38 @@ function ShadowChatPageContent() {
                           aria-pressed={selected}
                           onClick={() => void handleRestoreSession(session)}
                           disabled={isLoading || busy}
-                          className="w-full px-3 py-2 text-left disabled:opacity-50"
+                          className="w-full p-[var(--s3)] text-left disabled:opacity-50"
                         >
-                          <span className="block truncate text-sm font-semibold text-[color:var(--bone-200)]">
+                          {/* Not .t-command: a session title is the user's own
+                              sentence, and the stencil voice uppercases it. */}
+                          <span className="t-body block truncate font-semibold text-[color:var(--bone-100)]">
                             {restoring ? 'Restoring…' : session.title}
                           </span>
-                          <span className="mt-1 block text-xs uppercase tracking-[0.08em] text-[color:var(--bone-400)]">
+                          <span className="t-label mt-[var(--s1)] block">
                             {session.sessionType.replaceAll('_', ' ')} · {formatGymDateNumeric(session.updatedAt)}
                           </span>
                         </button>
-                        <div className="flex items-center gap-3 border-t border-[color:var(--brass-900)] px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-[var(--s3)] border-t border-[color:var(--brass-900)] p-[var(--s3)]">
                           <button
                             type="button"
                             onClick={() => beginRenameSession(session)}
                             disabled={busy || isLoading}
-                            className="border border-[color:var(--brass-800)] bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)] transition hover:text-[color:var(--bone-200)] disabled:opacity-50"
+                            className="btn btn--ghost disabled:opacity-50"
                           >
                             Rename
                           </button>
+                          {/* Armed delete keeps --restricted, not --locked or
+                              .btn--danger: losing your own saved chat is not a
+                              child in danger. Same amber the rest of this room
+                              uses for "weigh this", on the system's control. */}
                           <button
                             type="button"
                             onClick={() => void handleDeleteSession(session)}
                             disabled={busy || isLoading}
-                            className={`border px-2 py-1 text-xs uppercase tracking-[0.1em] transition disabled:opacity-50 ${
+                            className={`btn btn--ghost disabled:opacity-50 ${
                               armedDelete
-                                ? 'border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] text-[color:var(--restricted-ink)]'
-                                : 'border-[color:var(--brass-800)] bg-transparent text-[color:var(--bone-400)] hover:text-[color:var(--bone-200)]'
+                                ? 'border-[color:var(--restricted)] text-[color:var(--restricted-ink)]'
+                                : ''
                             }`}
                           >
                             {busy && armedDelete ? 'Deleting…' : armedDelete ? 'Confirm delete' : 'Delete'}
@@ -1288,7 +1288,7 @@ function ShadowChatPageContent() {
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteId(undefined)}
-                              className="border border-[color:var(--brass-800)] bg-transparent px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]"
+                              className="btn btn--ghost"
                             >
                               Keep
                             </button>
@@ -1303,21 +1303,21 @@ function ShadowChatPageContent() {
           )}
         </section>
 
-        <section className="bg-[var(--hide-950)] font-mono text-[color:var(--bone-300)] rounded-none border border-[color:var(--brass-900)] p-4">
-          <details className="mb-3 border border-[color:var(--brass-900)] bg-[var(--hide-900)] px-3 py-2">
-            <summary className="cursor-pointer text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">
+        <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+          <details className="mat-leather--raised mb-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
+            <summary className="t-label cursor-pointer">
               What the evidence labels mean
             </summary>
-            <ul className="mt-2 space-y-1">
+            <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
               {EVIDENCE_TIER_ORDER.map((tier) => (
-                <li key={tier} className="text-xs text-[color:var(--bone-400)]">
-                  <span className="font-bold uppercase text-[color:var(--bone-300)]">{getEvidenceTierLabel(tier)}:</span>{' '}
+                <li key={tier} className="t-muted">
+                  <span className="t-label">{getEvidenceTierLabel(tier)}:</span>{' '}
                   {EVIDENCE_TIER_MEANINGS[tier]}
                 </li>
               ))}
             </ul>
           </details>
-          <div className="mb-5 max-h-[550px] space-y-4 overflow-y-auto pr-2">
+          <div className="mb-[var(--s5)] max-h-[550px] space-y-[var(--s4)] overflow-y-auto pr-[var(--s2)]">
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -1330,17 +1330,17 @@ function ShadowChatPageContent() {
                       : `border-[color:var(--brass-900)] bg-[var(--hide-900)] text-[color:var(--bone-300)] ${EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]}`
                   }`}
                 >
-                  <p className="text-sm leading-relaxed">{msg.text}</p>
+                  <p className="t-body">{msg.text}</p>
                   {msg.type === 'shadow' && msg.evidenceTier ? (
                     <p
-                      className="mt-2 text-xs font-bold uppercase tracking-[0.12em] text-[color:var(--bone-400)]"
+                      className="t-label mt-[var(--s2)]"
                       title={EVIDENCE_TIER_MEANINGS[msg.evidenceTier]}
                     >
                       Evidence: {getEvidenceTierLabel(msg.evidenceTier)}
                     </p>
                   ) : null}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'EVIDENCE_RETRIEVAL_UNAVAILABLE' ? (
-                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">
+                    <p className="t-label mt-[var(--s1)]">
                       Evidence lookup temporarily unavailable -- graded without it.
                     </p>
                   ) : null}
@@ -1350,63 +1350,71 @@ function ShadowChatPageContent() {
                       acted on alone. Amber rather than the tier's red, because
                       this is an answer to weigh, not a refusal. */}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' ? (
-                    <p className="mt-1 text-xs leading-relaxed text-[color:var(--restricted)]">
+                    <p className="t-muted mt-[var(--s1)] text-[color:var(--restricted)]">
                       No verified Library evidence matched this question. Treat the answer above as
                       unsourced -- confirm it with a coach before acting on it.
                     </p>
                   ) : null}
                   {msg.type === 'shadow' && msg.citations?.length ? (
-                    <div className="mt-2 border-t border-[color:var(--brass-900)] pt-2">
-                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Sources</p>
-                      <ul className="mt-1 space-y-1">
+                    <div className="mt-[var(--s2)] border-t border-[color:var(--brass-900)] pt-[var(--s2)]">
+                      <p className="t-label">Sources</p>
+                      <ul className="mt-[var(--s1)] space-y-[var(--s1)]">
                         {msg.citations.map((citation) => (
-                          <li key={citation.evidenceId} className="text-xs leading-relaxed text-[color:var(--bone-400)]">
+                          <li key={citation.evidenceId} className="t-data text-[color:var(--bone-400)]">
                             [{citation.token}] {citation.sourceTitle} — {citation.documentName}
                           </li>
                         ))}
                       </ul>
                     </div>
                   ) : null}
+                  {/* Law 2/3: a response state is a queue outcome, so it rides
+                      the badge ladder -- glyph plus uppercase word, never a
+                      one-off chip. Withheld and degraded are --restricted, not
+                      --locked: neither is a medical or safeguarding refusal.
+                      A queued answer is not an outcome yet, so it wears the
+                      administrative rung. */}
                   {msg.type === 'shadow' && msg.state && msg.state !== 'ok' ? (
-                    msg.state === 'filtered' ? (
-                      <p className="mt-3">
-                        <span className="border border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] px-2 py-1 text-xs uppercase tracking-[0.12em] text-[color:var(--restricted-ink)]">
-                          Withheld
-                        </span>
-                      </p>
-                    ) : (
-                      <p className="mt-2">
-                        <span className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-2 py-1 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">
-                          {msg.state}
-                        </span>
-                      </p>
-                    )
+                    <p className="mt-[var(--s3)]">
+                      <span className={`badge ${msg.state === 'queued' ? 'badge--filed' : 'badge--restricted'}`}>
+                        <i aria-hidden="true">{msg.state === 'queued' ? '◌' : '▲'}</i>
+                        {msg.state === 'filtered' ? 'Withheld' : msg.state}
+                      </span>
+                    </p>
                   ) : null}
                   {msg.type === 'shadow' && msg.handoff ? (
-                    <div className="mt-3">
-                      <span className="border border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] px-2 py-1 text-xs uppercase tracking-[0.12em] text-[color:var(--restricted-ink)]">
+                    <div className="mt-[var(--s3)]">
+                      <span className="badge badge--restricted">
+                        <i aria-hidden="true">▲</i>
                         Human Handoff Required
                       </span>
-                      <p className="mt-2 text-xs leading-relaxed text-[color:var(--bone-300)]">{msg.handoff}</p>
+                      <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">{msg.handoff}</p>
                     </div>
                   ) : null}
                   {msg.tier ? (
-                    <div className="mt-3 space-y-2 border-t border-[color:var(--brass-900)] pt-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--bone-400)]">
+                    <div className="mt-[var(--s3)] space-y-[var(--s2)] border-t border-[color:var(--brass-900)] pt-[var(--s2)]">
+                      <div className="flex items-center justify-between gap-[var(--s3)]">
+                        <p className="t-label">
                           {msg.tier === 'heavy_bag' ? 'Heavy Bag' : 'Quick Round'}
                           {getProfileTierLabel(msg.profileTier)}
                           {msg.isAsync ? ' · Processing...' : ''}
                         </p>
-                        {msg.feedbackSent ? <p className="text-xs text-[color:var(--bone-400)]">Feedback recorded.</p> : null}
+                        {msg.feedbackSent ? <p className="t-muted">Feedback recorded.</p> : null}
                       </div>
                     </div>
                   ) : null}
+                  {/* Law 3, stated 200 lines above this block and then broken
+                      by it: the rating is carried by its uppercase word, not by
+                      a medal emoji that vanishes in greyscale packets and screen
+                      readers alike. "Human-in-the-loop RLHF" was implementation
+                      jargon on a surface an athlete or a parent can reach. The
+                      reason IS required -- sendFeedback returns early without
+                      one -- so the label says so in words rather than marking
+                      it with a bare asterisk. */}
                   {msg.type === 'shadow' ? (
-                    <div className="mt-3 border-t border-[color:var(--brass-900)] pt-3">
-                      <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--bone-400)]">Human-in-the-loop RLHF</p>
-                      <label htmlFor={`feedback-reason-${msg.id}`} className="mt-2 block text-xs text-[color:var(--bone-400)]">
-                        Specify precise reason for evaluation rating *
+                    <div className="mt-[var(--s3)] border-t border-[color:var(--brass-900)] pt-[var(--s3)]">
+                      <p className="t-eyebrow">Rate this answer</p>
+                      <label htmlFor={`feedback-reason-${msg.id}`} className="t-label mt-[var(--s2)] block">
+                        Reason — required
                       </label>
                       <textarea
                         id={`feedback-reason-${msg.id}`}
@@ -1414,36 +1422,36 @@ function ShadowChatPageContent() {
                         onChange={(event) => setFeedbackReasons((prev) => ({ ...prev, [msg.id]: event.target.value }))}
                         disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
                         rows={3}
-                        className="mt-1 w-full border border-[color:var(--brass-800)] bg-[var(--hide-950)] px-2 py-1 text-xs text-[color:var(--bone-200)] disabled:opacity-60"
+                        className="textarea mt-[var(--s1)] disabled:opacity-60"
                       />
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
                         <button
                           type="button"
                           onClick={() => void sendFeedback(msg.id, true)}
                           disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
-                          className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-2 py-1 text-xs text-[color:var(--bone-200)] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          [👍 Output Metrics Valid / Intact]
+                          Helpful
                         </button>
                         <button
                           type="button"
                           onClick={() => void sendFeedback(msg.id, false)}
                           disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
-                          className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-2 py-1 text-xs text-[color:var(--bone-200)] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          [👎 Confusing / Missing Rule Layers]
+                          Not helpful
                         </button>
                       </div>
                     </div>
                   ) : null}
-                  <p className="mt-2 text-xs text-[color:var(--bone-400)]">{msg.timestamp}</p>
+                  <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{msg.timestamp}</p>
                 </div>
               </div>
             ))}
             {isLoading ? (
               <div className="flex justify-start">
-                <div className="border border-[color:var(--brass-900)] bg-[var(--hide-900)] px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.1em] text-[color:var(--bone-400)]">SHADOW {heavyBagMode ? 'Heavy Bag' : 'Quick Round'} processing...</p>
+                <div className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
+                  <p className="t-label">SHADOW {heavyBagMode ? 'Heavy Bag' : 'Quick Round'} processing...</p>
                 </div>
               </div>
             ) : null}
@@ -1451,11 +1459,14 @@ function ShadowChatPageContent() {
           </div>
 
           {allowedSessionTypes.includes('heavy_bag') && Object.keys(modelStatus).length > 0 ? (
-            <div className="mb-3 flex flex-wrap gap-3">
+            <div className="mb-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+              {/* Deliberately NOT the badge ladder: a model's deployment state
+                  is not a safety or queue rung, and badge--cleared means
+                  CLEARED. Telemetry voice on a brass chip instead. */}
               {Object.values(modelStatus).map((model) => (
                 <span
                   key={model.displayName}
-                  className={`border px-3 py-1 text-xs uppercase tracking-[0.08em] ${model.available ? 'border-[color:var(--brass-700)] text-[color:var(--bone-300)]' : 'border-[color:var(--brass-800)] text-[color:var(--bone-400)]'}`}
+                  className={`t-data rounded-[var(--r-md)] border px-[var(--s3)] py-[var(--s1)] uppercase ${model.available ? 'border-[color:var(--brass-700)] text-[color:var(--bone-300)]' : 'border-[color:var(--brass-800)] text-[color:var(--bone-400)]'}`}
                   title={`${model.tier} tier -- ${model.available ? 'live' : 'not deployed yet'}`}
                 >
                   {model.available ? '● ' : '○ '}{model.displayName}
@@ -1464,7 +1475,7 @@ function ShadowChatPageContent() {
             </div>
           ) : null}
 
-          <form onSubmit={handleSendMessage} className="flex flex-wrap gap-3">
+          <form onSubmit={handleSendMessage} className="flex flex-wrap gap-[var(--s3)]">
             {allowedSessionTypes.includes('heavy_bag') ? (
               <button
                 type="button"
@@ -1472,7 +1483,7 @@ function ShadowChatPageContent() {
                 disabled={Boolean(restoringSessionId)}
                 aria-pressed={heavyBagMode}
                 title={heavyBagMode ? 'Switch to Quick Round' : 'Switch to Heavy Bag Session (deep reasoning)'}
-                className={`border px-3 py-2 text-xs uppercase tracking-[0.1em] disabled:cursor-not-allowed disabled:opacity-60 ${heavyBagMode ? 'border-[color:var(--brass-700)] bg-[var(--hide-900)] text-[color:var(--bone-200)]' : 'border-[color:var(--brass-800)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'}`}
+                className={`btn disabled:cursor-not-allowed disabled:opacity-60 ${heavyBagMode ? '' : 'btn--ghost'}`}
               >
                 {heavyBagMode ? 'Heavy Bag' : 'Quick'}
               </button>
@@ -1480,10 +1491,8 @@ function ShadowChatPageContent() {
             {heavyBagMode ? (
               <label
                 title="Queue this Heavy Bag question for background processing -- the answer is added to this conversation when ready, instead of holding the page for the full generation."
-                className={`flex cursor-pointer items-center gap-1 border px-3 text-xs font-bold uppercase tracking-[0.1em] transition ${
-                  backgroundHeavyBag
-                    ? 'border-[color:var(--brass-700)] bg-[var(--hide-900)] text-[color:var(--bone-200)]'
-                    : 'border-[color:var(--brass-800)] bg-[var(--hide-900)] text-[color:var(--bone-400)] hover:border-[color:var(--brass-600)]'
+                className={`btn btn--ghost cursor-pointer ${
+                  backgroundHeavyBag ? 'border-[color:var(--brass-400)] text-[color:var(--bone-100)]' : ''
                 }`}
               >
                 <input
@@ -1502,47 +1511,18 @@ function ShadowChatPageContent() {
               onChange={(e) => setUserInput(e.target.value)}
               disabled={Boolean(restoringSessionId)}
               placeholder="What do you need to know?"
-              className="min-w-[220px] flex-1 border border-[color:var(--brass-800)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)]"
+              className="input min-w-[220px] flex-1"
             />
             <button
               type="submit"
               disabled={isLoading || Boolean(restoringSessionId)}
-              className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-200)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isLoading ? '...' : 'Ask'}
             </button>
           </form>
         </section>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/shadow?context=SHADOW" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            SHADOW CHAT
-          </Link>
-          <Link href="/research/chat" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            The Library
-          </Link>
-          <Link href="/research" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            Research Intake
-          </Link>
-          <Link href="/admin/shadow" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            The Office
-          </Link>
-          <Link href="/operations" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            Operations
-          </Link>
-          <Link href="/coach/video-analysis" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            AI Video Analysis (Planned)
-          </Link>
-          <Link href="/board/compliance-monitoring" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            Compliance Monitoring (Planned)
-          </Link>
-          <Link href="/athlete/progression-intelligence" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            Progression Intelligence (Planned)
-          </Link>
-          <Link href="/source-control/publication-workflow" className="border border-[color:var(--brass-800)] bg-[var(--hide-900)] px-3 py-2 text-xs uppercase tracking-[0.1em] text-[color:var(--bone-300)]">
-            Publication Workflow (Planned)
-          </Link>
-        </div>
       </div>
     </main>
   );
@@ -1550,7 +1530,7 @@ function ShadowChatPageContent() {
 
 export default function ShadowChatPage() {
   return (
-    <Suspense fallback={<main className="room room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]"><div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6"><div className="text-center"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p><h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Loading scope</h1></div></div></main>}>
+    <Suspense fallback={<main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-300)]"><div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6"><div className="text-center"><p className="t-eyebrow">SHADOW</p><h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-lg)' }}>Loading scope</h1></div></div></main>}>
       <ShadowChatPageContent />
     </Suspense>
   );

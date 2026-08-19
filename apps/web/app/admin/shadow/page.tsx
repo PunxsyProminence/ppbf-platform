@@ -465,6 +465,36 @@ function fromBackendStatus(status: 'pending_review' | 'approved' | 'rejected' | 
   return 'Pending';
 }
 
+/**
+ * The room's own instrument face. `.gauge` shipped in ppbf.css drawing exactly
+ * what this room's Feel line says -- telemetry -- and had zero consumers here.
+ *
+ * No `.gauge-arc`: ppbf.css limits the red band to readings with a genuine
+ * danger threshold, and nothing server-side defines one for a filter rate,
+ * an effectiveness score, or a satisfaction rate. A null reading draws no
+ * needle rather than parking it at zero and reporting a measurement nobody
+ * took.
+ */
+function RateGauge({ caption, percent }: { readonly caption: string; readonly percent: number | null }) {
+  const known = percent != null && Number.isFinite(percent);
+  const clamped = known ? Math.min(Math.max(percent, 0), 100) : 0;
+  return (
+    <div className="gauge">
+      <div className="gauge-bezel">
+        <div className="gauge-face">
+          <div className="gauge-ticks" />
+          {known ? (
+            <div className="gauge-needle" style={{ ['--deg' as string]: `${clamped * 1.8 - 90}deg` }} />
+          ) : null}
+          <div className="gauge-hub" />
+        </div>
+      </div>
+      <div className="gauge-cap">{caption}</div>
+      <div className="gauge-val">{known ? `${clamped.toFixed(1)}%` : 'Unavailable'}</div>
+    </div>
+  );
+}
+
 function renderMetricsPanel(
   growthMetrics: OrgMetrics | null,
   metricsLoading: boolean,
@@ -477,22 +507,37 @@ function renderMetricsPanel(
         {metricsLoading && <span className="t-muted">Loading…</span>}
       </div>
       {growthMetrics ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-          {([
-            ['Interactions', growthMetrics.growth.totalInteractions],
-            ['Filter Rate', growthMetrics.growth.filterRate != null ? `${(growthMetrics.growth.filterRate * 100).toFixed(1)}%` : '—'],
-            ['Avg Satisfaction', growthMetrics.growth.avgSatisfaction != null ? growthMetrics.growth.avgSatisfaction.toFixed(2) : '—'],
-            ['Effectiveness %', growthMetrics.effectiveness.avgRecommendationScore != null ? String(growthMetrics.effectiveness.avgRecommendationScore) : '—'],
-            ['Reviewed Outcomes', growthMetrics.growth.reviewedOutcomes],
-            ['Research Created', growthMetrics.growth.researchRequirementsCreated],
-            ['Research Closed', growthMetrics.growth.researchRequirementsClosed],
-            ['New Patterns', growthMetrics.growth.newLibraryPatterns],
-          ] as [string, string | number][]).map(([label, value]) => (
-            <div key={label} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)] text-center">
-              <p className="t-eyebrow">{label}</p>
-              <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{value}</p>
-            </div>
-          ))}
+        <div className="space-y-[var(--s4)]">
+          {/* Rate readings on the room's instrument face, counts on .stat.
+              Both shipped in ppbf.css with no consumer in this room at all,
+              while the console hand-rolled the same centred tile twice. */}
+          <div className="flex flex-wrap gap-[var(--s4)]">
+            <RateGauge
+              caption="Filter Rate"
+              percent={growthMetrics.growth.filterRate != null ? growthMetrics.growth.filterRate * 100 : null}
+            />
+            <RateGauge
+              caption="Effectiveness"
+              percent={growthMetrics.effectiveness.avgRecommendationScore}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-[var(--s3)] sm:grid-cols-3 lg:grid-cols-6">
+            {([
+              ['Interactions', growthMetrics.growth.totalInteractions],
+              // AVG(rating) on the feedback rows, not a percentage -- so it is
+              // a figure, not a dial.
+              ['Avg Satisfaction', growthMetrics.growth.avgSatisfaction != null ? growthMetrics.growth.avgSatisfaction.toFixed(2) : '—'],
+              ['Reviewed Outcomes', growthMetrics.growth.reviewedOutcomes],
+              ['Research Created', growthMetrics.growth.researchRequirementsCreated],
+              ['Research Closed', growthMetrics.growth.researchRequirementsClosed],
+              ['New Patterns', growthMetrics.growth.newLibraryPatterns],
+            ] as [string, string | number][]).map(([label, value]) => (
+              <div key={label} className="stat">
+                <span className="stat-label">{label}</span>
+                <span className="stat-val">{value}</span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : metricsError ? (
         // "Metrics unavailable" was shown for a failed load, a forbidden load
@@ -960,18 +1005,18 @@ function renderFeedbackReviewPanel(props: {
       </div>
 
       {summary && (
-        <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mb-[var(--s4)] flex flex-wrap items-end gap-[var(--s4)]">
           {([
             ['Responses (30d)', summary.total_responses],
             ['Helpful', summary.helpful_count],
-            ['Satisfaction', `${(summary.satisfaction_rate * 100).toFixed(1)}%`],
             ['Avg Rating', summary.avg_rating != null ? summary.avg_rating.toFixed(2) : '—'],
           ] as [string, string | number][]).map(([label, value]) => (
-            <div key={label} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)] text-center">
-              <p className="t-eyebrow">{label}</p>
-              <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{value}</p>
+            <div key={label} className="stat flex-1 basis-[144px]">
+              <span className="stat-label">{label}</span>
+              <span className="stat-val">{value}</span>
             </div>
           ))}
+          <RateGauge caption="Satisfaction" percent={summary.satisfaction_rate * 100} />
         </div>
       )}
 
@@ -1749,9 +1794,14 @@ export default function AdminShadowConsolePage() {
         <LibraryReviewFlagsPanel />
 
         <FeatureUnlockPanel />
-        <section className="frame">
-          <i aria-hidden className="rivet rivet--tl" /><i aria-hidden className="rivet rivet--tr" /><i aria-hidden className="rivet rivet--bl" /><i aria-hidden className="rivet rivet--br" />
-          <div className="frame-in mat-leather space-y-[var(--s5)] p-[var(--s5)]">
+        {/* A riveted brass frame is the Front Office's Feel line -- .rivet--tl
+            appears on eleven other /admin/* office surfaces, so this console
+            was sharing its frame vocabulary with /admin/people. ppbf.css also
+            limits rivets to one ceremonial rivet per screen, and this one
+            carried four. The instrument panel the log stream already uses is
+            the right material for the room, so it is extended to hold the
+            whole console. */}
+        <section className="mat-slate space-y-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
           <div className="mb-[var(--s5)] border-b border-[color:rgba(212,175,74,.2)] pb-[var(--s4)]">
             <p className="t-eyebrow">AI/ML Telemetry Scout</p>
             <h2 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>SHADOW Data Intake + Command Console</h2>
@@ -1760,7 +1810,7 @@ export default function AdminShadowConsolePage() {
             </p>
           </div>
 
-          <section className="mat-slate rounded-[var(--r-md)] p-[var(--s4)]">
+          <section className="rounded-[var(--r-md)] border border-[color:rgba(230,227,214,.16)] bg-[rgba(0,0,0,.25)] p-[var(--s4)]">
             <div className="mb-[var(--s4)] flex flex-wrap gap-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">
               <span>Pending: {queueCounts.pending}</span>
               <span>Approved: {queueCounts.approved}</span>
@@ -1905,7 +1955,6 @@ export default function AdminShadowConsolePage() {
               </div>
             )}
           </section>
-          </div>
         </section>
 
         <aside className="space-y-[var(--s4)]">
