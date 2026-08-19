@@ -346,15 +346,19 @@ Phase 1 does not:
 - deploy or run protected workflows;
 - alter SHADOW evidence-tier, algorithm, medical, safeguarding, contact, or sparring behavior.
 
-**Open items this document cannot close.** Three findings above need an owner decision, not a
+**Open items this document cannot close.** Two findings above need an owner decision, not a
 further documentation pass:
 
 1. **§1 is unconfirmed.** Confirm or correct the OneDrive `Library Intake` tree, and produce
    any artifact of it (an export, a manifest, a connector record) that a later reader can check.
 2. **§1 and issue #345 name different stores** — OneDrive vs SharePoint. One of them is wrong.
    Whichever survives, #345 is the durable contract and should be the document that changes.
-3. **The `warmup_decay` stop rules are live** (§8) on a 2026-08-08 owner decision recorded only
-   in a commit message. Confirm that decision still stands now that the research-corpus half of
-   the same package is documented as unloadable.
+
+**Closed — owner decision, 2026-08-19.** The `warmup_decay` stop rules (§8) are **confirmed and
+stay**. Jason Neale reconfirmed the 2026-08-08 decision on 2026-08-19, through the primary
+working session, after the provenance review in PR #502: the re-warm-before-contact rule on the
+63 contact/maximal-effort drills is approved as operational drill data, independent of the
+unloadable research-corpus half of the same package. This paragraph is the durable record the
+2026-08-08 commit message lacked.
 
 The next implementation slice is a research-specific, idempotent archive handoff that reuses existing authenticated SharePoint upload primitives but adds source hashing, provenance, duplicate/lineage checks, stable archive identity, SHADOW source registration, and pending-review defaults. It must fail closed if the governed original cannot be preserved.
