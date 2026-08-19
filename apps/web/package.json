@@ -261,8 +261,7 @@
     "test:migrations:gate-fixtures": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/gateFixtureProvisioning.pg.test.ts --testTimeout=180000",
     "test:migrations:medical-clearance-coverage": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/medicalClearanceCoverageCheck.pg.test.ts --testTimeout=180000",
     "test:migrations:readiness-gates": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/migrationReadinessGates.pg.test.ts --testTimeout=180000",
-    "test:migrations:unexercised-runners": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/unexercisedMigrationRunners.pg.test.ts --testTimeout=180000",
-    "plates": "node ../../scripts/decode-plates.mjs"
+    "test:migrations:unexercised-runners": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/unexercisedMigrationRunners.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",

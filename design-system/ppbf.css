@@ -3415,24 +3415,24 @@ body.ppbf.on-canvas {
 }
 
 /* Plate Set v1 — locked inventory. */
-.room--office { --plate: url("/plates/plate-01-office-01.png"); }
-.room--floor  { --plate: url("/plates/plate-02a-floor-landscape-01.png"); }
-.room--board  { --plate: url("/plates/plate-04-board-01.png"); }
-.room--file   { --plate: url("/plates/plate-05-file-01.png"); }
-.room--clinic { --plate: url("/plates/plate-03-clinic-01.png"); }
-.room--night  { --plate: url("/plates/plate-06-night-01.png"); }
+.room--office { --plate: url("/plates/plate-01-office-01.jpg"); }
+.room--floor  { --plate: url("/plates/plate-02a-floor-landscape-01.jpg"); }
+.room--board  { --plate: url("/plates/plate-04-board-01.jpg"); }
+.room--file   { --plate: url("/plates/plate-05-file-01.jpg"); }
+.room--clinic { --plate: url("/plates/plate-03-clinic-01.jpg"); }
+.room--night  { --plate: url("/plates/plate-06-night-01.jpg"); }
 
 /* The gym tablet stands upright. A landscape wall cropped to a portrait
    viewport loses the courses that make it read as masonry, so the floor
    room carries its own portrait plate rather than being scaled into one. */
 @media (orientation: portrait) {
-  .room--floor { --plate: url("/plates/plate-02b-floor-portrait-01.png"); }
+  .room--floor { --plate: url("/plates/plate-02b-floor-portrait-01.jpg"); }
 }
 
 /* Plate 7. The family ground is .on-canvas, not a room -- Law 6's second
    ground -- so it is declared here rather than in the room list above.
    T7: family surfaces take the warm plate and no other. */
-.on-canvas { --plate: url("/plates/plate-07-warm-ground-01.png"); }
+.on-canvas { --plate: url("/plates/plate-07-warm-ground-01.jpg"); }
 
 /* Reduced motion is not the relevant axis here, but reduced DATA is: a
    coach on a metered tablet gets the gradient wall, which is a complete

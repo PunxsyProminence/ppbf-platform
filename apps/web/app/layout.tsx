@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import "../../../design-system/plates-v1g.css";
 import GlobalRoleHeader from "@/components/GlobalRoleHeader";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
