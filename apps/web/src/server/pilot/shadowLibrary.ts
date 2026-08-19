@@ -1408,3 +1408,25 @@ export async function listShadowCapabilityCoverage(organizationId: string): Prom
     [organizationId],
   );
 }
+
+// Merge a partial metadata patch into an existing source's metadata jsonb.
+// Used by the research workspace to correct domain_classification without
+// touching other metadata keys or source fields.
+// Returns true when a row was updated, false when the source_id was not found
+// in the organization.
+export async function updateShadowLibrarySourceMetadata(input: {
+  organizationId: string;
+  sourceId: string;
+  metadataPatch: Record<string, unknown>;
+}): Promise<boolean> {
+  const rows = await query<{ source_id: string }>(
+    `update pilot.shadow_library_sources
+     set metadata = metadata || $3::jsonb,
+         updated_at = now()
+     where organization_id = $1
+       and source_id = $2
+     returning source_id`,
+    [input.organizationId, input.sourceId, JSON.stringify(input.metadataPatch)],
+  );
+  return rows.length > 0;
+}

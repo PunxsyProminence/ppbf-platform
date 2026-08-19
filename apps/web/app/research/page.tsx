@@ -5,17 +5,16 @@ import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
+import { RESEARCH_DOMAIN_LABELS, RESEARCH_DOMAINS, type ResearchDomain } from '@/src/server/pilot/shadowResearchSubmissions';
 
-interface ShadowResearchItem {
-  event_id: number;
-  requirement: string | null;
-  knowledge_gap: string | null;
-  evidence_label: string | null;
-  source_status: string;
-  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
-  source_event_name: string;
-  created_at: string;
-}
+// ── types ──────────────────────────────────────────────────────────────────
+
+type AnswerState =
+  | 'needs_evidence'
+  | 'sources_submitted'
+  | 'evidence_under_review'
+  | 'partially_answered'
+  | 'resolved';
 
 interface ShadowResearchRequirement {
   research_requirement_id: number;
@@ -30,213 +29,293 @@ interface ShadowResearchRequirement {
   source_verification_state: string;
   status: 'open' | 'resolved';
   created_at: string;
+  // computed by the UI after loading submissions
+  answer_state?: AnswerState;
 }
 
-/* Law 3: a review state is a queue outcome -- glyph + uppercase label on the
-   status ladder, never a bare lowercase word or colour alone. */
-const REVIEW_STATE_BADGES: Record<ShadowResearchItem['review_state'], { className: string; glyph: string; label: string }> = {
-  pending_review: { className: 'badge badge--monitor', glyph: '◉', label: 'Pending Review' },
-  approved: { className: 'badge badge--cleared', glyph: '✓', label: 'Approved' },
-  rejected: { className: 'badge badge--locked', glyph: '✕', label: 'Rejected' },
-  promoted: { className: 'badge badge--cleared', glyph: '✓', label: 'Promoted' },
-  /* The sheet's own administrative rung (badge--filed) replaced the
-     hand-rolled chip this entry used to carry -- same ◌, same job. */
-  unknown: { className: 'badge badge--filed', glyph: '◌', label: 'Unknown' },
+interface ResearchSubmission {
+  submission_id: string;
+  research_requirement_id: number;
+  source_id: string;
+  review_verdict: string | null;
+  doi: string | null;
+  provider_provenance: string | null;
+  why_this_source: string | null;
+  created_at: string;
+}
+
+interface LibrarySource {
+  source_id: string;
+  title: string;
+  publisher: string | null;
+  source_type: string;
+}
+
+type WorkspaceTab = 'needs_evidence' | 'answer_a_gap' | 'general_research';
+
+// ── constants ──────────────────────────────────────────────────────────────
+
+/* Law 3: every status rung gets a glyph + uppercase label, never bare colour. */
+const ANSWER_STATE_BADGES: Record<AnswerState, { className: string; glyph: string; label: string }> = {
+  needs_evidence: { className: 'badge badge--monitor', glyph: '◉', label: 'Needs Evidence' },
+  sources_submitted: { className: 'badge badge--filed', glyph: '◌', label: 'Sources Submitted' },
+  evidence_under_review: { className: 'badge badge--filed', glyph: '◌', label: 'Evidence Under Review' },
+  partially_answered: { className: 'badge badge--cleared', glyph: '✓', label: 'Partially Answered' },
+  resolved: { className: 'badge badge--cleared', glyph: '✓', label: 'Resolved' },
 };
 
-/* A paper-ground caption label. The sheet's .t-label is tuned for leather
-   (bone ink); on paper the same caption needs dark ink. */
+/* A paper-ground caption label. */
 const PAPER_LABEL = 'font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.13em] text-[color:var(--hide-600)]';
 
-export default function ResearchIntakePage() {
-  const [items, setItems] = useState<ShadowResearchItem[]>([]);
+// ── answer state computation ──────────────────────────────────────────────
+// Must match the server-side computeAnswerState in shadowResearchSubmissions.ts.
+// The resolved rung is only reachable from the requirement's own status field;
+// submission alone structurally cannot reach it.
+
+function computeAnswerState(
+  requirement: Pick<ShadowResearchRequirement, 'status'>,
+  submissions: ResearchSubmission[],
+): AnswerState {
+  if (requirement.status === 'resolved') return 'resolved';
+  if (submissions.length === 0) return 'needs_evidence';
+  const hasPositive = submissions.some(
+    (s) => s.review_verdict === 'relevant' || s.review_verdict === 'partial',
+  );
+  if (hasPositive) return 'partially_answered';
+  const allPending = submissions.every((s) => s.review_verdict === null);
+  if (allPending) return 'sources_submitted';
+  return 'evidence_under_review';
+}
+
+// ── component ─────────────────────────────────────────────────────────────
+
+export default function ResearchWorkspacePage() {
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('needs_evidence');
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
+  const [submissions, setSubmissions] = useState<ResearchSubmission[]>([]);
+  const [librarySources, setLibrarySources] = useState<LibrarySource[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
-  const [requirementDraft, setRequirementDraft] = useState({
-    sourceEventName: 'MANUAL_RESEARCH_NOTE',
-    sourceEntityType: 'manual_note',
-    sourceEntityId: '',
-    researchRequirement: '',
-    knowledgeGap: '',
+
+  // Answer a Gap form
+  const [gapForm, setGapForm] = useState({
+    research_requirement_id: '',
+    source_id: '',
+    doi: '',
+    pmid: '',
+    provider_provenance: '',
+    why_this_source: '',
   });
-  const [submitMessage, setSubmitMessage] = useState('');
+  const [gapMessage, setGapMessage] = useState('');
+  const [gapSubmitting, setGapSubmitting] = useState(false);
+
+  // General Research form
+  const [generalForm, setGeneralForm] = useState({
+    title: '',
+    publisher: '',
+    source_type: 'peer_reviewed',
+    authority_tier: '3',
+    publication_date: '',
+    url: '',
+    domain_classification: '' as ResearchDomain | '',
+  });
+  const [generalMessage, setGeneralMessage] = useState('');
+  const [generalSubmitting, setGeneralSubmitting] = useState(false);
+
+  // Mark Resolved
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  const [resolveMessage, setResolveMessage] = useState('');
 
+  // Load requirements and submissions on mount
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-projection`, {
-        credentials: 'include',
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 120 }),
-        });
+        const [reqRes, subRes, srcRes] = await Promise.all([
+          fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' }),
+          fetch(`${apiBase()}/api/pilot/shadow/research-submissions`, { credentials: 'include' }),
+          fetch(`${apiBase()}/api/pilot/shadow/library/sources?limit=200`, { credentials: 'include' }),
+        ]);
 
-        if (!response.ok) {
-          throw new Error('Unable to load SHADOW research projection.');
+        if (!reqRes.ok) throw new Error('Unable to load research requirements.');
+
+        const reqPayload = (await reqRes.json()) as { items?: ShadowResearchRequirement[] };
+        setRequirements(reqPayload.items ?? []);
+
+        if (subRes.ok) {
+          const subPayload = (await subRes.json()) as { items?: ResearchSubmission[] };
+          setSubmissions(subPayload.items ?? []);
         }
 
-        const payload = (await response.json()) as { items?: ShadowResearchItem[] };
-        setItems(payload.items ?? []);
-        setErrorMessage('');
+        if (srcRes.ok) {
+          const srcPayload = (await srcRes.json()) as { items?: LibrarySource[] };
+          setLibrarySources(srcPayload.items ?? []);
+        }
       } catch (error) {
-        setItems([]);
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load SHADOW research projection.');
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load research workspace.');
       }
     })();
   }, []);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' });
+  // Attach computed answer states to requirements
+  const requirementsWithState = useMemo<ShadowResearchRequirement[]>(() => {
+    return requirements.map((req) => {
+      const reqSubmissions = submissions.filter(
+        (s) => s.research_requirement_id === req.research_requirement_id,
+      );
+      return { ...req, answer_state: computeAnswerState(req, reqSubmissions) };
+    });
+  }, [requirements, submissions]);
 
-        if (!response.ok) {
-          throw new Error('Unable to load SHADOW research requirements.');
-        }
+  const openRequirements = useMemo(
+    () => requirementsWithState.filter((r) => r.status === 'open'),
+    [requirementsWithState],
+  );
 
-        const payload = (await response.json()) as { items?: ShadowResearchRequirement[] };
-        setRequirements(payload.items ?? []);
-      } catch {
-        setRequirements([]);
-      }
-    })();
-  }, []);
-
-  const counts = useMemo(() => {
-    return {
-      pending: items.filter((item) => item.review_state === 'pending_review').length,
-      approved: items.filter((item) => item.review_state === 'approved').length,
-      rejected: items.filter((item) => item.review_state === 'rejected').length,
-      promoted: items.filter((item) => item.review_state === 'promoted').length,
-    };
-  }, [items]);
-
-  async function handleCreateRequirement(event: React.SyntheticEvent<HTMLFormElement>) {
+  async function handleAnswerGap(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const sourceEntityId = requirementDraft.sourceEntityId.trim() || `manual-${Date.now()}`;
-
+    if (!gapForm.research_requirement_id || !gapForm.source_id) {
+      setGapMessage('Select a requirement and a source.');
+      return;
+    }
+    setGapSubmitting(true);
+    setGapMessage('');
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
+      const res = await fetch(`${apiBase()}/api/pilot/shadow/research-submissions`, {
         credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          source_event_name: requirementDraft.sourceEventName,
-          source_entity_type: requirementDraft.sourceEntityType,
-          source_entity_id: sourceEntityId,
-          research_requirement: requirementDraft.researchRequirement,
-          knowledge_gap: requirementDraft.knowledgeGap,
-          source_status: 'observed',
-          source_confidence_tier: 'SUFFICIENT_FOR_REVIEW',
-          source_verification_state: 'unverified',
-          metadata: { created_from: 'research_page' },
+          research_requirement_id: Number(gapForm.research_requirement_id),
+          source_id: gapForm.source_id,
+          doi: gapForm.doi.trim() || null,
+          pmid: gapForm.pmid.trim() || null,
+          provider_provenance: gapForm.provider_provenance.trim() || null,
+          why_this_source: gapForm.why_this_source.trim() || null,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Unable to create SHADOW research requirement.');
+      if (!res.ok) {
+        const errBody = (await res.json()) as { error?: string };
+        throw new Error(errBody.error ?? 'Unable to file submission.');
       }
-
-      const payload = (await response.json()) as { research_requirement_id?: number };
-      setRequirements((current) => [
-        {
-          research_requirement_id: payload.research_requirement_id ?? Date.now(),
-          source_event_name: requirementDraft.sourceEventName,
-          source_entity_type: requirementDraft.sourceEntityType,
-          source_entity_id: sourceEntityId,
-          research_requirement: requirementDraft.researchRequirement,
-          knowledge_gap: requirementDraft.knowledgeGap,
-          evidence_label: null,
-          source_status: 'observed',
-          source_confidence_tier: 'SUFFICIENT_FOR_REVIEW',
-          source_verification_state: 'unverified',
-          status: 'open',
-          created_at: new Date().toISOString(),
-        },
-        ...current,
-      ]);
-      setRequirementDraft({
-        sourceEventName: 'MANUAL_RESEARCH_NOTE',
-        sourceEntityType: 'manual_note',
-        sourceEntityId: '',
-        researchRequirement: '',
-        knowledgeGap: '',
-      });
-      setSubmitMessage('Research requirement saved.');
+      const payload = (await res.json()) as { submission: ResearchSubmission };
+      setSubmissions((current) => [payload.submission, ...current]);
+      setGapForm({ research_requirement_id: '', source_id: '', doi: '', pmid: '', provider_provenance: '', why_this_source: '' });
+      setGapMessage(
+        'Source filed. The source answers nothing until evidence review approves it.',
+      );
     } catch (error) {
-      setSubmitMessage(error instanceof Error ? error.message : 'Unable to create SHADOW research requirement.');
+      setGapMessage(error instanceof Error ? error.message : 'Unable to file submission.');
+    } finally {
+      setGapSubmitting(false);
     }
   }
 
-  async function handleResolveRequirement(researchRequirementId: number) {
-    setResolvingId(researchRequirementId);
-
+  async function handleGeneralResearch(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!generalForm.title.trim()) {
+      setGeneralMessage('Title is required.');
+      return;
+    }
+    setGeneralSubmitting(true);
+    setGeneralMessage('');
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
+      const metadata: Record<string, unknown> = {};
+      if (generalForm.domain_classification) {
+        metadata['domain_classification'] = generalForm.domain_classification;
+      }
+      const res = await fetch(`${apiBase()}/api/pilot/shadow/library/sources`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: generalForm.title.trim(),
+          publisher: generalForm.publisher.trim() || null,
+          source_type: generalForm.source_type,
+          authority_tier: Number(generalForm.authority_tier),
+          url: generalForm.url.trim() || null,
+          publication_date: generalForm.publication_date.trim() || null,
+          metadata,
+        }),
+      });
+      if (!res.ok) {
+        const errBody = (await res.json()) as { error?: string };
+        throw new Error(errBody.error ?? 'Unable to register source.');
+      }
+      const payload = (await res.json()) as { source: LibrarySource };
+      setLibrarySources((current) => [payload.source, ...current]);
+      setGeneralForm({
+        title: '',
+        publisher: '',
+        source_type: 'peer_reviewed',
+        authority_tier: '3',
+        publication_date: '',
+        url: '',
+        domain_classification: '',
+      });
+      setGeneralMessage(
+        'Research registered. It is not citable until a reviewer approves and indexes it. It can be linked to a requirement gap later.',
+      );
+    } catch (error) {
+      setGeneralMessage(error instanceof Error ? error.message : 'Unable to register source.');
+    } finally {
+      setGeneralSubmitting(false);
+    }
+  }
+
+  async function handleResolve(researchRequirementId: number) {
+    setResolvingId(researchRequirementId);
+    setResolveMessage('');
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
         credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'resolve',
           research_requirement_id: researchRequirementId,
-          metadata: { resolved_from: 'research_page' },
+          metadata: { resolved_from: 'research_workspace' },
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Unable to resolve SHADOW research requirement.');
-      }
-
+      if (!res.ok) throw new Error('Unable to resolve requirement.');
       setRequirements((current) =>
-        current.map((requirement) =>
-          requirement.research_requirement_id === researchRequirementId
-            ? { ...requirement, status: 'resolved' }
-            : requirement,
+        current.map((r) =>
+          r.research_requirement_id === researchRequirementId ? { ...r, status: 'resolved' } : r,
         ),
       );
-      setSubmitMessage('Research requirement resolved.');
+      setResolveMessage('Requirement resolved.');
     } catch (error) {
-      setSubmitMessage(error instanceof Error ? error.message : 'Unable to resolve SHADOW research requirement.');
+      setResolveMessage(error instanceof Error ? error.message : 'Unable to resolve requirement.');
     } finally {
       setResolvingId(null);
     }
   }
 
-  const stats = [
-    { label: 'Mode', value: 'Research Projection' },
-    { label: 'Current Stage', value: 'Research Intake' },
-    { label: 'Items', value: String(items.length) },
-    { label: 'Pending Review', value: String(counts.pending) },
+  const tabs: { key: WorkspaceTab; label: string; count?: number }[] = [
+    { key: 'needs_evidence', label: 'Needs Evidence', count: openRequirements.length },
+    { key: 'answer_a_gap', label: 'Answer a Gap' },
+    { key: 'general_research', label: 'General Research' },
   ];
 
   return (
-    /* Room--file: the research wall. Intake cards are paper records pinned to
-       the cork; the requirement form is the leather-bound clipboard hung
-       beside them. */
+    /* Room--file: the research wall. */
     <main className="room--file min-h-screen bg-[var(--hide-950)]">
       <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
-            <p className="t-eyebrow">Research Intake</p>
+            <p className="t-eyebrow">SHADOW</p>
             <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
-              Research Inbox
+              Research Workspace
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-[64ch]">
-              SHADOW research projection showing requirements, gaps, evidence labels, and review state.
+              See open knowledge gaps, submit evidence against them, and register general research for later review.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-[var(--s3)]">
-            <ShadowChatButton context="Research Intake" />
+            <ShadowChatButton context="Research Workspace" />
             <Link href="/research/chat" className="btn btn--ghost">
-              Q&amp;A Research Chat
+              Q&amp;A Chat
             </Link>
             <Link href="/evidence" className="btn btn--ghost">
               Evidence Review
-            </Link>
-            <Link href="/source-control#publish" className="btn btn--ghost">
-              Publish Stage
             </Link>
           </div>
         </div>
@@ -245,194 +324,339 @@ export default function ResearchIntakePage() {
       <div className="mx-auto w-full max-w-[1200px] space-y-[var(--s5)] p-[var(--s5)]">
         <DevelopmentPipelineBanner currentStage="research" />
 
-        <section aria-label="Research intake status" className="flex flex-wrap gap-[var(--s3)]">
-          {stats.map((item) => (
-            <span key={item.label} className="plaque">
-              {item.label.toUpperCase()}: {item.value.toUpperCase()}
-            </span>
-          ))}
-        </section>
-
         {errorMessage ? (
           <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
-            <span className="badge badge--locked">
-              <i>✕</i>Projection Unavailable
-            </span>
+            <span className="badge badge--locked"><i>✕</i>Workspace Unavailable</span>
             <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
           </section>
         ) : null}
 
-        {!errorMessage && items.length === 0 ? (
-          <section className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
-            <p className={PAPER_LABEL}>Empty State</p>
-            <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
-              No SHADOW research projection items exist for this organization yet.
-            </p>
+        {/* Tab bar */}
+        <nav aria-label="Research workspace tabs" className="flex gap-[var(--s2)] border-b border-[color:rgba(212,175,74,.22)]">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={[
+                'btn btn--ghost px-[var(--s4)] pb-[var(--s3)]',
+                activeTab === tab.key ? 'border-b-2 border-[color:var(--brass-400)]' : '',
+              ].join(' ')}
+            >
+              {tab.label}
+              {tab.count !== undefined ? (
+                <span className="ml-[var(--s2)] badge badge--monitor">{tab.count}</span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+
+        {/* ── Tab 1: Needs Evidence ── */}
+        {activeTab === 'needs_evidence' ? (
+          <section className="space-y-[var(--s4)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+              Open Research Requirements
+            </h2>
+            {resolveMessage ? (
+              <p className="t-muted" role="status">{resolveMessage}</p>
+            ) : null}
+            {requirementsWithState.length === 0 ? (
+              <div className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
+                <p className={PAPER_LABEL}>Empty State</p>
+                <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
+                  No research requirements yet. SHADOW will add them when it encounters knowledge gaps.
+                </p>
+              </div>
+            ) : openRequirements.length === 0 ? (
+              <div className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
+                <p className={PAPER_LABEL}>All Resolved</p>
+                <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
+                  All research requirements are resolved.
+                </p>
+              </div>
+            ) : null}
+            <div className="grid gap-[var(--s4)] lg:grid-cols-2">
+              {openRequirements.map((req) => {
+                const state = req.answer_state ?? 'needs_evidence';
+                const badge = ANSWER_STATE_BADGES[state];
+                const reqSubmissions = submissions.filter(
+                  (s) => s.research_requirement_id === req.research_requirement_id,
+                );
+                return (
+                  <article key={req.research_requirement_id} className="relative mat-paper rounded-[var(--r-sm)] p-[var(--s5)]">
+                    <span className="pin pin--brass" aria-hidden="true" />
+                    <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
+                      <p className="t-typed text-[length:var(--t-md)] font-bold">{req.source_event_name}</p>
+                      <span className={badge.className}>
+                        <i>{badge.glyph}</i>
+                        {badge.label}
+                      </span>
+                    </div>
+                    <dl className="mt-[var(--s4)] grid gap-x-[var(--s4)] gap-y-[var(--s3)] sm:grid-cols-2">
+                      <div>
+                        <dt className={PAPER_LABEL}>Requirement</dt>
+                        <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">
+                          {req.research_requirement || 'Not provided'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className={PAPER_LABEL}>Knowledge Gap</dt>
+                        <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">
+                          {req.knowledge_gap || 'Not provided'}
+                        </dd>
+                      </div>
+                      {req.evidence_label ? (
+                        <div>
+                          <dt className={PAPER_LABEL}>Evidence Label</dt>
+                          <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{req.evidence_label}</dd>
+                        </div>
+                      ) : null}
+                      <div>
+                        <dt className={PAPER_LABEL}>Sources Filed</dt>
+                        <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{reqSubmissions.length}</dd>
+                      </div>
+                    </dl>
+                    <div className="mt-[var(--s4)] flex flex-wrap items-center justify-between gap-[var(--s3)] border-t border-[color:rgba(51,41,27,.26)] pt-[var(--s4)]">
+                      {req.status === 'open' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGapForm((f) => ({
+                                ...f,
+                                research_requirement_id: String(req.research_requirement_id),
+                              }));
+                              setActiveTab('answer_a_gap');
+                            }}
+                            className="btn"
+                          >
+                            Answer This Gap
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleResolve(req.research_requirement_id)}
+                            disabled={resolvingId === req.research_requirement_id}
+                            className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {resolvingId === req.research_requirement_id ? 'Resolving…' : 'Mark Resolved'}
+                          </button>
+                        </>
+                      ) : (
+                        <p className={PAPER_LABEL}>Resolved</p>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </section>
         ) : null}
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-            Review State Summary
-          </h2>
-          <div className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { label: 'Pending', value: counts.pending },
-              { label: 'Approved', value: counts.approved },
-              { label: 'Rejected', value: counts.rejected },
-              { label: 'Promoted', value: counts.promoted },
-            ].map((entry) => (
-              <article key={entry.label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="t-label">{entry.label}</p>
-                <p className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">{entry.value}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="space-y-[var(--s4)]">
-          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-            <span className="text-[color:var(--hide-900)]">Research Intake Cards</span>
-          </h2>
-          <div className="grid gap-[var(--s4)] lg:grid-cols-2">
-            {items.map((item) => {
-              const badge = REVIEW_STATE_BADGES[item.review_state];
-              return (
-                <article key={item.event_id} className="relative mat-paper rounded-[var(--r-sm)] p-[var(--s5)]">
-                  <span className="pin pin--brass" aria-hidden="true" />
-                  <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
-                    <p className="t-typed text-[length:var(--t-md)] font-bold">{item.source_event_name}</p>
-                    <span className={badge.className}>
-                      <i>{badge.glyph}</i>
-                      {badge.label}
-                    </span>
-                  </div>
-                  <dl className="mt-[var(--s4)] grid gap-x-[var(--s4)] gap-y-[var(--s3)] sm:grid-cols-2">
-                    <div>
-                      <dt className={PAPER_LABEL}>Requirement</dt>
-                      <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{item.requirement || 'Not provided'}</dd>
-                    </div>
-                    <div>
-                      <dt className={PAPER_LABEL}>Knowledge Gap</dt>
-                      <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{item.knowledge_gap || 'Not provided'}</dd>
-                    </div>
-                    <div>
-                      <dt className={PAPER_LABEL}>Evidence Label</dt>
-                      <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{item.evidence_label || 'Not provided'}</dd>
-                    </div>
-                    <div>
-                      <dt className={PAPER_LABEL}>Source Status</dt>
-                      <dd className="t-typed mt-[var(--s1)] text-[length:var(--t-sm)]">{item.source_status}</dd>
-                    </div>
-                  </dl>
-                  <div className="mt-[var(--s4)] flex flex-wrap items-center justify-between gap-[var(--s3)] border-t border-[color:rgba(51,41,27,.26)] pt-[var(--s4)]">
-                    <p className={PAPER_LABEL}>Next: Evidence Review</p>
-                    <Link href="/evidence" className="btn">
-                      Move to Evidence
-                    </Link>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
-          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-            Operational Research Requirements
-          </h2>
-          <form onSubmit={handleCreateRequirement} className="space-y-[var(--s4)]">
-            <div className="grid gap-[var(--s4)] md:grid-cols-2">
+        {/* ── Tab 2: Answer a Gap ── */}
+        {activeTab === 'answer_a_gap' ? (
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+              Answer a Gap
+            </h2>
+            <p className="t-body max-w-[64ch]">
+              Pick an open requirement, select a registered library source, and attach provenance.
+              The source answers nothing until evidence review approves it.
+            </p>
+            <form onSubmit={handleAnswerGap} className="space-y-[var(--s4)]">
               <label className="field">
-                <span className="t-label">Source event name</span>
-                <input
-                  value={requirementDraft.sourceEventName}
-                  onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEventName: event.target.value }))}
+                <span className="t-label">Open requirement</span>
+                <select
+                  value={gapForm.research_requirement_id}
+                  onChange={(e) => setGapForm((f) => ({ ...f, research_requirement_id: e.target.value }))}
                   className="input"
-                  placeholder="Source event name"
+                  required
+                >
+                  <option value="">— select a requirement —</option>
+                  {openRequirements.map((req) => (
+                    <option key={req.research_requirement_id} value={String(req.research_requirement_id)}>
+                      #{req.research_requirement_id} — {req.research_requirement.slice(0, 80)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="t-label">Library source</span>
+                <select
+                  value={gapForm.source_id}
+                  onChange={(e) => setGapForm((f) => ({ ...f, source_id: e.target.value }))}
+                  className="input"
+                  required
+                >
+                  <option value="">— select a source —</option>
+                  {librarySources.map((src) => (
+                    <option key={src.source_id} value={src.source_id}>
+                      {src.title} {src.publisher ? `(${src.publisher})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid gap-[var(--s4)] md:grid-cols-2">
+                <label className="field">
+                  <span className="t-label">DOI <span className="t-muted">(optional)</span></span>
+                  <input
+                    value={gapForm.doi}
+                    onChange={(e) => setGapForm((f) => ({ ...f, doi: e.target.value }))}
+                    className="input"
+                    placeholder="10.xxxx/xxxxx"
+                  />
+                </label>
+                <label className="field">
+                  <span className="t-label">PMID <span className="t-muted">(optional)</span></span>
+                  <input
+                    value={gapForm.pmid}
+                    onChange={(e) => setGapForm((f) => ({ ...f, pmid: e.target.value }))}
+                    className="input"
+                    placeholder="PubMed ID"
+                  />
+                </label>
+              </div>
+              <label className="field">
+                <span className="t-label">Source / provider provenance <span className="t-muted">(optional)</span></span>
+                <input
+                  value={gapForm.provider_provenance}
+                  onChange={(e) => setGapForm((f) => ({ ...f, provider_provenance: e.target.value }))}
+                  className="input"
+                  placeholder="e.g. Penn State Library"
                 />
               </label>
               <label className="field">
-                <span className="t-label">Source entity type</span>
-                <input
-                  value={requirementDraft.sourceEntityType}
-                  onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityType: event.target.value }))}
-                  className="input"
-                  placeholder="Source entity type"
+                <span className="t-label">Why this source? <span className="t-muted">(optional)</span></span>
+                <textarea
+                  value={gapForm.why_this_source}
+                  onChange={(e) => setGapForm((f) => ({ ...f, why_this_source: e.target.value }))}
+                  className="textarea h-[89px]"
+                  placeholder="How does this source address the knowledge gap?"
                 />
               </label>
-            </div>
-            <label className="field">
-              <span className="t-label">Source entity id</span>
-              <input
-                value={requirementDraft.sourceEntityId}
-                onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityId: event.target.value }))}
-                className="input"
-                placeholder="Source entity id"
-              />
-            </label>
-            <label className="field">
-              <span className="t-label">Research requirement</span>
-              <textarea
-                value={requirementDraft.researchRequirement}
-                onChange={(event) => setRequirementDraft((current) => ({ ...current, researchRequirement: event.target.value }))}
-                className="textarea h-[89px]"
-                placeholder="Research requirement"
-              />
-            </label>
-            <label className="field">
-              <span className="t-label">Knowledge gap</span>
-              <textarea
-                value={requirementDraft.knowledgeGap}
-                onChange={(event) => setRequirementDraft((current) => ({ ...current, knowledgeGap: event.target.value }))}
-                className="textarea h-[55px]"
-                placeholder="Knowledge gap"
-              />
-            </label>
-            <div className="flex flex-wrap items-center gap-[var(--s4)]">
-              <button type="submit" className="btn">
-                Save Requirement
-              </button>
-              <p className="t-muted" role="status">
-                {submitMessage || 'Persist a requirement from evidence or a manual note.'}
-              </p>
-            </div>
-          </form>
-          <div className="space-y-[var(--s3)]">
-            {requirements.map((requirement) => (
-              <article key={requirement.research_requirement_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-                  <p className="t-body font-bold text-[color:var(--bone-100)]">{requirement.source_event_name}</p>
-                  {requirement.status === 'open' ? (
-                    <span className="badge badge--monitor">
-                      <i>◉</i>Open
-                    </span>
-                  ) : (
-                    <span className="badge badge--cleared">
-                      <i>✓</i>Resolved
-                    </span>
-                  )}
-                </div>
-                <p className="t-body mt-[var(--s3)]">{requirement.research_requirement}</p>
-                <p className="t-muted mt-[var(--s2)]">Gap: {requirement.knowledge_gap}</p>
-                {/* Law 4: sourcing facts a reviewer checks against are records -- mono voice. */}
-                <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
-                  Source: {requirement.source_status} | Confidence: {requirement.source_confidence_tier} | Verification: {requirement.source_verification_state}
-                </p>
-                {requirement.status === 'open' ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleResolveRequirement(requirement.research_requirement_id)}
-                    disabled={resolvingId === requirement.research_requirement_id}
-                    className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Mark Resolved'}
-                  </button>
+              <div className="flex flex-wrap items-center gap-[var(--s4)]">
+                <button type="submit" disabled={gapSubmitting} className="btn disabled:cursor-not-allowed disabled:opacity-60">
+                  {gapSubmitting ? 'Filing…' : 'File Submission'}
+                </button>
+                {gapMessage ? (
+                  <p className="t-muted" role="status">{gapMessage}</p>
                 ) : null}
-              </article>
-            ))}
-          </div>
-        </section>
+              </div>
+            </form>
+          </section>
+        ) : null}
+
+        {/* ── Tab 3: General Research ── */}
+        {activeTab === 'general_research' ? (
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+              General Research
+            </h2>
+            <p className="t-body max-w-[64ch]">
+              Register useful research not yet requested by an open gap. Provenance and domain
+              classification are preserved. The source is not citable until reviewed and approved.
+              It can be linked to a requirement gap after registration.
+            </p>
+            <form onSubmit={handleGeneralResearch} className="space-y-[var(--s4)]">
+              <label className="field">
+                <span className="t-label">Title <span className="t-muted">(required)</span></span>
+                <input
+                  value={generalForm.title}
+                  onChange={(e) => setGeneralForm((f) => ({ ...f, title: e.target.value }))}
+                  className="input"
+                  placeholder="Source title"
+                  required
+                />
+              </label>
+              <div className="grid gap-[var(--s4)] md:grid-cols-2">
+                <label className="field">
+                  <span className="t-label">Publisher / journal</span>
+                  <input
+                    value={generalForm.publisher}
+                    onChange={(e) => setGeneralForm((f) => ({ ...f, publisher: e.target.value }))}
+                    className="input"
+                    placeholder="Publisher or journal name"
+                  />
+                </label>
+                <label className="field">
+                  <span className="t-label">Publication date</span>
+                  <input
+                    type="date"
+                    value={generalForm.publication_date}
+                    onChange={(e) => setGeneralForm((f) => ({ ...f, publication_date: e.target.value }))}
+                    className="input"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-[var(--s4)] md:grid-cols-2">
+                <label className="field">
+                  <span className="t-label">Source type</span>
+                  <select
+                    value={generalForm.source_type}
+                    onChange={(e) => setGeneralForm((f) => ({ ...f, source_type: e.target.value }))}
+                    className="input"
+                  >
+                    <option value="peer_reviewed">Peer Reviewed</option>
+                    <option value="clinical_guideline">Clinical Guideline</option>
+                    <option value="governing_body">Governing Body</option>
+                    <option value="textbook">Textbook</option>
+                    <option value="internal_policy">Internal Policy</option>
+                    <option value="coach_observation">Coach Observation</option>
+                    <option value="athlete_self_report">Athlete Self Report</option>
+                    <option value="sensor_data">Sensor Data</option>
+                    <option value="media">Media</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="t-label">Authority tier (1–5)</span>
+                  <select
+                    value={generalForm.authority_tier}
+                    onChange={(e) => setGeneralForm((f) => ({ ...f, authority_tier: e.target.value }))}
+                    className="input"
+                  >
+                    <option value="1">1 — Highest</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5 — Lowest</option>
+                  </select>
+                </label>
+              </div>
+              <label className="field">
+                <span className="t-label">Domain classification <span className="t-muted">(human-picked, correctable)</span></span>
+                <select
+                  value={generalForm.domain_classification}
+                  onChange={(e) => setGeneralForm((f) => ({ ...f, domain_classification: e.target.value as ResearchDomain | '' }))}
+                  className="input"
+                >
+                  <option value="">— select a domain —</option>
+                  {RESEARCH_DOMAINS.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {RESEARCH_DOMAIN_LABELS[domain]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="t-label">URL <span className="t-muted">(optional)</span></span>
+                <input
+                  value={generalForm.url}
+                  onChange={(e) => setGeneralForm((f) => ({ ...f, url: e.target.value }))}
+                  className="input"
+                  placeholder="https://…"
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-[var(--s4)]">
+                <button type="submit" disabled={generalSubmitting} className="btn disabled:cursor-not-allowed disabled:opacity-60">
+                  {generalSubmitting ? 'Registering…' : 'Register Source'}
+                </button>
+                {generalMessage ? (
+                  <p className="t-muted" role="status">{generalMessage}</p>
+                ) : null}
+              </div>
+            </form>
+          </section>
+        ) : null}
       </div>
     </main>
   );

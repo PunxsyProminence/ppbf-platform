@@ -5,9 +5,11 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   createShadowLibrarySource,
   listShadowLibrarySources,
+  updateShadowLibrarySourceMetadata,
   type ShadowLibrarySourceStatus,
   type ShadowLibrarySourceType,
 } from '@/src/server/pilot/shadowLibrary';
+import { isResearchDomain, RESEARCH_DOMAINS } from '@/src/server/pilot/shadowResearchSubmissions';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
@@ -164,6 +166,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'metadata must be an object' }, { status: 400 });
     }
 
+    // domain_classification is stored in metadata and must come from the
+    // shared taxonomy so the value is consistent between registration and
+    // the research workspace that reads it.
+    const metadataObj = body.metadata as Record<string, unknown> | undefined;
+    if (
+      metadataObj?.['domain_classification'] !== undefined
+      && metadataObj['domain_classification'] !== null
+      && !isResearchDomain(metadataObj['domain_classification'])
+    ) {
+      return NextResponse.json(
+        { ok: false, error: `metadata.domain_classification must be one of: ${RESEARCH_DOMAINS.join(', ')}` },
+        { status: 400 },
+      );
+    }
+
     const source = await createShadowLibrarySource({
       organizationId: principal.organizationId,
       actorAccountId: principal.accountId,
@@ -188,6 +205,52 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+    return jsonError(error);
+  }
+}
+
+// Correction path for domain_classification on an existing source. The same
+// taxonomy validation runs as on POST so nothing can be filed outside the
+// contract. Only metadata.domain_classification is updated — this is not a
+// general metadata merge, and full source field updates go through the evidence
+// review / curation workflow.
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+
+    const body = (await request.json().catch(() => ({}))) as {
+      source_id?: unknown;
+      domain_classification?: unknown;
+    };
+
+    if (typeof body.source_id !== 'string' || !body.source_id.trim()) {
+      return NextResponse.json({ ok: false, error: 'source_id is required' }, { status: 400 });
+    }
+
+    if (body.domain_classification === undefined || body.domain_classification === null) {
+      return NextResponse.json({ ok: false, error: 'domain_classification is required' }, { status: 400 });
+    }
+
+    if (!isResearchDomain(body.domain_classification)) {
+      return NextResponse.json(
+        { ok: false, error: `domain_classification must be one of: ${RESEARCH_DOMAINS.join(', ')}` },
+        { status: 400 },
+      );
+    }
+
+    const updated = await updateShadowLibrarySourceMetadata({
+      organizationId: principal.organizationId,
+      sourceId: body.source_id,
+      metadataPatch: { domain_classification: body.domain_classification },
+    });
+
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: 'Source not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, source_id: body.source_id });
+  } catch (error) {
     return jsonError(error);
   }
 }
