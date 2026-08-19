@@ -4,7 +4,7 @@ import BoardSummaryPanel from './BoardSummaryPanel';
 
 export default function BoardHubPage() {
   return (
-    <main className="room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="room room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         {/* The header sits on the board room's plaster upper wall, so it is
             written in dark ink rather than the bone type the leather panels

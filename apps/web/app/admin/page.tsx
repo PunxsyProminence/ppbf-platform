@@ -1104,7 +1104,7 @@ export default function AdminCapabilitiesPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
-      <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <header className="border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>

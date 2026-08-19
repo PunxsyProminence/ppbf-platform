@@ -133,7 +133,7 @@ function WorkspaceContent() {
   return (
     /* Law 6: a staff/volunteer workspace is a staff surface -- ink leather,
        the front-office room, not the family canvas it wore before. */
-    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-[1200px] flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)]">
         <header className="flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
           <div>

@@ -1518,7 +1518,7 @@ export default function AthleteWorkspace() {
     /* Gym-floor kiosk surface: ink ground with the floor room's brick wall
        (PAGE_MAP), the same room pattern /schedule uses. Law 5 applies to
        everything inside — targets at var(--tap), working type at var(--t-md). */
-    <div className="room--floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
+    <div className="room room--floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
       <div className="max-w-7xl mx-auto p-[var(--s4)] space-y-[var(--s6)]">
         {/* HEADER */}
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">

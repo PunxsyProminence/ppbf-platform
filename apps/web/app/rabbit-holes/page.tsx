@@ -238,7 +238,7 @@ function RabbitHoleAuthoringPage() {
   return (
     /* Law 6: authoring is coach/admin work -- ink leather, the front-office
        desk, not the family canvas this page wore before. */
-    <main className="room--floor min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="room room--floor min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-[1200px] px-[var(--s5)] py-[var(--s6)]">
         <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Gym Coaching</p>

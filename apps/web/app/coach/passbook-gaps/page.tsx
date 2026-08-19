@@ -134,7 +134,7 @@ export default function CoachPassbookGapsPage() {
       {/* Exactly one room, applied here and nowhere below: this page owns its
           <main>, so it supplies `room--floor` itself. Nothing inside adds a
           second `room--*` -- a nested room is two grounds fighting. */}
-      <main className="room--floor min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
+      <main className="room room--floor min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl">
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>

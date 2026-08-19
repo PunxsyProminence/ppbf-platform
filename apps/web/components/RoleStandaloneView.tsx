@@ -175,13 +175,41 @@ export default function RoleStandaloneView({
            .room--* sets a background-image as well as a colour, and this sheet
            is unlayered while Tailwind's utilities sit in a layer, so a room
            would beat the canvas ground and put a dark plank wall behind
-           canvas-coloured text. Rooms stay ink-only. */
-        className={[
-          familyGround ? '' : (room ? `room--${room}` : ''),
+           canvas-coloured text. Rooms stay ink-only.
+
+           BOTH CLASSES, ALWAYS. A room is composed of four parts in ppbf.css
+           and only one of them is the modifier:
+
+             .room          the ground, the ink, position and isolation
+             .room::before  THE LIGHT -- the lamp pools and the falloff
+             .room::after   the plate layer, painting var(--plate)
+             .room--X       the material variation, which DECLARES --plate
+                            but never consumes it
+
+           This line emitted `room--X` alone, so every surface the shell wraps
+           got a wall texture with no lamp on it, no plate layer, and none of
+           the base ground -- and a pseudo-element selector that never matches
+           produces no warning anywhere. Three surfaces in the whole app wrote
+           the pair by hand (/chalkboard, /wall, /names) and they were the only
+           three that looked like lit rooms. Hence roomBaseClass.test.ts, which
+           fails if this string loses the base again.
+
+           The ink branch also drops `bg-[var(--hide-950)]` once a room is
+           present. It was already dead there -- .room--X states both a
+           background-colour and a background-image, unlayered, so the utility
+           never painted -- and a dead ground utility sitting beside a live one
+           is a second answer to "what colour is this page", which is how the
+           map and the wall drift apart. The roomless branch keeps it, because
+           there it is the only ground the surface has. The ink colour goes for
+           the same reason: .room states --bone-200, and .room--board and
+           .room--file deliberately state --hide-900 over it. */
+        className={
           familyGround
             ? 'on-canvas min-h-screen'
-            : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]',
-        ].filter(Boolean).join(' ')}
+            : room
+              ? `room room--${room} min-h-screen`
+              : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]'
+        }
       >
         {showShellHeader && (
           <header className={familyGround ? BAND : BAND_INK}>
