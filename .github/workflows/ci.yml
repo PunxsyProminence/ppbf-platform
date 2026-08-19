@@ -41,6 +41,15 @@ jobs:
       - name: Verify critical entrypoint contracts
         run: node scripts/verify-entrypoint-contracts.mjs
 
+      # Unconditional, and above the classifier on purpose. The docs-only fast
+      # path below skips install, tests and build, which is how commits kept
+      # reporting green on main over an already-destroyed apps/web/package.json.
+      # This step runs in well under a second and needs no node_modules --
+      # package-integrity.yml runs the same script as its own workflow so a
+      # cancelled `validate` run still leaves a verdict.
+      - name: Verify package integrity
+        run: node scripts/verify-package-integrity.mjs
+
       - name: Test CI surface classifier
         shell: bash
         run: |
