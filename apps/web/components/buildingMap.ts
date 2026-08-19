@@ -65,6 +65,13 @@ export interface Door {
 
 const BOARD_GATE: readonly ClubRole[] = ['board', 'platform_owner'];
 const ADMIN_GATE: readonly ClubRole[] = ['admin', 'platform_owner'];
+/* The client-side spelling of SHADOW_PROJECTION_READ_ROLES: every seat inside
+   an organization, plus Omega for the read. 'admin' covers organization_admin
+   (mapPilotRoleToClubRole collapses the pair); 'board' is absent because
+   ORGANIZATION_MEMBER_ROLES does not carry it. */
+const MEMBER_GATE: readonly ClubRole[] = [
+  'athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer',
+];
 
 export const BUILDING: readonly Door[] = [
   // ---------------------------------------------------------------- office --
@@ -240,8 +247,21 @@ export const BUILDING: readonly Door[] = [
     roles: ['coach'], keywords: 'publish film share video' },
   { href: '/coach/environment/intake-router', label: 'Intake Router', room: 'floor',
     roles: ['coach'], keywords: 'intake routing new athlete triage' },
-  { href: '/coach/environment/passbook-check', label: 'Passbook Check', room: 'floor',
-    roles: ['coach'], keywords: 'usa boxing passbook insurance eligibility verification' },
+  /* "Passbook Check" until 2026-08-19, and the word was doing two jobs. USA
+     Boxing's passbook is the external competitor book this scaffold is a
+     placeholder for; the athlete's passbook is this platform's own record
+     book -- `/coach/passbook-gaps` below, over `src/server/pilot/passbook.ts`.
+     One label for both taught every reader the wrong thing, so this door now
+     names the external check it is actually about. The route, the page and
+     its "Planned -- Not Yet Implemented" disclosure are untouched: nothing
+     behind this door is built yet, and it must keep saying so. */
+  { href: '/coach/environment/passbook-check', label: 'USA Boxing Eligibility Check', room: 'floor',
+    roles: ['coach'],
+    keywords: 'usa boxing passbook competitor book insurance eligibility verification sanction',
+    hint: 'Planned \u2014 the external USA Boxing check. Nothing is wired to a real source yet.' },
+  { href: '/coach/passbook-gaps', label: 'Passbook Gaps', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'passbook gap retention stopped coming absent last seen queue triage book athlete record',
+    hint: 'Open gaps in your athletes\u2019 books, worst attendance first \u2014 last seen, and absent days since.' },
   { href: '/coach/drills', label: 'Drills', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'drills exercises techniques practice assign library catalogue',
     hint: 'Drill library and programming.' },
@@ -313,9 +333,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/board/at-large', label: 'At Large', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
 
   // ------------------------------------------------------------------ file --
-  { href: '/research', label: 'Research Inbox', room: 'file', roles: OPEN,
+  { href: '/research', label: 'Research Inbox', room: 'file', roles: MEMBER_GATE,
     keywords: 'research intake requirements gaps evidence labels' },
-  { href: '/research/chat', label: 'Research Chat', room: 'file', roles: OPEN,
+  { href: '/research/chat', label: 'Research Chat', room: 'file', roles: MEMBER_GATE,
     keywords: 'ask research question chat' },
   { href: '/research/review', label: 'Submission Review', room: 'file', roles: ADMIN_GATE,
     keywords: 'submission review responsive partially responsive not responsive duplicate applicability curator' },

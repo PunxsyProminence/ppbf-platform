@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import {
   askLibrary,
@@ -135,8 +136,22 @@ export default function ResearchQAChatPage() {
   return (
     /* Room--file: the Library stands in the research room -- cork wall,
        gooseneck light. The conversation itself is a leather desk blotter and
-       every answer from approved evidence arrives as a paper slip on it. */
-    <main className="room--file min-h-screen bg-[var(--hide-950)]">
+       every answer from approved evidence arrives as a paper slip on it. The
+       room is declared ONCE, by the shell's own <main>; this subtree must not
+       restate .room--file.
+
+       allowedRoles matches the two routes this page calls -- library/claims
+       and research-projection -- both of which run on
+       SHADOW_PROJECTION_READ_ROLES. /workspace already links The Library to
+       staff and volunteers on exactly that reasoning, so narrowing this to the
+       curator roles would lock out the audience the API grants. */
+    <RoleStandaloneView
+      roleLabel="The Library"
+      routeLabel="/research/chat"
+      allowedRoles={['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer']}
+      room="file"
+      showShellHeader={false}
+    >
       <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
@@ -297,6 +312,6 @@ export default function ResearchQAChatPage() {
           </section>
         </aside>
       </div>
-    </main>
+    </RoleStandaloneView>
   );
 }

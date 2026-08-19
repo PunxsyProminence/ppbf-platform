@@ -90,6 +90,13 @@ export default function PublicInterestReviewPage() {
       roleLabel="Public Interest Review"
       routeLabel="/admin/public-interest"
       allowedRoles={['admin', 'platform_owner']}
+      /* Law 6: every screen inherits exactly one room, and this one inherited
+         none -- the shell renders the bare ink ground when no room is named,
+         so the page stood on a wall-less floor. The office is what
+         buildingMap.ts already tells the corridor and the catalog this door
+         opens onto, and it is the right room for the work: an intake queue
+         somebody works through from a desk. */
+      room="office"
     >
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">

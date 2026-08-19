@@ -77,8 +77,10 @@ export default function PublicationWorkflowPage() {
 
   return (
     /* Ink ground (Law 6): a staff governance table, on the same leather
-       chassis as /source-control rather than the FeatureSurface scaffold. */
-    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+       chassis as /source-control rather than the FeatureSurface scaffold, and
+       in the same room -- .room--office, per buildingMap.ts. It had no room at
+       all, which is the sibling half of the same bug. */
+    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
           <p className="t-eyebrow tracking-[0.35em]">Publication Workflow</p>

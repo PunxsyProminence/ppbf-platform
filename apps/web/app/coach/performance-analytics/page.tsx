@@ -80,106 +80,104 @@ export default function PerformanceAnalyticsPage() {
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/performance-analytics" allowedRoles={['coach', 'admin']} room="floor" showShellHeader={false}>
-      <div className="room--floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-[var(--s5)]">
-            <p className="t-eyebrow">Performance Analytics</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Roster Rollup</h1>
-            <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-              Session logs, readiness check-ins, training days, and progression work over the selected window.
-              Read-only; every number comes from records the gym already keeps.
-            </p>
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-[var(--s5)]">
+          <p className="t-eyebrow">Performance Analytics</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Roster Rollup</h1>
+          <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+            Session logs, readiness check-ins, training days, and progression work over the selected window.
+            Read-only; every number comes from records the gym already keeps.
+          </p>
+        </div>
+
+        <nav aria-label="Window" className="mb-[var(--s5)] flex gap-[var(--s3)]">
+          {WINDOW_CHOICES.map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              className={choice === windowDays ? 'btn' : 'btn btn--ghost'}
+              aria-pressed={choice === windowDays}
+              onClick={() => setWindowDays(choice)}
+            >
+              {choice} days
+            </button>
+          ))}
+        </nav>
+
+        {errorMessage && (
+          <div className="alert alert--critical" role="alert">
+            <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert-body">
+              <p className="alert-title">Failed</p>
+              <p className="alert-msg">{errorMessage}</p>
+            </div>
           </div>
+        )}
 
-          <nav aria-label="Window" className="mb-[var(--s5)] flex gap-[var(--s3)]">
-            {WINDOW_CHOICES.map((choice) => (
-              <button
-                key={choice}
-                type="button"
-                className={choice === windowDays ? 'btn' : 'btn btn--ghost'}
-                aria-pressed={choice === windowDays}
-                onClick={() => setWindowDays(choice)}
-              >
-                {choice} days
-              </button>
-            ))}
-          </nav>
-
-          {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
-              <div className="alert-body">
-                <p className="alert-title">Failed</p>
-                <p className="alert-msg">{errorMessage}</p>
-              </div>
+        {loading ? (
+          <div className="flex justify-center py-[var(--s7)]">
+            <span className="working">Loading performance rollup...</span>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="mat-leather rounded-[var(--r-lg)]">
+            <div className="empty">
+              <div className="empty-glyph" aria-hidden="true">🥊</div>
+              <div className="empty-title">No athletes on your roster</div>
+              <p className="empty-msg mx-auto">Athletes you coach (or cover) will appear here with their rollup.</p>
             </div>
-          )}
-
-          {loading ? (
-            <div className="flex justify-center py-[var(--s7)]">
-              <span className="working">Loading performance rollup...</span>
-            </div>
-          ) : items.length === 0 ? (
-            <div className="mat-leather rounded-[var(--r-lg)]">
-              <div className="empty">
-                <div className="empty-glyph" aria-hidden="true">🥊</div>
-                <div className="empty-title">No athletes on your roster</div>
-                <p className="empty-msg mx-auto">Athletes you coach (or cover) will appear here with their rollup.</p>
-              </div>
-            </div>
-          ) : (
-            <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]" style={{ overflowX: 'auto' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr className="text-left">
-                    <th className="t-label p-[var(--s3)]">Athlete</th>
-                    <th className="t-label p-[var(--s3)]">Sessions</th>
-                    <th className="t-label p-[var(--s3)]">Avg RPE</th>
-                    <th className="t-label p-[var(--s3)]">Training days</th>
-                    <th className="t-label p-[var(--s3)]">Readiness</th>
-                    <th className="t-label p-[var(--s3)]">Trend</th>
-                    <th className="t-label p-[var(--s3)]">Open gaps</th>
-                    <th className="t-label p-[var(--s3)]">Drill completion</th>
+          </div>
+        ) : (
+          <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]" style={{ overflowX: 'auto' }}>
+            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+              <thead>
+                <tr className="text-left">
+                  <th className="t-label p-[var(--s3)]">Athlete</th>
+                  <th className="t-label p-[var(--s3)]">Sessions</th>
+                  <th className="t-label p-[var(--s3)]">Avg RPE</th>
+                  <th className="t-label p-[var(--s3)]">Training days</th>
+                  <th className="t-label p-[var(--s3)]">Readiness</th>
+                  <th className="t-label p-[var(--s3)]">Trend</th>
+                  <th className="t-label p-[var(--s3)]">Open gaps</th>
+                  <th className="t-label p-[var(--s3)]">Drill completion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.athlete_id} className="border-t border-[color:rgba(212,175,74,.18)]">
+                    <td className="p-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{item.full_name}</td>
+                    <td className="t-data p-[var(--s3)]">{item.sessions_completed}/{item.sessions_total}</td>
+                    <td className="t-data p-[var(--s3)]">{formatNumber(item.avg_rpe)}</td>
+                    <td className="t-data p-[var(--s3)]">{item.training_days}</td>
+                    <td className="t-data p-[var(--s3)]">
+                      {formatNumber(item.avg_readiness)}
+                      {item.readiness_count > 0 ? (
+                        <span className="ml-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">({item.readiness_count} check-ins)</span>
+                      ) : null}
+                    </td>
+                    <td className="p-[var(--s3)]">
+                      <ReadinessTrend early={item.readiness_early_avg} late={item.readiness_late_avg} />
+                    </td>
+                    <td className="t-data p-[var(--s3)]">{item.open_gaps}</td>
+                    <td className="t-data p-[var(--s3)]">
+                      {item.avg_assignment_completion == null ? '—' : `${Math.round(item.avg_assignment_completion)}%`}
+                      {item.active_assignments > 0 ? (
+                        <span className="ml-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">({item.active_assignments} active)</span>
+                      ) : null}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => (
-                    <tr key={item.athlete_id} className="border-t border-[color:rgba(212,175,74,.18)]">
-                      <td className="p-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{item.full_name}</td>
-                      <td className="t-data p-[var(--s3)]">{item.sessions_completed}/{item.sessions_total}</td>
-                      <td className="t-data p-[var(--s3)]">{formatNumber(item.avg_rpe)}</td>
-                      <td className="t-data p-[var(--s3)]">{item.training_days}</td>
-                      <td className="t-data p-[var(--s3)]">
-                        {formatNumber(item.avg_readiness)}
-                        {item.readiness_count > 0 ? (
-                          <span className="ml-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">({item.readiness_count} check-ins)</span>
-                        ) : null}
-                      </td>
-                      <td className="p-[var(--s3)]">
-                        <ReadinessTrend early={item.readiness_early_avg} late={item.readiness_late_avg} />
-                      </td>
-                      <td className="t-data p-[var(--s3)]">{item.open_gaps}</td>
-                      <td className="t-data p-[var(--s3)]">
-                        {item.avg_assignment_completion == null ? '—' : `${Math.round(item.avg_assignment_completion)}%`}
-                        {item.active_assignments > 0 ? (
-                          <span className="ml-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">({item.active_assignments} active)</span>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/coach/progression-intelligence" className="btn btn--ghost">
-              Progression Intelligence
-            </Link>
-            <Link href="/coach/operations" className="btn btn--ghost">
-              Coach Operations
-            </Link>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+
+        <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
+          <Link href="/coach/progression-intelligence" className="btn btn--ghost">
+            Progression Intelligence
+          </Link>
+          <Link href="/coach/operations" className="btn btn--ghost">
+            Coach Operations
+          </Link>
         </div>
       </div>
     </RoleStandaloneView>

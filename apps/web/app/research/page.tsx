@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
+import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -430,8 +431,26 @@ export default function ResearchIntakePage() {
   return (
     /* Room--file: the research wall. Intake cards are paper records pinned to
        the cork; the requirement form is the leather-bound clipboard hung
-       beside them. */
-    <main className="room--file min-h-screen bg-[var(--hide-950)]">
+       beside them. The room is declared ONCE, by the shell's own <main>, and
+       this subtree must not restate .room--file: two rooms on one page is a
+       real defect, not a duplicate class.
+
+       allowedRoles is the client-side spelling of SHADOW_PROJECTION_READ_ROLES
+       -- the set every read this page performs already authorizes
+       (research-projection, research-requirements, research-submissions), and
+       the set the requirement POST allows through ORGANIZATION_MEMBER_ROLES.
+       It is deliberately not narrowed to the curator roles: the curator panels
+       here already hide themselves when the sources probe is refused, so a
+       coach or volunteer still has a working inbox. 'admin' covers
+       organization_admin (mapPilotRoleToClubRole); 'board' is absent because
+       ORGANIZATION_MEMBER_ROLES does not carry it and the APIs would refuse. */
+    <RoleStandaloneView
+      roleLabel="Research Inbox"
+      routeLabel="/research"
+      allowedRoles={['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer']}
+      room="file"
+      showShellHeader={false}
+    >
       <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
@@ -830,6 +849,6 @@ export default function ResearchIntakePage() {
           </section>
         ) : null}
       </div>
-    </main>
+    </RoleStandaloneView>
   );
 }

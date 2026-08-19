@@ -83,8 +83,11 @@ export default function SourceControlPage() {
   return (
     /* Ink ground (Law 6): source-control is a staff governance table, so it
        stands on the same leather chassis as /operations rather than the
-       FeatureSurface cream scaffold it launched on. */
-    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+       FeatureSurface cream scaffold it launched on. The room is .room--office,
+       the room buildingMap.ts already files this door under -- ink alone is a
+       ground, not a room, and a screen with no room is the one thing Room DNA
+       does not allow. */
+    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
           <p className="t-eyebrow tracking-[0.35em]">Source Control</p>
