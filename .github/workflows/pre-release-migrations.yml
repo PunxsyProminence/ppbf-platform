@@ -1,0 +1,243 @@
+# ─────────────────────────────────────────────────────────────────────
+# Pre-release migration gate -- run this BEFORE dispatching apply-migrations.
+#
+# WHY THIS EXISTS
+#   On 2026-08-19 an `apply-migrations` dispatch (target `staging`, migration
+#   `all`) failed with ATHLETE_CHECK_INS_NOT_READY and stopped the release
+#   chain before every migration ordered after it. The schema was fine. The
+#   *assertion* was wrong: the runner matched `pg_get_constraintdef()` against
+#   `like '%between 1 and 5%'`, but Postgres deparses a CHECK from the parsed
+#   tree rather than echoing the submitted text, so BETWEEN comes back as
+#   `>= 1 AND <= 5`. That readiness check could not have passed on any
+#   database, ever -- and nothing told us until an operator burned a real
+#   staging dispatch on it. See PR #488 for the fix.
+#
+#   The point is not that one query had a typo. It is that a migration
+#   runner's post-apply readiness assertion is code that only executes at
+#   dispatch time, against a real environment, at the exact moment when being
+#   wrong is most expensive. The `.pg.test.ts` suites are the only place that
+#   code runs against a real Postgres somewhere cheap. So they have to run
+#   somewhere on a schedule, not only when someone happens to touch the right
+#   file.
+#
+# WHAT THE EXISTING GATES DO AND DO NOT COVER
+#   * `npm test` -- the always-on gate in ci.yml -- passes
+#     `--testPathIgnorePatterns=\.pg\.test\.ts$`. Every migration suite is
+#     excluded from it by construction. That exclusion is deliberate and stays:
+#     ~100 embedded-Postgres suites do not belong on every pull request.
+#   * ci.yml does run `npm run test:migrations`, but only when the changed-file
+#     classifier (scripts/ci-classify-paths.mjs) flags the diff as touching
+#     `apps/web/src/server/pilot/`, `apps/web/scripts/pilot-`, `infra/azure/`,
+#     or the package manifests. That is per-PR coverage of a PR's own diff.
+#     Nothing verifies the migration suites against the *merged* state of
+#     `main` -- which is the state a release operator actually dispatches
+#     from, and which no single PR's CI run ever saw.
+#
+#   This workflow closes that second gap, and only that one. It does not add
+#   pg suites to pull-request CI.
+#
+# SAFETY PROPERTIES
+#   Mirroring apply-migrations.yml's framing, because this job is the thing
+#   that runs *before* it and the contrast matters:
+#     * This job holds NO Azure credentials. It requests no `id-token`
+#       permission, declares no `environment:`, and reads no secret. It
+#       cannot reach staging or production even by accident.
+#     * All 105 `.pg.test.ts` files spin up their own disposable, local-only
+#       embedded Postgres via apps/web/scripts/test-embedded-pg-server.mjs (a
+#       child process bound to 127.0.0.1, with a test-scoped data directory
+#       torn down on SIGTERM). The suites that drive a `pilot-apply-*` runner
+#       through its real entrypoint overwrite AZURE_POSTGRES_CONNECTION_STRING
+#       to point at that local server first. Every `postgres://` URL appearing
+#       anywhere in those 105 files resolves to `localhost`; none of them reads
+#       an Azure credential.
+#     * It is therefore safe to run unattended on a schedule, which is the
+#       whole reason it can be scheduled and apply-migrations.yml cannot.
+#
+# RELATIONSHIP TO apply-migrations.yml
+#   A green run here means: every migration's SQL applies from nothing, is
+#   idempotent on re-apply, and -- for the runners whose suites exercise them
+#   -- its post-apply readiness assertion actually passes against a real
+#   Postgres. It does NOT mean the target database is in the expected
+#   pre-migration state. It removes one specific failure mode (an assertion
+#   that could never pass) from the dispatch, not all of them.
+# ─────────────────────────────────────────────────────────────────────
+
+name: pre-release-migrations
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 07:17 UTC = 03:17 America/New_York in EDT, 02:17 in EST -- the middle of
+    # the night for the only people who dispatch releases here, so a ~20 minute
+    # run never contends with a working day's CI. The offset minute is
+    # deliberate: scheduled jobs at :00 queue behind the rest of GitHub's
+    # hourly spike, and this job is long enough already.
+    - cron: '17 7 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  # One verification run at a time per ref. Unlike ci.yml on pull requests,
+  # nothing is cancelled: an operator who dispatches this while the nightly is
+  # mid-run wants the answer, and a cancelled run reads as "never verified" --
+  # the same reasoning ci.yml applies to pushes on main.
+  group: pre-release-migrations-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    # Measured: the full 105-suite loop below runs in 11m52s wall clock on a
+    # developer machine (individual suites are 3-14s each), plus `npm ci`,
+    # which is also where embedded-postgres unpacks its server binaries. A
+    # hosted runner is slower, so budget roughly triple. 90 minutes leaves room
+    # for that and for the suite count to keep growing without anyone
+    # remembering to revisit this number.
+    #
+    # Serial on purpose. The suites allocate their Postgres port by binding :0
+    # and reading it back, which is a race the moment two run concurrently, and
+    # sharding across a matrix would split the failure list this job exists to
+    # produce whole. Twelve minutes of a machine nobody is waiting on is not
+    # worth trading either property away.
+    timeout-minutes: 90
+    env:
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Resolve the migration suite list
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Single source of truth: the suite list is READ OUT OF the
+          # `test:migrations` chain in apps/web/package.json rather than
+          # restated here. A restated list is a list that drifts, and a
+          # migration suite that silently stops running is the exact failure
+          # class this workflow exists to prevent.
+          node --input-type=module <<'NODE' > suites.txt
+          import fs from 'node:fs';
+
+          const { scripts } = JSON.parse(
+            fs.readFileSync('apps/web/package.json', 'utf8'),
+          );
+
+          const chain = scripts['test:migrations'];
+          if (!chain) {
+            throw new Error(
+              'apps/web/package.json has no `test:migrations` script -- this ' +
+                'workflow derives its suite list from that chain.',
+            );
+          }
+
+          const chained = [
+            ...chain.matchAll(/npm run (test:migrations:[A-Za-z0-9:_-]+)/g),
+          ].map((match) => match[1]);
+
+          if (chained.length === 0) {
+            throw new Error(
+              '`test:migrations` matched no `npm run test:migrations:*` steps.',
+            );
+          }
+
+          const undefined_ = chained.filter((name) => !scripts[name]);
+          if (undefined_.length > 0) {
+            throw new Error(
+              `test:migrations chains scripts that do not exist: ${undefined_.join(', ')}`,
+            );
+          }
+
+          // Drift guard, in both directions. A `test:migrations:*` script that
+          // nobody chained runs nowhere -- not in ci.yml's conditional step,
+          // not locally, not here -- which looks exactly like coverage until
+          // the day it matters.
+          const orphans = Object.keys(scripts)
+            .filter((name) => name.startsWith('test:migrations:'))
+            .filter((name) => !chained.includes(name));
+          if (orphans.length > 0) {
+            throw new Error(
+              `these test:migrations:* scripts are not in the test:migrations ` +
+                `chain, so nothing runs them: ${orphans.join(', ')}`,
+            );
+          }
+
+          process.stdout.write(`${chained.join('\n')}\n`);
+          NODE
+
+          echo "Resolved $(wc -l < suites.txt) migration suites from the test:migrations chain."
+
+      - name: Run every migration suite (report all failures)
+        shell: bash
+        run: |
+          # Deliberately NOT `npm run test:migrations`. That script chains its
+          # ~105 steps with `&&`, which is right for a human running it locally
+          # -- you want to stop and fix the first thing that broke. It is wrong
+          # for a release gate: it reports one failure and hides every later
+          # one, so an operator fixes it, re-runs the ~20 minute job, and
+          # discovers the next. Here each suite runs independently (they are
+          # independent -- every one stands up its own embedded Postgres from
+          # the base schema) and the job fails once at the end with the
+          # complete list.
+          #
+          # `test:migrations` itself is untouched, so local behaviour is
+          # unchanged.
+          #
+          # No `set -e`: a failing suite must not abort the loop.
+          set -uo pipefail
+
+          passed=0
+          failed=()
+
+          while read -r suite; do
+            [[ -n "$suite" ]] || continue
+            echo "::group::${suite}"
+            # `< /dev/null` because the loop is reading suites.txt on stdin: a
+            # child that touched stdin would swallow the remaining suite names.
+            if npm --workspace web run "$suite" < /dev/null; then
+              passed=$((passed + 1))
+            else
+              failed+=("$suite")
+              echo "::error title=Migration suite failed::${suite}"
+            fi
+            echo "::endgroup::"
+          done < suites.txt
+
+          {
+            echo "### Pre-release migration gate"
+            echo ""
+            echo "- passed: ${passed}"
+            echo "- failed: ${#failed[@]}"
+            if [[ ${#failed[@]} -gt 0 ]]; then
+              echo ""
+              echo "Failing suites:"
+              echo ""
+              for suite in "${failed[@]}"; do
+                echo "- \`npm --workspace web run ${suite}\`"
+              done
+              echo ""
+              echo "Do not dispatch \`apply-migrations\` until these are green."
+            fi
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ ${#failed[@]} -gt 0 ]]; then
+            echo ""
+            echo "${#failed[@]} migration suite(s) failed:"
+            printf '  %s\n' "${failed[@]}"
+            exit 1
+          fi
+
+          echo ""
+          echo "All ${passed} migration suites passed."
