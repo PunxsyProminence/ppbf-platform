@@ -1,10 +1,24 @@
 # SHADOW research intake import
 
-The verified PPBF boxing-learning and gym-operations research package is stored at:
+This document covers the deterministic import of a **derived GitHub research corpus** into the SHADOW Library. It does not define original-file custody or replace the governed Microsoft archive.
 
-`apps/web/seed-data/shadow-research/2026-08-07`
+Start with [SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md) for the controlling archive, provenance, taxonomy, and source-of-truth boundaries.
 
-It contains the original ten research artifacts and database-ready seed data for:
+## Source layers
+
+The research system deliberately separates three layers:
+
+1. **Governed originals and provenance** — `admin@punxsyprominence.org / OneDrive / Library Intake`, using `_CONTROL`, R00, R01-R19, and R98.
+2. **Reviewer-facing evidence reference package** — `apps/web/seed-data/research-evidence/2026-08-07/`; this package is not loaded into the database.
+3. **Loadable SHADOW corpus** — `apps/web/seed-data/shadow-research/2026-08-07/`; this is the current importer's default seed directory.
+
+The repository also contains `apps/web/seed-data/shadow-research/2026-08-08/`. Its Penn State and multidiscipline integration artifacts remain proposed/reference material unless a separate approved import and runtime verification establishes a later state.
+
+Presence in Microsoft, Google Drive, GitHub, or a seed directory does not by itself make evidence citable.
+
+## Current loadable package
+
+`apps/web/seed-data/shadow-research/2026-08-07/` contains database-ready seed data for:
 
 - 1,214 library sources
 - 14 synthesis documents
@@ -12,11 +26,25 @@ It contains the original ten research artifacts and database-ready seed data for
 - 30 capability coverage records
 - 229 open research requirements
 
+These are derived records. Licensed publisher PDFs remain in the governed internal Microsoft archive and must not be committed to public GitHub.
+
 ## Safety boundaries
 
 The importer is dry-run by default and writes only when `--apply` is supplied. A live run also requires the operator to declare the expected PostgreSQL hostname and database. The importer refuses missing organizations, missing or inactive accounts, non-privileged accounts, cross-tenant actors, cross-tenant ID collisions, malformed CSV/JSON/array fields, changed row counts, broken package references, and post-import count mismatches.
 
 New evidence is not automatically trusted. Database defaults leave sources and documents at `pending_review` and `unverified`. The importer neither approves evidence nor generates embeddings.
+
+Importing does not:
+
+- prove the original archive object exists;
+- verify source provenance;
+- establish duplicate or lineage status;
+- index documents;
+- generate embeddings;
+- approve or verify sources/documents;
+- resolve a research requirement;
+- adopt PPBF methodology;
+- change SHADOW algorithm or safety policy.
 
 ## Local validation
 
@@ -60,13 +88,32 @@ The five table loads and their post-import verification run in one transaction. 
 
 The GitHub Actions workflow `.github/workflows/import-shadow-research.yml` provides the same process for staging or production. Apply mode requires the target to be retyped and the phrase `IMPORT RESEARCH` to be entered exactly. Production environment protection rules apply normally.
 
-## Make the evidence retrievable
+## Make imported evidence retrievable
 
-After import:
+Import is only the first stage. Retrieval requires all of the following:
 
-1. A qualified evidence reviewer verifies and approves selected sources/documents in `/admin/shadow`.
-2. Run the existing `pilot:backfill-chunk-embeddings` process with the same embedding deployment used by SHADOW retrieval.
-3. Confirm approved sources, indexed documents, and non-null chunk embeddings before enabling citations.
-4. Review `EVIDENCE_TIER_SPEC.md` separately. This integration deliberately does not change `shadowEvidenceTier.ts`.
+1. Generate chunk embeddings with the same embedding deployment used by SHADOW retrieval. Repeat the existing `pilot:backfill-chunk-embeddings` process until no eligible chunks remain.
+2. Index each document so `ingest_state = 'indexed'` and `index_completed_at` is populated.
+3. A qualified evidence reviewer verifies and approves selected sources and documents in `/evidence`.
+4. Confirm active, non-suppressed sources; approved/verified sources and documents; indexed documents; and current-model, non-null chunk embeddings before claiming citations are live.
 
-Medical clearance, concussion decisions, youth safety, safeguarding, weight cutting, contact clearance, and eligibility remain human decisions regardless of research status.
+The SHADOW Library reads the requesting organization's approved shelf plus the reserved `__platform__` baseline. The governed archive is upstream custody; it is not a competing retrieval authority.
+
+## Ongoing research intake
+
+The bulk importer is not the finished ongoing source-intake workflow. New research should flow through:
+
+```text
+governed original archive
+    -> provenance and duplicate/lineage review
+    -> SHADOW Library source registration as pending/unverified
+    -> optional research-requirement link in /research
+    -> document processing, chunking, and embeddings
+    -> applicability review
+    -> indexing and human evidence review in /evidence
+    -> retrieval eligibility
+```
+
+The missing archive-to-SHADOW automation must be research-specific and idempotent. It may reuse authenticated PDF validation and SharePoint upload primitives, but it must preserve stable archive identity, content hash, provenance, and duplicate status. A generic upload classifier must not decide research authority or subject classification automatically.
+
+Medical clearance, concussion decisions, youth safety, safeguarding, weight cutting, contact clearance, sparring clearance, and eligibility remain human decisions regardless of research status.
