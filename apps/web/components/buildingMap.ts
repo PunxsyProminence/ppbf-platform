@@ -65,6 +65,13 @@ export interface Door {
 
 const BOARD_GATE: readonly ClubRole[] = ['board', 'platform_owner'];
 const ADMIN_GATE: readonly ClubRole[] = ['admin', 'platform_owner'];
+/* The client-side spelling of SHADOW_PROJECTION_READ_ROLES: every seat inside
+   an organization, plus Omega for the read. 'admin' covers organization_admin
+   (mapPilotRoleToClubRole collapses the pair); 'board' is absent because
+   ORGANIZATION_MEMBER_ROLES does not carry it. */
+const MEMBER_GATE: readonly ClubRole[] = [
+  'athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer',
+];
 
 export const BUILDING: readonly Door[] = [
   // ---------------------------------------------------------------- office --
@@ -313,9 +320,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/board/at-large', label: 'At Large', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
 
   // ------------------------------------------------------------------ file --
-  { href: '/research', label: 'Research Inbox', room: 'file', roles: OPEN,
+  { href: '/research', label: 'Research Inbox', room: 'file', roles: MEMBER_GATE,
     keywords: 'research intake requirements gaps evidence labels' },
-  { href: '/research/chat', label: 'Research Chat', room: 'file', roles: OPEN,
+  { href: '/research/chat', label: 'Research Chat', room: 'file', roles: MEMBER_GATE,
     keywords: 'ask research question chat' },
   { href: '/research/review', label: 'Submission Review', room: 'file', roles: ADMIN_GATE,
     keywords: 'submission review responsive partially responsive not responsive duplicate applicability curator' },
