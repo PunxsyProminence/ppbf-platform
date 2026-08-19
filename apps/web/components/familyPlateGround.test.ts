@@ -84,7 +84,7 @@ describe('T7: the warm ground is reachable and is not a room', () => {
     );
 
     // The family ground resolves plate 7...
-    expect(css).toMatch(/\.on-canvas\s*\{\s*--plate:\s*url\("\/plates\/plate-07-warm-ground-01\.png"\)/);
+    expect(css).toMatch(/\.on-canvas\s*\{\s*--plate:\s*url\("\/plates\/plate-07-warm-ground-01\.jpg"\)/);
 
     // ...and no room does. If a room ever claimed the warm plate, T7 would be
     // satisfiable by a staff surface, which is not what the rule protects.

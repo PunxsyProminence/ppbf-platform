@@ -22,8 +22,7 @@
     "shots": "npm --workspace web run shots --",
     "deep:audit": "powershell -ExecutionPolicy Bypass -File ./scripts/deep-audit.ps1",
     "seed:data": "tsx scripts/seed-data.ts",
-    "seed:data:dry": "tsx scripts/seed-data.ts --dry-run",
-    "plates:materialize": "node scripts/materialize-plates.mjs"
+    "seed:data:dry": "tsx scripts/seed-data.ts --dry-run"
   },
   "devDependencies": {
     "csv-parse": "^7.0.2",
