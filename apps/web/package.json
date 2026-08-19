@@ -284,6 +284,7 @@
     "@types/pg": "^8.21.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "async-exit-hook": "^2.0.1",
     "csv-parse": "^7.0.2",
     "embedded-postgres": "18.4.0-beta.17",
     "eslint": "^9",

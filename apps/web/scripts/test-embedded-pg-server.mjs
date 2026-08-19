@@ -10,7 +10,26 @@
 
 import fs from 'node:fs/promises';
 
+import AsyncExitHook from 'async-exit-hook';
 import EmbeddedPostgres from 'embedded-postgres';
+
+// `embedded-postgres` registers its own SIGTERM/SIGINT handler at import time
+// (`AsyncExitHook(gracefulShutdown)` in its module body, via the same
+// `async-exit-hook` package imported above -- it is hoisted to a single
+// shared copy in node_modules, so this is the same module instance and the
+// unhook below actually removes embedded-postgres's listener). That handler
+// calls `pg.stop()` and then forces `process.exit()` on its own timeline,
+// with no knowledge of the `fs.rm` cleanup below. Because Node invokes every
+// listener registered for a signal, both handlers run concurrently on
+// SIGTERM/SIGINT: embedded-postgres's only awaits `pg.stop()` before exiting
+// (no filesystem I/O after that), while ours also awaits `fs.rm(dataDir)`.
+// The former reliably wins the race and calls `process.exit()` before our
+// `fs.rm` promise settles, which is exactly how the data directory was
+// leaking even on a passing run. Unhooking these two signals here makes our
+// own handler below the sole authority over the shutdown order, so `fs.rm`
+// is guaranteed to complete before this process exits.
+AsyncExitHook.unhookEvent('SIGTERM');
+AsyncExitHook.unhookEvent('SIGINT');
 
 const dataDir = process.argv[2];
 const port = Number.parseInt(process.argv[3], 10);
@@ -30,11 +49,17 @@ const pg = new EmbeddedPostgres({
 
 async function shutdown(exitCode) {
   try {
+    // Fully stop Postgres (embedded-postgres's own gracefulShutdown listener
+    // is unhooked above, so this is the only caller of `pg.stop()` and it is
+    // awaited to completion) BEFORE attempting to remove its data directory.
     await pg.stop();
   } catch {
     // best-effort
   }
   try {
+    // Awaited to completion before `process.exit` below, so a raced SIGTERM
+    // can no longer truncate this cleanup (see the unhook above for why that
+    // was previously possible).
     await fs.rm(dataDir, { recursive: true, force: true });
   } catch {
     // best-effort -- a lingering temp dir is not a correctness issue
