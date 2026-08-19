@@ -5,6 +5,87 @@ Written for an agent picking up work who needs to know what is already done,
 already in review, or deliberately parked — before spending an afternoon on
 something that merged this morning.
 
+## LIVE, 2026-08-18 ~20:47 UTC — #415→#418→#419→#420 stack rebased and verified; #415 already merged by the other session
+
+**#415 merged.** Confirmed via `pull_request_read`: `merged: true, merged_by: PunxsyProminence` — the other concurrent session merged it before this one could, exactly the race this file has been tracking all day. No action needed on #415 itself; the reset to `bc1e6967` and the rescue branch (`origin/rescue/415-stray-commits`) both did their job.
+
+**#418, #419, #420 are all rebased onto current `main` (via #415), fully verified, pushed, and marked ready.** Sequential rebase, same discipline as #410→#423 earlier in this file:
+
+- **#418** (`claude/ppbf-platform-club-members`, head `79003de2`) — real architectural reconciliation in `rosterImport.ts` against an already-merged perf PR's batched-INSERT restructuring (not a mechanical rebase — see the PR body for the split-routing design). Full suite 517/6476, both features' own tests together 36/36, `clubMembers.pg.test.ts` 6/6, migration-coverage guards 3/127. Base retargeted to `main`.
+- **#419** (`claude/ppbf-platform-film-study-video`, head `6e687013`) — a background agent found the PR body's "5 commits" claim was stale; the real branch carried a 6th (`9213fdaa`, requiring the reviewer to have watched before releasing a minor's footage — confirmed as the legitimate coach-side half of already-merged #421, which had explicitly deferred it here). No architectural conflicts despite real overlap risk with merged #465/#470. Full suite 517/6512, 6 `.pg.test.ts` files 90/90, migration-coverage guards 3/130. PR body rewritten, base retargeted to `main`.
+- **#420** (`claude/ppbf-platform-ffmpeg-barrels`, head `b8091a62`) — a second background agent verified the PR body's "1 commit" claim was accurate this time (unlike #419), rebased cleanly onto #419's new tip with zero conflicts (narrow 4-file diff, no overlap with anything else in the stack). Full suite 517/6522, targeted tests 33/33, migration-coverage guards 3/130. Stays based on `claude/ppbf-platform-film-study-video` (not `main`) since #419 hasn't merged yet — retarget after #419 merges.
+
+**New gotcha found and fixed, worth knowing if a PR you rebased seems to hang with no CI:** retargeting a PR's base via the GitHub API (`update_pull_request`) fires an `edited` event, not `synchronize` — and `ci.yml`'s `on: pull_request: branches: [main]` only listens to the *default* types (opened/synchronize/reopened), not `edited`. So #418 and #419 sat "ready for review" with real green-locally content and **zero check runs** against their head SHA (confirmed via `get_status`/`get_check_runs` showing `total_count: 0`), because the base-retarget-after-#415-merged was the only event that had fired. Fixed by pushing a trivial commit to each (an empty commit for #418; a `commit-tree`-built empty-diff commit for #419, done without needing its worktree) to force a real `synchronize`. Both now show `validate` genuinely `in_progress`. If you retarget a PR's base and it doesn't seem to pick up CI, check `get_check_runs` before assuming it's fine — a "ready" PR with a stale base can look done and never have been tested against its current head at all.
+
+**UPDATE 2026-08-18 ~21:44 UTC — all three merged, the whole stack is closed.** #418 merged as `cef08cae`. Merging #418 immediately made #419's `mergeable_state` go `dirty` (its base sha was one merge behind) — rebased #419 onto the new `main` (git auto-recognized #418's squashed content and skipped it, zero real conflicts), re-verified (517/6512, 6 pg-suites/90, migration-coverage 3/130, all matching the PR's own numbers exactly), pushed as `2cb33607`, CI green, merged as `b8c9fac0`. Retargeting #420's base from `claude/ppbf-platform-film-study-video` to `main` then showed a *misleadingly large* diff (39 files/8 commits) — that's expected (the branch was still forked from #419's pre-merge tip, not the squash commit) and is not itself a conflict signal; **do not `git rebase origin/main` plain on a PR like this** — it replays the *entire* original commit chain including already-merged ancestors and hits real conflicts on content that's actually fine. Use `git rebase --onto origin/main <old-fork-point> <branch>` instead, where `<old-fork-point>` is the exact commit #420's own unique commit was built on top of (found via `git log --oneline <branch> -8` and matching subject lines against what's now on `main`) — that replayed cleanly to #420's true 1-commit/4-file diff. Re-verified (517/6522, targeted 33/33, no migrations touched so no pg/coverage re-run needed), pushed as `0cf8446a`, CI green, merged as `e24555c3`.
+
+**The full #415→#418→#419→#420 stack is on `main`.** Temporary rebase worktrees/branches (`wt-419-rebase`, `wt-420-rebase`, and their local branches) have been removed. Nothing left to do here.
+
+## LIVE, 2026-08-18 ~16:38 UTC — two sessions are both merging right now
+
+**If you are reading this in the next hour or so: STOP and check `gh pr list`
+before merging anything.** Another session (not this one) merged #421, #416,
+and #467 directly in the last few minutes while this session was mid-way
+through its own pass over the same open-PR backlog. Neither session
+coordinated the timing — this file is being updated after the fact, not
+before, which is exactly the gap it exists to close. If you are a third
+session arriving now: **do not start a new sweep of the open-PR list until
+you have re-fetched it fresh** — several rows below may already be stale by
+the time you read them.
+
+**PR #447 closed as superseded, not merged.** It was a 9-commit bundle from a
+capability-network audit, ~2 days stale. Checking it against current `main`
+before touching anything found 8 of its 9 commits already independently
+shipped via other merged PRs (#450, #439, #438, #440, #448, #443, #445,
+#441) — and its video-scan escalation commit isn't just duplicated, it's
+**contradicted** by the merged #439 (narrower verdict set, hard-fixed
+severity vs. #439's per-verdict severity). Its `docs/handoffs/HANDOFF_*.md`
+files are also near-duplicates of the `docs/HANDOFF_*.md` files #437 already
+landed at the repo root. **One piece was genuinely non-redundant and is
+still worth building**: a compliance-rules route plus an "Escalate to
+Compliance" UI action on the Film Study review queue (commit `b65d490e` on
+the now-closed branch, `claude/artifact-code-session-7piryt`, if anyone
+wants to hand-port it fresh off current `main` rather than dig it out of
+history). See the closing comment on #447 for the full table.
+
+**A real branch-contamination problem, found by an agent bringing PR #415 up
+to date, needs a human decision before anyone touches that branch again.**
+`origin/claude/ppbf-platform-orientation-qg4j3b` (PR #415, "staff
+credentials") should end at commit `bc1e6967` per the PR's own description
+(which says the branch "was trimmed back to its original three
+staff-credentials commits"). It does not — the live branch carries four more
+commits past that point: a no-op merge of `main`, then three real,
+**unrelated** commits (a research-classification taxonomy layer axis, a
+SHADOW-library-to-SharePoint mirror, and a Coach Intelligence
+safety-escalations digest change) that have nothing to do with staff
+credentials and do not exist anywhere in `origin/main`'s history. PR #418
+(the next PR stacked on #415) has its own base recorded as `bc1e6967`
+exactly, confirming that's the intended tip and the three trailing commits
+are stray — most likely the other concurrent session committing to this
+branch by mistake instead of its own.
+
+**Update: the two non-redundant stray commits are confirmed to exist
+nowhere else in the repository** (`9b40e47b` "Add a layer axis to the
+research classification taxonomy" and `279e4d14` "Mirror approved SHADOW
+Library sources to SharePoint as a backup" — checked via `git log --all
+--source --grep` across every local and remote ref; only match is this
+branch). The third (`8412311f`, Coach Intelligence escalations/violations)
+is confirmed redundant — already shipped as merged PR #450. **Before any
+reset, all three have been saved to `origin/rescue/415-stray-commits`**
+(pushed, points at the branch's current tip `8412311f`) so nothing is lost
+regardless of what happens to `claude/ppbf-platform-orientation-qg4j3b`
+next. **#415 has been reset and is now in flight.** Force-reset to
+`bc1e6967`, merged with current `main` (two purely-additive conflicts in
+`apply-migrations.yml`/`package.json`, same union-both-sides pattern as
+every other conflict in this batch), full suite green (516/6457), pushed,
+marked ready for review, CI running. Will merge once green, then #418 gets
+rebased with `git rebase --onto main
+bc1e6967132e8e940cd37e0b3ffec10920c050f8 claude/ppbf-platform-club-members`
+(only #418's own commit(s) replay onto the new main), then #419 onto
+#418's new tip, then #420 onto #419's new tip — same sequential pattern as
+#410→#423 earlier in this file. If you pick this up mid-stack, check
+`gh pr list` for current state before touching any of #415/#418/#419/#420.
+
 **Status as of `origin/main` at `3f961545`, 2026-08-18 09:18 UTC.** This file
 carries the commit it was written against because it will go stale. Check
 `git log` and the open PR list before trusting any row.
@@ -782,10 +863,19 @@ a writer or a reader.
 
 ---
 
-## Closed — 32, merged
+## Closed — 41, merged
 
 | Gap | Closed by |
 |---|---|
+| Staff credential documents had no self-upload, admin verification, or public status surface | #415 |
+| Roster imports silently dropped or misfiled non-athlete rows (coaches, volunteers, board members) | #418 |
+| Film Study queue could only approve/reject, with no coach feedback loop, revision history, or per-org video release policy; coach-side release had no watch-confirmation gate | #419 |
+| Interval frame sampling for Film Study wasted budget on empty footage, with no measured alternative | #420 |
+| No UI path could place or lift a training hold on a child — the #1 priority in this whole audit | #467 |
+| A quarantined minor's video could be approved (made playable) with one unwatched click | #421 |
+| Owner-approved background art was undeployed; 3 routes bypassed the family/warm-ground rule | #416 |
+| No read-only measurement of medical-clearance coverage ahead of the fail-closed gate rollout | #464 |
+| Full-spectrum UX/UI audit report, plus a dead privacy-denylist entry, 5 stale docs, and the unvalidated `parent_id` guardian-link privilege gap (owner-approved narrowing) | #456 |
 | `pilot.shadow_medical_administrative_status` had no authority check and no expiry, so one clearance recorded once counted forever | #473 |
 | The video content screen sent frames to a vision model with no guardian consent check | #465 |
 | `upsertGuardian` nulled `account_id`/`phone`/`email` on an omitted field | #466 |
