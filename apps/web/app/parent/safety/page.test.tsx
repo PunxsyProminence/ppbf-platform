@@ -34,6 +34,11 @@ const HELD_ATHLETE = [
       lift_condition_text: 'Bring a signed clearance note.',
       placed_at: '2026-08-01T00:00:00.000Z',
       expires_at: null,
+      // Owner decision 2026-08-19: a guardian gets a real point of contact.
+      // RefusalStamp's training_hold kind THROWS on a blank coachName rather
+      // than render a nameless hold, so a fixture without this renders nothing
+      // at all -- which is exactly how this test caught its own omission.
+      placed_by_name: 'Coach Neale',
     },
     gates: [
       { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'flagged' as const, evaluated_at: '2026-08-01T00:00:00.000Z' },
@@ -67,6 +72,19 @@ test('an athlete under an active hold shows the athlete-safe explanation and lif
   await screen.findByText('Training is paused right now');
   expect(screen.getByText('You need a doctor note before training resumes.')).toBeInTheDocument();
   expect(screen.getByText(/Bring a signed clearance note\./)).toBeInTheDocument();
+});
+
+// Owner decision 2026-08-19: "so they have a point of contact to investigate
+// why". A hold that reaches a guardian without naming who placed it is the
+// state this decision reversed, so it gets its own assertion rather than
+// riding along inside the test above.
+test('a guardian is told who placed the hold, so they have someone to ask', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: HELD_ATHLETE })) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Training is paused right now');
+  expect(screen.getByText('Coach Neale')).toBeInTheDocument();
 });
 
 test('an athlete with no active hold shows "no training pause on file", not silence', async () => {
