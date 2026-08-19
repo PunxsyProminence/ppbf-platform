@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from 'reac
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
+import RefusalStamp from '@/components/RefusalStamp';
 import {
   EVIDENCE_TIER_MEANINGS,
   EVIDENCE_TIER_ORDER,
@@ -89,21 +90,6 @@ const EVIDENCE_TIER_STYLES: Record<ShadowEvidenceTier, string> = {
   EMERGING: 'border border-[color:var(--brass-900)] bg-[var(--hide-800)] text-[color:var(--bone-200)]',
   EXPERIMENTAL: 'border border-[color:var(--brass-900)] bg-[var(--hide-700)] text-[color:var(--bone-300)]',
   RESEARCH_NEEDED: 'border border-[color:var(--brass-800)] bg-[var(--hide-600)] text-[color:var(--bone-300)]',
-};
-
-// Law 7 gives a refusal ink, and the sheet resolves .stamp's ink per ground:
-// stamp-red on paper/canvas, locked-ink on the leathers. This map used to
-// exist because the tier fills above were near-black hexes rather than
-// materials, so no single ink could be stated for all four -- except every
-// entry then held the identical value (#dc2626, an off-palette red), so the
-// per-tier shape was carrying nothing. Now that all four tiers are leather,
-// the sheet's own leather answer applies uniformly: --locked-ink. Kept as a
-// map only because the call sites index it per message.
-const STAMP_INK_BY_TIER: Record<ShadowEvidenceTier, string> = {
-  PROVEN: 'var(--locked-ink)',
-  EMERGING: 'var(--locked-ink)',
-  EXPERIMENTAL: 'var(--locked-ink)',
-  RESEARCH_NEEDED: 'var(--locked-ink)',
 };
 
 function getEvidenceTierLabel(tier: ShadowEvidenceTier): string {
@@ -1074,13 +1060,16 @@ function ShadowChatPageContent() {
   // Role denial does not need capabilities; show it as soon as auth is known.
   if (authChecked && !chatRoleAllowed) {
     return (
-      <main className="room--office min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+      <main className="room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
         <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 border border-[color:var(--brass-900)] px-6">
           <div className="text-center">
             <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p>
-            <h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Not available for this role</h1>
+            <RefusalStamp
+              kind="wrong_door"
+              detail={`your signed-in role (${userRole || 'unknown'}) cannot use SHADOW chat`}
+              className="mt-3"
+            />
             <p className="mt-4 max-w-md text-sm text-[color:var(--bone-400)]">
-              Your signed-in role ({userRole || 'unknown'}) cannot use SHADOW chat.
               You are still signed in — return to your dashboard or sign out.
             </p>
           </div>
@@ -1106,7 +1095,7 @@ function ShadowChatPageContent() {
 
   if (!authChecked || !capabilitiesLoaded) {
     return (
-      <main className="room--office min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+      <main className="room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6">
           <div className="text-center">
             <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">Secure Session</p>
@@ -1118,7 +1107,7 @@ function ShadowChatPageContent() {
   }
 
   return (
-    <main className="room--office min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
+    <main className="room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]">
       <header className="border-b border-[color:var(--brass-900)]">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-5">
           <div>
@@ -1286,7 +1275,7 @@ function ShadowChatPageContent() {
                             disabled={busy || isLoading}
                             className={`border px-2 py-1 text-xs uppercase tracking-[0.1em] transition disabled:opacity-50 ${
                               armedDelete
-                                ? 'border-red-700 bg-red-950 text-red-400'
+                                ? 'border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] text-[color:var(--restricted-ink)]'
                                 : 'border-[color:var(--brass-800)] bg-transparent text-[color:var(--bone-400)] hover:text-[color:var(--bone-200)]'
                             }`}
                           >
@@ -1338,7 +1327,7 @@ function ShadowChatPageContent() {
                       : `border-[color:var(--brass-900)] bg-[var(--hide-900)] text-[color:var(--bone-300)] ${EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]}`
                   }`}
                 >
-                  <p className={`text-sm leading-relaxed ${msg.text.includes('⚠️ CRITICAL LOG ERROR') ? 'animate-pulse text-[#b91c1c]' : ''}`}>{msg.text}</p>
+                  <p className="text-sm leading-relaxed">{msg.text}</p>
                   {msg.type === 'shadow' && msg.evidenceTier ? (
                     <p
                       className="mt-2 text-xs font-bold uppercase tracking-[0.12em] text-[color:var(--bone-400)]"
@@ -1358,7 +1347,7 @@ function ShadowChatPageContent() {
                       acted on alone. Amber rather than the tier's red, because
                       this is an answer to weigh, not a refusal. */}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' ? (
-                    <p className="mt-1 text-xs leading-relaxed text-[#b45309]">
+                    <p className="mt-1 text-xs leading-relaxed text-[color:var(--restricted)]">
                       No verified Library evidence matched this question. Treat the answer above as
                       unsourced -- confirm it with a coach before acting on it.
                     </p>
@@ -1378,10 +1367,7 @@ function ShadowChatPageContent() {
                   {msg.type === 'shadow' && msg.state && msg.state !== 'ok' ? (
                     msg.state === 'filtered' ? (
                       <p className="mt-3">
-                        <span
-                          className="border border-red-700 bg-red-950 px-2 py-1 text-xs uppercase tracking-[0.12em]"
-                          style={{ color: STAMP_INK_BY_TIER[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER] }}
-                        >
+                        <span className="border border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] px-2 py-1 text-xs uppercase tracking-[0.12em] text-[color:var(--restricted-ink)]">
                           Withheld
                         </span>
                       </p>
@@ -1395,10 +1381,7 @@ function ShadowChatPageContent() {
                   ) : null}
                   {msg.type === 'shadow' && msg.handoff ? (
                     <div className="mt-3">
-                      <span
-                        className="border border-red-700 bg-red-950 px-2 py-1 text-xs uppercase tracking-[0.12em]"
-                        style={{ color: STAMP_INK_BY_TIER[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER] }}
-                      >
+                      <span className="border border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] px-2 py-1 text-xs uppercase tracking-[0.12em] text-[color:var(--restricted-ink)]">
                         Human Handoff Required
                       </span>
                       <p className="mt-2 text-xs leading-relaxed text-[color:var(--bone-300)]">{msg.handoff}</p>
@@ -1564,7 +1547,7 @@ function ShadowChatPageContent() {
 
 export default function ShadowChatPage() {
   return (
-    <Suspense fallback={<main className="room--office min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]"><div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6"><div className="text-center"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p><h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Loading scope</h1></div></div></main>}>
+    <Suspense fallback={<main className="room--night min-h-screen bg-[var(--hide-950)] [font-family:var(--font-type)] text-[color:var(--bone-300)]"><div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6"><div className="text-center"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--bone-400)]">SHADOW</p><h1 className="mt-3 text-xl uppercase tracking-[0.14em] text-[color:var(--bone-200)]">Loading scope</h1></div></div></main>}>
       <ShadowChatPageContent />
     </Suspense>
   );
