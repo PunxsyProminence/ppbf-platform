@@ -22,6 +22,26 @@ Read additional documents only when the task actually touches their domain:
 
 Do not preload archived audits, the historical queue, superseded plans, old build plans, or unrelated domain rules.
 
+## Working channel (owner decision, 2026-08-19)
+
+All repository work runs through the owner's primary Claude Code session. No
+other channel -- another AI session, a connector, a chat tool relaying
+commits -- commits, pushes, or merges here on its own authority. Work
+originating elsewhere (designs, research, generated assets) enters as a
+branch or PR that the primary session or the owner reviews before merge;
+binary assets enter through real file upload, never re-encoded through a
+chat channel.
+
+Direct pushes to `main` are prohibited for everyone, including agents that
+technically can. Every change lands by PR with green CI. This rule exists
+because on 2026-08-19 nine direct-to-main pushes from a secondary channel
+destroyed `apps/web/package.json` (39,755 bytes -> 327), left `main` unable
+to build, test, or migrate, and a docs-only CI fast path then painted it
+green; the same channel's base64 relay truncated a binary asset mid-file.
+Written policy reports; branch protection enforces -- only the owner can
+set the required status checks that make this rule technical rather than
+textual.
+
 ## Six invariants
 
 1. **Start current.** Reconcile against current `origin/main`; stale branches and old prose are not current behavior.
