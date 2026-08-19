@@ -446,30 +446,44 @@ body.ppbf {
    and RefusalStamp's training_hold record, both of which print "A note from
    your coaches" as a .t-eyebrow inside a .mat-paper box. */
 .mat-paper .t-eyebrow { color: var(--brass-800); }
-/* .t-command (--bone-100) and .t-body (--bone-200) are the same story --
-   both tuned for dark leather, both near-invisible on --paper (~1.05:1,
-   worse than the eyebrow above) -- but neither gets the general .mat-paper
-   restatement here. .mat-paper appears 100+ times across the app (change-pin
-   already routes around exactly this gap rather than fix it -- see that
-   page's own comment) and a blanket .mat-paper .t-command / .t-body rule is
-   real design-system work this branch did not set out to do and has not
-   audited for. Scoped instead to the training-hold stamp surfaces this
-   branch DOES own (TrainingHoldBanner.tsx, parent/safety/page.tsx), both of
-   which now carry data-refusal-stamp="training_hold" on their wrapper. The
-   general .mat-paper fix for t-command/t-body is a real follow-up, tracked
-   as a finding in this branch's PR rather than done silently here. */
-[data-refusal-stamp="training_hold"] .mat-paper .t-command,
-[data-refusal-stamp="training_hold"] .mat-paper .t-body {
+/* The rest of the restatement, promoted from the training-hold scope it was
+   parked in to .mat-paper itself. Same root cause as the eyebrow above, same
+   fix: .t-command, .t-body and .t-label all pin bone rungs tuned for dark
+   leather, and .mat-paper is a light ground, so each one lands near-invisible
+   on --paper (#F4EBD4):
+
+     .t-command  --bone-100 #F7F1E1   1.05:1  ->  #241B12  14.25:1
+     .t-body     --bone-200 #EFE6D0   1.05:1  ->  #3A2E1D  11.13:1
+     .t-label    --bone-400 #B5A688   2.01:1  ->  #4A3B26   9.09:1
+
+   (Worst case against the material's own gradient -- .mat-paper darkens to
+   #E7DBBD at the bottom edge -- is 12.31:1 / 9.61:1 / 7.85:1. Every one
+   clears AA for normal text, so the 11px labels are covered too.)
+
+   The three inks are .on-canvas's own voices, not new values: this sheet's
+   light ground already answers exactly this question, and cornerColor.test.ts
+   pins that quartet as THE light-ground text set. No saturated colour is
+   involved, so Law 2 is untouched, and nothing here is the only channel
+   carrying meaning (Law 3) -- these are the same glyph-and-label voices,
+   only legible.
+
+   The parked version was scoped to [data-refusal-stamp="training_hold"] and
+   is gone rather than kept beside this: two rules for one fact is how the
+   training-hold box and every other paper box drift apart. Live surfaces this
+   reaches that nothing else corrects -- all ink-ground, so .on-canvas never
+   applied: the Sports Medicine hold-and-scope form's labels, the coach
+   progression-intelligence suggestion cards, and AthleteWorkspace's three
+   paper notes (check in / your floor plan / your goals).
+
+   .t-command also takes .on-canvas's text-shadow with it. The base rule casts
+   a hard black drop shadow for a lit stencil on leather; on paper that reads
+   as soot under the letter rather than as light. */
+.mat-paper .t-command {
   color: #241B12;
+  text-shadow: 0 1px 0 rgba(255,255,255,.4), 0 0 0 transparent;
 }
-/* .t-label (--bone-400) is the same story again, on the Sports Medicine
-   clearance board's own hold box ("Lifts when: ..."): ~2.0:1 on --paper,
-   still short of the 4.5:1 an 11px label owes. Reuses .on-canvas's own
-   .t-label ink (#4A3B26) rather than inventing a fourth value -- canvas-warm
-   and paper are close enough in luminance that the same rung clears both. */
-[data-refusal-stamp="training_hold"] .mat-paper .t-label {
-  color: #4A3B26;
-}
+.mat-paper .t-body  { color: #3A2E1D; }
+.mat-paper .t-label { color: #4A3B26; }
 /* Ragged lower edge, no image asset */
 .note-torn {
   clip-path: polygon(0 0, 100% 0, 100% 94%,
