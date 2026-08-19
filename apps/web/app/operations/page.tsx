@@ -109,54 +109,6 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', notes: 'Parked by owner-approved assessment (2026-08-15, BACKLOG-publication-automation): the internal publication machinery that exists — video compliance, research evidence review, retraction — is human-gated on purpose, and outward automation has no defined destination or disclosure set yet. Front-end placeholder remains visible.' },
 ];
 
-const shadowReadinessEquation = 'Readiness = max(1, min(10, (Sleep x 1.25) - (Soreness x 0.45) + (Discipline x 0.3)))';
-const shadowRpeEquation = 'Delta RPE = RPE Observed - RPE Intended';
-
-const shadowCertificationSignals = [
-  'System Core Tracking Context: ONLINE',
-  'Enforcement Context: Production Build v21.1 - SHADOW Pre-Flight Calibration',
-  'Aesthetic Preset: ULTRA-DENSE WINTER GRIT',
-];
-
-// The "BREAK MY 40% RULE" override line is gone from this list by owner
-// decision: the concept was removed from the platform (see the coach landing
-// rework), and any future override must be explicit, auditable, and
-// rationale-required -- never a magic token, and never advertised on a status
-// page as if it existed.
-const shadowBoundaryChecks = [
-  'Readiness upper bound test resolves to 10.0 and remains stable at clamp.',
-  'Readiness lower bound test resolves to 1.0 and remains stable at clamp.',
-  'Any readiness score below 5.0 triggers protective route and drill constraints.',
-  'Delta RPE lockout engages when discrepancy is 2 or greater until rationale is provided.',
-];
-
-const shadowArchitectureNodes = [
-  {
-    name: 'Background Telemetry Scout',
-    details: [
-      'Silent state scraping and metric watch.',
-      'Delta RPE sieve and intercept checks.',
-      'Zulu-timestamped JSON transaction output for pending control pipeline.',
-    ],
-  },
-  {
-    name: 'Blunt Analytical Hub',
-    details: [
-      'Direct, fact-based guidance responses.',
-      'Refusal matrix for diagnosis and treatment requests.',
-      'Role isolation block for restricted governance and finance content.',
-    ],
-  },
-];
-
-const shadowComplianceChecks = [
-  '12-role viewport segregation prevents cross-role data leakage.',
-  'Athlete view cannot mount finance/admin controls.',
-  'Board and governance view cannot parse raw individual biometric streams.',
-  'Build-state badges stay visible for QA handoff and release triage.',
-  'Immutability default verified_by_jason: false remains locked pending coach verification.',
-];
-
 /* Build state is deliberately kept OFF the status ladder.
 
    These tiles used to carry it on the ladder's own colours — green for
@@ -231,82 +183,42 @@ export default function OperationsHubPage() {
             </div>
           </section>
 
-          <details className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s4)]">
-            <summary className="cursor-pointer list-none t-command" style={{ fontSize: 'var(--t-lg)' }}>
-              System Diagnostics and SHADOW Certification
-            </summary>
-            <div className="mt-4 space-y-5">
-            <div className="space-y-[var(--s3)] mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="t-eyebrow">System Operational Audit and Validation Report</p>
-              <p className="t-body">
-                SHADOW v21.1 seed is ingested, stress-validated, and sealed for development deployment. This build section mirrors the certified guardrails used for floor safety, role isolation, and audit integrity.
-              </p>
-              <div className="grid gap-2 md:grid-cols-3">
-                {shadowCertificationSignals.map((signal) => (
-                  <div key={signal} className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-data uppercase tracking-[0.08em]">
-                    {signal}
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* The "System Diagnostics and SHADOW Certification" panel used to sit
+              here, ending in a green .stamp--green reading "Signed & Active" over
+              "Certification Status: Signed and Active". It is deleted, and it must
+              not come back.
 
-            <div className="grid gap-4 xl:grid-cols-2">
-              <article className="space-y-[var(--s3)] mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Mathematical Gate Validation</h3>
-                <p className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-data">{shadowReadinessEquation}</p>
-                <p className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-data">{shadowRpeEquation}</p>
-                <div className="grid gap-2">
-                  {shadowBoundaryChecks.map((item) => (
-                    <p key={item} className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-body">
-                      {item}
-                    </p>
-                  ))}
-                </div>
-              </article>
+              Nothing signed it. The whole panel was module-level string constants
+              in this file — no fetch, no state, no build metadata, no signer, no
+              date, no build id. A certification stamp that names no authority and
+              no artifact is a decoration that reads as a guarantee, on the one
+              surface where staff go to ask whether the platform is safe to run on.
 
-              <article className="space-y-[var(--s3)] mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Privacy and Compliance Boundaries</h3>
-                <div className="grid gap-2">
-                  {shadowComplianceChecks.map((item) => (
-                    <p key={item} className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-body">
-                      {item}
-                    </p>
-                  ))}
-                </div>
-              </article>
-            </div>
+              It was also wrong on the facts:
 
-            <article className="space-y-[var(--s4)] mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>SHADOW Dual-Engine Architecture</h3>
-              <div className="grid gap-3 lg:grid-cols-2">
-                {shadowArchitectureNodes.map((node) => (
-                  <div key={node.name} className="space-y-[var(--s2)] mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
-                    <p className="t-eyebrow">{node.name}</p>
-                    <div className="grid gap-2">
-                      {node.details.map((detail) => (
-                        <p key={detail} className="t-body">
-                          {detail}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* This announced a PASS on a solid --red-primary field — the
-                  safety gate's red carrying a success message, which is the
-                  most misleading way the token has been misused anywhere in
-                  the app. A signed certification is a governance decision, so
-                  Law 7 gives it ink: a stamp on the page, in the approved
-                  green the system reserves for exactly this. */}
-              <div className="mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
-                <span className="stamp stamp--green">Signed &amp; Active</span>
-                <p className="t-body mt-[var(--s4)]">
-                  Certification Status: Signed and Active. Logical paths, equations, role boundaries, and sandbox behavior are aligned for SHADOW core build execution.
-                </p>
-              </div>
-            </article>
-            </div>
-          </details>
+              * "Mathematical Gate Validation" presented the readiness equation as
+                a live safety gate. formulas/registry.ts registers that exact
+                formula as LEGACY-READINESS, support 'experimental_unsupported':
+                "Coefficients, input scales, fairness, and clinical/safety validity
+                are unproven. It must not clear, restrict, or prescribe training."
+                readinessBoard.ts keeps it deliberately unwired for that reason;
+                calculateReadinessL14 has no caller but its own unit test.
+              * "Any readiness score below 5.0 triggers protective route and drill
+                constraints" described a threshold that does not exist. The real
+                numbers are READINESS_GREEN_MIN = 7 and READINESS_YELLOW_MIN = 4 in
+                readinessBoard.ts, and they are display triage colours over a
+                staff-typed score — they constrain nothing.
+              * "12-role viewport segregation" was a count of nothing: ClubRole in
+                components/roleRoutes.ts defines 16 roles.
+
+              readinessMath.ts still holds the 1-10 clamp and the delta-RPE >= 2
+              lockout-unless-rationale, and both are unit-tested — but neither has a
+              production caller either, so neither is a guardrail this page may
+              advertise as active. If a real certification ever exists, it needs a
+              signer, a timestamp, and a build it was signed against, read from a
+              record — not a const.
+
+              page.test.tsx pins the absence. */}
 
           <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Role Selector</h2>
