@@ -29,9 +29,15 @@ import type { ReactNode } from 'react';
 const push = jest.fn();
 const replace = jest.fn();
 
+/* Which room the drawer is standing in. GlobalRoleHeader mounts this component
+   on every route, so the pathname is the only thing that tells it whether it is
+   on the gym floor or in the board room -- and half the tests below are about
+   what it must NOT offer in the four rooms whose DNA forbids an egg. */
+let pathname = '/dashboard';
+
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace }),
-  usePathname: () => '/dashboard',
+  usePathname: () => pathname,
 }));
 
 jest.mock('next/link', () => ({
@@ -87,6 +93,7 @@ beforeEach(() => {
   replace.mockClear();
   clearRoleSession.mockClear();
   role = 'coach';
+  pathname = '/dashboard';
   window.localStorage.clear();
   resetGymSoundForTests();
   (globalThis as { fetch?: unknown }).fetch = jest.fn(() => Promise.resolve({ ok: true }));
@@ -358,5 +365,126 @@ describe('the quiet acknowledgments', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+/* ==========================================================================
+   THE EGGS HAVE A ROOM
+
+   docs/shadow-ui/ROOM-PURPOSE-DNA.md answers "Easter eggs?" for all six rooms.
+   Twice it is yes -- the gym floor (their PRIMARY HOME) and the front office.
+   Four times it is NEVER, in capitals: board, file, clinic, and after hours on
+   a deny. docs/shadow-ui/EGGS-LOAD-FIRST-12.md says it from the other end:
+   "Never load onto: board, file, clinic, shadow deny."
+
+   This palette is mounted by GlobalRoleHeader on EVERY route, so before this
+   change both of its eggs -- the hidden bell, and the gym's noticing lines --
+   were offered in all six. A board member reading a governance screen could
+   type "bell" and ring one; an admin working the clearance ladder in the
+   clinic got told "Before six. Somebody always is."
+   ========================================================================== */
+
+const FORBIDDEN = [
+  ['the board room', '/board'],
+  ['the file room', '/research'],
+  ['the clinic', '/admin/escalations'],
+  ['after hours', '/shadow'],
+] as const;
+
+const ALLOWED = [
+  ['the front office', '/dashboard'],
+  ['the gym floor', '/schedule'],
+] as const;
+
+describe('the bell knows which room it is in', () => {
+  it.each(FORBIDDEN)('is not in %s, however plainly you ask for it', (_room, route) => {
+    pathname = route;
+    render(<CardCatalog />);
+    openCatalog();
+    for (const word of ['bell', 'ring', 'gong']) {
+      type(word);
+      expect(screen.queryByText('Ring the bell')).toBeNull();
+    }
+  });
+
+  it.each(ALLOWED)('is still there in %s for anybody who wonders', (_room, route) => {
+    pathname = route;
+    render(<CardCatalog />);
+    openCatalog();
+    type('bell');
+    expect(screen.getByText('Ring the bell')).toBeTruthy();
+  });
+
+  it('follows a nested route into the room it belongs to', () => {
+    pathname = '/board/treasurer/2026';
+    render(<CardCatalog />);
+    openCatalog();
+    type('bell');
+    expect(screen.queryByText('Ring the bell')).toBeNull();
+  });
+
+  // The room rule must cost the drawer nothing else: a board member still gets
+  // a working command palette, they just do not get a joke in it.
+  it.each(FORBIDDEN)('leaves every other act working in %s', (_room, route) => {
+    pathname = route;
+    render(<CardCatalog />);
+    openCatalog();
+    expect(screen.getByText('Print this page')).toBeTruthy();
+    expect(screen.getByText('Copy a link to this page')).toBeTruthy();
+    expect(screen.getByText('Sign out')).toBeTruthy();
+    type('sound');
+    expect(screen.getByText('Turn the gym sound on')).toBeTruthy();
+  });
+});
+
+describe('the gym noticing knows it too', () => {
+  it.each(FORBIDDEN)('says nothing before dawn in %s', (_room, route) => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 2, 4, 4, 40));
+    try {
+      pathname = route;
+      render(<CardCatalog />);
+      openCatalog();
+      expect(screen.queryByText(/before six/i)).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(ALLOWED)('still says it in %s', (_room, route) => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 2, 4, 4, 40));
+    try {
+      pathname = route;
+      render(<CardCatalog />);
+      openCatalog();
+      expect(screen.getByText(/before six/i)).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not nod in a forbidden room', () => {
+    window.localStorage.setItem('ppbf.catalog.opens', '4');
+    pathname = '/board';
+    render(<CardCatalog />);
+    openCatalog();
+    expect(screen.queryByText(/you know where the drawer is/i)).toBeNull();
+  });
+
+  /* The nod fires on the fifth open and only ever once, so counting opens in a
+     room that can never show it would spend the egg where nobody can see it.
+     The count does not move in the board room; the fifth open on the floor is
+     still the fifth. */
+  it('does not spend the fifth-open nod in a room that could never show it', () => {
+    window.localStorage.setItem('ppbf.catalog.opens', '4');
+    pathname = '/board';
+    const boardRoom = render(<CardCatalog />);
+    openCatalog();
+    expect(window.localStorage.getItem('ppbf.catalog.opens')).toBe('4');
+    boardRoom.unmount();
+
+    pathname = '/schedule';
+    render(<CardCatalog />);
+    openCatalog();
+    expect(screen.getByText(/you know where the drawer is/i)).toBeTruthy();
   });
 });
