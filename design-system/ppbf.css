@@ -617,6 +617,23 @@ body.ppbf {
 .stamp--flat    { rotate: 0deg; }
 .stamp--lg      { font-size: 17px; padding: 9px 15px; border-width: 4px; }
 
+/* Kiosk-scale ink (Law 5). The plain .stamp sits at --t-sm (15px) with no
+   minimum footprint -- fine on a desk screen, too small for the gym-floor
+   tablet the Refusal Stamp family (RefusalStamp.tsx) is built to render on,
+   where a stamp is often the whole content of the screen a kid is looking
+   at. Same move as .btn--kiosk / .input--kiosk: bump type to the --t-md
+   kiosk floor and give the mark a real --tap-sized footprint, glyph and
+   label both included via flex, without inventing a new type voice or
+   colour of its own. */
+.stamp--kiosk {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-md);
+  min-height: var(--tap);
+  padding: var(--s3) var(--s5);
+}
+
 /* A stamp is ink pressed into paper, so the colours above are the ones that
    belong on the warm ground: --stamp-red measures 5.78:1 on canvas. On the
    leathers the same ink is 1.83:1 to 3.58:1, because a dark pigment on a dark

@@ -164,6 +164,15 @@ describe('the app only names design-system classes that exist', () => {
     }
   });
 
+  /* The Refusal Stamp family (RefusalStamp.tsx) is the first consumer of the
+     stamp namespace sized for a gym-floor tablet -- named individually
+     because losing stamp--kiosk would silently shrink every refusal stamp
+     below the Law 5 floor without the generic reference check noticing a
+     class went missing versus merely unused. */
+  it('keeps the kiosk-scale stamp variant defined', () => {
+    expect(defined.has('stamp--kiosk')).toBe(true);
+  });
+
   /* A brace swallowed at a merge boundary produced a stylesheet browsers
      accepted and Turbopack rejected. Cheap to assert here so it fails in the
      suite rather than at build time. */
