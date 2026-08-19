@@ -102,8 +102,13 @@ Full detail: `apps/web/app/api/pilot/auth/README.md`.
 ## 2. Reaching a specific child
 
 The single function every athlete-scoped read and write funnels through.
-`access.ts` is owned by **open PR #431** and is called, never edited, by
-everything below.
+`access.ts` is called, never edited, by everything below. (This section
+previously attributed `access.ts` to "open PR #431" -- that was wrong on both
+counts: #431 closed on `fcabbde5` as "Batch shadow-job list authorization
+instead of one check per row", not an access.ts feature branch, and
+`access.ts` itself is not owned by any open PR. What #431 actually added --
+the batched `accessibleAthleteIds` used by `getJobsForActor` -- is the
+"Batched form" row below, already marked **LIVE**.)
 
 | Gate | What it checks | Enforced at | Refuses with | Status |
 |---|---|---|---|---|
@@ -198,7 +203,7 @@ find.
 | Uniform refusal | "no such account", "no photo", "not released", "not your family" all return the same 404; the card is assembled **after** the decision so it cannot be read backwards | `profile/photo/[accountId]/route.ts`, `profile/card/route.ts` | 404 `Not found` | **LIVE** |
 | Roster decides per row | `scope=organization` changes which rows come back, never what may be seen on one | `profile/roster/route.ts` | plate per row | **LIVE** |
 | Wall / wall-of-names privacy | public surfaces resolve every athlete to initials unless a guardian-signed waiver row says otherwise; opaque hashed keys, no `athlete_id`; org fixed; IP-budgeted | `wallDisplay.ts:resolveDisplayVisibility`, `wallRateLimit.ts`, `app/api/pilot/wall/route.ts` | 429 `Too many requests.`; 503 with **no** detail (deliberately not `jsonError` -- the response renders on a screen in a public room) | **LIVE** |
-| Reviewer must have seen the image | -- | -- | -- | **branch `fix/portrait-review-must-show-image`** |
+| Reviewer must have seen the image | a narrow, audited, review-only route (mirrors `video/review-link`'s split from `video/[videoId]`) serves the pending photo only, organization-admin only, `pending_review` state only; the console's Approve stays disabled until the reviewer's own `<img>` has fired `onLoad` for that photo | `admin/portrait-review/photo/[accountId]/route.ts`, `profileVisibility.ts` boundary unchanged | hidden 404, same posture as the release path | **LIVE** -- merged as **PR #461** (`c78f181a`). Re-verified against current `main` (this file's 2026-08-17 version listed it as a not-yet-on-main branch; git log + `NETWORK_STATUS.md`'s Closed table confirm it merged.) |
 | Route-level tests for any of the above | -- | -- | -- | **GAP** (see GAP-4) |
 
 ---
@@ -311,13 +316,19 @@ they arrive with the PR.
 
 ---
 
-## 10. Evidence and truth-on-screen (not on main)
+## 10. Evidence and truth-on-screen
+
+All four rows below were listed in this file's 2026-08-17 version as
+not-yet-on-main branches. Re-verified against current `main` (git log +
+`docs/capabilities/NETWORK_STATUS.md`'s Closed table): all four merged and are
+now on main. Corrected here rather than left to mislead a reader into thinking
+they still need watching.
 
 | Gate | What it checks | Enforced at | Refuses with | Status |
 |---|---|---|---|---|
-| Only an accepted Film Study proposal is admissible evidence | `review_state` must be in `ADMISSIBLE_FILM_STUDY_REVIEW_STATES` (today exactly `['accepted']`), bound to the source union via `as const satisfies` so the predicate and the SQL cannot drift; a new verdict kind (PR #419) is **inadmissible on arrival** | `shadowFilmStudyProposals.ts` and its caller | per the branch | **branch `fix/rejected-proposal-not-evidence`** |
-| A per-child value belongs to the child now selected | superseded loads aborted; `controller.signal.aborted` re-checked after every await and before every `setState`; an abort never clears existing state; `activeHold.athleteId === selectedAthlete` style anchoring | client effects | -- | **branch `fix/child-data-fetch-races`** |
-| The revenue console disowns its fabricated rows | an unconditional "Planned -- Not Yet Implemented" stamp plus per-tab notices; pinned by a test that mocks `global.fetch` and asserts it is never called | `app/.../revenue` | -- | **branch `fix/revenue-center-fabricated-rows`** |
+| Only an accepted Film Study proposal is admissible evidence | `review_state` must be in `ADMISSIBLE_FILM_STUDY_REVIEW_STATES` (today exactly `['accepted']`), bound to the source union via `as const satisfies` so the predicate and the SQL cannot drift; a new verdict kind (PR #419) is **inadmissible on arrival** | `shadowFilmStudyProposals.ts` and its caller | 404 `Not found` (the module's existing hidden not-found) | **LIVE** -- merged as **PR #459** (`b070fa50`) |
+| A per-child value belongs to the child now selected | superseded loads aborted; `controller.signal.aborted` re-checked after every await and before every `setState`; an abort never clears existing state; anchored per-selection so a slow earlier response cannot overwrite a faster later one | `app/parent/progression-visibility`, `components/ParentHub`, and a third progression surface's client effects | -- | **LIVE** -- merged as **PR #460** (`4d6a2b05`) |
+| The revenue console disowns its fabricated rows | an unconditional "Planned -- Not Yet Implemented" stamp plus per-tab notices naming the data as fabricated; pinned by a test that mocks `global.fetch` and asserts it is never called | `RevenueFundingCenter.tsx` | -- | **LIVE** -- merged as **PR #462** (`008d57b2`) |
 | Rule-justification map exhaustiveness | a missing key is a compile error | `progressionSuggestions.ts:RULE_JUSTIFICATION_FIELDS` | TS2741 at build time | **LIVE** -- PR #451 landed as `04dd116b`, the commit this file was written against. `npx tsc --noEmit` is clean on `origin/main` as of this writing; if you were told to expect one known error there, that is stale. |
 
 ---
