@@ -56,9 +56,29 @@ function resolveSslConfig() {
 // a gym may hold gates of its own beyond the one default. The disjunction
 // (deterministic gate_id OR gate_key) survives a gym renaming the row.
 const READINESS_QUERY = `
-  with unseeded as (
+  -- Every gate this migration seeds, not just the first one. The tables and
+  -- indexes below are all declared by the base schema (pilot_slice_postgres.sql)
+  -- too, so the ONLY thing this migration contributes beyond the base schema is
+  -- these seed rows -- which makes them the only thing worth asserting. Listing
+  -- one of the two let a database seeded by the earlier revision of this
+  -- migration (which shipped contact_medical_clearance alone) report READY while
+  -- missing the gate that BLOCKS registration for an athlete under a training
+  -- hold. src/server/pilot/safetyGateSeeds.ts holds the same two in
+  -- DEFAULT_SAFETY_GATES for organizations created after a dispatch, and
+  -- safetyGateSeedsOwnership.test.ts fails the build if the two lists diverge.
+  --
+  -- Keyed on gate_key ONLY -- never on name, enforcement, or active_flag. A gym
+  -- may rename a gate or switch it off through the admin surface, and the
+  -- migration's own seed guard is a not-exists on gate_key alone, so it
+  -- would never repair an edited row. Asserting an editable field would strand
+  -- the dispatch on a state no re-apply can reach.
+  with expected_gate(gate_key) as (
+    values ('contact_medical_clearance'), ('training_hold')
+  ),
+  unseeded as (
     select 1
     from pilot.organizations o
+    cross join expected_gate e
     -- The reserved organization owning the platform SHADOW evidence baseline is
     -- a shelf, not a gym: no accounts, no athletes, nobody to clear for contact.
     -- The seeding statements skip it, so asserting it is seeded would report
@@ -69,8 +89,8 @@ const READINESS_QUERY = `
       from pilot.safety_gates g
       where g.organization_id = o.organization_id
         and (
-          g.gate_id = 'gate_' || o.organization_id || '_contact_medical_clearance'
-          or g.gate_key = 'contact_medical_clearance'
+          g.gate_id = 'gate_' || o.organization_id || '_' || e.gate_key
+          or g.gate_key = e.gate_key
         )
     )
   )
@@ -84,7 +104,7 @@ const READINESS_QUERY = `
         and pg_get_constraintdef(oid) like '%''block''%'
         and pg_get_constraintdef(oid) like '%''flag''%'
     ) as enforcement_vocabulary_ready,
-    not exists (select 1 from unseeded) as default_gate_seeded
+    not exists (select 1 from unseeded) as default_gates_seeded
 `;
 
 function assertReadiness(row) {

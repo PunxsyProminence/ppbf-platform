@@ -1,0 +1,47 @@
+name: package-integrity
+
+# Deliberately its own workflow rather than a step in ci.yml alone.
+#
+# ci.yml already triggers on push to main, but it did not report the manifest
+# being destroyed, for two reasons this workflow is shaped to avoid:
+#
+#   1. ci.yml puts every push to main in one concurrency group. GitHub cancels
+#      *pending* runs in a group when a newer run arrives, regardless of
+#      `cancel-in-progress`, so a burst of direct pushes leaves most commits
+#      with a cancelled run and no verdict. This workflow declares no
+#      concurrency group: every commit gets its own run, and it is short enough
+#      that runs never queue behind each other.
+#   2. ci.yml's documentation-only fast path skips install, tests and build for
+#      any commit touching only `.md` files, so later commits reported green
+#      over an already-broken manifest. This workflow has no fast path.
+#
+# The check itself is plain node against files already on disk: no npm ci, no
+# node_modules, no network. A guard that installs the manifest it is guarding
+# cannot report on a manifest too broken to install.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Verify package integrity
+        run: node scripts/verify-package-integrity.mjs
