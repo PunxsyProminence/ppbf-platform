@@ -232,257 +232,255 @@ export default function AthleteProgressionIntelligencePage() {
 
   return (
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/progression-intelligence" allowedRoles={['athlete']} showShellHeader={false} room="floor">
-      <div className="room--floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
-        <div className="max-w-5xl mx-auto">
-          <div className="mb-[var(--s6)]">
-            <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Progression</h1>
-            <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-              Track your assigned drills, complete workouts, and close identified gaps
-            </p>
+      <div className="max-w-5xl mx-auto">
+        <div className="mb-[var(--s6)]">
+          <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Progression</h1>
+          <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+            Track your assigned drills, complete workouts, and close identified gaps
+          </p>
+        </div>
+
+        {errorMessage && (
+          <div className="alert alert--critical" role="alert">
+            <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert-body">
+              <p className="alert-title">Failed</p>
+              <p className="alert-msg">{errorMessage}</p>
+            </div>
           </div>
+        )}
 
-          {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
-              <div className="alert-body">
-                <p className="alert-title">Failed</p>
-                <p className="alert-msg">{errorMessage}</p>
-              </div>
+        {loading ? (
+          <div className="flex justify-center py-[var(--s7)]">
+            <span className="working">Loading your progression data...</span>
+          </div>
+        ) : gaps.length === 0 && assignments.length === 0 ? (
+          <div className="mat-leather rounded-[var(--r-lg)]">
+            <div className="empty">
+              <div className="empty-glyph" aria-hidden="true">🥊</div>
+              <div className="empty-title">No progression gaps assigned</div>
+              <p className="empty-msg mx-auto">Your coaches will identify gaps and assign drills to help you improve</p>
             </div>
-          )}
-
-          {loading ? (
-            <div className="flex justify-center py-[var(--s7)]">
-              <span className="working">Loading your progression data...</span>
-            </div>
-          ) : gaps.length === 0 && assignments.length === 0 ? (
-            <div className="mat-leather rounded-[var(--r-lg)]">
-              <div className="empty">
-                <div className="empty-glyph" aria-hidden="true">🥊</div>
-                <div className="empty-title">No progression gaps assigned</div>
-                <p className="empty-msg mx-auto">Your coaches will identify gaps and assign drills to help you improve</p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-[var(--s6)]">
-              <section>
-                <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Identified Gaps</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
-                  {gaps.map((gap) => (
-                    <div key={gap.gap_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
-                      <div className="flex items-start justify-between gap-[var(--s3)] mb-[var(--s4)]">
-                        <div>
-                          <h3 className="text-[length:var(--t-md)] font-semibold capitalize text-[color:var(--bone-100)]">{gap.gap_type.replaceAll('_', ' ')}</h3>
-                          <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{gap.gap_description}</p>
-                        </div>
-                        <GapBadge severity={gap.severity} />
+          </div>
+        ) : (
+          <div className="space-y-[var(--s6)]">
+            <section>
+              <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Identified Gaps</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
+                {gaps.map((gap) => (
+                  <div key={gap.gap_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
+                    <div className="flex items-start justify-between gap-[var(--s3)] mb-[var(--s4)]">
+                      <div>
+                        <h3 className="text-[length:var(--t-md)] font-semibold capitalize text-[color:var(--bone-100)]">{gap.gap_type.replaceAll('_', ' ')}</h3>
+                        <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{gap.gap_description}</p>
                       </div>
-                      <div className="flex items-center gap-[var(--s3)]">
-                        <StatusBadge status={gap.status} type="gap" />
-                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Identified {formatGymDateNumeric(gap.created_at)}</span>
-                      </div>
-                      <RabbitHole anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }} className={GAP_RABBIT_HOLE_CLASS} />
-                      <RabbitHole anchor={{ anchorType: 'severity', anchorKey: gap.severity }} className={GAP_RABBIT_HOLE_CLASS} />
+                      <GapBadge severity={gap.severity} />
                     </div>
-                  ))}
+                    <div className="flex items-center gap-[var(--s3)]">
+                      <StatusBadge status={gap.status} type="gap" />
+                      <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Identified {formatGymDateNumeric(gap.created_at)}</span>
+                    </div>
+                    <RabbitHole anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }} className={GAP_RABBIT_HOLE_CLASS} />
+                    <RabbitHole anchor={{ anchorType: 'severity', anchorKey: gap.severity }} className={GAP_RABBIT_HOLE_CLASS} />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Drill Assignments</h2>
+              {assignments.length === 0 ? (
+                <div className="mat-leather rounded-[var(--r-lg)]">
+                  <div className="empty" style={{ padding: 'var(--s6) var(--s5)' }}>
+                    <p className="empty-msg mx-auto">No drills assigned yet</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-[var(--s4)]">
+                  {assignments.map((assignment) => {
+                    const gap = getGapForAssignment(assignment.assignment_id);
+                    const assignmentCompletions = getCompletionsForAssignment(assignment.assignment_id);
+                    const progressPercent = assignment.completion_percentage;
+                    const isLogging = loggingAssignmentId === assignment.assignment_id;
+
+                    return (
+                      <div key={assignment.assignment_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+                        <div className="flex items-start justify-between gap-[var(--s4)] mb-[var(--s4)]">
+                          <div className="flex-1">
+                            <h3 className="text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]">
+                              {assignment.drill_display_name || assignment.drill_name}
+                            </h3>
+                            <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                              {assignment.drill_display_description || assignment.drill_description}
+                            </p>
+                            {gap && (
+                              <p className="t-muted mt-[var(--s3)]">
+                                Assigned for:{' '}
+                                <span className="font-medium text-[color:var(--bone-200)]">{gap.gap_type.replaceAll('_', ' ')}</span>
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <StatusBadge status={assignment.status} type="assignment" />
+                            <p className="t-label mt-[var(--s3)]">{assignment.drill_difficulty.replaceAll('_', ' ')}</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-[var(--s4)] mb-[var(--s4)]">
+                          {assignment.rep_count != null && (
+                            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                              <p className="t-label">Reps</p>
+                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.rep_count}</p>
+                            </div>
+                          )}
+                          {assignment.duration_minutes != null && (
+                            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                              <p className="t-label">Duration</p>
+                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.duration_minutes} min</p>
+                            </div>
+                          )}
+                          {assignment.frequency_per_week != null && (
+                            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                              <p className="t-label">Frequency</p>
+                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.frequency_per_week}x/week</p>
+                            </div>
+                          )}
+                          {assignment.due_date && (
+                            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                              <p className="t-label">Due Date</p>
+                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{formatCalendarDay(assignment.due_date)}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mb-[var(--s4)] flex items-center gap-[var(--s5)]">
+                          <CompletionGauge percent={Math.min(progressPercent, 100)} />
+                        </div>
+
+                        {/* Log completion form */}
+                        {assignment.status !== 'cancelled' && assignment.status !== 'completed' && (
+                          <div className="mb-[var(--s4)]">
+                            {!isLogging ? (
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => {
+                                  setLoggingAssignmentId(assignment.assignment_id);
+                                  setLogReps('');
+                                  setLogNotes('');
+                                }}
+                              >
+                                Log completion
+                              </button>
+                            ) : (
+                              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
+                                <div className="field">
+                                  <label className="t-label" htmlFor={`reps-${assignment.assignment_id}`}>Reps completed (optional)</label>
+                                  <input
+                                    id={`reps-${assignment.assignment_id}`}
+                                    type="number"
+                                    min={0}
+                                    className="input"
+                                    value={logReps}
+                                    onChange={(e) => setLogReps(e.target.value)}
+                                  />
+                                </div>
+                                <div className="field">
+                                  <label className="t-label" htmlFor={`notes-${assignment.assignment_id}`}>Notes (optional)</label>
+                                  <textarea
+                                    id={`notes-${assignment.assignment_id}`}
+                                    className="textarea"
+                                    rows={2}
+                                    value={logNotes}
+                                    onChange={(e) => setLogNotes(e.target.value)}
+                                    placeholder="How it felt, what you focused on…"
+                                  />
+                                </div>
+                                <div className="flex gap-[var(--s2)]">
+                                  <button
+                                    type="button"
+                                    className="btn"
+                                    disabled={logBusy}
+                                    onClick={() => void handleLogCompletion(assignment.assignment_id)}
+                                  >
+                                    {logBusy ? 'Saving…' : 'Save log'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn--ghost"
+                                    disabled={logBusy}
+                                    onClick={() => setLoggingAssignmentId(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {assignmentCompletions.length > 0 && (
+                          <div className="border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
+                            <p className="t-label mb-[var(--s4)]">Completion History</p>
+                            <div className="space-y-[var(--s3)]">
+                              {assignmentCompletions
+                                .toSorted((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())
+                                .map((completion) => (
+                                  <div key={completion.completion_id} className="mat-leather--raised flex items-start gap-[var(--s4)] rounded-[var(--r-md)] p-[var(--s4)]">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-[var(--s3)]">
+                                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                                          {formatGymDateNumeric(completion.completed_at)}
+                                        </span>
+                                        <StatusBadge status={completion.verification_status} type="completion" />
+                                      </div>
+                                      {completion.reps_completed != null && (
+                                        <p className="t-muted mt-[var(--s2)]">Completed {completion.reps_completed} reps</p>
+                                      )}
+                                      {completion.notes && (
+                                        <p className="mt-[var(--s3)] text-[length:var(--t-sm)] italic text-[color:var(--bone-300)]">&ldquo;{completion.notes}&rdquo;</p>
+                                      )}
+                                      {completion.verified_at && (
+                                        <p className="mt-[var(--s2)] text-[length:var(--t-xs)] font-medium text-[color:var(--cleared-ink)]">
+                                          ✓ Verified on {formatGymDateNumeric(completion.verified_at)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {assignments.length > 0 && (
+              <section className="grid grid-cols-1 md:grid-cols-3 gap-[var(--s4)]">
+                <div className="stat">
+                  <p className="stat-label">Total Gaps</p>
+                  <p className="stat-val">{gaps.length}</p>
+                </div>
+                <div className="stat">
+                  <p className="stat-label">Active Drills</p>
+                  <p className="stat-val">
+                    {assignments.filter((a) => a.status === 'in_progress' || a.status === 'assigned').length}
+                  </p>
+                </div>
+                <div className="stat">
+                  <p className="stat-label">Completed</p>
+                  <p className="stat-val">
+                    {assignments.filter((a) => a.status === 'completed').length}
+                  </p>
                 </div>
               </section>
-
-              <section>
-                <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Drill Assignments</h2>
-                {assignments.length === 0 ? (
-                  <div className="mat-leather rounded-[var(--r-lg)]">
-                    <div className="empty" style={{ padding: 'var(--s6) var(--s5)' }}>
-                      <p className="empty-msg mx-auto">No drills assigned yet</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-[var(--s4)]">
-                    {assignments.map((assignment) => {
-                      const gap = getGapForAssignment(assignment.assignment_id);
-                      const assignmentCompletions = getCompletionsForAssignment(assignment.assignment_id);
-                      const progressPercent = assignment.completion_percentage;
-                      const isLogging = loggingAssignmentId === assignment.assignment_id;
-
-                      return (
-                        <div key={assignment.assignment_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-                          <div className="flex items-start justify-between gap-[var(--s4)] mb-[var(--s4)]">
-                            <div className="flex-1">
-                              <h3 className="text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]">
-                                {assignment.drill_display_name || assignment.drill_name}
-                              </h3>
-                              <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
-                                {assignment.drill_display_description || assignment.drill_description}
-                              </p>
-                              {gap && (
-                                <p className="t-muted mt-[var(--s3)]">
-                                  Assigned for:{' '}
-                                  <span className="font-medium text-[color:var(--bone-200)]">{gap.gap_type.replaceAll('_', ' ')}</span>
-                                </p>
-                              )}
-                            </div>
-                            <div className="text-right">
-                              <StatusBadge status={assignment.status} type="assignment" />
-                              <p className="t-label mt-[var(--s3)]">{assignment.drill_difficulty.replaceAll('_', ' ')}</p>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-[var(--s4)] mb-[var(--s4)]">
-                            {assignment.rep_count != null && (
-                              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                                <p className="t-label">Reps</p>
-                                <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.rep_count}</p>
-                              </div>
-                            )}
-                            {assignment.duration_minutes != null && (
-                              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                                <p className="t-label">Duration</p>
-                                <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.duration_minutes} min</p>
-                              </div>
-                            )}
-                            {assignment.frequency_per_week != null && (
-                              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                                <p className="t-label">Frequency</p>
-                                <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.frequency_per_week}x/week</p>
-                              </div>
-                            )}
-                            {assignment.due_date && (
-                              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                                <p className="t-label">Due Date</p>
-                                <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{formatCalendarDay(assignment.due_date)}</p>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="mb-[var(--s4)] flex items-center gap-[var(--s5)]">
-                            <CompletionGauge percent={Math.min(progressPercent, 100)} />
-                          </div>
-
-                          {/* Log completion form */}
-                          {assignment.status !== 'cancelled' && assignment.status !== 'completed' && (
-                            <div className="mb-[var(--s4)]">
-                              {!isLogging ? (
-                                <button
-                                  type="button"
-                                  className="btn"
-                                  onClick={() => {
-                                    setLoggingAssignmentId(assignment.assignment_id);
-                                    setLogReps('');
-                                    setLogNotes('');
-                                  }}
-                                >
-                                  Log completion
-                                </button>
-                              ) : (
-                                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
-                                  <div className="field">
-                                    <label className="t-label" htmlFor={`reps-${assignment.assignment_id}`}>Reps completed (optional)</label>
-                                    <input
-                                      id={`reps-${assignment.assignment_id}`}
-                                      type="number"
-                                      min={0}
-                                      className="input"
-                                      value={logReps}
-                                      onChange={(e) => setLogReps(e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="field">
-                                    <label className="t-label" htmlFor={`notes-${assignment.assignment_id}`}>Notes (optional)</label>
-                                    <textarea
-                                      id={`notes-${assignment.assignment_id}`}
-                                      className="textarea"
-                                      rows={2}
-                                      value={logNotes}
-                                      onChange={(e) => setLogNotes(e.target.value)}
-                                      placeholder="How it felt, what you focused on…"
-                                    />
-                                  </div>
-                                  <div className="flex gap-[var(--s2)]">
-                                    <button
-                                      type="button"
-                                      className="btn"
-                                      disabled={logBusy}
-                                      onClick={() => void handleLogCompletion(assignment.assignment_id)}
-                                    >
-                                      {logBusy ? 'Saving…' : 'Save log'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn--ghost"
-                                      disabled={logBusy}
-                                      onClick={() => setLoggingAssignmentId(null)}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {assignmentCompletions.length > 0 && (
-                            <div className="border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
-                              <p className="t-label mb-[var(--s4)]">Completion History</p>
-                              <div className="space-y-[var(--s3)]">
-                                {assignmentCompletions
-                                  .toSorted((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())
-                                  .map((completion) => (
-                                    <div key={completion.completion_id} className="mat-leather--raised flex items-start gap-[var(--s4)] rounded-[var(--r-md)] p-[var(--s4)]">
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-[var(--s3)]">
-                                          <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                                            {formatGymDateNumeric(completion.completed_at)}
-                                          </span>
-                                          <StatusBadge status={completion.verification_status} type="completion" />
-                                        </div>
-                                        {completion.reps_completed != null && (
-                                          <p className="t-muted mt-[var(--s2)]">Completed {completion.reps_completed} reps</p>
-                                        )}
-                                        {completion.notes && (
-                                          <p className="mt-[var(--s3)] text-[length:var(--t-sm)] italic text-[color:var(--bone-300)]">&ldquo;{completion.notes}&rdquo;</p>
-                                        )}
-                                        {completion.verified_at && (
-                                          <p className="mt-[var(--s2)] text-[length:var(--t-xs)] font-medium text-[color:var(--cleared-ink)]">
-                                            ✓ Verified on {formatGymDateNumeric(completion.verified_at)}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              {assignments.length > 0 && (
-                <section className="grid grid-cols-1 md:grid-cols-3 gap-[var(--s4)]">
-                  <div className="stat">
-                    <p className="stat-label">Total Gaps</p>
-                    <p className="stat-val">{gaps.length}</p>
-                  </div>
-                  <div className="stat">
-                    <p className="stat-label">Active Drills</p>
-                    <p className="stat-val">
-                      {assignments.filter((a) => a.status === 'in_progress' || a.status === 'assigned').length}
-                    </p>
-                  </div>
-                  <div className="stat">
-                    <p className="stat-label">Completed</p>
-                    <p className="stat-val">
-                      {assignments.filter((a) => a.status === 'completed').length}
-                    </p>
-                  </div>
-                </section>
-              )}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </RoleStandaloneView>
   );

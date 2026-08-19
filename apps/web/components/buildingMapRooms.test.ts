@@ -251,7 +251,6 @@ const PAGE_IS_WRONG: Record<string, { paints: Room; shouldPaint: Room; why: stri
 const UNPAINTED: Record<string, string> = {
   '/dashboard': 'redirect hub -- one riveted frame on bare ink, seen for under a second',
   '/admin/safety-escalations': 'redirect() to /admin/escalations, renders nothing',
-  '/admin/public-interest': 'RoleStandaloneView with no room prop',
   '/admin/consent': 'legacy canvas-tan palette, never converted to a room',
   '/print': 'PrintRoom renders print sheets, which carry their own paper ground',
   '/operations': 'bare ink ground',
@@ -263,8 +262,6 @@ const UNPAINTED: Record<string, string> = {
   '/public': '.on-canvas, and the only surface a signed-out visitor sees',
   '/help': '.on-canvas',
   '/store': 'legacy canvas-tan palette',
-  '/source-control': 'bare ink ground',
-  '/source-control/publication-workflow': 'bare ink ground',
   '/retro-lab': 'design lab on canvas-tan -- component samples, not a gym surface',
 };
 

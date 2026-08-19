@@ -9,10 +9,39 @@
 // POST's own gate); a curator's submission carries the provenance and is
 // answered with the review-first message; and the pre-existing inbox --
 // intake cards, requirement create, Mark Resolved -- still renders.
+//
+// Added with the route guard: this page rendered its whole workspace shell to
+// a signed-out visitor. The last test in this file is the regression pin for
+// that, and it is the one test here that runs the REAL RoleStandaloneView --
+// a stubbed shell cannot prove a gate.
 
+import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import ResearchIntakePage from './page';
+
+// Passthrough by default, so the content tests below exercise the page rather
+// than the shell -- the same stub /research/review's suite uses. The guard
+// test flips it off.
+let mockBypassShell = true;
+
+jest.mock('@/components/RoleStandaloneView', () => {
+  const React = jest.requireActual('react');
+  const actual = jest.requireActual('@/components/RoleStandaloneView');
+  return {
+    __esModule: true,
+    default: (props: { readonly children: ReactNode }) =>
+      mockBypassShell
+        ? React.createElement('div', null, props.children)
+        : React.createElement(actual.default, props),
+  };
+});
+
+const mockReplace = jest.fn();
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mockReplace }),
+}));
 
 const REQUIREMENT = {
   research_requirement_id: 7,
@@ -63,6 +92,8 @@ function mockFetch(options: { curator: boolean; capture?: { posts: unknown[] }; 
 }
 
 afterEach(() => {
+  mockBypassShell = true;
+  mockReplace.mockReset();
   jest.restoreAllMocks();
 });
 
@@ -271,4 +302,39 @@ test('a still-loading projection shows a pending state, not the empty state, unt
 
   await screen.findByText('Empty State');
   expect(screen.queryByText('Loading research projection...')).toBeNull();
+});
+
+
+// The guard. /research shipped with no gate at all: an unauthenticated visitor
+// got 200 and the full workspace shell -- pipeline banner, review-state
+// summary, and the Save Requirement form. The data APIs refused correctly
+// throughout, so nothing leaked, but the shell itself is not a public surface
+// and it must not render before the session is authorized.
+test('an unauthenticated visitor gets no workspace shell, only the bounce', async () => {
+  mockBypassShell = false;
+
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/api/pilot/auth/session')) {
+      return { ok: false, status: 401, json: async () => ({ authenticated: false }) } as Response;
+    }
+    // Every data route this page reaches for refuses the same visitor.
+    return { ok: false, status: 401, json: async () => ({}) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  // None of the workspace: not the header, not the pipeline banner, not the
+  // form. queryBy* (never getBy*) so a rendered shell fails as an assertion
+  // rather than as a thrown lookup.
+  expect(screen.queryByRole('heading', { name: 'Research Inbox' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Save Requirement' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Mark Resolved' })).toBeNull();
+  expect(screen.queryByText('Research Intake')).toBeNull();
+
+  // What they get instead, and where they are sent.
+  expect(screen.getByText('Checking access')).toBeTruthy();
+  expect(mockReplace).toHaveBeenCalledWith('/login');
 });

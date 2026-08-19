@@ -29,10 +29,14 @@ migrations actually run.
 
 ## Core Athlete System
 
-**1. Athlete Profile System** — No route found. `/api/pilot/passbook` and
-`/api/pilot/passbook/gaps` are built, role-gated, and tested, but no page
-anywhere in `apps/web/app` calls them. There's nothing to click; this is
-an owner decision — build a page, or accept it as API-only.
+**1. Athlete Profile System** — Route: `/coach/passbook-gaps` (partial).
+`/api/pilot/passbook/gaps` now has a page: open it as a coach and you should
+see every open gap on your own athletes' books, worst attendance first, each
+row carrying the day that athlete was last in the gym and how many recorded
+absent days have gone by since. An organization admin sees the whole
+organization. If you have no open gaps the honest empty state is the correct,
+passing result. `/api/pilot/passbook` — one athlete's whole book — is still
+API-only with no page; that half remains an owner decision.
 
 **2. Raw Observation Intake System** — Route: `/coach/decision-loop`.
 Select an athlete, type a note into the "Behavior Note" box, and submit.
