@@ -3451,7 +3451,7 @@ body.ppbf.on-canvas {
    pools exactly as before. A plate is an enhancement over that ground, never
    a replacement for it -- which is also why the plate must never be an <img>.
 
-   ADDING A VARIANT. Rooms are reused heavily (office 42 pages, floor 22), so
+   ADDING A VARIANT. Rooms are reused heavily (office 40 routes, floor 31), so
    the set is expected to grow. A second plate for a room is a new file plus
    one declaration here; nothing else changes. */
 .room { isolation: isolate; }
@@ -3477,6 +3477,57 @@ body.ppbf.on-canvas {
 .room--file   { --plate: url("/plates/plate-05-file-01.jpg"); }
 .room--clinic { --plate: url("/plates/plate-03-clinic-01.jpg"); }
 .room--night  { --plate: url("/plates/plate-06-night-01.jpg"); }
+
+/* ---- Route-derived variants --------------------------------------------
+   Rooms repeat: office covers 40 doors, floor 31. When a room grows a second
+   plate, WHICH of its plates a given door shows is decided here, from the
+   route, and nowhere else.
+
+   THE ATTRIBUTE. `PlateVariantGround` -- one display:contents marker in the
+   root layout, so it is an ancestor of every room in the building without
+   being a box around any of them -- writes the current route's slot in every
+   useful split onto a single attribute:
+
+       data-plate-variant="2of2 1of3 4of4 3of5 5of6"
+
+   Read `2of2` as "the second of two". The route is hashed once and reduced to
+   each count in turn, so THIS SHEET states how many plates a room has and the
+   component never has to be told. That is what keeps a new plate to a new file
+   plus one declaration in this block, with no TypeScript edit at all -- and it
+   keeps the plate URLs where the one-source-of-truth rule says they live.
+
+   ADDING A SECOND OFFICE PLATE is that one declaration:
+
+       :where([data-plate-variant~="2of2"]) .room--office {
+         --plate: url("/plates/plate-01-office-02.jpg");
+       }
+
+   A third replaces it with the two other thirds of an `of3` split. A portrait
+   variant goes INSIDE the orientation block below, after its generic rule --
+   never up here.
+
+   :where() IS LOAD-BEARING, NOT DECORATION. Written plainly, a variant rule
+   reads `.room--floor[data-plate-variant~="2of2"]` at specificity (0,2,0). The
+   portrait override below is `.room--floor` at (0,1,0), and a media query adds
+   NO specificity of its own -- so the variant rule would outrank it, and a gym
+   tablet held upright would silently lose the portrait floor plate: the one
+   room where the crop matters most, on the one device it matters most on.
+   `:where()` contributes zero specificity, so every rule in this block stays
+   at (0,1,0) and the whole PLATES cascade is decided by SOURCE ORDER instead:
+
+       1. the room list above       the default plate, -01
+       2. this block                the variant the route asks for
+       3. the orientation override  what the shape of the viewport demands
+       4. prefers-reduced-data      no plate at all, the gradient wall
+
+   plateVariant.test.ts fails on a variant rule that drops `:where()`, and on
+   one declared after the orientation block instead of inside it.
+
+   EMPTY ON PURPOSE. Every room sits at -01, and a room with one plate needs no
+   rule: the declaration above is already the right answer for every route.
+   With no rule here the attribute matches nothing and changes nothing, which
+   is why wiring this mechanism is a no-op anybody can merge -- it is in place,
+   and guarded, before the first variant is drawn. */
 
 /* The gym tablet stands upright. A landscape wall cropped to a portrait
    viewport loses the courses that make it read as masonry, so the floor

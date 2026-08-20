@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import GlobalRoleHeader from "@/components/GlobalRoleHeader";
+import PlateVariantGround from "@/components/PlateVariantGround";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 /* Golden-era pass: every face is now served from files in this repo — no
@@ -48,8 +49,18 @@ export default function RootLayout({
         className={`${tacticalDisplay.variable} ${tacticalBody.variable} ${geistMono.variable} antialiased`}
       >
         <ThemeProvider>
-          <GlobalRoleHeader />
-          {children}
+          {/* The route-derived plate variant is marked here and nowhere else.
+              78 surfaces paint a room class of their own and 73 of those are
+              server components that cannot know their own route, so the
+              attribute goes on one client ancestor of all of them rather than
+              on 78 elements. It generates no box (display: contents), so this
+              is a hook over the building, not a container around it -- see the
+              component, and the PLATES section of design-system/ppbf.css for
+              the cascade half. */}
+          <PlateVariantGround>
+            <GlobalRoleHeader />
+            {children}
+          </PlateVariantGround>
         </ThemeProvider>
       </body>
     </html>
