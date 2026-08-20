@@ -737,19 +737,25 @@ body.ppbf {
 .mat-leather--raised .stamp,
 .mat-leather--worn .stamp,
 .mat-brass--dark .stamp,
-.mat-slate .stamp             { color: var(--locked-ink); }
+.mat-slate .stamp,
+.mat-wood .stamp,
+.mat-wood--dark .stamp             { color: var(--locked-ink); }
 
 .mat-leather .stamp--green,
 .mat-leather--raised .stamp--green,
 .mat-leather--worn .stamp--green,
 .mat-brass--dark .stamp--green,
-.mat-slate .stamp--green      { color: var(--cleared-ink); }
+.mat-slate .stamp--green,
+.mat-wood .stamp--green,
+.mat-wood--dark .stamp--green      { color: var(--cleared-ink); }
 
 .mat-leather .stamp--brass,
 .mat-leather--raised .stamp--brass,
 .mat-leather--worn .stamp--brass,
 .mat-brass--dark .stamp--brass,
-.mat-slate .stamp--brass      { color: var(--brass-300); }
+.mat-slate .stamp--brass,
+.mat-wood .stamp--brass,
+.mat-wood--dark .stamp--brass      { color: var(--brass-300); }
 
 /* Redaction bar — Layer 17 grant privacy */
 .redacted {
@@ -928,19 +934,28 @@ body.ppbf.on-canvas {
    A leather material is a ground, so it re-restates every voice back to the
    inks those voices were authored in. Ordered after the canvas block and one
    class heavier, so the nearer ground wins -- which is what a reader sees. */
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) {
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) {
   color: var(--bone-200);
 }
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-command,
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-painted {
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) .t-command,
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) .t-painted {
   color: var(--bone-100); text-shadow: none;
 }
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-body  { color: var(--bone-200); }
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-muted { color: var(--bone-400); }
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-label { color: var(--bone-300); }
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-data  { color: var(--bone-200); }
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-eyebrow,
-.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .prompt-line {
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) .t-body  { color: var(--bone-200); }
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) .t-muted { color: var(--bone-400); }
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) .t-label { color: var(--bone-300); }
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) .t-data  { color: var(--bone-200); }
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) .t-eyebrow,
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn,
+               .mat-brass--dark, .mat-slate, .mat-wood, .mat-wood--dark) .prompt-line {
   color: var(--brass-400);
 }
 

@@ -382,7 +382,9 @@ h6 {
   .mat-leather--raised a,
   .mat-leather--worn a,
   .mat-brass--dark a,
-  .mat-slate a {
+  .mat-slate a,
+  .mat-wood a,
+  .mat-wood--dark a {
     color: var(--brass-300);
   }
 
@@ -390,7 +392,9 @@ h6 {
   .mat-leather--raised a:hover,
   .mat-leather--worn a:hover,
   .mat-brass--dark a:hover,
-  .mat-slate a:hover {
+  .mat-slate a:hover,
+  .mat-wood a:hover,
+  .mat-wood--dark a:hover {
     color: var(--brass-200);
   }
 }
