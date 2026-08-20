@@ -169,30 +169,83 @@ export default function GuardianMediaConsentPage() {
                     ) : null}
                     {!currentlySigned ? (
                       <div className="mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
-                        <label className="t-body flex items-center gap-[var(--s2)]">
+                        {/* THE LABEL IS THE TARGET, not the box. These two carried no
+                            size class at all and rendered at the browser default --
+                            about 13x13px, the smallest targets on the page, deciding
+                            whether a minor's photograph goes on social media.
+
+                            globals.css deliberately excludes checkboxes from its 44px
+                            interactive floor ("a 44px checkbox is a layout bug, and
+                            their labels are the real target"), so the fix is the one
+                            that file already names: the wrapping <label> carries
+                            --tap (55px) and stretches the full width of the card --
+                            it is a flex item in a flex-col, so it stretches without
+                            asking -- and the input stays a 21px (--s5) mark inside it.
+                            Anywhere on the line toggles the box.
+
+                            Unlike the button below, both of these utilities actually
+                            win: nothing unlayered sets min-height on a <label> or
+                            width/height on a checkbox, so there is no ppbf.css rule
+                            for them to lose to. The same pattern is already on
+                            /athlete/dashboard/sparring. */}
+                        <label className="t-body flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)]">
                           <input
                             type="checkbox"
                             defaultChecked
+                            className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
                             onChange={(event) => setVideoByAthlete((prev) => ({ ...prev, [item.athlete_id]: event.target.checked }))}
                           />
                           Include video (unchecked = photos only)
                         </label>
-                        <label className="t-body flex items-center gap-[var(--s2)]">
+                        <label className="t-body flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)]">
                           <input
                             type="checkbox"
+                            className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
                             onChange={(event) => setPublicByAthlete((prev) => ({ ...prev, [item.athlete_id]: event.target.checked }))}
                           />
                           Allow public use (website, social media) &mdash; unchecked means internal/gym use only
                         </label>
                       </div>
                     ) : null}
+                    {/* .btn .btn--kiosk, not `.btn--lever min-h-[44px]`.
+
+                        The old class string asked for 44px and rendered 38. It is
+                        the #498 cascade trap: design-system/ppbf.css is UNLAYERED
+                        and Tailwind's utilities sit in `@layer utilities`, and an
+                        unlayered rule beats a layered one whatever the selectors
+                        say -- so `.btn--lever { min-height: 38px }` won and the
+                        utility did nothing. Adding a second utility here would have
+                        looked like a fix and changed nothing; the height had to come
+                        from a rule in the same unlayered sheet.
+
+                        Both classes are that. `.btn` (ppbf.css) floors at 44px and
+                        `.btn--kiosk` follows it at equal specificity, so the sheet's
+                        own source order takes min-height to var(--tap) -- 55px, the
+                        system's ergonomic token, which the README pairs with the
+                        WCAG floor rather than with the gym floor. `.btn--kiosk` is
+                        already the app's decisive-action scale on desk surfaces:
+                        admin/escalations, admin/compliance-center and
+                        admin/video-compliance all use it for confirm/cancel pairs.
+
+                        NOT data-surface="kiosk". That attribute raises EVERY control
+                        in a subtree, present and future, and globals.css scopes it to
+                        the gym floor on purpose. A guardian on a phone is not a
+                        kiosk, and this page needs two named controls raised, not a
+                        blanket escalation it would inherit silently.
+
+                        Full width comes with .btn--kiosk, and it is the point of
+                        defect 3: "Back to Parent Hub" was 230x44 while this button
+                        was 156x38, so the control that leaves without deciding was a
+                        bigger target than the control that decides. It cannot be
+                        again at any viewport -- this one spans the child's card, the
+                        escape hatch keeps its intrinsic width. */}
                     <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s2)]">
                       {!currentlySigned ? (
                         <button
                           type="button"
                           disabled={pendingIds.has(item.athlete_id)}
                           onClick={() => void decide(item.athlete_id, 'grant', childLabel(item))}
-                          className="btn--lever min-h-[44px] disabled:opacity-50"
+                          className="btn btn--kiosk disabled:opacity-50"
                         >
                           Grant Consent
                         </button>
@@ -201,7 +254,7 @@ export default function GuardianMediaConsentPage() {
                           type="button"
                           disabled={pendingIds.has(item.athlete_id)}
                           onClick={() => void decide(item.athlete_id, 'withdraw', childLabel(item))}
-                          className="btn--lever min-h-[44px] disabled:opacity-50"
+                          className="btn btn--kiosk disabled:opacity-50"
                         >
                           Withdraw Consent
                         </button>
