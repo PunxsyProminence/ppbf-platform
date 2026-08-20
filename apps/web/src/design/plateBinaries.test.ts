@@ -157,7 +157,21 @@ describe('every committed plate is encoded for dark material', () => {
 });
 
 describe('the sheet and the directory agree', () => {
-  const sheet = readFileSync(CSS, 'utf8');
+  /* PROSE IS NOT A DECLARATION.
+     The PLATES block documents the recipe for adding a variant, and the recipe
+     is a worked example containing a plate URL -- `plate-01-office-02.jpg`, a
+     file that deliberately does not exist yet. Scanned raw, that comment reads
+     as a ninth declaration and this suite fails on a plate nothing points at,
+     which would make "document the recipe next to the rule" and "every declared
+     plate exists" mutually exclusive. A commented-out URL cannot 404, so it is
+     not this test's business.
+
+     roomBaseClass.test.ts and buildingMapRooms.test.ts each had to learn the
+     same lesson from the other direction, where a comment made a guard PASS.
+     Stripping costs this one nothing: what it exists to catch is a real
+     declaration pointing at a missing file, and those are all still here -- the
+     eight .png paths that resolved to nothing for months were declarations. */
+  const sheet = readFileSync(CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const declared = [...sheet.matchAll(/url\("\/plates\/([^"]+)"\)/g)].map((m) => m[1]);
 
   it('declares plates in the sheet at all', () => {
