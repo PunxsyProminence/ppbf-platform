@@ -63,26 +63,66 @@ test('no invented safety or governance alert is presented as live data', async (
   expect(screen.queryByText(/capture rate remains at 100%/i)).toBeNull();
 });
 
-// The command node's stamp is gone because the feed behind it is real. The
-// doctrine the stamp carried is the part that must survive: whatever state the
-// feed is in — and under this harness's generic fetch mock it settles on the
-// honest-empty state — the panel must say an empty feed is not a clear floor,
-// and must never claim to be planned-only again.
-test('the alert panel reads the record and never lets empty look clear', async () => {
+// THE NIGHT FEED IS NOT FURNITURE IN THIS ROOM. The hub used to mount
+// <ShadowCommandFeed /> -- a newest-first event/telemetry feed, the After Hours
+// room's own chrome -- under a heading reading "SHADOW COMMAND NODE", inside
+// .room--office. ROOM-PURPOSE-DNA forbids night telemetry in the front office
+// by name. The panel is a door now, and the log is read in the room that keeps
+// it. These fail if the feed is mounted here again, and if the one remaining
+// door to that room stops being office-voiced.
+test('the night feed is not mounted in the office, only a door to the room that keeps it', async () => {
   await renderPage();
 
-  const panel = screen.getByRole('heading', { name: 'SHADOW COMMAND NODE' }).parentElement as HTMLElement;
-  await screen.findByText(/nothing has been recorded/i);
-  expect(panel.textContent).toMatch(/not that the floor is clear/i);
-  expect(panel.textContent).not.toContain('PLANNED | NOT YET IMPLEMENTED');
+  expect(screen.queryByRole('heading', { name: /shadow command node/i })).toBeNull();
+  expect(document.body.textContent).not.toMatch(/reading the operational record/i);
+  expect(document.body.textContent).not.toMatch(/nothing is recorded in the operational feed/i);
+
+  const panel = screen.getByRole('heading', { name: 'After Hours' }).parentElement as HTMLElement;
+  expect(panel.textContent).toMatch(/kept in the\s+after-hours room, not at this desk/i);
+});
+
+test('exactly one door leads to the after-hours room, and it says so', async () => {
+  await renderPage();
+
+  const nightDoors = screen
+    .getAllByRole('link')
+    .filter((link) => link.getAttribute('href') === '/admin/shadow');
+
+  expect(nightDoors).toHaveLength(1);
+  expect(nightDoors[0].textContent).toBe('Open the after-hours room');
+  // The removed second door was labelled "The Office" and opened After Hours.
+  expect(screen.queryByRole('link', { name: 'The Office' })).toBeNull();
+});
+
+// The register is the office's own furniture: a ruled paper record, not a
+// sixth grid of leather tiles. Pinned because "convert it back to cards" is
+// exactly the drift that made this room interchangeable with the board room.
+test('the capability register renders as a ruled ledger', async () => {
+  await renderPage();
+
+  const table = document.querySelector('table.ledger') as HTMLTableElement | null;
+  expect(table).not.toBeNull();
+  expect(table?.querySelector('caption')?.textContent).toBe('The capability register');
+  expect(screen.getByRole('heading', { name: 'Drill Library' }).closest('tr')).not.toBeNull();
+});
+
+// The state chips spoke the roadmap's language at a front desk. The record
+// keeps its own words; the page prints the clerk's.
+test('the register prints clerk words for build state, not spec words', async () => {
+  await renderPage();
+
+  await screen.findByText('Drill Library');
+  expect(document.body.textContent).not.toMatch(/\bEXISTS\b/);
+  expect(document.body.textContent).not.toMatch(/\bPLACEHOLDER\b/);
+  expect(document.body.textContent).toMatch(/IN USE/);
 });
 
 test('SHADOW Monitoring reads as shipped with the human-alarm boundary stated', async () => {
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'SHADOW Monitoring' });
-  const card = heading.closest('article') as HTMLElement;
-  expect(card.textContent).toContain('EXISTS');
+  const card = heading.closest('tr') as HTMLElement;
+  expect(card.textContent).toContain('IN USE');
   expect(card.textContent).toMatch(/remains a human decision/i);
 });
 
@@ -101,9 +141,9 @@ test('Video Review Intelligence reads as shipped, not a placeholder', async () =
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'Video Review Intelligence' });
-  const card = heading.closest('article') as HTMLElement;
-  expect(card.textContent).toContain('EXISTS');
-  expect(card.textContent).not.toContain('PLACEHOLDER');
+  const card = heading.closest('tr') as HTMLElement;
+  expect(card.textContent).toContain('IN USE');
+  expect(card.textContent).not.toContain('NOT BUILT');
   const link = card.querySelector('a') as HTMLAnchorElement | null;
   expect(link?.getAttribute('href')).toBe('/admin/video-review');
 });
@@ -112,8 +152,8 @@ test('AI Video Analysis reads as partial (real upload/playback), not mock-only',
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'AI Video Analysis' });
-  const card = heading.closest('article') as HTMLElement;
-  expect(card.textContent).toContain('PARTIAL');
+  const card = heading.closest('tr') as HTMLElement;
+  expect(card.textContent).toContain('IN PART');
   expect(card.textContent).not.toContain('mock-only');
 });
 
@@ -125,9 +165,9 @@ test('Closed-Loop Progression Intelligence reads as partial (real records), not 
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'Closed-Loop Progression Intelligence' });
-  const card = heading.closest('article') as HTMLElement;
-  expect(card.textContent).toContain('PARTIAL');
-  expect(card.textContent).not.toContain('PLACEHOLDER');
+  const card = heading.closest('tr') as HTMLElement;
+  expect(card.textContent).toContain('IN PART');
+  expect(card.textContent).not.toContain('NOT BUILT');
 });
 
 // Performance Analytics shipped as a read-only rollup over existing records
@@ -140,9 +180,9 @@ test('Sports Medicine reads as partial with the no-clinical-detail boundary stat
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'Sports Medicine' });
-  const card = heading.closest('article') as HTMLElement;
-  expect(card.textContent).toContain('PARTIAL');
-  expect(card.textContent).not.toContain('PLACEHOLDER');
+  const card = heading.closest('tr') as HTMLElement;
+  expect(card.textContent).toContain('IN PART');
+  expect(card.textContent).not.toContain('NOT BUILT');
   expect(card.textContent).toMatch(/no diagnoses or clinical detail/i);
 });
 
@@ -150,9 +190,9 @@ test('Performance Analytics reads as shipped, not a placeholder', async () => {
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'Performance Analytics' });
-  const card = heading.closest('article') as HTMLElement;
-  expect(card.textContent).toContain('EXISTS');
-  expect(card.textContent).not.toContain('PLACEHOLDER');
+  const card = heading.closest('tr') as HTMLElement;
+  expect(card.textContent).toContain('IN USE');
+  expect(card.textContent).not.toContain('NOT BUILT');
   const link = card.querySelector('a') as HTMLAnchorElement | null;
   expect(link?.getAttribute('href')).toBe('/coach/performance-analytics');
 });
@@ -165,9 +205,9 @@ test('Wrestling League Management reads as partial with the skeleton boundary st
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'Wrestling League Management' });
-  const card = heading.closest('article') as HTMLElement;
-  expect(card.textContent).toContain('PARTIAL');
-  expect(card.textContent).not.toContain('PLACEHOLDER');
+  const card = heading.closest('tr') as HTMLElement;
+  expect(card.textContent).toContain('IN PART');
+  expect(card.textContent).not.toContain('NOT BUILT');
   expect(card.textContent).toMatch(/until a real league defines them/i);
 });
 
@@ -177,9 +217,9 @@ test('External Competition Platform reads as partial with the skeleton boundary 
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'External Competition Platform' });
-  const card = heading.closest('article') as HTMLElement;
-  expect(card.textContent).toContain('PARTIAL');
-  expect(card.textContent).not.toContain('PLACEHOLDER');
+  const card = heading.closest('tr') as HTMLElement;
+  expect(card.textContent).toContain('IN PART');
+  expect(card.textContent).not.toContain('NOT BUILT');
   expect(card.textContent).toMatch(/until real competitions define them/i);
 });
 
@@ -190,12 +230,12 @@ test('External Competition Platform reads as partial with the skeleton boundary 
 test('Membership and Scholarship Tracking read as shipped with the discount rule stated', async () => {
   await renderPage();
 
-  const membership = screen.getByRole('heading', { name: 'Membership Tracking' }).closest('article') as HTMLElement;
-  expect(membership.textContent).toContain('EXISTS');
+  const membership = screen.getByRole('heading', { name: 'Membership Tracking' }).closest('tr') as HTMLElement;
+  expect(membership.textContent).toContain('IN USE');
   expect(membership.textContent).toMatch(/Billing is not built/i);
 
-  const scholarship = screen.getByRole('heading', { name: 'Scholarship Tracking' }).closest('article') as HTMLElement;
-  expect(scholarship.textContent).toContain('EXISTS');
+  const scholarship = screen.getByRole('heading', { name: 'Scholarship Tracking' }).closest('tr') as HTMLElement;
+  expect(scholarship.textContent).toContain('IN USE');
   expect(scholarship.textContent).toMatch(/never bypasses/i);
 });
 
@@ -206,7 +246,7 @@ test('Publication Workflow Automation reads as parked with its backlog id', asyn
   await renderPage();
 
   const heading = screen.getByRole('heading', { name: 'Publication Workflow Automation' });
-  const card = heading.closest('article') as HTMLElement;
+  const card = heading.closest('tr') as HTMLElement;
   expect(card.textContent).toContain('BACKLOG-publication-automation');
   expect(card.textContent).toMatch(/human-gated on purpose/i);
 });
@@ -221,7 +261,7 @@ test('the radar lists the shipped coach-floor capabilities as existing', async (
   expect(screen.getByText('Safety Compliance Center')).toBeTruthy();
   expect(screen.getByText('Coach Coverage')).toBeTruthy();
   expect(screen.getByText('Drill Library')).toBeTruthy();
-  expect(screen.getByText(/backed by pilot.session_script_runs/)).toBeTruthy();
+  expect(screen.getByText(/pilot\.session_script_runs/)).toBeTruthy();
 });
 
 test('the removed override token is not advertised anywhere on the hub', async () => {

@@ -165,12 +165,20 @@ export default function AdminCredentialsPage() {
     const wrapperClass = alertRowClass(row.band);
 
     return (
-      <li key={key} className={wrapperClass ? `${wrapperClass} mb-[var(--s3)]` : 'mat-leather mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s4)]'}>
+      /* Each row carries its own three-field review form, which is what makes
+         this a card surface and not a register: a form does not fit in a ruled
+         cell. So it stays a card and becomes the paper form it always was --
+         "paper forms" is this room's Feel line, and .mat-paper restates the
+         t-* inks for the light ground. The flagged bands keep the alert
+         chassis they had; only the ordinary rows move to paper. */
+      <li key={key} className={wrapperClass ? `${wrapperClass} mb-[var(--s3)]` : 'mat-paper mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s5)]'}>
         {wrapperClass && <span className="alert-icon" aria-hidden="true">{row.band === 'expiring_soon' ? '!' : '✕'}</span>}
         <div className={wrapperClass ? 'alert-body' : ''}>
           <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
-            <span className="t-body font-semibold text-[color:var(--bone-100)]">{row.person_display_name}</span>
-            <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{row.person_role}</span>
+            <span className="t-body font-semibold">{row.person_display_name}</span>
+            {/* .t-data pins bone-200, a dark-ground ink; .t-label is restated
+                for paper and is the same mono record voice at label size. */}
+            <span className="t-label">{row.person_role}</span>
             <span className="t-body font-semibold">{row.clearance_name}</span>
             <span className="badge badge--filed"><i aria-hidden="true">▣</i>{bandLabel[row.band] ?? row.band}</span>
           </div>
@@ -184,7 +192,7 @@ export default function AdminCredentialsPage() {
           {row.has_document && (
             <p className="mt-[var(--s2)]">
               <a
-                className="btn btn--ghost"
+                className="btn--lever hover:no-underline"
                 href={`${apiBase()}/api/pilot/credentials/document/${row.person_account_id}/${row.clearance_type_id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -240,7 +248,7 @@ export default function AdminCredentialsPage() {
                 value={rejectNotes[key] ?? ''}
                 onChange={(e) => setRejectNotes((f) => ({ ...f, [key]: e.target.value }))}
               />
-              <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void handleReject(row)}>
+              <button type="button" className="btn--lever" disabled={busy} onClick={() => void handleReject(row)}>
                 Reject
               </button>
             </div>
@@ -255,7 +263,7 @@ export default function AdminCredentialsPage() {
       <main className="room room--office min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl">
           <header className="mb-[var(--s5)]">
-            <p className="t-eyebrow">Admin Console</p>
+            <p className="t-eyebrow">Front Office</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Staff Credentials</h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Review submitted documents and confirm issue/expiry dates. Verifying is the only thing that
@@ -310,7 +318,7 @@ export default function AdminCredentialsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/admin" className="btn btn--ghost">Back to Admin Console</Link>
+            <Link href="/admin" className="btn btn--ghost">Back to the office</Link>
           </div>
         </div>
       </main>

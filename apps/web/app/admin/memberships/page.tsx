@@ -179,7 +179,11 @@ export default function MembershipsPage() {
           </div>
 
           {showForm && (
-            <section className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+            /* "Paper forms" is this room's Feel line and mat-paper appeared on
+               no /admin route. The design system's own guardian-portal screen
+               is the pattern: .field / .input / .select / .btn on a paper
+               panel. */
+            <section className="mat-paper mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
               <div className="grid gap-[var(--s3)] md:grid-cols-2">
                 <div className="field">
                   <label className="t-label" htmlFor="membership-athlete">Athlete</label>
@@ -231,48 +235,72 @@ export default function MembershipsPage() {
               </div>
             </div>
           ) : (
-            <ul className="space-y-[var(--s3)]">
-              {items.map((row) => {
-                const badge = STATUS_BADGE[row.status] ?? STATUS_BADGE.active;
-                return (
-                  <li key={row.membership_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-                    <div className="flex flex-wrap items-center gap-[var(--s3)]">
-                      <span className="t-body font-semibold text-[color:var(--bone-100)]">{row.athlete_name}</span>
-                      <span className="t-label">{row.program_name}</span>
-                      <span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{row.status}</span>
-                      {row.scholarship_percent > 0 ? (
-                        <span className="badge badge--monitor"><i aria-hidden="true">◉</i>{row.scholarship_percent}% scholarship</span>
-                      ) : null}
-                      <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        since {formatGymDateNumeric(row.started_on)}
-                        {row.ended_on ? ` — ended ${formatGymDateNumeric(row.ended_on)}` : ''}
-                      </span>
-                    </div>
-                    <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s2)]">
-                      {(NEXT_ACTIONS[row.status] ?? []).map((action) => (
-                        <button key={action.status} type="button" className="btn btn--ghost"
-                          disabled={busyId === row.membership_id}
-                          onClick={() => void patch(row.membership_id, { status: action.status })}>
-                          {action.label}
-                        </button>
-                      ))}
-                      {row.status !== 'ended' && (
-                        <label className="t-label flex items-center gap-[var(--s2)]" htmlFor={`scholarship-${row.membership_id}`}>
-                          Scholarship
-                          <select id={`scholarship-${row.membership_id}`} className="select" value={row.scholarship_percent}
-                            disabled={busyId === row.membership_id}
-                            onChange={(e) => void patch(row.membership_id, { scholarship_percent: Number(e.target.value) })}>
-                            {SCHOLARSHIP_LEVELS.map((level) => (
-                              <option key={level} value={level}>{level === 0 ? 'None' : `${level}%`}</option>
+            /* Enrollments are records, not cards: one ruled row each, on the
+               sheet this office keeps its registers on. */
+            <section className="mat-paper overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
+              <table className="ledger">
+                <caption className="text-left">Program memberships</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Athlete</th>
+                    <th scope="col">Program</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Scholarship</th>
+                    <th scope="col">Dates</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((row) => {
+                    const badge = STATUS_BADGE[row.status] ?? STATUS_BADGE.active;
+                    return (
+                      <tr key={row.membership_id}>
+                        <td className="font-bold">{row.athlete_name}</td>
+                        <td>{row.program_name}</td>
+                        <td><span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{row.status}</span></td>
+                        <td>
+                          {row.scholarship_percent > 0 ? (
+                            <span className="badge badge--monitor"><i aria-hidden="true">◉</i>{row.scholarship_percent}% scholarship</span>
+                          ) : (
+                            <span aria-hidden="true">—</span>
+                          )}
+                        </td>
+                        <td className="ledger-id whitespace-nowrap">
+                          since {formatGymDateNumeric(row.started_on)}
+                          {row.ended_on ? ` — ended ${formatGymDateNumeric(row.ended_on)}` : ''}
+                        </td>
+                        <td>
+                          <div className="flex flex-wrap items-center gap-[var(--s2)]">
+                            {/* .btn--ghost is bone text on a translucent black
+                                wash, tuned for leather; a lever carries its own
+                                dark surface and reads on the sheet. */}
+                            {(NEXT_ACTIONS[row.status] ?? []).map((action) => (
+                              <button key={action.status} type="button" className="btn--lever"
+                                disabled={busyId === row.membership_id}
+                                onClick={() => void patch(row.membership_id, { status: action.status })}>
+                                {action.label}
+                              </button>
                             ))}
-                          </select>
-                        </label>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                            {row.status !== 'ended' && (
+                              <label className="t-label flex items-center gap-[var(--s2)]" htmlFor={`scholarship-${row.membership_id}`}>
+                                Scholarship
+                                <select id={`scholarship-${row.membership_id}`} className="select" value={row.scholarship_percent}
+                                  disabled={busyId === row.membership_id}
+                                  onChange={(e) => void patch(row.membership_id, { scholarship_percent: Number(e.target.value) })}>
+                                  {SCHOLARSHIP_LEVELS.map((level) => (
+                                    <option key={level} value={level}>{level === 0 ? 'None' : `${level}%`}</option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
           )}
 
           <div className="mt-[var(--s5)]">

@@ -318,25 +318,30 @@ export default function CoachCoveragePage() {
               <div className="empty-msg">Nobody is currently covering another coach&rsquo;s athlete.</div>
             </div>
           ) : (
-            <section className="mat-leather mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)]">
-              <table className="w-full text-left">
+            /* A ruled sheet on the desk. .ledger is the office's own record
+                furniture -- rules, head rule, and the mono voice Law 4 gives
+                anything auditable -- so every hand-rolled px/py/border on the
+                rows below is gone with it. */
+            <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
+              <table className="ledger">
+                <caption className="text-left">Active coverage grants</caption>
                 <thead>
-                  <tr className="t-eyebrow border-b border-[color:var(--hide-700)]">
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Athlete</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Covering coach</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Granted by</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Expires</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Actions</th>
+                  <tr>
+                    <th scope="col">Athlete</th>
+                    <th scope="col">Covering coach</th>
+                    <th scope="col">Granted by</th>
+                    <th scope="col">Expires</th>
+                    <th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item) => (
-                    <tr key={item.coverage_id} className="border-b border-[color:var(--hide-800)] last:border-b-0 align-top">
-                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.athlete_full_name}</td>
-                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.covering_coach_email ?? item.covering_coach_id}</td>
-                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.granted_by_email ?? item.granted_by_account_id}</td>
-                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.expires_at)}</td>
-                      <td className="px-[var(--s4)] py-[var(--s3)]">
+                    <tr key={item.coverage_id}>
+                      <td>{item.athlete_full_name}</td>
+                      <td>{item.covering_coach_email ?? item.covering_coach_id}</td>
+                      <td>{item.granted_by_email ?? item.granted_by_account_id}</td>
+                      <td>{formatDate(item.expires_at)}</td>
+                      <td>
                         <button
                           type="button"
                           disabled={pendingCoverageIds.has(item.coverage_id)}

@@ -2,7 +2,6 @@ import Link from 'next/link';
 import AnnouncementBanner from '@/components/AnnouncementBanner';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
-import ShadowCommandFeed from '@/components/ShadowCommandFeed';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 
 const roleSelector = [
@@ -76,37 +75,52 @@ const utilityLinks = [
   { label: 'Notices & Motivation', href: '/notices' },
   { label: 'Entry Point', href: '/dashboard' },
   { label: 'Revenue Center', href: '/admin?tab=revenue' },
-  { label: 'The Office', href: '/admin/shadow' },
   { label: 'The Stands', href: '/guardian' },
 ];
 
 type CapabilityState = 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISSING';
 
-const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: string; notes: string }> = [
-  { name: 'Athlete Readiness', state: 'EXISTS', href: '/athlete/dashboard', notes: 'Readiness check-ins, session logs, and goals are active.' },
-  { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/environment/intake-router', notes: 'Coach workspace, review queue, and floor controls are available.' },
-  { name: 'Research Intelligence', state: 'EXISTS', href: '/research', notes: 'Research intake and Q&A workflow are available.' },
-  { name: 'Knowledge Graph', state: 'EXISTS', href: '/knowledge-graph', notes: 'Knowledge and relationship view is available.' },
-  { name: 'Scenario Simulation', state: 'EXISTS', href: '/simulator', notes: 'What-if simulator and promotion flow links are available.' },
-  { name: 'Source Governance', state: 'EXISTS', href: '/source-control', notes: 'Audit-to-source-control publication flow is visible.' },
-  { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Revenue center front-end plus the payment ledger schema and the Stripe Connect onboarding flow (/admin/payments: connect button, OAuth round trip, deauthorization webhook). No charging exists — CAP-012 stays BLOCKED behind owner platform-account registration and compliance sign-off.' },
-  { name: 'Scholarship Tracking', state: 'EXISTS', href: '/admin/memberships', notes: 'Scholarships are stored discounts on real membership rows (100% = full scholarship), never bypasses — backed by pilot.program_memberships. Fee computation from these records arrives with the payment lanes.' },
-  { name: 'Membership Tracking', state: 'EXISTS', href: '/admin/memberships', notes: 'Program enrollment records with an active/lapsed/ended lifecycle and one-active-per-program enforcement, backed by pilot.program_memberships. Billing is not built — fees arrive with the payment lanes and will read these records.' },
-  { name: 'SHADOW Monitoring', state: 'EXISTS', href: '/shadow', notes: 'SHADOW consoles are wired to live routes, and the operations hub command node reads the real event/telemetry record, read-only and newest-first. Which recorded facts deserve an alarm remains a human decision; the feed reports what is recorded and claims nothing more.' },
-  { name: 'AI Video Analysis', state: 'PARTIAL', href: '/coach/video-analysis', notes: 'Upload, release, and playback are real and backed by persistent records; a released video can be sent to Film Study for human-reviewed observation — Film Study is the analysis pathway. Per-skill scoring is PARKED for Phase 2+ by owner decision (2026-08-15, BACKLOG-video-skill-scoring): partial by design, not by neglect.' },
-  { name: 'Video Review Intelligence', state: 'EXISTS', href: '/admin/video-review', notes: 'Org-admin console for the automated content-scan quarantine escalation: watch the clip, approve or block. A downstream compliance-review step (appropriateness, consent, audio privacy) is separately available at /admin/video-compliance.' },
-  { name: 'Session Script Delivery', state: 'EXISTS', href: '/coach/session-scripts', notes: 'Script browse, live floor delivery with a server-owned clock, and settled delivery history are backed by pilot.session_script_runs.' },
-  { name: 'Safety Compliance Center', state: 'EXISTS', href: '/admin/compliance-center', notes: 'Violation register with acknowledge / escalate / resolve / dismiss lifecycle; org-scoped, audited, backed by pilot.compliance_violations.' },
-  { name: 'Coach Coverage', state: 'EXISTS', href: '/admin/coach-coverage', notes: 'Temporary athlete-record access for a covering coach, with expiry and immediate revocation, backed by pilot.coach_coverage.' },
-  { name: 'Drill Library', state: 'EXISTS', href: '/coach/drills', notes: 'Versioned drill library backed by persistent records.' },
-  { name: 'Performance Analytics', state: 'EXISTS', href: '/coach/performance-analytics', notes: 'Read-only roster rollup for coach/admin: sessions and RPE, readiness check-ins with a glanceable trend, activity-log training days, and progression work over a selectable window. Aggregates existing records only; no new data collection.' },
-  { name: 'Grant Compliance Intelligence', state: 'PARTIAL', href: '/admin/grants', notes: 'The internal grant-obligation ledger is real: deadlines, deliverables, renewals, and filings with a status lifecycle, backed by pilot.grant_obligations — which structurally carries no athlete data, keeping the parked external-disclosure question parked. Grant-packet generation for funders remains parked until a real grant defines its disclosure set.' },
-  { name: 'Closed-Loop Progression Intelligence', state: 'PARTIAL', href: '/athlete/progression-intelligence', notes: 'Athlete, coach, and parent surfaces read the real gap / drill-assignment / completion records behind the pilot progression routes. Gaps are coach-identified today; automated gap detection remains planned.' },
-  { name: 'Sports Medicine', state: 'PARTIAL', href: '/coach/sports-medicine', notes: 'The clearance board is real: per-athlete clearance status and active training holds with athlete-safe explanations only — no diagnoses or clinical detail, by owner decision (2026-08-15). Broader sports-medicine workflow (injury tracking, treatment records) remains planned.' },
-  { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'Volunteer roster, status, and availability are backed by persistent records.' },
-  { name: 'Wrestling League Management', state: 'PARTIAL', href: '/operations/wrestling-league', notes: 'Season, event, and roster records are real, backed by pilot.wrestling_league_* tables — deliberately skeletal by owner decision (2026-08-15). Match cards, brackets, weigh-ins, scoring, and scheduling stay unbuilt until a real league defines them.' },
-  { name: 'External Competition Platform', state: 'PARTIAL', href: '/operations/external-competition', notes: 'Competition and entry records are real, backed by pilot.external_competition* tables — deliberately skeletal by owner decision (2026-08-15). Federation integration, result sync, brackets, travel, and compliance checklists stay unbuilt until real competitions define them.' },
-  { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', notes: 'Parked by owner-approved assessment (2026-08-15, BACKLOG-publication-automation): the internal publication machinery that exists — video compliance, research evidence review, retraction — is human-gated on purpose, and outward automation has no defined destination or disclosure set yet. Front-end placeholder remains visible.' },
+/* The state is the record's own word, kept as-is because the tests and the
+   work queue both read it. What the register PRINTS is the clerk's word for
+   the same fact -- "IN USE", not "EXISTS" -- because a visitor to the front
+   desk is asking whether a thing works, not what the roadmap calls it. */
+const CAPABILITY_STATE_LABEL: Record<CapabilityState, string> = {
+  EXISTS: 'IN USE',
+  PARTIAL: 'IN PART',
+  PLACEHOLDER: 'NOT BUILT',
+  MISSING: 'NOT ON FILE',
+};
+
+/* `record` is the file reference -- the table, backlog id, or capability
+   number the entry is kept under. It used to sit inside the sentence, so the
+   register read a database schema out loud to whoever walked up to the desk.
+   A clerk writes the file number in the margin instead: it stays on the page,
+   in the mono record voice, in its own ruled column. */
+const capabilityRadar: Array<{ name: string; state: CapabilityState; href: string; record?: string; notes: string }> = [
+  { name: 'Athlete Readiness', state: 'EXISTS', href: '/athlete/dashboard', notes: 'Check-ins, session logs, and goals are open to athletes today.' },
+  { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/environment/intake-router', notes: 'The coach workspace, the review queue, and the floor controls are open.' },
+  { name: 'Research Intelligence', state: 'EXISTS', href: '/research', notes: 'Research intake and the question-and-answer workflow are open.' },
+  { name: 'Knowledge Graph', state: 'EXISTS', href: '/knowledge-graph', notes: 'The knowledge and relationship view is open.' },
+  { name: 'Scenario Simulation', state: 'EXISTS', href: '/simulator', notes: 'The what-if simulator and its promotion links are open.' },
+  { name: 'Source Governance', state: 'EXISTS', href: '/source-control', notes: 'The route from an audit entry through to source control is visible end to end.' },
+  { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', record: 'CAP-012', notes: 'The revenue desk, the payment record, and the Stripe Connect sign-up round trip are all in place. Nothing can be charged yet: that waits on the owner registering the platform account and on compliance signing it off.' },
+  { name: 'Scholarship Tracking', state: 'EXISTS', href: '/admin/memberships', record: 'pilot.program_memberships', notes: 'A scholarship is a discount written on a real membership record — 100% is a full scholarship — and never bypasses one. Working the fee out from those records arrives with the payment lanes.' },
+  { name: 'Membership Tracking', state: 'EXISTS', href: '/admin/memberships', record: 'pilot.program_memberships', notes: 'Enrollment records with an active, lapsed, or ended life, and one active membership per program. Billing is not built — fees arrive with the payment lanes and will read these records.' },
+  { name: 'SHADOW Monitoring', state: 'EXISTS', href: '/shadow', notes: 'The SHADOW consoles read the live record. The record itself is kept in the after-hours room rather than at this desk. Which of the recorded facts deserves an alarm remains a human decision, and nothing claims more than what is written down.' },
+  { name: 'AI Video Analysis', state: 'PARTIAL', href: '/coach/video-analysis', record: 'BACKLOG-video-skill-scoring · 2026-08-15', notes: 'Upload, release, and playback are real and kept on file, and a released video can go to Film Study for a person to watch and write up. Film Study is the analysis path. Scoring a clip skill by skill is parked for a later phase by owner decision: part built on purpose, not by neglect.' },
+  { name: 'Video Review Intelligence', state: 'EXISTS', href: '/admin/video-review', notes: 'The organization admin\u2019s desk for a clip the content scan has held back: watch it, then approve or block. Whether the clip is also appropriate, consented to, and private on audio is a separate read with a desk of its own.' },
+  { name: 'Session Script Delivery', state: 'EXISTS', href: '/coach/session-scripts', record: 'pilot.session_script_runs', notes: 'Browsing a script, running it on the floor against a clock the server owns, and the settled history afterwards are all kept on file.' },
+  { name: 'Safety Compliance Center', state: 'EXISTS', href: '/admin/compliance-center', record: 'pilot.compliance_violations', notes: 'A register of violations that can be acknowledged, escalated, resolved, or dismissed. One organization at a time, and every step is written to the audit record.' },
+  { name: 'Coach Coverage', state: 'EXISTS', href: '/admin/coach-coverage', record: 'pilot.coach_coverage', notes: 'Temporary access to an athlete record for a covering coach, with a date it runs out and a revoke that takes effect at once.' },
+  { name: 'Drill Library', state: 'EXISTS', href: '/coach/drills', notes: 'A versioned drill library kept on file.' },
+  { name: 'Performance Analytics', state: 'EXISTS', href: '/coach/performance-analytics', notes: 'A read-only roster rollup for coaches and admins: sessions and RPE, readiness check-ins with a trend you can read at a glance, training days from the activity log, and progression work over a window you choose. It adds up records that already exist and collects nothing new.' },
+  { name: 'Grant Compliance Intelligence', state: 'PARTIAL', href: '/admin/grants', record: 'pilot.grant_obligations', notes: 'The gym\u2019s own obligation ledger is real: deadlines, deliverables, renewals, and filings, each with a status. It carries no athlete data at all, which is what keeps the question of what a funder may see parked. Building a packet for a funder waits until a real grant says what belongs in one.' },
+  { name: 'Closed-Loop Progression Intelligence', state: 'PARTIAL', href: '/athlete/progression-intelligence', notes: 'The athlete, coach, and parent surfaces read the real gap, drill-assignment, and completion records. A coach names the gaps today; finding them automatically is still planned.' },
+  { name: 'Sports Medicine', state: 'PARTIAL', href: '/coach/sports-medicine', notes: 'The clearance board is real: where each athlete stands, and any training hold, written so the athlete can read it — no diagnoses or clinical detail, by owner decision. The wider work, injury tracking and treatment records, is still planned.' },
+  { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'The volunteer roster, their status, and their availability are kept on file.' },
+  { name: 'Wrestling League Management', state: 'PARTIAL', href: '/operations/wrestling-league', record: 'pilot.wrestling_league_* · 2026-08-15', notes: 'Season, event, and roster records are real, and deliberately bare by owner decision. Match cards, brackets, weigh-ins, scoring, and scheduling stay unbuilt until a real league defines them.' },
+  { name: 'External Competition Platform', state: 'PARTIAL', href: '/operations/external-competition', record: 'pilot.external_competition* · 2026-08-15', notes: 'Competition and entry records are real, and deliberately bare by owner decision. Federation links, result sync, brackets, travel, and compliance checklists stay unbuilt until real competitions define them.' },
+  { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', record: 'BACKLOG-publication-automation · 2026-08-15', notes: 'Parked by an owner-approved assessment. What already exists inside the building — video compliance, research evidence review, retraction — is human-gated on purpose, and sending anything outward has no destination and no agreed disclosure set yet. The front-end placeholder stays visible.' },
 ];
 
 /* Build state is deliberately kept OFF the status ladder.
@@ -163,7 +177,11 @@ export default function OperationsHubPage() {
           or a night console. It was on bare ink, which is no room at all. */}
       <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
+          <header className="relative space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
+            {/* The office's own fixture, hung over the desk. .lamp draws the
+                shade and the pool of light under it; the room supplies the
+                wall behind, and nothing else on the page paints light. */}
+            <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
             <p className="t-eyebrow tracking-[0.35em]">Mission Control</p>
             <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>The Ring</h1>
             <p className="t-body max-w-[80ch]">
@@ -275,7 +293,10 @@ export default function OperationsHubPage() {
               </section>
 
               <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>DEVELOPMENT LAB</h2>
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>OTHER DESKS</h2>
+                <p className="t-body">
+                  The research, evidence, and publication desks, and the rooms that keep their records.
+                </p>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {developmentLab.map((item) => (
                     <Link
@@ -289,79 +310,111 @@ export default function OperationsHubPage() {
                 </div>
               </section>
 
-              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capability Visibility Map</h2>
-                <p className="t-body">
-                  Reality-based map of major PPBF capabilities. Placeholders are roadmap visibility only and are not implemented.
+              <section className="space-y-[var(--s4)]" aria-labelledby="capability-register">
+                <h2 id="capability-register" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+                  What This Gym Can Do Today
+                </h2>
+                <p className="t-body max-w-[80ch]">
+                  One line for every part of the platform, and a plain word for how far along it is.
+                  A line that says NOT BUILT is not built — it is on the list, and that is all.
                 </p>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {capabilityRadar.map((item) => (
-                    <article
-                      key={item.name}
-                      className="mat-leather--raised rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.18)] p-[var(--s4)]"
-                    >
-                      <div className="flex items-start justify-between gap-[var(--s4)]">
-                        <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
-                          {item.name}
-                        </h3>
-                        <span
-                          className={`inline-flex shrink-0 items-center gap-[var(--s2)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.1em] ${capabilityChip(item.state).cls}`}
-                        >
-                          <i className="not-italic">{capabilityChip(item.state).glyph}</i>
-                          {item.state}
-                        </span>
-                      </div>
-                      <p className="t-body mt-[var(--s3)]">{item.notes}</p>
-                      {item.href ? (
-                        <Link href={item.href} className="btn btn--ghost mt-[var(--s3)]">
-                          Open Capability
-                        </Link>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="btn btn--ghost mt-[var(--s3)] cursor-not-allowed opacity-60 grayscale"
-                        >
-                          Planned Capability
-                        </button>
-                      )}
-                    </article>
-                  ))}
+                {/* The register is a record, so it is a ruled sheet on the desk
+                    rather than another grid of leather tiles: .ledger on
+                    .mat-paper, in the brass frame the office hangs its records
+                    in. The mono voice is Law 4's — every row here is auditable
+                    against the work queue. */}
+                <div className="frame">
+                  <span className="rivet rivet--tl" />
+                  <span className="rivet rivet--tr" />
+                  <span className="rivet rivet--bl" />
+                  <span className="rivet rivet--br" />
+                  <div className="frame-in mat-paper p-[var(--s5)]">
+                    {/* The scroller is a child: .frame > .frame-in sets
+                        overflow:hidden unlayered, which beats a layered
+                        overflow-x utility on the same element. */}
+                    <div className="overflow-x-auto">
+                    <table className="ledger">
+                      <caption className="text-left">The capability register</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Capability</th>
+                          <th scope="col">State</th>
+                          <th scope="col">What is on file</th>
+                          <th scope="col">Filed under</th>
+                          <th scope="col">Desk</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {capabilityRadar.map((item) => (
+                          <tr key={item.name}>
+                            <td>
+                              {/* Still a heading -- a row label in a register is
+                                  the record's name -- but it takes the ledger's
+                                  own voice rather than the display stencil,
+                                  which is what makes a ruled sheet read as one. */}
+                              <h3 className="font-bold">{item.name}</h3>
+                            </td>
+                            <td>
+                              <span
+                                className={`inline-flex shrink-0 items-center gap-[var(--s2)] uppercase tracking-[0.1em] ${capabilityChip(item.state).cls}`}
+                              >
+                                <i className="not-italic">{capabilityChip(item.state).glyph}</i>
+                                {CAPABILITY_STATE_LABEL[item.state]}
+                              </span>
+                            </td>
+                            <td className="max-w-[58ch]">{item.notes}</td>
+                            <td className="ledger-id">{item.record ?? '—'}</td>
+                            <td>
+                              <Link href={item.href} className="btn--lever hover:no-underline" aria-label={`Open ${item.name}`}>
+                                Open
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                  </div>
                 </div>
               </section>
             </div>
 
             <aside className="space-y-6">
 
-              {/* A solid red panel for "planned, not yet implemented". The
-                  copy underneath is the important part — an empty panel here
-                  does not mean the floor is clear — and drowning it in the
-                  safety red made the panel itself look like the alert it is
-                  explicitly telling you it is not. Law 7: the unbuilt state is
-                  stamped, in brass so the ladder keeps its colour. */}
+              {/* THE NIGHT RECORD IS NOT KEPT AT THIS DESK.
+
+                  This panel used to mount <ShadowCommandFeed /> under a heading
+                  reading "SHADOW COMMAND NODE": a newest-first event feed,
+                  POSTing to the shadow events and telemetry routes, rendered
+                  inside .room--office. ROOM-PURPOSE-DNA names night telemetry
+                  as forbidden chrome in the front office in as many words, and
+                  the feed is the After Hours room's own core furniture -- the
+                  page was wearing another room's face.
+
+                  So the panel is a door, not a console. The doctrine the feed
+                  carried travels with it: whoever reads that log reads it in the
+                  room that owns it, where an empty feed still does not mean the
+                  floor is clear. The component itself is untouched and still
+                  tested (components/shadowCommandFeed.test.tsx) -- it is for the
+                  night room to mount, not this one.
+
+                  This is the ONLY link to /admin/shadow on the page. The
+                  "Platform Shortcuts" list carried a second one labelled "The
+                  Office", which pointed at the After Hours room -- a door with
+                  the wrong room painted on it. It is gone. */}
               <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
-                {/* The stamp is gone because the feed is real: ShadowCommandFeed
-                    reads the same org-scoped, role-projected record the SHADOW
-                    consoles read. The doctrine the old stamp carried survives in
-                    the feed's own copy — every state (loading, failed, empty)
-                    says in as many words that it does not mean the floor is
-                    clear, and app/operations/page.test.tsx pins that. What this
-                    panel still does NOT do is rank or alarm: which recorded
-                    facts deserve an alarm is a human decision nobody has made,
-                    and inventing one here would put fabricated urgency on a
-                    safety-adjacent surface. */}
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>SHADOW COMMAND NODE</h2>
-                <ShadowCommandFeed />
-                <Link
-                  href="/admin/shadow"
-                  className="btn btn--ghost"
-                >
-                  Open SHADOW Ops
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>After Hours</h2>
+                <p className="t-body">
+                  The night record — every SHADOW event and reading, newest first — is kept in the
+                  after-hours room, not at this desk. Open it when you need the log itself.
+                </p>
+                <Link href="/admin/shadow" className="btn btn--ghost">
+                  Open the after-hours room
                 </Link>
               </section>
 
               <section className="space-y-[var(--s3)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Platform Shortcuts</h2>
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Around The Building</h2>
                 <div className="grid gap-2">
                   {utilityLinks.map((item) => (
                     <Link

@@ -407,22 +407,22 @@ function PinManagementPageContent() {
 /**
  * Shown to a platform owner who reaches this console. Every route behind it is
  * organization-scoped and refuses that role by design -- athlete credentials
- * belong to the gym's own administrator. Without this they would see a console
+ * belong to the gym's own administrator. Without this they would see a desk
  * whose every request failed, which is the pattern this codebase keeps having
  * to remove.
  */
 function WrongRoleNotice() {
   return (
-    <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+    <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
-        <p className="t-eyebrow">Different Console</p>
+        <p className="t-eyebrow">Different Desk</p>
         <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Athlete PINs are managed per gym</h1>
         <p className="t-body">
-          This console issues and resets the credentials of individual athletes, which belongs to that
+          This desk issues and resets the credentials of individual athletes, which belongs to that
           gym&apos;s administrator. As platform owner you create organizations and appoint their admins.
         </p>
         <Link href="/admin/platform" className="btn btn--ghost">
-          Platform console
+          The platform desk
         </Link>
       </div>
     </main>

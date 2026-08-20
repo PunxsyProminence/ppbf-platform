@@ -107,29 +107,42 @@ function StaffCredentialsBoard() {
         ) : staff.length === 0 ? (
           <p className="empty-msg">No staff credential records yet.</p>
         ) : (
-          <ul className="space-y-[var(--s3)]">
-            {staff.map((person) => (
-              <li key={person.account_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-                <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
-                  <span className="t-body font-semibold text-[color:var(--bone-100)]">{person.display_name}</span>
-                  <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                    {ROLE_LABEL[person.role] ?? person.role}
-                  </span>
-                </div>
-                <ul className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
-                  {person.credentials.map((credential) => {
-                    const badge = bandBadge(credential.band);
-                    return (
-                      <li key={credential.clearance_type_id} className={`badge ${badge.className}`}>
-                        <i aria-hidden="true">▣</i>
-                        {credential.clearance_name}: {badge.label}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </li>
-            ))}
-          </ul>
+          /* Who holds what is a register, and this office writes registers on
+             ruled paper: .ledger, one row a person, the badges keeping their
+             own grounds and their own glyphs (Law 3). */
+          <section className="mat-paper overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
+            <table className="ledger">
+              <caption className="text-left">Certified &amp; cleared</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Person</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Clearances</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staff.map((person) => (
+                  <tr key={person.account_id}>
+                    <td className="font-bold">{person.display_name}</td>
+                    <td>{ROLE_LABEL[person.role] ?? person.role}</td>
+                    <td>
+                      <ul className="flex flex-wrap gap-[var(--s2)]">
+                        {person.credentials.map((credential) => {
+                          const badge = bandBadge(credential.band);
+                          return (
+                            <li key={credential.clearance_type_id} className={`badge ${badge.className}`}>
+                              <i aria-hidden="true">▣</i>
+                              {credential.clearance_name}: {badge.label}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
         )}
 
         <div className="mt-[var(--s5)]">

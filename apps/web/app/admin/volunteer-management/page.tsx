@@ -28,38 +28,47 @@ const VOLUNTEER_STATUS_BADGE: Record<VolunteerStatus, { rung: string; glyph: str
   inactive: { rung: 'badge--monitor', glyph: '◉' },
 };
 
-interface VolunteerCardProps {
+interface VolunteerRowProps {
   item: VolunteerRecord;
   onStatusChange: (volunteerId: string, status: VolunteerStatus) => void;
 }
 
-function VolunteerCard(props: Readonly<VolunteerCardProps>) {
+/* The roster was a grid of leather tiles -- a card per volunteer, with the
+   same six facts on every one. Six facts repeated down a list is a register,
+   and a register in this room is ruled paper: one row each, columns that line
+   up, the mono record voice Law 4 gives anything auditable. The status levers
+   move with the row they belong to. */
+function VolunteerRow(props: Readonly<VolunteerRowProps>) {
   const { item, onStatusChange } = props;
   const badge = VOLUNTEER_STATUS_BADGE[item.status];
   return (
-    <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-      <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-        <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{item.full_name}</h2>
-        <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.status}</span>
-      </div>
-      <p className="t-body mt-[var(--s3)]">{item.role_focus}</p>
-      <p className="t-body">Availability: {item.availability}</p>
-      <p className="t-body">Certification: {item.certification_status}</p>
-      <p className="t-body">Background Check: {item.background_check_status}</p>
-      {item.notes ? <p className="t-muted mt-[var(--s3)]">{item.notes}</p> : null}
-      <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
-        {volunteerStatuses.map((status) => (
-          <button
-            key={status}
-            type="button"
-            onClick={() => onStatusChange(item.volunteer_id, status)}
-            className="btn--lever min-h-[44px]"
-          >
-            {status}
-          </button>
-        ))}
-      </div>
-    </article>
+    <tr>
+      <td>
+        <h2 className="font-bold">{item.full_name}</h2>
+        {/* .t-muted is bone-400, a dark-ground ink, and the sheet is a light
+            ground: the note takes the register's own ink instead. */}
+        {item.notes ? <p className="max-w-[34ch]">{item.notes}</p> : null}
+      </td>
+      <td>{item.role_focus}</td>
+      <td>{item.availability}</td>
+      <td>{item.certification_status}</td>
+      <td>{item.background_check_status}</td>
+      <td><span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.status}</span></td>
+      <td>
+        <div className="flex flex-wrap gap-[var(--s2)]">
+          {volunteerStatuses.map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => onStatusChange(item.volunteer_id, status)}
+              className="btn--lever min-h-[44px]"
+            >
+              {status}
+            </button>
+          ))}
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -198,9 +207,9 @@ export default function VolunteerManagementPage() {
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Volunteer Management</h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | TABLE-BACKED | BACKEND CONNECTED</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
-              Volunteer roster, status, and availability are now backed by persistent records instead of placeholders.
+              Who volunteers here, what they help with, when they are free, and where their checks stand.
+              Everything on this page is kept on file — nothing here is a sample.
             </p>
             {errorMessage ? (
               <p role="alert" className="alert alert--critical">
@@ -223,7 +232,9 @@ export default function VolunteerManagementPage() {
             ))}
           </section>
 
-          <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          {/* A form on paper -- the room's Feel line, and the pattern the
+              design system's own guardian-portal screen uses. */}
+          <section className="mat-paper mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add Volunteer</h2>
             <label className="field">
               <span className="t-label">Full name</span>
@@ -270,10 +281,26 @@ export default function VolunteerManagementPage() {
               <div className="empty-msg">Add the first volunteer above and they&apos;ll show up here.</div>
             </div>
           ) : (
-            <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
-              {items.map((item) => (
-                <VolunteerCard key={item.volunteer_id} item={item} onStatusChange={(volunteerId, status) => void handleStatusUpdate(volunteerId, status)} />
-              ))}
+            <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
+              <table className="ledger">
+                <caption className="text-left">Volunteer roster</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Volunteer</th>
+                    <th scope="col">Role focus</th>
+                    <th scope="col">Availability</th>
+                    <th scope="col">Certification</th>
+                    <th scope="col">Background check</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Set status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <VolunteerRow key={item.volunteer_id} item={item} onStatusChange={(volunteerId, status) => void handleStatusUpdate(volunteerId, status)} />
+                  ))}
+                </tbody>
+              </table>
             </section>
           )}
 

@@ -67,7 +67,7 @@ const automationWorkflowPanels = [
 const quickLinks = [
   { label: 'Audit trace', href: '/audit' },
   { label: 'Research intake', href: '/research' },
-  { label: 'Publication workflow surface', href: '/source-control/publication-workflow' },
+  { label: 'Publication workflow', href: '/source-control/publication-workflow' },
   { label: 'Operations Hub', href: '/operations' },
   { label: 'Member Access', href: '/login' },
 ];
@@ -75,8 +75,8 @@ const quickLinks = [
 const stats = [
   { label: 'Current Stage', value: 'Source Control' },
   { label: 'Next Stage', value: 'Publish to Ecosystem' },
-  { label: 'Promotion Queue', value: 'BACKEND REQUIRED' },
-  { label: 'Canonical Source', value: 'BACKEND REQUIRED' },
+  { label: 'Promotion Queue', value: 'Not wired yet' },
+  { label: 'Canonical Source', value: 'Not wired yet' },
 ];
 
 export default function SourceControlPage() {
@@ -89,18 +89,24 @@ export default function SourceControlPage() {
        does not allow. */
     <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-        <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
+        <header className="relative space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
+          {/* The office's own fixture. This page had no lamp, no rivets, no
+              paper and no table -- five grids of leather tiles, which is a
+              board room with the wall swapped. */}
+          <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
           <p className="t-eyebrow tracking-[0.35em]">Source Control</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>
-            Promotion pipeline and publication lane
+            How A Card Gets Published
           </h1>
           {/* Law 7: "not built yet" is a declaration, so it is stamped in
               brass rather than painted in the safety ladder's colours. */}
           <span className="stamp stamp--brass">{capabilityStatus}</span>
           <p className="t-body max-w-[80ch]">
-            Shows how cards would move through Draft, Review, Approved, Published, and Archived states before ecosystem release. Every card, version, and count on this page is a sample, not live promotion state.
+            The route a card takes — Draft, Review, Approved, Published, Archived — before it goes out to
+            the rest of the platform. Every card, version, and count below is a sample written into this
+            page. Nothing here is a real record, and nothing here moves anything.
           </p>
-          <ShadowChatButton context="Source Control Promotion pipeline and publication lane" />
+          <ShadowChatButton context="Source Control How A Card Gets Published" />
         </header>
 
         <DevelopmentPipelineBanner currentStage="source-control" />
@@ -141,14 +147,29 @@ export default function SourceControlPage() {
           <article className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Version History</h2>
             <p className="t-label">{capabilityStatus}</p>
-            <div className="space-y-[var(--s3)]">
-              {sampleVersionHistory.map((entry) => (
-                <div key={entry.version} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                  <p className="t-data text-[color:var(--bone-100)]">{entry.version}</p>
-                  <p className="t-body mt-[var(--s2)]">{entry.note}</p>
-                  <p className="t-data mt-[var(--s2)]">{entry.date}</p>
-                </div>
-              ))}
+            {/* A version history is a record, and the office writes records on
+                ruled paper. .ledger carries the mono voice Law 4 gives anything
+                auditable, so the per-row t-data classes go with it. */}
+            <div className="mat-paper overflow-x-auto rounded-[var(--r-md)] p-[var(--s4)]">
+              <table className="ledger">
+                <caption className="text-left">Sample version history</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Version</th>
+                    <th scope="col">Note</th>
+                    <th scope="col">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sampleVersionHistory.map((entry) => (
+                    <tr key={entry.version}>
+                      <td className="font-bold">{entry.version}</td>
+                      <td>{entry.note}</td>
+                      <td className="ledger-id whitespace-nowrap">{entry.date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </article>
 
@@ -164,9 +185,9 @@ export default function SourceControlPage() {
 
         <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s4)]">
-            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Automated Publication Workflow - Planned</h2>
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>The Automatic Version — Planned</h2>
             <Link href="/source-control/publication-workflow" className="btn">
-              Open Workflow Surface
+              Open The Workflow Page
             </Link>
           </div>
           <div className="grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
@@ -181,14 +202,38 @@ export default function SourceControlPage() {
 
         <section id="publish" className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Publish to Ecosystem</h2>
-          <p className="t-body max-w-[80ch]">Mock destination routing only. No live publication logic in this front-end stage.</p>
-          <div className="grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
-            {publishDestinations.map((destination) => (
-              <article key={destination.label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="t-body font-semibold text-[color:var(--bone-100)]">{destination.label}</p>
-                <p className="t-label mt-[var(--s2)]">Status: {destination.status}</p>
-              </article>
-            ))}
+          <p className="t-body max-w-[80ch]">
+            The list of places a published card would go. Nothing on this page sends anything anywhere yet.
+          </p>
+          <div className="frame">
+            <span className="rivet rivet--tl" />
+            <span className="rivet rivet--tr" />
+            <span className="rivet rivet--bl" />
+            <span className="rivet rivet--br" />
+            <div className="frame-in mat-paper p-[var(--s5)]">
+              {/* The scroller is a child: .frame > .frame-in sets
+                  overflow:hidden unlayered, which beats a layered overflow-x
+                  utility on the same element. */}
+              <div className="overflow-x-auto">
+              <table className="ledger">
+                <caption className="text-left">Destinations</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Destination</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {publishDestinations.map((destination) => (
+                    <tr key={destination.label}>
+                      <td className="font-bold">{destination.label}</td>
+                      <td>{destination.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+            </div>
           </div>
         </section>
 

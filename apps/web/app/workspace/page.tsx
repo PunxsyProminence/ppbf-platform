@@ -231,7 +231,10 @@ function WorkspaceContent() {
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
-          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Outside This Role</h2>
+          {/* The body underneath was already kind and procedural; only the
+              heading was filing-cabinet language for "here is what your sign-in
+              does not open". */}
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>What Your Sign-In Does Not Open</h2>
           <p className="t-body mt-[var(--s3)] max-w-[64ch]">
             Athlete records, class scheduling and attendance, video, intake review, and the admin and
             board consoles are not part of staff or volunteer access. If your work needs one of them,

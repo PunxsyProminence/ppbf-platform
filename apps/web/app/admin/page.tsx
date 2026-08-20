@@ -1105,10 +1105,17 @@ export default function AdminCapabilitiesPage() {
   return (
     <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
       <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
-        <header className="border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-6 py-4">
+        <header className="relative border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-6 py-4">
+          {/* The desk lamp. .lamp draws the shade and the pool under it -- the
+              office's own fixture, unused anywhere in the app until now. */}
+          <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">PPBF ADMIN AUTHORITY CONSOLE</p>
+              {/* "AUTHORITY CONSOLE" is the After Hours room's word for itself,
+                  in a hand-rolled mono class rather than the shared eyebrow.
+                  This is a desk, and .t-eyebrow is the label voice every other
+                  office surface uses -- /admin/customize included. */}
+              <p className="t-eyebrow">PPBF ADMIN DESK</p>
               <h1 className="mt-2 font-display text-[length:var(--t-xl)] font-black tracking-tight text-[color:var(--bone-100)]">The Capability Room</h1>
               <p className="mt-2 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--bone-300)]">
                 Decide what this gym can do, who gets to do it, and what is still on the bench.
@@ -2320,13 +2327,22 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="overflow-x-auto border border-[color:var(--hide-700)] bg-[var(--hide-900)]">
-                <table className="min-w-[1300px] border-collapse text-left">
+              {/* The board is a record of who holds what, so it is ruled paper
+                  on the desk rather than another dark slab: .ledger supplies
+                  the rules, the mono record voice (Law 4) and the head rule,
+                  which is why every hand-rolled px/py/border on the rows below
+                  is gone. .pap rides along with .mat-paper for one reason --
+                  .mat-paper restates the t-* inks for a light ground and .pap
+                  restates the .empty ones, and the filtered-to-nothing state
+                  lives inside this table. */}
+              <article className="mat-paper pap overflow-x-auto rounded-[var(--r-md)] p-[var(--s4)]">
+                <table className="ledger min-w-[1300px]">
+                  <caption className="text-left">Assignment board</caption>
                   <thead>
-                    <tr className="border-b border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[length:var(--t-sm)] uppercase tracking-[0.08em] text-[color:var(--bone-300)]">
-                      <th className="px-4 py-3">Capability</th>
+                    <tr>
+                      <th scope="col">Capability</th>
                       {ROLE_OPTIONS.map((role) => (
-                        <th key={role} className="px-3 py-3">
+                        <th key={role} scope="col">
                           {role}
                         </th>
                       ))}
@@ -2342,7 +2358,7 @@ export default function AdminCapabilitiesPage() {
                     */}
                     {matrixCapabilities.length === 0 && (
                       <tr>
-                        <td colSpan={ROLE_OPTIONS.length + 1} className="px-4 py-3">
+                        <td colSpan={ROLE_OPTIONS.length + 1}>
                           {capabilities.length === 0 ? (
                             <div className="empty">
                               <div className="empty-glyph" aria-hidden="true">⌾</div>
@@ -2386,10 +2402,10 @@ export default function AdminCapabilitiesPage() {
                       </tr>
                     )}
                     {matrixCapabilities.map((capability) => (
-                      <tr key={capability.id} className="border-b border-[var(--hide-700)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
-                        <td className="px-4 py-3">
-                          <p className="text-[length:var(--t-sm)] font-semibold">{capability.capabilityId} - {capability.name}</p>
-                          <p className="t-muted">{capability.group} • {capability.status}</p>
+                      <tr key={capability.id}>
+                        <td>
+                          <p className="font-semibold">{capability.capabilityId} - {capability.name}</p>
+                          <p className="ledger-id">{capability.group} • {capability.status}</p>
                         </td>
                         {ROLE_OPTIONS.map((role) => {
                           const assigned = capability.assignedRoles.includes(role);
@@ -2397,14 +2413,19 @@ export default function AdminCapabilitiesPage() {
                           let assignmentClass = 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]';
                           let marker = '—';
                           if (needsReview) {
-                            assignmentClass = 'border-[color:var(--restricted)] bg-[rgba(192,90,30,.22)] text-[color:var(--restricted-ink)]';
+                            // The ground moved to paper, and --restricted-ink is
+                            // a light ink: it was legible on a 22%-orange wash
+                            // over ink and is not over paper. Same rung, same
+                            // glyph, on the dark chip .badge--restricted already
+                            // uses -- the ladder is unchanged.
+                            assignmentClass = 'border-[color:var(--restricted)] bg-[var(--hide-900)] text-[color:var(--restricted-ink)]';
                             marker = '⚠';
                           } else if (assigned) {
                             assignmentClass = 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]';
                             marker = '✓';
                           }
                           return (
-                            <td key={role} className="px-3 py-3">
+                            <td key={role}>
                               <button
                                 type="button"
                                 onClick={() => toggleCapabilityRole(capability.id, role)}
@@ -2428,7 +2449,7 @@ export default function AdminCapabilitiesPage() {
               <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capability Builder</h2>
                 <p className="t-body mt-[var(--s3)]">
-                  Create and manage capability definitions without leaving the Admin Console.
+                  Create and manage capability definitions without leaving the desk.
                 </p>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -2614,9 +2635,19 @@ export default function AdminCapabilitiesPage() {
               {showTelemetry ? 'Hide' : 'Show'} what changed this session
             </button>
 
+            {/* THE BRACKETED MONO LOG LINE IS THE AFTER-HOURS IDIOM.
+
+                This read `[{timestamp}] {action} - {detail}` in font-mono,
+                newest first, on a dark slab -- the same shape the night room's
+                event feed prints, inside .room--office. The record it keeps is
+                the office's own (what YOU changed at this desk, this session),
+                so it stays; only the hand it is written in changes. .ledger is
+                what an office writes a running record in: ruled paper, one row
+                per entry, the time in its own column. The empty state was
+                already the clerk's own voice and is untouched. */}
             {showTelemetry && (
-              <div className="panel-settle mt-3 max-h-[220px] overflow-y-auto border border-[var(--hide-700)] bg-[var(--hide-900)]">
-                {eventTraces.length === 0 && (
+              <div className="panel-settle mt-3 max-h-[220px] overflow-y-auto">
+                {eventTraces.length === 0 ? (
                   <div className="empty" style={{ padding: 'var(--s6) var(--s5)' }}>
                     <div className="empty-title">Nothing logged yet</div>
                     <p className="empty-msg mx-auto">
@@ -2624,12 +2655,30 @@ export default function AdminCapabilitiesPage() {
                       long as this tab stays open.
                     </p>
                   </div>
-                )}
-                {eventTraces.map((trace, index) => (
-                  <div key={`${trace.timestamp}-${index}`} className="border-b border-[var(--hide-700)] px-4 py-3 text-[length:var(--t-sm)] text-[var(--bone-400)]">
-                    <span className="font-mono text-[color:var(--brass-300)]">[{trace.timestamp}]</span> {trace.action} - {trace.detail}
+                ) : (
+                  <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+                    <table className="ledger">
+                      <caption className="text-left">This session</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Time</th>
+                          <th scope="col">What changed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {eventTraces.map((trace, index) => (
+                          <tr key={`${trace.timestamp}-${index}`}>
+                            <td className="ledger-id whitespace-nowrap">{trace.timestamp}</td>
+                            <td>
+                              {trace.action}
+                              <span className="ledger-val">{trace.detail}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                ))}
+                )}
               </div>
             )}
 

@@ -465,3 +465,50 @@ describe('the add-athlete form', () => {
     expect(screen.queryByText(/is already on your roster as/i)).toBeNull();
   });
 });
+
+/**
+ * THE ROSTER IS THE OFFICE'S CANONICAL TABLE, AND THE DNA'S OWN EMPTY STATE.
+ *
+ * ROOM-PURPOSE-DNA gives the front office "forms, tables, invite buttons,
+ * 'Nobody here yet'" as its Motion line. This page had none of it: the roster
+ * was a <ul> with hand-rolled dividers, and "Nobody here yet." was written in
+ * raw utilities while seventeen sibling pages used .empty / .empty-title /
+ * .empty-msg -- so the one empty state the DNA names by name was the one
+ * off-system empty state in the building, and it had no invite button on it at
+ * all. It told you to go and do it somewhere else.
+ */
+describe('the roster is a ruled register', () => {
+  test('renders as a .ledger table, not a list', async () => {
+    global.fetch = fetchMock({
+      members: [guardianMember({ account_id: 'coach@example.com', login_email: 'coach@example.com', role: 'coach' })],
+      roster: ROSTER,
+    }) as never;
+
+    const { container } = render(<PeopleConsolePage />);
+
+    await screen.findByText('coach@example.com');
+    const table = container.querySelector('table.ledger');
+    expect(table).not.toBeNull();
+    expect(table?.querySelector('caption')?.textContent).toBe('Everyone in this gym');
+    expect(screen.getByText('coach@example.com').closest('tr')).not.toBeNull();
+  });
+
+  test('the empty roster is on the system, and carries the invite the DNA names', async () => {
+    global.fetch = fetchMock({ members: [], roster: ROSTER }) as never;
+
+    const { container } = render(<PeopleConsolePage />);
+
+    const title = await screen.findByText('Nobody here yet.');
+    expect(title.className).toContain('empty-title');
+    expect(title.closest('.empty')).not.toBeNull();
+    expect(container.querySelector('.empty-msg')).not.toBeNull();
+    expect(container.querySelector('.empty-action')).not.toBeNull();
+
+    // The button is the point: an empty roster with no way to fill it from
+    // where you are standing is the state this replaced.
+    const invite = screen.getByRole('button', { name: 'Add A Coach Or Guardian' });
+    expect(invite.closest('.empty-action')).not.toBeNull();
+    fireEvent.click(invite);
+    expect(await screen.findByRole('heading', { name: /Add a coach, staff member, or guardian/i })).toBeTruthy();
+  });
+});

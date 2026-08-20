@@ -268,7 +268,7 @@ function ActivationCodesConsoleContent() {
 
 function WrongRoleNotice() {
   return (
-    <main className="room room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+    <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
         <p className="t-eyebrow">Different Console</p>
         <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>

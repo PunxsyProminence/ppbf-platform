@@ -129,12 +129,6 @@ type VisitorType =
   | 'Board / Community Partner'
   | 'General Visitor';
 
-interface TelemetryTrace {
-  timestamp: string;
-  event: 'visitor path selected' | 'intake form started' | 'intake form submitted' | 'FAQ opened' | 'quick link clicked';
-  detail: string;
-}
-
 // Card titles and descriptions are copy and can be reworded freely. The
 // `visitorType` values are not: they are submitted as `visitor_type` and
 // checked server-side against VISITOR_TYPES in src/server/pilot/publicInterest.ts.
@@ -373,7 +367,6 @@ export default function PublicPortalPage() {
   const [confirmation, setConfirmation] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
-  const [telemetryTraces, setTelemetryTraces] = useState<TelemetryTrace[]>([]);
   const [showSignIn, setShowSignIn] = useState(false);
   const closeSignIn = useCallback(() => setShowSignIn(false), []);
 
@@ -387,26 +380,19 @@ export default function PublicPortalPage() {
     return subscribeRoleSession(syncRole);
   }, []);
 
-  function addTrace(event: TelemetryTrace['event'], detail: string) {
-    setTelemetryTraces((prev) => [{ timestamp: new Date().toISOString(), event, detail }, ...prev].slice(0, 80));
-  }
-
   function startFormIfNeeded() {
     if (!formStarted) {
       setFormStarted(true);
-      addTrace('intake form started', 'Started filling in the contact form.');
     }
   }
 
   function selectPath(path: VisitorType) {
     setSelectedPath(path);
     setVisitorType(path);
-    addTrace('visitor path selected', `Picked: ${visitorTypeLabels[path]}`);
   }
 
   function toggleFaq(question: string) {
     setOpenFaq((current) => (current === question ? null : question));
-    addTrace('FAQ opened', question);
   }
 
   // Posts to /api/pilot/public-interest -- the one unauthenticated write
@@ -454,7 +440,6 @@ export default function PublicPortalPage() {
       }
 
       setConfirmation('Got it -- thanks. A staff member reads every one of these, and someone will get back to you the way you asked.');
-      addTrace('intake form submitted', `${fullName || 'Visitor'} submitted interest as ${visitorType} for ${programInterest}.`);
       setFullName('');
       setEmail('');
       setPhone('');
@@ -931,7 +916,6 @@ export default function PublicPortalPage() {
               <a
                 key={link.label}
                 href={link.href}
-                onClick={() => addTrace('quick link clicked', `${link.label} -> ${link.href}`)}
                 className="btn"
               >
                 {link.label}
@@ -940,23 +924,19 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
-        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
-          <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT YOU HAVE CLICKED ON THIS PAGE</h2>
-          <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
-            This list lives in your browser and nowhere else. It is not sent to us and it disappears when you close the
-            tab.
-          </p>
-          <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-3">
-            {telemetryTraces.length === 0 && <p className="text-[length:var(--t-sm)] text-[color:var(--hide-800)]">Nothing yet. This fills in as you click around.</p>}
-            {telemetryTraces.map((trace, idx) => (
-              <div key={`${trace.timestamp}-${idx}`} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-2 text-[length:var(--t-xs)] text-[color:var(--hide-800)]">
-                <p className="font-mono text-[color:var(--brass-800)]">[{trace.timestamp}]</p>
-                <p>{trace.event}</p>
-                <p>{trace.detail}</p>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* A SCROLLING TRACE OF THE VISITOR'S OWN CLICKS, ON THE FAMILY PAGE.
+
+            "WHAT YOU HAVE CLICKED ON THIS PAGE" sat here over a mono list of
+            bracketed timestamps -- the After Hours idiom, on the one surface a
+            parent reaches before they have an account. It existed to prove the
+            privacy promise, and it was the wrong instrument: the promise is
+            already made in plain words two panels up ("WHAT IS NOT ON THIS
+            PAGE"), and showing a family a log of themselves to reassure them
+            nothing is logged reads as surveillance whatever the caption says.
+
+            The panel, the trace state, and every addTrace() call are gone --
+            nothing was written anywhere else, so nothing is lost but the
+            watching. */}
         </div>
       </div>
       {showSignIn && <SignInOverlay onClose={closeSignIn} />}

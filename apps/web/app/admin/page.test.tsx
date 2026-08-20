@@ -210,3 +210,72 @@ it('hides the compliance center from a platform owner and keeps it for a gym adm
   await renderPage(fetchMock, 'organization_admin');
   expect(screen.getAllByRole('link', { name: /compliance/i }).length).toBeGreaterThan(0);
 });
+
+/**
+ * THE SESSION LOG IS AN OFFICE RECORD, IN AN OFFICE HAND.
+ *
+ * "Show what changed this session" used to print `[{timestamp}] {action} -
+ * {detail}` in font-mono on a dark slab, newest first -- the same shape the
+ * After Hours event feed prints, inside .room--office. ROOM-PURPOSE-DNA names
+ * night telemetry as forbidden chrome in the front office. The record it keeps
+ * is genuinely the office's own, so the record stays and the hand changes:
+ * .ledger, which ppbf.css defines as "a ruled paper record ... because every
+ * row is auditable".
+ *
+ * The eyebrow above it is here for the same reason: it read "PPBF ADMIN
+ * AUTHORITY CONSOLE", and "console" is the word the night room uses for itself.
+ */
+describe('the office writes its own record in its own hand', () => {
+  async function openTheLog() {
+    const fetchMock = jest.fn(async (url: string) => {
+      if (String(url).includes('/api/pilot/admin/capabilities')) {
+        return jsonResponse({ ok: true, capabilities: [] });
+      }
+      return jsonResponse({ ok: true });
+    });
+    await renderPage(fetchMock);
+    // Any tracked action writes a row; a filter change is the cheapest.
+    fireEvent.click(await screen.findByRole('button', { name: 'Assignment Board' }));
+    fireEvent.click(screen.getByRole('button', { name: /Show what changed this session/i }));
+  }
+
+  it('prints the session log as a ruled ledger, not a bracketed mono line', async () => {
+    await openTheLog();
+
+    const caption = await screen.findByText('This session');
+    const table = caption.closest('table');
+    expect(table).not.toBeNull();
+    expect(table?.className).toContain('ledger');
+    expect(table?.parentElement?.className).toContain('mat-paper');
+    expect(screen.getByRole('columnheader', { name: 'Time' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'What changed' })).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\[\d{1,2}:\d{2}/);
+  });
+
+  it('keeps the clerk-voiced empty state it already had', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      if (String(url).includes('/api/pilot/admin/capabilities')) {
+        return jsonResponse({ ok: true, capabilities: [] });
+      }
+      return jsonResponse({ ok: true });
+    });
+    await renderPage(fetchMock);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Show what changed this session/i }));
+    expect(screen.getByText('Nothing logged yet')).toBeTruthy();
+  });
+
+  it('does not call the desk a console', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      if (String(url).includes('/api/pilot/admin/capabilities')) {
+        return jsonResponse({ ok: true, capabilities: [] });
+      }
+      return jsonResponse({ ok: true });
+    });
+    await renderPage(fetchMock);
+
+    await screen.findByRole('heading', { name: 'The Capability Room' });
+    expect(screen.queryByText(/authority console/i)).toBeNull();
+    expect(screen.getByText('PPBF ADMIN DESK').className).toContain('t-eyebrow');
+  });
+});

@@ -258,33 +258,38 @@ export default function AttendanceDashboardPage() {
               </div>
             </div>
           ) : (
-            <section className="mat-leather mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)]">
-              <table className="w-full text-left">
+            /* A ruled sheet on the desk. .ledger is the office's own record
+                furniture -- rules, head rule, and the mono voice Law 4 gives
+                anything auditable -- so every hand-rolled px/py/border on the
+                rows below is gone with it. */
+            <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
+              <table className="ledger">
+                <caption className="text-left">Attendance</caption>
                 <thead>
-                  <tr className="t-eyebrow border-b border-[color:var(--hide-700)]">
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Athlete</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Present</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Absent</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Excused</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Rate</th>
-                    <th className="px-[var(--s4)] py-[var(--s3)]">Last marked</th>
+                  <tr>
+                    <th scope="col">Athlete</th>
+                    <th scope="col">Present</th>
+                    <th scope="col">Absent</th>
+                    <th scope="col">Excused</th>
+                    <th scope="col">Rate</th>
+                    <th scope="col">Last marked</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.map((item) => (
-                    <tr key={item.athlete_id} className="border-b border-[color:var(--hide-800)] last:border-b-0">
-                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.full_name}</td>
-                      <td className="t-data px-[var(--s4)] py-[var(--s3)]">{item.present_count}</td>
-                      <td className="t-data px-[var(--s4)] py-[var(--s3)]">{item.absent_count}</td>
-                      <td className="t-data px-[var(--s4)] py-[var(--s3)]">{item.excused_count}</td>
-                      <td className="t-data px-[var(--s4)] py-[var(--s3)]">
+                    <tr key={item.athlete_id}>
+                      <td>{item.full_name}</td>
+                      <td>{item.present_count}</td>
+                      <td>{item.absent_count}</td>
+                      <td>{item.excused_count}</td>
+                      <td>
                         {item.attendance_rate === null ? (
                           <span className="badge badge--monitor"><i>◉</i>Unavailable</span>
                         ) : (
                           formatRate(item.attendance_rate)
                         )}
                       </td>
-                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatLastMarked(item.last_marked_at)}</td>
+                      <td>{formatLastMarked(item.last_marked_at)}</td>
                     </tr>
                   ))}
                 </tbody>
