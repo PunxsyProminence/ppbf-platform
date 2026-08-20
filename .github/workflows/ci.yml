@@ -62,6 +62,9 @@ jobs:
             migrations: false,
             boardE2e: false,
             homepageE2e: false,
+            coachE2e: false,
+            athleteE2e: false,
+            guardianE2e: false,
             unknownCode: false,
           });
 
@@ -78,8 +81,20 @@ jobs:
             migrations: false,
             boardE2e: true,
             homepageE2e: true,
+            coachE2e: true,
+            athleteE2e: true,
+            guardianE2e: true,
             unknownCode: false,
           });
+
+          // The three journey surfaces added with the coach/athlete/guardian
+          // specs. deepEqual above pins the SHAPE; these pin that each new flag
+          // actually fires for its own surface -- a flag that is always false is
+          // a spec that never runs, which is worse than no spec at all.
+          assert.equal(classifyPaths(['apps/web/e2e/coach-journey.spec.ts']).coachE2e, true);
+          assert.equal(classifyPaths(['apps/web/e2e/athlete-journey.spec.ts']).athleteE2e, true);
+          assert.equal(classifyPaths(['apps/web/e2e/guardian-journey.spec.ts']).guardianE2e, true);
+          assert.equal(classifyPaths(['apps/web/e2e/support/signIn.ts']).coachE2e, true);
 
           assert.equal(
             classifyPaths(['apps/web/app/board/page.tsx']).boardE2e,
