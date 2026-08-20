@@ -3451,7 +3451,7 @@ body.ppbf.on-canvas {
    pools exactly as before. A plate is an enhancement over that ground, never
    a replacement for it -- which is also why the plate must never be an <img>.
 
-   ADDING A VARIANT. Rooms are reused heavily (office 42 pages, floor 22), so
+   ADDING A VARIANT. Rooms are reused heavily (office 40 routes, floor 31), so
    the set is expected to grow. A second plate for a room is a new file plus
    one declaration here; nothing else changes. */
 .room { isolation: isolate; }
