@@ -8,28 +8,13 @@ Start with [SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md) fo
 
 The research system deliberately separates three layers:
 
-1. **Governed originals and provenance** — *proposed, unconfirmed.*
-   `SHADOW_RESEARCH_ARCHITECTURE.md` §1 describes `admin@punxsyprominence.org / OneDrive /
-   Library Intake` with `_CONTROL`, R00, R01-R19, and R98, on the strength of a 2026-08-19
-   agent-connector observation for which no artifact exists in this repository. Open,
-   owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345)
-   instead names **SharePoint** `SHADOW AIML / 02 - Source Materials / Penn State Library
-   Intake / ...` and remains the durable contract. The only Microsoft destination this
-   repository's code writes to is a third thing again — a SharePoint site drive at
-   `PPBF/Intake` (`apps/web/src/server/document-intake/sharepoint.ts`). Do not treat any of
-   the three as settled; see §1 and §3 of the architecture document.
+1. **Governed originals and provenance** — the permanent governed archive is the nonprofit Microsoft SharePoint workspace by owner decision dated 2026-08-19. The exact SharePoint hostname, site path, document library/drive, root folder, and stable IDs remain pending read-only verification. The `admin@punxsyprominence.org / OneDrive / Library Intake` tree is a temporary working and migration source, not the production destination. The existing generic application uploader can write to a configurable SharePoint site drive, defaulting to `PPBF/Intake`; that destination is not automatically the governed research archive.
 2. **Reviewer-facing evidence reference package** — `apps/web/seed-data/research-evidence/2026-08-07/`; this package is not loaded into the database.
 3. **Loadable SHADOW corpus** — `apps/web/seed-data/shadow-research/2026-08-07/`; this is the current importer's default seed directory.
 
-The repository also contains `apps/web/seed-data/shadow-research/2026-08-08/`. **This importer
-cannot load it**: it supplies only one of the five required seed files, and `EXPECTED_COUNTS`
-would reject it on row counts even if the rest were present. As a SHADOW research corpus it is
-unimported and unloadable.
+The repository also contains `apps/web/seed-data/shadow-research/2026-08-08/`. **This importer cannot load it**: it supplies only one of the five required seed files, and `EXPECTED_COUNTS` would reject it on row counts even if the rest were present. As a SHADOW research corpus it is unimported and unloadable.
 
-That is not the same as "nothing in the package is live". The package's warm-up-decay stop rule
-reached the operational drill seed by a different route — `seed_drill_stop_rules.csv`, loaded by
-`npm run seed:drill-library` — on a separate, recorded 2026-08-08 owner decision. See
-[SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md) §8 for the full provenance.
+That is not the same as "nothing in the package is live". The package's warm-up-decay stop rule reached the operational drill seed by a different route — `seed_drill_stop_rules.csv`, loaded by `npm run seed:drill-library` — on a separate, recorded owner decision. See [SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md) §8 for the provenance.
 
 Presence in Microsoft, Google Drive, GitHub, or a seed directory does not by itself make evidence citable.
 
@@ -43,12 +28,7 @@ Presence in Microsoft, Google Drive, GitHub, or a seed directory does not by its
 - 30 capability coverage records
 - 229 open research requirements
 
-These are derived records, and "derived" is doing real work: the chunk rows carry licensed
-publisher **content** as extracted claim text. Whole publisher PDFs stay in the governed archive
-and must never be committed here — but the absence of `.pdf` files in this repository is not
-evidence that licensed content is absent from it. Govern by content, not by file extension.
-This is a private repository; that is why the extracts are currently tolerable, not why they are
-unlimited.
+These are derived records, and "derived" is doing real work: the chunk rows carry licensed publisher **content** as extracted claim text. Whole publisher PDFs stay in the governed archive and must never be committed here, but the absence of `.pdf` files is not evidence that licensed content is absent. Govern by content, not file extension.
 
 ## Safety boundaries
 
@@ -58,7 +38,8 @@ New evidence is not automatically trusted. Database defaults leave sources and d
 
 Importing does not:
 
-- prove the original archive object exists;
+- prove the permanent SharePoint archive object exists;
+- verify the exact SharePoint site, library, root, or stable item identity;
 - verify source provenance;
 - establish duplicate or lineage status;
 - index documents;
@@ -119,23 +100,25 @@ Import is only the first stage. Retrieval requires all of the following:
 3. A qualified evidence reviewer verifies and approves selected sources and documents in `/evidence`.
 4. Confirm active, non-suppressed sources; approved/verified sources and documents; indexed documents; and current-model, non-null chunk embeddings before claiming citations are live.
 
-The SHADOW Library reads the requesting organization's approved shelf plus the reserved `__platform__` baseline. The governed archive is upstream custody; it is not a competing retrieval authority.
+The SHADOW Library reads the requesting organization's approved shelf plus the reserved `__platform__` baseline. The governed SharePoint archive is upstream custody; it is not a competing retrieval authority.
 
 ## Ongoing research intake
 
 The bulk importer is not the finished ongoing source-intake workflow. New research should flow through:
 
 ```text
-governed original archive
+permanent nonprofit SharePoint original archive
     -> provenance and duplicate/lineage review
     -> SHADOW Library source registration as pending/unverified
     -> optional research-requirement link in /research
     -> document processing, chunking, and embeddings
-    -> applicability review
+    -> applicability review in /research/review
     -> indexing and human evidence review in /evidence
     -> retrieval eligibility
 ```
 
 The missing archive-to-SHADOW automation must be research-specific and idempotent. It may reuse authenticated PDF validation and SharePoint upload primitives, but it must preserve stable archive identity, content hash, provenance, and duplicate status. A generic upload classifier must not decide research authority or subject classification automatically.
+
+Before that implementation begins, the exact nonprofit SharePoint site, document library, root folder, and stable IDs must be verified and recorded. No bulk movement, deletion, tree retirement, permission change, or upload configuration is authorized before that verification and a synthetic pilot handoff.
 
 Medical clearance, concussion decisions, youth safety, safeguarding, weight cutting, contact clearance, sparring clearance, and eligibility remain human decisions regardless of research status.
