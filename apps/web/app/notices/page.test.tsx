@@ -7,6 +7,9 @@
 // pin the distinction the surface has to keep visible: live, scheduled,
 // expired, and retired are four different things.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
@@ -190,4 +193,126 @@ test('a failed load is not presented as an empty notice board', async () => {
 
   expect(screen.getByText(/Nothing below is the full list/i)).toBeTruthy();
   expect(screen.queryByText('Nothing has been posted for this gym yet.')).toBeNull();
+});
+
+/* ============================================================== the room ==
+
+   /notices was roomless while being named in the Front Office's own Purpose
+   line, and the reason on file was the ink: a staff-gated page standing on
+   .on-canvas with --hide-800 and --hide-950 hard-coded into its header, which
+   is correct on cream and invisible on a plank wall. These pin the conversion
+   and the room together, because either one alone is the failure mode.
+
+   MUTATION-CHECKED. Dropping `room`, dropping `room--office`, putting a
+   `min-h-screen bg-[...]` child back inside the room, restoring one
+   `text-[color:var(--hide-800)]`, and swapping .btn--lever back to
+   .btn--ghost each turn one of these red by name. */
+
+/** class="..." / className="..." / className={`...`} -- attributes only. */
+const CLASS_ATTR = /class(?:Name)?\s*=\s*(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\})/g;
+
+/**
+ * Ink authored for the family canvas. Every one of these resolves to a colour
+ * the light ground needs and the plank wall cannot use: --canvas-tan is
+ * --canvas-warm, --black is --hide-950 (#14100D), --gray-dark is --hide-800
+ * (#2A1F18). The hide rungs are banned as INK only -- `bg-[var(--hide-950)]`
+ * on the room element itself is the no-stylesheet fallback every sibling
+ * office route states, and is not what goes dark-on-dark.
+ */
+const CANVAS_INK = [
+  'var(--canvas-tan',
+  'var(--black)',
+  'var(--gray-dark)',
+  'text-[color:var(--hide-800)]',
+  'text-[color:var(--hide-950)]',
+  'text-[var(--hide-800)]',
+  'text-[var(--hide-950)]',
+];
+
+/** A ground tall enough to cover the wall, the light and the plate at once. */
+const FULL_VIEWPORT = /^(?:[a-z]+:)?(?:min-)?h-(?:screen|full|\[100vh\]|\[100dvh\])$/;
+const A_GROUND = /^(?:[a-z]+:)?bg-/;
+
+function classAttributeValues(source: string): string[] {
+  return [...source.matchAll(CLASS_ATTR)].map((m) => m[1] ?? m[2] ?? m[3] ?? '');
+}
+
+test('stands in the front office wearing the base class, not the modifier alone', async () => {
+  await renderPage(listFetch([]));
+
+  const main = document.querySelector('main');
+  expect(main).not.toBeNull();
+  const tokens = (main as HTMLElement).className.split(/\s+/).filter(Boolean);
+
+  // Both, on the same element. `.room--office` DECLARES --plate and never
+  // consumes it -- `.room::after` paints the plate and `.room::before` is the
+  // light -- so a surface carrying only the modifier gets the plank texture
+  // and no room at all. That was defect #498, across 76 surfaces.
+  expect(tokens).toContain('room');
+  expect(tokens).toContain('room--office');
+});
+
+test('lets no descendant paint a full-viewport ground over the room', async () => {
+  await renderPage(listFetch([item()]));
+
+  const room = document.querySelector('main.room') as HTMLElement;
+  // ppbf.css is unlayered and Tailwind's utilities sit in @layer utilities, so
+  // .room--office outranks a bg-[...] on the SAME element -- but not on a
+  // child. A child stating `min-h-screen bg-[...]` paints a full-viewport
+  // rectangle over the wall AND over the plate and silently negates the room.
+  // Found live at coach/sports-medicine/page.tsx and fixed there.
+  const offenders = [...room.querySelectorAll('*')]
+    .filter((el) => typeof el.className === 'string')
+    .map((el) => ({ el, tokens: el.className.split(/\s+/).filter(Boolean) }))
+    .filter(({ tokens }) => tokens.some((t) => FULL_VIEWPORT.test(t)) && tokens.some((t) => A_GROUND.test(t)))
+    .map(({ el }) => `${el.tagName.toLowerCase()}: ${el.className}`);
+
+  expect(offenders).toEqual([]);
+});
+
+test('states no canvas ink in any class it writes', () => {
+  // Read off the source rather than the DOM: a branch that only renders on a
+  // failed load or a board session still ships its ink. Class ATTRIBUTES only,
+  // so the comments above -- which name these tokens to explain them -- are
+  // prose and not markup.
+  const source = readFileSync(join(__dirname, 'page.tsx'), 'utf8');
+  const offenders = classAttributeValues(source)
+    .filter((value) => CANVAS_INK.some((token) => value.includes(token)));
+
+  expect(offenders).toEqual([]);
+});
+
+test('carries the office furniture and not only the office wall', async () => {
+  await renderPage(listFetch([item()]));
+
+  const room = document.querySelector('main.room') as HTMLElement;
+  // ROOM-PURPOSE-DNA, Feel: "Plank wall, desk lamp, paper forms". Motion:
+  // "Forms, tables". The wall was never the missing half.
+  expect(room.querySelector('.lamp')).not.toBeNull();
+  expect(room.querySelector('.mat-paper')).not.toBeNull();
+  expect(room.querySelector('table.ledger')).not.toBeNull();
+});
+
+test('names its empty board instead of leaving one bare sentence', async () => {
+  await renderPage(listFetch([]));
+
+  const empty = document.querySelector('.empty');
+  expect(empty).not.toBeNull();
+  // The DNA names the invite as well as the empty state. An empty board that
+  // only tells you nothing is there is not a front desk.
+  expect(empty?.querySelector('.empty-action')).not.toBeNull();
+  expect(screen.getByText('Nothing has been posted for this gym yet.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Write the first one' })).toBeTruthy();
+});
+
+test('puts no ghost button on the paper', async () => {
+  await renderPage(listFetch([item()]));
+
+  // ppbf.css documents .btn--ghost as grey-on-grey the moment it lands on a
+  // light ground: it is bone text on a translucent black wash, tuned for
+  // leather. .btn--lever carries its own dark surface and reads on the sheet.
+  const ghostsOnPaper = [...document.querySelectorAll('.mat-paper .btn--ghost')]
+    .map((el) => el.textContent?.trim());
+  expect(ghostsOnPaper).toEqual([]);
+  expect(document.querySelector('.mat-paper .btn--lever')).not.toBeNull();
 });
