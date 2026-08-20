@@ -81,13 +81,70 @@ why a plate must never be an `<img>` and never carries text.
 Rooms are reused heavily — office covers 42 pages, floor 22 — so a single wall
 repeats a great deal. A second plate for a room is a new file plus one
 declaration in the PLATES section of `design-system/ppbf.css`. Nothing else
-changes.
+changes, and that is now true in the strong sense: **no TypeScript is edited to
+add a plate.**
 
-If more than one variant per room is ever wired, selection must be
-**deterministic** (derived from the route, for instance), never random: a screen
-that changes appearance between loads breaks screenshot comparison, print
-reproducibility, and a coach's sense that they are on the page they were on a
-moment ago.
+Selection is **deterministic**, derived from the route and from nothing else --
+never random, never timed, never counted. A screen that changes appearance
+between loads breaks screenshot comparison, print reproducibility, and a coach's
+sense that they are on the page they were on a moment ago.
+
+### How it is wired
+
+`apps/web/components/PlateVariantGround.tsx` -- one `display: contents` marker
+in the root layout, so it is an ancestor of every room in the building without
+being a box around any of them -- hashes the current route and writes its slot
+in every useful split onto one attribute:
+
+```html
+<div data-plate-variant="2of2 1of3 4of4 3of5 5of6">
+```
+
+Read `2of2` as "the second of two". The route is hashed once and reduced to each
+count in turn, so **the stylesheet states how many plates a room has** and the
+component never has to be told. That is what keeps the plate URLs declared once,
+in `ppbf.css`, and keeps adding one down to a single declaration.
+
+It is an ancestor rather than the room element itself because it has to be: 78
+non-test surfaces paint a `.room--*` class of their own and 73 of those are
+server components, which cannot know their own route.
+
+### The recipe
+
+Drop `plate-01-office-02.jpg` in this directory, then add one rule to the
+route-derived variants block of the PLATES section:
+
+```css
+:where([data-plate-variant~="2of2"]) .room--office {
+  --plate: url("/plates/plate-01-office-02.jpg");
+}
+```
+
+That is the whole change. A third plate replaces that rule with the two other
+thirds of an `of3` split. Splits up to six are emitted; a seventh would be one
+entry in `PLATE_SPLITS`.
+
+Three things are not optional, and `apps/web/components/plateVariant.test.ts`
+fails by name on each:
+
+- **`:where()` around the attribute.** Without it the rule is `(0,2,0)`, while
+  the portrait override below is `.room--floor` at `(0,1,0)` -- and a media
+  query adds no specificity of its own. The variant would outrank it, and a gym
+  tablet held upright would silently lose the portrait floor plate. `:where()`
+  scores zero, which holds every plate rule in the block at `(0,1,0)` and leaves
+  source order to decide.
+- **Position.** Variant rules go after the locked inventory and *before* the
+  orientation block. A portrait variant goes *inside* that block, after its
+  generic rule.
+- **The count lives in the sheet.** Do not put a room's plate count in a
+  TypeScript file; there is nowhere to put it, on purpose.
+
+### What it looks like today
+
+Every room is at `-01`, so the block declares no variant rule and the mechanism
+resolves every route to the plate it already resolved to. It was wired and
+guarded before the first variant was drawn, deliberately, so the branch that
+landed it changed nothing anybody could see.
 
 ## Rules that hold regardless
 
