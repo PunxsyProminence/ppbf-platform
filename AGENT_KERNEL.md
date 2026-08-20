@@ -42,6 +42,79 @@ Written policy reports; branch protection enforces -- only the owner can
 set the required status checks that make this rule technical rather than
 textual.
 
+**Scope (owner decision, 2026-08-20).** As written on 2026-08-19 this section
+governed *repository* work only. Claude read repository execution control as
+project command control; ChatGPT read the text as repository-scoped and was
+correct about what the text said.
+
+The owner then decided the question rather than the reading: **the primary
+Claude session is the PPBF project command thread**, not only the repository
+one. ChatGPT operates as the independent audit, research, storage,
+documentation and verification lane.
+
+Both facts are recorded because they are different things. The 2026-08-19 text
+did not say project-level; the 2026-08-20 decision does. A later reader
+resolving the chain cold should not have to guess which.
+
+So the lanes are:
+
+- **Claude** -- project command thread. Repository execution: code, tests,
+  branches, PRs, migrations, CI, staging, and explicitly authorized production
+  deployment. Reports exact evidence.
+- **ChatGPT** -- independent audit, research, full-spectrum review, storage
+  inventory and reconciliation, documentation, control ledger, and
+  deployed-versus-specification verification. Read-only on this repository;
+  no branches, commits, pushes, merges, deploys, or migrations.
+- **Grok** -- image files only, per `docs/GROK-VISUAL-LANE.md`.
+- **Jason** -- final authority. Priorities, scope, mutation approval,
+  production authorization, acceptance, conflict resolution.
+
+Storage authority, promotion rules and the wider AI governance chain remain
+governed by the ACTIVE source in OneDrive at `Documents/Library Intake/_CONTROL
+- Registers and Coverage Maps/AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/`. That
+source is deliberately *not* duplicated here; it is named so a reader knows
+this file is not the whole picture. Claude claimed that master did not exist --
+it does, exactly where ChatGPT said. The search was of this repository and the
+claim was reported without that qualifier: a real check, stated wider than it
+was run.
+
+## Independent verification duties (agreed by both lanes, 2026-08-20)
+
+Project command, repository command and repository implementation now sit on
+the same side. That puts three roles on one party, so the check has to be
+structural rather than polite -- and it matters more under the 2026-08-20
+decision than it did before, not less.
+
+What actually caught Claude's errors on 2026-08-20 was never Claude reviewing
+Claude: it was an independent party *measuring*, a mechanical process, or the
+owner looking at the live page. Design accordingly.
+
+Any reviewing lane -- and Claude, of its own work -- holds these five:
+
+1. **Re-measure every number.** Never accept a count, ratio, size, or SHA
+   because it was stated. Three agents were handed a stale test baseline that
+   day; all three re-measured, and all three were right.
+2. **Ask what made a "verified" claim verified.** If the answer is reading the
+   code, it is not runtime verification. A ground flip was called safe on that
+   basis and shipped an unreadable page.
+3. **Ask whether a new guard was seen to fail.** A test nobody has watched go
+   red under a relevant mutation is a hypothesis. Two of four guards written
+   that day passed every mutation put to them until they were rewritten.
+4. **Flag alarm raised without executable or deployed evidence.** A gate was
+   reported as an abandoned safety boundary because a script existed; the
+   script could not run and the boundary was covered three other ways.
+5. **Compare deployed behaviour against approved specification.** Nothing else
+   covers this. Tests do not know the spec, and no person holds fifty commits
+   in their head.
+
+Pushback against one of these is a review issue, not a debate to win.
+
+**Known gap, stated rather than implied:** as of 2026-08-20 no AI lane can
+load a deployed page. Claude's sandbox refuses outbound HTTPS; ChatGPT's
+browser tool could not load the staging URL. Duty 5 therefore rests entirely
+on the owner opening the page. No lane should imply deployed behaviour is
+being independently watched while that holds.
+
 ## Authority doctrine (owner decision, 2026-08-20)
 
 This system is implementation and decision support. It is not the final
