@@ -99,6 +99,30 @@ Jason orders one image (filename + room + size/variant note)
   → Jason reviews on the live URL
 ```
 
+### The drop
+
+```
+OneDrive (admin@punxsyprominence.org)
+  Documents / PPBF-AI-Lanes / Grok-Plates-Inbox /
+```
+
+Created and round-trip verified on 20 Aug: Claude can write to it, list it,
+and read from it **by path**, so the folder can be polled by name on a
+schedule rather than by tracking item ids. It carries its own
+`READ-ME-FIRST.md` stating the laws, so the rules are legible to anyone who
+opens the folder without having read this file.
+
+One order, one file, named exactly as ordered. Nothing else belongs there --
+no drafts, no variations to pick between, no notes. Anything else found in it
+is reported rather than guessed at.
+
+`PPBF-AI-Lanes/` is the parent for every lane hand-off, so the ChatGPT drive
+lane gets a sibling folder rather than a second convention.
+
+**Note for the drive reorganisation:** this folder is machine-read at a fixed
+path. It can be moved, but moving it silently breaks the pickup, so it is a
+coordinated change and not a tidy-up.
+
 ### Claude's gate refuses
 
 A file is sent back, named for the law it broke, if it is:
