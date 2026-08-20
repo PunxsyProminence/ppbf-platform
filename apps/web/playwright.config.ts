@@ -7,6 +7,16 @@ import { defineConfig, devices } from '@playwright/test';
    this unset, so it changes nothing in the pipeline. */
 const localChromium = process.env.PPBF_CHROMIUM_PATH;
 
+/* The dev server's port. CI leaves this unset and keeps 3100, so the pipeline
+   is unchanged. It exists because 3100 is not always free -- a sandbox or a
+   dev container may already have something bound there, and with
+   reuseExistingServer on, a mismatched port means Playwright tries to start a
+   second Next dev server and fails outright rather than reusing the one that
+   is already up. One variable moves both the server and the baseURL together,
+   which is the only way they cannot disagree. */
+const port = process.env.PPBF_E2E_PORT ?? '3100';
+const baseURL = `http://localhost:${port}`;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -15,7 +25,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: [['list']],
   use: {
-    baseURL: 'http://localhost:3100',
+    baseURL,
     trace: 'on-first-retry',
     ...(localChromium ? { launchOptions: { executablePath: localChromium } } : {}),
   },
@@ -36,8 +46,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev -- --port 3100',
-    url: 'http://localhost:3100',
+    command: `npm run dev -- --port ${port}`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },

@@ -159,7 +159,7 @@ jobs:
         run: npm run test:migrations
 
       - name: Install Playwright browsers
-        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true')
+        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true')
         run: npx --workspace web playwright install --with-deps chromium
 
       - name: Run board governance E2E
@@ -169,6 +169,23 @@ jobs:
       - name: Run public homepage E2E
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.homepage_e2e == 'true'
         run: npm --workspace web run test:e2e:homepage
+
+      # The three signed-in journeys. Conditional on the same classifier the
+      # two suites above use, in the same shape: each runs when the surfaces
+      # it covers move, not on every PR. They stub the pilot API at the
+      # network boundary and need no database, so they add no service to this
+      # job -- only the Chromium already installed above.
+      - name: Run coach journey E2E
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.coach_e2e == 'true'
+        run: npm --workspace web run test:e2e:coach
+
+      - name: Run athlete journey E2E
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.athlete_e2e == 'true'
+        run: npm --workspace web run test:e2e:athlete
+
+      - name: Run guardian journey E2E
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.guardian_e2e == 'true'
+        run: npm --workspace web run test:e2e:guardian
 
       - name: Build production application
         if: steps.changes.outputs.docs_only != 'true'

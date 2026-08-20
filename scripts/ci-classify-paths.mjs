@@ -50,6 +50,77 @@ const isHomepageE2ePath = (file) => {
   );
 };
 
+/* The plumbing every SIGNED-IN journey stands on, regardless of role: the
+   sign-in panel and its route, the client role cache, the gate that asks the
+   server who you are, the shell those gated pages render inside, the server
+   page guard, the routing table that decides where a role lands, the shared
+   e2e sign-in helper, and the Playwright config itself. A change to any of
+   these can break the coach, athlete and guardian journeys at once, so all
+   three predicates below consult this rather than restating it three times
+   and drifting. */
+const isSignedInJourneyPath = (file) =>
+  startsWithAny(file, [
+    'apps/web/app/login/',
+    'apps/web/components/SignInPanel',
+    'apps/web/components/roleSession',
+    'apps/web/components/RoleSessionGate',
+    'apps/web/components/RoleStandaloneView',
+    'apps/web/src/shared/pilotRoleRouting',
+    'apps/web/src/server/pilot/auth',
+    'apps/web/src/server/pilot/pageGuard',
+    'apps/web/app/api/pilot/auth/',
+    'apps/web/e2e/support/',
+  ]) || file === 'apps/web/playwright.config.ts';
+
+const isCoachE2ePath = (file) => {
+  const component = directComponentName(file);
+  return (
+    isSignedInJourneyPath(file) ||
+    startsWithAny(file, [
+      'apps/web/app/coach/',
+      'apps/web/app/api/pilot/coach/',
+      'apps/web/app/api/pilot/shadow/',
+      'apps/web/app/api/pilot/athletes/',
+      'apps/web/e2e/coach-journey',
+    ]) ||
+    component.includes('Coach')
+  );
+};
+
+const isAthleteE2ePath = (file) => {
+  const component = directComponentName(file);
+  return (
+    isSignedInJourneyPath(file) ||
+    startsWithAny(file, [
+      'apps/web/app/athlete/',
+      'apps/web/app/api/pilot/athlete/',
+      'apps/web/app/api/pilot/progression/',
+      'apps/web/src/server/pilot/credentialPolicy',
+      'apps/web/src/server/pilot/pinPolicy',
+      'apps/web/e2e/athlete-journey',
+    ]) ||
+    component.includes('Athlete')
+  );
+};
+
+/* 'parent' is the canonical guardian role in this codebase, and /guardian
+   redirects into the Parent Hub -- so the guardian journey moves whenever
+   either name does. */
+const isGuardianE2ePath = (file) => {
+  const component = directComponentName(file);
+  return (
+    isSignedInJourneyPath(file) ||
+    startsWithAny(file, [
+      'apps/web/app/parent/',
+      'apps/web/app/guardian/',
+      'apps/web/app/api/pilot/parent/',
+      'apps/web/app/api/pilot/profile/',
+      'apps/web/e2e/guardian-journey',
+    ]) ||
+    ['Parent', 'Guardian'].some((token) => component.includes(token))
+  );
+};
+
 export function classifyPaths(paths) {
   const files = paths.map((file) => file.trim()).filter(Boolean);
   const docsOnly =
@@ -58,14 +129,29 @@ export function classifyPaths(paths) {
   const migrations = files.some(isMigrationPath);
   const boardE2e = files.some(isBoardE2ePath);
   const homepageE2e = files.some(isHomepageE2ePath);
+  const coachE2e = files.some(isCoachE2ePath);
+  const athleteE2e = files.some(isAthleteE2ePath);
+  const guardianE2e = files.some(isGuardianE2ePath);
   const unknownCode =
     !docsOnly &&
     files.length > 0 &&
     !migrations &&
     !boardE2e &&
-    !homepageE2e;
+    !homepageE2e &&
+    !coachE2e &&
+    !athleteE2e &&
+    !guardianE2e;
 
-  return { docsOnly, migrations, boardE2e, homepageE2e, unknownCode };
+  return {
+    docsOnly,
+    migrations,
+    boardE2e,
+    homepageE2e,
+    coachE2e,
+    athleteE2e,
+    guardianE2e,
+    unknownCode,
+  };
 }
 
 function outputLines(result) {
@@ -74,6 +160,9 @@ function outputLines(result) {
     `migrations=${result.migrations}`,
     `board_e2e=${result.boardE2e}`,
     `homepage_e2e=${result.homepageE2e}`,
+    `coach_e2e=${result.coachE2e}`,
+    `athlete_e2e=${result.athleteE2e}`,
+    `guardian_e2e=${result.guardianE2e}`,
     `unknown_code=${result.unknownCode}`,
   ].join('\n');
 }
@@ -108,6 +197,9 @@ if (
         `- PostgreSQL migration suite: ${result.migrations}`,
         `- board E2E: ${result.boardE2e}`,
         `- homepage E2E: ${result.homepageE2e}`,
+        `- coach journey E2E: ${result.coachE2e}`,
+        `- athlete journey E2E: ${result.athleteE2e}`,
+        `- guardian journey E2E: ${result.guardianE2e}`,
         `- unknown/general code: ${result.unknownCode}`,
         '',
       ].join('\n'),
