@@ -291,21 +291,62 @@ export default function SignInPanel({
      the ghost treatment. This is what the red used to do, and the red is the
      safety gate's colour (Law 2), so it cannot also mean "you tapped this". */
   const methodButton = (method: LoginMethod) =>
-    `btn ${selectedMethod === method ? '' : 'btn--ghost'} w-full justify-start text-left`;
+    `btn ${selectedMethod === method ? '' : 'btn--ghost'} grow justify-center text-center sm:grow-0`;
 
   return (
-    <div className="frame">
-      <span className="rivet rivet--tl" />
-      <span className="rivet rivet--tr" />
-      <span className="rivet rivet--bl" />
-      <span className="rivet rivet--br" />
-      <div className="frame-in mat-paper" style={{ padding: 'var(--s6)' }}>
+    <div className="relative">
+      {/* THE BOARD, NOT A CARD.
+          A sign-in screen that is a white rectangle in the middle of a page is
+          a slide. This is the gym's own board: a lamp over it, a brass frame
+          around it, studs holding it together, and a stamp across the corner.
+          Every piece here already existed in ppbf.css and had never been
+          composed -- .rivet--patina had zero usages in the app.
+
+          The lamp is standalone-only. In the /public popover the panel is
+          already inside a modal with its own backdrop, and a light fixture
+          hanging inside a dialog reads as a bug, not as a room. */}
+      {!embedded && (
+        <span className="lamp left-1/2 -translate-x-1/2" aria-hidden="true" />
+      )}
+
+      <div className={`frame relative ${embedded ? '' : 'mt-[42px]'}`}>
+        {/* Eight studs, not four. Four corners read as a rounded rectangle
+            with dots; studs down the long edges read as something bolted
+            together. --patina rather than brass so they sit back from the
+            frame's own brass instead of competing with it. */}
+        <span className="rivet rivet--patina rivet--tl" />
+        <span className="rivet rivet--patina rivet--tr" />
+        <span className="rivet rivet--patina rivet--bl" />
+        <span className="rivet rivet--patina rivet--br" />
+        <span className="rivet rivet--patina absolute left-1/2 top-[8px] -translate-x-1/2" />
+        <span className="rivet rivet--patina absolute bottom-[8px] left-1/2 -translate-x-1/2" />
+        <span className="rivet rivet--patina absolute left-[8px] top-1/2 -translate-y-1/2" />
+        <span className="rivet rivet--patina absolute right-[8px] top-1/2 -translate-y-1/2" />
+
+        {/* mat-wood--dark, not mat-paper. The ground flip is safe without an
+            ink pass: every type voice pins a bone or brass rung tuned for dark
+            material, and it was .mat-paper that was overriding them. Removing
+            it returns each voice to its native reading rather than needing a
+            new one. The one paper element inside (the activation note) stays
+            paper deliberately -- a note pinned to a board has depth that a
+            panel of uniform cards does not. */}
+        <div className="frame-in mat-wood--dark" style={{ padding: 'var(--s6)' }}>
         <header className="mb-[var(--s6)] flex flex-wrap items-start justify-between gap-[var(--s4)]">
           <div>
-            <div className="t-eyebrow">Member Access</div>
+            <div className="t-eyebrow">Punxsy Prominence &middot; Member Access</div>
             <h1 className="t-painted mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>
               The Bell
             </h1>
+            {/* OBSERVE. DECIDE. EXECUTE. is the platform's tagline, carried in
+                CLAUDE.md and in the SHADOW UI docs, and until now it rendered
+                on no screen in the application at all. The front door is where
+                it belongs. On a brass plate because that is what the gym screws
+                a motto to -- and because a plate is a different object from the
+                text around it, which is the kind of variation a page of equal
+                paragraphs never gets. */}
+            <p className="mat-brass--dark t-eyebrow mt-[var(--s4)] inline-block rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s2)]">
+              OBSERVE. DECIDE. EXECUTE.
+            </p>
             <p className="t-body mt-[var(--s4)] max-w-[52ch]">
               Sign in with Account ID/PIN or Microsoft. You will land on the right dashboard for your role.
             </p>
@@ -347,7 +388,13 @@ export default function SignInPanel({
 
         <fieldset className="mb-[var(--s6)] border-0 p-0">
           <legend className="t-label mb-[var(--s4)]">Choose Sign-In Method</legend>
-          <div className="grid gap-[var(--s4)] sm:grid-cols-3">
+          {/* Was `grid sm:grid-cols-3` -- three identical cells with an
+              identical gutter, which is the single most PowerPoint-shaped
+              thing on the page. These are three different objects: a wrap
+              flex lets each plate take the width of its own label, so the row
+              reads as switches screwed to a board rather than as slide
+              bullets. They still stack to full width below sm. */}
+          <div className="flex flex-wrap gap-[var(--s4)]">
             <button
               type="button"
               onClick={() => setSelectedMethod('microsoft')}
@@ -542,8 +589,29 @@ export default function SignInPanel({
         )}
       </div>
 
-      {/* Help and gym notices sit outside the frame: the framed paper is the
-          thing you fill in, and this is what's tacked up next to it. Kept in
+        {/* THE THING THAT BREAKS THE FRAME.
+            Slides are strictly flat and strictly inside their own edges, and
+            that containment is most of why a screen reads as a slide. This
+            stamp is rotated by .stamp's own rule, sits on top of the board,
+            and hangs off its bottom-right corner -- one element that refuses
+            the rectangle.
+
+            aria-hidden and pointer-events-none: it is a mark on the board, not
+            a control and not a status. Law 7 reserves a real stamp for a real
+            refusal; this one says nothing a screen reader needs, and a person
+            using one must not be told there is a button here. */}
+        <span
+          aria-hidden="true"
+          className="stamp pointer-events-none absolute -bottom-[18px] right-[24px] select-none"
+        >
+          Enter The Gym
+        </span>
+      </div>
+
+      {/* Help and gym notices sit outside the frame: the framed board is the
+          thing you fill in, and this is what's tacked up next to it. They are
+          a sibling of the board now -- this comment said "outside the frame"
+          while the markup had them inside the brass border. Kept in
           both contexts (embedded or standalone) -- forgetting a PIN, or
           needing the athlete door, is exactly as real from the popover as
           from the standalone page. */}
