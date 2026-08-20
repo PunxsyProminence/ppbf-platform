@@ -114,11 +114,14 @@ defect or an opportunity the brief missed, say so. The 02a/02b mismatch below
 was found by an audit, not by an order, and it is the most useful thing anyone
 learned about these plates.
 
-What does not loosen, and all of it is Mode B: Grok still delivers one file
-per shipped order, still never
-pushes, still never touches a drive outside its inbox, and still waits for
-Jason to name an order before generating. Reading widely is not authority to
-act widely.
+What does not loosen, and all of it is Mode B: a shipped order is one file
+carrying the exact ordered name, Grok never pushes to the repository, and it
+never touches a drive outside its own inbox.
+
+Mode A carries none of that. Grok generates mockups from Jason's gym
+photographs without waiting to be handed a filename, because that is the whole
+point of Mode A. Reading widely and exploring widely are both fine; **writing**
+is what stays gated.
 
 ### Composition laws
 
