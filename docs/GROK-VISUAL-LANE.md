@@ -31,6 +31,98 @@ summary of them:
 2. `apps/web/public/plates/README.md` — format, quiet centre, layer-0 rule,
    the delivery failures, variant rules
 
+### Two modes (owner correction, 2026-08-20)
+
+An earlier version of this contract said "one order = one file" as an absolute
+law. That was wrong, and it was Claude's error: it wrote a **delivery gate**
+as though it governed the whole lane, which would have forbidden Grok from
+showing options at all. Exploration and delivery are different activities and
+only one of them needs a gate.
+
+**Mode A -- mockups. The work.** Jason photographs the real gym. Grok treats
+those photographs as primary reference and produces mockups: room walls, page
+feels, variants, alternatives. Multiple references, multiple outputs, iterate
+freely, show options. **None of the delivery rules below apply in Mode A.** No
+filename discipline, no inbox, no PR. This is where the design actually
+happens and it should be loose.
+
+**Mode B -- shipping. The gate.** A mockup Jason picks becomes a real asset.
+*Now* it is one file, the exact ordered filename, 4:4:4, into
+`Grok-Plates-Inbox`, and Claude opens a PR. Every rule in the delivery section
+applies here and only here.
+
+The one-file rule exists so a plate entering the repository is unambiguous --
+so `plate-01-office-02.jpg` means one specific image and Claude's gate can
+refuse a bad one by name. It was never meant to limit how many pictures get
+made.
+
+### Photographing the gym
+
+Jason shooting the real place solves two problems at once, and they are worth
+keeping distinct:
+
+1. **Reference for wall plates.** Real brick, mortar, plank, lamps, light and
+   wear, so a generated wall looks like *this* building rather than stock. The
+   plate that ships may be generated from those references; that is Mode A
+   into Mode B.
+2. **The twelve photograph slots** in `docs/visual-inventory/03-glyphs-and-photos.md`
+   are a different job. Six frames of the building and the coach's portrait
+   are **the photographs themselves**, not references for generation.
+   `gymPhotos.ts` forbids fake-photorealistic imagery in those slots. A camera
+   fills them; a model must not.
+
+**Reference shots should be of empty walls and rooms.** No athletes, no
+children, no faces. A wall plate carries no person, and a reference photograph
+containing a minor creates a consent question that a wall does not need to
+raise.
+
+**A design consequence worth naming.** Six rooms photographed inside one real
+building makes "no two rooms feel alike" harder, not easier -- the brick is the
+same brick. The distinction has to come from framing, light, material choice
+and what is on the wall, rather than from six different buildings. That is a
+constraint on Mode A, not an argument against it: a real place that reads as
+six rooms is worth more than six stock rooms that read as nowhere.
+
+**Page DNA, not only room DNA.** Pages inside the same room should not feel
+identical either. This is why the office needs more than one wall across its
+40 routes, and it is a Mode A question before it is a delivery one.
+
+### Freedom of traverse (owner decision, 2026-08-20)
+
+Grok reads whatever it needs. The repository is public; nothing in it is
+off limits to reading, and a lane that can only see two files scopes its work
+from a keyhole.
+
+Two files remain **required** reading before an order, because they are the
+law rather than context: `design-system/ppbf.css` and
+`apps/web/public/plates/README.md`. Everything else is open, and these are
+worth the time:
+
+- `docs/visual-inventory/00-GROK-ORDER-BRIEF.md` -- the compiled order list,
+  ranked, with counts measured rather than estimated
+- `docs/visual-inventory/01-image-files.md` -- every committed image, its real
+  bytes, and which are in this lane
+- `docs/visual-inventory/02-css-drawn.md` -- the 110 constructs the sheet draws
+  itself, split into leave-alone / photography-better / needs-art
+- `docs/visual-inventory/03-glyphs-and-photos.md` -- the glyph set, and the
+  twelve photograph slots that need a camera
+- `docs/visual-inventory/04-room-coverage.md` -- routes per room, ranked
+- `docs/shadow-ui/ROOM-PURPOSE-DNA.md` -- what each room is for
+
+**Grok may now propose orders, not only fill them.** If reading turns up a
+defect or an opportunity the brief missed, say so. The 02a/02b mismatch below
+was found by an audit, not by an order, and it is the most useful thing anyone
+learned about these plates.
+
+What does not loosen, and all of it is Mode B: a shipped order is one file
+carrying the exact ordered name, Grok never pushes to the repository, and it
+never touches a drive outside its own inbox.
+
+Mode A carries none of that. Grok generates mockups from Jason's gym
+photographs without waiting to be handed a filename, because that is the whole
+point of Mode A. Reading widely and exploring widely are both fine; **writing**
+is what stays gated.
+
 ### Composition laws
 
 - **Quiet centre.** Low detail where UI panels land; visual interest in the
@@ -50,7 +142,8 @@ summary of them:
 - reintroduce a `plates-v1g.css` override sheet — plate URLs are declared once,
   in the PLATES section of `ppbf.css`
 - deliver base64, data URIs, or "copy the bytes out of chat"
-- freestyle "improve all rooms" — one order is one file, or one named set
+- freestyle "improve all rooms" **when shipping** — a Mode B order is one
+  file, or one named set. Mode A is deliberately unconstrained
 - ask for mid-loop mock reviews — Jason reviews on the live URL only
 
 ## The amendment: 4:4:4
