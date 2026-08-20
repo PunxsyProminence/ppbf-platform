@@ -47,13 +47,52 @@ Library Intake/
 └── R98 - Duplicate Hold/
 ```
 
-The R01-R19 taxonomy may be retained in the nonprofit SharePoint library and is the current application classification crosswalk. This does not prove those folders already exist in SharePoint or authorize creating them in this phase.
+The R01-R19 taxonomy is the current application classification crosswalk, and its folder structure is now physically present in the nonprofit SharePoint library.
+
+### Verified target, 2026-08-20
+
+Measured directly through Microsoft Graph by the primary Claude session, not inferred and not relayed:
+
+| Fact | Value |
+|---|---|
+| Site | `punxsyprominenceboxing.sharepoint.com` `/sites/PunxsyProminenceClubOperations` |
+| Documents drive | `b!-Vo_sgBoOE2exdhUasmD2dxgw3lpD95Ir3in52rLlJkPoxSpVsFoQI_NNbWdKzpJ` |
+| Drive root item | `0154YZVW56Y2GOVW7725BZO354PWSELRRZ` |
+| Research Archive folder | `0154YZVWYXXDPDFKTSCBA3G2XDFG34WAO7` |
+| Lane structure | `_CONTROL`, `R00`, `R01`-`R19`, `R98` -- all present |
+
+### The lanes are prepared and EMPTY
+
+This is the distinction most easily lost, and losing it would assert a migration that has not happened.
+
+Every `R01`-`R19` folder and `R98` in the SharePoint Research Archive reads **0 bytes**. `R01 - Boxing and Athlete Development` was opened directly and returned no children. Only `_CONTROL` (governance artifacts) and `R00` (2,040 bytes) hold anything.
+
+The corpus remains in the OneDrive `Library Intake` working source, where the same lanes hold roughly a gigabyte: `R00` alone is 489,854,741 bytes, `R17` is 138.5 MB, `R18` is 113.3 MB, `R98` is 107.4 MB.
+
+**An inventory count of these lanes is therefore a count of OneDrive, not of SharePoint.** A figure such as "609 items across R01-R19" describes the working source. Read against the archive it would claim a migration that did not occur.
+
+**Structure present is not corpus present. Nothing has been migrated.**
+
+### Still not authorized
+
+No bulk movement, deletion, retirement, permission change, or upload configuration is authorized. Outstanding before any of it:
+
+- current destination contents and naming collisions;
+- a timestamped **recursive** inventory -- counts recorded so far are immediate-child counts, not a recursive corpus inventory;
+- OneDrive-to-SharePoint comparison and duplicate reconciliation;
+- provenance and lineage controls;
+- one synthetic, non-licensed pilot handoff, observed end to end.
+
+`R00 - Unsorted Drop` in the working source is **not** a research corpus. Its `PPBF__FROM_DOWNLOADS__UNSORTED` subtree mixes research with personal, financial, medical, identity and survey material, plus installers and partial downloads. It must not be bulk-migrated, and sensitive material within it stays metadata-only -- not opened, not ingested.
+
+A second SharePoint library named `Create the Coaching Library (File Storage` also exists on this site. Its authority is unresolved and it must not be silently selected as the archive.
+
+The OneDrive `Library Intake` anonymous edit/write sharing exposure is **not fixed** and must not be described as fixed.
 
 No bulk movement, deletion, retirement, permission change, or upload configuration is authorized until all of the following are verified:
 
 - exact SharePoint hostname and site path;
 - exact document library/drive and root item;
-- proposed canonical research root;
 - current contents and naming collisions;
 - stable identifiers and a timestamped inventory/manifest;
 - OneDrive-to-SharePoint comparison;
@@ -77,14 +116,14 @@ Nothing here authorizes deleting, moving, merging, or retiring any older Microso
 
 ## 2. Meaning of the target taxonomy
 
-- `_CONTROL` is the proposed control area for registers, coverage maps, lineage controls, task records, and research-governance artifacts.
+- `_CONTROL` is the control area for registers, coverage maps, lineage controls, task records, and research-governance artifacts.
 - `R00` is a processing state: source not yet confidently classified or cleared for movement.
 - `R01` through `R19` are subject classifications.
 - `R98` is a processing state: duplicate or lineage hold.
 
 `R00` and `R98` are not subject domains. Folder placement does not establish evidence quality, organizational authority, approval, or operational use.
 
-The taxonomy is approved as a cross-system classification contract. Its physical implementation in the permanent SharePoint library remains pending target verification.
+The taxonomy is approved as a cross-system classification contract, and its folder structure now exists in the permanent SharePoint library. Folders being present says nothing about what they contain, and nothing about evidence quality.
 
 ## 3. Source-of-truth boundaries
 
