@@ -297,17 +297,17 @@ export default function DoorRegisterPage() {
                             <td>{ROOM_LABEL[group.room]}</td>
                             <td>
                               {readerCanOpen ? (
-                                /* Ink stated rather than inherited. ppbf.css
-                                   styles a bare anchor for .on-canvas only, so
-                                   a link on .mat-paper falls through to the
-                                   host app's `a` rule -- which is the safety
-                                   ladder's red. --brass-800 is the same ink
-                                   that sheet already gives a link on a light
-                                   ground; it is not a new value. */
-                                <Link
-                                  href={door.href}
-                                  className="text-[color:var(--brass-800)] underline"
-                                >
+                                /* Underline stated, ink inherited. The base
+                                   `a` rule already resolves to --brass-800 on
+                                   this ground (--accent-quiet), measured at
+                                   7.7:1 on paper in ppbf.css -- restating it
+                                   here would be a second source of truth for a
+                                   colour the sheet already owns. The underline
+                                   is not decoration: it is the channel that
+                                   separates a door you can open from one you
+                                   cannot, which must not rest on colour alone
+                                   (Law 3). */
+                                <Link href={door.href} className="underline">
                                   {door.label}
                                 </Link>
                               ) : (
