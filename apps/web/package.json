@@ -286,7 +286,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^22",
     "@types/pdfkit": "^0.17.6",
-    "@types/pg": "^8.21.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "async-exit-hook": "^2.0.1",
