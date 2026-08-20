@@ -11,10 +11,12 @@
  * board treatment below touched it, and restyling an untested sign-in flow is
  * how a gym finds out on a Monday that nobody can get in.
  *
- * So the behaviour tests come first and are the point. The composition tests
- * are second and they pin the two things that would be silently wrong rather
- * than visibly wrong: the stamp must not be announced, and the lamp must not
- * hang inside the modal.
+ * The board treatment these were written alongside has been reverted -- it
+ * rendered dark-on-dark and unreadable. These tests were the valuable half of
+ * that work and none of them depended on it: they describe what the door must
+ * DO, not what it looks like, so they outlive any number of restyles. Deleting
+ * them along with the styling would have put the front door back to having no
+ * test at all, which is how it got into this state.
  */
 
 import type { ReactNode } from 'react';
@@ -116,72 +118,6 @@ describe('every way in still works', () => {
   });
 });
 
-describe('the board is a board and not a card', () => {
-  test('stands on wood inside a brass frame, not on a paper card', async () => {
-    const { container } = await renderPanel();
-
-    expect(container.querySelector('.frame .frame-in.mat-wood--dark')).toBeTruthy();
-    expect(container.querySelector('.frame-in.mat-paper')).toBeNull();
-  });
-
-  test('is bolted together down its edges, not only at its corners', async () => {
-    const { container } = await renderPanel();
-
-    expect(container.querySelectorAll('.rivet').length).toBeGreaterThan(4);
-  });
-
-  test('speaks in the gym\'s voice, not the coaching system\'s', async () => {
-    await renderPanel();
-
-    expect(screen.getByText(/NOT FANCY\. JUST TOUGH\./)).toBeTruthy();
-  });
-
-  /* OBSERVE. DECIDE. EXECUTE. REPEAT. is SHADOW's tagline (CLAUDE.md line 14).
-     SHADOW lives in After Hours; this is a signed-out family surface, and the
-     person reading it has not signed in. Same voice boundary that keeps the
-     screen from being titled after SHADOW. */
-  test('does not borrow the SHADOW tagline for a signed-out door', async () => {
-    const { container } = await renderPanel();
-
-    expect(container.textContent).not.toMatch(/OBSERVE\. DECIDE\. EXECUTE/i);
-  });
-
-  /* The row was `grid sm:grid-cols-3`: three identical cells, identical
-     gutter. That shape is the thing being fixed, so a regression back to it
-     should fail rather than merely look familiar. */
-  test('does not lay the methods out as three identical cells', async () => {
-    const { container } = await renderPanel();
-
-    const row = container.querySelector('fieldset > div');
-    expect(row?.className).not.toMatch(/grid-cols-3/);
-  });
-});
-
-describe('the marks on it are marks, not controls', () => {
-  /* A rubber stamp that announces itself is a screen-reader user being told
-     there is something here to press. Law 7 keeps a spoken stamp for a real
-     refusal. */
-  test('the stamp is hidden from assistive technology', async () => {
-    const { container } = await renderPanel();
-
-    const stamp = container.querySelector('.stamp');
-    expect(stamp).toBeTruthy();
-    expect(stamp?.getAttribute('aria-hidden')).toBe('true');
-  });
-
-  test('the stamp cannot be clicked', async () => {
-    const { container } = await renderPanel();
-
-    expect(container.querySelector('.stamp')?.className).toMatch(/pointer-events-none/);
-  });
-
-  test('the lamp is hidden from assistive technology too', async () => {
-    const { container } = await renderPanel();
-
-    expect(container.querySelector('.lamp')?.getAttribute('aria-hidden')).toBe('true');
-  });
-});
-
 describe('the popover is the same door in a smaller room', () => {
   /* A light fixture hanging inside a modal dialog reads as a rendering bug. */
   test('hangs no lamp inside the modal', async () => {
@@ -190,10 +126,10 @@ describe('the popover is the same door in a smaller room', () => {
     expect(container.querySelector('.lamp')).toBeNull();
   });
 
-  test('but is still the same board', async () => {
+  test('but is still the same framed panel', async () => {
     const { container } = await renderPanel({ embedded: true });
 
-    expect(container.querySelector('.frame-in.mat-wood--dark')).toBeTruthy();
+    expect(container.querySelector('.frame .frame-in')).toBeTruthy();
   });
 
   test('offers a way out that the standalone page does not need', async () => {
