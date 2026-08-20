@@ -484,6 +484,47 @@ body.ppbf {
 }
 .mat-paper .t-body  { color: #3A2E1D; }
 .mat-paper .t-label { color: #4A3B26; }
+/* The rest of the light-ground set, completing the same restatement. The four
+   voices above were the ones a training-hold box happened to use; .on-canvas
+   answers this question for ten, and .mat-paper is a light ground too, so the
+   other six were broken on paper the whole time and only nobody had put them
+   there yet. #514 then put mat-paper on eight /admin/* routes and made the
+   office a paper room, which is what surfaced it.
+
+   Measured against --paper (#F4EBD4):
+
+     .t-data      --bone-200 #EFE6D0   1.05:1  ->  #2A2013  13.45:1
+     .t-painted   --bone-100 #F7F1E1   1.05:1  ->  #241B12  14.25:1
+     .t-muted     --bone-400 #B5A688   2.01:1  ->  #6E5B3E   5.48:1
+     .prompt-line --brass-400          1.76:1  ->  brass-800 7.70:1
+     .working     --brass-300 #E8CE7A  1.31:1  ->  brass-800 7.70:1
+     .alert--*    --bone-100 #F7F1E1   1.05:1  ->  #2A2013  13.45:1
+
+   Worst case is the material's own gradient, which darkens to #E7DBBD at the
+   bottom edge: the weakest of these, .t-muted, still reads 4.73:1 there, so
+   every one clears AA for normal text at the darkest point of the panel.
+
+   Values are .on-canvas's own, not new ones -- this sheet's light ground
+   already decided them and cornerColor.test.ts pins that set. No saturated
+   colour is involved, so Law 2 is untouched; nothing here is the only channel
+   carrying meaning (Law 3), since these are the same glyph-and-label voices
+   made legible rather than recoloured.
+
+   .alert--* matters most of the six. Its four rules pin --bone-100 for the ink
+   grounds and .on-canvas is their only restatement, so an alert inside a paper
+   panel printed near-white on cream -- a warning nobody could read is worse
+   than no warning. Eighteen files carry both classes today. The office
+   conversion hit this and worked around it locally with a .badge; that
+   workaround can now go back to being a choice rather than a necessity. */
+.mat-paper .t-data      { color: #2A2013; }
+.mat-paper .t-painted   { color: #241B12; text-shadow: 1.5px 1px 0 var(--rust-500), 0 1px 0 rgba(255,255,255,.35); }
+.mat-paper .t-muted     { color: #6E5B3E; }
+.mat-paper .prompt-line { color: var(--brass-800); }
+.mat-paper .working     { color: var(--brass-800); }
+.mat-paper .alert--info,
+.mat-paper .alert--warning,
+.mat-paper .alert--critical,
+.mat-paper .alert--success { color: #2A2013; }
 /* Ragged lower edge, no image asset */
 .note-torn {
   clip-path: polygon(0 0, 100% 0, 100% 94%,

@@ -64,7 +64,21 @@ function readSource(file: string): string {
 }
 
 /** Every room this source paints, as a class or as a `room=` prop. */
-function roomsDeclaredIn(source: string): Set<string> {
+/* Prose is not markup. These pages explain the room system at length and
+   several name a class while doing it, so a comment saying "this page supplies
+   room--office itself" used to resolve as the page painting that room. The
+   resolver would then agree with the door for a page whose class had been
+   deleted, and disagree with nothing -- a guard that reads its own
+   documentation as evidence cannot fail. roomBaseClass.test.ts already strips
+   comments for exactly this reason; this is the same strip, and the two should
+   become one shared helper (attendancePrecedence.test.ts and typeLadder.test.ts
+   hand-roll it too) rather than a fourth copy. */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
+}
+
+function roomsDeclaredIn(rawSource: string): Set<string> {
+  const source = withoutComments(rawSource);
   const found = new Set<string>();
 
   // `.room--office`, including inside a longer className string.
@@ -296,6 +310,38 @@ const UNPAINTED: Record<string, string> = {
 };
 
 /* ---------------------------------------------------------------- checks -- */
+
+/**
+ * The strip above is load-bearing, and nothing in this file failed when it was
+ * removed -- so this is the test that makes it real.
+ *
+ * Four live pages name their room ONLY in a comment and never in markup:
+ * /coach/sports-medicine, /research, /research/chat and /athlete/video-analysis.
+ * Each takes its room from a shell it imports. roomsFromModule returns early
+ * when a page declares a room of its own, so before the strip those four
+ * short-circuited on their own prose and the resolver never looked at the shell
+ * that actually paints them. The guard agreed with the door for reasons that
+ * had nothing to do with the page.
+ */
+describe('prose is not markup', () => {
+  it('ignores a room named in a block comment', () => {
+    expect([...roomsDeclaredIn('/* this page supplies room--office itself */')]).toEqual([]);
+  });
+
+  it('ignores a room named in a line comment', () => {
+    expect([...roomsDeclaredIn('// room={"clinic"} comes from the shell\n')]).toEqual([]);
+  });
+
+  it('still reads a room out of real markup', () => {
+    expect([...roomsDeclaredIn('<main className="room room--file">')]).toEqual(['file']);
+    expect([...roomsDeclaredIn('<RoleStandaloneView room="board" />')]).toEqual(['board']);
+  });
+
+  it('reads the markup and not the comment when a file carries both', () => {
+    const source = '/* not room--night here */\n<main className="room room--floor">';
+    expect([...roomsDeclaredIn(source)]).toEqual(['floor']);
+  });
+});
 
 describe('the room a door files a surface under is the room the page paints', () => {
   const resolved = BUILDING.map((door) => ({ door, rendered: renderedRoom(door.href) }));
