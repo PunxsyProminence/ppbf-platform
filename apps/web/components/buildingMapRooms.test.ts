@@ -241,11 +241,19 @@ const PAGE_IS_WRONG: Record<string, { paints: Room; shouldPaint: Room; why: stri
  * room on its canvas branch, so those are resolved as 'canvas' above and are
  * correct with no room.
  *
- * FOUR HAVE LEFT. /dashboard and the three /operations surfaces were bare ink
+ * SIX HAVE LEFT. /dashboard and the three /operations surfaces were bare ink
  * under ink-tuned content -- mat-leather panels, t-* type, brass chips -- so
  * hanging the office wall behind them was a class on one line and nothing
- * else. What remains is not a backlog of the same kind of edit. Each entry
- * below now says which of the two reasons keeps it here:
+ * else.
+ *
+ * /notices and /admin/consent were the two NEEDS A SLICE entries where the
+ * room was already decided and the ink was the whole obstacle, and they were
+ * paid rather than re-argued: /notices had its --hide-800 / --hide-950 header
+ * moved onto .t-eyebrow / .t-command / .t-body, and /admin/consent had some
+ * forty inline restatements of canvas-tan and --black replaced by the paper
+ * form and ledger the sheet already carries. Both then took `room room--office`
+ * on their last edited line. What remains is not a backlog of the same kind of
+ * edit. Each entry below now says which of the reasons keeps it here:
  *
  *   NO MARKUP    -- the page returns a redirect or hands its whole surface to
  *                   something that brings its own ground. There is nowhere to
@@ -268,17 +276,6 @@ const UNPAINTED: Record<string, string> = {
     'NO MARKUP -- the page is a gate around PrintRoom, and print sheets carry their own '
     + 'paper ground. A wall behind paper that is about to leave the building on a printer '
     + 'is a wall nobody sees',
-  '/admin/consent':
-    'NEEDS A SLICE -- office. Its clinic siblings are the audits (/admin/waiver-status asks '
-    + 'who is MISSING a waiver, /admin/athlete-consent who lacks media consent); this screen '
-    + 'records that a guardian signed and gates nothing, which the page says of itself in so '
-    + 'many words. Recording is desk work. Still on the legacy canvas-tan palette, and its '
-    + 'cards set no ink of their own, so a room would recolour every one of them at once',
-  '/notices':
-    'NEEDS A SLICE -- office, and named in the room\'s purpose line. Staff-gated (admin, '
-    + 'coach, platform_owner, board), so .on-canvas is the wrong ground for its audience, but '
-    + 'the header hard-codes --hide-800 and --hide-950 ink for that canvas and would go '
-    + 'dark-on-dark against a plank wall. The mat-paper cards would survive; the header would not',
   '/store':
     'NEEDS A SLICE -- legacy canvas-tan with --black type, and open to families and '
     + 'signed-out visitors, so the ground is an audience question (T7) before it is a room one',

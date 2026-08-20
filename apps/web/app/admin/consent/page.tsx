@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
@@ -79,6 +79,21 @@ const STATUSES = [
   { value: 'withdrawn', label: 'Withdrawn' },
 ];
 
+/**
+ * The same three vocabularies, read backwards.
+ *
+ * pilot.waivers stores the KEY -- `medical_release`, `organization_admin`,
+ * `withdrawn` -- and the register used to print it raw, so a screen whose whole
+ * job is answering "who signed, and what" answered in column names. The clerk
+ * who filed it wrote "Medical release". Nothing is invented here: the labels
+ * are the ones the form already offers, so the record reads back in the words
+ * it was entered in. The key is not dropped -- it moves to the mono "Filed
+ * under" column, because that is what somebody searches the cabinet by.
+ */
+function labelFor(options: { value: string; label: string }[], value: string): string {
+  return options.find((option) => option.value === value)?.label ?? value;
+}
+
 /** Today as a calendar day, for the date input's default. */
 function todayValue(): string {
   const now = new Date();
@@ -107,6 +122,10 @@ function ConsentConsole() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saved, setSaved] = useState('');
+
+  // The empty register's invite has to land somewhere on THIS page: an empty
+  // state that only tells you to go and do it elsewhere is not a front desk.
+  const whoSignedRef = useRef<HTMLInputElement>(null);
 
   // No state is set before the first await: a synchronous setState inside an
   // effect cascades a render before the request has left.
@@ -230,38 +249,70 @@ function ConsentConsole() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
-      <div className="mx-auto max-w-3xl">
-        <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">
-          Consent on file
-        </p>
-        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Record a signed consent</h1>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-          This records that a consent or waiver was given, so the gym can answer later who signed and
-          when. It does not collect a signature, and it does not stop anyone training.
-        </p>
+    /* FRONT OFFICE. The door files this under office (buildingMap.ts) and the
+       header comment above says why: this screen RECORDS that a guardian
+       signed, and recording is desk work.
 
-        <Link
-          href="/admin"
-          className="mt-4 inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
-        >
-          Back to admin
-        </Link>
+       The class is the PAIR. `.room` carries the light (.room::before) and the
+       plate layer (.room::after); `.room--office` only DECLARES the --plate
+       that .room::after consumes, so a surface wearing the modifier alone gets
+       a plank texture, no lamp and no plate -- defect #498.
+
+       And nothing below this element may carry a full-viewport background. An
+       unlayered .room--office beats a layered bg-[...] on the SAME element,
+       but a child painting `min-h-screen bg-[...]` covers the wall, the light
+       and the plate at once. The container below states width, padding and
+       rhythm and deliberately no ground. */
+    <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+      <div className="mx-auto w-full max-w-3xl space-y-[var(--s5)]">
+        <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          {/* The desk lamp. .lamp draws the shade and the pool of light under
+              it -- the office's own fixture, hung the way /admin and
+              /admin/people hang theirs. */}
+          <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
+          <p className="t-eyebrow">Consent on file</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
+            Record a signed consent
+          </h1>
+          <p className="t-body mt-[var(--s3)] max-w-[68ch]">
+            This records that a consent or waiver was given, so the gym can answer later who signed and
+            when. It does not collect a signature, and it does not stop anyone training.
+          </p>
+          <p className="mt-[var(--s4)]">
+            {/* Ghost is correct HERE and nowhere else on this page: it is bone
+                text on a translucent black wash, tuned for leather. Every
+                secondary control that landed on the paper below is a
+                .btn--lever instead -- ppbf.css documents ghost-on-light as
+                grey-on-grey. */}
+            <Link href="/admin" className="btn btn--ghost">
+              Back to admin
+            </Link>
+          </p>
+        </header>
 
         {rosterError ? (
-          <p className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm">
-            {rosterError}
-          </p>
+          /* Law 3: a glyph and an uppercase label, never the red on its own. */
+          <div role="alert" className="alert alert--critical alert--tight">
+            <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert-body">
+              <p className="alert-title">Roster unavailable</p>
+              <p className="alert-msg">{rosterError}</p>
+            </div>
+          </div>
         ) : null}
 
-        <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
-            Athlete
+        {/* "Paper forms" is this room's Feel line and this is the form. The
+            .field / .t-label / .input / .select / .btn set is the design
+            system's own paper-form pattern -- the same one /admin/credentials
+            and /admin/memberships moved to. */}
+        <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
+          <div className="field">
+            <label className="t-label" htmlFor="consent-athlete">Athlete</label>
             <select
-              aria-label="Athlete"
+              id="consent-athlete"
               value={athleteId}
               onChange={(event) => setAthleteId(event.target.value)}
-              className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+              className="select"
             >
               <option value="">Choose an athlete</option>
               {roster.map((athlete) => (
@@ -271,127 +322,144 @@ function ConsentConsole() {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
 
           {athleteId ? (
             <>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
-                  What was signed
+              <div className="mt-[var(--s4)] grid gap-[var(--s4)] sm:grid-cols-2">
+                <div className="field">
+                  <label className="t-label" htmlFor="consent-what">What was signed</label>
                   <select
-                    aria-label="What was signed"
+                    id="consent-what"
                     value={waiverType}
                     onChange={(event) => setWaiverType(event.target.value)}
-                    className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+                    className="select"
                   >
                     {WAIVER_TYPES.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                </label>
+                </div>
 
-                <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
-                  Who signed
+                <div className="field">
+                  <label className="t-label" htmlFor="consent-who">Who signed</label>
                   <input
+                    id="consent-who"
+                    ref={whoSignedRef}
                     type="text"
-                    aria-label="Who signed"
                     value={signedByName}
                     onChange={(event) => setSignedByName(event.target.value)}
                     placeholder="Full name"
-                    className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+                    className="input"
                   />
-                </label>
+                </div>
 
-                <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
-                  In what capacity
+                <div className="field">
+                  <label className="t-label" htmlFor="consent-capacity">In what capacity</label>
                   <select
-                    aria-label="In what capacity"
+                    id="consent-capacity"
                     value={signedByRole}
                     onChange={(event) => setSignedByRole(event.target.value)}
-                    className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+                    className="select"
                   >
                     {SIGNER_ROLES.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                </label>
+                </div>
 
-                <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
-                  Date signed
+                <div className="field">
+                  <label className="t-label" htmlFor="consent-date">Date signed</label>
                   <input
+                    id="consent-date"
                     type="date"
-                    aria-label="Date signed"
                     value={signedAt}
                     onChange={(event) => setSignedAt(event.target.value)}
-                    className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+                    className="input"
                   />
-                </label>
+                </div>
 
-                <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
-                  Consent version
+                <div className="field">
+                  <label className="t-label" htmlFor="consent-version">Consent version</label>
                   <input
+                    id="consent-version"
                     type="text"
-                    aria-label="Consent version"
                     value={consentVersion}
                     onChange={(event) => setConsentVersion(event.target.value)}
-                    className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+                    className="input"
                   />
-                </label>
+                </div>
 
-                <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
-                  Status
+                <div className="field">
+                  <label className="t-label" htmlFor="consent-status">Status</label>
                   <select
-                    aria-label="Status"
+                    id="consent-status"
                     value={status}
                     onChange={(event) => setStatus(event.target.value)}
-                    className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+                    className="select"
                   >
                     {STATUSES.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                </label>
+                </div>
               </div>
 
-              <label className="mt-4 block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
-                Notes
+              <div className="field mt-[var(--s4)]">
+                <label className="t-label" htmlFor="consent-notes">Notes</label>
                 <textarea
-                  aria-label="Notes"
+                  id="consent-notes"
                   value={notes}
                   onChange={(event) => setNotes(event.target.value)}
                   placeholder="Where the paper is kept, or anything the next person needs"
-                  className="mt-1 h-20 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm normal-case tracking-normal"
+                  className="textarea h-20"
                 />
-              </label>
+              </div>
 
               <button
                 type="button"
                 disabled={!canSave}
                 onClick={() => { void recordConsent(); }}
-                className="mt-4 w-full border-2 border-[var(--black)] bg-[color:var(--brass-800)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn mt-[var(--s4)] w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSaving ? 'Recording...' : `Record consent for ${selectedAthlete?.full_name ?? 'this athlete'}`}
               </button>
 
+              {/* Outcomes INSIDE the paper panel are a badge and a line of
+                  prose, not .alert. Every .alert--* rule in ppbf.css pins
+                  `color: var(--bone-100)` and the sheet restates it for
+                  .on-canvas only -- an alert dropped on .mat-paper is bone on
+                  cream. The badge carries its own dark chip and its own ink,
+                  which is why #514 moved the needs-review cell onto one, and
+                  the glyph plus the uppercase label keep Law 3. The two alerts
+                  on this page that ARE .alert both stand on the wall. */}
               {saveError ? (
-                <p className="mt-3 border-l-4 border-[color:var(--rust-500)] bg-[var(--canvas-tan)] px-3 py-2 text-sm">
-                  {saveError}
-                </p>
+                <div role="alert" className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
+                  <span className="badge badge--locked"><i aria-hidden="true">✕</i>Not recorded</span>
+                  <p className="t-body">{saveError}</p>
+                </div>
               ) : null}
               {saved ? (
-                <p className="mt-3 border-l-4 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm">{saved}</p>
+                <div role="status" className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
+                  <span className="badge badge--cleared"><i aria-hidden="true">✓</i>On file</span>
+                  <p className="t-body">{saved}</p>
+                </div>
               ) : null}
             </>
           ) : null}
         </section>
 
         {athleteId ? (
-          <section className="mt-6">
-            <h2 className="font-display text-xl font-black tracking-tight">Already on file</h2>
+          <section className="space-y-[var(--s4)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Already on file</h2>
             {waiversError ? (
-              <p className="mt-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm">
-                {waiversError}
-              </p>
+              <div role="alert" className="alert alert--critical alert--tight">
+                <span className="alert-icon" aria-hidden="true">✕</span>
+                <div className="alert-body">
+                  <p className="alert-title">Records unavailable</p>
+                  <p className="alert-msg">{waiversError}</p>
+                </div>
+              </div>
             ) : null}
             {/*
               An empty list and a list that failed to load are different facts,
@@ -400,36 +468,64 @@ function ConsentConsole() {
               ever given" for a child whose guardian signed.
             */}
             {waiversLoaded && !waiversError && waivers.length === 0 ? (
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                Nothing recorded for this athlete yet.
-              </p>
-            ) : null}
-            <ul className="mt-3 grid gap-3">
-              {waivers.map((waiver) => (
-                <li
-                  key={waiver.waiver_id}
-                  className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3 text-sm"
-                >
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-                    <span className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-[var(--black)]">
-                      {waiver.waiver_type}
-                    </span>
-                    <span className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-[var(--black)]">
-                      {waiver.status}
-                    </span>
-                    <span>{formatCalendarDay(waiver.signed_at?.slice(0, 10))}</span>
+              /* The room's own named empty state rather than a lone sentence.
+                 .pap so .empty takes its paper inks -- the bone rungs are
+                 authored against leather and go faint on the sheet. */
+              <div className="mat-paper pap rounded-[var(--r-lg)] p-[var(--s5)]">
+                <div className="empty">
+                  <div className="empty-glyph" aria-hidden="true">▤</div>
+                  <div className="empty-title">Nothing filed yet.</div>
+                  <p className="empty-msg">Nothing recorded for this athlete yet.</p>
+                  <div className="empty-action">
+                    <button type="button" className="btn" onClick={() => whoSignedRef.current?.focus()}>
+                      Record the first one
+                    </button>
                   </div>
-                  <p className="mt-2 leading-6">
-                    {waiver.signed_by_name} &middot; {waiver.signed_by_role} &middot; {waiver.consent_version}
-                  </p>
-                  {waiver.notes ? (
-                    <p className="mt-2 border-l-4 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 leading-6 text-[var(--gray-dark)]">
-                      {waiver.notes}
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+                </div>
+              </div>
+            ) : null}
+            {waivers.length > 0 ? (
+              /* A register, not a stack of cards: one ruled row per record, in
+                 the mono voice Law 4 gives anything auditable. .ledger is the
+                 office's record furniture and this page is the office's record.
+                 The raw column values -- `medical_release`, `signed` -- are
+                 machine keys, so the cells read the vocabulary's own labels and
+                 the keys move to a mono "Filed under" column rather than being
+                 dropped: they are what somebody searches the cabinet by. */
+              <div className="mat-paper pap overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
+                <table className="ledger">
+                  <caption className="text-left">
+                    Consent records for {selectedAthlete?.full_name ?? 'this athlete'}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">What was signed</th>
+                      <th scope="col">Who signed</th>
+                      <th scope="col">In what capacity</th>
+                      <th scope="col">Date signed</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Notes</th>
+                      <th scope="col">Filed under</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {waivers.map((waiver) => (
+                      <tr key={waiver.waiver_id}>
+                        <td>{labelFor(WAIVER_TYPES, waiver.waiver_type)}</td>
+                        <td className="font-bold">{waiver.signed_by_name}</td>
+                        <td>{labelFor(SIGNER_ROLES, waiver.signed_by_role)}</td>
+                        <td className="whitespace-nowrap">{formatCalendarDay(waiver.signed_at?.slice(0, 10))}</td>
+                        <td>{labelFor(STATUSES, waiver.status)}</td>
+                        <td>{waiver.notes ? waiver.notes : <span aria-hidden="true">—</span>}</td>
+                        <td className="ledger-id whitespace-nowrap">
+                          {waiver.waiver_type} · {waiver.status} · {waiver.consent_version}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>
