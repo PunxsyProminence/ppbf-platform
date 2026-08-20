@@ -78,6 +78,48 @@ it does, exactly where ChatGPT said. The search was of this repository and the
 claim was reported without that qualifier: a real check, stated wider than it
 was run.
 
+## Report the check, not the conclusion (owner instruction, 2026-08-20)
+
+The owner should not have to ask "what verified that?" Being asked is already
+the failure.
+
+Every error Claude made on 2026-08-20 was the same shape: **a claim stated
+wider than the check that was actually run.** The underlying work was mostly
+sound. The reporting was not, and it reached the owner every time.
+
+The fix is a constraint on the sentence, not a resolution to be careful. If
+one check ran, the sentence may carry one check's worth of claim. Naming the
+check drags the scope along with it automatically.
+
+| Said | Should have said | What was actually run |
+|---|---|---|
+| "no file by that name exists" | "grep over the repo found no match; the drives are unchecked" | one `grep`, repo only -- the file was in OneDrive |
+| "the ground flip needs no ink pass" | "safe by cascade reasoning; not seen rendered" | read the sheet -- it shipped an unreadable page |
+| "PR #539" | "branch pushed; PR not opened yet" | a `git push` -- no PR existed |
+| "the baseline is 526/6677" | "526/6677, measured before the seven DNA merges" | a stale run -- three agents re-measured and were right |
+| "`.room` is the biggest risk" | "`.room` has the most collisions; whether they differ is unmeasured" | a count of overlaps, not of defeats |
+| "the handoff mechanism is live" | "Claude can write it; ChatGPT's side is unverified" | one round trip, one side of two |
+
+Rules that follow:
+
+- **Never assert an absence.** Report the search and its scope. "Not in the
+  repository" is a finding; "does not exist" is a claim about everywhere.
+- **Never report an artifact before the API returns it.** A pushed branch is
+  not a pull request. An inferred number is not an identifier.
+- **A number carries when and against what it was measured.** A count without
+  a SHA is a rumour.
+- **"Verified" names its instrument.** Reading code is not runtime
+  verification. Cascade reasoning is not a rendered page. A passing test that
+  has never been watched to fail is a hypothesis.
+- **Superlatives require a measurement.** "Biggest", "worst", "most" are
+  claims about a distribution, so either measure it or say it is a guess.
+
+Where a claim genuinely cannot be checked from here -- anything about how a
+page looks, above all -- say so in the same sentence rather than in a caveat
+further down. `docs/CHATGPT-AUDIT-LANE.md` records that no AI lane can load a
+deployed page, so **every visual claim in this project is unverified by
+construction** and must be stated that way without being asked.
+
 ## Independent verification duties (agreed by both lanes, 2026-08-20)
 
 Project command, repository command and repository implementation now sit on

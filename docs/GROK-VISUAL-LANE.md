@@ -31,6 +31,38 @@ summary of them:
 2. `apps/web/public/plates/README.md` — format, quiet centre, layer-0 rule,
    the delivery failures, variant rules
 
+### Freedom of traverse (owner decision, 2026-08-20)
+
+Grok reads whatever it needs. The repository is public; nothing in it is
+off limits to reading, and a lane that can only see two files scopes its work
+from a keyhole.
+
+Two files remain **required** reading before an order, because they are the
+law rather than context: `design-system/ppbf.css` and
+`apps/web/public/plates/README.md`. Everything else is open, and these are
+worth the time:
+
+- `docs/visual-inventory/00-GROK-ORDER-BRIEF.md` -- the compiled order list,
+  ranked, with counts measured rather than estimated
+- `docs/visual-inventory/01-image-files.md` -- every committed image, its real
+  bytes, and which are in this lane
+- `docs/visual-inventory/02-css-drawn.md` -- the 110 constructs the sheet draws
+  itself, split into leave-alone / photography-better / needs-art
+- `docs/visual-inventory/03-glyphs-and-photos.md` -- the glyph set, and the
+  twelve photograph slots that need a camera
+- `docs/visual-inventory/04-room-coverage.md` -- routes per room, ranked
+- `docs/shadow-ui/ROOM-PURPOSE-DNA.md` -- what each room is for
+
+**Grok may now propose orders, not only fill them.** If reading turns up a
+defect or an opportunity the brief missed, say so. The 02a/02b mismatch below
+was found by an audit, not by an order, and it is the most useful thing anyone
+learned about these plates.
+
+What does not loosen: Grok still delivers one file per order, still never
+pushes, still never touches a drive outside its inbox, and still waits for
+Jason to name an order before generating. Reading widely is not authority to
+act widely.
+
 ### Composition laws
 
 - **Quiet centre.** Low detail where UI panels land; visual interest in the
