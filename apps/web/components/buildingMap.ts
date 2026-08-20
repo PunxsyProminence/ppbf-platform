@@ -121,6 +121,16 @@ export const BUILDING: readonly Door[] = [
     hint: 'Capability definitions, assignments, status and role exposure.' },
   { href: '/admin/people', label: 'People', room: 'office', roles: ADMIN_GATE,
     keywords: 'roster members directory participants' },
+  /* This file, read from the front desk. The register prints the doors below
+     grouped by role and by room -- label, path, room -- and nothing else: it
+     performs no fetch, and it previews a role's NAVIGATION, never a role's
+     records or a role's session. 'view as' is in the keywords because that is
+     the phrase somebody will search for, and the label deliberately is not,
+     since 'View As' is the industry's word for impersonation and this is the
+     opposite of one (see the header of the page). */
+  { href: '/admin/door-register', label: 'Door Register', room: 'office', roles: ADMIN_GATE,
+    keywords: 'view as preview role structure navigation tabs doors rooms register map building sitemap routes',
+    hint: 'Every door each role holds, by room. Route structure only — never another person’s records.' },
   { href: '/admin/pin', label: 'PIN Management', room: 'office', roles: ADMIN_GATE,
     keywords: 'pin codes credentials reset kiosk access' },
   { href: '/admin/activation-codes', label: 'Activation Codes', room: 'office', roles: ADMIN_GATE,
