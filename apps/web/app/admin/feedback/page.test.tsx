@@ -244,3 +244,19 @@ it('reports a failed load instead of rendering an empty queue as good news', asy
   await screen.findByText('Internal server error');
   expect(screen.queryByText('Nobody has sent anything yet.')).toBeNull();
 });
+
+it('reports that failure with a glyph and a label, not with colour alone', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ error: 'Internal server error' }, false));
+
+  await renderPage(fetchMock);
+
+  // This was the room's one true Law 3 break: --locked-ink as bare text, with
+  // no glyph, no uppercase label and no .alert chassis -- and in the red this
+  // room reserves for a medical or safeguarding fact, over a failed read.
+  const alert = await screen.findByRole('alert');
+  expect(alert.className).toContain('alert');
+  expect(alert.className).toContain('alert--warning');
+  expect(alert.className).not.toContain('alert--critical');
+  expect(within(alert).getByText('Attention')).toBeTruthy();
+  expect(within(alert).getByText('Internal server error')).toBeTruthy();
+});

@@ -51,11 +51,16 @@ interface SafetyReview {
   openViolations: ViolationItem[];
 }
 
-const SEVERITY_BADGE: Record<EscalationSeverity, string> = {
-  critical: 'badge--locked',
-  high: 'badge--restricted',
-  moderate: 'badge--monitor',
-  low: 'badge--monitor',
+// Law 3: a severity badge carries a glyph and an uppercase label, never colour
+// alone. This one shipped as a bare rung while both of its siblings --
+// /admin/escalations over the same four-value union, and
+// /admin/compliance-center -- supply the glyphs. Same glyphs as escalations,
+// because it is the same ladder read from a different page.
+const SEVERITY_BADGE: Record<EscalationSeverity, { rung: string; glyph: string }> = {
+  critical: { rung: 'badge--locked', glyph: '✕' },
+  high: { rung: 'badge--restricted', glyph: '▲' },
+  moderate: { rung: 'badge--monitor', glyph: '◉' },
+  low: { rung: 'badge--monitor', glyph: '◉' },
 };
 
 function displayName(athleteId: string, athleteName: string | null): string {
@@ -99,21 +104,38 @@ export default function SafetyReviewPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-      <main className="room room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--clinic min-h-screen">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-            <p className="t-eyebrow">Admin Workspace</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Safety Review</h1>
+          {/* Room DNA (clinic): cabinetry, the green banker's shade, and the
+              blackletter reserved for the clinic masthead at display size only.
+              The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
+              .mat-wood's lit edge; full note on /coach/sports-medicine. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
+            <h1
+              className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
+              style={{ fontSize: 'var(--t-2xl)' }}
+            >
+              Safety Review
+            </h1>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Everything open, right now, across the four safety systems: training holds, safety-gate checks, the
               red-flag escalation ladder, and compliance violations. Each item links to the page that can act on
               it -- this view only rolls them up.
             </p>
+            {/* A failed read is a network fact. --locked red is what this room
+                says when a clinician or a safeguarding decision has stopped
+                something, so it does not carry this. --restricted does, keeping
+                the glyph and gaining the uppercase label Law 3 asks for. */}
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
-                <span className="alert-msg">{errorMessage}</span>
-              </p>
+              <div role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{errorMessage}</p>
+                </div>
+              </div>
             ) : null}
           </header>
 
@@ -171,7 +193,10 @@ export default function SafetyReviewPage() {
                     {review!.openEscalations.map((escalation) => (
                       <li key={escalation.escalation_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] py-[var(--s2)]">
                         <span className="t-body">{displayName(escalation.athlete_id, escalation.athlete_name)}</span>
-                        <span className={`badge ${SEVERITY_BADGE[escalation.severity]}`}>{escalation.severity}</span>
+                        <span className={`badge ${SEVERITY_BADGE[escalation.severity].rung}`}>
+                          <i aria-hidden="true">{SEVERITY_BADGE[escalation.severity].glyph}</i>
+                          {escalation.severity}
+                        </span>
                       </li>
                     ))}
                   </ul>

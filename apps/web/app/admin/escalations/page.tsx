@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 // Imported (type-only, erased at build time -- safe in a 'use client' page,
 // matching e.g. app/athlete/sign-in/page.tsx's `import type { PilotRole }`)
 // rather than re-declared here: escalationLadder.ts is the canonical source
@@ -75,6 +76,25 @@ export default function EscalationsPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  // The resolution note used to be collected in window.prompt(): a decision
+  // about a minor, taken in unstyled browser chrome with no room, no material,
+  // no glyph and no kiosk sizing, on the one screen in the building where the
+  // record being written is why a red flag was closed. It is a dialog now --
+  // the same role="dialog" aria-modal shape and the same focus trap
+  // /admin/compliance-center already uses for Escalate, which is the LOWER
+  // stakes flow of the two.
+  const [resolving, setResolving] = useState<SafetyEscalation | null>(null);
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [noteRefusal, setNoteRefusal] = useState('');
+  const closeResolve = useCallback(() => {
+    setResolving(null);
+    setResolutionNote('');
+    setNoteRefusal('');
+  }, []);
+  const resolveDialogRef = useDialogFocusTrap<HTMLDivElement>({
+    open: resolving !== null,
+    onClose: closeResolve,
+  });
 
   const isAdmin = role === 'admin' || role === 'organization_admin';
 
@@ -150,18 +170,16 @@ export default function EscalationsPage() {
     }
   }
 
-  async function handleResolve(escalationId: string) {
-    const note = window.prompt(
-      'Resolution note (required -- this is the durable record of why the red flag was closed):',
-      '',
-    );
-    if (note === null) return;
+  async function handleResolve(escalationId: string, note: string) {
     // A safety escalation about a minor does not close without a stated
-    // reason. An empty OK is treated as "not done deciding", not as consent.
+    // reason. An empty confirm is treated as "not done deciding", not as
+    // consent -- and, unlike a dismissed prompt, the dialog stays open with
+    // the refusal beside the field it belongs to.
     if (note.trim() === '') {
-      setActionMessage('Resolution needs a note -- the escalation was not resolved.');
+      setNoteRefusal('A resolution needs a stated reason — the escalation was not resolved.');
       return;
     }
+    closeResolve();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/escalations`, {
         method: 'POST',
@@ -210,29 +228,53 @@ export default function EscalationsPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'coach']}>
-      <main className="room room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <main className="room room--clinic min-h-screen">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-            <p className="t-eyebrow">Admin Workspace</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Escalations</h1>
+          {/* Room DNA (clinic): the room's own cabinetry under the masthead, its
+              green banker's shade, and the blackletter reserved for the clinic
+              masthead at display size only. The eyebrow states --brass-200
+              because --brass-400 is 3.34:1 on .mat-wood's lit edge; the full
+              note, and where that restatement really belongs, is on
+              /coach/sports-medicine. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
+            <h1
+              className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
+              style={{ fontSize: 'var(--t-2xl)' }}
+            >
+              Escalations
+            </h1>
             <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.safety_escalations</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               This platform sends no email or push notification -- a near miss, pain report, or safety-gate flag
               severe enough to escalate lands here, and only here. Nothing auto-resolves; a human closes every row.
             </p>
+            {/* Room DNA (clinic): both of these were --locked red, the colour
+                this room reserves for a medical or safeguarding fact. One is a
+                failed read of the queue; the other is a failed read of the
+                caller's own role. --restricted carries them, each keeping the
+                glyph and gaining the uppercase label Law 3 asks for -- colour
+                was doing that work alone. */}
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
-                <span className="alert-msg">{errorMessage}</span>
-              </p>
+              <div role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{errorMessage}</p>
+                </div>
+              </div>
             ) : null}
             {roleFetchFailed ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
-                <span className="alert-msg">
-                  Your role could not be verified, so resolve and pattern-scan controls are hidden. Reload to retry.
-                </span>
-              </p>
+              <div role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">
+                    Your role could not be verified, so resolve and pattern-scan controls are hidden. Reload to retry.
+                  </p>
+                </div>
+              </div>
             ) : null}
             {actionMessage ? <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p> : null}
           </header>
@@ -322,13 +364,13 @@ export default function EscalationsPage() {
                                 Acknowledge
                               </button>
                               {isAdmin ? (
-                                <button type="button" onClick={() => void handleResolve(item.escalation_id)} className="btn--lever min-h-[44px]">
+                                <button type="button" onClick={() => setResolving(item)} className="btn--lever min-h-[44px]">
                                   Resolve
                                 </button>
                               ) : null}
                             </div>
                           ) : item.status === 'acknowledged' && isAdmin ? (
-                            <button type="button" onClick={() => void handleResolve(item.escalation_id)} className="btn--lever min-h-[44px]">
+                            <button type="button" onClick={() => setResolving(item)} className="btn--lever min-h-[44px]">
                               Resolve
                             </button>
                           ) : (
@@ -342,6 +384,76 @@ export default function EscalationsPage() {
               </table>
             </section>
           )}
+
+          {/* The durable record of why a red flag about a child was closed.
+              Deliberately unriveted: ppbf.css allows "one ceremonial rivet per
+              screen at most", and a riveted card is Front Office DNA, not this
+              room's. Cabinetry, a green-shaded reading light, kiosk-sized
+              field and buttons instead. */}
+          {resolving ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-[var(--s4)]">
+              <div
+                ref={resolveDialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="resolve-escalation-heading"
+                className="mat-wood w-full max-w-lg rounded-[var(--r-lg)] border border-[color:var(--brass-700)] p-[var(--s5)]"
+              >
+                <p className="t-eyebrow text-[color:var(--brass-200)]">
+                  {SOURCE_LABEL[resolving.source_type]} &middot; {resolving.severity}
+                </p>
+                <h2
+                  id="resolve-escalation-heading"
+                  className="t-command mt-[var(--s3)]"
+                  style={{ fontSize: 'var(--t-lg)' }}
+                >
+                  Close this escalation
+                </h2>
+                <p className="t-body mt-[var(--s3)]">
+                  This is the durable record of why the flag was closed, and it stays on the child&rsquo;s
+                  history. Closing the escalation closes the workflow only — it clears nothing and lifts no
+                  training hold.
+                </p>
+                <div className="field mt-[var(--s4)]">
+                  <label className="t-label" htmlFor="resolution-note">Resolution note (required)</label>
+                  <textarea
+                    id="resolution-note"
+                    className="textarea input--kiosk"
+                    rows={3}
+                    value={resolutionNote}
+                    onChange={(event) => {
+                      setResolutionNote(event.target.value);
+                      setNoteRefusal('');
+                    }}
+                  />
+                </div>
+                {noteRefusal ? (
+                  <div role="alert" className="alert alert--warning alert--tight">
+                    <span className="alert-icon" aria-hidden="true">▲</span>
+                    <div className="alert-body">
+                      <p className="alert-title">Attention</p>
+                      <p className="alert-msg">{noteRefusal}</p>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+                  {/* Cancel first in the DOM: the way out is the first thing a
+                      keyboard user reaches and the first thing a screen reader
+                      announces after the warning. */}
+                  <button type="button" onClick={closeResolve} className="btn btn--ghost btn--kiosk flex-1">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleResolve(resolving.escalation_id, resolutionNote)}
+                    className="btn btn--kiosk flex-1"
+                  >
+                    Resolve
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/admin/compliance-center" className="btn btn--ghost">
