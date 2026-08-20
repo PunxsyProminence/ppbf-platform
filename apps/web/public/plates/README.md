@@ -78,7 +78,7 @@ why a plate must never be an `<img>` and never carries text.
 
 ## Adding a variant
 
-Rooms are reused heavily — office covers 42 pages, floor 22 — so a single wall
+Rooms are reused heavily — office covers 40 routes, floor 31 — so a single wall
 repeats a great deal. A second plate for a room is a new file plus one
 declaration in the PLATES section of `design-system/ppbf.css`. Nothing else
 changes.
