@@ -92,19 +92,20 @@ const GYM_STANDING: Record<string, { badgeClass: string; glyph: string; label: s
     badgeClass: 'badge badge--filed',
     glyph: '\u25A0',
     label: 'closed',
-    meaning: 'Closed. Nobody can sign in to it. Every record it holds is still on file.',
+    meaning:
+      'Closed. Nobody but a platform owner can sign in to it. Every record it holds is still on file.',
   },
   suspended: {
     badgeClass: 'badge badge--restricted',
     glyph: '\u25B2',
     label: 'on hold',
-    meaning: 'On hold. Nobody can sign in to it while the hold is on.',
+    meaning: 'On hold. Nobody but a platform owner can sign in to it while the hold is on.',
   },
   pending: {
     badgeClass: 'badge badge--filed',
     glyph: '\u25CB',
     label: 'not open yet',
-    meaning: 'Not open yet. Nobody can sign in until somebody opens it.',
+    meaning: 'Not open yet. Nobody but a platform owner can sign in until somebody opens it.',
   },
 };
 
@@ -817,10 +818,19 @@ export default function PlatformConsole() {
               reaches everybody who works there.
             </p>
             <ul className="t-body mt-[var(--s3)] list-disc space-y-[var(--s2)] pl-[var(--s5)]">
+              {/* "and nobody can sign back in" was not true of the person
+                  reading it. signInWithMicrosoft refuses a non-active
+                  organization only for accounts that are NOT platform owners
+                  (src/server/pilot/auth.ts), so the owner keeps a way in --
+                  which is the whole reason a closed gym can be opened again,
+                  and exactly the reassurance somebody hesitating over this
+                  button needs. A warning that overstates is still a warning
+                  that is wrong. */}
               <li>
                 <strong>Everyone is signed out.</strong> Every session scoped to this gym is revoked
-                — coaches, staff, board, volunteers, athletes — and nobody can sign back in
-                while it is closed.
+                — coaches, staff, board, volunteers, athletes — and none of them can sign
+                back in while it is closed. You still can: a platform owner is the one sign-in a
+                closed gym still lets through, which is how it gets opened again.
               </li>
               <li>
                 <strong>Nothing is deleted.</strong> Closing is not a delete, and there is no delete on

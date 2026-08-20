@@ -140,7 +140,7 @@ describe('the warning comes before the action, not after it', () => {
     const form = screen.getByText(/Everyone is signed out\./i).closest('li');
     expect(form).toBeTruthy();
     expect(form?.textContent).toMatch(/Every session scoped to this gym is revoked/i);
-    expect(form?.textContent).toMatch(/nobody can sign back in while it is closed/i);
+    expect(form?.textContent).toMatch(/can sign\s+back in while it is closed/i);
   });
 
   test('the copy says plainly that closing is not a deletion', async () => {
@@ -152,6 +152,22 @@ describe('the warning comes before the action, not after it', () => {
     expect(notADelete?.textContent).toMatch(/Closing is not a delete/i);
     expect(notADelete?.textContent).toMatch(/there is no delete on this desk/i);
     expect(notADelete?.textContent).toMatch(/stay exactly where they are/i);
+  });
+
+  // signInWithMicrosoft refuses a non-active organization only for accounts
+  // that are NOT platform owners (src/server/pilot/auth.ts). "Nobody can sign
+  // back in" was therefore untrue of the one person who reads this warning,
+  // and it is the sentence that decides whether closing a gym feels like
+  // locking yourself out of it.
+  test('the warning does not overstate: the owner keeps their way back in', async () => {
+    mountDesk();
+    await chooseGym();
+
+    const signedOut = screen.getByText(/Everyone is signed out\./i).closest('li');
+    expect(signedOut?.textContent).toMatch(/none of them can sign\s+back in while it is closed/i);
+    expect(signedOut?.textContent).toMatch(/a platform owner is the one sign-in a\s+closed gym still lets through/i);
+    // The absolute claim must not come back.
+    expect(signedOut?.textContent).not.toMatch(/nobody can sign back in/i);
   });
 
   test('the copy says closing is reversible, before it is done', async () => {
