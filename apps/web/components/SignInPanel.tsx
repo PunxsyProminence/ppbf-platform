@@ -337,15 +337,28 @@ export default function SignInPanel({
             <h1 className="t-painted mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>
               The Bell
             </h1>
-            {/* OBSERVE. DECIDE. EXECUTE. is the platform's tagline, carried in
-                CLAUDE.md and in the SHADOW UI docs, and until now it rendered
-                on no screen in the application at all. The front door is where
-                it belongs. On a brass plate because that is what the gym screws
-                a motto to -- and because a plate is a different object from the
-                text around it, which is the kind of variation a page of equal
-                paragraphs never gets. */}
+            {/* The gym's own words, on the gym's own door.
+                This first read OBSERVE. DECIDE. EXECUTE. -- which is the
+                SHADOW UI tagline (CLAUDE.md line 14, and four docs under
+                docs/shadow-ui/). SHADOW is the coaching intelligence and it
+                lives in After Hours. Putting its motto on a signed-out family
+                surface is the same voice mistake as titling this screen after
+                SHADOW, which was already declined: the person reading this is
+                a parent, a kid, or a volunteer who has not signed in yet.
+
+                "Not fancy, just tough" is what a free youth boxing program in
+                a rural steel town actually sounds like, and it sets the brief
+                for everything else on this screen. Nothing here should read as
+                ornament: the studs hold the board together, the lamp is a bare
+                caged bulb, the stamp is ink on wood. If a future change to
+                this page could be called decorative, it is wrong.
+
+                On a brass plaque because that is what a gym screws a motto to,
+                and because a plaque is a different OBJECT from the text around
+                it -- the kind of variation a page of equal paragraphs in equal
+                cards never gets. */}
             <p className="mat-brass--dark t-eyebrow mt-[var(--s4)] inline-block rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s2)]">
-              OBSERVE. DECIDE. EXECUTE.
+              NOT FANCY. JUST TOUGH.
             </p>
             <p className="t-body mt-[var(--s4)] max-w-[52ch]">
               Sign in with Account ID/PIN or Microsoft. You will land on the right dashboard for your role.

@@ -130,10 +130,20 @@ describe('the board is a board and not a card', () => {
     expect(container.querySelectorAll('.rivet').length).toBeGreaterThan(4);
   });
 
-  test('carries the tagline that rendered on no screen before', async () => {
+  test('speaks in the gym\'s voice, not the coaching system\'s', async () => {
     await renderPanel();
 
-    expect(screen.getByText(/OBSERVE\. DECIDE\. EXECUTE\./)).toBeTruthy();
+    expect(screen.getByText(/NOT FANCY\. JUST TOUGH\./)).toBeTruthy();
+  });
+
+  /* OBSERVE. DECIDE. EXECUTE. REPEAT. is SHADOW's tagline (CLAUDE.md line 14).
+     SHADOW lives in After Hours; this is a signed-out family surface, and the
+     person reading it has not signed in. Same voice boundary that keeps the
+     screen from being titled after SHADOW. */
+  test('does not borrow the SHADOW tagline for a signed-out door', async () => {
+    const { container } = await renderPanel();
+
+    expect(container.textContent).not.toMatch(/OBSERVE\. DECIDE\. EXECUTE/i);
   });
 
   /* The row was `grid sm:grid-cols-3`: three identical cells, identical
