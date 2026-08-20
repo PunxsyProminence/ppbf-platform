@@ -131,6 +131,29 @@ describe('every committed plate is encoded for dark material', () => {
     const geometry = `${sof?.width}x${sof?.height}`;
     expect(['1280x720', '2560x1440', '405x720', '810x1440']).toContain(geometry);
   });
+
+  /**
+   * The filename is the order. Grok's lane lists "wrong size vs order" as a
+   * refuse condition, and a geometry allow-list alone does not deliver that:
+   * every declared geometry is valid for every file, so a landscape image
+   * dropped under a `-portrait-` name passes while being the wrong picture.
+   *
+   * The name is the only part of the order this test can read, so it is what
+   * gets held to. A portrait crop is portrait; everything else is a wall and
+   * is landscape. Neither may be square, which is what an image model returns
+   * when an aspect instruction is dropped.
+   */
+  it.each(files)('%s has the orientation its filename claims', (name) => {
+    const sof = readSof(readFileSync(path.join(PLATES_DIR, name)));
+    const width = sof?.width ?? 0;
+    const height = sof?.height ?? 0;
+    expect(width).not.toEqual(height);
+    if (name.includes('-portrait-')) {
+      expect(height).toBeGreaterThan(width);
+    } else {
+      expect(width).toBeGreaterThan(height);
+    }
+  });
 });
 
 describe('the sheet and the directory agree', () => {

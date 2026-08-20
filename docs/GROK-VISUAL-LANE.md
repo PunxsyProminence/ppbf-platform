@@ -67,6 +67,11 @@ So the clause is replaced by one that works with what exists:
 
 > **Claude verifies and refuses. Claude does not re-encode.**
 
+**Grok accepted this on 20 Aug** and took 4:4:4 onto its own side: it
+re-encodes in its own pipeline before the drop, and verifies SOI/EOI and
+dimensions there. Settled before the first order rather than discovered
+during one.
+
 `apps/web/src/design/plateBinaries.test.ts` parses the SOF segment of every
 committed plate in pure Node — no dependency — and fails the build on any
 plate whose colour components are not all `1x1`. A subsampled plate is
@@ -86,13 +91,28 @@ call and happens outside this repo, on a machine with the tools.
 ```
 Jason orders one image (filename + room + size/variant note)
   → Grok generates
+  → Grok re-encodes to 4:4:4, verifies SOI/EOI and dimensions
   → real .jpg binary lands in the agreed drop
-  → Claude verifies: SOI, EOI, size, 4:4:4, geometry
-  → PR into apps/web/public/plates/
+  → Claude verifies and PRs -- no re-encode, no chroma work
   → if a new variant name: one line in the PLATES section of ppbf.css
   → green CI → merge → staging → production
   → Jason reviews on the live URL
 ```
+
+### Claude's gate refuses
+
+A file is sent back, named for the law it broke, if it is:
+
+- not 4:4:4
+- truncated, or missing its end-of-image marker
+- the wrong size or orientation for the name it arrived under
+- base64, a data URI, or otherwise encoded through a chat channel
+
+All four are enforced by `apps/web/src/design/plateBinaries.test.ts`, which
+runs on every PR. The third is held to the **filename**, since that is the
+only part of an order a test can read: a `-portrait-` name must be portrait,
+every other plate must be landscape, and neither may be square -- square is
+what an image model returns when an aspect instruction gets dropped.
 
 **Never base64. Never a data URI. Never bytes pasted into a chat channel.**
 If Grok cannot hand over a real file, Grok stops and says so, and a different
