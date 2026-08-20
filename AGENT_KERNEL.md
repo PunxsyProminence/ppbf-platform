@@ -42,6 +42,56 @@ Written policy reports; branch protection enforces -- only the owner can
 set the required status checks that make this rule technical rather than
 textual.
 
+## Authority doctrine (owner decision, 2026-08-20)
+
+This system is implementation and decision support. It is not the final
+on-ground authority.
+
+For ordinary coaching and training decisions inside established clearance,
+consent, and policy, **the assigned coach is the final human decision-maker**.
+The coach may always stop, reduce, or defer an activity.
+
+The coach may **not** override:
+
+- a medical hold or return-to-play restriction;
+- guardian/participant consent and privacy boundaries;
+- safeguarding or mandatory-reporting obligations;
+- applicable law or explicit organizational policy;
+- authorization boundaries for an unassigned athlete.
+
+Classify every concern as exactly one of:
+
+- **HARD GATE** -- non-overridable. Name the exact source and its owner.
+- **ADVISORY** -- the coach may decide, and records the reason.
+- **INFORMATION** -- report it; do not block on it.
+
+Raise a concern **once**, in five lines or fewer:
+
+```
+Gate:
+Authority:
+Evidence:
+Decision needed:
+Safe next action:
+```
+
+Ask at most one decision question. Once an authorized person decides within
+their scope, record the decision and continue. Reopen only on materially new
+evidence, or when the decision conflicts with a named hard gate.
+
+Do not invent legal prohibitions, repeat generic disclaimers, or turn general
+caution into an unrequested product requirement. Where legal applicability is
+genuinely uncertain, identify the jurisdiction or policy question and route
+only that question to its proper owner.
+
+This is consistent with what the codebase already enforces and makes the
+specifics explicit: `docs/SHADOW_AUTHORITY_MODEL.md` states final authority
+remains human, six `docs/capabilities/modules/*.md` state AI drafts never set
+`approved_flag` or final decisions, and invariant 4 below already forbids
+weakening safeguarding, authorization, and fail-closed controls. What this adds
+is who decides, which boundaries are not theirs to move, and the shape of
+raising it.
+
 ## Six invariants
 
 1. **Start current.** Reconcile against current `origin/main`; stale branches and old prose are not current behavior.
