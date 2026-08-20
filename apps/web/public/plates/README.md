@@ -24,7 +24,14 @@ repeats them:
   header-only check installs silently.
 
 Binary assets enter this repository by real file upload. Never by re-encoding
-through a text channel. Every file below was verified on install: start-of-image
+through a text channel. Two documents describing the base64 route --
+`PLATES-INSTALL.md` and `PLATES-v1g-STATUS.md` -- were deleted on 20 Aug:
+every claim in them was false by then (the override sheet, both decode
+scripts and the layout import were all gone, and `.jpg` was never actually
+gitignored), but they still read as instructions, and instructions for a
+dead route are how the next channel repeats a solved mistake.
+`docs/GROK-VISUAL-LANE.md` is the live contract; the laws below are
+enforced by `apps/web/src/design/plateBinaries.test.ts`. Every file below was verified on install: start-of-image
 **and** end-of-image markers present, dimensions parsed from the SOF segment,
 size within budget.
 
