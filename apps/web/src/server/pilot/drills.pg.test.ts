@@ -4,7 +4,7 @@
 // and drill_description as free text with no foreign key, so two coaches
 // assigning the same drill produce two unrelated strings, and the athlete drill
 // library is three rows hardcoded in a useState initializer in
-// apps/web/components/AthleteWorkspace.tsx.
+// apps/web/components/athlete/AthleteWorkspace.tsx.
 //
 // Five things need proving, and none can be proven by reading SQL:
 //

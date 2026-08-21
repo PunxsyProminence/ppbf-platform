@@ -1,7 +1,7 @@
 // Real PostgreSQL-backed contract test for the rabbit holes migration.
 //
 // A rabbit hole is CONCEPT + HOMEWORK: the shape the product already shows in
-// apps/web/components/AthleteWorkspace.tsx under the 'rabbit-holes' tab, where
+// apps/web/components/athlete/AthleteWorkspace.tsx under the 'rabbit-holes' tab, where
 // one lesson is hardcoded JSX addressed to one role.
 //
 // Five things need proving, and none can be proven by reading SQL:

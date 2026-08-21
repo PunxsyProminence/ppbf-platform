@@ -1,4 +1,4 @@
-import AthleteWorkspace from '@/components/AthleteWorkspace';
+import AthleteWorkspace from '@/components/athlete/AthleteWorkspace';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
 

@@ -19,8 +19,8 @@ jest.mock('next/link', () => ({
 
 import { GOAL_CATEGORIES } from '@/src/server/pilot/contracts';
 import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/types';
-import type { AnnouncementItem } from './AnnouncementBanner';
-import type { RabbitHoleLessonItem } from './RabbitHole';
+import type { AnnouncementItem } from '../AnnouncementBanner';
+import type { RabbitHoleLessonItem } from '../RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
 
 type FetchCall = { url: string; method: string; body: Record<string, unknown> };

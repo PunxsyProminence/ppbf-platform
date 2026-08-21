@@ -22,7 +22,7 @@ jest.mock('@/components/RoleStandaloneView', () => ({
   default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
 }));
 
-jest.mock('@/components/AthleteWorkspace', () => ({
+jest.mock('@/components/athlete/AthleteWorkspace', () => ({
   __esModule: true,
   default: () => <div data-testid="athlete-workspace-mount" />,
 }));

@@ -2,21 +2,21 @@
 
 import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
-import AnnouncementBanner from './AnnouncementBanner';
-import AthleteAchievements from './AthleteAchievements';
-import Chalkboard from './Chalkboard';
-import GymWallModule from './GymWallModule';
-import PersonalGoalBoard from './PersonalGoalBoard';
-import type { RabbitHoleLessonItem } from './RabbitHole';
-import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
-import ProfileHeader from './ProfileHeader';
-import TrainingHoldBanner from './TrainingHoldBanner';
-import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
-import ShadowChatButton from './ShadowChatButton';
-import ThenAndNow from './ThenAndNow';
-import TrainingCard, { type TrainingSession } from './TrainingCard';
-import { cx } from './uiStyles';
-import useGymSound from './useGymSound';
+import AnnouncementBanner from '../AnnouncementBanner';
+import AthleteAchievements from '../AthleteAchievements';
+import Chalkboard from '../Chalkboard';
+import GymWallModule from '../GymWallModule';
+import PersonalGoalBoard from '../PersonalGoalBoard';
+import type { RabbitHoleLessonItem } from '../RabbitHole';
+import { ANCHOR_KEY_OPTIONS, anchorLabel } from '../rabbitHoleAnchorLabels';
+import ProfileHeader from '../ProfileHeader';
+import TrainingHoldBanner from '../TrainingHoldBanner';
+import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from '../RoleSummaryPanels';
+import ShadowChatButton from '../ShadowChatButton';
+import ThenAndNow from '../ThenAndNow';
+import TrainingCard, { type TrainingSession } from '../TrainingCard';
+import { cx } from '../uiStyles';
+import useGymSound from '../useGymSound';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 
