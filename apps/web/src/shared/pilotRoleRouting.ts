@@ -22,7 +22,13 @@ export function getPilotRoleDestination(role: unknown, seat?: unknown): string |
     return '/admin/platform';
   }
   if (role === 'organization_admin' || role === 'admin') {
-    return '/admin';
+    // The working admin desk: the roster and the rest of the people work live
+    // in /admin/people, which is where an admin's day actually starts. The
+    // old destination, /admin -- the Capability Room catalog -- is left
+    // intact and reachable, one click away in the corridor and the header
+    // (owner decision, Operations V1 2026-08-21: every role lands in its
+    // operational work; a capability catalog is not an admin's morning).
+    return '/admin/people';
   }
   if (role === 'coach') {
     // The working coach hub: intake review actions, coach reviews, floor

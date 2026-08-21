@@ -112,6 +112,15 @@ const MEMBER_GATE: readonly ClubRole[] = [
    else is sent back to /shadow. organization_admin collapses into 'admin'. */
 const SCOUT_GATE: readonly ClubRole[] = ['admin', 'coach', 'platform_owner'];
 
+/* OPERATIONS V1 (owner decision, 2026-08-21): the research desks leave the
+   athlete's and the parent's navigation. Their pages still gate on every
+   organization member (RoleSessionGate in app/research/page.tsx and
+   research/chat/page.tsx), so this is visibility NARROWER than the guard --
+   which the header note allows, where wider never is: research intake is
+   staff-side lab work, not an athlete's or a family's operational surface.
+   Both doors stay reachable by URL for every role the pages admit. */
+const RESEARCH_GATE: readonly ClubRole[] = ['coach', 'admin', 'platform_owner', 'staff', 'volunteer'];
+
 export const BUILDING: readonly Door[] = [
   // ---------------------------------------------------------------- office --
   { href: '/dashboard', label: 'Bell', room: 'office', roles: OPEN,
@@ -227,10 +236,14 @@ export const BUILDING: readonly Door[] = [
     roles: ['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer'],
     keywords: 'profile identity portrait photo ring name nickname corner fight card programme',
     hint: 'Your portrait, ring name, corner and programme.' },
-  { href: '/source-control', label: 'Source Control', room: 'office', roles: OPEN,
+  /* ADMIN_GATE, not OPEN: part of the Operations V1 lab narrowing recorded at
+     the /simulator entry. The two pages carry no gate of their own, so this is
+     a pure visibility decision -- the lab leaves ordinary navigation, and the
+     data behind both is guarded by its own API checks. */
+  { href: '/source-control', label: 'Source Control', room: 'office', roles: ADMIN_GATE,
     keywords: 'versions publication workflow provenance' },
   { href: '/source-control/publication-workflow', label: 'Publication Workflow', room: 'office',
-    roles: OPEN, keywords: 'publish review release' },
+    roles: ADMIN_GATE, keywords: 'publish review release' },
   /* Two coach routes that are desk work rather than floor work, and both
      already paint .room--office. A cohort is a RULE and a discipline record is
      READ ONLY: neither runs a session, neither is touched with gloves on, and
@@ -307,6 +320,13 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/cue-library', label: 'Cue Library', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'cues coaching cues external focus analogy constraint families',
     hint: 'Every cue written into the drill library, searchable in one place. Read-only.' },
+  /* Shipped by the session-loop change (#551) linked from Quick Actions and
+     the radar, but never given a door -- the exact orphan
+     buildingMapCoverage.test.ts exists to catch, and it did. Room and roles
+     read off the page's own paint and gate. */
+  { href: '/coach/workout-templates', label: 'Workout Templates', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'workout templates conditioning circuit warmup catalog browse session building blocks',
+    hint: 'The template catalog a session is built from — browse and read, assignment stays in the plan.' },
   { href: '/coach/intelligence', label: 'The Morning Read', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'intelligence digest morning read stalled gaps readiness attendance unreviewed holds',
     hint: 'Five deterministic reads of your athletes\u2019 records, by urgency. No scores, no predictions.' },
@@ -343,7 +363,12 @@ export const BUILDING: readonly Door[] = [
   { href: '/rabbit-holes', label: 'Rabbit Holes', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'lessons tangents deep dives notes anchors',
     hint: 'The tangents worth following, anchored to where they came up.' },
-  { href: '/retro-lab', label: 'Retro Lab', room: 'floor', roles: OPEN,
+  /* Not OPEN, and never truly was: the page itself is RoleSessionGate
+     ['admin', 'platform_owner'], so the OPEN row advertised a door that
+     bounces every other role -- the exact defect the night-room block below
+     records, called out by the same audit. The roles now read off the page's
+     own gate (Operations V1, 2026-08-21). */
+  { href: '/retro-lab', label: 'Retro Lab', room: 'floor', roles: ADMIN_GATE,
     keywords: 'retrospective experiment lab' },
 
   // ----------------------------------------------------------------- board --
@@ -389,17 +414,27 @@ export const BUILDING: readonly Door[] = [
      what-ifs, which is archive work, not floor work. The page still paints
      .room--office and needs the matching edit -- see buildingMapRooms.test.ts,
      PAGE_IS_WRONG. */
-  { href: '/simulator', label: 'Simulator', room: 'file', roles: OPEN,
+  /* OPERATIONS V1 (owner decision, 2026-08-21): the lab doors leave ordinary
+     navigation. /simulator, /knowledge-graph, /source-control and
+     /publication-workflow are development-lab surfaces, not anybody's
+     operational day, so only the admin desks keep them in a corridor or a
+     catalog. Visibility only, per the header note: the pages are unchanged
+     and ungated, every one stays reachable by URL, and the data behind each
+     is guarded by its own API checks (verified by audit). Hiding these rows
+     protects nothing, and that is fine -- that was never their job. */
+  { href: '/simulator', label: 'Simulator', room: 'file', roles: ADMIN_GATE,
     keywords: 'scenario model what-if simulate' },
-  { href: '/research', label: 'Research Inbox', room: 'file', roles: MEMBER_GATE,
+  { href: '/research', label: 'Research Inbox', room: 'file', roles: RESEARCH_GATE,
     keywords: 'research intake requirements gaps evidence labels' },
-  { href: '/research/chat', label: 'Research Chat', room: 'file', roles: MEMBER_GATE,
+  { href: '/research/chat', label: 'Research Chat', room: 'file', roles: RESEARCH_GATE,
     keywords: 'ask research question chat' },
   { href: '/research/review', label: 'Submission Review', room: 'file', roles: ADMIN_GATE,
     keywords: 'submission review responsive partially responsive not responsive duplicate applicability curator' },
   { href: '/evidence', label: 'Evidence Review', room: 'file', roles: ADMIN_GATE,
     keywords: 'shadow evidence sources citations provenance' },
-  { href: '/knowledge-graph', label: 'Knowledge Graph', room: 'file', roles: OPEN,
+  /* ADMIN_GATE, not OPEN: the Operations V1 lab narrowing recorded at the
+     /simulator entry above. */
+  { href: '/knowledge-graph', label: 'Knowledge Graph', room: 'file', roles: ADMIN_GATE,
     keywords: 'concepts relationships map observations findings lessons' },
   { href: '/audit', label: 'Audit Trace', room: 'file', roles: ['admin', 'coach'],
     keywords: 'audit log ledger trace continuity history immutable',
