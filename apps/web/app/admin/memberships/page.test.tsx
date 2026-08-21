@@ -29,12 +29,36 @@ const MEMBERSHIP = {
 };
 
 function mockFetch(options: {
-  capture?: { posts: unknown[]; patches: unknown[] };
+  capture?: { posts: unknown[]; patches: unknown[]; programPosts?: unknown[]; programPatches?: unknown[] };
   postStatus?: number;
   postError?: string;
 }) {
+  // The catalog is stateful within one mock: a program created through the
+  // page shows up in the next GET, exactly as the real reload would see it.
+  const createdPrograms: string[] = [];
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.includes('/admin/programs') && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as { program_name: string };
+      options.capture?.programPosts?.push(body);
+      createdPrograms.push(body.program_name);
+      return {
+        ok: true,
+        json: async () => ({ item: { program_id: `prog-new-${createdPrograms.length}`, program_name: body.program_name, status: 'active', active_member_count: 0 } }),
+      } as Response;
+    }
+    if (url.includes('/admin/programs') && init?.method === 'PATCH') {
+      options.capture?.programPatches?.push(JSON.parse(String(init.body)));
+      return { ok: true, json: async () => ({ item: {} }) } as Response;
+    }
+    if (url.includes('/admin/programs')) {
+      const items = [
+        { program_id: 'prog-1', program_name: 'Youth Boxing', status: 'active', active_member_count: 1 },
+        { program_id: 'prog-2', program_name: 'Retired Program', status: 'archived', active_member_count: 0 },
+        ...createdPrograms.map((name, index) => ({ program_id: `prog-new-${index + 1}`, program_name: name, status: 'active', active_member_count: 0 })),
+      ];
+      return { ok: true, json: async () => ({ items }) } as Response;
+    }
     if (url.includes('/admin/memberships') && init?.method === 'POST') {
       options.capture?.posts.push(JSON.parse(String(init.body)));
       if (options.postStatus) {
@@ -114,6 +138,67 @@ test('changing a scholarship PATCHes only the scholarship -- one act per call', 
   });
 
   expect(capture.patches).toEqual([{ membership_id: 'mem-1', scholarship_percent: 50 }]);
+});
+
+test('the program field is a catalog select offering only ACTIVE programs -- free text is gone', async () => {
+  global.fetch = mockFetch({});
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Enroll athlete' }));
+  });
+
+  const select = screen.getByLabelText('Program') as HTMLSelectElement;
+  expect(select.tagName).toBe('SELECT');
+  const optionNames = Array.from(select.options).map((option) => option.textContent);
+  expect(optionNames).toContain('Youth Boxing');
+  expect(optionNames).not.toContain('Retired Program');
+});
+
+test('the inline add-new affordance POSTs to the catalog and selects the new program', async () => {
+  const capture = { posts: [] as unknown[], patches: [] as unknown[], programPosts: [] as unknown[], programPatches: [] as unknown[] };
+  global.fetch = mockFetch({ capture });
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Enroll athlete' }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'New program' }));
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('New program name'), { target: { value: 'Fight Camp' } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Add program' }));
+  });
+
+  expect(capture.programPosts).toEqual([{ program_name: 'Fight Camp' }]);
+  expect((screen.getByLabelText('Program') as HTMLSelectElement).value).toBe('Fight Camp');
+});
+
+test('the catalog section lists programs with live headcounts, and archiving PATCHes the catalog only', async () => {
+  const capture = { posts: [] as unknown[], patches: [] as unknown[], programPosts: [] as unknown[], programPatches: [] as unknown[] };
+  global.fetch = mockFetch({ capture });
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  expect(await screen.findByText('Retired Program')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Reactivate' })).toBeTruthy();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+  });
+
+  expect(capture.programPatches).toEqual([{ program_id: 'prog-1', status: 'archived' }]);
+  // Catalog housekeeping never PATCHes a membership.
+  expect(capture.patches).toEqual([]);
 });
 
 test('a duplicate active enrollment surfaces the server message', async () => {
