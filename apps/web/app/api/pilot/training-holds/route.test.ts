@@ -285,6 +285,31 @@ describe('POST place', () => {
     expect(mockPlace).not.toHaveBeenCalled();
   });
 
+  // conditioning_only is still a valid TrainingHoldScope -- historical rows
+  // carry it and every display path renders it -- but no enforcement probe
+  // reads it (scope in ('all_training', 'contact_only') everywhere), so a new
+  // hold may not promise it. The refusal names why.
+  test('a NEW conditioning_only hold is refused: the platform does not enforce it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(postRequest({ ...placeBody, scope: 'conditioning_only' }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Unsupported scope: conditioning_only is not offered because nothing enforces it -- use all_training or contact_only',
+    });
+    expect(mockPlace).not.toHaveBeenCalled();
+
+    // The two enforced scopes both still place.
+    for (const scope of ['all_training', 'contact_only']) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+      mockPlace.mockResolvedValueOnce(FULL_HOLD);
+      const accepted = await POST(postRequest({ ...placeBody, scope }));
+      expect(accepted.status).toBe(200);
+      expect(mockPlace).toHaveBeenCalledWith(expect.objectContaining({ scope }));
+    }
+  });
+
   test('a past expires_at is refused', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
     const response = await POST(postRequest({ ...placeBody, expires_at: '2020-01-01T00:00:00Z' }));

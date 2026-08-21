@@ -25,7 +25,8 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
-import { EVIDENCE_SOURCES } from './interventionEvidence';
+import { closePool } from './db';
+import { EVIDENCE_SOURCES, linkEvidence, listEvidence } from './interventionEvidence';
 
 jest.setTimeout(180_000);
 
@@ -56,6 +57,9 @@ const LAYERED_MIGRATIONS = [
   'pilot_slice_postgres_intervention_protocols_migration.sql',
   'pilot_slice_postgres_intervention_executions_migration.sql',
   'pilot_slice_postgres_training_attempts_migration.sql',
+  // The film-study admissibility gate had no Postgres-level proof while this
+  // migration was absent here (the module header used to record that gap).
+  'pilot_slice_postgres_film_study_proposals_migration.sql',
 ];
 
 const ORG_ID = 'org-evidence';
@@ -385,6 +389,83 @@ describe('intervention evidence migration', () => {
       // Another organization cannot see the attempt at all.
       const crossOrg = await client.query(EVIDENCE_SOURCES.training_attempt, [OTHER_ORG_ID, 'att-1', OTHER_ATHLETE_ID]);
       expect(crossOrg.rowCount).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The read-time half of the admissibility rule, against the real schema.
+  // Runs the SHIPPED linkEvidence/listEvidence through the module's own pool
+  // (pointed at this test's database), not a restatement of their SQL.
+  test('a link whose accepted proposal is later rejected reads back annotated inadmissible -- and is never filtered', async () => {
+    const client = await freshDatabase('evidence_admissibility');
+    try {
+      await client.query(migrationSql);
+      await client.query(
+        `insert into pilot.training_attempts
+           (organization_id, attempt_id, athlete_id, recorded_by_account_id, context_type,
+            metric_kind, direction, achieved_value)
+         values ($1, 'att-adm', $2, $3, 'session', 'reps', 'at_least', 12)`,
+        [ORG_ID, ATHLETE_ID, ADMIN_ID],
+      );
+      const proposal = await client.query(
+        `insert into pilot.shadow_film_study_proposals
+           (proposal_id, organization_id, athlete_id, video_session_id, observation_text,
+            evidence_id, model_deployment, frames_analyzed, review_state,
+            reviewed_by_account_id, reviewed_by_role, reviewed_at)
+         values (gen_random_uuid(), $1, $2, 'vs-adm', 'guard drops in round 3', 'ev-adm',
+                 'vision-test', 30, 'accepted', $3, 'coach', now())
+         returning proposal_id::text as proposal_id`,
+        [ORG_ID, ATHLETE_ID, COACH_ID],
+      );
+      const proposalId = proposal.rows[0].proposal_id as string;
+
+      process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor('evidence_admissibility');
+      // db.ts only honors this when NODE_ENV is exactly 'test' (Jest sets it).
+      process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+      try {
+        const filmLink = await linkEvidence({
+          organizationId: ORG_ID,
+          executionId: 'exec-1',
+          evidenceRole: 'immediate_post',
+          sourceKind: 'film_study',
+          sourceId: proposalId,
+          linkedByAccountId: COACH_ID,
+        });
+        expect(filmLink).not.toBeNull();
+        const attemptLink = await linkEvidence({
+          organizationId: ORG_ID,
+          executionId: 'exec-1',
+          evidenceRole: 'baseline',
+          sourceKind: 'training_attempt',
+          sourceId: 'att-adm',
+          linkedByAccountId: COACH_ID,
+        });
+        expect(attemptLink).not.toBeNull();
+
+        // While the proposal stands accepted, the link reads admissible.
+        const before = await listEvidence(ORG_ID, 'exec-1');
+        expect(before.find((row) => row.source_kind === 'film_study')?.source_admissible).toBe(true);
+
+        // The coach changes the verdict: the model was wrong about this child.
+        await client.query(
+          `update pilot.shadow_film_study_proposals
+           set review_state = 'rejected', updated_at = now()
+           where organization_id = $1 and proposal_id::text = $2`,
+          [ORG_ID, proposalId],
+        );
+
+        const after = await listEvidence(ORG_ID, 'exec-1');
+        // Annotated, never filtered and never auto-stamped: the row is still
+        // there, still active, and now says its source may not stand.
+        expect(after).toHaveLength(2);
+        const film = after.find((row) => row.source_kind === 'film_study');
+        expect(film?.source_admissible).toBe(false);
+        expect(film?.status).toBe('active');
+        expect(after.find((row) => row.source_kind === 'training_attempt')?.source_admissible).toBe(true);
+      } finally {
+        await closePool();
+      }
     } finally {
       await client.end();
     }

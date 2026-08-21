@@ -1613,6 +1613,12 @@ export default function CoachWorkspace() {
                   >
                     Open Scheduler
                   </Link>
+                  <Link
+                    href="/coach/session-scripts"
+                    className="btn"
+                  >
+                    Session Scripts: Run Tonight&apos;s Plan
+                  </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('floor')}
@@ -1646,6 +1652,30 @@ export default function CoachWorkspace() {
                     className="btn btn--ghost"
                   >
                     Write a Rabbit Hole
+                  </Link>
+                  <Link
+                    href="/coach/floor-groups"
+                    className="btn btn--ghost"
+                  >
+                    Today&apos;s Floor Groups
+                  </Link>
+                  <Link
+                    href="/coach/drills"
+                    className="btn btn--ghost"
+                  >
+                    Open Drill Library
+                  </Link>
+                  <Link
+                    href="/coach/cue-library"
+                    className="btn btn--ghost"
+                  >
+                    Open Cue Library
+                  </Link>
+                  <Link
+                    href="/coach/workout-templates"
+                    className="btn btn--ghost"
+                  >
+                    Browse Workout Templates
                   </Link>
                 </div>
               </section>
