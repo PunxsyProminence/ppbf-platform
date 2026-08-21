@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
+import { athleteIdsForCoach } from '@/src/server/pilot/access';
 import { getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getReadinessBoard } from '@/src/server/pilot/readinessBoard';
@@ -9,6 +10,11 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, athleteIdsForCoach: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/entities', () => ({
@@ -22,6 +28,7 @@ jest.mock('@/src/server/pilot/readinessBoard', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockCoachIds = athleteIdsForCoach as jest.Mock;
 const mockForCoach = getAthletesForCoach as jest.Mock;
 const mockByOrg = getAthletesByOrganization as jest.Mock;
 const mockBoard = getReadinessBoard as jest.Mock;
@@ -44,17 +51,34 @@ function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
 
 const getRequest = () => new NextRequest('http://localhost/api/pilot/coach/readiness-board');
 
-test('a coach reads through their own roster derivation, not the whole organization', async () => {
+test('a coach reads through their accessible athlete ids, not the whole organization', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
-  mockForCoach.mockResolvedValue([{ athlete_id: 'ath-1' }, { athlete_id: 'ath-2' }]);
+  mockCoachIds.mockResolvedValue(['ath-1', 'ath-2']);
   mockBoard.mockResolvedValue([]);
 
   const response = await GET(getRequest());
 
   expect(response.status).toBe(200);
-  expect(mockForCoach).toHaveBeenCalledWith('org-1', 'acct-1');
+  expect(mockCoachIds).toHaveBeenCalledWith('org-1', 'acct-1');
   expect(mockByOrg).not.toHaveBeenCalled();
   expect(mockBoard).toHaveBeenCalledWith('org-1', ['ath-1', 'ath-2']);
+});
+
+test("an athlete outside the coach's access set never reaches the board or the response", async () => {
+  // The whole-org roster read still knows ath-3 exists; the coach's access
+  // contract does not include it, so its readiness must never be computed.
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockForCoach.mockResolvedValue([{ athlete_id: 'ath-1' }, { athlete_id: 'ath-3' }]);
+  mockCoachIds.mockResolvedValue(['ath-1']);
+  mockBoard.mockImplementation(async (_organizationId: string, athleteIds: string[]) =>
+    athleteIds.map((athleteId) => ({ athlete_id: athleteId, status: 'GREEN', score: 8, measured_at: 'now' })),
+  );
+
+  const payload = await (await GET(getRequest())).json();
+
+  expect(mockBoard).toHaveBeenCalledWith('org-1', ['ath-1']);
+  expect(payload.items.map((item: { athlete_id: string }) => item.athlete_id)).toEqual(['ath-1']);
+  expect(JSON.stringify(payload)).not.toContain('ath-3');
 });
 
 test('an admin reads the organization roster', async () => {

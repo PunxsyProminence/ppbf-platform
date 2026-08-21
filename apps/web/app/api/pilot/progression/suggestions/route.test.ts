@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
+import { athleteIdsForCoach } from '@/src/server/pilot/access';
 import { getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getGapSuggestions } from '@/src/server/pilot/progressionSuggestions';
@@ -9,6 +10,11 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, athleteIdsForCoach: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/entities', () => ({
@@ -22,6 +28,7 @@ jest.mock('@/src/server/pilot/progressionSuggestions', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockCoachIds = athleteIdsForCoach as jest.Mock;
 const mockForCoach = getAthletesForCoach as jest.Mock;
 const mockForOrg = getAthletesByOrganization as jest.Mock;
 const mockSuggestions = getGapSuggestions as jest.Mock;
@@ -66,18 +73,43 @@ describe('suggestions stay staff-side', () => {
     expect(mockSuggestions).not.toHaveBeenCalled();
   });
 
-  test('a coach is scoped through getAthletesForCoach', async () => {
+  test('a coach is scoped through athleteIdsForCoach', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach', accountId: 'coach-9' }));
-    mockForCoach.mockResolvedValue([{ athlete_id: 'ath-1', full_name: 'Jordan Doe' }]);
+    // The roster read deliberately returns the whole organization (names for
+    // rendering); the access contract is what bounds the computation.
+    mockForCoach.mockResolvedValue([
+      { athlete_id: 'ath-1', full_name: 'Jordan Doe' },
+      { athlete_id: 'ath-2', full_name: 'Riley Doe' },
+    ]);
+    mockCoachIds.mockResolvedValue(['ath-1']);
     mockSuggestions.mockResolvedValue([SUGGESTION]);
 
     const payload = await (await GET(request())).json();
 
-    expect(mockForCoach).toHaveBeenCalledWith('org-1', 'coach-9');
+    expect(mockCoachIds).toHaveBeenCalledWith('org-1', 'coach-9');
     expect(mockForOrg).not.toHaveBeenCalled();
     expect(mockSuggestions).toHaveBeenCalledWith('org-1', ['ath-1']);
     expect(payload.items[0].full_name).toBe('Jordan Doe');
     expect(payload.items[0].rule).toBe('readiness_falling');
+  });
+
+  test("an athlete outside the coach's access set never reaches the suggester or the response", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach', accountId: 'coach-9' }));
+    mockForCoach.mockResolvedValue([
+      { athlete_id: 'ath-1', full_name: 'Jordan Doe' },
+      { athlete_id: 'ath-2', full_name: 'Riley Doe' },
+    ]);
+    mockCoachIds.mockResolvedValue(['ath-1']);
+    mockSuggestions.mockImplementation(async (_organizationId: string, athleteIds: string[]) =>
+      athleteIds.map((athleteId) => ({ ...SUGGESTION, athlete_id: athleteId })),
+    );
+
+    const payload = await (await GET(request())).json();
+
+    expect(mockSuggestions).toHaveBeenCalledWith('org-1', ['ath-1']);
+    expect(payload.items.map((item: { athlete_id: string }) => item.athlete_id)).toEqual(['ath-1']);
+    expect(JSON.stringify(payload)).not.toContain('ath-2');
+    expect(JSON.stringify(payload)).not.toContain('Riley Doe');
   });
 
   test('an organization admin reads the whole roster', async () => {
