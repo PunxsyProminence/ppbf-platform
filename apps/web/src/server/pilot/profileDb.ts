@@ -58,6 +58,7 @@ export interface AccountProfile {
   readonly photoBlobPath: string | null;
   readonly photoContentType: string | null;
   readonly photoReviewState: PhotoReviewState;
+  readonly photoUploadedAt: string | null;
 }
 
 /**
@@ -77,6 +78,7 @@ export function emptyProfile(organizationId: string, accountId: string): Account
     photoBlobPath: null,
     photoContentType: null,
     photoReviewState: 'pending_review',
+    photoUploadedAt: null,
   };
 }
 
@@ -91,6 +93,7 @@ function toProfile(row: AccountProfileRow): AccountProfile {
     photoBlobPath: row.photo_blob_path,
     photoContentType: row.photo_content_type,
     photoReviewState: normalizePhotoReviewState(row.photo_review_state),
+    photoUploadedAt: row.photo_uploaded_at,
   };
 }
 

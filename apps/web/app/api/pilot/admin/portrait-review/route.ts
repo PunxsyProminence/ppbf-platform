@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { deletePilotProfilePhoto } from '@/src/server/pilot/blob';
+import { query } from '@/src/server/pilot/db';
+import { ForbiddenError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   clearPhoto,
@@ -91,6 +93,31 @@ export async function POST(request: NextRequest) {
     // deleting first and losing the race would destroy a photo the other
     // reviewer just released.
     if (decision === 'approve') {
+      // An approval attests that THIS reviewer looked at THIS photograph. The
+      // client disables Approve until the image loads, but a disabled button
+      // is not a server guarantee -- the only server-verifiable record of a
+      // look is the audit row the photo route writes BEFORE serving bytes
+      // (photo/[accountId]/route.ts). Bound to photo_uploaded_at because a
+      // member can replace a pending photo while the queue is open: a view of
+      // the FIRST photograph must not authorise releasing the SECOND, and
+      // every upload moves photo_uploaded_at (profileDb.setPhoto). A null
+      // photo_uploaded_at matches no row, which fails closed. Reject is
+      // deliberately ungated: refusing is never slowed.
+      const viewed = await query<{ audit_id: string }>(
+        `select audit_id
+         from pilot.audit_events
+         where organization_id = $1
+           and actor_account_id = $2
+           and entity_type = 'account_profile_photo'
+           and entity_id = $3
+           and details->>'action' = 'portrait_review_image_viewed'
+           and created_at >= $4
+         limit 1`,
+        [principal.organizationId, principal.accountId, accountId, profile.photoUploadedAt],
+      );
+      if (viewed.length === 0) {
+        throw new ForbiddenError('Forbidden: approve requires viewing the current photo first');
+      }
       const applied = await releasePhoto(principal.organizationId, accountId, principal.accountId, 'pending_review');
       if (!applied) {
         throw new Error('Unsupported: portrait was already decided by another reviewer');

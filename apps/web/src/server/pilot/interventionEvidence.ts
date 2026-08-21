@@ -24,12 +24,13 @@ import type { FilmStudyProposalReviewState } from './shadowFilmStudyProposals';
 // have explicitly refused. So that kind carries a second condition --
 // review state -- described at ADMISSIBLE_FILM_STUDY_REVIEW_STATES below.
 //
-// Admissibility is checked at link time only and was never backfilled: a
-// pre-gate link citing a rejected or unreviewed proposal stays active until a
-// human removes it, and listEvidence does not re-validate sources on read.
-// Honest gap: the film-study admissibility gate has no Postgres-level proof --
-// the proposals migration is absent from interventionEvidence.pg.test.ts's
-// LAYERED_MIGRATIONS.
+// Admissibility is checked at link time AND annotated at read time.
+// linkEvidence refuses an inadmissible film-study source outright; but a
+// link can also become inadmissible after the fact (a pre-gate link, or a
+// proposal whose review state changed), and doctrine says removal stamps,
+// never deletes -- so listEvidence never filters. It returns every row with
+// a computed `source_admissible`, so a consumer can present a link citing a
+// rejected or unreviewed proposal as exactly what it is.
 
 export const EVIDENCE_ROLES = [
   'baseline', 'during_intervention', 'immediate_post', 'retention',
@@ -261,13 +262,38 @@ export async function removeEvidence(input: {
   );
 }
 
-export async function listEvidence(organizationId: string, executionId: string): Promise<EvidenceLinkRow[]> {
-  return query<EvidenceLinkRow>(
-    `select * from pilot.intervention_evidence_links
-     where organization_id = $1 and execution_id = $2
-     order by created_at asc`,
+export interface EvidenceLinkListRow extends EvidenceLinkRow {
+  /** Whether the link's source may stand as formal evidence about the child
+   * RIGHT NOW. Always true for non-film-study kinds -- they record something
+   * that actually happened. For film study it re-reads the proposal's review
+   * state through the same allow-list the link gate uses, so a link that
+   * predates the gate, or whose proposal was later rejected, presents as
+   * inadmissible instead of passing for accepted. */
+  source_admissible: boolean;
+}
+
+/** Every link for the execution, stamped rows included, oldest first --
+ * removal stamps, never deletes, and this read never filters either. The
+ * LEFT JOIN reaches the film-study proposal only for film_study rows; a
+ * film_study link whose proposal row is gone reads as inadmissible (the
+ * helper refuses null), which is the fail-closed direction. */
+export async function listEvidence(organizationId: string, executionId: string): Promise<EvidenceLinkListRow[]> {
+  const rows = await query<EvidenceLinkRow & { film_study_review_state: string | null }>(
+    `select l.*, p.review_state as film_study_review_state
+     from pilot.intervention_evidence_links l
+     left join pilot.shadow_film_study_proposals p
+       on l.source_kind = 'film_study'
+      and p.organization_id = l.organization_id
+      and p.proposal_id::text = l.source_id
+     where l.organization_id = $1 and l.execution_id = $2
+     order by l.created_at asc`,
     [organizationId, executionId],
   );
+  return rows.map(({ film_study_review_state, ...link }) => ({
+    ...link,
+    source_admissible:
+      link.source_kind !== 'film_study' || isAdmissibleFilmStudyReviewState(film_study_review_state),
+  }));
 }
 
 /** Records the human review of a CLOSED execution. Reviewing work still in

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import { deletePilotProfilePhoto } from '@/src/server/pilot/blob';
+import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   clearPhoto,
@@ -22,6 +23,10 @@ jest.mock('@/src/server/pilot/blob', () => ({
   deletePilotProfilePhoto: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/db', () => ({
+  query: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
@@ -35,6 +40,10 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
+// `as jest.Mock` rather than jest.mocked: query is generic, and the emulated
+// implementation below returns one concrete row shape. Same pattern as
+// interventionEvidence.test.ts's mockQueryOne.
+const mockDbQuery = query as jest.Mock;
 const mockList = jest.mocked(listPendingReviewPortraits);
 const mockGetProfile = jest.mocked(getAccountProfile);
 const mockRelease = jest.mocked(releasePhoto);
@@ -72,6 +81,8 @@ function malformedJsonRequest(): NextRequest {
   });
 }
 
+const UPLOADED_AT = '2026-08-10T00:00:00Z';
+
 function profile(overrides: Record<string, unknown> = {}) {
   return {
     organizationId: 'org-a',
@@ -83,8 +94,44 @@ function profile(overrides: Record<string, unknown> = {}) {
     photoBlobPath: '/blob/path.jpg',
     photoContentType: 'image/jpeg',
     photoReviewState: 'pending_review',
+    photoUploadedAt: UPLOADED_AT,
     ...overrides,
   } as never;
+}
+
+/**
+ * Emulates the one SQL statement this route sends through db.query -- the
+ * audit-events probe for a 'portrait_review_image_viewed' row -- against a
+ * seeded in-memory event list, applying the same conditions the real WHERE
+ * clause applies, INCLUDING created_at >= photo_uploaded_at read from the
+ * parameters the route actually passed. That last part is what makes "the
+ * reviewer viewed an EARLIER upload" distinguishable from "the reviewer
+ * never viewed anything": both must refuse, for different recorded reasons.
+ */
+interface SeededViewEvent {
+  organization_id: string;
+  actor_account_id: string;
+  entity_id: string;
+  created_at: string;
+}
+
+function seedViewProbe(events: SeededViewEvent[]) {
+  mockDbQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
+    if (!/from pilot\.audit_events/.test(sql)) {
+      throw new Error(`Unexpected SQL through db.query in this route: ${sql}`);
+    }
+    const [organizationId, actorAccountId, entityId, uploadedAt] = params as [
+      string, string, string, string | null,
+    ];
+    if (uploadedAt === null) return [];
+    return events
+      .filter((event) =>
+        event.organization_id === organizationId
+        && event.actor_account_id === actorAccountId
+        && event.entity_id === entityId
+        && Date.parse(event.created_at) >= Date.parse(uploadedAt))
+      .map(() => ({ audit_id: 'evt-1' }));
+  });
 }
 
 beforeEach(() => {
@@ -93,6 +140,12 @@ beforeEach(() => {
   // simulate a lost race (another reviewer's write landed first).
   mockRelease.mockResolvedValue(true);
   mockClear.mockResolvedValue(true);
+  // By default this reviewer HAS viewed the current photo (a fresh audit
+  // view event exists), so the pre-existing approve tests exercise the
+  // paths they always did; the view-attestation tests re-seed.
+  seedViewProbe([
+    { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', created_at: UPLOADED_AT },
+  ]);
 });
 
 describe('GET /api/pilot/admin/portrait-review', () => {
@@ -268,5 +321,73 @@ describe('POST /api/pilot/admin/portrait-review', () => {
     expect(response.status).toBe(400);
     expect(mockDeleteBlob).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+// The server half of the view-before-approve gate. The client's disabled
+// Approve button (admin/portrait-review/page.tsx) is one render's property;
+// the audit row the photo route writes before serving bytes is the only
+// record of a look the server can verify. These pin that approve demands it,
+// bound to the CURRENT upload, and that reject never waits for it.
+describe('POST approve requires a server-verifiable view of the current photo', () => {
+  test('approve with no view event on record is refused 403 and the photo is NOT released', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetProfile.mockResolvedValueOnce(profile());
+    seedViewProbe([]);
+
+    const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Forbidden: approve requires viewing the current photo first',
+    });
+    expect(mockRelease).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a view of an EARLIER upload does not authorise the replacement: the probe is bound to photo_uploaded_at', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    // The member replaced the photo AFTER the reviewer's only look.
+    mockGetProfile.mockResolvedValueOnce(profile({ photoUploadedAt: '2026-08-15T00:00:00Z' }));
+    seedViewProbe([
+      { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', created_at: '2026-08-12T00:00:00Z' },
+    ]);
+
+    const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
+
+    expect(response.status).toBe(403);
+    expect(mockRelease).not.toHaveBeenCalled();
+    // The load-bearing binding: the SQL carries the recency condition and the
+    // route passed the profile's CURRENT photo_uploaded_at into it.
+    const [sql, params] = mockDbQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("details->>'action' = 'portrait_review_image_viewed'");
+    expect(sql).toContain('created_at >= $4');
+    expect(params).toEqual(['org-a', 'acct-admin', 'acct-athlete', '2026-08-15T00:00:00Z']);
+  });
+
+  test('approve with a fresh view of the current upload succeeds', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetProfile.mockResolvedValueOnce(profile());
+    seedViewProbe([
+      { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', created_at: '2026-08-11T00:00:00Z' },
+    ]);
+
+    const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
+
+    expect(response.status).toBe(200);
+    expect(mockRelease).toHaveBeenCalledWith('org-a', 'acct-athlete', 'acct-admin', 'pending_review');
+    await expect(response.json()).resolves.toEqual({ ok: true, review_state: 'released' });
+  });
+
+  test('reject stays ungated: no view event, no probe -- refusing is never slowed', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetProfile.mockResolvedValueOnce(profile());
+    seedViewProbe([]);
+
+    const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'reject' }));
+
+    expect(response.status).toBe(200);
+    expect(mockClear).toHaveBeenCalledWith('org-a', 'acct-athlete', 'blocked', 'acct-admin', 'pending_review');
+    expect(mockDbQuery).not.toHaveBeenCalled();
   });
 });

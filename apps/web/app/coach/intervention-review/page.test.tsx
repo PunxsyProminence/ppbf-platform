@@ -38,6 +38,14 @@ const CHAIN_ITEM = {
     {
       link_id: 'l-1', evidence_role: 'counterevidence', source_kind: 'training_attempt',
       source_id: 'att-9', note: 'round-3 output fell again', status: 'active', removed_reason: '',
+      source_admissible: true,
+    },
+    // A pre-gate film-study link whose proposal is not accepted: the API
+    // annotates it and the page must stamp it, not hide it.
+    {
+      link_id: 'l-2', evidence_role: 'immediate_post', source_kind: 'film_study',
+      source_id: 'prop-7', note: '', status: 'active', removed_reason: '',
+      source_admissible: false,
     },
   ],
   review: null,
@@ -75,6 +83,14 @@ test('the chain renders in order with counterevidence visible and the unreviewed
   expect(screen.getByText('counterevidence')).toBeTruthy();
   expect(screen.getByText(/round-3 output fell again/)).toBeTruthy();
   expect(screen.getByText('Not yet reviewed by a human.')).toBeTruthy();
+
+  // The inadmissible film-study row is stamped in refusal ink, and STILL
+  // rendered -- annotation, never a hidden row; the admissible row wears no
+  // such stamp.
+  const stamp = screen.getByText('inadmissible — proposal not accepted');
+  expect(stamp.className).toContain('badge--locked');
+  expect(screen.getByText(/film study prop-7/)).toBeTruthy();
+  expect(screen.getByText(/training attempt att-9/)).toBeTruthy();
 });
 
 test('recording a review posts three separate answers -- no score field exists to post', async () => {

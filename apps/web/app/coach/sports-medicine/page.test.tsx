@@ -317,6 +317,21 @@ async function openPlaceForm() {
   await screen.findByLabelText(/What this athlete reads/);
 }
 
+// The rung list offers only what the platform enforces. conditioning_only
+// stays display-vocabulary for historical rows, but a coach must not be able
+// to promise a pause that nothing stops -- the server refuses it too
+// (training-holds route, OPERATIONAL_TRAINING_HOLD_SCOPES).
+test('the "What stops" select offers only enforced rungs -- conditioning_only is not among them', async () => {
+  mockWriteFetch({ holdsBefore: [], holdsAfter: [] });
+
+  render(<SportsMedicinePage />);
+  await openPlaceForm();
+
+  const select = screen.getByLabelText('What stops') as HTMLSelectElement;
+  const offered = Array.from(select.options).map((option) => option.value);
+  expect(offered).toEqual(['all_training', 'contact_only']);
+});
+
 test('the place form sends the payload the route requires, and the board re-reads the hold', async () => {
   const harness = mockWriteFetch({ holdsBefore: [], holdsAfter: [PLACED] });
 

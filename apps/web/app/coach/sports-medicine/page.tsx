@@ -63,16 +63,16 @@ interface ClearanceRow {
 }
 
 /**
- * The three rungs, in the words of the capability's own contract
- * (docs/capabilities/GATES.md §7). `conditioning_only` says out loud that
- * nothing enforces it (GATES.md GAP-6), and a coach picking a rung has to know
- * which one actually stops something rather than discovering it when a child
- * spars anyway.
+ * The rungs a coach may PLACE, in the words of the capability's own contract
+ * (docs/capabilities/GATES.md §7) -- only the ones the platform actually
+ * enforces. `conditioning_only` (GATES.md GAP-6) said out loud that nothing
+ * enforces it, and is no longer offered at all: the server refuses it too
+ * (training-holds route, OPERATIONAL_TRAINING_HOLD_SCOPES). Historical
+ * conditioning_only holds still render everywhere holds are displayed.
  */
 const HOLD_SCOPES: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'all_training', label: 'All training — STOP: class registration is refused until this is lifted' },
   { value: 'contact_only', label: 'No contact — training continues; contact events are refused, logged contact raises an alarm' },
-  { value: 'conditioning_only', label: 'Conditioning only — recorded and an admin is notified; the platform does not yet enforce it' },
 ];
 
 const REASON_CATEGORIES: readonly string[] = ['medical', 'fatigue', 'behavioral', 'administrative', 'other'];

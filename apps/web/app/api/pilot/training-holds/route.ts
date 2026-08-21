@@ -7,12 +7,13 @@ import {
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import {
+  OPERATIONAL_TRAINING_HOLD_SCOPES,
   TRAINING_HOLD_REASON_CATEGORIES,
-  TRAINING_HOLD_SCOPES,
   getActiveTrainingHold,
   getTrainingHoldById,
   liftTrainingHold,
@@ -174,8 +175,17 @@ export async function POST(request: NextRequest) {
       if (!athleteId) throw new Error('Missing athlete_id');
 
       const scope = typeof body.scope === 'string' ? body.scope : '';
-      if (!TRAINING_HOLD_SCOPES.includes(scope as TrainingHoldScope)) {
-        throw new Error('Unsupported scope: must be all_training, contact_only, or conditioning_only');
+      // Placement validates against the OPERATIONAL subset, not the full
+      // vocabulary: conditioning_only remains a valid TrainingHoldScope so
+      // historical rows keep reading and rendering, but no new hold may be
+      // placed with it -- see OPERATIONAL_TRAINING_HOLD_SCOPES.
+      if (!OPERATIONAL_TRAINING_HOLD_SCOPES.includes(scope as TrainingHoldScope)) {
+        if (scope === 'conditioning_only') {
+          throw new ValidationError(
+            'Unsupported scope: conditioning_only is not offered because nothing enforces it -- use all_training or contact_only',
+          );
+        }
+        throw new Error('Unsupported scope: must be all_training or contact_only');
       }
 
       const reasonCategory = typeof body.reason_category === 'string' ? body.reason_category : '';
