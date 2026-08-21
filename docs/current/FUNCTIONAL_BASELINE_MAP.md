@@ -409,3 +409,52 @@ interesting-but-nonessential encountered along the way:
 - **PRESERVE** — `packages/{intelligence,portals,routing,continuity}` are
   confirmed dead/unimported legacy code; no action needed, they impose zero
   risk sitting as-is per the non-destructive rule.
+
+---
+
+## Recommendation: what the base model should consist of
+
+Distilled from §1-§6 into a single answer, not just a classification:
+
+- **Platform**: current auth (PIN + Microsoft login), org lifecycle
+  (SetupWizard), Platform Owner console, and just enough admin (athletes,
+  people, attendance, pin, credentials, activation-codes, coach-coverage).
+  Untouched — the build-time org-isolation test is an asset, not a
+  liability. Everything else under `admin/*` (grants, compliance-center,
+  macro-analytics, curriculum, community-service, public-interest,
+  volunteer-management, door-register, etc.) is a real feature but not
+  boundary-defining — hide, don't build around it.
+- **Organization**: `organizations` + `organization_memberships` as the
+  boundary. Nothing else needs org-level status for this phase.
+- **Coach**: the workspace hub, drill library, floor-groups, training-attempt
+  logging, coach-reviews, and sports-medicine clearance/hold (generic safety
+  infrastructure, not "advanced" — keep fully active). The one genuinely
+  *new* piece: a trimmed "assign & track workout" page built directly on the
+  existing `progression.ts` functions, stripped of the ML gap-suggestion
+  framing it's currently bundled with in `coach/progression-intelligence`.
+- **Adult Athlete**: sign-in, dashboard/check-in, assigned-workout
+  consumption/logging, session history, receiving individual Coach Cards —
+  all already exists and works.
+- **Workout tracking**: reuse the existing gap→assign→log→verify loop as-is;
+  the one prerequisite is confirming `pilot.training_attempts` is actually
+  deployed (§5 `NEEDS_MEASUREMENT`), not rebuilding anything.
+- **Coach Cards**: individual ships as-is (`pilot.recognitions` already has
+  issuer/org/recipient/history). Group issuance is the one genuinely new
+  schema item in the whole base model — a small, additive group-roster join
+  table, with issuance fanning out through `recognitions`' existing
+  issuer/org/status columns per member. Do not repurpose floor-groups
+  (session-only by design) or cohorts (rule-computed, no roster) — both are
+  a worse fit than they look.
+- **Safeguarding**: medical clearance and training-hold gates stay fully
+  active (generic, not youth-specific). Guardian-consent/travel-waiver flips
+  to non-blocking for adult-only orgs using the *existing*
+  `safety_gates.active_flag` per-org switch — no new mechanism required.
+- **AI/ML/SHADOW, youth, and every MAKE-DORMANT surface**: stays fully in
+  the codebase and build. Base model = hidden from navigation for baseline
+  roles, nothing removed, nothing rewritten.
+
+**Net shape of the work**: roughly 90% reuse-and-hide, 10% genuinely new —
+one trimmed coach UI, and one small group-roster table for group Coach
+Cards. Every other piece of the four-level path already exists in working
+form; the base model is a scoping and navigation exercise first, and a
+build task second.
