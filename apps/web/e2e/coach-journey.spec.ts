@@ -120,6 +120,89 @@ test.describe('Coach journey', () => {
     });
   });
 
+  /* OPERATIONS V1 acceptance points 24 and 25, in a browser.
+     ------------------------------------------------------------------------
+     The route test proves the server hands back the issued/skipped split and
+     the .pg suite proves the rows are really written, one per authorized
+     active member, under one issuance_id. Neither can fail the way this can:
+     a report rendered but not painted, a skipped list dropped from the DOM,
+     a coach reading "Issued to Junior Boxing" and reasonably concluding all
+     three members got the card. The honesty of a group card is a VISUAL
+     property of this page, so it is asserted here. */
+  test('issues a card to a whole program and shows who did not get it', async ({ page }) => {
+    const issued: Array<Record<string, unknown>> = [];
+
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
+        '/api/pilot/drills': { ok: true, items: [] },
+        '/api/pilot/admin/programs': {
+          ok: true,
+          items: [
+            { program_id: 'prog-1', program_name: 'Junior Boxing', status: 'active', active_member_count: 3 },
+            // Archived programs keep their history and are not offered new
+            // work; if this one ever appears in the picker, the form is
+            // offering work to a group that no longer trains.
+            { program_id: 'prog-2', program_name: 'Old Guard', status: 'archived', active_member_count: 0 },
+          ],
+        },
+        '/api/pilot/coach/cards': (_url, route) => {
+          if (route.request().method() !== 'POST') {
+            return { items: [] };
+          }
+          issued.push(JSON.parse(route.request().postData() ?? '{}'));
+          return {
+            program_id: 'prog-1',
+            program_name: 'Junior Boxing',
+            issuance_id: 'issuance-1',
+            issued: [
+              { athlete_id: 'ath-rosa', athlete_name: 'Rosa Delgado', assignment_id: 'asg-1' },
+              { athlete_id: 'ath-cora', athlete_name: 'Cora Vance', assignment_id: 'asg-2' },
+            ],
+            skipped: [{ athlete_id: 'ath-bela', athlete_name: 'Bela Ortiz' }],
+          };
+        },
+      },
+    });
+
+    await page.goto('/coach/cards');
+    await expect(page.getByRole('heading', { name: 'Issue a Card' })).toBeVisible();
+
+    // The form opens on the individual card. Reaching a program is a
+    // deliberate act -- issuing to eleven people must not be one stray click
+    // away from issuing to one.
+    await expect(page.getByRole('button', { name: 'One athlete' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByLabel('Program')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Whole program' }).click();
+    const programPicker = page.getByLabel('Program');
+    await expect(programPicker).toBeVisible();
+    await expect(programPicker.getByRole('option', { name: /Old Guard/ })).toHaveCount(0);
+
+    await programPicker.selectOption('prog-1');
+    await page.getByLabel('Title').fill('Jump rope');
+    await page.getByLabel('Description').fill('Ten minutes, no misses');
+    await page.getByRole('button', { name: 'Issue to program' }).click();
+
+    // What left the browser: the program, never a list of athletes the client
+    // assembled for itself. Who is in the group is the server's answer.
+    await expect.poll(() => issued).toHaveLength(1);
+    expect(issued[0]).toMatchObject({ program_id: 'prog-1', title: 'Jump rope' });
+    expect(issued[0]).not.toHaveProperty('athlete_id');
+
+    const report = page.getByRole('region', { name: 'Issuance report' });
+    await expect(report).toBeVisible();
+    await expect(report.getByRole('heading', { name: 'Issued to Junior Boxing' })).toBeVisible();
+    // The count and BOTH lists. A page that showed only the two who got the
+    // card would be telling the coach the program is covered.
+    await expect(report.getByText('2 issued, 1 skipped.')).toBeVisible();
+    await expect(report.getByText('Rosa Delgado')).toBeVisible();
+    await expect(report.getByText('Cora Vance')).toBeVisible();
+    await expect(report.getByText('Bela Ortiz')).toBeVisible();
+    await expect(report.getByText(/Skipped/)).toBeVisible();
+  });
+
   test('a guardian who opens a coach route is sent to their own hub, not to a login form', async ({ page }) => {
     /* Signed in, just not to this surface. Sending them to /login is the
        defect requirePageRole and BoardRoleGate were both written to end: the
