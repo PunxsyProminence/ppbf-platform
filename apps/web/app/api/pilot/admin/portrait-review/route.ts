@@ -97,28 +97,39 @@ export async function POST(request: NextRequest) {
       // client disables Approve until the image loads, but a disabled button
       // is not a server guarantee -- the only server-verifiable record of a
       // look is the audit row the photo route writes BEFORE serving bytes
-      // (photo/[accountId]/route.ts). Bound to photo_uploaded_at because a
-      // member can replace a pending photo while the queue is open: a view of
-      // the FIRST photograph must not authorise releasing the SECOND, and
-      // every upload moves photo_uploaded_at (profileDb.setPhoto). A null
-      // photo_uploaded_at matches no row, which fails closed. Reject is
-      // deliberately ungated: refusing is never slowed.
-      const viewed = await query<{ audit_id: string }>(
-        `select audit_id
-         from pilot.audit_events
-         where organization_id = $1
-           and actor_account_id = $2
-           and entity_type = 'account_profile_photo'
-           and entity_id = $3
-           and details->>'action' = 'portrait_review_image_viewed'
-           and created_at >= $4
-         limit 1`,
-        [principal.organizationId, principal.accountId, accountId, profile.photoUploadedAt],
-      );
-      if (viewed.length === 0) {
+      // (photo/[accountId]/route.ts), which records WHICH photograph it
+      // served: the row's exact photo_uploaded_at. The probe demands
+      // EQUALITY with the profile's current value, not recency ordering --
+      // a member can replace a pending photo while the queue is open
+      // (setPhoto sends a replacement back to pending_review), and under
+      // ordering the view event for the OLD photo can postdate the swap and
+      // attest a photo nobody saw. A null photo_uploaded_at, and any view
+      // event written before identities were recorded, matches nothing:
+      // fail closed, look again. Reject is deliberately ungated: refusing
+      // is never slowed.
+      const attestedUploadedAt = profile.photoUploadedAt;
+      const viewed = attestedUploadedAt === null
+        ? []
+        : await query<{ audit_id: string }>(
+            `select audit_id
+             from pilot.audit_events
+             where organization_id = $1
+               and actor_account_id = $2
+               and entity_type = 'account_profile_photo'
+               and entity_id = $3
+               and details->>'action' = 'portrait_review_image_viewed'
+               and details->>'photo_uploaded_at' = $4
+             limit 1`,
+            [principal.organizationId, principal.accountId, accountId, attestedUploadedAt],
+          );
+      if (attestedUploadedAt === null || viewed.length === 0) {
         throw new ForbiddenError('Forbidden: approve requires viewing the current photo first');
       }
-      const applied = await releasePhoto(principal.organizationId, accountId, principal.accountId, 'pending_review');
+      // The attested identity rides into the CAS: releasePhoto's UPDATE also
+      // requires photo_uploaded_at to still equal it, so a replacement
+      // landing between the probe above and this write matches zero rows and
+      // refuses -- the same shape as losing the pending_review race.
+      const applied = await releasePhoto(principal.organizationId, accountId, principal.accountId, 'pending_review', attestedUploadedAt);
       if (!applied) {
         throw new Error('Unsupported: portrait was already decided by another reviewer');
       }

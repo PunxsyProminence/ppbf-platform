@@ -114,6 +114,15 @@ export async function GET(
       details: {
         action: 'portrait_review_image_viewed',
         athlete_id: identity.athleteId,
+        // WHICH photograph this look attests: the row's photo_uploaded_at
+        // (::text, exact) read in the SAME getAccountProfile call that gave
+        // us the blob path served above. The blob path is account-stable and
+        // a replacement overwrites it, so the path names the slot, not the
+        // picture -- this value names the picture. The approve gate in
+        // ../../route.ts requires EQUALITY between this and the profile's
+        // current value, so a view of a photograph that has since been
+        // replaced attests nothing.
+        photo_uploaded_at: profile.photoUploadedAt,
         source: 'admin_portrait_review_console',
       },
       shadow_mirror: false,

@@ -275,7 +275,7 @@ export default function InterventionReviewPage() {
                                     <>
                                       {' '}
                                       <span className="badge badge--locked">
-                                        <i aria-hidden="true">▪</i>inadmissible — proposal not accepted
+                                        <i aria-hidden="true">▪</i>inadmissible — no accepted proposal
                                       </span>
                                     </>
                                   )}

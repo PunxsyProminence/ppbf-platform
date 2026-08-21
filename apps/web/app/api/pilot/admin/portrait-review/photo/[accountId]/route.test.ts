@@ -74,6 +74,7 @@ function profile(overrides: Record<string, unknown> = {}) {
     photoBlobPath: '/blob/path.jpg',
     photoContentType: 'image/jpeg',
     photoReviewState: 'pending_review',
+    photoUploadedAt: '2026-08-10 09:00:00.123456+00',
     ...overrides,
   } as never;
 }
@@ -140,6 +141,10 @@ describe('GET /api/pilot/admin/portrait-review/photo/[accountId]', () => {
         entity_id: 'acct-athlete',
         details: expect.objectContaining({
           action: 'portrait_review_image_viewed',
+          // WHICH photograph the look attests -- the exact photo_uploaded_at
+          // of the row whose blob path was served. The approve gate matches
+          // this by equality; an event without it can authorise nothing.
+          photo_uploaded_at: '2026-08-10 09:00:00.123456+00',
           source: 'admin_portrait_review_console',
         }),
       }),

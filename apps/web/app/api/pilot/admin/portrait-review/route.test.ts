@@ -81,7 +81,9 @@ function malformedJsonRequest(): NextRequest {
   });
 }
 
-const UPLOADED_AT = '2026-08-10T00:00:00Z';
+// In the exact ::text shape PROFILE_COLUMNS returns -- the identity is an
+// opaque string compared by equality, microseconds and all.
+const UPLOADED_AT = '2026-08-10 09:00:00.123456+00';
 
 function profile(overrides: Record<string, unknown> = {}) {
   return {
@@ -103,16 +105,19 @@ function profile(overrides: Record<string, unknown> = {}) {
  * Emulates the one SQL statement this route sends through db.query -- the
  * audit-events probe for a 'portrait_review_image_viewed' row -- against a
  * seeded in-memory event list, applying the same conditions the real WHERE
- * clause applies, INCLUDING created_at >= photo_uploaded_at read from the
- * parameters the route actually passed. That last part is what makes "the
- * reviewer viewed an EARLIER upload" distinguishable from "the reviewer
- * never viewed anything": both must refuse, for different recorded reasons.
+ * clause applies, INCLUDING that the identity the event RECORDED
+ * (details.photo_uploaded_at, written by the photo route at serve time) must
+ * EQUAL the identity the route passed from the profile's current row. That
+ * equality is what makes "the reviewer viewed the photograph this row held
+ * earlier" distinguishable from "the reviewer never viewed anything": both
+ * must refuse, for different recorded reasons -- and no ordering of
+ * timestamps can conflate them.
  */
 interface SeededViewEvent {
   organization_id: string;
   actor_account_id: string;
   entity_id: string;
-  created_at: string;
+  photo_uploaded_at: string;
 }
 
 function seedViewProbe(events: SeededViewEvent[]) {
@@ -121,15 +126,14 @@ function seedViewProbe(events: SeededViewEvent[]) {
       throw new Error(`Unexpected SQL through db.query in this route: ${sql}`);
     }
     const [organizationId, actorAccountId, entityId, uploadedAt] = params as [
-      string, string, string, string | null,
+      string, string, string, string,
     ];
-    if (uploadedAt === null) return [];
     return events
       .filter((event) =>
         event.organization_id === organizationId
         && event.actor_account_id === actorAccountId
         && event.entity_id === entityId
-        && Date.parse(event.created_at) >= Date.parse(uploadedAt))
+        && event.photo_uploaded_at === uploadedAt)
       .map(() => ({ audit_id: 'evt-1' }));
   });
 }
@@ -144,7 +148,7 @@ beforeEach(() => {
   // view event exists), so the pre-existing approve tests exercise the
   // paths they always did; the view-attestation tests re-seed.
   seedViewProbe([
-    { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', created_at: UPLOADED_AT },
+    { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', photo_uploaded_at: UPLOADED_AT },
   ]);
 });
 
@@ -196,7 +200,7 @@ describe('POST /api/pilot/admin/portrait-review', () => {
     const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
 
     expect(response.status).toBe(200);
-    expect(mockRelease).toHaveBeenCalledWith('org-a', 'acct-athlete', 'acct-admin', 'pending_review');
+    expect(mockRelease).toHaveBeenCalledWith('org-a', 'acct-athlete', 'acct-admin', 'pending_review', UPLOADED_AT);
     expect(mockClear).not.toHaveBeenCalled();
     expect(mockDeleteBlob).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({ ok: true, review_state: 'released' });
@@ -307,7 +311,7 @@ describe('POST /api/pilot/admin/portrait-review', () => {
     const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
 
     expect(response.status).toBe(400);
-    expect(mockRelease).toHaveBeenCalledWith('org-a', 'acct-athlete', 'acct-admin', 'pending_review');
+    expect(mockRelease).toHaveBeenCalledWith('org-a', 'acct-athlete', 'acct-admin', 'pending_review', UPLOADED_AT);
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
@@ -345,38 +349,75 @@ describe('POST approve requires a server-verifiable view of the current photo', 
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  test('a view of an EARLIER upload does not authorise the replacement: the probe is bound to photo_uploaded_at', async () => {
+  test('a view of an EARLIER upload does not authorise the replacement: the probe demands identity EQUALITY', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
-    // The member replaced the photo AFTER the reviewer's only look.
-    mockGetProfile.mockResolvedValueOnce(profile({ photoUploadedAt: '2026-08-15T00:00:00Z' }));
+    // The member replaced the photo AFTER the reviewer's only look: the row
+    // now carries a new photo_uploaded_at, and the only view event on record
+    // attests the OLD one. Note ordering could not refuse this -- the view
+    // event's created_at may well postdate the replacement (the photo route
+    // can serve old bytes and write its event after a concurrent swap) --
+    // only identity equality can.
+    mockGetProfile.mockResolvedValueOnce(profile({ photoUploadedAt: '2026-08-15 08:00:00.654321+00' }));
     seedViewProbe([
-      { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', created_at: '2026-08-12T00:00:00Z' },
+      { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', photo_uploaded_at: UPLOADED_AT },
     ]);
 
     const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
 
     expect(response.status).toBe(403);
     expect(mockRelease).not.toHaveBeenCalled();
-    // The load-bearing binding: the SQL carries the recency condition and the
-    // route passed the profile's CURRENT photo_uploaded_at into it.
+    // The load-bearing binding: the SQL compares the RECORDED identity for
+    // equality with the profile's CURRENT photo_uploaded_at, passed as $4.
     const [sql, params] = mockDbQuery.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain("details->>'action' = 'portrait_review_image_viewed'");
-    expect(sql).toContain('created_at >= $4');
-    expect(params).toEqual(['org-a', 'acct-admin', 'acct-athlete', '2026-08-15T00:00:00Z']);
+    expect(sql).toContain("details->>'photo_uploaded_at' = $4");
+    expect(sql).not.toContain('created_at >=');
+    expect(params).toEqual(['org-a', 'acct-admin', 'acct-athlete', '2026-08-15 08:00:00.654321+00']);
   });
 
-  test('approve with a fresh view of the current upload succeeds', async () => {
+  // The race the probe alone cannot close: the swap lands AFTER the probe
+  // found a fresh view but BEFORE releasePhoto's UPDATE commits. setPhoto
+  // sends a replacement back to 'pending_review', so the state half of the
+  // CAS still matches -- only the identity half (photo_uploaded_at =
+  // attested value, passed as releasePhoto's fifth argument) makes the
+  // UPDATE match zero rows. The mock resolving false IS that zero-row
+  // outcome, same as the existing lost-state-race tests.
+  test('a replacement between probe and release loses the identity CAS: nothing is released', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetProfile.mockResolvedValueOnce(profile());
+    mockRelease.mockResolvedValueOnce(false);
+
+    const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
+
+    expect(response.status).toBe(400);
+    // The identity the probe attested is the SAME value the CAS was handed.
+    expect(mockRelease).toHaveBeenCalledWith('org-a', 'acct-athlete', 'acct-admin', 'pending_review', UPLOADED_AT);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('approve with a view attesting the CURRENT upload succeeds', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
     mockGetProfile.mockResolvedValueOnce(profile());
     seedViewProbe([
-      { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', created_at: '2026-08-11T00:00:00Z' },
+      { organization_id: 'org-a', actor_account_id: 'acct-admin', entity_id: 'acct-athlete', photo_uploaded_at: UPLOADED_AT },
     ]);
 
     const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
 
     expect(response.status).toBe(200);
-    expect(mockRelease).toHaveBeenCalledWith('org-a', 'acct-athlete', 'acct-admin', 'pending_review');
+    expect(mockRelease).toHaveBeenCalledWith('org-a', 'acct-athlete', 'acct-admin', 'pending_review', UPLOADED_AT);
     await expect(response.json()).resolves.toEqual({ ok: true, review_state: 'released' });
+  });
+
+  test('a profile with no photo_uploaded_at fails closed: refused without even probing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetProfile.mockResolvedValueOnce(profile({ photoUploadedAt: null }));
+
+    const response = await POST(jsonRequest({ account_id: 'acct-athlete', decision: 'approve' }));
+
+    expect(response.status).toBe(403);
+    expect(mockDbQuery).not.toHaveBeenCalled();
+    expect(mockRelease).not.toHaveBeenCalled();
   });
 
   test('reject stays ungated: no view event, no probe -- refusing is never slowed', async () => {

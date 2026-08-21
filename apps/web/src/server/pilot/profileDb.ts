@@ -97,8 +97,13 @@ function toProfile(row: AccountProfileRow): AccountProfile {
   };
 }
 
+// photo_uploaded_at::text, not raw: the exact microsecond-precision value IS
+// the photograph's identity (setPhoto moves it on every replacement, and the
+// blob path is deliberately account-stable). The portrait-review console
+// attests views and gates release by string EQUALITY on this value; through
+// a JS Date it would round to milliseconds and never compare equal again.
 const PROFILE_COLUMNS = `organization_id, account_id, display_nickname, nickname_cleared_at,
-    corner, program, photo_blob_path, photo_content_type, photo_review_state, photo_uploaded_at`;
+    corner, program, photo_blob_path, photo_content_type, photo_review_state, photo_uploaded_at::text`;
 
 export async function getAccountProfile(
   organizationId: string,
@@ -506,7 +511,26 @@ export async function releasePhoto(
   reviewedByAccountId: string,
   // See clearPhoto's expectedCurrentState comment -- same CAS guard.
   expectedCurrentState?: PhotoReviewState,
+  // The IDENTITY half of the CAS. expectedCurrentState alone cannot see a
+  // replacement: setPhoto sets a replacement back to 'pending_review', so a
+  // member swapping the photo between a reviewer's check and this UPDATE
+  // leaves the state predicate satisfied -- and the never-seen replacement
+  // would be released. Passing the attested photo_uploaded_at (the ::text
+  // form PROFILE_COLUMNS returns) makes the swap lose the race instead:
+  // the UPDATE matches zero rows and the caller refuses, exactly like a
+  // lost state race.
+  expectedPhotoUploadedAt?: string,
 ): Promise<boolean> {
+  const params: unknown[] = [organizationId, accountId, reviewedByAccountId];
+  const guards: string[] = [];
+  if (expectedCurrentState) {
+    params.push(expectedCurrentState);
+    guards.push(`and photo_review_state = $${params.length}`);
+  }
+  if (expectedPhotoUploadedAt !== undefined) {
+    params.push(expectedPhotoUploadedAt);
+    guards.push(`and photo_uploaded_at = $${params.length}`);
+  }
   const rows = await query<{ account_id: string }>(
     `update pilot.account_profiles
      set photo_review_state = 'released',
@@ -514,11 +538,9 @@ export async function releasePhoto(
          photo_reviewed_by_account_id = $3,
          updated_at = now()
      where organization_id = $1 and account_id = $2 and photo_blob_path is not null
-       ${expectedCurrentState ? 'and photo_review_state = $4' : ''}
+       ${guards.join('\n       ')}
      returning account_id`,
-    expectedCurrentState
-      ? [organizationId, accountId, reviewedByAccountId, expectedCurrentState]
-      : [organizationId, accountId, reviewedByAccountId],
+    params,
   );
   return rows.length > 0;
 }
