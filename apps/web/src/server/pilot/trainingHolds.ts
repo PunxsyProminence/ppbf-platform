@@ -447,8 +447,9 @@ export async function findRegistrationBlockingHold(
  * one narrow condition, and it is deliberate: it keeps one contract for what a
  * pre-migration database means rather than inventing a second, stricter one
  * for competitions, and a gym whose training_holds relation does not exist yet
- * has no holds to honour. The competition gate that calls this states the same
- * limit in its own README so nobody has to infer it.
+ * has no holds to honour. The competition gate that calls this
+ * (`competitionSafetyGates.ts`) states the same limit so nobody has to infer
+ * it.
  */
 export async function findContactEventBlockingHold(
   organizationId: string,

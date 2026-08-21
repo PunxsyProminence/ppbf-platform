@@ -39,7 +39,7 @@ stops moving forward; record why in its row.
 | `PRODUCTION_READY` | Staging evidence attached, no open release blocker, owner has what they need to approve | **gatekeeper only** |
 | `PRODUCTION_DEPLOYED` | `deploy-production` succeeded; the owner's environment-gate approval already happened as part of that run | **gatekeeper only**, after the owner's GitHub approval click |
 | `PRODUCTION_VERIFIED` | Gatekeeper re-read the live container app's SHA + digest and ran smoke checks against production | **gatekeeper only** |
-| `DONE` | Ticket moved to `intake/tickets/done/` with its Shipped section filled in | **gatekeeper only**, for runtime features |
+| `DONE` | Ticket resolved in place in `intake/tickets/` with a delivery note appended (the `done/` move never operated; the directory was removed) | **gatekeeper only**, for runtime features |
 
 Documentation-only tickets (no code path affected) may define their own
 completion rule in the ticket body — e.g. "DONE when merged to main" — and

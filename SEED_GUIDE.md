@@ -352,7 +352,7 @@ npm run seed:data:dry
 
 ```bash
 # Edit config with different org:
-npx ts-node scripts/seed-data.ts --config scripts/seed-prod.config.ts
+npx tsx scripts/seed-data.ts --config scripts/seed-prod.config.ts
 ```
 
 ### Seed Only Athletes

@@ -24,10 +24,12 @@ import type { FilmStudyProposalReviewState } from './shadowFilmStudyProposals';
 // have explicitly refused. So that kind carries a second condition --
 // review state -- described at ADMISSIBLE_FILM_STUDY_REVIEW_STATES below.
 //
-// Every gate on this capability, what each one refuses with, and what is
-// deliberately NOT gated, is written up in
-// app/api/pilot/coach/intervention-review/README.md (documentation only --
-// nothing imports it).
+// Admissibility is checked at link time only and was never backfilled: a
+// pre-gate link citing a rejected or unreviewed proposal stays active until a
+// human removes it, and listEvidence does not re-validate sources on read.
+// Honest gap: the film-study admissibility gate has no Postgres-level proof --
+// the proposals migration is absent from interventionEvidence.pg.test.ts's
+// LAYERED_MIGRATIONS.
 
 export const EVIDENCE_ROLES = [
   'baseline', 'during_intervention', 'immediate_post', 'retention',

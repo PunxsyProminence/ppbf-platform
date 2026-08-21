@@ -65,8 +65,8 @@ export async function GET(
     // string can fetch a minor's footage for the whole validity window, with no
     // session and no idea who is holding it. So the response that carries one
     // must not be storable by the browser or by any intermediary -- the same
-    // reasoning profile/README.md Gate 4 sets out for portraits, and the same
-    // header value the portrait routes use.
+    // reasoning the portrait routes apply (docs/capabilities/GATES.md §5), and
+    // the same header value they use.
     return NextResponse.json({
       ...row,
       blob_path: undefined,

@@ -6,7 +6,8 @@ One index of every gate guarding a capability in this platform: what it checks,
 where it is enforced, what it refuses with, and -- the column that matters most
 -- **whether it exists today**.
 
-Read this first, then the per-capability README next to the code.
+Read this first; each section names the code and tests that carry the full
+detail.
 
 ---
 
@@ -74,7 +75,7 @@ identical `404 {"error":"Not found"}` for both cases. Do not "fix" those into
 
 ## 1. Session and tenancy -- the floor everything else stands on
 
-Full detail: `apps/web/app/api/pilot/auth/README.md`.
+Full detail: `auth.ts` and its test suite.
 
 | Gate | What it checks | Enforced at | Refuses with | Status |
 |---|---|---|---|---|
@@ -129,7 +130,9 @@ writer to a child's portrait.**
 
 ## 3. Coach coverage -- temporary access, expiry, revocation
 
-Full detail: `apps/web/app/api/pilot/admin/coach-coverage/README.md`.
+Full detail: `access.ts` and the route's tests. One disclosure worth knowing:
+`GET` returns `login_email` for the covering coach and the granter — an
+intra-org, admin-only field disclosure no tier check gates.
 
 | Gate | What it checks | Enforced at | Refuses with | Status |
 |---|---|---|---|---|
@@ -150,7 +153,8 @@ Full detail: `apps/web/app/api/pilot/admin/coach-coverage/README.md`.
 
 ## 4. Guardian linking and media consent
 
-Full detail: `apps/web/app/api/pilot/parent/consent/README.md`.
+Full detail: `guardianConsent.ts` (its `resolveActingParent` header carries the
+wrong-parent-row bug history) and `guardianConsent.test.ts`.
 
 Consent = **every** linked guardian has a current (`distinct on (parent_id) ...
 order by created_at desc`) `photo_media` waiver with `status = 'signed'`.
@@ -176,7 +180,14 @@ order by created_at desc`) `photo_media` waiver with `status = 'signed'`.
 
 ## 5. A child's face and name
 
-Full detail: `apps/web/app/api/pilot/profile/README.md`.
+Full detail: `profileVisibility.ts` (its header states the
+relationship-not-consent model). Two notes with no other home: a guardian's
+`photo_media` withdrawal never un-releases a portrait — guardians have no
+takedown route; they ask staff to block (`photo/review` admits admin+coach
+only). And the portrait-review POST accepts an approve with no attestation
+field (curl bypasses the console's view gate); the compensating control is
+that an approval lacking a matching `portrait_review_image_viewed` audit
+event for that reviewer+account is detectable after the fact.
 
 The strictest tier in the platform (`privacyTiers.ts` calls it `minor_circle`).
 It decides on **relationship**, not consent, because -- as
@@ -210,7 +221,9 @@ find.
 
 ## 6. Video -- quarantine, release, publication
 
-Full detail: `apps/web/app/api/pilot/video/README.md`.
+Full detail: `videoSessions.ts` and the video route tests. One asymmetry with
+no other home: a blocked video's blob is retained (only
+`scan_state='blocked'`), unlike a blocked portrait whose bytes are deleted.
 
 | Gate | What it checks | Enforced at | Refuses with | Status |
 |---|---|---|---|---|
@@ -238,7 +251,8 @@ Full detail: `apps/web/app/api/pilot/video/README.md`.
 
 ## 7. Sports medicine -- training holds and medical clearance
 
-Full detail: `apps/web/app/api/pilot/training-holds/README.md`.
+Full detail: `trainingHolds.ts`, `contactClearanceGate.ts` (block-vs-flag
+doctrine in its own comments), and their tests.
 
 | Gate | What it checks | Enforced at | Refuses with | Status |
 |---|---|---|---|---|
@@ -257,7 +271,7 @@ Full detail: `apps/web/app/api/pilot/training-holds/README.md`.
 | Medically sensitive recommendations | unconditional fail-closed clearance check -- it used to be armed by a request-body flag, and "a safety gate the caller decides to arm is not a gate" | `shadowRecommendations.ts:assertMedicalStatusAllowsRecommendation` | 409 `Blocked: this athlete's medical administrative status is '<x>', not 'cleared'...` / `Blocked: this athlete has no medical administrative status on file yet...` | **LIVE** |
 | Medical status is read-only to the model | the write function must never be imported by recommendation or decision logic | `shadowMedicalStatus.ts` (documented invariant) | -- | **LIVE** |
 | Per-org gate deactivation | an organization may set `safety_gates.active_flag=false` for a named gate -- a configuration, **not** a per-evaluation override (no such override exists) | `safetyGateMatrix.ts:getSafetyGateDefinition` | -- | **LIVE** |
-| Contact-event hold gate (competitions) | `all_training` + `contact_only` blocks a competition entry | `trainingHolds.ts:findContactEventBlockingHold` | 403 `TRAINING_HOLD_BLOCKS_COMPETITION` | **PR #452** |
+| Contact-event hold gate (competitions) | `all_training` + `contact_only` blocks a competition entry | `trainingHolds.ts:findContactEventBlockingHold` | 403 `TRAINING_HOLD_BLOCKS_COMPETITION` | **LIVE** (merged as PR #452) |
 | **`conditioning_only` enforcement** | the scope is storable, escalating and displayed -- and **no code path reads it** | -- | -- | **GAP** (see GAP-6) |
 | Hold vs. medical record reconciliation | a `medical` hold is not tied to `shadow_medical_administrative_status`; lifting one does not clear the other | -- | -- | **GAP** |
 | Required note on lifting | -- | -- | -- | **GAP** (`lift_note` optional, unlike compliance's required closing note) |
@@ -275,7 +289,8 @@ record flags.
 
 ## 8. Safety compliance and escalation
 
-Full detail: `apps/web/app/api/pilot/compliance/README.md`.
+Full detail: `compliance.ts` (`TRANSITION_CONTRACT` states what resolution
+does and does not mean) and the compliance/escalation tests.
 
 | Gate | What it checks | Enforced at | Refuses with | Status |
 |---|---|---|---|---|
@@ -293,25 +308,24 @@ Full detail: `apps/web/app/api/pilot/compliance/README.md`.
 | Board sees gated counts only | each severity and status bucket independently k-anonymity-gated; `athlete_id` never selected; empty stays distinguishable from suppressed | `compliance.ts:getOrganizationViolationSummary` -> `boardSummary.ts:boardCountMetric` | a **withheld** bucket, never a small number | **LIVE** |
 | Coach escalation feed excludes `athlete_voice` | their existence alone says "this child said something", and the coach may be who it is about | `escalations/route.ts:GET` | rows omitted | **LIVE** |
 | Severity sorts correctly | `severity` is text; an explicit rank stops `medium` outranking `critical` | `compliance.ts:SEVERITY_RANK_SQL` | -- | **LIVE** |
-| Morning Read surfaces open escalations/violations | -- | -- | -- | **PR #450** |
+| Morning Read surfaces open escalations/violations | -- | -- | -- | **LIVE** (merged as PR #450) |
 | **`violation_escalations.escalated_to_role` validation** | free text, no CHECK constraint, no code validation | -- | -- | **GAP** (see GAP-7) |
 | Compliance rule write route | rules are seed-only; there is no create/edit/deactivate route | -- | -- | **GAP** (nothing to gate; a gym cannot add a rule without a migration) |
 
 ---
 
-## 9. Competition entry (not on main)
+## 9. Competition entry
 
-Adds the first per-athlete gates to the two competition capabilities. Full
-detail lives in the PR's own READMEs
-(`app/api/pilot/operations/wrestling-league/README.md` and
-`.../external-competition/README.md`), **which do not exist in this branch** --
-they arrive with the PR.
+The first per-athlete gates on the two competition capabilities, merged as
+PR #452. Full detail: `competitionSafetyGates.ts` (its own comments state the
+every-season-is-travel, fail-closed-absent-a-home/away-flag rationale) and
+`competitionSafetyGates.test.ts`.
 
 | Gate | What it checks | Enforced at | Refuses with | Status |
 |---|---|---|---|---|
-| Standing with this child | `assertActorCanAccessAthlete` before any hold or waiver read | `competitionSafetyGates.ts:assertAthleteMayBeEnteredInCompetition` | 403, `access.ts` messages | **PR #452** |
-| No contact-covering hold | `all_training` or `contact_only`, expiry in the predicate | same -> `trainingHolds.ts:findContactEventBlockingHold` | 403 `ForbiddenError` code `TRAINING_HOLD_BLOCKS_COMPETITION`, carrying the athlete's own explanation | **PR #452** |
-| Signed travel waiver | newest `travel` waiver must be `signed`; `missing`/`declined`/`withdrawn` all refuse | same -> `waiverCompliance.ts:getAthleteWaiverStatus` | 409 `ConflictError` code `TRAVEL_WAIVER_NOT_SIGNED` | **PR #452** |
+| Standing with this child | `assertActorCanAccessAthlete` before any hold or waiver read | `competitionSafetyGates.ts:assertAthleteMayBeEnteredInCompetition` | 403, `access.ts` messages | **LIVE** (merged as PR #452) |
+| No contact-covering hold | `all_training` or `contact_only`, expiry in the predicate | same -> `trainingHolds.ts:findContactEventBlockingHold` | 403 `ForbiddenError` code `TRAINING_HOLD_BLOCKS_COMPETITION`, carrying the athlete's own explanation | **LIVE** (merged as PR #452) |
+| Signed travel waiver | newest `travel` waiver must be `signed`; `missing`/`declined`/`withdrawn` all refuse | same -> `waiverCompliance.ts:getAthleteWaiverStatus` | 409 `ConflictError` code `TRAVEL_WAIVER_NOT_SIGNED` | **LIVE** (merged as PR #452) |
 | Age / weight / medical-clearance eligibility | -- | -- | -- | **GAP**, and the PR says so: an athlete with medical status `not_cleared` and no training hold can still be rostered |
 
 ---
@@ -480,7 +494,7 @@ would be unfair to the design.
 
 The finding survives that context as an **asymmetry**, which is the honest
 version: `contact_only` did get an enforcement path -- it is in
-`flagContactDuringHold`'s scope set, and PR #452 adds it to competition entry --
+`flagContactDuringHold`'s scope set, and PR #452 (merged) added it to competition entry --
 while `conditioning_only` got none anywhere. Both are REGRESS scopes; only one
 of them regresses anything.
 
@@ -568,30 +582,14 @@ single-gym deployment that is correct; on a multi-gym one it is a quiet default
 rather than a refusal, and nothing warns. The active-membership join constrains
 the damage, but the fallback itself is ungated.
 
----
+### GAP-12 -- the role-destination map is the de facto sign-in allow-list
 
-## Per-capability READMEs
-
-Written from what the code actually does, each next to the capability's real
-home. **In this branch:**
-
-- `apps/web/app/api/pilot/auth/README.md` -- sessions, credentials, org scoping
-- `apps/web/app/api/pilot/admin/coach-coverage/README.md` -- temporary access
-- `apps/web/app/api/pilot/parent/consent/README.md` -- guardian linking and media
-  consent
-- `apps/web/app/api/pilot/profile/README.md` -- portraits, ring names, the
-  minor's-face rule
-- `apps/web/app/api/pilot/video/README.md` -- quarantine, scan, release
-- `apps/web/app/api/pilot/training-holds/README.md` -- Stop / Hold / Regress and
-  medical clearance
-- `apps/web/app/api/pilot/compliance/README.md` -- violation lifecycle and
-  escalation
-
-**Arriving with open work, not present here:**
-
-- `apps/web/app/api/pilot/operations/wrestling-league/README.md` and
-  `.../external-competition/README.md` -- **PR #452**
-- `apps/web/app/api/pilot/coach/intelligence/README.md` -- **PR #450**
+`loginWithMicrosoftEmail` refuses a role only because
+`getPilotRoleDestination(role)` returns nothing for it. That is an
+indirection: a routing table doubles as an authentication policy, and adding
+a destination for a new role silently makes it signable-in. Related
+deliberate absences: no concurrent-session limit and no device binding — a
+stolen cookie works from anywhere within its 24-hour life.
 
 ---
 

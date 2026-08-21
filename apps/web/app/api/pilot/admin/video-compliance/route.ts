@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
     // string can watch a minor's footage with no session at all. This queue
     // hands out a batch of them at once, so a stored copy -- browser cache or
     // any intermediary -- is a batch disclosure. Not storable, therefore, with
-    // the same header value the portrait routes use (profile/README.md Gate 4).
+    // the same header value the portrait routes use (GATES.md §5).
     // The POST responses below carry no SAS URL and are left alone.
     return NextResponse.json(
       { ok: true, items, drafts, published, retracted },

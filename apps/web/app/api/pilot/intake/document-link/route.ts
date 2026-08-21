@@ -59,8 +59,8 @@ export async function POST(request: NextRequest) {
     // is a bearer credential -- 15 minutes of read access to a youth athlete's
     // intake paperwork for whoever holds the string -- so a copy left in the
     // browser's cache or in an intermediary hands it to a holder no audit row
-    // names. Same header value the portrait routes use (profile/README.md
-    // Gate 4), for the same reason.
+    // names. Same header value the portrait routes use
+    // (docs/capabilities/GATES.md §5), for the same reason.
     return NextResponse.json({
       ok: true,
       intake_document_id: intakeDocumentId,

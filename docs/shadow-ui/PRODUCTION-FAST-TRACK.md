@@ -32,7 +32,8 @@ Ship **P0.1–P0.6** to **deployed production**. No mid-loop Jason mock reviews.
 | night | dark SHADOW machine | never on deny |
 
 ## Rules
-1. Real `ppbf.css` / design-system symbols — mocks are north star only  
+1. Real `ppbf.css` / design-system symbols — mocks are north star only
+   (mocks live in Drive: Claude-Instructions / AF set)  
 2. Do **not** wait for Jason between P0 items  
 3. Do **not** expand past P0  
 4. Build must pass (lint/typecheck/test if present)  
