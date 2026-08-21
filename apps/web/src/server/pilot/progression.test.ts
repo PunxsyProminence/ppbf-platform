@@ -15,11 +15,14 @@ import {
   getAssignmentCompletions,
   getAthleteAssignments,
   getAthleteGaps,
+  getCompletionById,
+  getDrillAssignmentById,
   verifyCompletion,
 } from './progression';
-import { query } from './db';
+import { query, queryOne } from './db';
 
 const mockQuery = query as jest.Mock;
+const mockQueryOne = queryOne as jest.Mock;
 
 beforeEach(() => {
   currentClient = fakeClient();
@@ -142,6 +145,41 @@ describe('getAthleteGaps', () => {
     expect(sql).not.toContain('order by severity desc');
     expect(sql).toContain("when 'critical' then 1");
     expect(sql).toContain("when 'low' then 4");
+  });
+});
+
+// OPERATIONS V1 acceptance point 37: a Coach Card is a drill_assignments row,
+// so "a card id from another gym is useless" is exactly "this lookup is
+// org-scoped". Both ids below travel to the client on every write, and both
+// are the only thing standing between a caller and another gym's record on
+// the completions route -- that route authorizes on what these two return,
+// and a row they hand back is a row it will act on. verifyCompletion below
+// already shipped with an unscoped fallback once (#214); these are the same
+// class of hole in the two lookups that feed it.
+describe('the id lookups the card and completion routes authorize on', () => {
+  test('getDrillAssignmentById is scoped by organization, so another gym\'s assignment id reads as absent', async () => {
+    await getDrillAssignmentById('org-1', 'assignment-1');
+
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain('a.organization_id = $1');
+    expect(sql).toContain('a.assignment_id = $2');
+    expect(params).toEqual(['org-1', 'assignment-1']);
+  });
+
+  test('getDrillAssignmentById never matches on the assignment id alone', async () => {
+    await getDrillAssignmentById('org-1', 'assignment-1');
+
+    const [sql] = mockQueryOne.mock.calls[0];
+    expect(sql).not.toMatch(/where\s+a\.assignment_id\s*=\s*\$1/i);
+  });
+
+  test('getCompletionById is scoped the same way, before any verification flips', async () => {
+    await getCompletionById('org-1', 'completion-1');
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('organization_id = $1');
+    expect(sql).toContain('completion_id = $2');
+    expect(params).toEqual(['org-1', 'completion-1']);
   });
 });
 
