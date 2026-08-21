@@ -286,11 +286,11 @@ export default function SchedulerPage() {
                 Role: {role || 'loading'}
               </span>
               {roleCanOverrideAttendance(role) ? (
-                <Link href="/admin/attendance" className="btn btn--ghost min-h-[var(--tap)]">
+                <Link href="/admin/attendance" className="btn btn--ghost btn--tap">
                   Attendance Dashboard
                 </Link>
               ) : null}
-              <Link href="/operations" className="btn btn--ghost min-h-[var(--tap)]">
+              <Link href="/operations" className="btn btn--ghost btn--tap">
                 Back to Operations
               </Link>
             </div>

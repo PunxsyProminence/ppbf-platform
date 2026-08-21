@@ -827,6 +827,28 @@ body.ppbf {
 
 .btn--kiosk { min-height: var(--tap); font-size: 19px; padding: 0 28px; width: 100%; }
 
+/* Left-aligned label inside a button. `.btn` centres, and a call site asking
+   for it with `justify-start` loses -- this sheet is unlayered and Tailwind's
+   utilities sit in `@layer utilities`. Stated here so the call site can ask in
+   the sheet's own vocabulary. Equal specificity to `.btn`, later in source
+   order, which is what makes it win. */
+.btn--start { justify-content: flex-start; }
+
+/* The tap floor as an opt-in, for a `.btn` outside the kiosk surface that still
+   needs the gym-floor target -- /schedule's action links, tapped in the room.
+   Same shape and the same reason as `.btn--start`: `min-h-[var(--tap)]` at the
+   call site never applies, so the height has to come from this sheet. */
+.btn--tap { min-height: var(--tap); }
+
+/* Law 5 for the whole gym-floor surface. globals.css states this floor too, but
+   in `@layer base`, so `.btn` here beat it and every athlete button sat at 44px
+   -- and that rule never named `a`, so `.btn` anchors had no floor at all.
+   Unlayered and (0,2,0) against `.btn`'s (0,1,0), so it wins on both counts.
+   The hook is app/athlete/layout.tsx. A floor, not an opt-in: it reaches the
+   controls nobody remembered to mark, which is the failure mode that put the
+   attribute there in the first place. */
+[data-surface="kiosk"] .btn { min-height: var(--tap); }
+
 /* Leather-recessed inputs */
 .field { display: block; }
 .field > .t-label { display: block; margin-bottom: 7px; }
@@ -2203,7 +2225,11 @@ body.ppbf.on-canvas {
 /* Self-sufficient on purpose. The `--` reads like a .btn modifier, but a lever
    is its own object and gets used standalone next to a form, so it carries a
    full surface rather than falling through to the browser's native button. */
-.btn--lever { min-height: 38px; padding: 0 var(--s4); font-size: 12px; letter-spacing: .08em;
+/* 44px, not the 38 this shipped with: a lever is a real control and 38px is
+   below the WCAG target floor. Call sites had been asking for 44 with
+   `min-h-[44px]` and losing to this rule (unlayered beats @layer utilities),
+   so the number had to change here rather than at any of them. */
+.btn--lever { min-height: 44px; padding: 0 var(--s4); font-size: 12px; letter-spacing: .08em;
               text-transform: uppercase; display: inline-flex; align-items: center; gap: var(--s2);
               position: relative; cursor: pointer;
               font-family: var(--font-ui); font-weight: 650;
