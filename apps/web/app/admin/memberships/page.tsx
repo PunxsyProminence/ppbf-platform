@@ -160,9 +160,26 @@ export default function MembershipsPage() {
         throw new Error(err.error || `Create failed (${response.status})`);
       }
       const payload = (await response.json()) as { item?: ProgramRow };
-      await reloadPrograms();
-      setErrorMessage(null);
-      return payload.item ?? null;
+      const created = payload.item ?? null;
+      // The catalog write has already succeeded; from here on nothing may
+      // report the create as failed or lose the new program. The POST
+      // returns the counted row shape, so it can stand in for the list
+      // entry until a refresh lands.
+      if (created) {
+        setPrograms((current) => [
+          ...current.filter((program) => program.program_id !== created.program_id),
+          created,
+        ]);
+      }
+      try {
+        await reloadPrograms();
+        setErrorMessage(null);
+      } catch {
+        // Non-fatal: the optimistic row keeps the flow working; the banner
+        // only reports the stale list.
+        setErrorMessage('The program was created, but the program list could not be refreshed.');
+      }
+      return created;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to create the program.');
       return null;

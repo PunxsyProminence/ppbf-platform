@@ -58,10 +58,18 @@ const READINESS_QUERY = `
   select
     to_regclass('pilot.programs') is not null as table_ready,
     exists (
-      select 1 from pg_constraint
-      where conrelid = to_regclass('pilot.programs')
-        and contype = 'u'
-        and conname = 'pilot_programs_name_unique'
+      -- A unique INDEX, not a table constraint, so it is probed through
+      -- pg_indexes rather than pg_constraint. indexdef is Postgres's own
+      -- deparse, which emits the canonicalizing expression exactly as
+      -- lower(btrim(program_name)) -- asserting it here is what makes this
+      -- readiness check refuse a database where the index exists but is
+      -- the old case-SENSITIVE per-column unique.
+      select 1 from pg_indexes
+      where schemaname = 'pilot'
+        and tablename = 'programs'
+        and indexname = 'pilot_programs_name_unique'
+        and indexdef like 'CREATE UNIQUE INDEX%'
+        and indexdef like '%lower(btrim(program_name))%'
     ) as name_unique_ready,
     exists (
       select 1 from pg_constraint

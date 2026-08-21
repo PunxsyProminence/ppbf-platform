@@ -23,7 +23,8 @@
 -- Archived, not deleted: a program that ends keeps its name reserved and
 -- its enrollment history joinable. status is a two-value check constraint
 -- following pilot.program_memberships.status (hard-coded vocabulary, not a
--- lookup table).
+-- lookup table). Name uniqueness is case-insensitive on the trimmed name
+-- (see the unique index below); the name DISPLAYS as typed.
 --
 -- Idempotent like every migration in this directory: create table if not
 -- exists, no alters, no drops, safe to re-run wholesale. No begin;/commit;
@@ -42,8 +43,15 @@ create table if not exists pilot.programs (
   created_by_account_id text not null references pilot.accounts(account_id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  primary key (organization_id, program_id),
-  -- The whole point: one name, one group, per gym. Spelling drift becomes
-  -- a refused insert instead of a silently split roster.
-  constraint pilot_programs_name_unique unique (organization_id, program_name)
+  primary key (organization_id, program_id)
 );
+
+-- The whole point: one name, one group, per gym. Uniqueness is on the
+-- CANONICAL name -- lowercased, trimmed -- because "Junior Boxing" vs
+-- "junior boxing" is exactly the spelling drift this catalog exists to
+-- refuse; a plain column-unique would have let the case variants coexist
+-- and recreate the split roster. The display name stays as typed:
+-- program_name keeps its capitalization, only the uniqueness check
+-- canonicalizes.
+create unique index if not exists pilot_programs_name_unique
+  on pilot.programs (organization_id, lower(btrim(program_name)));

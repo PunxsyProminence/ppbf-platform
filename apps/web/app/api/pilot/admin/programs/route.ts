@@ -57,7 +57,10 @@ export async function POST(request: NextRequest) {
       createdByAccountId: principal.accountId,
     });
 
-    return NextResponse.json({ item });
+    // A just-created program has no members by definition. Returning the
+    // counted shape keeps POST rows interchangeable with GET rows, so the
+    // page can splice one straight into its catalog state.
+    return NextResponse.json({ item: { ...item, active_member_count: 0 } });
   } catch (error) {
     return jsonError(error);
   }

@@ -84,13 +84,18 @@ export async function createProgram(input: {
       [input.organizationId, programId, programName, input.notes ?? '', input.createdByAccountId],
     );
   } catch (error) {
-    // The org-scoped unique name is the table's whole point: spelling drift
-    // must be a refused create, reported as a conflict the admin can read,
-    // never a second group. Archived programs hold their name too -- the
-    // message says so, since "reactivate it" is the fix for that case.
+    // The org-scoped canonical name is the table's whole point: spelling
+    // drift -- including a case or whitespace variant of an existing name,
+    // which the unique index canonicalizes with lower(btrim()) -- must be a
+    // refused create, reported as a conflict the admin can read, never a
+    // second group. (Postgres reports a unique-INDEX violation with the
+    // index name in the constraint slot of the message, so the match below
+    // holds for the expression index exactly as it did for a constraint.)
+    // Archived programs hold their name too -- the message says so, since
+    // "reactivate it" is the fix for that case.
     if (error instanceof Error && /pilot_programs_name_unique/.test(error.message)) {
       throw new ConflictError(
-        'A program with this name already exists in this organization (it may be archived). Use the existing program or reactivate it.',
+        'A program with this name already exists in this organization (it may be archived or spelled with different capitalization). Use the existing program or reactivate it.',
         'PROGRAM_NAME_TAKEN',
       );
     }

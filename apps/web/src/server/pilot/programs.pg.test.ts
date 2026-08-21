@@ -8,9 +8,11 @@
 //
 // What needs proving that reading SQL cannot prove: the migration creates
 // the table from nothing; re-applying it is a no-op; the status vocabulary
-// and non-blank name are database facts; the org-scoped unique NAME -- the
-// whole reason this table exists, since free-text program_name silently
-// split one group across spellings -- is a refused insert. On top of that:
+// and non-blank name are database facts; the org-scoped CANONICAL name --
+// unique on lower(btrim(program_name)), the whole reason this table
+// exists, since free-text program_name silently split one group across
+// spellings and capitalizations -- refuses exact and case/whitespace
+// variants alike. On top of that:
 // createProgram's trim and its translation of the unique violation into a
 // typed ConflictError, the org isolation of every read and status flip, the
 // active-members count joining pilot.program_memberships by name, and the
@@ -294,6 +296,12 @@ describe('programs migration', () => {
       await insertProgram(client, 'prog-1');
       await expect(insertProgram(client, 'prog-2'))
         .rejects.toMatchObject({ code: '23505' });
+      // Uniqueness is on lower(btrim(program_name)) -- a case or whitespace
+      // variant is the SAME group, refused by the database itself, not by
+      // module courtesy. A per-column unique would accept this insert and
+      // recreate the split roster.
+      await expect(insertProgram(client, 'prog-case', { program_name: '  junior BOXING  ' }))
+        .rejects.toMatchObject({ code: '23505' });
       // The SAME name in a DIFFERENT organization is a different group.
       await insertProgram(client, 'prog-other-org', { organization_id: OTHER_ORG_ID });
     } finally {
@@ -339,6 +347,36 @@ describe('the real programs catalog against real rows', () => {
         programName: 'Junior Boxing',
         createdByAccountId: ADMIN_ID,
       })).resolves.toMatchObject({ organization_id: OTHER_ORG_ID });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a case variant of an existing name is the same group: typed 409, and the original casing lists back', async () => {
+    const client = await freshDatabase('programs_case');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+
+      await createProgram({
+        organizationId: ORG_ID,
+        programName: 'Junior Boxing',
+        createdByAccountId: ADMIN_ID,
+      });
+      await expect(createProgram({
+        organizationId: ORG_ID,
+        programName: 'junior boxing',
+        createdByAccountId: ADMIN_ID,
+      })).rejects.toMatchObject({ status: 409, code: 'PROGRAM_NAME_TAKEN' });
+      await expect(createProgram({
+        organizationId: ORG_ID,
+        programName: '  JUNIOR BOXING  ',
+        createdByAccountId: ADMIN_ID,
+      })).rejects.toBeInstanceOf(ConflictError);
+
+      // The display name stays exactly as the admin first typed it.
+      const rows = await listPrograms(ORG_ID);
+      expect(rows.map((row) => row.program_name)).toEqual(['Junior Boxing']);
     } finally {
       await client.end();
     }

@@ -32,6 +32,8 @@ function mockFetch(options: {
   capture?: { posts: unknown[]; patches: unknown[]; programPosts?: unknown[]; programPatches?: unknown[] };
   postStatus?: number;
   postError?: string;
+  /** After a program create, every catalog GET fails -- the stale-list case. */
+  programReloadFails?: boolean;
 }) {
   // The catalog is stateful within one mock: a program created through the
   // page shows up in the next GET, exactly as the real reload would see it.
@@ -52,6 +54,9 @@ function mockFetch(options: {
       return { ok: true, json: async () => ({ item: {} }) } as Response;
     }
     if (url.includes('/admin/programs')) {
+      if (options.programReloadFails && createdPrograms.length > 0) {
+        return { ok: false, status: 500, json: async () => ({}) } as Response;
+      }
       const items = [
         { program_id: 'prog-1', program_name: 'Youth Boxing', status: 'active', active_member_count: 1 },
         { program_id: 'prog-2', program_name: 'Retired Program', status: 'archived', active_member_count: 0 },
@@ -179,6 +184,34 @@ test('the inline add-new affordance POSTs to the catalog and selects the new pro
 
   expect(capture.programPosts).toEqual([{ program_name: 'Fight Camp' }]);
   expect((screen.getByLabelText('Program') as HTMLSelectElement).value).toBe('Fight Camp');
+});
+
+test('a created program survives a failed list refresh: still selected, never reported as a failed create', async () => {
+  const capture = { posts: [] as unknown[], patches: [] as unknown[], programPosts: [] as unknown[], programPatches: [] as unknown[] };
+  global.fetch = mockFetch({ capture, programReloadFails: true });
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Enroll athlete' }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'New program' }));
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('New program name'), { target: { value: 'Fight Camp' } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Add program' }));
+  });
+
+  // The POST succeeded, so the program is real: it must be selected from
+  // the optimistic row, and the only report is the stale-list banner --
+  // never a create failure.
+  expect(capture.programPosts).toEqual([{ program_name: 'Fight Camp' }]);
+  expect((screen.getByLabelText('Program') as HTMLSelectElement).value).toBe('Fight Camp');
+  expect(screen.getByText(/The program was created, but the program list could not be refreshed/)).toBeTruthy();
 });
 
 test('the catalog section lists programs with live headcounts, and archiving PATCHes the catalog only', async () => {

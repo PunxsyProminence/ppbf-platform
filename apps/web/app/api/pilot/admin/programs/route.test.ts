@@ -58,13 +58,19 @@ const bodyRequest = (method: 'POST' | 'PATCH', body: Record<string, unknown>) =>
     body: JSON.stringify(body),
   });
 
-const PROGRAM = {
+// What createProgram returns: the catalog row, no count.
+const CATALOG_ROW = {
   organization_id: 'org-1',
   program_id: 'prog-1',
   program_name: 'Junior Boxing',
   status: 'active',
   notes: 'admin-only field',
   created_at: '2026-08-01T00:00:00Z',
+};
+
+// What listProgramsWithCounts returns: the counted shape the UI consumes.
+const PROGRAM = {
+  ...CATALOG_ROW,
   active_member_count: 7,
 };
 
@@ -109,9 +115,9 @@ test('an admin reads the full catalog rows, notes included', async () => {
   expect(payload.items).toEqual([PROGRAM]);
 });
 
-test('a create is filed under the caller organization and account, name trimmed', async () => {
+test('a create is filed under the caller organization and account, name trimmed, and answers the counted row shape', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
-  mockCreate.mockResolvedValue(PROGRAM);
+  mockCreate.mockResolvedValue(CATALOG_ROW);
 
   const response = await POST(bodyRequest('POST', { program_name: '  Junior Boxing  ' }));
 
@@ -122,6 +128,10 @@ test('a create is filed under the caller organization and account, name trimmed'
     notes: undefined,
     createdByAccountId: 'acct-1',
   });
+  // POST rows are interchangeable with GET rows: a just-created program
+  // carries its (definitionally zero) live headcount.
+  const payload = await response.json();
+  expect(payload.item).toEqual({ ...CATALOG_ROW, active_member_count: 0 });
 });
 
 test('a blank name is refused before any write', async () => {
