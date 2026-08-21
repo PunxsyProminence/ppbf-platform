@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import {
   issueCoachCard,
   issueCoachCardToProgram,
@@ -137,8 +137,7 @@ export async function GET(request: NextRequest) {
 
     // A coach reads the cards they issued; an admin reads every card in the
     // organization. Both reads are inside principal.organizationId only.
-    const issuer = isOrganizationAdminRole(principal.role) ? null : principal.accountId;
-    const rows = await listCoachCards(principal.organizationId, issuer);
+    const rows = await listCoachCards(principal);
 
     // Group by issuance: rows sharing an issuance_id were one act of
     // issuing; an individual card (issuance_id null) stands alone. Insertion

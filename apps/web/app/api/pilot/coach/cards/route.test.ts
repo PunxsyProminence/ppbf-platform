@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import {
   issueCoachCard,
@@ -201,7 +202,7 @@ test('GET groups rows by issuance: a coach reads their own cards', async () => {
   const response = await GET(getRequest());
 
   expect(response.status).toBe(200);
-  expect(mockListCards).toHaveBeenCalledWith('org-1', 'acct-coach-1');
+  expect(mockListCards).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'acct-coach-1', organizationId: 'org-1' }));
   const payload = await response.json();
   expect(payload.items).toHaveLength(2);
   expect(payload.items[0].issuance_id).toBe('issuance-9');
@@ -217,5 +218,42 @@ test('GET for an admin reads every card in the organization, not one issuer\'s',
   const response = await GET(getRequest());
 
   expect(response.status).toBe(200);
-  expect(mockListCards).toHaveBeenCalledWith('org-1', null);
+  expect(mockListCards).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'acct-admin-1', role: 'organization_admin' }));
+});
+
+// P2 at the route boundary. The two refusals are deliberately different
+// shapes: another gym's program_id is cloaked as a 404 (the module returns
+// null), while an archived program in the caller's OWN gym is named --
+// the coach can see that program in their catalog, so a 404 would only
+// leave them staring at a refusal for something plainly there.
+test('an archived program in the caller own organization is refused by name, not cloaked', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockIssueToProgram.mockRejectedValue(
+    new ValidationError(
+      'That program is archived, so it cannot be issued new work. Reactivate "Old Guard" first.',
+      'PROGRAM_ARCHIVED',
+    ),
+  );
+
+  const response = await POST(postRequest({ program_id: 'prog-archived', ...CARD_BODY }));
+
+  expect(response.status).toBe(400);
+  const payload = await response.json();
+  expect(payload.error).toMatch(/archived/i);
+  expect(payload.code).toBe('PROGRAM_ARCHIVED');
+});
+
+// P1 at the route boundary: the route hands the whole principal to the
+// module, which is what lets listCoachCards re-derive the access bound on
+// every read. A route that passed only an account id would put the
+// boundary back in the caller's hands.
+test('GET passes the principal itself, so the module can bound the read by CURRENT access', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockListCards.mockResolvedValue([]);
+
+  await GET(getRequest());
+
+  expect(mockListCards).toHaveBeenCalledWith(
+    expect.objectContaining({ accountId: 'acct-coach-1', organizationId: 'org-1', role: 'coach' }),
+  );
 });

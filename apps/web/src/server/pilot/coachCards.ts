@@ -1,12 +1,23 @@
 import { randomUUID } from 'node:crypto';
 
-import { accessibleAthleteIds, type ActorIdentity } from './access';
+import {
+  accessibleAthleteIds,
+  athleteIdsForCoach,
+  isOrganizationAdminRole,
+  type ActorIdentity,
+} from './access';
 import { query, queryOne } from './db';
+import { ValidationError } from './errors';
 import {
   ASSIGNMENT_DRILL_JOIN,
   ASSIGNMENT_FIELDS,
   type DrillAssignment,
 } from './progression';
+
+// The shared projection plus the one column this feature's migration adds.
+// Only card reads name it, so an assignment surface that predates Coach
+// Cards keeps working on a database that has not taken the migration yet.
+const CARD_FIELDS = `${ASSIGNMENT_FIELDS}, a.issuance_id`;
 
 // Coach Cards: the thinnest operational layer over the existing assignment
 // spine. A card IS a pilot.drill_assignments row -- issued by a coach with
@@ -33,6 +44,11 @@ export interface CoachCardCompletion {
 
 /** One card row plus the athlete's name and its completion history. */
 export interface CoachCardRow extends DrillAssignment {
+  // Shared tag across the rows one group Coach Card issuance created; null
+  // on an individual card. It lives on the CARD row rather than on
+  // DrillAssignment because the column arrives with this feature's own
+  // migration -- see the note on ASSIGNMENT_FIELDS in progression.ts.
+  issuance_id: string | null;
   athlete_name: string;
   completions: CoachCardCompletion[];
 }
@@ -105,7 +121,7 @@ export async function issueCoachCard(params: {
                frequency_per_week, due_date, status, completion_percentage,
                assigned_by_account_id, assigned_at, issuance_id, created_at
     )
-    select ${ASSIGNMENT_FIELDS}
+    select ${CARD_FIELDS}
     from a
     ${ASSIGNMENT_DRILL_JOIN}`,
     [
@@ -150,13 +166,35 @@ export async function issueCoachCardToProgram(params: {
 } & CardContent): Promise<ProgramIssuanceResult | null> {
   const organizationId = params.actor.organizationId;
 
-  const program = await queryOne<{ program_id: string; program_name: string }>(
-    `select program_id, program_name from pilot.programs
+  // status comes back with the row rather than being filtered in the WHERE,
+  // because the two refusals are deliberately DIFFERENT shapes. A program in
+  // another gym must be indistinguishable from one that does not exist
+  // (null -> hiddenNotFound at the route), or the endpoint becomes a probe
+  // for other gyms' program ids. An ARCHIVED program in the caller's OWN gym
+  // is not a secret -- a coach reads it in the catalog they are shown -- so
+  // hiding it there would only leave them staring at a 404 for a program
+  // they can see. They get told why.
+  const program = await queryOne<{ program_id: string; program_name: string; status: string }>(
+    `select program_id, program_name, status from pilot.programs
      where organization_id = $1 and program_id = $2`,
     [organizationId, params.programId],
   );
   if (!program) {
     return null;
+  }
+
+  // Archiving a program deliberately does NOT touch its membership rows --
+  // enrollment history outlives the group it names (see programs.ts). That
+  // is precisely why this check has to exist: without it, the active
+  // memberships of a closed group are still found and real work is still
+  // issued to it. The form already excludes archived programs from new
+  // work; this is the same rule where it is actually enforceable, for a
+  // program_id that arrived by any other route.
+  if (program.status !== 'active') {
+    throw new ValidationError(
+      `That program is archived, so it cannot be issued new work. Reactivate "${program.program_name}" first.`,
+      'PROGRAM_ARCHIVED',
+    );
   }
 
   const members = await query<{ athlete_id: string; athlete_name: string }>(
@@ -238,19 +276,45 @@ export async function issueCoachCardToProgram(params: {
 }
 
 /**
- * Every Coach Card in the organization -- gap_id IS NULL is the definition
- * -- optionally narrowed to one issuer. A coach reads their own issued
- * cards (issuedByAccountId = their account); an admin passes null and reads
- * them all. Each row carries the athlete's name and the card's full
- * completion history so the coach's list can show per-athlete progress and
- * offer verify/dispute per completion without a second round trip.
+ * Every Coach Card the actor may currently read -- gap_id IS NULL is what
+ * makes a row a card. Each row carries the athlete's name and the card's
+ * full completion history, so the coach's list shows per-athlete progress
+ * and offers verify/dispute without a second round trip.
+ *
+ * TWO SCOPES, AND ONLY ONE OF THEM IS THE BOUNDARY.
+ *
+ * The boundary is athleteIdsForCoach -- the central access contract added
+ * in #546 (coach_id of record UNION active, unexpired coach_coverage),
+ * evaluated NOW, on every read. The issuer filter that sits beside it is a
+ * convenience ("cards I issued"), not a permission.
+ *
+ * That distinction is the whole point. This function first shipped scoped
+ * by assigned_by_account_id ALONE, and issuer identity never changes: once
+ * a coach had issued a card, they kept reading that athlete's name, their
+ * completion notes and their verification state forever -- through a roster
+ * reassignment, and past the expiry of the temporary coverage grant that
+ * was the only reason they could reach the athlete in the first place.
+ * assertActorCanAccessAthlete would have refused them, and the verify
+ * branch of /api/pilot/progression/completions DOES recheck before it
+ * flips anything, so the write was already bounded while the read was not.
+ * A read of a child's notes is not a lesser thing than a write.
+ *
+ * An organization admin administers the whole gym's records, so their read
+ * is org-wide and carries no issuer filter -- unchanged, and the reason the
+ * card does not disappear from the gym when a coach loses access to it.
+ *
+ * Note the empty-set case is a real answer, not a missing filter: a coach
+ * who currently reaches nobody reads no cards. `= any('{}')` is false for
+ * every row, which is exactly right; passing null would have meant
+ * "unbounded" and is reserved for the admin branch.
  */
-export async function listCoachCards(
-  organizationId: string,
-  issuedByAccountId: string | null,
-): Promise<CoachCardRow[]> {
+export async function listCoachCards(actor: ActorIdentity): Promise<CoachCardRow[]> {
+  const organizationId = actor.organizationId;
+  const isAdmin = isOrganizationAdminRole(actor.role);
+  const issuedByAccountId = isAdmin ? null : actor.accountId;
+  const athleteIds = isAdmin ? null : await athleteIdsForCoach(organizationId, actor.accountId);
   return query<CoachCardRow>(
-    `select ${ASSIGNMENT_FIELDS},
+    `select ${CARD_FIELDS},
             ath.full_name as athlete_name,
             coalesce(comp.completions, '[]'::json) as completions
      from pilot.drill_assignments a
@@ -271,8 +335,11 @@ export async function listCoachCards(
      ) comp on true
      where a.organization_id = $1
        and a.gap_id is null
+       -- The access boundary, re-evaluated on every read.
+       and ($3::text[] is null or a.athlete_id = any($3::text[]))
+       -- "Cards I issued": a convenience filter, never the boundary.
        and ($2::text is null or a.assigned_by_account_id = $2)
      order by a.assigned_at desc, ath.full_name asc, a.athlete_id asc`,
-    [organizationId, issuedByAccountId],
+    [organizationId, issuedByAccountId, athleteIds],
   );
 }
