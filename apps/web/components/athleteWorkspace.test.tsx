@@ -38,6 +38,10 @@ let sessionListFails = false;
 let sessionUpdateFails = false;
 let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
+let storedFloorPlans: Array<Record<string, unknown>> = [];
+let floorPlanPatchFails = false;
+let storedAssignments: Array<Record<string, unknown>> = [];
+let assignmentsFail = false;
 
 // pilot.sessions stores date as `date` and rpe as `numeric`, so node-postgres
 // hands back a timestamp and a string. Both are sent straight back by
@@ -92,6 +96,10 @@ function postedTo(path: string): FetchCall[] {
   return fetchCalls.filter((call) => call.method === 'POST' && call.url.endsWith(path));
 }
 
+function patchedTo(path: string): FetchCall[] {
+  return fetchCalls.filter((call) => call.method === 'PATCH' && call.url.endsWith(path));
+}
+
 beforeEach(() => {
   fetchCalls.length = 0;
   authenticated = true;
@@ -106,6 +114,10 @@ beforeEach(() => {
   sessionUpdateFails = false;
   storedGoals = [];
   goalUpdateFails = false;
+  storedFloorPlans = [];
+  floorPlanPatchFails = false;
+  storedAssignments = [];
+  assignmentsFail = false;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -152,7 +164,19 @@ beforeEach(() => {
       return jsonResponse(goalUpdateFails ? { error: 'Internal server error' } : { ok: true }, !goalUpdateFails);
     }
     if (url.includes('/api/pilot/floor-plans')) {
-      return jsonResponse({ items: [] });
+      if (init?.method === 'PATCH') {
+        return jsonResponse(floorPlanPatchFails ? { error: 'Internal server error' } : { ok: true }, !floorPlanPatchFails);
+      }
+      if (init?.method === 'POST') {
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ items: storedFloorPlans });
+    }
+    if (url.includes('/api/pilot/progression/assignments')) {
+      if (assignmentsFail) {
+        throw new Error('assignments offline');
+      }
+      return jsonResponse({ items: storedAssignments });
     }
     if (url.includes('/api/pilot/shadow/observation-projection')) {
       return jsonResponse({ items: [] });
@@ -182,12 +206,9 @@ async function renderWorkspace() {
  * surface being filed somewhere an athlete would not look for it.
  */
 const GROUP_FOR_SURFACE: Record<string, string> = {
-  'Bio Check-In': 'Today',
   Dashboard: 'Today',
   Floor: 'Today',
   Goals: 'Development',
-  Tracks: 'Development',
-  Assessments: 'Development',
   Drills: 'Learn',
   'Rabbit Holes': 'Learn',
   Schedule: 'Schedule',
@@ -234,12 +255,13 @@ describe('athlete workspace honesty', () => {
     expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
   });
 
-  test('the Assessments tab does not present a start control that cannot start anything', async () => {
+  test('the Schedule tab no longer apologises for itself over the working link', async () => {
     await renderWorkspace();
-    openTab('Assessments');
+    openTab('Schedule');
 
-    const start = screen.getByRole('button', { name: 'Start Assessment' }) as HTMLButtonElement;
-    expect(start.disabled).toBe(true);
+    // The link was always real; the NOT BUILT wrapper around it is what left.
+    expect(screen.queryByText(/this tab cannot see the gym's classes/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
   });
 
   test('double-clicking Create Goal posts the goal once', async () => {
@@ -948,5 +970,165 @@ describe('the athlete question box does not imply a coach reads it', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
 
     expect(screen.getByText(/your parent is not automatically copied and no coach is notified/)).toBeTruthy();
+  });
+});
+
+// The floor checkbox moved React state alone: an athlete ticked their work
+// off, reloaded, and the floor came back untouched. Completion lives on the
+// stored plan now (PATCH /api/pilot/floor-plans), and these pin the three
+// claims that has to hold up: the tick is written, the tick comes back, and a
+// refused write is never left on screen looking saved.
+function storedFloorPlan(tasks: Array<Record<string, unknown>>) {
+  return {
+    athleteName: 'Test Athlete',
+    readiness: 'GREEN',
+    generatedAt: '2026-08-20T17:00:00.000Z',
+    tasks,
+  };
+}
+
+function floorTask(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'wf_1',
+    title: 'Technical Boxing Block',
+    category: 'Training',
+    description: 'Footwork progression.',
+    dueDate: '5:30 PM',
+    priority: 'High',
+    ...overrides,
+  };
+}
+
+describe('the floor survives a reload', () => {
+  test('ticking a task off writes it to the stored plan', async () => {
+    storedFloorPlans = [storedFloorPlan([floorTask()])];
+    await renderWorkspace();
+    openTab('Floor');
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }));
+
+    await waitFor(() => expect(patchedTo('/api/pilot/floor-plans')).toHaveLength(1));
+    // task_id and the flag, nothing else -- above all no athlete_id, which the
+    // route must take from the session, never from this body.
+    expect(patchedTo('/api/pilot/floor-plans')[0].body).toEqual({ task_id: 'wf_1', completed: true });
+    expect(await screen.findByText('Marked done: Technical Boxing Block.')).toBeTruthy();
+  });
+
+  test('a task ticked off before a reload comes back ticked', async () => {
+    storedFloorPlans = [storedFloorPlan([
+      floorTask({ completed: true }),
+      floorTask({ id: 'wf_2', title: 'Cooldown + Session Journal' }),
+    ])];
+    await renderWorkspace();
+    openTab('Floor');
+
+    const done = await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }) as HTMLInputElement;
+    expect(done.checked).toBe(true);
+    // A task with no stored flag is not done -- absent must not read as true.
+    const open = screen.getByRole('checkbox', { name: 'Mark done: Cooldown + Session Journal' }) as HTMLInputElement;
+    expect(open.checked).toBe(false);
+  });
+
+  test('a refused write puts the box back and says nothing was saved', async () => {
+    storedFloorPlans = [storedFloorPlan([floorTask()])];
+    floorPlanPatchFails = true;
+    await renderWorkspace();
+    openTab('Floor');
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }));
+
+    expect(await screen.findByText(/the box went back to where it was/)).toBeTruthy();
+    expect((screen.getByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByText(/Marked done/)).toBeNull();
+  });
+});
+
+// The drills a coach assigned lived at /athlete/progression-intelligence,
+// reachable from this workspace only through a collapsed <details> at the foot
+// of the page. Today now carries the count and the door.
+describe('Today shows the work a coach assigned', () => {
+  test('open assignments are counted for the athlete the session names, and the card links out', async () => {
+    storedAssignments = [
+      { assignment_id: 'as-1', status: 'assigned' },
+      { assignment_id: 'as-2', status: 'in_progress' },
+      // Finished work is record, not today.
+      { assignment_id: 'as-3', status: 'completed' },
+    ];
+    await renderWorkspace();
+
+    expect(await screen.findByText('2 still to do.')).toBeTruthy();
+    const link = screen.getByRole('link', { name: 'Open your progression' });
+    expect(link.getAttribute('href')).toBe('/athlete/progression-intelligence');
+
+    const asked = fetchCalls.find((call) => call.url.includes('/api/pilot/progression/assignments'));
+    expect(asked?.url).toContain('athlete_id=ath_test');
+  });
+
+  test('no assignments reads as none recorded, not as zero', async () => {
+    await renderWorkspace();
+
+    expect(await screen.findByText('No assigned work recorded.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open your progression' })).toBeTruthy();
+  });
+
+  test('a failed read is reported as unavailable, never as no work assigned', async () => {
+    assignmentsFail = true;
+    await renderWorkspace();
+
+    expect(await screen.findByText('Not available right now.')).toBeTruthy();
+    expect(screen.queryByText('No assigned work recorded.')).toBeNull();
+  });
+});
+
+// Three surfaces carried nothing behind them: Bio Check-In persisted no field
+// (nothing calls /api/pilot/athlete/check-in), Tracks had every value reading
+// "Nobody has written this down yet", and Assessments said NOT BUILT YET over
+// a disabled button. A tab is a promise that there is something behind it, so
+// they are no longer offered; the panels stay in the file for when they earn
+// their entry back.
+describe('tabs with nothing behind them are not offered', () => {
+  test('Bio Check-In, Tracks and Assessments are gone from the nav', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(screen.queryByRole('button', { name: 'Bio Check-In' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    expect(screen.queryByRole('button', { name: 'Tracks' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assessments' })).toBeNull();
+  });
+
+  test('Development opens straight onto Goals, its one real surface', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+
+    expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
+  });
+
+  test('the surfaces with something behind them still render', async () => {
+    await renderWorkspace();
+
+    openTab('Floor');
+    // The honest-empty grammar appears both in the panel and as the sync
+    // message loadFloorTasks sets, so this asserts presence, not uniqueness.
+    expect((await screen.findAllByText(/Nothing on your floor yet/)).length).toBeGreaterThan(0);
+
+    openTab('Drills');
+    expect(await screen.findByText(/have not added any drills yet/)).toBeTruthy();
+
+    openTab('Schedule');
+    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
+  });
+
+  test('the drill library no longer offers a completion it cannot store', async () => {
+    // "Mark Complete" set a React flag with no row behind it anywhere --
+    // pilot.assignment_completions is keyed on a coach's assignment, and no
+    // table records (athlete, library drill). Completions that ARE stored are
+    // logged on the progression page against assigned drills.
+    await renderWorkspace();
+    openTab('Drills');
+
+    expect(screen.queryByRole('button', { name: 'Mark Complete' })).toBeNull();
   });
 });
