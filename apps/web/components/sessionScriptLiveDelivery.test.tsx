@@ -90,6 +90,8 @@ interface Handlers {
   athletes?: () => Response | Promise<Response>;
   protocols?: () => Response | Promise<Response>;
   logPost?: (body: Record<string, unknown>) => Response | Promise<Response>;
+  roster?: () => Response | Promise<Response>;
+  readinessBoard?: () => Response | Promise<Response>;
 }
 
 const DEFAULT_LOG_ATHLETES = [{ athlete_id: 'ath-1', full_name: 'Jordan P.' }];
@@ -107,6 +109,12 @@ function mockFetch(handlers: Handlers = {}) {
     }
     if (url.includes('/api/pilot/athletes/list')) {
       return handlers.athletes ? handlers.athletes() : jsonResponse({ items: DEFAULT_LOG_ATHLETES });
+    }
+    if (url.includes('/api/pilot/profile/roster')) {
+      return handlers.roster ? handlers.roster() : jsonResponse({ items: [] });
+    }
+    if (url.includes('/api/pilot/coach/readiness-board')) {
+      return handlers.readinessBoard ? handlers.readinessBoard() : jsonResponse({ items: [] });
     }
     if (url.includes('/api/pilot/coach/intervention-protocols')) {
       return handlers.protocols ? handlers.protocols() : jsonResponse({ items: DEFAULT_LOG_PROTOCOLS });
@@ -561,5 +569,82 @@ describe('logging an intervention against this run', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
     expect(await screen.findByText(/athlete roster could not be loaded/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Log intervention' })).toBeDisabled();
+  });
+});
+
+describe('the "On the floor" panel', () => {
+  // "Who is training tonight" used to exist on this screen only as the
+  // hand-typed athletes_present count at finish. This panel shows the coach
+  // dashboard's fresh-check-in feed during delivery: identity from the
+  // profile roster, freshness from the readiness board (which returns only
+  // athletes with a fresh check-in), names and faces only.
+  function rosterEntry(id: string, name: string, overrides: Record<string, unknown> = {}) {
+    return {
+      athlete_id: id,
+      account_id: null,
+      full_name: name,
+      initials: name.split(' ').map((part) => part[0]).join(''),
+      ring_name: null,
+      photo_available: false,
+      ...overrides,
+    };
+  }
+
+  const boardEntry = (id: string) => ({
+    athlete_id: id,
+    status: 'GREEN',
+    score: 8,
+    measured_at: '2026-08-21T00:00:00.000Z',
+    method: 'UNKNOWN',
+    reliability_status: '',
+    validity_status: '',
+    evidence_class: '',
+  });
+
+  it('shows the names of athletes with a fresh check-in, and only those', async () => {
+    await renderLive(liveRun(), {
+      roster: () => jsonResponse({ items: [rosterEntry('ath-1', 'Jordan Packer'), rosterEntry('ath-2', 'Riley Stone')] }),
+      readinessBoard: () => jsonResponse({ items: [boardEntry('ath-1')] }),
+    });
+
+    const panel = within(screen.getByRole('region', { name: 'On the floor' }));
+    expect(panel.getByText('Jordan Packer')).toBeInTheDocument();
+    // No fresh check-in means not on the floor panel -- the board is the
+    // freshness filter, exactly as the dashboard applies it.
+    expect(panel.queryByText('Riley Stone')).not.toBeInTheDocument();
+    // Names only: the board's triage colour is used as a filter, never shown.
+    expect(panel.queryByText('GREEN')).not.toBeInTheDocument();
+    // The run controls are untouched by the panel loading.
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeEnabled();
+  });
+
+  it('a failed read shows the unavailable copy instead of an empty room, and the controls still work', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      roster: () => jsonResponse({}, false, 500),
+      patch: () => jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) }),
+    });
+
+    const panel = within(screen.getByRole('region', { name: 'On the floor' }));
+    expect(panel.getByText(/could not be loaded/)).toBeInTheDocument();
+    expect(panel.getByText(/not an empty room/)).toBeInTheDocument();
+    expect(panel.queryByText(/No athlete on your roster has a fresh check-in/)).not.toBeInTheDocument();
+
+    // The panel's failure must never block the run: pausing still round-trips.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'pause' }]);
+    expect(screen.getByText('PAUSED')).toBeInTheDocument();
+  });
+
+  it('an empty result is an honest empty state, not the unavailable copy', async () => {
+    await renderLive(liveRun(), {
+      roster: () => jsonResponse({ items: [rosterEntry('ath-1', 'Jordan Packer')] }),
+      readinessBoard: () => jsonResponse({ items: [] }),
+    });
+
+    const panel = within(screen.getByRole('region', { name: 'On the floor' }));
+    expect(panel.getByText(/No athlete on your roster has a fresh check-in/)).toBeInTheDocument();
+    expect(panel.queryByText(/could not be loaded/)).not.toBeInTheDocument();
   });
 });

@@ -1115,3 +1115,29 @@ describe('family barrier reports', () => {
     expect(screen.getByText(/No guardian on your roster has reported a barrier/)).not.toBeNull();
   });
 });
+
+describe('the hub links to the session-delivery surfaces', () => {
+  // The delivery loop worked end to end while nothing linked to it: the
+  // scripts page, floor groups, the drill library, the cue library and the
+  // template catalog were all reachable only by typing the URL. These pin
+  // the Quick Actions links that make that loop part of the coach's day.
+  test.each([
+    ["Session Scripts: Run Tonight's Plan", '/coach/session-scripts'],
+    ["Today's Floor Groups", '/coach/floor-groups'],
+    ['Open Drill Library', '/coach/drills'],
+    ['Open Cue Library', '/coach/cue-library'],
+    ['Browse Workout Templates', '/coach/workout-templates'],
+  ])('the dashboard links "%s" to %s', async (label, href) => {
+    await renderWorkspace();
+
+    const link = screen.getByRole('link', { name: label });
+    expect(link.getAttribute('href')).toBe(href);
+  });
+
+  test('the existing quick actions were not displaced by the new links', async () => {
+    await renderWorkspace();
+
+    expect(screen.getByRole('link', { name: 'Open Scheduler' }).getAttribute('href')).toBe('/schedule');
+    expect(screen.getByRole('link', { name: 'Write a Rabbit Hole' }).getAttribute('href')).toBe('/rabbit-holes');
+  });
+});
