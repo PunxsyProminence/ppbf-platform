@@ -291,7 +291,7 @@ export default function SignInPanel({
      the ghost treatment. This is what the red used to do, and the red is the
      safety gate's colour (Law 2), so it cannot also mean "you tapped this". */
   const methodButton = (method: LoginMethod) =>
-    `btn ${selectedMethod === method ? '' : 'btn--ghost'} w-full justify-start text-left`;
+    `btn btn--start ${selectedMethod === method ? '' : 'btn--ghost'} w-full text-left`;
 
   return (
     <div>

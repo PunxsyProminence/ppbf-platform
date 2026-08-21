@@ -265,7 +265,11 @@ export default function CoachCoveragePage() {
                   max={336}
                   value={ttlHours}
                   onChange={(event) => setTtlHours(event.target.value)}
-                  className="input min-h-[44px] w-32"
+                  /* Width is page-level control per design-system/README.md, and
+                     `.input { width: 100% }` in the unlayered sheet defeats
+                     `w-32`, so it is stated here rather than in the sheet. */
+                  style={{ width: 128 }}
+                  className="input min-h-[44px]"
                 />
               </label>
               <button

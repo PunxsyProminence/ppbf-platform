@@ -2475,7 +2475,8 @@ export default function CoachWorkspace() {
                     value={reviewNotes}
                     onChange={(event) => setReviewNotes(event.target.value)}
                     placeholder="Review notes"
-                    className="textarea min-h-[84px]"
+                    rows={4}
+                    className="textarea"
                   />
                 </label>
                 <button
