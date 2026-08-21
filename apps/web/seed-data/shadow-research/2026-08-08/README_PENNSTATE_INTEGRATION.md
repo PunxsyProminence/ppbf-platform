@@ -1,7 +1,16 @@
 # Penn State Integration — Package 9
 
-**Status:** PROPOSED. Nothing applied.
-**Date:** 2026-08-08
+> **RESEARCH PACKAGE — NOT PRODUCTION AUTHORITY.** Research output. Nothing in it approves
+> evidence, sets algorithm constants, or creates clearance of any kind by itself.
+
+**Status:** PROPOSED as a SHADOW research corpus — `import-shadow-research.mjs` cannot load this
+package (it supplies only one of the importer's five required seed files, and `EXPECTED_COUNTS`
+pins the loadable corpus to the 2026-08-07 package). **One finding is nonetheless operational:**
+the §3 warm-up-decay stop rule entered the drill seed
+(`../../drill-library/seed_drill_stop_rules.csv`, 63 rows, `rule_kind = warmup_decay`, loaded by
+`npm run seed:drill-library`) on a separate, recorded owner decision of 2026-08-08. See
+`docs/SHADOW_RESEARCH_ARCHITECTURE.md` §8 for that crossing's full commit trail.
+**Date:** 2026-08-08; combatives addendum 2026-08-09.
 
 Integrates the 42 verified Penn State claims into the existing work. Four changes plus a bug fix.
 
@@ -61,6 +70,11 @@ Added to **63 of 119 drills** — those involving contact or maximal effort, not
 
 Stop rules 611 -> 674. New `rule_kind` value `warmup_decay`. Bypassable with a note like every other flag.
 
+This is the one part of the package that is live operational drill data (see Status above): the
+rows sit in `../../drill-library/seed_drill_stop_rules.csv`, admitted by the
+`drill-vocabulary-widening` migration on a recorded owner decision, not through the research
+importer.
+
 ## 4. Physical test battery: four entries upgraded
 
 | test | was | now |
@@ -74,11 +88,11 @@ The punch-force entry gained a measurement condition that matters operationally:
 self-selected than fixed distance for the jab, and higher in males than females. **Distance condition and
 sex must be recorded or punch-force scores are not comparable across athletes or sessions.**
 
-## 5. A bug I found and fixed in my own coverage computation
+## 5. Coverage recompute: a bug found and fixed in this pass
 
 Re-running capability coverage produced an obviously wrong result: five capabilities dropped to zero
-claims. The cause was mine — the feeder-track column uses `|` for multi-track entries (`A3|A6`), and my
-recompute split on `,` only, producing track literals that matched nothing.
+claims. The cause was in the recompute itself — the feeder-track column uses `|` for multi-track entries
+(`A3|A6`), and the recompute split on `,` only, producing track literals that matched nothing.
 
 Fixed. **Zero capabilities now compute from an empty claim set**, which is the check that would have
 caught it immediately.
@@ -94,15 +108,16 @@ finance (2%). Those are the state of the field, not a search gap.
 
 ## Files
 
-| file | change |
-|---|---|
-| `evidence_registry_boxing_learning.csv` | 1,193 -> 1,235 claims |
-| `cross_track_conflict_ledger.csv` | 34 -> 36; CT-23 revised |
-| `seed_drill_stop_rules.csv` | 611 -> 674 |
-| `physical_test_battery.csv` | 4 entries upgraded |
-| `seed_shadow_library_capability_map.csv` | recomputed, parsing bug fixed |
+| file | location | change |
+|---|---|---|
+| `evidence_registry_boxing_learning.csv` | this directory | 1,193 -> 1,235 claims (1,243 after the addendum below) |
+| `cross_track_conflict_ledger.csv` | this directory | 34 -> 36; CT-23 revised |
+| `evidence_fragment_PS.csv` | this directory | the 42 Penn State claims as extracted; rows record "Full text supplied by user (Penn State Library). Parsed text extraction" — licensed extracts, governed by `docs/SHADOW_RESEARCH_ARCHITECTURE.md` §9 |
+| `physical_test_battery.csv` | this directory | 4 entries upgraded |
+| `seed_shadow_library_capability_map.csv` | this directory | recomputed, parsing bug fixed |
+| `seed_drill_stop_rules.csv` | `../../drill-library/` | 611 -> 674 (the operational copy; not part of this package's directory) |
 
-## Two things I deliberately did not do
+## Two things deliberately not done
 
 **No punch-force prediction model.** The r = 0.67-0.85 correlations are tempting, but CT-24 already
 resolved against individual prediction in this domain, and these are small elite adult male samples.

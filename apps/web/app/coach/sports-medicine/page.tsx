@@ -64,10 +64,10 @@ interface ClearanceRow {
 
 /**
  * The three rungs, in the words of the capability's own contract
- * (`app/api/pilot/training-holds/README.md`). `conditioning_only` says out loud
- * that nothing enforces it: the README calls that "the largest live gap in this
- * capability", and a coach picking a rung has to know which one actually stops
- * something rather than discovering it when a child spars anyway.
+ * (docs/capabilities/GATES.md §7). `conditioning_only` says out loud that
+ * nothing enforces it (GATES.md GAP-6), and a coach picking a rung has to know
+ * which one actually stops something rather than discovering it when a child
+ * spars anyway.
  */
 const HOLD_SCOPES: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'all_training', label: 'All training — STOP: class registration is refused until this is lifted' },

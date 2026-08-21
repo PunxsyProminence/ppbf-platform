@@ -19,9 +19,12 @@ export const runtime = 'nodejs';
 // matters more now than it did at v1 -- since the digest gained the two
 // safety registers (open escalations, open compliance violations) this list
 // is what stands between a coach and another coach's athlete's safeguarding
-// record. See README.md in this directory for the full gate list, including
-// the athlete_voice exclusion the digest applies unconditionally because it
-// is handed ids and an organization but never a role.
+// record. Full gate list: getCoachIntelligence's own comments, including the
+// athlete_voice exclusion the digest applies unconditionally because it is
+// handed ids and an organization but never a role. Coverage asymmetry worth
+// knowing: this roster is coach_id-of-record only -- it does not union
+// pilot.coach_coverage the way /api/pilot/escalations does, so a covering
+// coach sees a covered child on the escalation queue but not here.
 
 export async function GET(request: NextRequest) {
   try {

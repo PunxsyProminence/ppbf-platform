@@ -65,7 +65,9 @@ export const HOLD_EXPIRY_DAYS = 14;
  * filed an hour ago is exactly what a morning read is for.
  *
  * 'acknowledged' is not included, and that is a real choice, not an omission
- * -- see the README next to the route for what it costs.
+ * -- the cost: an escalation that is acknowledged but never resolved is still
+ * live yet leaves this digest; only /admin/escalations (status filter
+ * 'acknowledged') still shows it.
  */
 export const ESCALATION_DIGEST_STATUS: SafetyEscalationStatus = 'open';
 

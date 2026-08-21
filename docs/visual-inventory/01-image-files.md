@@ -67,7 +67,7 @@ Nothing here is deleted; this is a report.
 | `apps/web/public/file.svg` | 391 | `create-next-app` scaffold. Zero references. |
 | `apps/web/public/globe.svg` | 1,035 | `create-next-app` scaffold. Zero references. |
 | `apps/web/public/window.svg` | 385 | `create-next-app` scaffold. Zero references. |
-| `apps/web/seed-data/shadow-research/2026-08-07/fig_intake_seed.png` | 228,649 | Figure shipped with the research seed package. Not in that package's own file manifest, not read by its importer, referenced nowhere. |
+| `apps/web/seed-data/shadow-research/2026-08-07/fig_intake_seed.png` | 228,649 | Figure shipped with the research seed package. Listed in that package's manifest as a companion figure; not read by its importer. |
 
 The five scaffold SVGs total 3,314 bytes — trivial weight, but they are still public
 URLs served under the gym's domain, and `vercel.svg` in particular is another
@@ -267,8 +267,8 @@ transferred"* showing per-topic share of boxing-specific evidence against a 20% 
 It is documentation *about* the seed package — an analysis figure — sitting inside the
 package directory. It is **not** part of it:
 
-- `README_RESEARCH_INTAKE_SEED.md` lists eight files in its "What is in the package"
-  manifest; this PNG is not one of them.
+- `README_RESEARCH_INTAKE_SEED.md` lists it in its "What is in the package" manifest
+  only as a companion figure, explicitly not read by the importer.
 - `apps/web/scripts/import-shadow-research.mjs` reads five explicitly named CSVs from
   a frozen `FILES` map. It never reads the directory, so it never sees the PNG.
 - Nothing anywhere in the repository mentions the filename.

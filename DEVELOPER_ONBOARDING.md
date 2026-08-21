@@ -4,19 +4,14 @@
 git clone https://github.com/PunxsyProminence/ppbf-platform.git
 cd ppbf-platform
 
-## Step 2: Run Setup Batches
-Run scripts in order:
-- .\scripts\init.ps1
-- .\scripts\check-governance.ps1
-- .\scripts\run-tests.ps1
+## Step 2: Install
+This is an npm workspace — install from the repository root, never from
+`apps/web`:
 
-For full status checks and wrap-up:
-- .\scripts\final-master-status.ps1
-- .\scripts\quick-reference.ps1
-- .\scripts\health-check.ps1
+    npm ci
 
-Use .\master-runner.ps1 only when you want the top-level sequence runner.
-Use .\ppbf-cli.ps1 status or .\ppbf-cli.ps1 health for quick daily checks.
+(The `.ps1` scripts under `scripts/` are legacy Windows helpers, not part of
+the supported setup path. The checks that matter are the npm ones in Step 5.)
 
 ## Step 3: Environment
 Copy `.env.example` from the repository root to `apps/web/.env.local` and fill
@@ -77,15 +72,17 @@ deployment, migrations against protected environments, or anything the
 guardrails place behind a separate human gate.
 
 ## Step 5: Start Development
-cd apps/web
-npm install
-npm run dev
+From the repository root:
+
+    npm run dev
+
+Before opening a PR, run the same checks CI runs (also from the root):
+`npm run typecheck`, `npm run lint`, `npm test`, `npm run build` — and
+`npm run test:migrations` when SQL or persistence code changed.
 
 ## Step 6: Quick Reference
-Keep quick-reference.ps1 handy.
-Run final-master-status.ps1 for current status.
-Use backup-export.ps1 before changes.
-See [MASTER_INDEX.md](MASTER_INDEX.md) for the current documentation map.
+See [README.md](README.md) for the documentation hierarchy and
+[apps/web/README.md](apps/web/README.md) for the full command reference.
 
 Welcome to the PPBF platform development team.
 

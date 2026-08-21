@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     // -- in the browser or in any shared cache on the way back -- hands that
     // credential to a second holder nobody recorded, so the response carrying
     // it must not be stored. Same header the portrait routes use for the same
-    // reason (profile/README.md Gate 4).
+    // reason (docs/capabilities/GATES.md §5).
     return NextResponse.json({
       ok: true,
       video_session_id: videoSessionId,
