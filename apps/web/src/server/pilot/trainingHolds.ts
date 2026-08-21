@@ -52,6 +52,25 @@ export const TRAINING_HOLD_SCOPES: readonly TrainingHoldScope[] = [
   'conditioning_only',
 ];
 
+/**
+ * The subset of the vocabulary a NEW hold may be placed with.
+ *
+ * 'conditioning_only' stays in TRAINING_HOLD_SCOPES and in the type because
+ * historical rows carry it and every read/display path must keep rendering
+ * them -- but it is deliberately absent here, so it can no longer be OFFERED.
+ * Every enforcement probe in this module and in competitionSafetyGates.ts
+ * reads `scope in ('all_training', 'contact_only')`; a conditioning_only hold
+ * was recorded, shown to the guardian and athlete as "Conditioning is paused
+ * right now", and then stopped nothing. A safety promise the platform cannot
+ * keep is worse than not making it. If enforcement for a conditioning bar is
+ * ever built, adding the scope back here is the deliberate act that re-offers
+ * it.
+ */
+export const OPERATIONAL_TRAINING_HOLD_SCOPES: readonly TrainingHoldScope[] = [
+  'all_training',
+  'contact_only',
+];
+
 export const TRAINING_HOLD_REASON_CATEGORIES: readonly TrainingHoldReasonCategory[] = [
   'medical',
   'fatigue',

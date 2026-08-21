@@ -5,9 +5,11 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   linkEvidence,
+  listEvidence,
   removeEvidence,
   reviewOutcome,
 } from '@/src/server/pilot/interventionEvidence';
+import { listExecutions } from '@/src/server/pilot/interventionExecutions';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -37,6 +39,8 @@ jest.mock('@/src/server/pilot/interventionExecutions', () => {
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockLink = linkEvidence as jest.Mock;
+const mockListEvidence = listEvidence as jest.Mock;
+const mockListExecutions = listExecutions as jest.Mock;
 const mockRemove = removeEvidence as jest.Mock;
 const mockReview = reviewOutcome as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
@@ -161,4 +165,35 @@ test('removing evidence requires a stated reason; an unknown action is a 400', a
 
   expect((await PATCH(bodyRequest('PATCH', { action: 'delete_evidence', link_id: 'l-1' }))).status).toBe(400);
   expect((await POST(bodyRequest('POST', { action: 'auto_review', execution_id: 'ex-1' }))).status).toBe(400);
+});
+
+test('GET hands the evidence rows through with their read-time admissibility annotation intact', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockListExecutions.mockResolvedValueOnce([{ execution_id: 'ex-1', athlete_id: 'ath-1', status: 'completed' }]);
+  // listEvidence now returns source_admissible on every row (see
+  // interventionEvidence.listEvidence): a pre-gate film-study link whose
+  // proposal was rejected must reach the page saying so, not pass for
+  // accepted -- and must still be present, never filtered.
+  mockListEvidence.mockResolvedValueOnce([
+    {
+      link_id: 'l-film', evidence_role: 'immediate_post', source_kind: 'film_study',
+      source_id: 'prop-1', note: '', status: 'active', removed_reason: '',
+      source_admissible: false,
+    },
+    {
+      link_id: 'l-att', evidence_role: 'baseline', source_kind: 'training_attempt',
+      source_id: 'att-1', note: '', status: 'active', removed_reason: '',
+      source_admissible: true,
+    },
+  ]);
+
+  const response = await GET(new NextRequest('http://localhost/api/pilot/coach/intervention-review'));
+
+  expect(response.status).toBe(200);
+  const payload = (await response.json()) as { items: Array<{ evidence: Array<Record<string, unknown>> }> };
+  expect(payload.items).toHaveLength(1);
+  expect(payload.items[0].evidence.map((link) => [link.link_id, link.source_admissible])).toEqual([
+    ['l-film', false],
+    ['l-att', true],
+  ]);
 });

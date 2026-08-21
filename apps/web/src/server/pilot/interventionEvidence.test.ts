@@ -20,7 +20,7 @@ jest.mock('./interventionExecutions', () => ({
   getExecution: jest.fn(async () => null),
 }));
 
-import { queryOne } from './db';
+import { query, queryOne } from './db';
 import { getExecution } from './interventionExecutions';
 import {
   ADMISSIBLE_FILM_STUDY_REVIEW_STATES,
@@ -35,10 +35,12 @@ import {
   isAdmissibleFilmStudyReviewState,
   learningSignalError,
   linkEvidence,
+  listEvidence,
   performanceResultError,
   sourceKindError,
 } from './interventionEvidence';
 
+const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockGetExecution = getExecution as jest.Mock;
 
@@ -209,5 +211,46 @@ describe('film study: only an accepted proposal is evidence about a child', () =
     expect(insertParams[0]).toBe('org-1');
     expect(insertParams[4]).toBe('film_study');
     expect(insertParams[5]).toBe('prop-accepted');
+  });
+
+  /**
+   * The read-time half. Link-time refusal cannot reach a link that predates
+   * the gate or a proposal whose verdict changed afterwards, and doctrine
+   * forbids filtering or auto-stamping on read -- so listEvidence annotates:
+   * every row comes back, each carrying source_admissible computed through
+   * the SAME predicate the link gate uses.
+   */
+  test('listEvidence annotates every row with source_admissible instead of filtering', async () => {
+    const base = {
+      organization_id: 'org-1', execution_id: 'exec-1', note: '', status: 'active',
+      removed_reason: '', linked_by_account_id: 'acct-coach-1', created_at: '2026-08-01T00:00:00Z',
+    };
+    mockQuery.mockResolvedValueOnce([
+      { ...base, link_id: 'l-att', evidence_role: 'baseline', source_kind: 'training_attempt', source_id: 'att-1', film_study_review_state: null },
+      { ...base, link_id: 'l-accepted', evidence_role: 'immediate_post', source_kind: 'film_study', source_id: 'p-1', film_study_review_state: 'accepted' },
+      { ...base, link_id: 'l-rejected', evidence_role: 'retention', source_kind: 'film_study', source_id: 'p-2', film_study_review_state: 'rejected' },
+      // A film_study link whose proposal row is gone: inadmissible, fail-closed.
+      { ...base, link_id: 'l-orphan', evidence_role: 'context', source_kind: 'film_study', source_id: 'p-3', film_study_review_state: null },
+    ]);
+
+    const rows = await listEvidence('org-1', 'exec-1');
+
+    // Annotated, not filtered: all four rows survive, each honestly labeled.
+    expect(rows.map((row) => [row.link_id, row.source_admissible])).toEqual([
+      ['l-att', true],
+      ['l-accepted', true],
+      ['l-rejected', false],
+      ['l-orphan', false],
+    ]);
+    // The join's helper column never leaks to consumers.
+    expect(rows.some((row) => 'film_study_review_state' in row)).toBe(false);
+
+    // The SQL shape: the proposals join exists, is scoped to film_study rows
+    // and to the same organization, and the read stays org-and-execution bound.
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain('left join pilot.shadow_film_study_proposals');
+    expect(String(sql)).toContain("l.source_kind = 'film_study'");
+    expect(String(sql)).toContain('p.organization_id = l.organization_id');
+    expect(params).toEqual(['org-1', 'exec-1']);
   });
 });
