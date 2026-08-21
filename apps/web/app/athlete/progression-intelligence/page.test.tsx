@@ -181,3 +181,96 @@ describe('rabbit holes on the athlete gap cards', () => {
     expect(screen.queryByText(/GO DEEPER/)).toBeNull();
   });
 });
+
+// A Coach Card is an assignment with NO gap behind it (gap_id null, per the
+// coach-cards migration). The athlete's list renders it exactly like any
+// other assignment -- name, description, the log-completion button -- and
+// simply omits the "Assigned for" gap line instead of inventing a gap or
+// crashing on the null.
+describe('gap-free Coach Cards on the assignments list', () => {
+  const COACH_CARD_ASSIGNMENT = {
+    assignment_id: 'asg-card-1',
+    gap_id: null,
+    drill_name: 'Shadowbox',
+    drill_description: 'Three rounds before Friday, southpaw looks.',
+    drill_display_name: 'Shadowbox',
+    drill_display_description: 'Three rounds before Friday, southpaw looks.',
+    drill_difficulty: 'intermediate',
+    frequency_per_week: 3,
+    completion_percentage: 0,
+    status: 'assigned',
+    created_at: '2026-08-20T10:00:00.000Z',
+  };
+
+  const GAP_DRIVEN_ASSIGNMENT = {
+    assignment_id: 'asg-gap-1',
+    gap_id: 'gap-1',
+    drill_name: 'Pivot drill',
+    drill_description: 'Rounds on the line.',
+    drill_display_name: 'Pivot drill',
+    drill_display_description: 'Rounds on the line.',
+    drill_difficulty: 'intermediate',
+    frequency_per_week: null,
+    completion_percentage: 0,
+    status: 'assigned',
+    created_at: '2026-08-20T11:00:00.000Z',
+  };
+
+  const GAP = {
+    gap_id: 'gap-1',
+    athlete_id: 'athlete-001',
+    gap_type: 'technique',
+    gap_description: 'Rear foot stays flat through the cross.',
+    severity: 'high',
+    status: 'assigned',
+    created_at: '2026-07-30T12:00:00.000Z',
+  };
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function mockWithAssignments() {
+    return jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      if (url.includes('/progression/assignments')) {
+        return {
+          ok: true,
+          json: async () => ({ items: [COACH_CARD_ASSIGNMENT, GAP_DRIVEN_ASSIGNMENT] }),
+        } as Response;
+      }
+      if (url.includes('/progression/completions')) {
+        return { ok: true, json: async () => ({ items: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+  }
+
+  test('a gap-free assignment renders unchanged next to a gap-driven one, minus the gap line', async () => {
+    global.fetch = mockWithAssignments() as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<AthleteProgressionIntelligencePage />);
+    });
+
+    // The card renders as a full assignment.
+    await screen.findByText('Shadowbox');
+    expect(screen.getByText('Three rounds before Friday, southpaw looks.')).toBeTruthy();
+    expect(screen.getByText('3x/week')).toBeTruthy();
+
+    // The gap-driven neighbor keeps its "Assigned for" line; the card has
+    // none -- exactly one such line on the page.
+    expect(screen.getByText('Pivot drill')).toBeTruthy();
+    expect(screen.getAllByText(/Assigned for:/)).toHaveLength(1);
+
+    // The athlete can log against the card like any other assignment.
+    const logButtons = screen.getAllByRole('button', { name: 'Log completion' });
+    expect(logButtons).toHaveLength(2);
+  });
+});
