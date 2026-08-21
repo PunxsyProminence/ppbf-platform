@@ -137,7 +137,7 @@ describe('seed-reference-data workflow contract', () => {
     // Not just that each step mentions `all`, but that the steps appear in
     // dependency order -- the drill-library vocabulary widening has to land
     // before anything reads the drill library.
-    const steps = ['Seed Drill Library', 'Seed Disciplines', 'Seed Competence Cohorts'];
+    const steps = ['Seed Drill Library', 'Seed Disciplines', 'Seed Competence Cohorts', 'Seed Session Scripts'];
     const positions = steps.map((s) => workflow.indexOf(`- name: ${s}`));
     expect(positions.every((p) => p > -1)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -155,6 +155,10 @@ describe('seed-reference-data workflow contract', () => {
     // gate and then die mid-seed against a real database.
     const guard = workflow.slice(workflow.indexOf('SEED_ACCOUNT'));
     expect(guard).toMatch(/DATASET"\s*=\s*"all"/);
+    // session-scripts stamps created_by_account_id the same way
+    // (seed-session-scripts.mjs requires PPBF_SEED_ACCOUNT_ID), so its
+    // single-dataset dispatch must clear the same precondition.
+    expect(guard).toMatch(/DATASET"\s*=\s*"session-scripts"/);
   });
 
   it.each(LOADERS)('%s does not default its owning organization', (loader) => {
