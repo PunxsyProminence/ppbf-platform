@@ -12,15 +12,6 @@ passes (code + schema + docs), not a design proposal and not code changes.
 live database. Where a finding depends on deployed state rather than source,
 that is called out explicitly rather than implied.
 
-**Branch-state anomaly, disclosed rather than fixed:** the designated working
-branch (`claude/ppbf-production-baseline-sbffj5`) already carries ~288 files
-of unmerged history diverging from current `origin/main` (SHADOW-UI docs,
-visual-inventory docs, CI/package-integrity scripts) with no open, closed, or
-merged PR against it. This document does not touch, reconcile, or build on
-that content — it is added as a single new file on top of the branch as
-found. Whether that prior content is active work-in-progress or a stale
-artifact is an owner/repo-maintainer question, not one this pass answers.
-
 ---
 
 ## 1. KEEP ACTIVE
