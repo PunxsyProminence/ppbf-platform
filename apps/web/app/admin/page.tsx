@@ -1129,7 +1129,15 @@ export default function AdminCapabilitiesPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <ShadowChatButton context="Admin Hub" />
+              {/*
+                The SHADOW button (-> /admin/shadow) and the chat launcher used
+                to open this row. Operations V1 (2026-08-21) takes them off the
+                default header: this desk's job is capabilities and people, and
+                the night room keeps its own door in the corridor and the card
+                catalog (buildingMap.ts lists /admin/shadow under ADMIN_GATE),
+                so it stays one search away and fully reachable by URL. The
+                overview tab keeps its own chat launcher.
+              */}
               {canManagePeople && (
                 <Link
                   href="/admin/people"
@@ -1138,12 +1146,6 @@ export default function AdminCapabilitiesPage() {
                   PEOPLE
                 </Link>
               )}
-              <Link
-                href="/admin/shadow"
-                className="btn"
-              >
-                SHADOW
-              </Link>
               {/*
                 Video upload lives on a COACH page, and an organization_admin
                 lands here -- so the only surface that calls

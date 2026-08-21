@@ -134,8 +134,8 @@ describe('GET /api/pilot/auth/microsoft/callback', () => {
 
   test.each([
     ['platform_owner', '/admin/platform'],
-    ['organization_admin', '/admin'],
-    ['admin', '/admin'],
+    ['organization_admin', '/admin/people'],
+    ['admin', '/admin/people'],
     ['coach', '/coach/environment/intake-router'],
     ['athlete', '/athlete/dashboard'],
     ['parent', '/parent/dashboard'],

@@ -1134,10 +1134,22 @@ describe('the hub links to the session-delivery surfaces', () => {
     expect(link.getAttribute('href')).toBe(href);
   });
 
-  test('the existing quick actions were not displaced by the new links', async () => {
+  test('the existing operational quick actions were not displaced by the new links', async () => {
     await renderWorkspace();
 
     expect(screen.getByRole('link', { name: 'Open Scheduler' }).getAttribute('href')).toBe('/schedule');
-    expect(screen.getByRole('link', { name: 'Write a Rabbit Hole' }).getAttribute('href')).toBe('/rabbit-holes');
+  });
+
+  // Operations V1 (2026-08-21): the SHADOW Chat launcher and the Rabbit Hole
+  // shortcut left the quick-action row -- a coach's Quick Actions are
+  // operational work. Neither surface lost any access: the SHADOW Intel tab
+  // below remains the coach's own intelligence surface, and /rabbit-holes
+  // keeps its corridor door for the coach role.
+  test('the lab shortcuts are gone from Quick Actions, and SHADOW Intel stays', async () => {
+    await renderWorkspace();
+
+    expect(screen.queryByRole('link', { name: /SHADOW Chat/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Write a Rabbit Hole' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open SHADOW Intel' })).toBeTruthy();
   });
 });

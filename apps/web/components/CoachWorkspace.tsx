@@ -5,7 +5,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AnnouncementBanner from './AnnouncementBanner';
 import ProfilePortrait from './ProfilePortrait';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
-import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -1601,12 +1600,13 @@ export default function CoachWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
                 <h3 className="t-eyebrow">Quick Actions</h3>
+                {/* The SHADOW Chat launcher and the Write a Rabbit Hole link
+                    used to open this grid. Operations V1 (2026-08-21) keeps
+                    Quick Actions operational: the SHADOW Intel tab below is
+                    the coach's own intelligence surface and stays, and
+                    /rabbit-holes keeps its corridor door -- neither surface
+                    lost any access, only this shortcut row. */}
                 <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  <ShadowChatButton
-                    context="Coach Dashboard"
-                    label="SHADOW Chat"
-                    className="btn"
-                  />
                   <Link
                     href="/schedule"
                     className="btn"
@@ -1647,12 +1647,6 @@ export default function CoachWorkspace() {
                   >
                     Open SHADOW Intel
                   </button>
-                  <Link
-                    href="/rabbit-holes"
-                    className="btn btn--ghost"
-                  >
-                    Write a Rabbit Hole
-                  </Link>
                   <Link
                     href="/coach/floor-groups"
                     className="btn btn--ghost"
