@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
+import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymStamp } from '@/src/lib/gymTime';
@@ -11,24 +13,21 @@ import { formatGymStamp } from '@/src/lib/gymTime';
 // card is a drill assignment the athlete already knows how to log against,
 // and verification reuses the completions verify endpoint verbatim.
 
-interface RosterAthlete {
-  athlete_id: string;
-  display_name: string;
-}
+// The roster row as the server actually sends it. Typed from the producer
+// (getAthletesForCoach -> CoachRosterAthlete) rather than redeclared: this
+// picker first shipped reading `display_name`, a key
+// /api/pilot/athletes/list has never sent, so every option fell through to
+// the raw athlete_id in production while the test mock -- which invented
+// the same key -- stayed green.
+type RosterAthlete = Pick<CoachRosterAthlete, 'athlete_id' | 'full_name'>;
 
+// Exactly the four fields the coach branch of GET /api/pilot/admin/programs
+// returns (notes is stripped for a coach).
 interface ProgramOption {
   program_id: string;
   program_name: string;
   status: string;
   active_member_count: number;
-}
-
-interface DrillLibraryItem {
-  drill_id: string;
-  name: string;
-  focus: string;
-  difficulty: string;
-  active: boolean;
 }
 
 interface CardCompletion {
@@ -92,50 +91,79 @@ export default function CoachCardsPage() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [programs, setPrograms] = useState<ProgramOption[]>([]);
-  const [drills, setDrills] = useState<DrillLibraryItem[]>([]);
+  const [drills, setDrills] = useState<PilotDrill[]>([]);
   const [groups, setGroups] = useState<IssuanceGroup[]>([]);
   const [report, setReport] = useState<IssuanceReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const loadCards = useCallback(async () => {
-    const res = await fetch(`${apiBase()}/api/pilot/coach/cards`, { credentials: 'include' });
+  // signal is optional so the verify/dispute path can refresh the list
+  // without owning a controller; the mount effect passes its own.
+  const loadCards = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch(`${apiBase()}/api/pilot/coach/cards`, { credentials: 'include', signal });
     if (!res.ok) throw new Error(`Failed to load cards: ${res.status}`);
     const data = (await res.json()) as { items?: IssuanceGroup[] };
+    if (signal?.aborted) return;
     setGroups(data.items || []);
   }, []);
 
+  // Four reads on mount, every one of them abortable. Same shape as
+  // components/usePilotSession.ts: one controller for the effect, every
+  // fetch carries its signal, every setState is gated on the signal, and
+  // the cleanup aborts. Without it a coach who leaves the page mid-load
+  // gets state written into an unmounted tree -- and, worse on this page,
+  // `setLoading(false)` in a finally block that runs after the abort would
+  // swap "Loading cards…" for the "No cards issued yet" empty state, which
+  // is a claim about the gym rather than about the request.
   useEffect(() => {
-    (async () => {
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    void (async () => {
       try {
         setLoading(true);
         const [rosterRes, programsRes, drillsRes] = await Promise.all([
-          fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' }),
-          fetch(`${apiBase()}/api/pilot/admin/programs`, { credentials: 'include' }),
-          fetch(`${apiBase()}/api/pilot/drills`, { credentials: 'include' }),
+          fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include', signal }),
+          fetch(`${apiBase()}/api/pilot/admin/programs`, { credentials: 'include', signal }),
+          fetch(`${apiBase()}/api/pilot/drills`, { credentials: 'include', signal }),
         ]);
+        if (signal.aborted) return;
+
         if (rosterRes.ok) {
           const data = (await rosterRes.json()) as { items?: RosterAthlete[] };
+          if (signal.aborted) return;
           setRoster(data.items || []);
         }
         if (programsRes.ok) {
           const data = (await programsRes.json()) as { items?: ProgramOption[] };
+          if (signal.aborted) return;
           // Archived programs keep their history but are not offered new
           // work from this form.
           setPrograms((data.items || []).filter((program) => program.status === 'active'));
         }
         if (drillsRes.ok) {
-          const data = (await drillsRes.json()) as { items?: DrillLibraryItem[] };
+          // DrillLibraryResponse is the route's own body type, imported so a
+          // renamed key breaks the build instead of emptying the list.
+          const data = (await drillsRes.json()) as Partial<DrillLibraryResponse>;
+          if (signal.aborted) return;
           setDrills((data.items || []).filter((drill) => drill.active));
         }
-        await loadCards();
+        await loadCards(signal);
       } catch (error) {
+        if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          return;
+        }
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load');
       } finally {
-        setLoading(false);
+        // The empty state must not be revealed by a load this page abandoned.
+        if (!signal.aborted) setLoading(false);
       }
     })();
+
+    return () => {
+      controller.abort();
+    };
   }, [loadCards]);
 
   const onLibraryPick = (drillId: string) => {
@@ -290,7 +318,7 @@ export default function CoachCardsPage() {
                   <option value="">Choose from roster…</option>
                   {roster.map((athlete) => (
                     <option key={athlete.athlete_id} value={athlete.athlete_id}>
-                      {athlete.display_name || athlete.athlete_id}
+                      {athlete.full_name || athlete.athlete_id}
                     </option>
                   ))}
                 </select>

@@ -21,9 +21,13 @@ jest.mock('@/components/RoleStandaloneView', () => ({
   default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
 }));
 
+// full_name, because that is what getAthletesForCoach selects and therefore
+// what /api/pilot/athletes/list sends. The first version of this mock said
+// display_name -- a key the server has never produced -- so it pinned the
+// page's bug in place instead of catching it.
 const ROSTER = [
-  { athlete_id: 'ath-1', display_name: 'Anna Cards' },
-  { athlete_id: 'ath-2', display_name: 'Bela Cards' },
+  { athlete_id: 'ath-1', full_name: 'Anna Cards' },
+  { athlete_id: 'ath-2', full_name: 'Bela Cards' },
 ];
 
 const PROGRAMS = [
@@ -121,9 +125,24 @@ test('the two form modes swap the target picker: roster athletes vs ACTIVE progr
     render(<CoachCardsPage />);
   });
 
-  // Athlete mode is the default: the roster select is present.
+  // Athlete mode is the default: the roster select is present, and it shows
+  // the athlete's NAME. Asserting the id is absent is the half that matters
+  // -- the bug this pins rendered `display_name || athlete_id`, and since
+  // display_name was a key the server never sends, every option silently
+  // fell back to the raw id. A test that only looked for a truthy option,
+  // or matched on the id, would have passed straight through that.
   const athleteSelect = screen.getByLabelText('Athlete');
-  expect(within(athleteSelect).getByText('Anna Cards')).toBeTruthy();
+  const options = within(athleteSelect).getAllByRole('option');
+  // Placeholder plus the two roster rows.
+  expect(options.map((option) => option.textContent)).toEqual([
+    'Choose from roster…',
+    'Anna Cards',
+    'Bela Cards',
+  ]);
+  // The value stays the id -- it is what gets POSTed -- while the label is
+  // the name. Both halves are checked so a fix that swapped them would fail.
+  expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual(['', 'ath-1', 'ath-2']);
+  expect(within(athleteSelect).queryByText('ath-1')).toBeNull();
   expect(screen.queryByLabelText('Program')).toBeNull();
 
   fireEvent.click(screen.getByRole('button', { name: 'Whole program' }));
@@ -203,4 +222,47 @@ test('the no-frequency auto-complete semantics are stated to the coach, not sile
   expect(screen.getByText(/each logged session counts 25% and four logs complete the card/)).toBeTruthy();
   // No default is written into the field for the coach.
   expect((screen.getByLabelText('Sessions per week (optional)') as HTMLInputElement).value).toBe('');
+});
+
+// Leaving the page mid-load must abandon the load, not finish writing into
+// an unmounted tree. The failure this prevents is not abstract on this
+// page: the finally block's setLoading(false) would swap "Loading cards…"
+// for "No cards issued yet", which is a claim about the gym made by a
+// request nobody is waiting for any more.
+test('unmounting mid-load aborts every request and writes no state after', async () => {
+  const controllers: AbortSignal[] = [];
+  let resolveRoster: ((value: unknown) => void) | undefined;
+
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.signal) controllers.push(init.signal);
+    if (String(input).includes('/api/pilot/athletes/list')) {
+      // Hold the first read open so the unmount lands mid-flight.
+      return new Promise((resolve) => {
+        resolveRoster = resolve;
+      });
+    }
+    return { ok: true, status: 200, json: async () => ({ items: [] }) };
+  }) as unknown as typeof fetch;
+
+  const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+  const view = render(<CoachCardsPage />);
+  // Every fetch the effect started carries the effect's signal.
+  expect(controllers.length).toBeGreaterThan(0);
+  expect(controllers.every((signal) => signal.aborted === false)).toBe(true);
+
+  view.unmount();
+
+  // The cleanup aborted them all.
+  expect(controllers.every((signal) => signal.aborted)).toBe(true);
+
+  // Let the held request settle after unmount; nothing may be written.
+  await act(async () => {
+    resolveRoster?.({ ok: true, status: 200, json: async () => ({ items: [{ athlete_id: 'ath-1', full_name: 'Anna Cards' }] }) });
+  });
+
+  // React logs an act/update-after-unmount warning through console.error if
+  // state is written into an unmounted tree.
+  expect(errorSpy).not.toHaveBeenCalled();
+  errorSpy.mockRestore();
 });

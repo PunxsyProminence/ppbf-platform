@@ -58,9 +58,6 @@ export interface DrillAssignment {
   // whose issuance it is looking at.
   assigned_by_account_id: string;
   assigned_at: string;
-  // Shared tag across the rows one group Coach Card issuance created. Null
-  // on individual cards and on every gap-driven assignment.
-  issuance_id: string | null;
   created_at: string;
 }
 
@@ -69,6 +66,23 @@ export interface DrillAssignment {
 // exactly like the foreign key -- a drill_id alone would reach another gym's
 // drill. Exported for coachCards.ts, which reads the same rows and must not
 // grow a second projection that can drift from this one.
+//
+// EVERY COLUMN NAMED HERE MUST EXIST WITHOUT THE COACH-CARDS MIGRATION.
+// This projection is the read path for /athlete/progression-intelligence,
+// /coach/progression-intelligence and the assignments API -- all of which
+// shipped long before Coach Cards. issuance_id was briefly listed here and
+// it is added by pilot_slice_postgres_coach_cards_migration.sql, so every
+// one of those pre-existing reads started failing with `column
+// "issuance_id" does not exist` on any database that had not yet taken that
+// migration. drillsPersistence.pg.test.ts (base schema + progression +
+// drills, exactly a pre-cards database) caught it; in production the same
+// mistake is a deploy that 500s every assignment read until the migration
+// lands, which is the ordering hazard apply-migrations.yml exists to avoid.
+// coachCards.ts adds issuance_id to its OWN projection instead -- a card
+// cannot exist without that migration, so only the card reads require it.
+//
+// assigned_by_account_id and assigned_at are safe here: both are NOT NULL
+// columns of the original progression migration.
 export const ASSIGNMENT_FIELDS = `a.assignment_id, a.gap_id, a.athlete_id, a.drill_id,
            a.drill_name, a.drill_description,
            coalesce(d.name, a.drill_name) as drill_display_name,
@@ -76,7 +90,7 @@ export const ASSIGNMENT_FIELDS = `a.assignment_id, a.gap_id, a.athlete_id, a.dri
            d.category as drill_category, d.cues as drill_cues,
            a.drill_difficulty, a.rep_count, a.duration_minutes, a.frequency_per_week,
            a.due_date, a.status, a.completion_percentage,
-           a.assigned_by_account_id, a.assigned_at, a.issuance_id, a.created_at`;
+           a.assigned_by_account_id, a.assigned_at, a.created_at`;
 
 export const ASSIGNMENT_DRILL_JOIN = `left join pilot.drills d
       on d.organization_id = a.organization_id and d.drill_id = a.drill_id`;
@@ -172,7 +186,7 @@ export async function assignDrill(params: {
         returning assignment_id, organization_id, gap_id, athlete_id, drill_id, drill_name,
                  drill_description, drill_difficulty, rep_count, duration_minutes,
                  frequency_per_week, due_date, status, completion_percentage,
-                 assigned_by_account_id, assigned_at, issuance_id, created_at
+                 assigned_by_account_id, assigned_at, created_at
       )
       select ${ASSIGNMENT_FIELDS}
       from a

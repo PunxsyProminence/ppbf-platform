@@ -65,9 +65,16 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import type { ActorIdentity } from './access';
+import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
 import { issueCoachCard, issueCoachCardToProgram, listCoachCards } from './coachCards';
-import { assignDrill, recordCompletion } from './progression';
+import {
+  assignDrill,
+  getAssignmentCompletions,
+  getAthleteAssignments,
+  getDrillAssignmentById,
+  recordCompletion,
+  verifyCompletion,
+} from './progression';
 
 jest.setTimeout(180_000);
 
@@ -573,7 +580,7 @@ describe('the coach card list', () => {
         notes: 'Done before school',
       });
 
-      const coachView = await listCoachCards(ORG_ID, COACH_ID);
+      const coachView = await listCoachCards(coachActor);
       expect(coachView.map((row) => row.assignment_id)).toEqual([mine.assignment_id]);
       expect(coachView[0].athlete_name).toBe('Anna Cards');
       expect(coachView[0].completions).toHaveLength(1);
@@ -582,12 +589,381 @@ describe('the coach card list', () => {
       // One log with no frequency set is 25%, per touchAssignmentProgress.
       expect(coachView[0].completion_percentage).toBe(25);
 
-      const adminView = await listCoachCards(ORG_ID, null);
+      const adminView = await listCoachCards(adminActor);
       expect(adminView.map((row) => row.assignment_id).sort()).toEqual(
         [mine.assignment_id, theirs.assignment_id].sort(),
       );
       // The gap-driven assignment never surfaces as a card in either view.
       expect(adminView.map((row) => row.drill_name)).not.toContain('Pivot drill');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// P1 (#553 Codex finding). The card list is a READ of an athlete's name,
+// their completion notes, and their verification state. Scoping it by
+// assigned_by_account_id alone derives authorization from an identity that
+// never changes: the coach who issued a card keeps reading that athlete
+// forever, through a roster reassignment and past the expiry of temporary
+// coverage -- while assertActorCanAccessAthlete refuses them, and the
+// verify endpoint (which DOES recheck) refuses the write. #546 fixed this
+// defect class platform-wide; the fix is the same one, athleteIdsForCoach.
+describe('a card read is bounded by CURRENT access, not by who issued it', () => {
+  async function seedIssuedCard(athleteId: string) {
+    return issueCoachCard({
+      organizationId: ORG_ID,
+      athleteId,
+      assignedByAccountId: COACH_ID,
+      drillName: 'Shadowbox',
+      drillDescription: 'Three rounds before Friday',
+      drillDifficulty: 'intermediate',
+    });
+  }
+
+  test('a reassigned athlete drops out of the issuing coach list, while the admin keeps seeing it', async () => {
+    const client = await freshDatabase('cards_scope_reassign');
+    activeClient = client;
+    try {
+      const card = await seedIssuedCard(ATHLETES[0].id);
+      await recordCompletion({
+        organizationId: ORG_ID,
+        assignmentId: card.assignment_id,
+        athleteId: ATHLETES[0].id,
+        notes: 'Notes the coach must stop reading once the athlete moves',
+      });
+
+      // While the athlete is still theirs, the issuing coach reads it.
+      expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+
+      // The gym moves the athlete to another coach. Nothing about the card
+      // changes -- assigned_by_account_id still names the original issuer.
+      await client.query(
+        `update pilot.athletes set coach_id = $1 where organization_id = $2 and athlete_id = $3`,
+        [OTHER_COACH_ID, ORG_ID, ATHLETES[0].id],
+      );
+
+      expect(await listCoachCards(coachActor)).toEqual([]);
+      // Not a deletion: the record stands, and the organization admin --
+      // whose access did not change -- still reads it in full.
+      const adminView = await listCoachCards(adminActor);
+      expect(adminView.map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+      expect(adminView[0].completions[0].notes).toBe('Notes the coach must stop reading once the athlete moves');
+
+      // And the athlete's own read is untouched: their work does not vanish
+      // because the gym changed who coaches them.
+      const athleteView = await getAthleteAssignments(ORG_ID, ATHLETES[0].id);
+      expect(athleteView.map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('expired coverage ends the read the same way an assignment change does', async () => {
+    const client = await freshDatabase('cards_scope_coverage');
+    activeClient = client;
+    try {
+      // ATHLETES[1] is the OTHER coach's athlete; this coach reaches them
+      // only through a live coverage grant.
+      await client.query(
+        `insert into pilot.coach_coverage
+           (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+         values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour')`,
+        [ORG_ID, ATHLETES[1].id, COACH_ID, ADMIN_ID],
+      );
+
+      const card = await seedIssuedCard(ATHLETES[1].id);
+      expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+
+      // Coverage lapses. Same rule the access gate applies at read time:
+      // expires_at > now() is false, so the grant is simply over.
+      await client.query(
+        `update pilot.coach_coverage set starts_at = now() - interval '3 hours', expires_at = now() - interval '1 minute'
+         where organization_id = $1 and athlete_id = $2`,
+        [ORG_ID, ATHLETES[1].id],
+      );
+
+      expect(await listCoachCards(coachActor)).toEqual([]);
+      expect((await listCoachCards(adminActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('issuer scoping survives as a convenience: one coach does not read another coach card for a shared athlete', async () => {
+    const client = await freshDatabase('cards_scope_issuer');
+    activeClient = client;
+    try {
+      // Both cards are for an athlete THIS coach may currently reach, so
+      // only the issuer filter can separate them -- proving the athlete
+      // bound was added alongside it rather than in place of it.
+      const mine = await seedIssuedCard(ATHLETES[0].id);
+      await issueCoachCard({
+        organizationId: ORG_ID,
+        athleteId: ATHLETES[0].id,
+        assignedByAccountId: OTHER_COACH_ID,
+        drillName: 'Bag work',
+        drillDescription: 'Four rounds',
+        drillDifficulty: 'intermediate',
+      });
+
+      expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([mine.assignment_id]);
+      expect(await listCoachCards(adminActor)).toHaveLength(2);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// P2 (#553 Codex finding). Archiving a program deliberately leaves its
+// membership rows intact -- enrollment history outlives the group. That is
+// exactly why the issuance lookup has to check status: without it, active
+// memberships are still found under an archived program and real work is
+// issued to a group the gym has closed and the UI no longer offers.
+describe('an archived program cannot receive new work', () => {
+  test('a same-org archived program_id is refused by name, and writes nothing', async () => {
+    const client = await freshDatabase('cards_archived_program');
+    activeClient = client;
+    try {
+      await insertProgramWithMembers(client, [
+        { athleteId: ATHLETES[0].id, status: 'active' },
+        { athleteId: ATHLETES[2].id, status: 'active' },
+      ]);
+      await client.query(
+        `update pilot.programs set status = 'archived' where organization_id = $1 and program_id = $2`,
+        [ORG_ID, PROGRAM_ID],
+      );
+      // The memberships really do survive archiving -- otherwise this test
+      // would pass for the wrong reason (nobody to issue to).
+      const stillMembers = await client.query(
+        `select 1 from pilot.program_memberships where organization_id = $1 and status = 'active'`,
+        [ORG_ID],
+      );
+      expect(stillMembers.rows).toHaveLength(2);
+
+      await expect(
+        issueCoachCardToProgram({
+          actor: coachActor,
+          programId: PROGRAM_ID,
+          drillName: 'Jump rope',
+          drillDescription: 'Ten minutes',
+          drillDifficulty: 'beginner',
+        }),
+      ).rejects.toThrow(/archived/i);
+
+      const written = await client.query(`select 1 from pilot.drill_assignments`);
+      expect(written.rows).toHaveLength(0);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('reactivating the program makes it issuable again', async () => {
+    const client = await freshDatabase('cards_reactivated_program');
+    activeClient = client;
+    try {
+      await insertProgramWithMembers(client, [{ athleteId: ATHLETES[0].id, status: 'active' }]);
+      await client.query(
+        `update pilot.programs set status = 'archived' where organization_id = $1 and program_id = $2`,
+        [ORG_ID, PROGRAM_ID],
+      );
+      await client.query(
+        `update pilot.programs set status = 'active' where organization_id = $1 and program_id = $2`,
+        [ORG_ID, PROGRAM_ID],
+      );
+
+      const result = await issueCoachCardToProgram({
+        actor: coachActor,
+        programId: PROGRAM_ID,
+        drillName: 'Jump rope',
+        drillDescription: 'Ten minutes',
+        drillDifficulty: 'beginner',
+      });
+      expect(result!.issued.map((entry) => entry.athlete_id)).toEqual([ATHLETES[0].id]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// THE DEPLOY-ORDERING GUARANTEE, as a test rather than a comment.
+//
+// Coach Cards added a column to pilot.drill_assignments, and the first cut
+// of this branch put it straight into progression.ts's SHARED
+// ASSIGNMENT_FIELDS projection -- the one every assignment surface that
+// predates Coach Cards reads through. On any database that had not yet
+// taken the coach-cards migration, every one of those reads failed with
+// `column "issuance_id" does not exist`. drillsPersistence.pg.test.ts is
+// what caught it, because it builds exactly that database; in production
+// the same mistake is a deploy that 500s the athlete's own drill list until
+// the migration lands.
+//
+// This pins the rule directly rather than relying on another suite noticing
+// again: the pre-existing assignment reads must work on a pre-cards
+// database. Adding a new column to a shared projection breaks this test at
+// the moment it is written.
+describe('assignment reads that predate Coach Cards do not require its migration', () => {
+  test('a pre-cards database still serves assignDrill and the assignment reads', async () => {
+    // Base schema + progression + drills, and deliberately NOT coach-cards.
+    const client = await progressionOnlyDatabase('cards_predeploy');
+    await client.query(drillsMigrationSql);
+    activeClient = client;
+    try {
+      const columns = await client.query(
+        `select 1 from pg_attribute
+         where attrelid = to_regclass('pilot.drill_assignments')
+           and attname = 'issuance_id' and not attisdropped`,
+      );
+      // Guards the guard: if the column were already here the assertions
+      // below would prove nothing about a pre-cards database.
+      expect(columns.rows).toHaveLength(0);
+
+      await client.query(
+        `insert into pilot.progression_gaps
+           (gap_id, organization_id, athlete_id, coach_account_id, gap_type, gap_description, detected_from)
+         values ('gap-predeploy', $1, $2, $3, 'technique', 'Flat rear foot', 'coach_observation')`,
+        [ORG_ID, ATHLETES[0].id, COACH_ID],
+      );
+
+      const assignment = await assignDrill({
+        organizationId: ORG_ID,
+        gapId: 'gap-predeploy',
+        athleteId: ATHLETES[0].id,
+        assignedByAccountId: COACH_ID,
+        drillName: 'Pivot drill',
+        drillDescription: 'Rounds on the line',
+        drillDifficulty: 'intermediate',
+      });
+      expect(assignment.assignment_id).toBeTruthy();
+
+      const listed = await getAthleteAssignments(ORG_ID, ATHLETES[0].id);
+      expect(listed.map((row) => row.assignment_id)).toEqual([assignment.assignment_id]);
+
+      const single = await getDrillAssignmentById(ORG_ID, assignment.assignment_id);
+      expect(single?.assignment_id).toBe(assignment.assignment_id);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// THE TWO ENDPOINTS MUST NOT DISAGREE ABOUT WHO A COACH MAY REACH.
+//
+// The verify branch of /api/pilot/progression/completions has always
+// rechecked with assertActorCanAccessAthlete before it flips anything. The
+// listing did not, so the pair had drifted apart: one refused the write
+// while the other kept handing over the athlete's name, notes and
+// verification state. A divergence like that is the bug -- whichever side
+// is looser is the one that decides what actually leaks -- so this pins
+// them together in both directions rather than testing the list alone.
+describe('the listing and the verification endpoint agree about current access', () => {
+  async function canVerify(actor: ActorIdentity, athleteId: string): Promise<boolean> {
+    try {
+      await assertActorCanAccessAthlete(actor, athleteId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  test('authorized: both allow -- and after reassignment: both refuse, for the same athlete', async () => {
+    const client = await freshDatabase('cards_agreement');
+    activeClient = client;
+    try {
+      const card = await issueCoachCard({
+        organizationId: ORG_ID,
+        athleteId: ATHLETES[0].id,
+        assignedByAccountId: COACH_ID,
+        drillName: 'Shadowbox',
+        drillDescription: 'Three rounds',
+        drillDifficulty: 'intermediate',
+      });
+      const completion = await recordCompletion({
+        organizationId: ORG_ID,
+        assignmentId: card.assignment_id,
+        athleteId: ATHLETES[0].id,
+        notes: 'Logged while the athlete was still theirs',
+      });
+
+      // (1) Currently authorized: the coach lists the card AND may verify.
+      expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+      expect(await canVerify(coachActor, ATHLETES[0].id)).toBe(true);
+      const verified = await verifyCompletion(completion.completion_id, COACH_ID, true, ORG_ID);
+      expect(verified?.verification_status).toBe('verified');
+
+      // (2) The athlete is reassigned to another coach.
+      await client.query(
+        `update pilot.athletes set coach_id = $1 where organization_id = $2 and athlete_id = $3`,
+        [OTHER_COACH_ID, ORG_ID, ATHLETES[0].id],
+      );
+
+      // (3) + (5) Both sides refuse now, and they refuse together.
+      expect(await listCoachCards(coachActor)).toEqual([]);
+      expect(await canVerify(coachActor, ATHLETES[0].id)).toBe(false);
+
+      // The coach who now HOLDS the athlete is allowed by the access gate --
+      // so "nobody can reach this record" is not why the list came back
+      // empty. The other coach simply issued no card of their own.
+      expect(await canVerify(
+        { accountId: OTHER_COACH_ID, role: 'coach', organizationId: ORG_ID, athleteId: null },
+        ATHLETES[0].id,
+      )).toBe(true);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('and neither side is reachable from another organization', async () => {
+    const client = await freshDatabase('cards_agreement_cross_org');
+    activeClient = client;
+    try {
+      const card = await issueCoachCard({
+        organizationId: ORG_ID,
+        athleteId: ATHLETES[0].id,
+        assignedByAccountId: COACH_ID,
+        drillName: 'Shadowbox',
+        drillDescription: 'Three rounds',
+        drillDifficulty: 'intermediate',
+      });
+
+      // A coach in another gym, carrying the SAME account id and the same
+      // athlete id -- only the organization differs. Every read is scoped
+      // by organization_id, so both sides must come up empty.
+      const foreignActor: ActorIdentity = {
+        accountId: COACH_ID,
+        role: 'coach',
+        organizationId: OTHER_ORG_ID,
+        athleteId: null,
+      };
+      expect(await listCoachCards(foreignActor)).toEqual([]);
+      expect(await canVerify(foreignActor, ATHLETES[0].id)).toBe(false);
+
+      // An organization admin of the other gym is no different: the record
+      // belongs to a gym that is not theirs.
+      expect(await listCoachCards({
+        accountId: ADMIN_ID, role: 'organization_admin', organizationId: OTHER_ORG_ID, athleteId: null,
+      })).toEqual([]);
+
+      // The verification write is scoped too, not just the read: the same
+      // completion_id is untouchable from the other gym.
+      const completion = await recordCompletion({
+        organizationId: ORG_ID,
+        assignmentId: card.assignment_id,
+        athleteId: ATHLETES[0].id,
+        notes: 'ours',
+      });
+      expect(await verifyCompletion(completion.completion_id, COACH_ID, true, OTHER_ORG_ID)).toBeNull();
+      // Still pending in the gym that owns it -- the foreign attempt changed nothing.
+      const [own] = await getAssignmentCompletions(ORG_ID, card.assignment_id);
+      expect(own.verification_status).toBe('pending');
     } finally {
       activeClient = null;
       await client.end();
