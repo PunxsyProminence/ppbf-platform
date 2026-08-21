@@ -22,7 +22,11 @@ interface ProgressionGap {
 
 interface DrillAssignment {
   assignment_id: string;
-  gap_id: string;
+  // Null on a Coach Card -- work a coach issued directly, with no detection
+  // gap behind it. getGapForAssignment already tolerates it (find over the
+  // gaps list simply misses), so the card renders without an "Assigned for"
+  // line rather than with an invented gap.
+  gap_id: string | null;
   drill_name: string;
   drill_description: string;
   drill_display_name?: string;
