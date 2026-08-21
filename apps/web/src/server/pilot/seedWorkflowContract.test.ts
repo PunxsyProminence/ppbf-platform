@@ -149,7 +149,7 @@ describe('seed-reference-data workflow contract', () => {
     }
   });
 
-  it('"all" still demands the seeder account drill-library needs', () => {
+  it('"all" still demands the seeder account drill-library and session-scripts need', () => {
     // drill-library stamps a seeder onto every row and fails at the insert
     // without one. If `all` skipped that precondition, the run would clear the
     // gate and then die mid-seed against a real database.

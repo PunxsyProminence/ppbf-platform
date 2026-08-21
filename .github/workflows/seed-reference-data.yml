@@ -27,7 +27,9 @@
 #
 # session-scripts joined the choices once its two content-less Friday-sparring
 # blocks were given real what_to_* text; it needs only its own migration
-# (pilot-apply-session-scripts) -- its blocks reference no drills -- so it runs
+# (`npm run pilot:apply-session-scripts`, which runs
+# scripts/pilot-apply-session-scripts-migration.mjs) -- its blocks reference
+# no drills -- so it runs
 # after the original three.
 #
 # ONE LOADER IS DELIBERATELY ABSENT from the choices below, because it fails
