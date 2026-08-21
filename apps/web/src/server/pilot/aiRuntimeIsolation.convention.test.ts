@@ -13,7 +13,7 @@
 //   src/server/pilot/pilotOpsReadiness.ts     (ops probe REPORTING on AI config)
 //
 // Nothing else -- no shadowFilmStudy/embedding/router chain member imports it
-// directly. If a new module legitimately needs the AI runtime, it belongs on
+// directly, and src/server/document-intake (also swept) does not import it. If a new module legitimately needs the AI runtime, it belongs on
 // the SHADOW side of the line: add it to the allowlist with the reason, the
 // way organizationScope.convention.test.ts records its exceptions.
 
@@ -23,15 +23,22 @@ import path from 'node:path';
 const WEB_ROOT = path.resolve(__dirname, '../../..');
 const SCAN_ROOTS = [
   path.join(WEB_ROOT, 'app', 'api'),
-  path.join(WEB_ROOT, 'src', 'server', 'pilot'),
+  // ALL of src/server, not just pilot: document-intake lives beside pilot
+  // today (no AI import as of this writing), and any future sibling must be
+  // born inside this gate rather than escape it by directory name.
+  path.join(WEB_ROOT, 'src', 'server'),
 ];
 
 /**
- * Any import shape that binds a module to the AI runtime: static `from`,
- * dynamic `import(...)`, and `require(...)`. Matched against the specifier
- * string so a re-export or deep path variant is caught too.
+ * Any import shape that binds a module to the AI runtime: static `from`
+ * (imports and re-exports alike), side-effect `import '...'`, dynamic
+ * `import(...)`, and `require(...)`. azureAiRuntime is matched as a whole
+ * path segment anywhere in the specifier -- bare (./azureAiRuntime), deep
+ * (.../azureAiRuntime/internal), or with an explicit extension
+ * (.../azureAiRuntime.ts) -- while a module that merely contains the
+ * substring (azureAiRuntimeMetrics) does not match.
  */
-const IMPORTS_AI_RUNTIME = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)['"][^'"]*azureAiRuntime['"]/;
+const IMPORTS_AI_RUNTIME = /(?:from\s+|import\s+|import\s*\(\s*|require\s*\(\s*)['"](?:[^'"]*\/)?azureAiRuntime(?:\.[A-Za-z]+)?(?:\/[^'"]*)?['"]/;
 
 /**
  * The SHADOW/ops surfaces that may depend on the AI runtime. Everything under
