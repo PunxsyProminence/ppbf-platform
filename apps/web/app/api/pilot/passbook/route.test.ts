@@ -83,13 +83,41 @@ describe('GET /api/pilot/passbook', () => {
 
     expect(response.status).toBe(200);
     expect(mockAssertAccess).toHaveBeenCalledWith(actor, 'ath-1');
-    expect(mockGetPassbook).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockGetPassbook).toHaveBeenCalledWith('org-1', 'ath-1', 'coach');
+  });
+
+  // pilot.coach_observations is shared with guardian-authored barrier reports
+  // and staff conduct notes, and this route's gate admits the athlete
+  // themselves plus every linked guardian. The reader's role therefore has to
+  // reach getAthletePassbook, which owns the per-audience note_type
+  // allow-list; a route that dropped it would hand every reader the widest
+  // book the module can build.
+  test.each([
+    ['athlete', { accountId: 'athlete-account-1', athleteId: 'ath-1' }],
+    ['parent', { accountId: 'parent-account-1', athleteId: null }],
+    ['coach', { accountId: 'coach-1', athleteId: null }],
+    ['organization_admin', { accountId: 'admin-1', athleteId: null }],
+    ['admin', { accountId: 'admin-legacy-1', athleteId: null }],
+  ] as const)('passes the %s reader role down so the observation scope can be decided', async (role, identity) => {
+    const actor = principal({ role, ...identity });
+    mockRequirePrincipal.mockResolvedValueOnce(actor);
+    mockAssertAccess.mockResolvedValueOnce(undefined);
+    mockGetPassbook.mockResolvedValueOnce({ athlete: { athlete_id: 'ath-1' }, pages: {} });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(mockGetPassbook).toHaveBeenCalledWith('org-1', 'ath-1', role);
   });
 
   test.each([
     ['athlete', { accountId: 'athlete-account-1', athleteId: 'ath-1' }],
     ['parent', { accountId: 'parent-account-1', athleteId: null }],
-  ] as const)('allows an authorized %s to receive coach observations and progression gaps in the book', async (role, identity) => {
+  // getAthletePassbook is mocked here, so this pins the route's pass-through:
+  // an authorized athlete/guardian still receives the corner and the gaps.
+  // WHICH coach_observations rows the corner may carry is decided one layer
+  // down and is pinned in src/server/pilot/passbook.test.ts.
+  ] as const)('allows an authorized %s to receive the scoped coach observations and progression gaps in the book', async (role, identity) => {
     const actor = principal({ role, ...identity });
     mockRequirePrincipal.mockResolvedValueOnce(actor);
     mockAssertAccess.mockResolvedValueOnce(undefined);
