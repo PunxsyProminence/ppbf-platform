@@ -1,3 +1,4 @@
+import { athleteIdsForCoach, isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { query } from './db';
 import { guardianAthleteIds } from './guardianAccess';
@@ -118,34 +119,83 @@ function clampOffset(value: number | undefined): number {
   return Math.max(0, Number(value));
 }
 
+/**
+ * Two independent questions, one per field. They were previously entangled in
+ * `restrictToAthleteIds` + `excludeAthleteScoped`, which could not express the
+ * one combination a coach needs -- "these athletes, AND the rows that belong
+ * to no athlete at all" -- and that gap is what left the coach branch with no
+ * athlete restriction whatsoever.
+ */
 interface AthleteScope {
-  // Non-null: restrict rows to only these athlete IDs (parent: their linked
-  // athletes; athlete: themselves). Null: no athlete-based restriction.
+  // WHICH athlete-tied rows may this actor see?
+  // A list: only rows tied to these athlete IDs (athlete: themselves; parent:
+  // their linked athletes; coach: their assigned + actively covered roster).
+  // The EMPTY list is a real answer -- "no athlete-tied row at all" -- and is
+  // what every role that assertActorCanAccessAthlete refuses outright gets.
+  // Null means unrestricted and is reserved for the organization admin, who
+  // administers the whole gym's records.
   restrictToAthleteIds: string[] | null;
-  // True: strip out any row tied to a specific athlete entirely (volunteer --
-  // pilot.access.ts's assertActorCanAccessAthlete denies volunteers athlete
-  // access outright, so read-models must not leak athlete-scoped rows either).
-  excludeAthleteScoped: boolean;
+  // May this actor ALSO see rows that are tied to no athlete -- intake, job,
+  // formula and library events, and intake cases with no primary athlete?
+  // These carry no athlete subject to protect, and they are the bulk of an
+  // operational feed. False for the two roles whose whole read is one child:
+  // an athlete and a guardian have no business in the gym's operational
+  // stream, and that is the behaviour they already had.
+  includeUnscopedRows: boolean;
 }
 
-// Mirrors the guardian-link authorization check in
-// assertActorCanAccessAthlete (access.ts) so a parent's SHADOW read-model
-// access matches their actual linked-athlete scope everywhere in the app.
+/**
+ * Mirrors assertActorCanAccessAthlete (access.ts) so SHADOW read-model access
+ * matches the actor's real athlete scope everywhere in the app -- the same
+ * relationship, evaluated on every read.
+ *
+ * The coach branch is the one that was missing. A coach fell through to "no
+ * athlete restriction at all", so /api/pilot/shadow/events answered a
+ * caller-supplied `entity_id` for ANY athlete in the organization, and
+ * roleCanViewSensitivePayload returns true for a coach, so the pain-report
+ * payload came back with body site, pain type and severity intact. The
+ * sanitizer is not the defect: a coach seeing pain location and severity for
+ * THEIR OWN athlete is load-bearing (describePainReportEvent below renders
+ * exactly those fields into the coach's feed label). Restricting the coach to
+ * athleteIdsForCoach -- the same coach_id-of-record UNION active-coverage
+ * contract the escalations, readiness board and Coach Cards reads already use
+ * -- is what makes the unredacted payload legitimate.
+ *
+ * Roles that assertActorCanAccessAthlete refuses outright get the empty list,
+ * not null. That was already the intent for a volunteer; volunteer was simply
+ * the only one of the four that had been written down. staff falls through the
+ * same refusal; platform_owner and board are refused by name there, and
+ * shadowRoleSets.ts states the Omega tier is broader in breadth but strictly
+ * narrower in depth and "must never reach protected health information ... in
+ * any organization" -- which an org-wide unredacted pain-report read is.
+ *
+ * The default is the empty list, so a role added to PilotRole later reaches no
+ * athlete-tied row until someone decides it should. It fails closed.
+ */
 async function resolveAthleteScope(context: ShadowReadContext): Promise<AthleteScope> {
   if (context.actorRole === 'athlete') {
-    return { restrictToAthleteIds: [context.athleteId ?? '__unbound_athlete__'], excludeAthleteScoped: false };
+    return { restrictToAthleteIds: [context.athleteId ?? '__unbound_athlete__'], includeUnscopedRows: false };
   }
 
   if (context.actorRole === 'parent') {
     const athleteIds = await guardianAthleteIds(context.organizationId, context.actorAccountId);
-    return { restrictToAthleteIds: athleteIds.length > 0 ? athleteIds : ['__unbound_athlete__'], excludeAthleteScoped: false };
+    return { restrictToAthleteIds: athleteIds.length > 0 ? athleteIds : ['__unbound_athlete__'], includeUnscopedRows: false };
   }
 
-  if (context.actorRole === 'volunteer') {
-    return { restrictToAthleteIds: null, excludeAthleteScoped: true };
+  if (context.actorRole === 'coach') {
+    // Empty is a real answer here too: a coach who currently reaches nobody
+    // reads the operational feed and no athlete's rows. Never null.
+    return {
+      restrictToAthleteIds: await athleteIdsForCoach(context.organizationId, context.actorAccountId),
+      includeUnscopedRows: true,
+    };
   }
 
-  return { restrictToAthleteIds: null, excludeAthleteScoped: false };
+  if (isOrganizationAdminRole(context.actorRole)) {
+    return { restrictToAthleteIds: null, includeUnscopedRows: true };
+  }
+
+  return { restrictToAthleteIds: [], includeUnscopedRows: true };
 }
 
 function roleCanViewSensitivePayload(role: PilotRole): boolean {
@@ -242,13 +292,22 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
          or payload->>'intake_document_id' = $6
          or payload->>'correlation_id' = $6
        )
+       -- The access boundary. Two disjuncts, one per AthleteScope field: the
+       -- athlete-tied rows this actor may see, plus -- separately -- the rows
+       -- tied to no athlete. Keeping them separate is the whole point. With
+       -- the athlete list alone the predicate is EXCLUSIVE: scoping a coach
+       -- to their roster and stopping there deletes every athlete-free
+       -- operational event (intake, library, formula, job) from their feed,
+       -- which is most of it. Measured on a real Postgres over an
+       -- eight-row fixture: five rows survive with this predicate, one
+       -- without the second disjunct.
        and (
-         ($9::text[] is null and not $10::boolean)
-         or ($9::text[] is not null and (
-           (entity_type = 'athlete' and entity_id = any($9::text[]))
+         (
+           $9::text[] is null
+           or (entity_type = 'athlete' and entity_id = any($9::text[]))
            or payload->>'athlete_id' = any($9::text[])
            or payload->>'owner_entity_id' = any($9::text[])
-         ))
+         )
          or ($10::boolean and entity_type <> 'athlete' and payload->>'athlete_id' is null and payload->>'owner_entity_id' is null)
        )
      order by created_at desc
@@ -264,7 +323,7 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
       limit,
       offset,
       scope.restrictToAthleteIds,
-      scope.excludeAthleteScoped,
+      scope.includeUnscopedRows,
     ],
   );
 
@@ -299,14 +358,25 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
          or dimensions->>'entity_id' = $4
          or dimensions->>'correlation_id' = $4
        )
+       -- Same two disjuncts as listShadowEvents. The athlete-free test is
+       -- stricter than the athlete_id-is-null test it replaces: a dimensions blob
+       -- naming an athlete through entity_type/entity_id or owner_entity_id is
+       -- athlete-tied whether or not it also carries athlete_id, and reading
+       -- it as unscoped would hand it straight back through the second
+       -- disjunct to exactly the roles the first one just excluded.
        and (
-         ($7::text[] is null and not $8::boolean)
-         or ($7::text[] is not null and (
-           dimensions->>'athlete_id' = any($7::text[])
+         (
+           $7::text[] is null
+           or dimensions->>'athlete_id' = any($7::text[])
            or dimensions->>'entity_id' = any($7::text[])
            or dimensions->>'owner_entity_id' = any($7::text[])
-         ))
-         or ($8::boolean and dimensions->>'athlete_id' is null)
+         )
+         or (
+           $8::boolean
+           and dimensions->>'athlete_id' is null
+           and dimensions->>'owner_entity_id' is null
+           and dimensions->>'entity_type' is distinct from 'athlete'
+         )
        )
      order by created_at desc
      limit $5
@@ -319,7 +389,7 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
       limit,
       offset,
       scope.restrictToAthleteIds,
-      scope.excludeAthleteScoped,
+      scope.includeUnscopedRows,
     ],
   );
 
@@ -435,7 +505,16 @@ export async function getShadowReviewProjection(
      where c.organization_id = $1
        and ($2::text is null or c.intake_case_id::text = $2)
        and ($3::text is null or c.status = $3)
-       and ($6::text[] is null or c.primary_athlete_id = any($6::text[]))
+       -- Same two disjuncts again. Without the second one, scoping a coach
+       -- here would drop every intake case that has no primary athlete yet --
+       -- a case filed before the athlete record exists is precisely what a
+       -- review queue is for -- so the fix to one leak would have emptied the
+       -- queue it protects.
+       and (
+         $6::text[] is null
+         or c.primary_athlete_id = any($6::text[])
+         or ($7::boolean and c.primary_athlete_id is null)
+       )
      order by coalesce(se.created_at, c.updated_at) desc
      limit $4
      offset $5`,
@@ -446,6 +525,7 @@ export async function getShadowReviewProjection(
       limit,
       offset,
       scope.restrictToAthleteIds,
+      scope.includeUnscopedRows,
     ],
   );
 
@@ -455,12 +535,19 @@ export async function getShadowReviewProjection(
      where c.organization_id = $1
        and ($2::text is null or c.intake_case_id::text = $2)
        and ($3::text is null or c.status = $3)
-       and ($4::text[] is null or c.primary_athlete_id = any($4::text[]))`,
+       -- Must stay identical to the items query's boundary above, or the
+       -- caller pages through one set of rows against another set's count.
+       and (
+         $4::text[] is null
+         or c.primary_athlete_id = any($4::text[])
+         or ($5::boolean and c.primary_athlete_id is null)
+       )`,
     [
       context.organizationId,
       filters.entityId?.trim() || filters.correlationId?.trim() || null,
       filters.eventName?.trim() || null,
       scope.restrictToAthleteIds,
+      scope.includeUnscopedRows,
     ],
   );
 
