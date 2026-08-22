@@ -109,6 +109,14 @@ jobs:
           assert.equal(classifyPaths(['apps/web/components/SignInPanel.tsx']).homepageE2e, true);
           assert.equal(classifyPaths(['apps/web/app/login/page.tsx']).homepageE2e, true);
 
+          // And the board suite, which was the remaining spec that could not
+          // fire its own flag. Its three tests are unauthenticated redirect
+          // checks that each assert on the 'The Bell' heading, so the sign-in
+          // door is one of its surfaces too.
+          assert.equal(classifyPaths(['apps/web/e2e/board-governance.spec.ts']).boardE2e, true);
+          assert.equal(classifyPaths(['apps/web/components/SignInPanel.tsx']).boardE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/login/page.tsx']).boardE2e, true);
+
           // ...and still only that one. The rest of the signed-in plumbing is
           // not on an unauthenticated visitor's path, and widening this
           // predicate to all of it would run the homepage suite on every
