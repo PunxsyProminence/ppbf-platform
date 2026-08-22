@@ -6,6 +6,28 @@ import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/
 
 export const runtime = 'nodejs';
 
+// NO GUARDIAN-CONSENT GATE HERE, UNLIKE THE SIBLING [videoId] READ ROUTE.
+//
+// /api/pilot/video/[videoId] refuses to mint a playback SAS for an athlete
+// whose guardian signed a photo-only consent (covers_video = false). This route
+// deliberately does not, for two reasons worth writing down before someone
+// makes the two "consistent":
+//
+//   1. No media crosses this boundary. The rows below are metadata -- title,
+//      notes, file name, scan state. A guardian limiting consent to photos
+//      limited the use of the FOOTAGE; it is not a request to hide from an
+//      assigned coach that a session was filmed at all, and a coach who cannot
+//      see the row cannot tell a missing upload from a withheld one.
+//   2. The unfiltered coach branch below lists every unassigned clip plus every
+//      athlete on that coach's roster, so a consent gate here would mean a
+//      per-athlete consent lookup on every page load of the coach's main video
+//      screen -- and would degrade toward a blank list, which reads as "your
+//      uploads vanished" rather than as a refusal.
+//
+// Whether the metadata itself should be scoped is a real question, but it is a
+// product decision about what a coach may know, not a gap in consent
+// enforcement, and it is not settled here.
+
 interface VideoSessionRow {
   video_session_id: string;
   title: string;

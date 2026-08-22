@@ -41,6 +41,32 @@ export const dynamic = 'force-dynamic';
  * itself a disclosure about that child. hiddenNotFound() is the platform's
  * existing answer to exactly this, and it is used here for "no such account",
  * "no photo", "not released" and "not your family" alike.
+ *
+ * AND A FIFTH GATE THAT IS DELIBERATELY ABSENT: GUARDIAN MEDIA CONSENT.
+ *
+ * It is a fair question, because gate 4's photo_review_state is a human
+ * APPROPRIATENESS review -- "is this a suitable picture" -- which is a
+ * genuinely different question from "did a guardian agree to this child's
+ * image being used". The sibling video route (/api/pilot/video/[videoId]) does
+ * now consult pilot.waivers before serving footage. This one does not, on
+ * three grounds:
+ *
+ *   1. The one scope flag that route enforces cannot apply here. It refuses on
+ *      covers_video = false -- a photo-only consent -- and a photo-only consent
+ *      by definition still covers a photograph. There is nothing for it to
+ *      refuse. public_use_allowed does not apply either: the migration defines
+ *      false as "internal/gym-only", and an in-circle portrait IS that use.
+ *   2. Refusing on a MISSING consent row would close this route for nearly the
+ *      whole roster. The only writer of a consent row the gate can see is the
+ *      guardian's own console (see that route's own note for the measurement),
+ *      so absence is the default state, not a signal.
+ *   3. profileVisibility.ts already decided this surface on purpose: portraits
+ *      are scoped by RELATIONSHIP, to the three parties who already see the
+ *      child in the physical gym. That decision is not overturned from here.
+ *
+ * What remains genuinely open -- an explicitly WITHDRAWN consent, which today
+ * retracts published media but leaves this route serving -- is an owner
+ * decision, not a bug to be quietly closed by the next reader.
  */
 export async function GET(
   request: NextRequest,

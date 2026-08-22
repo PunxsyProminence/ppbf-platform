@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { queryOne } from '@/src/server/pilot/db';
+import { checkGuardianMediaConsent, type ConsentCheckResult } from '@/src/server/pilot/guardianConsent';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -19,11 +20,71 @@ jest.mock('@/src/server/pilot/blob', () => ({
   getPilotVideoSasUrl: jest.fn(() => 'https://blob.example/sas'),
 }));
 
+// Only checkGuardianMediaConsent is replaced; the rest of the module (and so
+// GuardianConsentMissingError's identity, which http.ts branches on) stays
+// real. Same shape the other consent-gated routes use -- publications/publish,
+// admin/video-compliance, shadow/video-analysis.
+jest.mock('@/src/server/pilot/guardianConsent', () => {
+  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
+  return { ...actual, checkGuardianMediaConsent: jest.fn() };
+});
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
+const mockCheckConsent = jest.mocked(checkGuardianMediaConsent);
+
+/**
+ * The default every existing test in this file runs under, and it is
+ * deliberately the WORST-CASE REAL ONE: no guardian links and no consent rows.
+ *
+ * That is not a convenience default, it is the measured default state of a
+ * roster-imported athlete. scripts/seed-data.ts writes no waiver row; both
+ * intake writers call upsertWaiver without parentId, so their rows have
+ * parent_id NULL and currentConsentByGuardian cannot see them. The only writer
+ * of a visible row is the guardian's own console. So if this route ever starts
+ * refusing on ABSENT consent, every unchanged test below turns red -- which is
+ * exactly the alarm that belongs on that change.
+ */
+const NO_CONSENT_ON_FILE: ConsentCheckResult = {
+  ok: false,
+  guardianIds: [],
+  missingParentIds: [],
+  perGuardian: [],
+};
+
+const consentResult = (perGuardian: ConsentCheckResult['perGuardian']): ConsentCheckResult => ({
+  ok: perGuardian.every((guardian) => guardian.status === 'signed'),
+  guardianIds: perGuardian.map((guardian) => guardian.parentId),
+  missingParentIds: perGuardian.filter((g) => g.status !== 'signed').map((g) => g.parentId),
+  perGuardian,
+});
+
+const guardian = (
+  parentId: string,
+  status: string | null,
+  coversVideo: boolean | null,
+): ConsentCheckResult['perGuardian'][number] => ({
+  parentId,
+  status,
+  coversVideo,
+  publicUseAllowed: false,
+  signedAt: status ? '2026-01-01T00:00:00.000Z' : null,
+});
+
+beforeEach(() => {
+  mockCheckConsent.mockResolvedValue(NO_CONSENT_ON_FILE);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
+  // clearAllMocks resets recorded calls but NOT queued mock*ValueOnce values,
+  // so a test that queues a value its route never reaches (deliberately -- see
+  // the access-gate ordering test) would hand that value to the NEXT test.
+  // These three are the queue-bearing mocks; reset drains them, and the
+  // beforeEach above restores the one default that has to survive.
+  mockRequirePrincipal.mockReset();
+  mockQueryOne.mockReset();
+  mockCheckConsent.mockReset();
 });
 
 function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
@@ -195,5 +256,168 @@ describe('GET /api/pilot/video/[videoId]', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).stream_url).toBe('https://blob.example/sas');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+});
+
+/**
+ * The consent-scope gate. See the route's own assertConsentCoversVideo header
+ * for the reasoning; these pin the two halves of it that matter most -- that a
+ * photo-only consent stops the bearer URL, and that a MISSING consent row never
+ * does.
+ */
+describe('GET /api/pilot/video/[videoId] guardian consent scope', () => {
+  test('a guardian who signed a photo-only consent stops the playback URL being minted', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', false)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    expect(body.error).toMatch(/photo-only media consent/);
+    // The point of the refusal: no bearer credential in the response at all.
+    expect(body.stream_url).toBeUndefined();
+  });
+
+  test('one photo-only guardian is enough, even when the other guardian consented to video', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([
+      guardian('par-1', 'signed', true),
+      guardian('par-2', 'signed', false),
+    ]));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+  });
+
+  test('a guardian who consented to video is served normally', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', true)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).stream_url).toBe('https://blob.example/sas');
+  });
+
+  test('NO consent row on file still plays -- absence must never refuse a read', async () => {
+    // The blast-radius guard. The only writer of a gate-visible consent row is
+    // the guardian's own console, so "no row" is the default state of every
+    // roster-imported athlete. A gate that refused here would have taken every
+    // coach's footage away on the day it shipped.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(NO_CONSENT_ON_FILE);
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+  });
+
+  test('a guardian link with no waiver row at all still plays', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', null, null)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+  });
+
+  test('a WITHDRAWN consent is knowingly not refused here -- withdrawal on read is left open', async () => {
+    // Documents a limit rather than an approval. Withdrawal today retracts
+    // published media (publication.ts suppressPublishedMediaForAthlete) and
+    // stops future publishes; whether it should also stop internal playback is
+    // an owner decision this lane deliberately did not take. If that decision
+    // is made, this test is the one to change -- on purpose, not by accident.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'withdrawn', false)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+  });
+
+  test('unattributed team video never consults consent -- there is no guardian to ask', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: null }));
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockCheckConsent).not.toHaveBeenCalled();
+  });
+
+  test('the consent check runs only AFTER the access gate, so it is no 403-vs-404 oracle', async () => {
+    // An unassigned coach must not be able to tell a photo-only consent from a
+    // video they simply may not see. Both are the same hiddenNotFound().
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce(null); // not assigned
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', false)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(mockCheckConsent).not.toHaveBeenCalled();
+  });
+
+  test('a consent lookup fault refuses rather than serving -- it does not degrade to "proceed"', async () => {
+    // waiverCompliance.ts's rule, applied here: a consent read that cannot
+    // complete must never mean "we could not find out, so go ahead".
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockRejectedValueOnce(Object.assign(new Error('relation does not exist'), { code: '42P01' }));
+
+    const res = await call();
+
+    expect(res.status).toBe(500);
+    expect((await res.json()).stream_url).toBeUndefined();
+  });
+
+  test('the athlete themself is subject to the same scope refusal', async () => {
+    // The athlete branch of assertActorCanAccessAthlete is pure -- no queryOne
+    // call -- so only the video row is queued here.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', false)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+  });
+
+  test('the linked guardian is subject to the same scope refusal', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', false)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
   });
 });
