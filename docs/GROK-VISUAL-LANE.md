@@ -141,7 +141,21 @@ six rooms is worth more than six stock rooms that read as nowhere.
 
 **Page DNA, not only room DNA.** Pages inside the same room should not feel
 identical either. This is why the office needs more than one wall across its
-40 routes, and it is a Mode A question before it is a delivery one.
+**44** routes, and it is a Mode A question before it is a delivery one.
+
+**Corrected 2026-08-22 — this said 40.** Measured from
+`apps/web/components/buildingMap.ts` at `c88e80a3` by counting `room:` on each
+door row: office **44**, floor **34**, board 12, clinic 10, file 7, night 3 —
+110 doors in all. The argument is unchanged and slightly stronger; only the
+number moved.
+
+Two other places state the office and floor counts, and both still say the old
+figures: `design-system/ppbf.css` line 3480 ("Rooms are reused heavily (office
+40 routes, floor 31)") and line 3508 ("Rooms repeat: office covers 40 doors,
+floor 31"). Those are comments in the law file and are recorded here rather than
+edited — the sheet is Grok's required reading and its own lane's to change. Take
+44 and 34 as the measured counts and the CSS comments as stale until someone
+with that file updates them.
 
 ### Freedom of traverse (owner decision, 2026-08-20)
 

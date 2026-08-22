@@ -93,10 +93,25 @@ Session behavior:
 - Revoke the token server-side.
 - Clear the session cookie.
 
-### GET /auth/session (implemented)
+### POST /auth/session (implemented)
+
+**Corrected 2026-08-22 — this heading read `GET /auth/session`.** It was wrong,
+and it contradicted this document's own Observed Current Behavior above, which
+has always said `POST /api/pilot/auth/session`.
+[route.ts](apps/web/app/api/pilot/auth/session/route.ts) exports `POST` and
+nothing else, so a `GET` answers `405`. Two callers carry the incident in their
+comments rather than in a changelog:
+[RoleSessionGate.tsx](apps/web/components/RoleSessionGate.tsx) records that it
+briefly used `GET` here, that `loadAuthoritativeRoleSession` treats any non-401
+failure as unauthenticated, and that every gated page therefore cleared a
+perfectly valid session and bounced its owner to `/login` — indistinguishable
+from being logged out; and
+[GlobalRoleHeader.tsx](apps/web/components/GlobalRoleHeader.tsx) points at that
+fix so the same mistake is not made a second time. Use `POST`.
 
 Request:
 
+- Method `POST`. No request body is required or read.
 - Session cookie supplied automatically by the browser.
 
 Response when authenticated:
@@ -118,7 +133,9 @@ Response when unauthenticated:
 
 Status codes:
 
-- `200` always for a valid request path
+- `200` always for a valid `POST`, authenticated or not — an unauthenticated
+  caller gets `200` with `"authenticated": false`, never `401`
+- `405` for any other method, `GET` included
 - `500` unexpected server failure
 
 ### GET /auth/roles (proposed, not built)

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -20,6 +20,12 @@ export const runtime = 'nodejs';
 // protocol is a stated hypothesis and plan, and recording one changes no
 // athlete's training by itself (execution is slice 2, behind its own human
 // acts). Athlete-specific protocols never auto-generalize.
+//
+// An athlete-specific protocol names the athlete and states a hypothesis
+// about them, so writing one is authorized per athlete
+// (assertActorCanAccessAthlete) and the list returns only the
+// athlete-specific rows the caller may reach. Protocols with no athlete are
+// gym doctrine and stay visible to every staff reader.
 
 const PROTOCOL_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
@@ -54,7 +60,10 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...PROTOCOL_ROLES]);
 
-    const items = await listProtocols(principal.organizationId);
+    const rows = await listProtocols(principal.organizationId);
+    const named = rows.map((row) => row.athlete_id).filter((id): id is string => id !== null);
+    const allowed = await accessibleAthleteIds(principal, named);
+    const items = rows.filter((row) => row.athlete_id === null || allowed.has(row.athlete_id));
     return NextResponse.json({ items });
   } catch (error) {
     return jsonError(error);
@@ -71,6 +80,7 @@ export async function POST(request: NextRequest) {
     const athleteId = typeof body.athlete_id === 'string' && body.athlete_id.trim() !== ''
       ? body.athlete_id.trim()
       : null;
+    if (athleteId) await assertActorCanAccessAthlete(principal, athleteId);
 
     const item = await createProtocol({
       ...content,
