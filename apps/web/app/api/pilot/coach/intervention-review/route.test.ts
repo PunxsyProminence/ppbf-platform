@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
+import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
@@ -15,6 +16,15 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return {
+    ...actual,
+    assertActorCanAccessAthlete: jest.fn(),
+    accessibleAthleteIds: jest.fn().mockResolvedValue(new Set()),
+  };
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -38,12 +48,22 @@ jest.mock('@/src/server/pilot/interventionExecutions', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockAccess = assertActorCanAccessAthlete as jest.Mock;
+const mockAccessible = accessibleAthleteIds as jest.Mock;
 const mockLink = linkEvidence as jest.Mock;
 const mockListEvidence = listEvidence as jest.Mock;
 const mockListExecutions = listExecutions as jest.Mock;
 const mockRemove = removeEvidence as jest.Mock;
 const mockReview = reviewOutcome as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+
+// The athlete gate is permissive by default so each test states its own
+// access decision rather than inheriting the previous test's --
+// clearAllMocks clears calls, not implementations.
+beforeEach(() => {
+  mockAccess.mockResolvedValue(undefined);
+  mockAccessible.mockResolvedValue(new Set());
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -170,6 +190,9 @@ test('removing evidence requires a stated reason; an unknown action is a 400', a
 test('GET hands the evidence rows through with their read-time admissibility annotation intact', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
   mockListExecutions.mockResolvedValueOnce([{ execution_id: 'ex-1', athlete_id: 'ath-1', status: 'completed' }]);
+  // Unfiltered read: the row survives the scope filter only because this
+  // coach may reach ath-1. What that filter does on its own is the next test.
+  mockAccessible.mockResolvedValueOnce(new Set(['ath-1']));
   // listEvidence now returns source_admissible on every row (see
   // interventionEvidence.listEvidence): a pre-gate film-study link whose
   // proposal was rejected must reach the page saying so, not pass for
@@ -196,4 +219,35 @@ test('GET hands the evidence rows through with their read-time admissibility ann
     ['l-film', false],
     ['l-att', true],
   ]);
+});
+
+test('a coach with no relationship to the named athlete gets no review rows at all', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockAccess.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+
+  const response = await GET(
+    new NextRequest('http://localhost/api/pilot/coach/intervention-review?athlete_id=ath-not-mine'),
+  );
+
+  expect(response.status).toBe(403);
+  expect(mockListExecutions).not.toHaveBeenCalled();
+  expect(mockListEvidence).not.toHaveBeenCalled();
+});
+
+test('an unfiltered review read is scoped to the athletes the caller may reach', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockListExecutions.mockResolvedValueOnce([
+    { execution_id: 'ex-mine', athlete_id: 'ath-mine', status: 'completed' },
+    { execution_id: 'ex-theirs', athlete_id: 'ath-theirs', status: 'completed' },
+  ]);
+  mockAccessible.mockResolvedValueOnce(new Set(['ath-mine']));
+
+  const response = await GET(new NextRequest('http://localhost/api/pilot/coach/intervention-review'));
+
+  expect(response.status).toBe(200);
+  const payload = (await response.json()) as { items: Array<{ execution: { execution_id: string } }> };
+  expect(payload.items.map((item) => item.execution.execution_id)).toEqual(['ex-mine']);
+  // The narrative and evidence of an unreachable athlete are never even read.
+  expect(mockListEvidence).toHaveBeenCalledTimes(1);
+  expect(mockListEvidence).toHaveBeenCalledWith('org-1', 'ex-mine');
 });
