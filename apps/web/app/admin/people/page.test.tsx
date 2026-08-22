@@ -512,3 +512,11 @@ describe('the roster is a ruled register', () => {
     expect(await screen.findByRole('heading', { name: /Add a coach, staff member, or guardian/i })).toBeTruthy();
   });
 });
+
+test('carries the same foot as every other full-screen board', async () => {
+  global.fetch = fetchMock({ members: [], roster: ROSTER }) as never;
+
+  render(<PeopleConsolePage />);
+
+  expect(await screen.findByRole('list', { name: 'The work axis' })).toBeTruthy();
+});

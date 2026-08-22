@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
+import WorkAxis from '@/components/WorkAxis';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 // A plain constant with no server dependencies, so a client component can
@@ -1678,6 +1679,10 @@ function PeopleConsoleContent() {
             </button>
           </form>
         )}
+
+        {/* The four words, at the foot of the page. See WorkAxis for why this
+            is not the motto line lifted out of other role workspaces. */}
+        <WorkAxis />
       </div>
     </main>
   );
