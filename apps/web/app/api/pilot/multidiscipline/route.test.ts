@@ -6,12 +6,18 @@ import {
   listDisciplines,
   listGrapplingExposure,
 } from '@/src/server/pilot/multidiscipline';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, assertActorCanAccessAthlete: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/multidiscipline', () => {
@@ -25,6 +31,7 @@ jest.mock('@/src/server/pilot/multidiscipline', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockDisciplines = listDisciplines as jest.Mock;
 const mockExposure = listGrapplingExposure as jest.Mock;
 const mockParticipation = getCurrentDisciplineParticipation as jest.Mock;
@@ -48,6 +55,9 @@ function get(url: string) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockRequirePrincipal.mockResolvedValue(principal());
+  // The default caller holds access for the athlete they ask about. Every
+  // 200 below therefore asserts "a coach WITH access", not "a coach".
+  mockAccess.mockResolvedValue(undefined);
   mockDisciplines.mockResolvedValue([]);
   mockExposure.mockResolvedValue([]);
   mockParticipation.mockResolvedValue([]);
@@ -128,6 +138,25 @@ describe('GET /api/pilot/multidiscipline -- one athlete', () => {
 
     expect(response.status).toBe(403);
     expect(mockExposure).not.toHaveBeenCalled();
+  });
+
+  it('refuses a coach who holds no relationship to that athlete', async () => {
+    // The role gate passes -- this caller IS a coach. Who they may read a
+    // choke and submission history about is a separate question, and one the
+    // organization boundary alone does not answer.
+    mockAccess.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+
+    const response = await get('http://localhost/api/pilot/multidiscipline?athlete_id=ath-other');
+
+    expect(response.status).toBe(403);
+    expect(mockExposure).not.toHaveBeenCalled();
+    expect(mockParticipation).not.toHaveBeenCalled();
+  });
+
+  it('checks athlete access with the principal and the requested athlete', async () => {
+    await get('http://localhost/api/pilot/multidiscipline?athlete_id=ath-1');
+
+    expect(mockAccess).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-1' }), 'ath-1');
   });
 
   it('does not fall through to the discipline list when athlete_id is given', async () => {

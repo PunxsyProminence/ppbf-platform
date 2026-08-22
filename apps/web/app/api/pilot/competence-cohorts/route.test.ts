@@ -6,12 +6,18 @@ import {
   listCohortDefinitions,
   listCompetenceLevels,
 } from '@/src/server/pilot/competenceCohorts';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, assertActorCanAccessAthlete: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/competenceCohorts', () => {
@@ -25,6 +31,7 @@ jest.mock('@/src/server/pilot/competenceCohorts', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockLevels = listCompetenceLevels as jest.Mock;
 const mockCohorts = listCohortDefinitions as jest.Mock;
 const mockReport = getAthleteCohortReport as jest.Mock;
@@ -48,6 +55,9 @@ function get(url: string) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockRequirePrincipal.mockResolvedValue(principal());
+  // The default caller holds access for the athlete they ask about. Every
+  // 200 below therefore asserts "a coach WITH access", not "a coach".
+  mockAccess.mockResolvedValue(undefined);
   mockLevels.mockResolvedValue([]);
   mockCohorts.mockResolvedValue([]);
   mockReport.mockResolvedValue(null);
@@ -133,7 +143,28 @@ describe('GET /api/pilot/competence-cohorts -- one athlete', () => {
     expect(mockReport).not.toHaveBeenCalled();
   });
 
+  it('refuses a coach who holds no relationship to that athlete', async () => {
+    // The role gate passes -- this caller IS a coach. What it must not decide
+    // is WHICH athlete, and age_years here is derived from the dob that
+    // entities.ts redacts from this same coach's roster listing.
+    mockAccess.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+
+    const response = await get('http://localhost/api/pilot/competence-cohorts?athlete_id=ath-other');
+
+    expect(response.status).toBe(403);
+    expect(mockReport).not.toHaveBeenCalled();
+  });
+
+  it('checks athlete access with the principal and the requested athlete', async () => {
+    await get('http://localhost/api/pilot/competence-cohorts?athlete_id=ath-1');
+
+    expect(mockAccess).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-1' }), 'ath-1');
+  });
+
   it('404s an unknown athlete rather than returning an empty report', async () => {
+    // Reachable only once access is granted: a coach asking about an athlete
+    // id that does not exist is refused by the gate first (403, existence not
+    // disclosed), exactly as on training-attempts and passbook.
     const response = await get('http://localhost/api/pilot/competence-cohorts?athlete_id=nope');
 
     expect(response.status).toBe(404);
