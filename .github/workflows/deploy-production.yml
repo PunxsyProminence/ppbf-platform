@@ -5,10 +5,25 @@
 # It does NOT apply database migrations -- migrations are always a separate,
 # manual step run against production before this workflow is ever dispatched.
 #
+# CORRECTED 2026-08-22. Step 1 below used to read: "Apply any pending schema
+# migration(s) directly against production PostgreSQL (e.g.
+# `npm run pilot:apply-multiorg`, then `npm run pilot:apply-session-expiry`)".
+# That instruction was wrong twice over. It described the exact practice
+# apply-migrations.yml exists to end -- its own header opens "applying a
+# migration meant running `npm run pilot:apply-*` from someone's laptop with a
+# production connection string in their shell" -- and the literal commands do
+# not resolve at the repository root anyway: the ~98 `pilot:apply-*` scripts
+# live in apps/web/package.json, and the migration workflow is what runs them.
+#
 # Safe rollout order (see PR #13 for the concrete session-expiry example):
-#   1. Apply any pending schema migration(s) directly against production
-#      PostgreSQL (e.g. `npm run pilot:apply-multiorg`, then
-#      `npm run pilot:apply-session-expiry`), and confirm each one committed.
+#   1. Apply any pending schema migration(s) through
+#      .github/workflows/apply-migrations.yml -- STAGING FIRST, then production,
+#      and confirm each run's output. That workflow runs the same runner scripts
+#      under the same Azure OIDC identity and reads the connection string from
+#      the Container App secret, so no production connection string ever reaches
+#      a laptop. It is dispatch-only, `confirm_target` must match the chosen
+#      target exactly, and it declares `environment:` so the same production
+#      protection rule that gates this deploy gates the schema change too.
 #   2. Only once every migration the target commit depends on has been
 #      applied and confirmed: dispatch this workflow, supplying the exact
 #      commit SHA you intend to deploy and confirming migrations are done.

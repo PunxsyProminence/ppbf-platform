@@ -45,8 +45,54 @@ Ship **P0.1–P0.6** to **deployed production**. No mid-loop Jason mock reviews.
 3. Build green  
 4. Deploy **staging** → smoke click path  
 5. Fix until smoke passes  
-6. Open PR → merge to main (or prod branch) for **PRODUCTION**  
-7. Reply: `READY FOR PRODUCTION` + URL + click path  
+6. Open PR → merge to `main` with green CI. **That is `MERGED`, and nothing
+   more.**  
+7. Reply: `READY FOR STAGING` + the staging URL + the click path, and hand the
+   release to Jason. Production is his instruction, not this file's step 8.  
+
+**Corrected 2026-08-22 — steps 6 and 7 used to read "Open PR → merge to main
+(or prod branch) for PRODUCTION" and "Reply: READY FOR PRODUCTION".** Both were
+false, and this is the file `CLAUDE.md` routes every P0-production ticket into,
+so a session that followed it merged, reported production shipped, and had in
+fact staged nothing, captured no release digest, applied no migration, and
+never reached the owner's approval.
+
+`.github/workflows/deploy-production.yml` is `workflow_dispatch:` only. It
+carries no `push:` trigger, there is no prod branch, and its `guard` job
+refuses any ref that is not `refs/heads/main` — its first `guard` step, which
+errors with "This workflow may only be dispatched from refs/heads/main".
+**Merging to `main` deploys nothing.**
+
+### The real path to production
+
+[`docs/AI_DELIVERY_PIPELINE.md`](../AI_DELIVERY_PIPELINE.md) is the authority
+and it governs the whole of this. The shape, so nobody reads step 6 above and
+improvises the rest:
+
+1. Apply the required migrations through
+   [`apply-migrations.yml`](../../.github/workflows/apply-migrations.yml),
+   **staging first**. Never from a laptop and never from an AI shell.
+2. Dispatch [`deploy-staging.yml`](../../.github/workflows/deploy-staging.yml)
+   for the exact SHA, and **capture the immutable `sha256:` image digest it
+   produces**. There is no production deployment without that digest — the
+   production workflow takes it as a required input and validates its shape.
+3. Verify staging: revision, traffic, smoke checks, and the P0 click path above.
+4. Return the `RELEASE READY` packet and **stop**. Promotion is a separate
+   explicit instruction from Jason.
+5. On that instruction: apply the production migrations through
+   `apply-migrations.yml` and verify the run, then dispatch
+   `deploy-production.yml` from `main` with `confirm_sha` (the exact prepared
+   SHA), `release_digest` (the exact staged digest), `migrations_complete:
+   CONFIRMED`, `allow_rollback: NO`. Never type `CONFIRMED` from assumption or
+   from a merged `.sql` file alone — the workflow's own header says that input
+   is an operator attestation, not a check against the database.
+6. GitHub halts at the protected `production` environment for Jason's approval.
+   **No AI approves that gate.**
+
+`MERGED`, `CI_VERIFIED`, `STAGED`, `PRODUCTION_DEPLOYED` and
+`PRODUCTION_RUNTIME_VERIFIED` are five distinct claims. Do not infer a later one
+from an earlier one, and do not report this ticket as shipped on the strength of
+a merge.
 
 ## Smoke path (staging then prod)
 1. `/` loads  
@@ -57,7 +103,10 @@ Ship **P0.1–P0.6** to **deployed production**. No mid-loop Jason mock reviews.
 6. Logout works  
 
 ## Production definition of done
-- [ ] Merged to production  
+- [ ] `deploy-production` completed for the exact SHA and the exact staged
+      digest, after Jason approved the protected `production` environment
+      (**corrected 2026-08-22** — this line used to read "Merged to production",
+      which describes nothing this repository does)  
 - [ ] Production URL loads  
 - [ ] Login works  
 - [ ] Shadow deny minimal  
@@ -65,12 +114,28 @@ Ship **P0.1–P0.6** to **deployed production**. No mid-loop Jason mock reviews.
 - [ ] Role landings sane  
 - [ ] Jason can click on phone/laptop  
 
-## Rollback only if
+## Rollback — escalate, never decide
+
+**Corrected 2026-08-22.** This section used to be a decision tree handed to the
+agent — "Rollback only if: nobody can log in / wrong people see athlete
+medical or chat / data corruption". That framing put the call in the wrong
+hands. [`docs/AI_DELIVERY_PIPELINE.md`](../AI_DELIVERY_PIPELINE.md) is explicit:
+**no AI may authorize a rollback**, and a rollback requires Jason's explicit
+authorization plus a known prior SHA and digest before `allow_rollback: YES` is
+dispatched.
+
+The three conditions survive as **what you escalate on, not what you decide on**:
+
 - Nobody can log in  
 - Wrong people see athlete medical/chat  
 - Data corruption  
 
-**Do not rollback for:** spacing, missing eggs, PLANNED pages.
+On seeing one: stop, preserve the failure evidence, read back the SHA and digest
+production is actually running, and hand Jason a rollback packet naming the
+prior SHA and digest to return to. Then wait.
+
+**Not escalations at all:** spacing, missing eggs, PLANNED pages. Those are
+notes for the next PR.
 
 ## Jason
 Reviews **only after** production (or staging if merge needs his click). Notes → next PR, not block ship.

@@ -54,6 +54,15 @@ Allowed (pilot phase — see [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITE
 
 Still gated regardless of the above:
 
+- **Organization-private athlete records.** `assertActorCanAccessAthlete`
+  refuses `platform_owner` unconditionally, and refuses it *first* — ahead of
+  `board` and ahead of any organization comparison (access.ts:316-318,
+  `Forbidden: platform owner cannot access organization-private athlete records
+  by default`). The batched counterpart `accessibleAthleteIds` returns an empty
+  set for the same role and says so in its own comment (access.ts:372-376). The
+  cross-organization visibility above is **de-identified and aggregate**; it is
+  not a key to an individual youth record, and the two must never be collapsed.
+  See [Enforcement model](#enforcement-model).
 - SHADOW medical-administrative-status writes remain isolated to their own
   module (`shadow_medical_administrative_status`) — this boundary is not
   loosened by Platform Owner's data visibility
@@ -82,12 +91,22 @@ The board role is AGGREGATE-ONLY. A board member never sees athlete-scoped or
 individually identifiable youth data.
 
 [access.ts](apps/web/src/server/pilot/access.ts) is the authority for this role,
-not this document. `assertActorCanAccessAthlete` throws for `board` before any
-other branch and before any athlete lookup is attempted, and
+not this document. `assertActorCanAccessAthlete` throws for `board` in its
+**second** branch — `platform_owner` is refused first — and, like that first
+refusal, before any athlete lookup is attempted and before organization scope is
+compared at all.
 [boardRoleBoundaries.test.ts](apps/web/src/server/pilot/boardRoleBoundaries.test.ts)
-holds that at 403 across seven surfaces: the athlete record, goals, training
-sessions, the intake review queue, admin capabilities, compliance violations,
-and the scheduler.
+holds that at 403 across **twelve** surfaces: the athlete record, goals,
+training sessions, the intake review queue, admin capabilities, safety and
+compliance violations, the athlete scheduler, safety escalations, wrestling
+league seasons, the league roster, external competitions, and competition
+entries.
+
+**Corrected 2026-08-22.** This paragraph said `board` was refused "before any
+other branch" and that the test held seven surfaces. Measured, both were wrong:
+`platform_owner` is the first branch (access.ts:316-318) and the test is a
+`test.each` of twelve cases. Nothing about the board boundary itself changed —
+only its position in the ladder, and the size of the proof standing under it.
 
 Allowed inside own organization:
 
@@ -159,9 +178,24 @@ Authorization decision inputs:
 
 Decision rule:
 
-- deny an athlete-scoped resource to `board` first, before organization scope is
-  even compared: a matching organization_id does not earn the board role access
-  to an individual youth record.
-- deny when organization_id does not match, unless the actor is platform_owner
-  (standing cross-organization visibility into de-identified data during
-  pilot, plus explicit aggregate-analytics actions).
+- deny an athlete-scoped resource to `platform_owner` **first**, before
+  organization scope is even compared. `assertActorCanAccessAthlete` opens with
+  it (access.ts:316-318) and takes no argument from organization_id, from the
+  role ladder above, or from the pilot-phase visibility in
+  [Platform Owner](#platform-owner).
+- deny an athlete-scoped resource to `board` **second**, and likewise before
+  organization scope is compared: a matching organization_id does not earn the
+  board role access to an individual youth record.
+- for every other role, deny when organization_id does not match. **There is no
+  platform_owner exemption at this step for an athlete-scoped resource** — that
+  actor was already refused two branches earlier.
+
+**Corrected 2026-08-22.** The second bullet used to read "deny when
+organization_id does not match, unless the actor is platform_owner". That
+inverted the guard on the exact records it exists to protect: anyone writing a
+new athlete-scoped route against this section would have written the exemption
+back in and handed the platform owner every minor's record in every
+organization. The code has never behaved that way — the refusal is
+unconditional and is the function's first branch. What the pilot-phase
+visibility genuinely covers is de-identified, aggregate, cross-organization
+data; it was never athlete-record access.
