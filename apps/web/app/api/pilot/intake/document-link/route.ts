@@ -12,7 +12,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotShadowSasUrl } from '@/src/server/pilot/blob';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { getIntakeDocumentById } from '@/src/server/pilot/intake';
+import { assertActorCanAccessIntakeCase, getIntakeDocumentById } from '@/src/server/pilot/intake';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 
 export const runtime = 'nodejs';
@@ -33,6 +33,26 @@ export async function POST(request: NextRequest) {
 
     const document = await getIntakeDocumentById(principal.organizationId, intakeDocumentId);
     if (!document) {
+      throw new Error('Not found: intake document');
+    }
+
+    // The role gate above says WHAT KIND of account may mint a link. It never
+    // said WHOSE paperwork, so any coach in the organization could mint a
+    // 15-minute read URL to any child's medical form or signed waiver -- the
+    // last step of a chain that starts at intake/review-queue (admits coach,
+    // returns every case in the organization) and passes through
+    // intake/cases/get. Same authority as that route, resolved from the case
+    // this document belongs to, and applied before the SAS URL exists.
+    //
+    // A document whose case cannot be resolved is refused as unknown rather
+    // than allowed: the FK makes that state unreachable today, and if it ever
+    // becomes reachable the closed side is the right one.
+    const authority = await assertActorCanAccessIntakeCase(
+      principal,
+      principal.organizationId,
+      document.intake_case_id,
+    );
+    if (!authority.found) {
       throw new Error('Not found: intake document');
     }
 

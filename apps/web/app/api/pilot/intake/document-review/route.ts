@@ -16,6 +16,8 @@ import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  assertActorCanAccessIntakeCase,
+  getIntakeDocumentById,
   isIntakeDocumentReadyForReview,
   reviewIntakeDocumentSecurity,
   type IntakeDocumentSecurityDecision,
@@ -44,6 +46,28 @@ export async function POST(request: NextRequest) {
     }
     if (!DECISIONS.has(decision)) {
       throw new Error('Missing decision: expected "clean" or "quarantined"');
+    }
+
+    // Read the row before writing to it: the role gate says a coach may
+    // review documents, never WHOSE. Without this, a coach with no
+    // relationship to the case could attest 'clean' on another child's
+    // medical form -- and 'clean' is not an opinion, it is the state
+    // isIntakeDocumentReadyForReview requires for the case to become
+    // approvable, so the unauthorized actor here is unblocking a promotion.
+    // Same authority as intake/cases/get and intake/document-link, applied
+    // before the update rather than after it.
+    const document = await getIntakeDocumentById(principal.organizationId, intakeDocumentId);
+    if (!document) {
+      throw new Error('Not found: intake document');
+    }
+
+    const authority = await assertActorCanAccessIntakeCase(
+      principal,
+      principal.organizationId,
+      document.intake_case_id,
+    );
+    if (!authority.found) {
+      throw new Error('Not found: intake document');
     }
 
     const updated = await reviewIntakeDocumentSecurity({
