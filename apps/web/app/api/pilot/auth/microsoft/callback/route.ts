@@ -1,7 +1,9 @@
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { listSeatsForAccount, resolveLandingSeat } from '@/src/server/pilot/boardSeats';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 import { loginWithMicrosoftEmail } from '@/src/server/pilot/auth';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
@@ -28,6 +30,27 @@ import {
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
+
+// A lost audit row must not refuse a sign-in that already happened -- the same
+// non-fatal-audit doctrine as login/route.ts and magic-link/consume/route.ts.
+// It matters more here than on either of those: loginWithMicrosoftEmail has
+// already inserted the pilot.session_tokens row by the time this runs, and
+// every throw inside the handler below lands in a catch that redirects to
+// /login?error=auth-failed. An unwrapped write would therefore turn a
+// transient database blip into an admin who cannot get in, holding a live
+// session they were never handed the cookie for.
+async function auditMicrosoftLoginEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try {
+    await writePilotAuditEvent(event);
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({
+      event: 'pilot-auth-microsoft-audit-write-failed',
+      ...(code ? { code } : {}),
+    });
+  }
+}
 
 function clearTempCookies(response: NextResponse): void {
   response.cookies.set(MICROSOFT_AUTH_STATE_COOKIE, '', { path: '/', maxAge: 0 });
@@ -215,6 +238,32 @@ export async function GET(request: NextRequest) {
       path: '/',
       maxAge: 10 * 60,
     });
+
+    // The door that recorded nothing. PIN and magic-link have written a 'login'
+    // row since each shipped; this route wrote none -- and it is the only way
+    // in for platform_owner, organization_admin, admin and board, so the
+    // highest-privilege sign-ins on a platform holding children's records were
+    // the only ones leaving no trace. For a youth-serving organization that is
+    // a safeguarding gap, not a bookkeeping one.
+    //
+    // Deliberately last, after the destination check: a role that fails that
+    // check is refused, and refusals are not recorded anywhere on this
+    // platform's auth paths (auditEventTypes.ts has no failure type). Writing
+    // before the check would put a 'login' row under a sign-in that did not
+    // happen, which is worse than the silence it replaced.
+    await auditMicrosoftLoginEvent({
+      event_type: 'login',
+      actor_account_id: loginResult.principal.accountId,
+      actor_role: loginResult.principal.role,
+      organization_id: loginResult.principal.organizationId,
+      entity_type: 'account',
+      entity_id: loginResult.principal.accountId,
+      details: {
+        auth_provider: 'microsoft',
+        hasMasterShadowAccess: loginResult.principal.hasMasterShadowAccess || false,
+      },
+    });
+
     clearTempCookies(response);
     return response;
   } catch (error) {

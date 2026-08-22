@@ -576,19 +576,36 @@ export default function SignInPanel({
           </div>
         </form>
 
-        {/* Both halves of this are literally true, which is the only reason
-            it is on the door. Every attempt through this panel is written to
-            pilot.audit_events by auditLoginEvent in
-            app/api/pilot/auth/login/route.ts -- succeeded or refused. The
-            approved mobile board carried a third line, "Your PIN is local and
-            never leaves your device"; it is not shipped, because the PIN is
-            POSTed to /api/pilot/auth/login and saying otherwise on a sign-in
-            form would be a false security claim to a child. */}
+        {/* "Access logged" stood here and was false, shipped by the same
+            commit that removed "Your PIN is local and never leaves your
+            device" for being false (#555). Replacing one false security claim
+            with another is the failure that comment was written to prevent.
+
+            No door on this panel records a refusal. PIN returns 401 in
+            login/route.ts before auditLoginEvent is reached; magic-link
+            consume returns 401 before its own write; requesting a link writes
+            nothing by design, because a row keyed to a real account is exactly
+            the address-enumeration signal that route exists to suppress. There
+            is no vocabulary for a refusal either -- auditEventTypes.ts carries
+            'login' and no failure type. Nor is the rate limiter the missing
+            record: a successful sign-in DELETES the attempt bucket
+            (clearDurableRateLimit in rateLimit.ts).
+
+            So the line claims only what all three doors do: on success they
+            write a 'login' row to pilot.audit_events -- login/route.ts,
+            magic-link/consume/route.ts and microsoft/callback/route.ts.
+            Recording refusals needs a new event type, a widened check
+            constraint and a migration; that is an owner decision, not a copy
+            fix, and until it is made this line must not imply it.
+
+            The PIN line is still not shipped, for the reason it never was: the
+            PIN is POSTed to /api/pilot/auth/login and saying otherwise on a
+            sign-in form would be a false security claim to a child. */}
         <p
           className="t-muted mt-[var(--s6)] text-center"
           style={{ fontSize: 'var(--t-sm)' }}
         >
-          Secure sign-in · Access logged
+          Secure sign-in · Successful sign-ins are recorded
         </p>
       </div>
     </div>

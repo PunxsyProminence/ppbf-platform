@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import {
   getCurrentDisciplineParticipation,
   listDisciplines,
@@ -24,7 +25,10 @@ export const runtime = 'nodejs';
 //
 // GET with athlete_id returns one athlete's grappling exposure history and
 // current participation level. That is athlete safety data, restricted to
-// coach and admin.
+// coach and admin AND to the athletes that particular caller may reach. The
+// role gate alone was not enough: athlete_id is caller-supplied, so any coach
+// in the organization could read any athlete's choke and submission history
+// through this route.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -34,6 +38,7 @@ export async function GET(request: NextRequest) {
 
     if (athleteId) {
       requireRole(principal, ['coach', 'admin']);
+      await assertActorCanAccessAthlete(principal, athleteId);
 
       const [exposure, participation] = await Promise.all([
         listGrapplingExposure(principal.organizationId, athleteId),
