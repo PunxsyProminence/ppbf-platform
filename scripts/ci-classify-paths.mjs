@@ -32,6 +32,21 @@ const isBoardE2ePath = (file) => {
       'apps/web/src/shared/pilotRoleRouting',
       'apps/web/src/server/pilot/auth',
       'apps/web/src/server/pilot/board',
+      /* The suite's own spec. The other four journey predicates match the
+         spec they run; this one was the last that did not, so an edit to
+         board-governance.spec.ts could not run itself. The homepage case was
+         fixed in #555 and the board case was missed in the same pass -- the
+         assertion block that caught it stopped at four. */
+      'apps/web/e2e/board-governance',
+      /* The sign-in door. Every one of this suite's three tests is an
+         unauthenticated redirect check that lands on /login and asserts the
+         'The Bell' heading is visible, and SignInPanel is the only thing that
+         renders it. So the front door is a surface this suite covers, and it
+         reached only the homepage and signed-in predicates before. Narrower
+         than isSignedInJourneyPath on purpose: this suite never signs in, so
+         the session gate and server auth module are not surfaces it touches. */
+      'apps/web/app/login/',
+      'apps/web/components/SignInPanel',
     ]) || component.includes('Board')
   );
 };
