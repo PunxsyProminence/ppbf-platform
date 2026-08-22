@@ -121,20 +121,34 @@ Also out of scope: favicons and brand identity, the OpenGraph card (entirely
 lettering), the orphaned research figure (regenerate from data), and the five
 scaffold SVGs (delete, do not redraw).
 
-## One thing that must be built before a variant can ship
+## Route-derived variant selection — BUILT, #541
 
-**No route-derived variant selection exists anywhere in this repository.**
-Nothing computes a `--plate` value. The portrait mechanism is
-`@media (orientation: portrait)` — viewport-derived, not route-derived.
+**Corrected 2026-08-22.** This section previously read "No route-derived
+variant selection exists anywhere in this repository… That is Claude's job,
+not Grok's, and it should be built before the first variant is ordered." That
+was true when this brief was compiled on 20 Aug and **became false the same
+day**: PR #541 built exactly that mechanism, hours later. Nobody came back to
+update the text. Left standing it would send the visual lane to build
+something that already ships.
 
-So `plate-01-office-02.jpg` cannot be wired by adding a CSS line. It needs
-selection code that does not exist yet, and that selection must be
-**deterministic**, derived from the route, never random — a screen that
-changes between loads breaks screenshot comparison, print reproducibility, and
-a coach's sense of being on the page they were on a moment ago.
+What exists now:
 
-That is Claude's job, not Grok's, and it should be built before the first
-variant is ordered rather than after it arrives.
+- `apps/web/components/plateVariant.ts` — hashes the pathname and emits a token
+  list (`2of2 1of3 4of4 …`). Deterministic by construction; `plateVariant.test.ts`
+  fails the build if `Math.random`, `Date`, a counter or a session id appears
+  in that path.
+- `apps/web/components/PlateVariantGround.tsx` — one `display: contents` marker
+  in the root layout, so every room can read the attribute without gaining a
+  box.
+- `design-system/ppbf.css` — a "Route-derived variants" block that reads the
+  attribute and sets `--plate` per route.
+
+**So a second office plate is now one file plus one CSS declaration.**
+`apps/web/public/plates/README.md` states it directly: *"No TypeScript is
+edited."* The determinism requirement still holds — a screen that changes
+between loads breaks screenshot comparison, print reproducibility, and a
+coach's sense of being on the page they were on a moment ago — and it is now
+enforced by a test rather than by instruction.
 
 ---
 OBSERVE. DECIDE. EXECUTE. REPEAT.
