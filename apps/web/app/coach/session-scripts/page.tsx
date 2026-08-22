@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
+import WorkAxis from '@/components/WorkAxis';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
 import { apiBase } from '@/lib/apiBase';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
@@ -248,7 +249,7 @@ function CoachSessionScripts() {
     <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
-          <p className="t-eyebrow">Coach</p>
+          <p className="t-eyebrow">Coach Workspace</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Session Scripts</h1>
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             The plan for a session, block by block. Times are minutes from the start of the session,
@@ -414,7 +415,16 @@ function CoachSessionScripts() {
                   </p>
                 )}
 
-                <ol className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
+                {/* Named, because this page now holds more than one list and
+                    an unlabelled one is indistinguishable to a screen reader
+                    (and to a test) from any other. The name also states the
+                    ordering the list actually carries: block_order, which is
+                    the sequence a coach runs, NOT start offset -- two blocks
+                    legitimately share an offset. */}
+                <ol
+                  aria-label="Session blocks, in the order they run"
+                  className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]"
+                >
                   {detail.blocks.map((block) => (
                     <li
                       key={block.block_id}
@@ -523,6 +533,10 @@ function CoachSessionScripts() {
           </section>
         )}
         </>)}
+
+      {/* The four words, at the foot of the page — the same foot the
+          approved boards put under every full screen. See WorkAxis. */}
+      <WorkAxis />
       </div>
     </main>
   );

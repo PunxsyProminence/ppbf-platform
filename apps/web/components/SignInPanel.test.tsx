@@ -63,50 +63,63 @@ async function renderPanel(props: { embedded?: boolean } = {}) {
   return result;
 }
 
+/**
+ * THE PICKER IS GONE (approved layout AF-01 / AF-M02, 2026-08-22).
+ *
+ * Five of these tests used to click a method tab before asserting anything,
+ * because only one method was rendered at a time and a default had to be
+ * chosen. All three now stand open on the page together, so the contract they
+ * describe gets STRONGER rather than weaker: every way in is not merely
+ * reachable, it is present without anybody having to find the tab first.
+ * That is the same promise the file was written to keep -- what the door must
+ * DO -- restated for a door with three openings instead of one with a switch.
+ */
 describe('every way in still works', () => {
-  test('offers all three sign-in methods', async () => {
+  test('offers all three sign-in methods at once, with no picker to find', async () => {
     await renderPanel();
 
-    expect(screen.getByRole('button', { name: /^(\u2713 )?Microsoft$/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^(\u2713 )?Email Link$/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^(\u2713 )?Account ID \/ PIN$/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /continue with microsoft/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /send sign-in link/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeTruthy();
   });
 
-  test('opens on Microsoft, the method most staff use', async () => {
-    await renderPanel();
-
-    expect(screen.getByRole('button', { name: /^(\u2713 )?Microsoft$/ }).getAttribute('aria-pressed')).toBe('true');
-  });
-
-  /* aria-pressed is the whole accessible answer to "which one am I on" --
-     the check glyph is decoration on top of it. */
-  test('switching method moves the pressed state with it', async () => {
-    await renderPanel();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^(\u2713 )?Account ID \/ PIN$/ }));
-    });
-
-    expect(screen.getByRole('button', { name: /^(\u2713 )?Account ID \/ PIN$/ }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: /^(\u2713 )?Microsoft$/ }).getAttribute('aria-pressed')).toBe('false');
-  });
-
-  test('the PIN method reveals a way to enter a PIN', async () => {
+  test('a way to enter a PIN is on the page from the start', async () => {
     const { container } = await renderPanel();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^(\u2713 )?Account ID \/ PIN$/ }));
-    });
 
     expect(container.querySelector('input[type="password"], input[inputmode="numeric"]')).toBeTruthy();
   });
 
-  test('a first-time member can still reach activation', async () => {
+  test('a way to enter an email is on the page from the start', async () => {
     const { container } = await renderPanel();
 
+    expect(container.querySelector('input[type="email"]')).toBeTruthy();
+  });
+
+  /* A PIN typed wrong on a shared tablet costs a rate-limit lockout, so the
+     field can be read back. aria-pressed is the whole accessible answer to
+     "is it showing"; the glyph sits on top of it, not instead of it. */
+  test('the PIN can be revealed and hidden again', async () => {
+    const { container } = await renderPanel();
+
+    const reveal = screen.getByRole('button', { name: /show pin/i });
+    expect(reveal.getAttribute('aria-pressed')).toBe('false');
+    expect(container.querySelector('#login-pin')?.getAttribute('type')).toBe('password');
+
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^(\u2713 )?Account ID \/ PIN$/ }));
+      fireEvent.click(reveal);
     });
+
+    expect(container.querySelector('#login-pin')?.getAttribute('type')).toBe('text');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /hide pin/i }));
+    });
+
+    expect(container.querySelector('#login-pin')?.getAttribute('type')).toBe('password');
+  });
+
+  test('a first-time member can still reach activation', async () => {
+    const { container } = await renderPanel();
 
     expect(container.querySelector('a[href="/activate"]')).toBeTruthy();
   });
@@ -115,6 +128,17 @@ describe('every way in still works', () => {
     const { container } = await renderPanel();
 
     expect(container.querySelector('a[href="/athlete/sign-in"]')).toBeTruthy();
+  });
+
+  /* The approved mobile board carried "Your PIN is local and never leaves
+     your device". The PIN is POSTed to /api/pilot/auth/login, so that line is
+     false, and a false security claim on a door used by children is the one
+     thing a decoration pass must never ship. This test is what keeps it out. */
+  test('claims nothing false about where the PIN goes', async () => {
+    const { container } = await renderPanel();
+
+    expect(container.textContent).not.toMatch(/never leaves your device/i);
+    expect(container.textContent).toMatch(/access logged/i);
   });
 });
 

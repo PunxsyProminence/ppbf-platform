@@ -45,6 +45,21 @@ const isHomepageE2ePath = (file) => {
       'design-system/',
       'apps/web/components/roleSession',
       'apps/web/src/shared/pilotRoleRouting',
+      /* The suite's own spec. Every other journey predicate matches the spec
+         it runs; this one did not, so an edit to public-homepage.spec.ts
+         could not run itself -- the suite stayed skipped on the exact commit
+         that changed what it asserts. */
+      'apps/web/e2e/public-homepage',
+      /* The sign-in door. public-homepage.spec.ts opens /login and asserts on
+         the methods it offers, so SignInPanel and its route are surfaces this
+         suite covers -- they were reachable only through the three SIGNED-IN
+         predicates, which do not run this one. A change to the front door
+         went out with the homepage journey skipped. Deliberately narrower
+         than isSignedInJourneyPath: the rest of that plumbing (the page
+         guard, the session gate, the server auth module) is not something an
+         unauthenticated visitor's journey touches. */
+      'apps/web/app/login/',
+      'apps/web/components/SignInPanel',
     ]) ||
     ['Home', 'Landing', 'Public'].some((token) => component.includes(token))
   );

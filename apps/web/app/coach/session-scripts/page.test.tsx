@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachSessionScriptsPage from './page';
 
@@ -212,8 +212,13 @@ describe('coach session scripts page', () => {
     render(<CoachSessionScriptsPage />);
     fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
 
-    const items = await screen.findAllByRole('listitem');
-    const labels = items.map((li) => li.textContent ?? '');
+    /* Scoped to the block list by name. This reached for EVERY listitem on the
+       page, which held only one list when it was written -- so the first
+       unrelated list to arrive anywhere on the page (the work-axis foot) took
+       positions 0 and 1 and the assertion read the tagline instead of the
+       plan. The claim is about the order of BLOCKS, so the query says so. */
+    const blocks = await screen.findByRole('list', { name: /blocks/i });
+    const labels = within(blocks).getAllByRole('listitem').map((li) => li.textContent ?? '');
     expect(labels[0]).toContain('Runs first');
     expect(labels[1]).toContain('Runs second');
   });

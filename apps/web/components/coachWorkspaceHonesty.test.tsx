@@ -947,7 +947,11 @@ describe('authored announcements on the coach workspace', () => {
     });
 
     expect(screen.queryByText('From the Gym')).toBeNull();
-    expect(screen.queryByText('Live Session Management')).not.toBeNull();
+    // The masthead. It named the workspace on every tab until the approved
+    // board (AF-09) put the open surface in the heading and the workspace's
+    // name on the line under it -- this checks the line, which is the half
+    // that does not move when the coach changes tabs.
+    expect(screen.queryByText('Coach workspace · Live session management')).not.toBeNull();
 
     openTab('Floor');
     expect(screen.queryByText(/Session Workout Plan/i)).not.toBeNull();
