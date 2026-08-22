@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import {
   getAthleteCohortReport,
   listCohortDefinitions,
@@ -18,7 +19,11 @@ export const runtime = 'nodejs';
 //
 // GET with athlete_id returns one athlete's assessed levels, logged training
 // and derived age. That IS athlete data, so it is restricted to coach and
-// admin. A parent-facing view of their own athlete would need its own route
+// admin AND to the athletes that particular caller may reach. The role gate
+// alone was not enough: athlete_id is caller-supplied, so any coach in the
+// organization could read any athlete here -- including age_years, derived
+// from the dob that entities.ts deliberately redacts from the same coach's
+// roster. A parent-facing view of their own athlete would need its own route
 // with a guardian-link check; it is deliberately not bolted on here, because
 // widening this handler is exactly how an athlete-data leak gets introduced.
 export async function GET(request: NextRequest) {
@@ -31,6 +36,7 @@ export async function GET(request: NextRequest) {
 
     if (athleteId) {
       requireRole(principal, ['coach', 'admin']);
+      await assertActorCanAccessAthlete(principal, athleteId);
 
       const report = await getAthleteCohortReport(principal.organizationId, athleteId, { discipline });
       if (!report) {

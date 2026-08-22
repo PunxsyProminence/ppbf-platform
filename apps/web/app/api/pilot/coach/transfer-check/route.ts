@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getTransferReadout } from '@/src/server/pilot/falseProgress';
@@ -12,6 +12,12 @@ export const runtime = 'nodejs';
 // raw counts attached to every flag. Nothing here writes, scores, or
 // decides -- a flag is a reason for a coach to look, not a verdict about
 // an athlete.
+//
+// The role gate says a coach may read transfer flags; it does not say WHICH
+// athlete's. athlete_id is caller-supplied, so assertActorCanAccessAthlete
+// (the standing authority, same as training-attempts) decides that second
+// question -- otherwise any coach in the organization reads any athlete's
+// attempt history through this route.
 
 const TRANSFER_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
@@ -22,6 +28,7 @@ export async function GET(request: NextRequest) {
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id')?.trim();
     if (!athleteId) throw new ValidationError('Missing athlete_id.');
+    await assertActorCanAccessAthlete(principal, athleteId);
 
     const items = await getTransferReadout(principal.organizationId, athleteId);
     return NextResponse.json({ items });
