@@ -97,8 +97,9 @@ grep -rhoE "slate-[0-9]+|zinc-[0-9]+|gray-[0-9]+" \
 
 **Zero, on `/shadow` and across every route file in the app.** The Room DNA
 passes cleaned it. The only surviving cold-palette code is
-`apps/web/src/components/core/PunxsyEcosystemCore.tsx`, an unwired prototype
-that is not a route.
+`apps/web/src/components/core/PunxsyEcosystemCore.tsx`, mounted only on
+`/admin/retro-lab` — a lab prototype (no fetch), not an operational route.
+The grep above is scoped to `app/**/page.tsx` and therefore does not see it.
 
 The method is still the right one for catching this class of defect, and
 running it before a visual batch is cheap. The verdict column is history.
