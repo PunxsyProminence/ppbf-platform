@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
+import {
+  assertActorCanAccessAthlete,
+  isOrganizationAdminRole,
+  type ActorIdentity,
+} from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import type { ReadinessMethod } from './readinessProvenance';
@@ -275,6 +280,140 @@ export async function getIntakeDocumentById(
     'select * from pilot.intake_documents where organization_id = $1 and intake_document_id = $2',
     [organizationId, intakeDocumentId],
   );
+}
+
+/**
+ * Who an intake case is ABOUT -- resolved from the only two places this
+ * codebase has ever recorded it, and honest about the fact that for most of a
+ * case's life the answer is "nobody yet".
+ *
+ * `pilot.intake_cases.primary_athlete_id` is the column the schema intends
+ * for this, and no code path writes it. `createIntakeCase` is reachable from
+ * exactly one caller (app/api/pilot/shadow/upload/route.ts), which never
+ * passes `primaryAthleteId`; `updateIntakeCaseStatus` does not touch the
+ * column; and no other statement in the repository updates it. Every row
+ * carries NULL. That is why a gate spelled `if (primary_athlete_id) await
+ * assertActorCanAccessAthlete(...)` was dead on every row it ever guarded.
+ *
+ * `pilot.intake_documents.owner_entity_type/owner_entity_id` are written --
+ * `bindIntakeDocumentsToOwner` stamps ('athlete', <athlete_id>) across the
+ * whole case at promotion -- so they are the real subject linkage. But they
+ * only exist from promotion onward, and the review queue exposes a case for
+ * the whole pending window BEFORE that. A gate keyed on the owner columns
+ * alone would therefore be dead in exactly the window that matters, which is
+ * the same mistake in a different column.
+ *
+ * So this returns what is knowable and refuses to guess. An empty
+ * `subjectAthleteIds` means "not attributable to an athlete yet" -- never
+ * "open to anyone" -- and `assertActorCanAccessIntakeCase` is what turns that
+ * into a decision.
+ */
+export interface IntakeCaseAuthority {
+  /** False when no such case exists in this organization. */
+  found: boolean;
+  /** The account that filed the case. NOT NULL in schema; null only when !found. */
+  submittedByAccountId: string | null;
+  /** Every athlete this case is about, from both sources, de-duplicated. */
+  subjectAthleteIds: string[];
+}
+
+export async function resolveIntakeCaseAuthority(
+  organizationId: string,
+  intakeCaseId: string,
+): Promise<IntakeCaseAuthority> {
+  const intakeCase = await queryOne<{ primary_athlete_id: string | null; submitted_by_account_id: string }>(
+    `select primary_athlete_id, submitted_by_account_id
+     from pilot.intake_cases
+     where organization_id = $1 and intake_case_id = $2`,
+    [organizationId, intakeCaseId],
+  );
+
+  if (!intakeCase) {
+    return { found: false, submittedByAccountId: null, subjectAthleteIds: [] };
+  }
+
+  // `owner_entity_type = 'athlete'` is not decoration. The column is free
+  // text; the single writer sets 'athlete', and an owner this code cannot map
+  // to an athlete must NOT silently widen the gate -- it drops the case back
+  // to unattributed, which is the closed side.
+  const owners = await query<{ owner_entity_id: string }>(
+    `select distinct owner_entity_id
+     from pilot.intake_documents
+     where organization_id = $1
+       and intake_case_id = $2
+       and owner_entity_type = 'athlete'
+       and owner_entity_id is not null`,
+    [organizationId, intakeCaseId],
+  );
+
+  const subjectAthleteIds = Array.from(new Set([
+    ...(intakeCase.primary_athlete_id ? [intakeCase.primary_athlete_id] : []),
+    ...owners.map((row) => row.owner_entity_id),
+  ]));
+
+  return {
+    found: true,
+    submittedByAccountId: intakeCase.submitted_by_account_id,
+    subjectAthleteIds,
+  };
+}
+
+/**
+ * The gate every intake-case read must pass BEFORE it reads anything, and the
+ * one all three case-scoped routes share so they cannot drift apart.
+ *
+ * Two branches, because the data has two states and only one of them names a
+ * person:
+ *
+ *  1. The case resolves to one or more athletes -- gate on every one of them
+ *     through `assertActorCanAccessAthlete`. All must pass: a case whose
+ *     documents span two athletes discloses both, so reaching one of them is
+ *     not authority over the case.
+ *  2. The case resolves to nobody (today: every pending case). There is no
+ *     athlete to check, so the authority falls back to the case's own
+ *     relationships: the organization admin, whose review authority is
+ *     organization-wide by definition, and the account that filed the case,
+ *     who supplied the documents in the first place. Everyone else is refused.
+ *
+ * Branch 2 is deliberately narrower than the role gate above it. A pending
+ * case's summary, payload and document rows carry intake file names, and an
+ * intake file name routinely carries a child's name -- so "any coach in the
+ * organization" is not a defensible audience for a case that coach has no
+ * relationship to. The only surface that calls these routes is /admin/shadow
+ * (allowedRoles admin, platform_owner), so no existing coach workflow depends
+ * on the wider set.
+ *
+ * Returns the authority so a caller can distinguish "no such case" from
+ * "refused" without a second round trip. `found: false` is NOT permission:
+ * every caller must decide what a missing case means for its own response.
+ */
+export async function assertActorCanAccessIntakeCase(
+  actor: ActorIdentity,
+  organizationId: string,
+  intakeCaseId: string,
+): Promise<IntakeCaseAuthority> {
+  const authority = await resolveIntakeCaseAuthority(organizationId, intakeCaseId);
+
+  if (!authority.found) {
+    return authority;
+  }
+
+  if (authority.subjectAthleteIds.length > 0) {
+    for (const athleteId of authority.subjectAthleteIds) {
+      await assertActorCanAccessAthlete(actor, athleteId);
+    }
+    return authority;
+  }
+
+  if (isOrganizationAdminRole(actor.role)) {
+    return authority;
+  }
+
+  if (authority.submittedByAccountId !== null && authority.submittedByAccountId === actor.accountId) {
+    return authority;
+  }
+
+  throw new Error('Forbidden: actor has no relationship to this intake case');
 }
 
 export type IntakeDocumentSecurityDecision = 'clean' | 'quarantined';
@@ -752,6 +891,72 @@ export async function listBarrierReports(
     reports: rows.slice(0, limit),
     truncated: rows.length > limit,
   };
+}
+
+/**
+ * Which `pilot.coach_observations.note_type` values a given READER may
+ * receive. `null` means unrestricted.
+ *
+ * That table is a shared bus, not a coach's notebook. Five distinct writers
+ * put rows on it under `note_type`, an unconstrained text column:
+ *
+ *   'intake_observation'  intake/review-action promotion default (staff)
+ *   'coach_observation'   intake/domain-upsert default            (staff)
+ *   'behavior_standard'   coach/decision-loop                     (staff)
+ *   'parent_message'      coach/admin -> guardian                 (staff)
+ *   'home_barrier' /      parent/barrier-report -- authored by a GUARDIAN,
+ *   'transportation_barrier'   addressed to the coach
+ *
+ * The repository already answered this question once, for exactly one
+ * reader: `listParentMessages` filters to `note_type = 'parent_message'`
+ * "so a guardian's message feed can never surface a behavior note or a
+ * barrier report filed under the same table". The rule generalizes -- a
+ * reader must not receive note types that were never meant for them -- and
+ * the readers that had no such filter were reading the whole bus.
+ *
+ * Per role, and why:
+ *
+ * - organization_admin / admin / coach: unrestricted. Every note type above
+ *   is either staff-authored or explicitly addressed to staff (the barrier
+ *   report exists to reach the coach -- `listBarrierReports` IS that inbox),
+ *   so there is nothing on this bus written for someone else. No change.
+ * - athlete: staff notes about their own training only. `parent_message` is
+ *   addressed to the guardian, not the child, and a barrier report is a
+ *   guardian describing home circumstances -- no transport, an unsafe walk,
+ *   a barrier at home -- to a coach in confidence. Handing that to the child
+ *   it is about is a safeguarding harm, not a privacy nicety.
+ * - parent: `parent_message` only, byte-for-byte the set `listParentMessages`
+ *   already decided for the guardian-facing read. It also closes a case that
+ *   set never had to consider: two guardians linked to one athlete, where an
+ *   unfiltered read hands one household the other household's report.
+ *
+ * The lists are closed, so a note_type nobody has enumerated here reaches
+ * staff and nobody else. That is deliberate: a new writer choosing a new
+ * value must decide who it is for, rather than inheriting an audience by
+ * default. Any other role falls through to the empty set for the same reason.
+ */
+export const ATHLETE_READABLE_NOTE_TYPES = [
+  'intake_observation',
+  'coach_observation',
+  'behavior_standard',
+] as const;
+
+export const PARENT_READABLE_NOTE_TYPES = ['parent_message'] as const;
+
+export function coachObservationNoteTypesForReader(role: PilotRole): string[] | null {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return null;
+  }
+
+  if (role === 'athlete') {
+    return [...ATHLETE_READABLE_NOTE_TYPES];
+  }
+
+  if (role === 'parent') {
+    return [...PARENT_READABLE_NOTE_TYPES];
+  }
+
+  return [];
 }
 
 export async function upsertGuardian(params: {
