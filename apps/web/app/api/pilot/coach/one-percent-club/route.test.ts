@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   castVote,
@@ -16,6 +17,11 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, assertActorCanAccessAthlete: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -35,6 +41,7 @@ jest.mock('@/src/server/pilot/onePercentClub', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockListNominations = listNominations as jest.Mock;
 const mockListMembers = listMembers as jest.Mock;
 const mockGetNomination = getNomination as jest.Mock;
@@ -42,6 +49,13 @@ const mockListVotes = listVotes as jest.Mock;
 const mockCreate = createNomination as jest.Mock;
 const mockVote = castVote as jest.Mock;
 const mockWithdraw = withdrawNomination as jest.Mock;
+
+// The athlete gate is permissive by default so each test states its own
+// access decision rather than inheriting the previous test's --
+// clearAllMocks clears calls, not implementations.
+beforeEach(() => {
+  mockAccess.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -78,6 +92,10 @@ test('parents cannot see or touch the club at all', async () => {
 
 test('coaches, admins, and athletes can all nominate; the source is never taken from the client', async () => {
   mockCreate.mockResolvedValue({ nomination_id: 'nom-1', source: 'coach_nomination' });
+  // a1 is this coach's athlete -- the staff gate grants. Its refusal, and the
+  // fact that it deliberately does not apply to an athlete nominator, are the
+  // next test.
+  mockAccess.mockResolvedValue(undefined);
 
   mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
   let response = await POST(post({ action: 'nominate', athlete_id: 'a1', source: 'milestone_surfaced' }));
@@ -170,4 +188,25 @@ test('one nomination detail includes who voted, when, and the tally -- coach/adm
 test('an unknown action is refused rather than silently ignored', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({ role: 'admin' }));
   expect((await POST(post({ action: 'crown_them', athlete_id: 'a1' }))).status).toBe(400);
+});
+
+test('a staff nominator is gated per athlete; the athlete self/peer path deliberately is not', async () => {
+  mockAccess.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+  mockCreate.mockResolvedValue({ nomination_id: 'nom-2', source: 'self_peer_nomination' });
+
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+  expect((await POST(post({ action: 'nominate', athlete_id: 'a-not-mine' }))).status).toBe(403);
+  expect(mockCreate).not.toHaveBeenCalled();
+
+  // Path 3 of the owner's design ("an athlete may nominate themselves or a
+  // peer") is unchanged: the central gate admits an athlete only for
+  // themselves, so applying it here would delete peer nomination rather than
+  // secure it. Narrowing that is an owner decision, not a gate fix.
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ath-self' }));
+  const peer = await POST(post({ action: 'nominate', athlete_id: 'a-teammate' }));
+  expect(peer.status).toBe(200);
+  expect(mockAccess).toHaveBeenCalledTimes(1);
+  expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+    athleteId: 'a-teammate', nominatorRole: 'athlete', nominatorAthleteId: 'ath-self',
+  }));
 });

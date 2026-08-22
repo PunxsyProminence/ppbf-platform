@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -30,6 +30,12 @@ export const runtime = 'nodejs';
 // safety-escalation ladder, where an org admin sees it and it carries an
 // acknowledge/resolve lifecycle. There is no conduct log on this route and
 // no way to add one through it.
+//
+// Both athlete-naming actions are authorized per athlete, not merely by
+// role: filing a safeguarding conduct concern against a child is not
+// something a coach with no relationship to that child may do, and the
+// central gate (assertActorCanAccessAthlete) is what says which children
+// this caller has.
 
 const FLOOR_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const POSTING_ROLES = ['organization_admin', 'admin'] as const;
@@ -111,6 +117,7 @@ export async function POST(request: NextRequest) {
       if (!standardId || !athleteId) {
         throw new ValidationError('recognize needs standard_id and athlete_id.');
       }
+      await assertActorCanAccessAthlete(principal, athleteId);
 
       const coachDisplayName = await getCoachDisplayName(principal.organizationId, principal.accountId);
       const result = await recognizeStandardMet({
@@ -132,6 +139,7 @@ export async function POST(request: NextRequest) {
       const athleteId = text(body.athlete_id)?.trim();
       const reason = text(body.reason)?.trim();
       if (!athleteId) throw new ValidationError('raise_concern needs athlete_id.');
+      await assertActorCanAccessAthlete(principal, athleteId);
       if (!reason) {
         throw new ValidationError(
           'A concern needs a reason in your own words. It goes to an org admin to handle, so it has to say what happened.',
