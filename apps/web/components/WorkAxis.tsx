@@ -39,6 +39,11 @@ export default function WorkAxis({ className = '' }: { readonly className?: stri
       className={`border-t border-[color:var(--brass-800)] pt-[var(--s4)] ${className}`.trim()}
     >
       <ol
+        /* Named for the same reason the session-scripts block list is: this
+           foot hangs on pages that carry lists of their own, and an
+           unlabelled ordered list is indistinguishable from them -- to a
+           screen reader, and to any test that reaches for listitems. */
+        aria-label="The work axis"
         className="flex flex-wrap items-center justify-center gap-x-[var(--s3)] gap-y-[var(--s2)]"
         style={{
           fontFamily: 'var(--font-ui)',

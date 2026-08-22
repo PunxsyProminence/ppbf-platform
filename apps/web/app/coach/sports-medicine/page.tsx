@@ -6,6 +6,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import WorkAxis from '@/components/WorkAxis';
 
 // The coach's clearance board (owner decision 2026-08-15): clearance status
 // and active training holds with athlete-safe explanations ONLY.
@@ -651,6 +652,10 @@ export default function SportsMedicinePage() {
               Performance Analytics
             </Link>
           </div>
+
+        {/* The four words, at the foot of the page — the same foot the
+            approved boards put under every full screen. See WorkAxis. */}
+        <WorkAxis />
         </div>
       </div>
     </RoleStandaloneView>

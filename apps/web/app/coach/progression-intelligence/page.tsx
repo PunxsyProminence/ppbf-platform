@@ -6,6 +6,7 @@ import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import WorkAxis from '@/components/WorkAxis';
 
 // A rabbit hole renders as a paper note pinned to the leather panel, so it
 // takes the design system's paper material (which carries its own dark ink)
@@ -895,6 +896,10 @@ export default function CoachProgressionIntelligencePage() {
           <Link href="/rabbit-holes" className="btn btn--ghost">
             Write a Rabbit Hole
           </Link>
+
+        {/* The four words, at the foot of the page — the same foot the
+            approved boards put under every full screen. See WorkAxis. */}
+        <WorkAxis />
         </div>
       </div>
     </RoleStandaloneView>
