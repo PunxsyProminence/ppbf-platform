@@ -351,31 +351,121 @@ describe('the coverage half (real database)', () => {
   });
 
   /**
+   * THE COACH PREDICATE ITSELF, which nothing here proved before.
+   *
+   * Every other test in this describe block grants coverage TO SUB_COACH, so
+   * `covering_coach_id = $2` was never the thing under test -- the window
+   * predicates and the organization predicate did all the work. Deleting
+   * `covering_coach_id = $2` outright left all eleven tests green, which
+   * means this file's header claim to prove the coverage half independently
+   * was false. Without that predicate every coach in the gym inherits every
+   * live grant in the gym.
+   *
+   * This is the same shape as the organization mutation below: a predicate is
+   * only proven by a row that would come back if it were gone. So the grant
+   * here names the OTHER coach, in this organization, inside a live window --
+   * everything correct except whose grant it is.
+   */
+  test('a live grant belonging to another coach does not leak to this one', async () => {
+    const client = await freshDatabase('aifc_other_coach');
+    activeClient = client;
+    try {
+      await insertGrant(client, {
+        athleteId: STRANGER_ATHLETE,
+        coveringCoachId: RECORD_COACH,
+      });
+
+      const ids = await athleteIdsForCoach(ORG_ID, SUB_COACH);
+
+      expect(ids).toEqual([OWN_ATHLETE]);
+      expect(ids).not.toContain(STRANGER_ATHLETE);
+
+      // And the grant is genuinely live, so the exclusion is the coach
+      // predicate doing it rather than a window that had already closed.
+      await expect(athleteIdsForCoach(ORG_ID, RECORD_COACH)).resolves.toEqual(
+        expect.arrayContaining([STRANGER_ATHLETE]),
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  /**
+   * `union` de-duplicates and `union all` does not, and no test had an athlete
+   * on BOTH sides of it -- assigned to this coach AND covered by this coach.
+   * A rewrite to `union all` (the usual "it is faster" edit) would have gone
+   * green and then handed every caller a duplicate row. `getPerformanceRollup`
+   * maps over these ids, so the duplicate surfaces as a doubled athlete on the
+   * coach's own analytics.
+   */
+  test('an athlete both assigned and covered is returned once, not twice', async () => {
+    const client = await freshDatabase('aifc_dedupe');
+    activeClient = client;
+    try {
+      await insertGrant(client, { athleteId: OWN_ATHLETE });
+
+      const ids = await athleteIdsForCoach(ORG_ID, SUB_COACH);
+
+      expect(ids).toEqual([OWN_ATHLETE]);
+      expect(ids.filter((id) => id === OWN_ATHLETE)).toHaveLength(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  /**
    * Revocation is modelled by forcing `expires_at` to `now()` rather than by
    * a status column, so this is the revocation path: a grant revoked a moment
    * ago is gone now.
    *
-   * WHAT THIS DOES NOT PROVE, stated because an earlier draft of this comment
-   * claimed it did. It does not distinguish `expires_at > now()` from
-   * `>= now()`. `now()` is transaction start time, so the INSERT's `now()` is
-   * strictly earlier than the SELECT's, and the row is already in the past by
-   * the time it is read -- both operators exclude it. Mutating `>` to `>=`
-   * leaves this test green, which is how the overclaim was caught.
+   * THE UPPER BOUND IS EXCLUSIVE, and proving that needs one transaction.
    *
-   * That gap is not closable from here, and it does not matter in production
-   * for the same reason: a revocation is always read back in a later
-   * statement, so the exact-equality case cannot arise.
+   * `now()` is `transaction_timestamp()`, so across two separate statements
+   * the INSERT's `now()` is strictly earlier than the SELECT's and the row is
+   * already past by the time it is read -- both `>` and `>=` exclude it, and
+   * mutating one to the other leaves such a test green. An earlier draft of
+   * this comment concluded from that the gap was "not closable from here".
+   * That was wrong, and wrong in the worst direction: it taught a future
+   * reader a false impossibility.
+   *
+   * It is closable. Inside a single explicit transaction both statements share
+   * one `transaction_timestamp()`, so `expires_at = now()` is exact equality
+   * rather than a value that has already slipped into the past. The `begin`
+   * below is the whole fix; with it, mutating `>` to `>=` turns this red.
+   *
+   * The second half of the earlier reasoning does hold, and is worth keeping:
+   * this cannot arise in production either way, because `athleteIdsForCoach`
+   * calls the module-level `query()`, which borrows its own pooled connection
+   * and so cannot be enlisted into a caller's transaction. That is a reason
+   * the case is unreachable in production -- it was never a reason the test
+   * could not be written.
    */
   test('a grant revoked a moment ago is already excluded', async () => {
     const client = await freshDatabase('aifc_boundary');
     activeClient = client;
     try {
+      // One transaction, so the grant's `now()` and the read's `now()` are the
+      // same instant and `expires_at = now()` is genuine equality.
+      await client.query('begin');
       await insertGrant(client, {
         startsAt: "now() - interval '1 hour'",
         expiresAt: 'now()',
       });
 
+      // The equality is real, not assumed -- if this ever came back false the
+      // test below would be proving the ordinary already-past case again.
+      const [{ exactly_now: exactlyNow }] = (
+        await client.query<{ exactly_now: boolean }>(
+          `select expires_at = now() as exactly_now from pilot.coach_coverage
+           where organization_id = $1 and athlete_id = $2`,
+          [ORG_ID, COVERED_ATHLETE],
+        )
+      ).rows;
+      expect(exactlyNow).toBe(true);
+
       await expect(athleteIdsForCoach(ORG_ID, SUB_COACH)).resolves.toEqual([OWN_ATHLETE]);
+
+      await client.query('rollback');
     } finally {
       await client.end();
     }
