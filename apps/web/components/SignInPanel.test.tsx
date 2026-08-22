@@ -138,7 +138,22 @@ describe('every way in still works', () => {
     const { container } = await renderPanel();
 
     expect(container.textContent).not.toMatch(/never leaves your device/i);
-    expect(container.textContent).toMatch(/access logged/i);
+  });
+
+  /* This assertion used to read `toMatch(/access logged/i)` -- it pinned the
+     claim rather than checking it, and the claim was false. Nothing on any of
+     the three doors records a refused attempt: PIN 401s before
+     auditLoginEvent, magic-link consume 401s before its write, requesting a
+     link deliberately writes nothing, and auditEventTypes.ts has no failure
+     type to record one with. The panel may therefore promise a record of
+     successes and nothing wider. Both directions are asserted, because the
+     defect this replaces was a true-sounding line nobody re-derived. */
+  test('promises only the sign-in record the system actually keeps', async () => {
+    const { container } = await renderPanel();
+
+    expect(container.textContent).toMatch(/successful sign-ins are recorded/i);
+    expect(container.textContent).not.toMatch(/access logged/i);
+    expect(container.textContent).not.toMatch(/every attempt/i);
   });
 });
 
