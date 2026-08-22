@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 
+import WorkAxis from '@/components/WorkAxis';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { useFocusOnStepChange } from '@/src/lib/useFocusOnStepChange';
@@ -452,6 +453,10 @@ export default function SetupWizard() {
             </div>
           </section>
         )}
+
+        {/* The four words, at the foot of the page. See WorkAxis for why this
+            is not the motto line lifted out of other role workspaces. */}
+        <WorkAxis />
       </div>
     </main>
   );

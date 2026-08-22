@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot } from '@/components/roleSession';
+import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
 import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
@@ -399,6 +400,10 @@ function PinManagementPageContent() {
             </form>
           </section>
         </div>
+
+        {/* The four words, at the foot of the page. See WorkAxis for why this
+            is not the motto line lifted out of other role workspaces. */}
+        <WorkAxis />
       </div>
     </main>
   );
