@@ -1,37 +1,83 @@
 # Grok visual lane
 
-**Agreed 20 Aug 2026.** Authored by Grok, amended once by Claude on a point
-Grok could not check from outside the sandbox. Live contract — if the repo and
-this document disagree, the repo wins and this document is wrong.
+**Agreed 20 Aug 2026. Substantially amended 22 Aug 2026 by owner decision.**
+Originally authored by Grok, amended once by Claude on a point Grok could not
+check from outside the sandbox. Live contract — if the repo and this document
+disagree, the repo wins and this document is wrong.
 
-## The three lanes
+**What changed on 22 Aug, and why.** The original contract put Grok outside
+the repository: it made image files, Claude implemented everything, and
+"writing is what stays gated" was the organising idea. That cost fidelity at
+every handoff — the implementer re-derived intent from a picture, and the
+designer never saw what shipped. **Grok now designs and implements its own
+visual work**, reading current source first and building only what the owner
+approved. The gate did not disappear; it moved onto the PR, where an
+independent reviewer belongs.
+
+Everything below concerning **plate binaries** — 4:4:4, the drop, the byte
+gate, the composition laws — is unchanged and still binds. What changed is who
+writes the code around them.
+
+## The lanes
 
 | Lane | Owns | Never touches |
 |---|---|---|
-| **ChatGPT** | SharePoint, OneDrive, Google Drive taxonomy | the repository, image generation |
-| **Grok** | image files | the repository, drive reorganisation |
-| **Claude** | code, wiring, PR, staging, production dispatch | drive taxonomy, image generation |
+| **ChatGPT** | SharePoint, OneDrive, Google Drive taxonomy; independent audit of diffs, CI, scope | the repository (read-only), image generation |
+| **Grok** | visual design **and** visual implementation: image files, JSX presentation structure, design-system usage, CSS, responsive layout, typography, visual tests | functional/security code (see the two lists below), drive reorganisation |
+| **Claude** | functional and security engineering, migrations, release engineering; **independent review of Grok's visual PRs** | drive taxonomy, image generation, redesigning approved visual work |
 
 Nobody pushes to `main`. Everything lands by PR with green CI, including
-Claude's own work. This is not a hierarchy — it is the rule in
+Claude's own work and Grok's. This is not a hierarchy — it is the rule in
 `AGENT_KERNEL.md`, and it exists because nine direct-to-main pushes from a
 secondary channel destroyed `apps/web/package.json` on 19 Aug and left `main`
 unable to build, test, or migrate.
 
+## What Grok may and may not change
+
+Grok reads the current page, its components and its tests **before** designing.
+Current source is the functional authority; the owner-approved design is the
+visual authority. Where a design conflicts with real behaviour, **the design
+changes** — working behaviour is not altered to make a picture fit.
+
+**May change:** JSX visual structure and presentation hierarchy;
+design-system classes; CSS; responsive layout; typography; visual assets
+within the image lane; accessibility markup belonging to its own layout; the
+visual and component tests covering all of it.
+
+**May not change without a separate owner-approved functional task:** database
+schema; migrations; API behaviour; authentication; authorization; organization
+scoping; guardian/athlete access rules; safeguarding policy; medical or hold
+semantics; role vocabulary; business logic; SHADOW algorithms; progression
+algorithms; data models; audit semantics; server security boundaries.
+
+**Invents nothing.** Not roles, athlete data, metrics, readiness scores,
+statuses, navigation destinations, medical information, security claims,
+SHADOW capabilities, or buttons with no backing behaviour. If an approved
+concept contains an element with no real behaviour behind it, omit it and
+report it rather than building a shell.
+
 ## What Grok produces
 
-Real JPEG wall plates, **layer 0 only**: the photographed wall a room stands
-in. Real UI composites on top in code.
+Two kinds of output, and they travel by different routes.
 
-Grok re-reads these two files before every order rather than working from a
-summary of them:
+**Visual implementation** — the presentation layer of real pages, in code, on
+a feature branch, by PR. This is the bulk of the work under the 2026-08-22
+model.
+
+**Real JPEG wall plates**, **layer 0 only**: the photographed wall a room
+stands in. Real UI composites on top in code. Plates are binaries and still
+enter through the drop described below, never through a chat channel.
+
+Grok re-reads these two files before every plate order, and reads the current
+page, components and tests before every visual design, rather than working
+from a summary of either:
 
 1. `design-system/ppbf.css` — rooms, materials, lamp laws, colour tokens, the
    PLATES block
 2. `apps/web/public/plates/README.md` — format, quiet centre, layer-0 rule,
    the delivery failures, variant rules
 
-### Two modes (owner correction, 2026-08-20)
+### Two modes (owner correction 2026-08-20, extended 2026-08-22)
 
 An earlier version of this contract said "one order = one file" as an absolute
 law. That was wrong, and it was Claude's error: it wrote a **delivery gate**
@@ -39,22 +85,32 @@ as though it governed the whole lane, which would have forbidden Grok from
 showing options at all. Exploration and delivery are different activities and
 only one of them needs a gate.
 
-**Mode A -- mockups. The work.** Jason photographs the real gym. Grok treats
-those photographs as primary reference and produces mockups: room walls, page
-feels, variants, alternatives. Multiple references, multiple outputs, iterate
-freely, show options. **None of the delivery rules below apply in Mode A.** No
-filename discipline, no inbox, no PR. This is where the design actually
-happens and it should be loose.
+**Mode A — design. The work.** Grok reads the current implementation, names
+the real fields, actions and states it has to serve, says what is wrong with
+the screen today, and produces alternatives. Jason photographs the real gym;
+Grok treats those photographs as primary reference. Multiple references,
+multiple outputs, iterate freely, show options, critique the existing design.
+**None of the delivery rules below apply in Mode A.** No filename discipline,
+no inbox, no PR, no branch. This is where the design actually happens and it
+should be loose. It ends when Jason approves one direction — not before.
 
-**Mode B -- shipping. The gate.** A mockup Jason picks becomes a real asset.
-*Now* it is one file, the exact ordered filename, 4:4:4, into
-`Grok-Plates-Inbox`, and Claude opens a PR. Every rule in the delivery section
-applies here and only here.
+**Mode B — implementation. The gate.** Grok builds the direction Jason
+approved, and only that direction. For a **plate**: one file, the exact
+ordered filename, 4:4:4, into `Grok-Plates-Inbox`. For **code**: a feature
+branch off current `main`, the approved design implemented against current
+source, visual tests added or updated to match, and a PR. Never a direct push
+to `main`. Then Claude reviews function and security, ChatGPT audits the diff
+against the claims, CI must be green on the exact head, and Jason reviews the
+result live.
 
-The one-file rule exists so a plate entering the repository is unambiguous --
-so `plate-01-office-02.jpg` means one specific image and Claude's gate can
-refuse a bad one by name. It was never meant to limit how many pictures get
-made.
+The one-file rule for plates exists so a plate entering the repository is
+unambiguous — so `plate-01-office-02.jpg` means one specific image and the
+byte gate can refuse a bad one by name. It was never meant to limit how many
+pictures get made, and it does not govern code PRs.
+
+**One screen, or one coherent small set, at a time.** Concept to
+implementation is not a race; a large visual PR is harder to review for
+functional drift, which is the thing most likely to slip through.
 
 ### Photographing the gym
 
@@ -109,19 +165,20 @@ worth the time:
 - `docs/visual-inventory/04-room-coverage.md` -- routes per room, ranked
 - `docs/shadow-ui/ROOM-PURPOSE-DNA.md` -- what each room is for
 
-**Grok may now propose orders, not only fill them.** If reading turns up a
+**Grok proposes work, it does not only fill orders.** If reading turns up a
 defect or an opportunity the brief missed, say so. The 02a/02b mismatch below
 was found by an audit, not by an order, and it is the most useful thing anyone
 learned about these plates.
 
-What does not loosen, and all of it is Mode B: a shipped order is one file
-carrying the exact ordered name, Grok never pushes to the repository, and it
-never touches a drive outside its own inbox.
+What does not loosen, and all of it is Mode B: a shipped **plate** is one file
+carrying the exact ordered name; a shipped **change** is a feature branch and a
+PR, never a direct push to `main`; and Grok never touches a drive outside its
+own inbox.
 
-Mode A carries none of that. Grok generates mockups from Jason's gym
-photographs without waiting to be handed a filename, because that is the whole
-point of Mode A. Reading widely and exploring widely are both fine; **writing**
-is what stays gated.
+Mode A carries none of that. Grok explores and mocks up freely, without waiting
+to be handed a filename, because that is the whole point of Mode A. What stays
+gated is not *writing* — that gate moved on 2026-08-22 — but **shipping without
+owner approval and independent review**.
 
 ### Composition laws
 
@@ -137,14 +194,26 @@ is what stays gated.
 
 ### What Grok does not do
 
-- push to GitHub — nobody does
+- push directly to `main` — nobody does; branch and PR
+- change anything on the "may not change" list above without a separate
+  owner-approved functional task
+- implement a design Jason has not approved
 - reorganise any drive — that is ChatGPT's lane
 - reintroduce a `plates-v1g.css` override sheet — plate URLs are declared once,
   in the PLATES section of `ppbf.css`
 - deliver base64, data URIs, or "copy the bytes out of chat"
-- freestyle "improve all rooms" **when shipping** — a Mode B order is one
-  file, or one named set. Mode A is deliberately unconstrained
-- ask for mid-loop mock reviews — Jason reviews on the live URL only
+- freestyle "improve all rooms" **when shipping** — a Mode B plate order is one
+  file or one named set, and a Mode B code PR is one screen or one coherent
+  small set. Mode A is deliberately unconstrained
+- weaken a test to make a redesign fit
+
+**On review timing.** The old contract said "Jason reviews on the live URL
+only" and forbade mid-loop mock reviews. That was right when Grok could not
+see code and a mockup review had nothing to check against. Under the 2026-08-22
+model Jason approves a *design* before implementation begins, and still reviews
+the *result* on the deployed page. Both, in that order — the approval gate is
+what keeps Grok from building the wrong thing, and the live review is still the
+only real visual verification that exists.
 
 ## The amendment: 4:4:4
 
@@ -179,14 +248,31 @@ against this and are genuinely 4:4:4.
 If a 4:2:0 file is ever the only thing available, converting it is Jason's
 call and happens outside this repo, on a machine with the tools.
 
-## The delivery path — the part that failed twice
+## The delivery paths
+
+**Visual implementation (the 2026-08-22 model):**
+
+```
+Grok reads current source: page, components, tests
+  → Grok names the real fields, actions and states
+  → Mode A: alternatives, critique, iteration
+  → Jason approves ONE direction
+  → Grok branches, implements that direction, updates visual tests
+  → Grok opens a PR — never a direct push to main
+  → Claude reviews function and security; ChatGPT audits diff vs. claims
+  → green CI on the exact head → merge → staging
+  → Jason reviews on the live URL → release decision
+```
+
+**Plate binaries — the part that failed twice.** Unchanged, because the
+failure modes were about bytes, not about lanes:
 
 ```
 Jason orders one image (filename + room + size/variant note)
   → Grok generates
   → Grok re-encodes to 4:4:4, verifies SOI/EOI and dimensions
   → real .jpg binary lands in the agreed drop
-  → Claude verifies and PRs -- no re-encode, no chroma work
+  → picked up and PR'd — no re-encode, no chroma work
   → if a new variant name: one line in the PLATES section of ppbf.css
   → green CI → merge → staging → production
   → Jason reviews on the live URL
@@ -237,11 +323,34 @@ route is used. Two attempts have already failed this way: 11–41 byte stubs
 from a relayed sidecar, and one file with a valid header, no end-of-image
 marker, and the wrong dimensions.
 
-Variant selection, when more than one plate per room is ever wired, must be
-**deterministic** — derived from the route — never random. A screen that
-changes appearance between loads breaks screenshot comparison, print
-reproducibility, and a coach's sense that they are on the page they were on a
-moment ago.
+Variant selection must be **deterministic** — derived from the route — never
+random. A screen that changes appearance between loads breaks screenshot
+comparison, print reproducibility, and a coach's sense that they are on the
+page they were on a moment ago.
+
+**This is built, as of #541.** `apps/web/components/plateVariant.ts` hashes the
+pathname and emits a token list (`2of2 1of3 4of4 …`);
+`apps/web/components/PlateVariantGround.tsx` writes it onto a `display:contents`
+ancestor in the root layout so every room can read it. The sheet states how
+many plates a room has; the hash picks the slot. `plateVariant.test.ts` fails
+the build if `Math.random`, `Date`, a counter or a session id ever appears in
+that path. Earlier revisions of this contract and of
+`docs/visual-inventory/` said no such mechanism existed — that was true when
+written and is now false.
+
+**The limit of what #541 provides, stated so nobody overclaims it.** It gives
+deterministic route → *slot* selection. It does **not** give route →
+*specifically named plate* assignment. The attribute carries slot tokens only
+and no route identity, so a rule can say "whichever office doors land in slot
+2-of-2 take `plate-01-office-02.jpg`" and cannot say "`/coach/session-scripts`
+takes the chalkboard wall." Which plate a route receives is decided by the
+hash, not by intent — deliberately: `plateVariant.ts` states that nothing in
+it "changes, ever, for art."
+
+So a brief asking for a **named** wall on a **named** route needs either a new
+mechanism or a room reassignment. Establish which before ordering the plate;
+neither is a one-line change, and discovering it after the file arrives wastes
+the order.
 
 ## Current state, so nothing finished gets redone
 

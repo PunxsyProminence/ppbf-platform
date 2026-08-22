@@ -292,9 +292,17 @@ route in a room shows the identical wall**. Confirmed by reading the PLATES
 block of `design-system/ppbf.css`: six one-line declarations, one
 `@media (orientation: portrait)` override, one `.on-canvas` declaration, and
 nothing anywhere in `app/`, `components/` or `src/` that computes a `--plate`
-value. **No variant-selection mechanism exists today.** Every room sits at
-`-01` and the `-0N` slot is open and unused, exactly as
-`docs/GROK-VISUAL-LANE.md` records.
+value.
+
+**Corrected 2026-08-22:** the sentence that stood here — "No variant-selection
+mechanism exists today" — was true on 20 Aug and was overtaken the same day by
+PR #541, which added `apps/web/components/plateVariant.ts` and
+`PlateVariantGround.tsx` plus a route-derived variants block in the sheet. See
+`00-GROK-ORDER-BRIEF.md` for what shipped.
+
+What is **still true**: every room sits at `-01`, and the `-0N` slot is open
+and unused — eight plate files, all `-01`. The mechanism exists; no second
+plate has been wired to it yet.
 
 | Room | Routes | Walls | Ratio | Share of the 103 room-bearing routes |
 |---|---|---|---|---|

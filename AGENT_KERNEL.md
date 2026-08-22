@@ -56,18 +56,57 @@ Both facts are recorded because they are different things. The 2026-08-19 text
 did not say project-level; the 2026-08-20 decision does. A later reader
 resolving the chain cold should not have to guess which.
 
+**Amendment (owner decision, 2026-08-22).** The 2026-08-19 text made this
+session the *only* repository-writing channel, and that clause is now
+narrowed: **Grok writes to this repository too**, on feature branches, by PR,
+for visual work it designed and the owner approved. Everything else in this
+section stands unchanged -- nobody direct-pushes `main`, every change lands by
+PR with green CI, and binary assets still enter by real file upload rather
+than through a chat channel.
+
+The reason for the change is drift, and it is worth stating plainly because
+the original rule was not wrong when it was written. Routing every visual
+design through one party to be re-implemented by another lost fidelity at the
+handoff: the implementer had to re-derive intent from a picture, and the
+designer never saw what shipped. Keeping design and implementation in one
+lane removes that translation step. It does *not* remove the independent
+check -- it moves it to where it belongs, on the PR.
+
 So the lanes are:
 
-- **Claude** -- project command thread. Repository execution: code, tests,
-  branches, PRs, migrations, CI, staging, and explicitly authorized production
-  deployment. Reports exact evidence.
+- **Claude** -- functional and security engineering: backend, APIs, schema,
+  migrations, authentication, authorization, organization isolation,
+  safeguarding, medical/hold enforcement, business logic, SHADOW functional
+  architecture, functional and migration tests, release engineering. Branches,
+  PRs, CI, staging, and explicitly authorized production deployment. Reports
+  exact evidence.
+
+  **On visual PRs Claude is an independent reviewer, not a redesigner.** It
+  checks that no function, role gate, organization boundary or safety rule
+  changed, that nothing unsupported was invented, that no existing action
+  disappeared, and that tests stayed meaningful. A visual preference that is
+  not a defect is not grounds to rewrite another lane's approved work.
 - **ChatGPT** -- independent audit, research, full-spectrum review, storage
-  inventory and reconciliation, documentation, control ledger, and
-  deployed-versus-specification verification. Read-only on this repository;
-  no branches, commits, pushes, merges, deploys, or migrations.
-- **Grok** -- image files only, per `docs/GROK-VISUAL-LANE.md`.
+  inventory and reconciliation, documentation, control ledger, exact-head SHA
+  and CI verification, scope auditing, and deployed-versus-specification
+  verification. Read-only on this repository; no branches, commits, pushes,
+  merges, deploys, or migrations.
+- **Grok** -- visual design **and** visual implementation, per
+  `docs/GROK-VISUAL-LANE.md`. Reads current source before designing; explores
+  and proposes freely; implements only what the owner approved. May change
+  presentation: JSX visual structure, design-system classes, CSS, responsive
+  layout, typography, visual assets, presentation-related accessibility
+  markup, and the visual tests that cover them. May **not** change schema,
+  migrations, API behaviour, auth, authorization, organization scoping,
+  guardian/athlete access rules, safeguarding, medical or hold semantics, role
+  vocabulary, business logic, SHADOW or progression algorithms, data models,
+  audit semantics, or server security boundaries without a separate
+  owner-approved functional task. Invents nothing -- no roles, athlete data,
+  metrics, statuses, navigation destinations, medical information, security
+  claims, or buttons with no backing behaviour.
 - **Jason** -- final authority. Priorities, scope, mutation approval,
-  production authorization, acceptance, conflict resolution.
+  visual approval, production authorization, acceptance, conflict resolution.
+  No lane converts a visual idea into a product decision on its own.
 
 Storage authority, promotion rules and the wider AI governance chain remain
 governed by the ACTIVE source in OneDrive at `Documents/Library Intake/_CONTROL
@@ -122,10 +161,17 @@ construction** and must be stated that way without being asked.
 
 ## Independent verification duties (agreed by both lanes, 2026-08-20)
 
-Project command, repository command and repository implementation now sit on
-the same side. That puts three roles on one party, so the check has to be
-structural rather than polite -- and it matters more under the 2026-08-20
-decision than it did before, not less.
+Project command, repository command and repository implementation sat on the
+same side under the 2026-08-20 decision. That put three roles on one party, so
+the check had to be structural rather than polite.
+
+The 2026-08-22 amendment splits visual implementation back out to Grok, which
+relieves that specific concentration and creates a different one: a lane that
+designs its own work and then implements it grades its own homework unless
+someone else looks. Either way the answer is the same, which is why these
+duties are unchanged -- they were never about *which* party held the roles,
+only about the fact that self-review does not catch what an independent
+measurement catches.
 
 What actually caught Claude's errors on 2026-08-20 was never Claude reviewing
 Claude: it was an independent party *measuring*, a mechanical process, or the
