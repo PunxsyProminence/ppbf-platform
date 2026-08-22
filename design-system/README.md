@@ -16,7 +16,7 @@ the laws and points to the checks — it does not restate what the sheet already
 
 | What | Where |
 |---|---|
-| Tokens (93: `--hide-*`, `--brass-*`, `--t-*`, `--s1..s8`, …) | top of `ppbf.css` |
+| Tokens (116: `--hide-*`, `--brass-*`, `--t-*`, `--s1..s8`, …) | top of `ppbf.css` |
 | Self-hosted faces (SIL OFL 1.1, 5 woff2, no CDN) | `fonts.css` + `fonts/` |
 | Room photo plates (JPEG, `--plate` per room) | `apps/web/public/plates/` |
 | Synthesized sound (Web Audio, classic script, `window.PPBFSound`) | `ppbf-sound.js` |
@@ -24,6 +24,27 @@ the laws and points to the checks — it does not restate what the sheet already
 | Previews (mockups, not the app) | `index.html`, `foundations/`, `components/`, `screens/` |
 
 Raw fetch for tools: `https://raw.githubusercontent.com/PunxsyProminence/ppbf-platform/main/design-system/manifest.json`
+
+**Token count corrected 2026-08-22, and the two figures still disagree on
+purpose.** The row above said **93**; `manifest.json` says **101**; counted
+directly, the first `:root` block of `ppbf.css` declares **116** distinct custom
+properties. The README's 93 was simply stale. The gap between 101 and 116 is a
+generator artefact, not a disagreement about the system: `build-manifest.mjs`
+extracts tokens with a line-anchored regex (`/^\s*(--[\w-]+):\s*([^;]+);/gm`),
+so where the sheet packs several declarations onto one line it records only the
+first. Fifteen tokens are invisible to it that way — `--s2`, `--s3`, `--s4`,
+`--s6`, `--s7`, `--s8` (lines 224-225), `--r-md`, `--r-lg`, `--r-xl`,
+`--r-pill` (line 226), and the five `*-ink` pairs `--cleared-ink`,
+`--monitor-ink`, `--restricted-ink`, `--locked-ink`, `--filed-ink`.
+`tokenCounts.space` is loose for a second reason: `byPrefix('--s')` also
+catches `--slate`, `--split-*` and `--stamp-*`.
+
+The manifest is generated and must not be hand-edited, so it is **not** patched
+here. Fixing it means fixing the generator — a one-line regex change in
+`design-system/build-manifest.mjs` plus a re-run of `npm run design:manifest` —
+which is code, and belongs to whoever owns that file. Until then: 116 is the
+measured count, 101 is what the manifest reports, and the reason is written
+down rather than left for the next reader to rediscover.
 
 ## The eight laws
 

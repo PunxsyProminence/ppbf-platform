@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -20,6 +20,11 @@ export const runtime = 'nodejs';
 // surface -- coaches make the floor, so coaches write here. A placement
 // is a fact about one session and carries no level, rank, or judgment;
 // nothing recorded here follows an athlete to tomorrow.
+//
+// Placing or removing a named athlete is still a write against that
+// athlete's day, so both go through assertActorCanAccessAthlete: making the
+// floor is a coach act, but only for the athletes this coach actually has
+// (assignment, or an active coverage grant).
 
 const FLOOR_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
@@ -103,6 +108,7 @@ export async function POST(request: NextRequest) {
       if (!planId || !groupId || !athleteId) {
         throw new ValidationError('place needs plan_id, group_id, and athlete_id.');
       }
+      await assertActorCanAccessAthlete(principal, athleteId);
 
       const groups = await placeAthlete({
         organizationId: principal.organizationId,
@@ -118,6 +124,7 @@ export async function POST(request: NextRequest) {
       const planId = text(body.plan_id)?.trim();
       const athleteId = text(body.athlete_id)?.trim();
       if (!planId || !athleteId) throw new ValidationError('remove needs plan_id and athlete_id.');
+      await assertActorCanAccessAthlete(principal, athleteId);
 
       const groups = await removeAthlete({
         organizationId: principal.organizationId,

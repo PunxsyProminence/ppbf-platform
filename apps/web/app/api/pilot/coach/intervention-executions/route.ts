@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -27,6 +27,11 @@ export const runtime = 'nodejs';
 // carries no verdict about whether the intervention worked (that is slice
 // 3's human review). Planned facts are snapshotted at start and no request
 // through this route can modify them afterwards.
+//
+// Being staff is not being THIS athlete's staff: every athlete_id here goes
+// through assertActorCanAccessAthlete, the same central gate the attempts
+// ledger uses, and an unfiltered read is scoped to the athletes the caller
+// may reach rather than the organization's whole ledger.
 
 const EXECUTION_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
@@ -65,7 +70,13 @@ export async function GET(request: NextRequest) {
     requireRole(principal, [...EXECUTION_ROLES]);
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id')?.trim() || undefined;
-    const items = await listExecutions(principal.organizationId, athleteId);
+    if (athleteId) await assertActorCanAccessAthlete(principal, athleteId);
+
+    let items = await listExecutions(principal.organizationId, athleteId);
+    if (!athleteId) {
+      const allowed = await accessibleAthleteIds(principal, items.map((item) => item.athlete_id));
+      items = items.filter((item) => allowed.has(item.athlete_id));
+    }
     return NextResponse.json({ items });
   } catch (error) {
     return jsonError(error);
@@ -81,6 +92,7 @@ export async function POST(request: NextRequest) {
     const athleteId = optionalString(body.athlete_id)?.trim();
     const protocolId = optionalString(body.protocol_id)?.trim();
     if (!athleteId) throw new ValidationError('Missing athlete_id.');
+    await assertActorCanAccessAthlete(principal, athleteId);
     if (!protocolId) throw new ValidationError('Missing protocol_id.');
 
     const item = await startExecution({

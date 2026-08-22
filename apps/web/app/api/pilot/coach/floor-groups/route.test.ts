@@ -1,13 +1,19 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { addGroup, createPlan, placeAthlete } from '@/src/server/pilot/floorGroups';
+import { addGroup, createPlan, placeAthlete, removeAthlete } from '@/src/server/pilot/floorGroups';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, assertActorCanAccessAthlete: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -22,9 +28,18 @@ jest.mock('@/src/server/pilot/floorGroups', () => ({
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockCreatePlan = createPlan as jest.Mock;
 const mockAddGroup = addGroup as jest.Mock;
 const mockPlace = placeAthlete as jest.Mock;
+const mockRemove = removeAthlete as jest.Mock;
+
+// The athlete gate is permissive by default so each test states its own
+// access decision rather than inheriting the previous test's --
+// clearAllMocks clears calls, not implementations.
+beforeEach(() => {
+  mockAccess.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -87,10 +102,28 @@ test('placing needs all three ids and hides unknown targets; an unknown action i
   expect((await POST(postRequest({ action: 'place', plan_id: 'p-1', group_id: 'g-1' }))).status).toBe(400);
   expect(mockPlace).not.toHaveBeenCalled();
 
+  // The gate is granted here, so this 404 is the MODULE's hidden not-found
+  // (mockPlace resolves null), not an access decision. The gate's own refusal
+  // is the next test.
   mockPlace.mockResolvedValue(null);
   expect((await POST(postRequest({
     action: 'place', plan_id: 'p-1', group_id: 'g-1', athlete_id: 'ath-other-org',
   }))).status).toBe(404);
 
   expect((await POST(postRequest({ action: 'shuffle', plan_id: 'p-1' }))).status).toBe(400);
+});
+
+test('a coach cannot place or remove an athlete who is not theirs', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockAccess.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+
+  expect((await POST(postRequest({
+    action: 'place', plan_id: 'p-1', group_id: 'g-1', athlete_id: 'ath-not-mine',
+  }))).status).toBe(403);
+  expect((await POST(postRequest({
+    action: 'remove', plan_id: 'p-1', athlete_id: 'ath-not-mine',
+  }))).status).toBe(403);
+
+  expect(mockPlace).not.toHaveBeenCalled();
+  expect(mockRemove).not.toHaveBeenCalled();
 });
