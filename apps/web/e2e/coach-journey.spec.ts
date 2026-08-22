@@ -47,7 +47,13 @@ test.describe('Coach journey', () => {
     // The thing a coach opens this page for. Asserted by role and accessible
     // name rather than by class, because this codebase restyles constantly
     // and a journey test that dies on a restyle is worse than no test.
-    await expect(page.getByRole('heading', { name: 'Live Session Management' })).toBeVisible();
+    //
+    // The masthead used to read 'Live Session Management' on all ten tabs.
+    // It names the open surface now (approved board AF-09), so the coach
+    // landing's heading is the tab it opens on; the workspace's own name
+    // moved to the line under it, which this checks too.
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
+    await expect(page.getByText('Coach workspace · Live session management')).toBeVisible();
 
     // The two live safety reads a coach scans first. Their presence is the
     // point; their contents belong to the API tests.

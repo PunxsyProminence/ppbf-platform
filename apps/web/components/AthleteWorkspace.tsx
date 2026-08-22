@@ -6,6 +6,7 @@ import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
+import WorkAxis from './WorkAxis';
 import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
@@ -676,6 +677,14 @@ export default function AthleteWorkspace() {
   const floorTasksRemaining = floorTasks.filter((task) => !task.completed).length;
   const activeGroup = groupForTab(activeTab);
   const activeGroupTabs = TAB_GROUPS.find((group) => group.id === activeGroup)?.tabs ?? [];
+  /* The masthead names where you actually are, the way the approved board
+     does: the open group as the title, the open surface underneath it. It
+     used to read "My Training Dashboard" no matter which of the eleven
+     surfaces was showing, so the one line on the page that claimed to say
+     where you were was wrong nine times out of eleven. Both fall out of
+     activeTab, so neither can drift from the nav. */
+  const activeGroupLabel = TAB_GROUPS.find((group) => group.id === activeGroup)?.label ?? 'Today';
+  const activeTabLabel = activeGroupTabs.find((tab) => tab.id === activeTab)?.label ?? activeGroupLabel;
 
   /* Where a group opens when its button is pressed. Only Today varies: it
      opens on check-in until the athlete has checked in, then on their
@@ -1682,8 +1691,16 @@ export default function AthleteWorkspace() {
                 of as theirs. Same information, said the way it would be said
                 across the floor. */}
             <p className="t-eyebrow">Your Floor</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>My Training Dashboard</h1>
-            <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today&apos;s work, and keep your goals where you can see them.</p>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>{activeGroupLabel}</h1>
+            <p className="t-label mt-[var(--s3)] text-[color:var(--bone-400)]">
+              Athlete workspace · {activeTabLabel}
+            </p>
+            {/* The standing description of the workspace, kept on Today only.
+                Under "SHADOW" or "Messages" it would be describing a screen
+                the athlete is not looking at. */}
+            {activeGroup === 'today' && (
+              <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today&apos;s work, and keep your goals where you can see them.</p>
+            )}
             {/* The motto strip is gone from here, from the coach workspace, from
                 the parent hub and from the funding centre -- the same six words
                 at --t-xs, four times, always directly above the fold.
@@ -2222,9 +2239,47 @@ export default function AthleteWorkspace() {
                 ))}
               </div>
 
+              {/* AN EMPTY FLOOR IS THE HERO, not a footnote.
+                  Same two sentences as before, word for word, given the room
+                  the approved board gives them -- because on the day an
+                  athlete first opens this tab, this IS the screen, and it used
+                  to be one grey line under a help panel.
+
+                  The button is the point. The old empty state named the action
+                  ("check in") and offered no way to do it: the athlete had to
+                  work out that check-in lives on a different tab. This calls
+                  the same handleCheckIn as the Dashboard's card and the
+                  Session Log's button -- one behaviour, three doors -- and it
+                  is drawn only when there is no open session, exactly as the
+                  Dashboard card is. */}
               {!tasksLoading && !tasksError && floorTasks.length === 0 && (
-                <div className={`${PANEL} text-center`}>
-                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Nothing on your floor yet. Check in and today&apos;s work gets built.</p>
+                <div className={`${PANEL} px-[var(--s5)] py-[var(--s7)] text-center`}>
+                  <span
+                    aria-hidden="true"
+                    className="mx-auto grid h-[var(--s7)] w-[var(--s7)] place-items-center rounded-full border-2 border-[color:var(--brass-600)] text-[color:var(--brass-300)]"
+                    style={{ fontSize: 'var(--t-lg)' }}
+                  >
+                    ☑
+                  </span>
+                  <h3 className="t-command mt-[var(--s5)]" style={{ fontSize: 'var(--t-xl)' }}>
+                    Nothing on your floor yet.
+                  </h3>
+                  <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+                    Check in and today&apos;s work gets built.
+                  </p>
+                  {activeSessionRecord ? null : (
+                    <>
+                      <span className="mx-auto mt-[var(--s5)] block h-px w-[144px] bg-[color:var(--brass-800)]" />
+                      <button
+                        type="button"
+                        onClick={() => void handleCheckIn()}
+                        disabled={isCheckingIn}
+                        className="btn btn--kiosk mx-auto mt-[var(--s5)] w-auto disabled:opacity-50 disabled:grayscale"
+                      >
+                        {isCheckingIn ? 'Checking in...' : 'Check In'}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -2996,6 +3051,10 @@ export default function AthleteWorkspace() {
             belongs. See the note where it used to hang, above the daily
             reminder. */}
         <GymWallModule className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]" />
+
+        {/* The four words, at the foot of the page. See WorkAxis for why this
+            is not the motto strip that was taken out of this header. */}
+        <WorkAxis />
       </div>
     </div>
   );

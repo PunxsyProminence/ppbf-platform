@@ -85,24 +85,24 @@ test('a failed notice read does not invent a notice, and leaves sign-in usable',
 
   expect(screen.queryByText(/📢 Gym Notice/)).toBeNull();
   expect(screen.queryByText(/Welcome to PPBF/i)).toBeNull();
-  // Asserts the Microsoft control, not the PIN field. The page now opens on
-  // Microsoft because PIN sign-in admits only athletes and athletes have their
-  // own door -- see the comment on selectedMethod. The claim being made here is
-  // unchanged: a failed notice fetch must leave sign-in usable.
+  // The claim being made here is unchanged: a failed notice fetch must leave
+  // sign-in usable.
   expect(screen.getByText('Continue With Microsoft')).toBeTruthy();
 });
 
-test('opens on Microsoft, not on a PIN form only athletes can use', async () => {
+test('meets nobody with a door that cannot open for them', async () => {
   await renderPage(async () => jsonResponse({ ok: true, announcements: [] }));
 
-  // The PIN tab exists, but it is not what an arriving coach or parent meets.
-  // While this defaulted to PIN they were shown a form that could never
-  // authenticate them and a refusal that blamed their credential for it.
-  // Two buttons say "Microsoft" -- the method tab and "Continue With
-  // Microsoft". Only the tab carries aria-pressed, which is what identifies it.
-  const microsoftTab = screen
-    .getAllByRole('button', { name: /Microsoft/ })
-    .find((button) => button.hasAttribute('aria-pressed'));
-  expect(microsoftTab?.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.queryByPlaceholderText('account-001')).toBeNull();
+  /* This used to assert that the page OPENED on Microsoft, because only one
+     method was drawn at a time and whichever one was chosen was wrong for
+     somebody: opening on PIN put every coach, parent and staff member in
+     front of a form that could never authenticate them (PIN sign-in admits
+     only athletes), and opening on Microsoft did the same to athletes.
+
+     The approved board (AF-01, AF-M02) draws all three at once, so there is
+     no default left to get wrong -- which is a stronger version of the same
+     claim, and what this now checks. */
+  expect(screen.getByText('Continue With Microsoft')).toBeTruthy();
+  expect(screen.getByPlaceholderText('account-001')).toBeTruthy();
+  expect(screen.getByPlaceholderText('you@example.com')).toBeTruthy();
 });

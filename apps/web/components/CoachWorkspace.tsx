@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import ProfilePortrait from './ProfilePortrait';
+import WorkAxis from './WorkAxis';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
@@ -32,6 +33,37 @@ interface CoachTab {
   readonly label: string;
   readonly badge?: CoachTabBadge;
 }
+
+/**
+ * The coach workspace's ten surfaces, in the order the tab row draws them.
+ *
+ * Hoisted out of the JSX so the masthead can name the open one without a
+ * second copy of the labels standing next to the first: two lists of the same
+ * tabs is how a heading starts disagreeing with the nav underneath it. Badges
+ * are deliberately NOT here -- they are live counts read per render, not part
+ * of the registry, and freezing one into a constant would be a lie the moment
+ * the queue changed.
+ */
+const COACH_TABS = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'floor', label: 'Floor' },
+  { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
+  { id: 'development', label: 'Development' },
+  { id: 'goals', label: 'Goals' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'assessments', label: 'Assessments' },
+  { id: 'film-study', label: 'Film Study' },
+  { id: 'athlete-reviews', label: 'Athlete Reviews' },
+  { id: 'shadow', label: 'SHADOW Intel' },
+] as const satisfies readonly CoachTab[];
+
+/**
+ * Both of these badge the same value by construction -- coachTasks is derived
+ * entirely from shadowQueue's pending_review items (see the comment above
+ * coachTasks) -- so Tasks and SHADOW Intel show the same underlying work seen
+ * from two angles, not two counts that could disagree.
+ */
+const REVIEW_BADGED_TABS: ReadonlySet<TabID> = new Set<TabID>(['tasks', 'shadow']);
 
 type SessionMode = 'Group' | 'One-on-One';
 type ReadinessStatus = 'GREEN' | 'YELLOW' | 'RED';
@@ -346,6 +378,7 @@ function painReportTime(value: string | null): string {
 
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
+  const activeTabLabel = COACH_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Dashboard';
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
   const [athleteFloorPlans, setAthleteFloorPlans] = useState<CoachAthleteFloorPlan[]>([]);
   const [floorPlansError, setFloorPlansError] = useState<string | null>(null);
@@ -1204,8 +1237,21 @@ export default function CoachWorkspace() {
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Coach Development Workspace</p>
-            <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">Live Session Management</h1>
-            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            {/* The masthead names the open surface, the way the approved
+                athlete board does. It read "Live Session Management" on all
+                ten tabs, so the one line claiming to say where the coach was
+                was wrong nine times out of ten. Derived from activeTab, so it
+                cannot drift from the tab row below. */}
+            <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">{activeTabLabel}</h1>
+            <p className="t-label mt-[var(--s3)] text-[color:var(--bone-400)]">
+              Coach workspace · Live session management
+            </p>
+            {/* The standing description of the workspace, kept on the tab it
+                describes. Under "Film Study" it was describing somewhere
+                else. */}
+            {activeTab === 'dashboard' && (
+              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            )}
           </div>
           {/* Two SHADOW buttons used to sit here and both were already on the
               page. RoleStandaloneView renders a context-carrying Open SHADOW
@@ -1560,26 +1606,16 @@ export default function CoachWorkspace() {
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
           <div className={ui.tabRow}>
-            {([
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'floor', label: 'Floor' },
-              { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
-              { id: 'development', label: 'Development' },
-              { id: 'goals', label: 'Goals' },
-              // Both badges are the same value by construction -- coachTasks
-              // is derived entirely from shadowQueue's pending_review items
-              // (see the comment above coachTasks) -- so Tasks and SHADOW
-              // Intel badge the same underlying work seen from two angles,
-              // not two different counts that could disagree.
-              { id: 'tasks', label: 'Tasks', badge: reviewQueueBadge },
-              { id: 'assessments', label: 'Assessments' },
-              { id: 'film-study', label: 'Film Study' },
-              { id: 'athlete-reviews', label: 'Athlete Reviews' },
-              { id: 'shadow', label: 'SHADOW Intel', badge: reviewQueueBadge }
-            ] satisfies CoachTab[]).map(tab => (
+            {COACH_TABS.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                /* Which tab is open was carried by colour alone. A coach using
+                   a screen reader, or a colour-blind coach on a bright gym
+                   floor, got no answer at all -- Law 3, and the athlete
+                   workspace's own tab row has said aria-current since it was
+                   built. */
+                aria-current={activeTab === tab.id ? 'page' : undefined}
                 className={cx(
                   ui.tabButtonBase,
                   'gap-2',
@@ -1587,7 +1623,9 @@ export default function CoachWorkspace() {
                 )}
               >
                 {tab.label}
-                {tab.badge ? <StatusBadge tone={tab.badge.tone} label={tab.badge.label} /> : null}
+                {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
+                  <StatusBadge tone={reviewQueueBadge.tone} label={reviewQueueBadge.label} />
+                ) : null}
               </button>
             ))}
           </div>
@@ -2523,8 +2561,11 @@ export default function CoachWorkspace() {
             </div>
           )}
         </div>
+
+        {/* The four words, at the foot of the page. See WorkAxis for why this
+            is not the motto line that was taken out of this header. */}
+        <WorkAxis />
       </div>
     </div>
   );
 }
-

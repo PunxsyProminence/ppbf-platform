@@ -1121,6 +1121,31 @@ describe('tabs with nothing behind them are not offered', () => {
     expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
   });
 
+  /* The empty floor names the action that fills it. Until the approved board
+     (AF-09) gave this state the room it has now, it named check-in in a single
+     grey line and offered no way to do it -- the athlete had to work out for
+     themselves that the control lives on another tab. */
+  test('an empty floor offers the check-in that fills it', async () => {
+    await renderWorkspace();
+
+    openTab('Floor');
+    await screen.findAllByText(/Nothing on your floor yet/);
+
+    expect(screen.getByRole('button', { name: 'Check In' })).toBeTruthy();
+  });
+
+  /* The masthead read "My Training Dashboard" on all eleven surfaces, so the
+     one line claiming to say where the athlete was agreed with the nav only
+     on the surface it was written for. */
+  test('the masthead names the surface that is actually open', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Learn' })).toBeTruthy();
+    expect(screen.getByText('Athlete workspace · Drills')).toBeTruthy();
+  });
+
   test('the drill library no longer offers a completion it cannot store', async () => {
     // "Mark Complete" set a React flag with no row behind it anywhere --
     // pilot.assignment_completions is keyed on a coach's assignment, and no
