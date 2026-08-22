@@ -338,6 +338,20 @@ that path. Earlier revisions of this contract and of
 `docs/visual-inventory/` said no such mechanism existed — that was true when
 written and is now false.
 
+**The limit of what #541 provides, stated so nobody overclaims it.** It gives
+deterministic route → *slot* selection. It does **not** give route →
+*specifically named plate* assignment. The attribute carries slot tokens only
+and no route identity, so a rule can say "whichever office doors land in slot
+2-of-2 take `plate-01-office-02.jpg`" and cannot say "`/coach/session-scripts`
+takes the chalkboard wall." Which plate a route receives is decided by the
+hash, not by intent — deliberately: `plateVariant.ts` states that nothing in
+it "changes, ever, for art."
+
+So a brief asking for a **named** wall on a **named** route needs either a new
+mechanism or a room reassignment. Establish which before ordering the plate;
+neither is a one-line change, and discovering it after the file arrives wastes
+the order.
+
 ## Current state, so nothing finished gets redone
 
 - 8 real plates on `main` at 1280×720 landscape / 405×720 portrait, all

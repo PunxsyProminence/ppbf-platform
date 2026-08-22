@@ -150,5 +150,25 @@ between loads breaks screenshot comparison, print reproducibility, and a
 coach's sense of being on the page they were on a moment ago — and it is now
 enforced by a test rather than by instruction.
 
+### What #541 does NOT provide, stated so the next reader does not overclaim
+
+#541 proves **deterministic route → *slot* selection**. It does not provide
+**route → *specifically named plate* assignment**, and the two are easy to
+conflate.
+
+The attribute carries slot tokens only — `data-plate-variant="2of2 1of3 4of4
+…"`. It carries no route identity. So a rule can say *"whichever office doors
+land in slot 2-of-2 take `plate-01-office-02.jpg`"*, and it cannot say
+*"`/coach/workout-templates` takes the chalkboard wall."* Which plate a given
+route receives is decided by the hash, not by intent, and the split is
+deliberately not authored — `plateVariant.ts` says so directly: *"nothing in
+this file changes, ever, for art."*
+
+That is a real constraint on ordering work, not a defect: it was a deliberate
+design decision to keep plate counts in the sheet rather than in TypeScript. It
+means a brief that wants a **named** wall on a **named** route needs either a
+new mechanism or a room reassignment, and neither is a one-line change. Say
+which of the two a request needs before ordering the plate.
+
 ---
 OBSERVE. DECIDE. EXECUTE. REPEAT.
