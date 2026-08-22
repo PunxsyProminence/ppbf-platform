@@ -1,10 +1,25 @@
-# Work queue — current
+# Work queue — historical ledger
 
-The single authoritative queue. Supersedes
-[docs/WORK_QUEUE.md](../WORK_QUEUE.md) and
+**Corrected 2026-08-22 — this file used to open "The single authoritative
+queue".** It is not, and had not been for some time.
+[`AGENT_KERNEL.md`](../../AGENT_KERNEL.md) places it last in the source
+hierarchy: "`docs/current/WORK_QUEUE.md`, dated audits, archived documents,
+superseded plans, and old local branches are historical/provenance evidence
+only", and its read path reaches this file only for "audit/provenance/history".
+[`docs/current/ACTIVE_WORK.md`](ACTIVE_WORK.md) says the same from the other
+side, and asks that this file not be preloaded. Current behaviour is described
+by executable code and enforced infrastructure; current intent is the ticket or
+the owner's request.
+
+What this file still is, and is good at: the detailed state machine, deployment
+evidence, digests and run ids, collision notes, and shipped history. Read it to
+answer "what happened, and what proved it". Do not read it to decide what to
+build next, and do not treat a row here as an instruction.
+
+It still supersedes [docs/WORK_QUEUE.md](../WORK_QUEUE.md) and
 [docs/WORK_QUEUE_2026-08-01.md](../WORK_QUEUE_2026-08-01.md), both marked
-superseded and left in place as history. If either contradicts this file,
-this file wins.
+superseded and left in place as history. If either contradicts this file, this
+file wins — all three are history, and this is the current history.
 
 Process: [docs/AI_DELIVERY_PIPELINE.md](../AI_DELIVERY_PIPELINE.md). Rules of
 conduct: [docs/AI_CONTRIBUTOR_GUARDRAILS.md](../AI_CONTRIBUTOR_GUARDRAILS.md).
@@ -40,6 +55,33 @@ stops moving forward; record why in its row.
 | `PRODUCTION_DEPLOYED` | `deploy-production` succeeded; the owner's environment-gate approval already happened as part of that run | **gatekeeper only**, after the owner's GitHub approval click |
 | `PRODUCTION_VERIFIED` | Gatekeeper re-read the live container app's SHA + digest and ran smoke checks against production | **gatekeeper only** |
 | `DONE` | Ticket resolved in place in `intake/tickets/` with a delivery note appended (the `done/` move never operated; the directory was removed) | **gatekeeper only**, for runtime features |
+
+**"Gatekeeper" is a retired role, corrected 2026-08-22.** The "Who may set it"
+column above reserves eight of these states to a "gatekeeper", several in bold.
+No such party exists. [`docs/AI_DELIVERY_PIPELINE.md`](../AI_DELIVERY_PIPELINE.md)
+opens with it: "There is no permanent production bot, deploy coordinator,
+gatekeeper model, or model-specific release owner", and adds that "historical
+references to a named gatekeeper or VS Code Claude session describe an old
+operating model and grant no current authority".
+
+Read the column as **the evidence standard the state needs, not the badge of
+whoever supplies it**:
+
+- Wherever it says "gatekeeper", read *the session Jason has asked to prepare or
+  operate this specific release*. That authority is task-scoped and ends when
+  the release completes, stops, or is handed back.
+- The states in bold are the ones that need observed evidence from a real run or
+  a real environment rather than an assertion — a deploy run id and digest, a
+  probe that was actually executed. That requirement is unchanged and is the
+  part worth keeping; only the named holder was fiction.
+- `PRODUCTION_DEPLOYED` and everything past it additionally require **Jason's**
+  approval of the protected `production` environment. No AI approves that gate,
+  and no AI authorizes a rollback.
+
+Rewriting the column itself is left alone deliberately: the rows below cite it,
+and replacing a vocabulary across a ledger of shipped history is a bigger edit
+than correcting the claim. If the owner would rather retire the word outright,
+that is his call to make.
 
 Documentation-only tickets (no code path affected) may define their own
 completion rule in the ticket body — e.g. "DONE when merged to main" — and
@@ -94,7 +136,7 @@ documentation-only.
 | BACKLOG-triage-keyboard | P3 | Keyboard triage for the coach review queue — approve/reject from the home row with the cursor auto-advancing. NOT buildable as a key binding today, and the reason is the point: intake documents are born `pending_security_review`, no automated scanner exists, and `review-action` refuses approval until a human review leaves an audit row (landmine §5). A key labelled "approve" aims at that guard, so the only outcomes are a refusal the coach cannot interpret or someone "fixing" the refusal and approving a child's intake by keypress. `promote` is worse — it carries a whole `IntakePromotionPayload` and has no keystroke-sized form. What would unblock it is a product change, not a binding: a queue that knows a case is review-complete and offers only the one action it is eligible for | unclaimed | audit | BACKLOG | a review-complete signal in the queue | `components/shortcuts.ts` (carries the full standing reason), `components/CoachWorkspace.tsx`, `app/api/pilot/intake/review-action/route.ts` | high — a single keystroke against a child's intake record | — | — | — | Needs the eligibility signal first. A module implementing this was written and deleted rather than left dormant, because dead code for a forbidden behaviour is an invitation to wire it | 2026-08-11 |
 | BACKLOG-offline-write-queue | P2 | Offline write queue for the floor kiosk. The zero-asset work means the kiosk *renders* with no network, but there is no write path: no service worker, no `navigator.onLine`, no pending-write store, so a check-in submitted during an outage is simply lost. Replay itself is safe — `upsertSession` keys on `(organization_id, session_id)` and the client mints the id, so a replayed write converges rather than duplicating. The blocker is not idempotency, it is identity and data-at-rest: a queued check-in would persist a child's record in `localStorage` on a SHARED floor tablet and replay later under whatever session is then active, which is an attribution hazard and participant data at rest on shared hardware. Needs an owner decision on where queued data lives, how it is scoped to an identity, and what happens when the session changes | unclaimed | audit | BACKLOG | none | `components/AthleteWorkspace.tsx`, `app/api/pilot/sessions/route.ts`, `src/server/pilot/entities.ts` (`upsertSession`) | high — minors' data at rest on shared hardware, and mis-attribution on replay | — | — | — | Owner decision on queued-data scoping. Design-system copy was corrected meanwhile: the kiosk alert no longer promises "changes will sync when connectivity returns", it tells the athlete not to close the screen | 2026-08-11 |
 | BACKLOG-grant-packet | P3 | Grant/board packet export — assemble the governance record into one document a funder can be handed. `/admin/export` is a roster CSV and is not this. The print foundation exists (#170's `@media print` collapses every ground onto paper and takes the safety ladder to ink weights, and Law 3 means the status ladder survives greyscale), so the remaining work is not rendering. It is deciding WHAT goes in: aggregate figures about minors leaving the organisation for an external reader, which is a k-anonymity and disclosure decision rather than a design one | unclaimed | audit | BACKLOG | none | `app/admin/export/*`, `app/board/BoardSummaryPanel.tsx`, `design-system/ppbf.css` (print block) | medium — external disclosure of aggregates about minors | — | — | — | Owner decision on the disclosure set and the k-anonymity floor for a funder-facing document | 2026-08-11 |
-| BACKLOG-open-route-gates | P2 | 21 doors in `buildingMap.ts` carry `roles: OPEN`, meaning no role gate at all — `/dashboard`, `/shadow`, `/shadow/scout`, `/retro-lab`, `/research`, `/knowledge-graph`, `/simulator`, `/source-control` among them. The map records `OPEN` because that is what the code does, not because it is intended; the file's own header says so and says the map is a visibility courtesy, never a boundary. Several of these look like they should be gated. Deliberately not changed by an agent: adding a gate can lock out a role that legitimately uses the surface, and removing one exposes it, so both directions need the owner | unclaimed | audit | BACKLOG | none | `components/buildingMap.ts`, the 21 named route files | high — unauthenticated reach of internal surfaces, if any of the 21 is wrong | — | — | — | Owner decision, route by route. Note the map is not the enforcement point: changing a row hides a door but protects nothing, so each decision has to land on the page's own guard | 2026-08-11 |
+| BACKLOG-open-route-gates | P2 | **Re-measured 2026-08-22 at `c88e80a3`; this row used to say 21 doors and named eight routes, and both were stale.** Measured count is **8** doors carrying `roles: OPEN` — `/dashboard`, `/admin/platform`, `/operations`, `/public`, `/help`, `/store`, `/wall`, `/athlete/dashboard/sparring`. Of the eight routes this row used to name, **seven have since been gated**: `/source-control`, `/retro-lab`, `/simulator` and `/knowledge-graph` on `ADMIN_GATE`, `/research` on `RESEARCH_GATE`, `/shadow` on `MEMBER_GATE`, `/shadow/scout` on `SCOUT_GATE`. Only `/dashboard` of that list is still open, and it is the sign-in landing. The standing point is unchanged: the map records `OPEN` because that is what the code does, not because it is intended, and the file's own header says the map is a visibility courtesy and never a boundary. Deliberately not changed by an agent — adding a gate can lock out a role that legitimately uses the surface, and removing one exposes it, so both directions need the owner | unclaimed | audit | BACKLOG | none | `components/buildingMap.ts`, the 8 open route files | high — unauthenticated reach of internal surfaces, if any of the 8 is wrong | — | — | — | Owner decision, route by route. Note the map is not the enforcement point: changing a row hides a door but protects nothing, so each decision has to land on the page's own guard | 2026-08-22 |
 
 **#238 bulk transition, 2026-08-09 — PROPOSED by an agent, not set by the
 gatekeeper.** The 30 rows above carrying PR #238 sat at `PR_OPEN` long after
