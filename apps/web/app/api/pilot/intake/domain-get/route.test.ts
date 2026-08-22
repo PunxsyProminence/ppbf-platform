@@ -113,7 +113,7 @@ describe('POST /api/pilot/intake/domain-get', () => {
 
     const [sql, params] = observationCall();
     expect(sql).toContain('note_type = any($3::text[])');
-    expect(params[2]).toEqual(['intake_observation', 'coach_observation', 'behavior_standard']);
+    expect(params[2]).toEqual(['coach_observation']);
     expect(params[2]).not.toContain('home_barrier');
     expect(params[2]).not.toContain('transportation_barrier');
     expect(params[2]).not.toContain('parent_message');

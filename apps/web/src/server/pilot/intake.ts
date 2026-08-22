@@ -920,11 +920,30 @@ export async function listBarrierReports(
  *   is either staff-authored or explicitly addressed to staff (the barrier
  *   report exists to reach the coach -- `listBarrierReports` IS that inbox),
  *   so there is nothing on this bus written for someone else. No change.
- * - athlete: staff notes about their own training only. `parent_message` is
- *   addressed to the guardian, not the child, and a barrier report is a
- *   guardian describing home circumstances -- no transport, an unsafe walk,
- *   a barrier at home -- to a coach in confidence. Handing that to the child
- *   it is about is a safeguarding harm, not a privacy nicety.
+ * - athlete: `coach_observation` ONLY -- the one type whose author, subject
+ *   and intended reader all sit inside the coaching relationship.
+ *   `parent_message` is addressed to the guardian, not the child, and a
+ *   barrier report is a guardian describing home circumstances -- no
+ *   transport, an unsafe walk, a barrier at home -- to a coach in
+ *   confidence. Handing that to the child it is about is a safeguarding
+ *   harm, not a privacy nicety.
+ *
+ *   `behavior_standard` and `intake_observation` are excluded, and an
+ *   earlier draft of this list included both. `behavior_standard` is a
+ *   SINGLE GENERIC LABEL by deliberate design -- coach/decision-loop's own
+ *   comment says picking category names "is a coaching-philosophy decision
+ *   for the gym's own staff, not something to invent here" -- so every
+ *   conduct note a coach types shares one value and there is no way to show
+ *   a child the encouraging ones without the disciplinary ones, unmediated.
+ *   `intake_observation` is free text promoted out of a packet that also
+ *   carries medical, waiver and emergency-contact blocks; nothing
+ *   constrains it to training content.
+ *
+ *   This matches passbook.ts's PASSBOOK_ATHLETE_NOTE_TYPES exactly. The two
+ *   readers were built in parallel and disagreed on these two values; the
+ *   narrower list wins, because a shared bus with two different answers to
+ *   "what may this child read about themselves" is the drift this whole
+ *   comment exists to prevent.
  * - parent: `parent_message` only, byte-for-byte the set `listParentMessages`
  *   already decided for the guardian-facing read. It also closes a case that
  *   set never had to consider: two guardians linked to one athlete, where an
@@ -935,11 +954,7 @@ export async function listBarrierReports(
  * value must decide who it is for, rather than inheriting an audience by
  * default. Any other role falls through to the empty set for the same reason.
  */
-export const ATHLETE_READABLE_NOTE_TYPES = [
-  'intake_observation',
-  'coach_observation',
-  'behavior_standard',
-] as const;
+export const ATHLETE_READABLE_NOTE_TYPES = ['coach_observation'] as const;
 
 export const PARENT_READABLE_NOTE_TYPES = ['parent_message'] as const;
 

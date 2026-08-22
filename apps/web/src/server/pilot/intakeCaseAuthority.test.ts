@@ -12,6 +12,7 @@ jest.mock('./db', () => ({
   queryOne: jest.fn(),
 }));
 
+import { PASSBOOK_ATHLETE_NOTE_TYPES } from './passbook';
 import {
   ATHLETE_READABLE_NOTE_TYPES,
   PARENT_READABLE_NOTE_TYPES,
@@ -324,12 +325,21 @@ describe('coachObservationNoteTypesForReader', () => {
     expect(coachObservationNoteTypesForReader('parent')).toEqual(['parent_message']);
   });
 
-  test('an athlete reads staff notes about their own training, and nothing addressed elsewhere', () => {
-    expect(coachObservationNoteTypesForReader('athlete')).toEqual([
-      'intake_observation',
-      'coach_observation',
-      'behavior_standard',
-    ]);
+  test('an athlete reads coach observations about themselves, and nothing else', () => {
+    // Narrowed from a three-value list during integration, to agree with
+    // passbook.ts. `behavior_standard` is one generic label covering every
+    // conduct note a coach types -- decision-loop picks no categories on
+    // purpose -- so it cannot be shown to a child selectively.
+    // `intake_observation` is free text promoted out of a packet carrying
+    // medical and waiver blocks.
+    expect(coachObservationNoteTypesForReader('athlete')).toEqual(['coach_observation']);
+  });
+
+  test('the two note-type readers agree on what a child may read about themselves', () => {
+    // A shared bus read by two modules is exactly where an allow-list drifts.
+    // These were written in parallel and disagreed; this fails if they part
+    // again.
+    expect(coachObservationNoteTypesForReader('athlete')).toEqual([...PASSBOOK_ATHLETE_NOTE_TYPES]);
   });
 
   test.each(['athlete', 'parent'] as PilotRole[])(
