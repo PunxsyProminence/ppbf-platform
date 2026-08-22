@@ -1,7 +1,185 @@
+import { isOrganizationAdminRole } from './access';
+import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 
 export const PASSBOOK_ATTENDANCE_STATUSES = ['present', 'late', 'absent'] as const;
 export const PASSBOOK_GYM_STATUSES = ['active', 'training', 'inactive'] as const;
+
+/* ---------------------------------------------------------------------------
+ * WHO MAY READ WHICH pilot.coach_observations ROW OUT OF THIS BOOK
+ *
+ * pilot.coach_observations is a SHARED free-text table. `note_type` is plain
+ * `text not null` (infra/azure/pilot_slice_postgres.sql:443) with no check
+ * constraint, no default and no enum, so it is a label the writer chooses,
+ * not a type the database enforces. Several different writers file into it,
+ * and one of them is not a coach at all:
+ *
+ *   home_barrier            app/api/pilot/parent/barrier-report/route.ts --
+ *   transportation_barrier    written by a GUARDIAN (role 'parent'), about the
+ *                             household. That route's own header describes the
+ *                             content as "no ride, an unsafe walk, a barrier at
+ *                             home". coach_account_id holds the REPORTING
+ *                             GUARDIAN's account id, not a coach's.
+ *   parent_message          app/coach/decision-loop's Message Home panel via
+ *                             intake/domain-upsert -- a coach/admin message
+ *                             ADDRESSED TO THE GUARDIAN, delivered on
+ *                             /api/pilot/parent/messages.
+ *   behavior_standard       app/coach/decision-loop's Behavior Note panel via
+ *                             intake/domain-upsert -- a staff conduct record
+ *                             about a minor, capture-only by design.
+ *   coach_observation       intake/domain-upsert's default note_type for
+ *                             entity_type 'coach_note' -- the coaching note
+ *                             about this athlete's own training.
+ *   intake_observation      app/api/pilot/intake/review-action's default when
+ *                             an intake case is promoted.
+ *   onboarding_observation  the label scripts/pilot-shadow-intake-gate.mjs
+ *                             sends through that same promotion path.
+ *
+ * This book is reachable by the ATHLETE THEMSELVES and by EVERY LINKED
+ * GUARDIAN -- assertActorCanAccessAthlete (access.ts) admits both -- so
+ * reading the table unfiltered handed a child their guardian's account of
+ * their own home. That is the defect these lists close.
+ *
+ * The precedent is already in this repository, one module over: intake.ts's
+ * listParentMessages filters to `note_type = 'parent_message'` and its
+ * BARRIER_NOTE_TYPES is a closed set, both for the stated reason that such a
+ * surface "must never surface a behavior note or a parent message filed under
+ * the same table". Same table, same hazard, same answer.
+ *
+ * ALLOW-LIST, NOT DENY-LIST, and that is load-bearing rather than stylistic:
+ * intake/domain-upsert stores `asString(body.payload.note_type,
+ * 'coach_observation')` -- ANY free-text label an organization_admin or coach
+ * sends -- and review-action stores any label carried in the promotion
+ * payload. The set of values that can exist is therefore OPEN. A deny-list
+ * cannot enumerate an open set; it admits the next label somebody invents,
+ * which is how a guardian's barrier note reached a child to begin with.
+ *
+ * COST, STATED HERE RATHER THAN DISCOVERED LATER: a note filed under a label
+ * that is on none of the lists below appears in NO passbook, including the
+ * authoring coach's. The row is not deleted and the staff surfaces that read
+ * this table directly are unaffected -- it is this book that stays silent.
+ * Adding a note_type is therefore a two-part act: write it, and decide here
+ * who may read it.
+ *
+ * Matching is exact and case-sensitive, matching the intake.ts precedent. A
+ * case variant such as 'Home_Barrier' falls off every list, which fails
+ * closed rather than open. An empty-string note_type is storable (`not null`
+ * does not forbid '') and is likewise on no list: an unlabelled note has no
+ * decided audience.
+ *
+ * NULLABILITY: checked, and it does not apply. `note_type text not null` is
+ * that column's ONLY definition anywhere under infra/azure -- no later
+ * migration adds, drops or relaxes it. There is no legacy NULL population for
+ * an allow-list to strand.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * What the ATHLETE may read in their own book.
+ *
+ * INCLUDED -- coach_observation: the coach's note about this athlete's own
+ * training, from this athlete's own coach. Author, subject and intended
+ * reader all sit inside the coaching relationship. This is what a passbook
+ * corner is for.
+ *
+ * EXCLUDED -- home_barrier, transportation_barrier: guardian-authored, about
+ * the household, filed TO the coach. A child must not read their guardian's
+ * account of their home. This is the defect being fixed.
+ *
+ * EXCLUDED -- parent_message: written to the guardian, not to the athlete. A
+ * coach writing "can we talk about how he's doing" has not written to the
+ * child. Mirror image of listParentMessages' own filter.
+ *
+ * EXCLUDED -- behavior_standard: a conduct record about a minor, held by
+ * staff. The decision-loop writer files every conduct note under this ONE
+ * generic label on purpose, because naming categories is the gym's own
+ * coaching-philosophy decision -- which means there is no way to show a child
+ * the encouraging ones without also showing them the rest, unmediated and
+ * with no coach in the room. Publishing conduct notes to the athlete is a
+ * product decision for the owner, not a filter default.
+ *
+ * EXCLUDED -- intake_observation, onboarding_observation: free text promoted
+ * out of an intake packet, alongside that packet's medical, waiver and
+ * emergency-contact blocks. Nothing constrains it to training content.
+ */
+export const PASSBOOK_ATHLETE_NOTE_TYPES: readonly string[] = ['coach_observation'];
+
+/**
+ * What a LINKED GUARDIAN may read.
+ *
+ * INCLUDED -- coach_observation: the coaching record about their child.
+ *
+ * INCLUDED -- parent_message: they are the addressee. It already reaches them
+ * on /api/pilot/parent/messages, so keeping it discloses nothing they are not
+ * already entitled to, and dropping it would be an unrelated product change
+ * riding along on a security fix.
+ *
+ * EXCLUDED -- home_barrier, transportation_barrier. This is the deliberate
+ * call on "should a guardian see their own barrier report back", and the
+ * answer is no THROUGH THIS SURFACE, for a structural reason rather than a
+ * privacy one: this book is keyed on the ATHLETE, so "the guardian" here is
+ * EVERY guardian linked to that athlete, not the one who wrote the report.
+ * Admitting these types would show guardian B what guardian A filed -- and
+ * the family most likely to file "a barrier at home" is exactly the family
+ * where that is not safe. A real read-back ("we received your report") needs
+ * an author-scoped reader, `coach_account_id = actor.accountId`, which is a
+ * NEW capability rather than a narrowing of this one. ParentHub's "Sent to
+ * your child's coach" promise is legitimate and still unbuilt; the safe
+ * default until it is built is not to widen.
+ *
+ * EXCLUDED -- behavior_standard: same single-generic-label problem as for the
+ * athlete. A coach who knows every conduct note is published to the family
+ * writes fewer of them, and that costs the safeguarding record more than the
+ * disclosure gains. Turning this on is an owner decision.
+ *
+ * EXCLUDED -- intake_observation, onboarding_observation: staff notes taken
+ * during case review, not correspondence with the family.
+ */
+export const PASSBOOK_GUARDIAN_NOTE_TYPES: readonly string[] = [
+  'coach_observation',
+  'parent_message',
+];
+
+/**
+ * What STAFF -- coach, organization_admin, and its legacy 'admin' alias --
+ * may read: every note_type a writer in this codebase actually produces.
+ *
+ * None of this is new disclosure. Each type is already reachable by exactly
+ * this audience through a purpose-built surface gated the same way: the
+ * barrier types via /api/pilot/coach/barrier-reports (DECISION_LOOP_ROLES =
+ * coach + organization_admin + admin, then assertActorCanAccessAthlete per
+ * athlete -- the same per-athlete gate the passbook route runs);
+ * parent_message and behavior_standard are what these accounts wrote; the
+ * intake types come out of the review they performed. Excluding them would
+ * hide a coach's own record from the coach without protecting anybody.
+ *
+ * floor_observation is deliberately absent: it appears only as a fixture
+ * payload in app/api/pilot/intake/domain-upsert/route.test.ts, no product
+ * path writes it, and promoting a test fixture into a product allow-list
+ * would be inventing surface.
+ */
+export const PASSBOOK_STAFF_NOTE_TYPES: readonly string[] = [
+  'coach_observation',
+  'intake_observation',
+  'onboarding_observation',
+  'behavior_standard',
+  'parent_message',
+  'home_barrier',
+  'transportation_barrier',
+];
+
+/**
+ * The note_types one reader may see, by role. Anything else -- board,
+ * platform_owner, volunteer, staff, or a role added later -- resolves to the
+ * empty list and therefore to no observations at all. The route's requireRole
+ * refuses most of those today; resolving them to nothing here keeps a later
+ * widening of that gate from silently widening this disclosure with it.
+ */
+export function passbookObservationNoteTypes(viewerRole: PilotRole): readonly string[] {
+  if (viewerRole === 'athlete') return PASSBOOK_ATHLETE_NOTE_TYPES;
+  if (viewerRole === 'parent') return PASSBOOK_GUARDIAN_NOTE_TYPES;
+  if (viewerRole === 'coach' || isOrganizationAdminRole(viewerRole)) return PASSBOOK_STAFF_NOTE_TYPES;
+  return [];
+}
 
 export type PassbookAttendanceStatus = (typeof PASSBOOK_ATTENDANCE_STATUSES)[number];
 export type PassbookAttendanceStampCode = 'PRESENT' | 'LATE' | 'ABSENT';
@@ -154,10 +332,20 @@ function belongsToOrganization(row: { organization_id: string }, organizationId:
   return row.organization_id === organizationId;
 }
 
+/**
+ * `viewerRole` is required, not optional with a default: the observations
+ * page of this book is audience-scoped (see the note_type lists above), and a
+ * caller that forgot to say who is reading must fail to compile rather than
+ * fall back to the widest audience.
+ */
 export async function getAthletePassbook(
   organizationId: string,
   athleteId: string,
+  viewerRole: PilotRole,
 ): Promise<AthletePassbook | null> {
+  const allowedNoteTypes = passbookObservationNoteTypes(viewerRole);
+  const allowedNoteTypeSet = new Set(allowedNoteTypes);
+
   const athlete = await queryOne<AthleteRow>(
     `select organization_id, athlete_id, full_name, dob, weight_class, gym_status, active_flag, coach_id, created_at
      from pilot.athletes
@@ -199,11 +387,16 @@ export async function getAthletePassbook(
       [organizationId, athleteId],
     ),
     query<CoachObservationRow>(
+      // note_type is scoped to this reader's audience, exactly as
+      // intake.ts's listParentMessages/listBarrierReports scope theirs. An
+      // empty allow-list produces `= any('{}')`, which matches no row -- an
+      // unrecognized role reads no observation rather than every one.
       `select organization_id, note_id::text, coach_account_id, note_type, note_text, created_at
        from pilot.coach_observations
        where organization_id = $1 and athlete_id = $2
+         and note_type = any($3::text[])
        order by created_at desc`,
-      [organizationId, athleteId],
+      [organizationId, athleteId, [...allowedNoteTypes]],
     ),
     query<GuardianRow>(
       `select g.organization_id, p.parent_id, p.full_name, g.relationship_to_athlete
@@ -255,6 +448,13 @@ export async function getAthletePassbook(
     }));
   const observations = observationRows
     .filter((row) => belongsToOrganization(row, organizationId))
+    // Second gate on the same rule the SQL above already applies, for the
+    // same reason belongsToOrganization re-checks organization_id that the
+    // WHERE clause already scoped: whatever a row's provenance, nothing
+    // leaves this function whose note_type this reader was not cleared for.
+    // The SQL filter is what keeps the rows off the wire; this is what makes
+    // the guarantee independent of the query text staying correct.
+    .filter((row) => allowedNoteTypeSet.has(row.note_type))
     .map((row) => ({
       note_id: row.note_id,
       coach_account_id: row.coach_account_id,
