@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AnnouncementBanner from '@/components/AnnouncementBanner';
-import RefusalStamp from '@/components/RefusalStamp';
+import RefusalStamp, { type RefusalStampKind } from '@/components/RefusalStamp';
 import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -42,6 +42,72 @@ function MethodRule() {
     </div>
   );
 }
+
+/**
+ * Every refusal this panel can be redirected here with (`?error=`), and the
+ * stamp that tells the truth about each one. The kind and the sentence sit in
+ * one table because they answer the same question: two switches over the same
+ * query parameter is how a mark and its copy drift apart.
+ *
+ * Not one of them is red, and that is the whole point. The owner's locked art
+ * policy of 2026-08-19 (RefusalStamp's header carries it) reserves red and
+ * --locked for MEDICALLY_NOT_ALLOWED alone. A sign-in refusal is never
+ * medical, so it renders brass/bone like every other non-medical "no".
+ *
+ * The sentences are unchanged from the copy this table replaced. Each is
+ * passed as the stamp's `detail`, which is appended to the stamp's own
+ * standard sentence rather than replacing it.
+ */
+const AUTH_ERROR_REFUSALS: Readonly<
+  Record<string, { readonly kind: Exclude<RefusalStampKind, 'training_hold'>; readonly message: string }>
+> = {
+  // Nothing is wrong with the credential and nothing the user can type fixes
+  // it: an org admin has to invite or reactivate the account first.
+  'not-invited': {
+    kind: 'get_permission',
+    message: 'This Microsoft account is not invited or not active.',
+  },
+  // The half-finished sign-in no longer exists to complete -- its state or its
+  // cookie is gone. SIGNED_OUT is literally that, and the way out is to start
+  // again rather than to ask anyone for anything.
+  'auth-state-expired': {
+    kind: 'signed_out',
+    message:
+      'Your sign-in session expired or the browser blocked the login cookies. Please try again.',
+  },
+  // The credential was accepted; the account still has nowhere to land until
+  // someone else finishes setting it up.
+  'auth-forbidden': {
+    kind: 'get_permission',
+    message:
+      'This account signed in, but its role has no workspace yet. Ask your organization admin to finish setting it up.',
+  },
+  // RoleSessionGate emits these two; without a case they fell through to the
+  // Microsoft message even when the user had signed in with a PIN. Both are a
+  // WRONG DOOR rather than a hard no -- the person is real and may well be
+  // allowed in, just not through the door they used or into that room.
+  privileged_auth_required: {
+    kind: 'wrong_door',
+    message: 'That area requires a Microsoft sign-in. Please continue with Microsoft.',
+  },
+  unsupported_role: {
+    kind: 'wrong_door',
+    message: 'Your account role cannot open that area.',
+  },
+};
+
+/**
+ * Anything else that arrives in `?error=`. The panel knows only that the
+ * sign-in did not complete, so CANNOT BE DONE is the honest mark: it names no
+ * cause, blames no credential, and promises no one who could unblock it.
+ */
+const UNKNOWN_AUTH_ERROR_REFUSAL: {
+  readonly kind: Exclude<RefusalStampKind, 'training_hold'>;
+  readonly message: string;
+} = {
+  kind: 'cannot_be_done',
+  message: 'Microsoft sign-in failed. Please try again.',
+};
 
 /**
  * THE BELL -- the platform's one sign-in flow, in one place.
@@ -99,36 +165,10 @@ export default function SignInPanel({
   // default: this is a reveal an athlete asks for, never the resting state.
   const [showPin, setShowPin] = useState(false);
 
-  const authErrorMessage = (() => {
-    const error = searchParams.get('error');
-    if (!error) {
-      return '';
-    }
-
-    if (error === 'not-invited') {
-      return 'This Microsoft account is not invited or not active.';
-    }
-
-    if (error === 'auth-state-expired') {
-      return 'Your sign-in session expired or the browser blocked the login cookies. Please try again.';
-    }
-
-    if (error === 'auth-forbidden') {
-      return 'This account signed in, but its role has no workspace yet. Ask your organization admin to finish setting it up.';
-    }
-
-    // RoleSessionGate emits these two; without a case they fell through to the
-    // Microsoft message even when the user had signed in with a PIN.
-    if (error === 'privileged_auth_required') {
-      return 'That area requires a Microsoft sign-in. Please continue with Microsoft.';
-    }
-
-    if (error === 'unsupported_role') {
-      return 'Your account role cannot open that area.';
-    }
-
-    return 'Microsoft sign-in failed. Please try again.';
-  })();
+  const authErrorParam = searchParams.get('error');
+  const authErrorRefusal = authErrorParam
+    ? AUTH_ERROR_REFUSALS[authErrorParam] ?? UNKNOWN_AUTH_ERROR_REFUSAL
+    : null;
 
   useEffect(() => {
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
@@ -368,19 +408,29 @@ export default function SignInPanel({
         {/* Sign-in failures arrive as a full-page redirect, which resets the
             tab to PIN. While this banner lived inside the Microsoft panel a
             rejected user saw an empty PIN form and no reason at all. */}
-        {/* Law 3: the glyph and the uppercase label carry the state, so a
-            refusal still reads in greyscale and to a colour-blind user —
-            the red is the third channel, never the only one. This replaces
-            an emoji, which is neither a system glyph nor legible at 11px. */}
-        {authErrorMessage && (
-          <div
-            className="mb-[var(--s5)] rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.06)] p-[var(--s4)]"
-            role="alert"
-          >
-            <span className="badge badge--locked">
-              <i>✕</i>Sign-in refused
-            </span>
-            <p className="t-body mt-[var(--s3)]">{authErrorMessage}</p>
+        {/* Brass/bone, never red -- the same treatment the PIN and magic-link
+            refusals below already use, and for the same reason. The comment
+            that stood here defended the red on Law 3 grounds: the glyph and
+            the uppercase label carry the state too, so the colour was never
+            the only channel. That reasoning is sound and it is not the rule
+            that governs. The locked art policy of 2026-08-19 is NARROWER than
+            Law 3 -- red/--locked belongs to medically_not_allowed alone, so
+            that an unscoped coach and a same-day medical hold never wear the
+            same colour of "no" -- and the narrower rule wins. A sign-in
+            refusal is not medical.
+
+            role="alert" stays on this wrapper. RefusalStamp gives its six
+            non-medical kinds role="status" (its header explains why), which is
+            that component's decision to make rather than this caller's; but a
+            refusal the user was redirected here to read is the reason they are
+            looking at the page at all, so the wrapper keeps the assertive
+            role this panel has always announced with. */}
+        {authErrorRefusal && (
+          <div className="mb-[var(--s5)]" role="alert">
+            <RefusalStamp
+              kind={authErrorRefusal.kind}
+              detail={trimTrailingPeriod(authErrorRefusal.message)}
+            />
           </div>
         )}
 

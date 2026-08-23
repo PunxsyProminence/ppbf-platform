@@ -586,7 +586,6 @@ export default function AthleteWorkspace() {
 
   // Bio Check-In State
   const [sleepHours, setSleepHours] = useState(8);
-  const [energyLevel, setEnergyLevel] = useState(7);
   const [motivation, setMotivation] = useState(7);
   const [soreness, setSoreness] = useState(2);
   const [hydrationStatus, setHydrationStatus] = useState(8);
@@ -1961,16 +1960,19 @@ export default function AthleteWorkspace() {
                 <div className={PANEL_RAISED}>
                   <h3 className="t-label mb-[var(--s4)]">Current Readiness</h3>
                   <div className="space-y-[var(--s4)]">
-                    <div>
-                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
-                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{sleepHours} hours</p>
-                    </div>
-                    <div>
-                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
-                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{energyLevel}/10</p>
-                    </div>
+                    {/* Sleep and Energy Level stood here until 2026-08-23 and
+                        recorded nothing: neither reached any request body, on
+                        check-in or anywhere else. They sat in the same card as
+                        Readiness to Train, Session Duration and the medical
+                        acknowledgement, which all do write, in identical
+                        styling -- so the card asked a child for five things and
+                        kept three, with nothing on screen saying which. Removed
+                        rather than stamped, the way the guardian consent
+                        prototype was: a control that silently discards what it
+                        asks for is worse than no control. Wiring them is a real
+                        option and a separate decision -- it needs an owner call
+                        on what a sleep or energy reading would mean and who, if
+                        anyone, it should reach. */}
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">Readiness to Train (1-10)</label>
                       <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
@@ -2003,11 +2005,13 @@ export default function AthleteWorkspace() {
                       <input type="checkbox" checked={injuryFlag} onChange={(e) => setInjuryFlag(e.target.checked)} className="h-[21px] w-[21px] accent-[var(--brass-600)]" />
                       <span>Injury or Pain Flag</span>
                     </label>
-                    <div>
-                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
-                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
-                    </div>
+                    {/* A Soreness Level slider stood here and recorded
+                        nothing, immediately below an Injury or Pain Flag that
+                        does. On a safety card that is the worst place for the
+                        distinction to be invisible: an athlete who moved this
+                        to 8 had every reason to believe a coach would see it.
+                        The pain report below -- location, type and severity --
+                        is the path that actually reaches one. */}
                     {/* All 10 locations, not just the first 3 -- a dropdown
                         scales to the list where a row of buttons did not, and
                         the other 7 were previously unreachable from this

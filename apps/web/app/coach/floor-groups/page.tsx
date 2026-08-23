@@ -339,7 +339,7 @@ export default function FloorGroupsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
           </div>
 
         {/* The four words, at the foot of the page — the same foot the
