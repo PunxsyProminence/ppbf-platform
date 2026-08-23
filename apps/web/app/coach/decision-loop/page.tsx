@@ -502,7 +502,11 @@ export default function DecisionLoopReviewPage() {
               />
             </label>
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
-            {errorMessage && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--locked-ink)]">{errorMessage}</p>}
+            {/* --restricted-ink, not --locked-ink. A roster that would not
+                load is a network fact, not a medical one; sports-medicine
+                already made this correction and states the reason -- red is
+                left to mean a child is in danger. */}
+            {errorMessage && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{errorMessage}</p>}
           </section>
 
           {!athleteId ? (
