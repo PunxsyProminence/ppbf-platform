@@ -2525,10 +2525,25 @@ export default function AthleteWorkspace() {
               <p className="t-label">
                 NOT BUILT YET -- there is nothing behind this tab, so nothing here can start or score anything.
               </p>
+              {/* The card here advertised an "MBTI Personality Test" that would
+                  "Discover your personality type and learning style." Both
+                  halves promise something this platform will not do: MBTI sorts
+                  a person into a fixed type, and learning styles are a contested
+                  construct with no instrument here to measure them. Advertised
+                  to a child, on their own screen, it says the gym is going to
+                  decide what kind of person they are.
+
+                  Nothing was ever built behind it, so this is copy removal
+                  rather than a feature removal -- but the copy had to go BEFORE
+                  the tab could ever be re-enabled, because whoever turns it on
+                  would have built what the card promised. What replaces it
+                  names the one thing an assessment tab could honestly hold. */}
               <div className="space-y-[var(--s4)]">
                 <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                  <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">MBTI Personality Test</p>
-                  <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">Discover your personality type and learning style.</p>
+                  <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">Skill checks</p>
+                  <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    If this is ever built, it records what you did on a given day — not what kind of person you are.
+                  </p>
                   <button
                     type="button"
                     disabled

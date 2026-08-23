@@ -288,6 +288,33 @@ SHADOW accepts and processes:
 
 ### 2.3 Personalization Engine
 
+> **SUPERSEDED IN PART — 2026-08-23. Owner decision.**
+>
+> The `UserProfile` shape below is the ORIGINAL DESIGN and is **not what the
+> platform builds, and not what it may build.** Three groups of fields are
+> withdrawn, and the withdrawal is binding on any future implementation:
+>
+> | Withdrawn | Why |
+> |---|---|
+> | `learning_style: 'visual' \| 'kinesthetic' \| 'verbal' \| 'mixed'` | Learning styles are a contested construct. Matching instruction to a self-reported style has not been shown to improve outcomes, and this platform has no instrument to assign one. Stating it about a child makes a claim about their mind out of their answer-format clicks. |
+> | `personality_traits: { growth_mindset_score, grit_score, coachability_score, resilience_score }`, all `0-100` | These are psychological instruments. Scoring a minor 0-100 on grit, coachability or resilience — from chat behaviour, with no validated instrument, no consent, and no clinician — is an ability ranking of a child dressed as a metric. **No replacement scale is authorized.** Do not implement a "lighter" version. |
+> | `explanation_complexity: 0-100`, `example_preference` | Retained as an IDEA only, and only as a stated preference about answer format. Not a score, not a trait, not a fixed type. |
+>
+> **What is authorized instead:** observed answer-format preference
+> (`communication_style`), and `remembered_facts` carrying an **ordinal
+> observation count** — never a probability, never a percentage, and never a
+> statement about the person rather than about what was observed. See
+> `apps/web/src/server/pilot/shadowPersonalizationGate.ts`, which is the
+> implementation and the reasoning.
+>
+> **The gate:** none of it reaches a model prompt unless the
+> `strong_personalization` feature is unlocked for that organization and
+> account. Locked, observation and disabled modes all resolve to absent.
+>
+> The `learning_style VARCHAR(50)` column in the §6 schema sketch is withdrawn
+> with the field. The live table
+> (`pilot.shadow_user_profiles`) never had it.
+
 SHADOW maintains a **tiered voluntary profiling system** (Bronze / Silver / Gold):
 
 ```typescript
@@ -297,17 +324,19 @@ interface UserProfile {
   tier_updated_at: ISO8601;
   interaction_count: number;
   
-  // Learning Style
-  learning_style: 'visual' | 'kinesthetic' | 'verbal' | 'mixed';
-  explanation_complexity: 0-100;  // 0=simple, 100=advanced
+  // Learning Style -- WITHDRAWN 2026-08-23. See the note above 2.3.
+  learning_style: 'visual' | 'kinesthetic' | 'verbal' | 'mixed';  // WITHDRAWN
+  explanation_complexity: 0-100;  // 0=simple, 100=advanced -- preference only
   example_preference: 'video' | 'text' | 'diagram' | 'real_athlete';
   
-  // Personality & Traits
+  // Personality & Traits -- WITHDRAWN 2026-08-23, ALL FOUR. No replacement
+  // scale is authorized. These score a child on psychological constructs with
+  // no instrument, no consent, and no clinician.
   personality_traits: {
-    growth_mindset_score: 0-100;
-    grit_score: 0-100;
-    coachability_score: 0-100;
-    resilience_score: 0-100;
+    growth_mindset_score: 0-100;   // WITHDRAWN
+    grit_score: 0-100;             // WITHDRAWN
+    coachability_score: 0-100;     // WITHDRAWN
+    resilience_score: 0-100;       // WITHDRAWN
   };
   
   // Preferences
@@ -891,7 +920,8 @@ CREATE TABLE shadow_user_profiles (
   tier VARCHAR(20),
   tier_updated_at TIMESTAMP,
   interaction_count INT DEFAULT 0,
-  learning_style VARCHAR(50),
+  -- learning_style: WITHDRAWN 2026-08-23, see the note at 2.3. Never built;
+  -- pilot.shadow_user_profiles has no such column. Do not add one.
   explanation_complexity INT,
   communication_style VARCHAR(50),
   feedback_frequency VARCHAR(50),
