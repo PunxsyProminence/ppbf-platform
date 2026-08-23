@@ -38,8 +38,9 @@ address, or a name.
 **It is already named as outstanding visual work.** `/store` is one of two
 remaining `NEEDS A SLICE` entries in `buildingMapRooms.test.ts`'s `UNPAINTED`
 map, and it carries the highest legitimate legacy-alias debt in the app
-(16 call sites across the two files; the three higher scorers are all
-`PENDING_TRIAGE` admin routes with unconfirmed roles).
+(25 occurrences of the four legacy tokens across the two files — 9 and 16;
+the three higher scorers are all `PENDING_TRIAGE` admin routes with
+unconfirmed roles).
 
 **The pattern is proven.** `/notices` and `/admin/consent` were the two previous
 `NEEDS A SLICE` entries and both were paid off the same way: convert the
@@ -246,9 +247,27 @@ brief actively wants new markup.
    `buildingMapRooms.test.ts` still passes — `/store` is either updated in
    `UNPAINTED` with `FAMILY GROUND` as its reason, matching `/help` and
    `/public`, or given a door decision. **Do not simply delete its entry.**
-2. Zero occurrences of `--canvas-tan`, `--canvas-tan-light`, `--black`, or
-   `--gray-dark` remain in either file:
-   `grep -c "var(--\(canvas-tan\|black\|gray-dark\)" apps/web/app/store/**/*.tsx` → `0`
+2. Zero occurrences of `--canvas-tan`, `--canvas-tan-light`, `--black` or
+   `--gray-dark` remain in either file. Run it exactly like this:
+
+   ```sh
+   grep -rEo 'var\(--(canvas-tan-light|canvas-tan|black|gray-dark)\)' \
+     apps/web/app/store --include='*.tsx' | wc -l
+   ```
+
+   Expected: `0`. It currently prints **25** (9 in `store/page.tsx`, 16 in
+   `store/[organizationId]/page.tsx`).
+
+   *Three things about that command are deliberate, because the first draft of
+   this criterion got all three wrong and would have passed while half the work
+   was undone.* It recurses with `-r` instead of globbing `store/**/*.tsx`:
+   `**` needs `shopt -s globstar`, which is off by default in a non-interactive
+   shell, so the glob silently matches only the `[organizationId]` directory
+   and never sees `store/page.tsx`. It pipes `-o` through `wc -l` instead of
+   using `grep -c`: `-c` counts matching *lines* and prints one `file:count`
+   pair per file, so it neither totals nor matches what "occurrences" means
+   here. And it names `canvas-tan-light` explicitly and before `canvas-tan`,
+   rather than trusting a prefix to cover it.
 3. Zero raw Tailwind type steps (`text-3xl`, `text-sm`, `text-[11px]`). All type
    on `.t-*` or `text-[length:var(--t-*)]`.
 4. No saturated colour anywhere. No `--locked`, `--restricted`, `--cleared`,
