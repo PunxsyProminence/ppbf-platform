@@ -24,7 +24,12 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import SignInPanel from './SignInPanel';
 
-const searchParams = { get: () => null };
+/* The `?error=` a refusal redirect arrives with. A plain mutable value rather
+   than a jest mock: `jest.clearAllMocks()` below clears calls but not a queued
+   return value, so a mocked `get` would leak the previous test's refusal into
+   the next one. This is reset in beforeEach with everything else. */
+let authErrorParam: string | null = null;
+const searchParams = { get: (key: string) => (key === 'error' ? authErrorParam : null) };
 const router = { replace: jest.fn(), push: jest.fn() };
 
 jest.mock('next/navigation', () => ({
@@ -48,6 +53,7 @@ jest.mock('@/components/AnnouncementBanner', () => ({
 const originalFetch = global.fetch;
 
 beforeEach(() => {
+  authErrorParam = null;
   jest.clearAllMocks();
   global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({}) })) as unknown as typeof fetch;
 });
@@ -182,5 +188,120 @@ describe('the popover is the same door in a smaller room', () => {
 
     expect(screen.queryByRole('button', { name: /close sign in/i })).toBeNull();
     expect(container.querySelector('a[href="/public"]')).toBeTruthy();
+  });
+});
+
+/**
+ * THE REFUSAL AT THE DOOR IS NOT A MEDICAL ONE.
+ *
+ * A failed Microsoft sign-in comes back as a full-page redirect carrying
+ * `?error=`, and this panel used to meet it with a red `--locked` banner --
+ * the one treatment the owner's locked art policy of 2026-08-19 reserves for
+ * MEDICALLY_NOT_ALLOWED alone, so that an unscoped coach and a same-day
+ * medical hold never wear the same colour of "no" (RefusalStamp's header
+ * carries the rule). The PIN and magic-link doors on this same panel were
+ * already brass; only this one was still red.
+ *
+ * These tests pin both halves: that each refusal gets the mark that describes
+ * it, and that the red does not come back. The colour assertion has been
+ * watched to fail — the old panel was reinstated and it went red on
+ * `--locked` and on the missing stamp — so it is a guard rather than a
+ * hypothesis.
+ */
+describe('a refused sign-in wears the right kind of "no"', () => {
+  const REFUSALS = [
+    {
+      param: 'not-invited',
+      kind: 'get_permission',
+      label: 'GET PERMISSION',
+      sentence: 'This Microsoft account is not invited or not active.',
+    },
+    {
+      param: 'auth-state-expired',
+      kind: 'signed_out',
+      label: 'SIGNED OUT',
+      sentence:
+        'Your sign-in session expired or the browser blocked the login cookies. Please try again.',
+    },
+    {
+      param: 'auth-forbidden',
+      kind: 'get_permission',
+      label: 'GET PERMISSION',
+      sentence:
+        'This account signed in, but its role has no workspace yet. Ask your organization admin to finish setting it up.',
+    },
+    {
+      param: 'privileged_auth_required',
+      kind: 'wrong_door',
+      label: 'WRONG DOOR',
+      sentence: 'That area requires a Microsoft sign-in. Please continue with Microsoft.',
+    },
+    {
+      param: 'unsupported_role',
+      kind: 'wrong_door',
+      label: 'WRONG DOOR',
+      sentence: 'Your account role cannot open that area.',
+    },
+    {
+      /* Not a value the app emits -- the point is that an unrecognised one
+         still lands somewhere honest instead of blaming Microsoft. */
+      param: 'something-nobody-has-written-yet',
+      kind: 'cannot_be_done',
+      label: 'CANNOT BE DONE',
+      sentence: 'Microsoft sign-in failed. Please try again.',
+    },
+  ] as const;
+
+  test.each(REFUSALS)(
+    '?error=$param is stamped $kind, with its own sentence intact',
+    async ({ param, kind, label, sentence }) => {
+      authErrorParam = param;
+      await renderPanel();
+
+      const refusal = screen.getByRole('alert');
+      expect(refusal.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe(
+        kind,
+      );
+      expect(refusal.textContent).toContain(label);
+      // The copy is the copy. RefusalStamp appends it to its own standard
+      // sentence, so the words the user reads must still be these exact ones.
+      expect(refusal.textContent).toContain(sentence);
+    },
+  );
+
+  /* THE GUARD. The red panel is what this ticket removed, and a test nobody
+     has watched go red is a hypothesis -- this one was watched. `--locked` is
+     matched with both dashes on purpose: one of the messages above contains
+     the word "blocked", which a bare /locked/ would match forever. */
+  test('never wears the red reserved for a medical refusal', async () => {
+    authErrorParam = 'not-invited';
+    const { container } = await renderPanel();
+
+    const refusal = screen.getByRole('alert');
+    expect(refusal.querySelector('[data-refusal-stamp]')).toBeTruthy();
+    expect(refusal.querySelector('.stamp--brass')).toBeTruthy();
+    expect(refusal.querySelector('.badge--locked')).toBeNull();
+    expect(refusal.outerHTML).not.toMatch(/badge--locked/);
+    expect(refusal.outerHTML).not.toMatch(/--locked/);
+    // Nothing anywhere else on the door reintroduces it either.
+    expect(container.innerHTML).not.toMatch(/--locked/);
+    expect(container.innerHTML).not.toMatch(/badge--locked/);
+  });
+
+  /* The refusal is the reason the user was sent back here, so it is announced
+     assertively even though RefusalStamp's six non-medical kinds carry
+     role="status" on their own. */
+  test('announces the refusal assertively', async () => {
+    authErrorParam = 'auth-forbidden';
+    await renderPanel();
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+  });
+
+  test('says nothing at all when nothing was refused', async () => {
+    await renderPanel();
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/sign-in refused/i)).toBeNull();
   });
 });
