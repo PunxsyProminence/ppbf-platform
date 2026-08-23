@@ -621,6 +621,12 @@ describe('readiness is not presence', () => {
       readinessBoard: () => jsonResponse({ items: [freshStaffEnteredReadiness('ath-1')] }),
     });
 
+    // The requirement stated directly: athlete A is not on this screen. The
+    // region and phrasing assertions below are the supporting cast -- this is
+    // the one that fails if a future panel renders the same substitution under
+    // any other heading.
+    expect(screen.queryByText('Jordan Packer')).not.toBeInTheDocument();
+
     expect(screen.queryByRole('region', { name: 'On the floor' })).not.toBeInTheDocument();
     expect(screen.queryByText(/on the floor/i)).not.toBeInTheDocument();
     // And no weaker phrasing of the same claim survived the removal.

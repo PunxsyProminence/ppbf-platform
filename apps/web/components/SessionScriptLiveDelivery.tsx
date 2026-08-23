@@ -74,11 +74,18 @@ interface LoggedIntervention {
 // the same substitution with a better-looking source. Attendance is the
 // coach/terminal register the passbook counts, which is not this either.
 //
-// The panel is therefore removed rather than repointed. What remains as the
-// record of who was actually present is the athletes_present count the coach
-// enters at finish -- a human stating a fact they observed. Restoring a live
-// presence panel needs the separate arrival surface the check-in route already
-// names; that is a product decision, not a swap of one query for another.
+// The panel is therefore removed rather than repointed.
+//
+// What remains is athletes_present: a COUNT the coach enters at finish, a
+// human stating HOW MANY they observed. It is not a record of who, and this
+// comment said it was until review caught it -- which is the same conflation
+// of a number with a roster of named children that the panel above committed,
+// written into the note explaining the removal. Nothing in the platform
+// currently records who was in the room during a session.
+//
+// Restoring a live presence panel needs the separate arrival surface the
+// check-in route already names; that is a product decision, not a swap of one
+// query for another.
 
 /** The four authored coaching fields, omitting the ones the author left empty. */
 function blockDetailLines(block: Block): { label: string; value: string }[] {
