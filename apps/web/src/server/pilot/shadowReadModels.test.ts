@@ -1,5 +1,5 @@
 import { query } from './db';
-import { listShadowEvents, listShadowTelemetry, getShadowReviewProjection, getShadowResearchProjection } from './shadowReadModels';
+import { listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
 
 jest.mock('./db', () => ({
@@ -407,5 +407,83 @@ describe('getShadowResearchProjection event-name filter', () => {
 
     expect(mockQuery.mock.calls[1][1][8]).toEqual(['ath-mine']);
     expect(mockQuery.mock.calls[1][1][9]).toBe(true);
+  });
+});
+
+describe('listShadowAuthorityChecks athlete scoping', () => {
+  /**
+   * This reader had no scope predicate and no test at all, which is the pair
+   * that let it survive: #569 mirrored the athlete access contract across the
+   * read models and did not reach it, and nothing failed to say so.
+   *
+   * It matters because assertShadowAuthority persists its caller's metadata
+   * verbatim, and two callers put an athlete id in it -- the medical-status
+   * route writes { athlete_id, status, expires_at } on every clearance change,
+   * and intake domain-upsert writes { athlete_id } for entity types including
+   * `medical`. The sanitizer was no help: every role this route admits is
+   * inside roleCanViewSensitivePayload, so the redacting branch never ran.
+   */
+
+  test('platform owner reaches no athlete-tied authority row, mirroring its refusal everywhere else', async () => {
+    // SHADOW_PHI_ROLES excludes platform_owner deliberately -- "the platform
+    // owner tier has no legitimate need for it" -- so the medical-status route
+    // answers Omega 403. Before the scope predicate existed it could read the
+    // same clearance out of the ledger instead.
+    mockQuery.mockResolvedValueOnce([]);
+    await listShadowAuthorityChecks(context({ actorRole: 'platform_owner' }));
+
+    const params = mockQuery.mock.calls[0][1];
+    expect(params[7]).toEqual([]);
+    expect(params[8]).toBe(true);
+  });
+
+  test('a coach is scoped to their own roster, not every athlete in the organization', async () => {
+    answerCoachRoster(['ath-mine']);
+    mockQuery.mockResolvedValueOnce([]);
+
+    await listShadowAuthorityChecks(context({ actorRole: 'coach', actorAccountId: 'coach-1' }));
+
+    const params = mockQuery.mock.calls[1][1];
+    expect(params[7]).toEqual(['ath-mine']);
+    expect(params[8]).toBe(true);
+  });
+
+  test('an organization admin remains unrestricted', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await listShadowAuthorityChecks(context({ actorRole: 'organization_admin' }));
+
+    const params = mockQuery.mock.calls[0][1];
+    expect(params[7]).toBeNull();
+    expect(params[8]).toBe(true);
+  });
+
+  test('the boundary keeps the athlete list and the athlete-free rows as separate disjuncts', async () => {
+    // Most authority rows name no athlete -- every upload, every review action,
+    // and every refusal recorded before assertShadowAuthority throws. Scoping on
+    // the first disjunct alone would empty the governance console for the coaches
+    // and admins it exists for, which is the regression #569 measured on the
+    // sibling readers.
+    mockQuery.mockResolvedValueOnce([]);
+    await listShadowAuthorityChecks(context({ actorRole: 'platform_owner' }));
+
+    const sql = sqlOf(0);
+    expect(sql).toContain("$8::text[] is null or metadata->>'athlete_id' = any($8::text[])");
+    expect(sql).toContain("$9::boolean");
+  });
+
+  test('treats a row as athlete-free only when no metadata key names an athlete', async () => {
+    // Stricter than an athlete_id-is-null test on purpose: a blob naming an
+    // athlete through entity_type/entity_id or owner_entity_id is athlete-tied
+    // whether or not it also carries athlete_id, and the athlete-free disjunct
+    // would hand it straight back to the roles the first disjunct excluded.
+    mockQuery.mockResolvedValueOnce([]);
+    await listShadowAuthorityChecks(context({ actorRole: 'platform_owner' }));
+
+    const sql = sqlOf(0);
+    expect(sql).toContain("metadata->>'entity_id' = any($8::text[])");
+    expect(sql).toContain("metadata->>'owner_entity_id' = any($8::text[])");
+    expect(sql).toContain(
+      "or ( $9::boolean and metadata->>'athlete_id' is null and metadata->>'owner_entity_id' is null and metadata->>'entity_type' is distinct from 'athlete' )",
+    );
   });
 });

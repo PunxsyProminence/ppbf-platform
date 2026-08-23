@@ -399,9 +399,39 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
   }));
 }
 
+/**
+ * The authority ledger, scoped the way its two siblings are.
+ *
+ * This reader shipped without an athlete-scope predicate while listShadowEvents
+ * and listShadowTelemetry both carried one, and #569 -- the commit that made
+ * the SHADOW read models mirror the athlete access contract -- did not touch
+ * it. The gap mattered because assertShadowAuthority persists whatever metadata
+ * its caller hands it, and two callers hand it an athlete id: the medical-status
+ * route writes { athlete_id, status, expires_at } on every clearance change, and
+ * intake domain-upsert writes { athlete_id } for entity types including
+ * `medical` and `emergency_contact`.
+ *
+ * The sanitizer was no protection here. sanitizeAuthorityMetadata redacts only
+ * for roles outside roleCanViewSensitivePayload, and all four roles this route
+ * admits are inside it -- so the redacting branch was unreachable and the blob
+ * came back whole.
+ *
+ * What that produced was a clean bypass of a restriction this file's own
+ * neighbours call deliberate. SHADOW_PHI_ROLES excludes platform_owner because
+ * "clearance is organization-private health information; the platform owner tier
+ * has no legitimate need for it" -- so the medical-status route answers Omega
+ * 403, and assertActorCanAccessAthlete refuses it every athlete-scoped record by
+ * name. It could then read the same clearance status, athlete by athlete, out of
+ * the ledger. A coach could read the clearance of an athlete they neither coach
+ * nor cover, which assertCoachAssignedToAthlete refuses everywhere else.
+ *
+ * `action` is caller-supplied and reaches the `action = $2` predicate directly,
+ * so the rows were targetable by name rather than needing to be found.
+ */
 export async function listShadowAuthorityChecks(context: ShadowReadContext, filters: ShadowListFilters = {}): Promise<ShadowAuthorityCheckRow[]> {
   const limit = clampLimit(filters.limit, 25, 200);
   const offset = clampOffset(filters.offset);
+  const scope = await resolveAthleteScope(context);
 
   const rows = await query<ShadowAuthorityCheckRow>(
     `select
@@ -427,6 +457,32 @@ export async function listShadowAuthorityChecks(context: ShadowReadContext, filt
          or metadata->>'intake_document_id' = $5
          or metadata->>'correlation_id' = $5
        )
+       -- The same two disjuncts listShadowEvents and listShadowTelemetry carry,
+       -- and for the same reason: most authority rows name no athlete at all
+       -- (every upload, every review action, and every refusal assertShadowAuthority
+       -- records before it throws), so scoping on the first disjunct alone would
+       -- empty the governance console for the coaches and admins it is built for.
+       --
+       -- The athlete-free test is stricter than an athlete_id-is-null test, which
+       -- is the trap the telemetry reader documents: a metadata blob naming an
+       -- athlete through entity_type/entity_id or owner_entity_id is athlete-tied
+       -- whether or not it also carries athlete_id, and reading it as unscoped
+       -- would hand it back through the second disjunct to precisely the roles
+       -- the first one just excluded.
+       and (
+         (
+           $8::text[] is null
+           or metadata->>'athlete_id' = any($8::text[])
+           or metadata->>'entity_id' = any($8::text[])
+           or metadata->>'owner_entity_id' = any($8::text[])
+         )
+         or (
+           $9::boolean
+           and metadata->>'athlete_id' is null
+           and metadata->>'owner_entity_id' is null
+           and metadata->>'entity_type' is distinct from 'athlete'
+         )
+       )
      order by created_at desc
      limit $6
      offset $7`,
@@ -438,6 +494,8 @@ export async function listShadowAuthorityChecks(context: ShadowReadContext, filt
       filters.correlationId?.trim() || null,
       limit,
       offset,
+      scope.restrictToAthleteIds,
+      scope.includeUnscopedRows,
     ],
   );
 
