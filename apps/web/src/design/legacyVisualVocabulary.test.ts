@@ -266,7 +266,23 @@ describe('the retired aesthetic does not grow back', () => {
 
   /* The seam only works if everything goes through it. A sheet or a component
      that imports the archive directly re-welds the aesthetic to whatever
-     imports it, which is the exact architecture the reset removed. */
+     imports it, which is the exact architecture the reset removed.
+
+     THE WHOLE DIRECTORY, NOT ONE FILE. The first version of this matched the
+     archive sheet by name alone, and the legacy folder holds a second one --
+     legacy-fonts.css, carrying the @font-face blocks for all five retired
+     typefaces. Importing THAT from globals.css brought the retired faces back
+     into the app and this guard stayed GREEN; verified by doing it.
+     RETIRED_FACES above was no help either, since it scans .tsx and the bypass
+     is pure CSS.
+
+     The pattern below is deliberately not restated in prose anywhere in this
+     file: a comment quoting a matching import would make the guard flag its
+     own source, and the fix for that is an allowlist entry, which is the thing
+     that eventually swallows a real offender.
+
+     Matching the directory closes that without touching anything else. Every
+     mutation red before is red now; one class of bypass stops being green. */
   it('is imported by nothing except the current theme', () => {
     const offenders: string[] = [];
 
@@ -304,7 +320,7 @@ describe('the retired aesthetic does not grow back', () => {
            parses it to compare token values, and this guard names the path in
            order to forbid it. Matching the bare path would flag all three and
            grow an allowlist that eventually swallows a real offender. */
-        if (/@import\s+(?:url\()?["'][^"']*legacy\/ppbf-leather-brass\.css/.test(
+        if (/@import\s+(?:url\()?["'][^"']*\blegacy\/[^"']+\.css/.test(
           readFileSync(file, 'utf8'),
         )) {
           offenders.push(relative);
