@@ -209,7 +209,10 @@ interface ActiveSessionRecord {
   sessionId: string;
   athleteId: string;
   date: string;
-  rpe: number;
+  // NULL until check-out. An open session has not been trained yet, so there
+  // is no exertion to rate -- see the rpe comment on PilotSession.
+  rpe: number | null;
+  rpeMethod: SessionRpeMethod;
   checkInNote: string;
   createdAt: string;
 }
@@ -219,7 +222,8 @@ interface StoredSession {
   sessionId: string;
   athleteId: string;
   date: string;
-  rpe: number;
+  rpe: number | null;
+  rpeMethod: SessionRpeMethod;
   notes: string;
   completed: boolean;
   createdAt: string;
@@ -265,17 +269,34 @@ function normalizeStoredSession(row: unknown): StoredSession | null {
   const athleteId = typeof record.athlete_id === 'string' ? record.athlete_id.trim() : '';
   const date = typeof record.date === 'string' ? record.date.slice(0, 10) : '';
   const createdAt = typeof record.created_at === 'string' ? record.created_at : '';
-  const rpe = Number(record.rpe);
 
-  if (!sessionId || !athleteId || !date || !createdAt || !Number.isFinite(rpe)) {
+  // null and undefined are checked BEFORE Number(), because Number(null) is 0
+  // and 0 is a legitimate RPE. Coercing first would turn "not rated yet" into
+  // "rated it zero" -- a fabricated reading, and the exact class of defect the
+  // rpe/readiness separation exists to end.
+  const rpeIsAbsent = record.rpe === null || record.rpe === undefined;
+  const rpe = rpeIsAbsent ? null : Number(record.rpe);
+
+  if (!sessionId || !athleteId || !date || !createdAt) {
     return null;
   }
+  if (rpe !== null && !Number.isFinite(rpe)) {
+    return null;
+  }
+
+  // An unrecognised method is not silently treated as the honest one. Anything
+  // this client does not know reads as UNKNOWN, which is what a row predating
+  // the method column genuinely is.
+  const rpeMethod: SessionRpeMethod = record.rpe_method === 'athlete_post_session_self_report'
+    ? 'athlete_post_session_self_report'
+    : 'UNKNOWN';
 
   return {
     sessionId,
     athleteId,
     date,
     rpe,
+    rpeMethod,
     notes: typeof record.notes === 'string' ? record.notes : '',
     completed: record.completed_flag === true,
     createdAt,
@@ -380,30 +401,49 @@ function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBui
   return [...core, ...readinessSpecific, ...closeout];
 }
 
-// Fast-Track observation feed: best-effort only. The athlete's session
-// check-in (POST /api/pilot/sessions, above) already fully succeeds or fails
-// on its own -- these calls only enrich SHADOW's formula engine with a
-// Session Load (RPE x duration) input, so a failure here must never block or
-// roll back the primary check-in.
+// Fast-Track observation feed: best-effort only. The athlete's check-out
+// (POST /api/pilot/sessions/update) already fully succeeds or fails on its
+// own -- these calls only enrich SHADOW's formula engine with a Session Load
+// (RPE x duration) input, so a failure here must never block or roll back the
+// primary write.
+//
+// THIS RUNS AT CHECK-OUT, NOT CHECK-IN, and that is the whole point. Session
+// Load multiplies session RPE by duration; both inputs only exist once the
+// session is over. It used to run at check-in with the pre-session readiness
+// slider as `session_rpe` and the pre-session duration box as `duration`, so
+// SHADOW was multiplying two numbers that had not measured anything yet.
+//
+// Both values are passed as null when the athlete did not give them, and
+// NOTHING is submitted in that case. There is no default and no prefill here
+// on purpose: a prefilled control that nobody touches is indistinguishable
+// from an answer, which is exactly how the planned 60 minutes became an
+// observed duration.
 async function submitFastTrackObservations(input: {
   athleteId: string;
   contextId: string;
   observedAt: string;
-  rpe: number;
-  durationMinutes: number;
+  rpe: number | null;
+  durationMinutes: number | null;
   painFlag: boolean;
   medicalReadAck: boolean;
 }): Promise<void> {
+  if (input.rpe === null || input.durationMinutes === null) {
+    return;
+  }
+
+  const rpe = input.rpe;
+  const durationMinutes = input.durationMinutes;
+
   const observations = [
     {
       kind: 'session_rpe' as const,
-      value: input.rpe,
+      value: rpe,
       unit: 'rpe_0_10' as const,
       dimensions: { painFlag: input.painFlag, medicalReadAck: input.medicalReadAck },
     },
     {
       kind: 'duration' as const,
-      value: input.durationMinutes,
+      value: durationMinutes,
       unit: 'minutes' as const,
     },
   ];
@@ -658,6 +698,15 @@ export default function AthleteWorkspace() {
   const [notesSaveState, setNotesSaveState] = useState<NotesSaveState>('idle');
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  /* What the athlete reports AFTER training, at check-out. Both start empty and
+     neither is prefilled -- see submitFastTrackObservations. An untouched
+     prefill cannot be told apart from an answer, which is how a planned 60
+     minutes came to be recorded as an observed duration. Empty means the
+     athlete did not say, and that is stored as "did not say" rather than as a
+     number. */
+  const [postSessionRpe, setPostSessionRpe] = useState<number | null>(null);
+  const [actualMinutesTrained, setActualMinutesTrained] = useState<number | null>(null);
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
@@ -1047,6 +1096,7 @@ export default function AthleteWorkspace() {
             athleteId: open.athleteId,
             date: open.date,
             rpe: open.rpe,
+            rpeMethod: open.rpeMethod,
             checkInNote: open.notes,
             createdAt: open.createdAt,
           }
@@ -1108,7 +1158,10 @@ export default function AthleteWorkspace() {
               session_id: record.sessionId,
               athlete_id: record.athleteId,
               date: record.date,
+              // Replayed unchanged: this is a notes save, not a rating. For an
+              // open session both are still null/UNKNOWN.
               rpe: record.rpe,
+              rpe_method: record.rpeMethod,
               notes: draft,
               completed_flag: false,
               created_at: record.createdAt,
@@ -1424,7 +1477,13 @@ export default function AthleteWorkspace() {
           session_id: sessionId,
           athlete_id: backendAthleteId,
           date: sessionDate,
-          rpe: readinessToTrain,
+          // No RPE at check-in. The session has not happened, so there is no
+          // exertion to rate; `rpe` stays null until check-out collects a real
+          // one. This field used to carry `readinessToTrain` -- a pre-session
+          // readiness self-report stored in the column named for session RPE,
+          // which is the defect this change exists to end.
+          rpe: null,
+          rpe_method: 'UNKNOWN',
           notes: checkInNote,
           completed_flag: false,
           created_at: now.toISOString(),
@@ -1440,7 +1499,8 @@ export default function AthleteWorkspace() {
           sessionId,
           athleteId: backendAthleteId,
           date: sessionDate,
-          rpe: readinessToTrain,
+          rpe: null,
+          rpeMethod: 'UNKNOWN',
           checkInNote,
           createdAt: now.toISOString(),
         });
@@ -1465,15 +1525,11 @@ export default function AthleteWorkspace() {
       setIsCheckingIn(false);
     }
 
-    void submitFastTrackObservations({
-      athleteId: backendAthleteId,
-      contextId: sessionId,
-      observedAt: now.toISOString(),
-      rpe: readinessToTrain,
-      durationMinutes: sessionDurationMinutes,
-      painFlag: injuryFlag,
-      medicalReadAck,
-    });
+    // Nothing is sent to SHADOW here any more. Check-in used to post the
+    // readiness slider as `session_rpe` and the planned-duration box as
+    // `duration` -- two pre-session numbers submitted as observations of a
+    // session that had not started. Both now come from check-out, from what
+    // the athlete actually reports afterwards.
   };
 
   const handleCheckOut = async () => {
@@ -1498,7 +1554,11 @@ export default function AthleteWorkspace() {
           session_id: record.sessionId,
           athlete_id: record.athleteId,
           date: record.date,
-          rpe: record.rpe,
+          // The first and only point at which a real session RPE exists. Null
+          // when the athlete did not rate it, which stays null rather than
+          // becoming a number nobody gave.
+          rpe: postSessionRpe,
+          rpe_method: postSessionRpe === null ? 'UNKNOWN' : 'athlete_post_session_self_report',
           // The check-in note is the fallback because the session record
           // requires a note and an empty box must not erase what check-in
           // already stored.
