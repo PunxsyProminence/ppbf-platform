@@ -115,11 +115,13 @@ const CLASS_CEILINGS: Readonly<Record<string, number>> = {
  * debt to tolerate. Naming one in app source from here on is new work reaching
  * for a retired voice.
  *
- * UnifrakturCook is here as the FIFTH face. The decision named four; this one
- * ships from the same folder, is declared in the same sheet and exists for the
- * clinic masthead alone, so archiving it with the other four is the reading
- * that keeps the set coherent. If it was meant to survive, it comes back out
- * of this list and out of legacy-fonts.css together.
+ * UnifrakturCook is the FIFTH face. The decision named four, so it was archived
+ * with the others as the reading that kept the set coherent -- same folder,
+ * same sheet, clinic masthead only -- and flagged rather than decided silently.
+ * The owner CONFIRMED it on 2026-08-23: "Yes. Retire UnifrakturCook with the
+ * other Leather & Brass personality faces. Keep the font file archived for
+ * rollback/reference." So all five are retired and all five .woff2 files stay
+ * on disk.
  *
  * The neutral body/data faces are deliberately absent: Roboto Condensed and
  * Geist Mono come through next/font and the same decision preserves them until
@@ -239,13 +241,17 @@ describe('the retired aesthetic does not grow back', () => {
      app/layout.tsx loads oswald-var.woff2 through next/font as
      --font-tactical-display, which globals.css reads for --font-stencil and
      --font-ui. That is a real rendering dependency, not a mention, and cutting
-     it now would change how the app looks -- which the owner decision
-     explicitly defers: "archive first; remove only after the new system is
-     integrated and verified."
+     it now would change how the app looks.
 
-     So it is pinned here instead. This test fails if the binding moves or
+     The owner ruled on this directly, 2026-08-23: "Do NOT remove the remaining
+     live Oswald binding yet. Replace that only when the new approved visual
+     system supplies its display typography and the replacement can be
+     verified." Verified is the operative word -- this repository has no
+     screenshot baselines, so a font swap cannot be checked here at all.
+
+     So it is pinned instead. This test fails if the binding moves or
      multiplies, and it is the line to delete when the new system supplies its
-     own display face. */
+     own display face and someone can look at the result. */
   it('keeps the retired display face to exactly one recorded binding', () => {
     const bindings: string[] = [];
 

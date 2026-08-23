@@ -270,15 +270,20 @@ face in code (comments are stripped first — `app/layout.tsx` explains in prose
 which face arrives by which route, and a guard that cannot tell an explanation
 from a dependency earns an allowlist, which is what eventually hides a real
 one). **There are five faces, not four**: `UnifrakturCook` ships from the same
-folder and the same sheet for the clinic masthead. It is archived with the
-other four; say so if it was meant to survive.
+folder and the same sheet for the clinic masthead. It was archived with the
+other four and flagged; the owner **confirmed** it the same day — retire it,
+keep the file archived for rollback. All five `.woff2` files stay on disk.
 
 **One live binding is recorded, not removed.** `app/layout.tsx` loads
 `oswald-var.woff2` through `next/font` as `--font-tactical-display`, which
 `globals.css` reads for `--font-stencil` and `--font-ui`. That is a real
 rendering dependency, and cutting it now would change how the app looks — which
-decision 2 defers. It is pinned to exactly one binding and is the line to
-delete when the new system supplies a display face.
+decision 2 defers. The owner confirmed this directly: "Do NOT remove the
+remaining live Oswald binding yet. Replace that only when the new approved
+visual system supplies its display typography and **the replacement can be
+verified**." Verification is the binding constraint — this repository has no
+screenshot baselines, so a font swap cannot be checked here at all. Pinned to
+exactly one binding; the line to delete when someone can look at the result.
 
 **3. Safety palette — semantics preserved, colours not.** `locked`,
 `restricted`, `monitor`, `cleared` keep their meanings; their Leather & Brass
