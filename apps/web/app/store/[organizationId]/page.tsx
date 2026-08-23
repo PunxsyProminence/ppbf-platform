@@ -22,6 +22,9 @@ import { apiBase } from '@/lib/apiBase';
  * A product with no checkout link is shown and marked as not purchasable
  * online, which is the honest state before a processor account exists rather
  * than a dead button.
+ *
+ * Ground is family canvas (T7), matching the index: a parent or a signed-out
+ * visitor is who is reading, so there is no room wall behind the paper.
  */
 
 interface StoreProduct {
@@ -86,84 +89,94 @@ export default function GymStorePage({ params }: { params: Promise<{ organizatio
   }, [organizationId]);
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-10 text-[var(--black)]">
-      <div className="mx-auto max-w-3xl">
-        <Link
-          href="/store"
-          className="inline-flex min-h-[44px] items-center text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]"
-        >
-          &larr; All shops
+    <main className="on-canvas min-h-screen">
+      <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)]">
+        <Link href="/store" className="btn btn--ghost">
+          All shops
         </Link>
 
-        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Equipment</h1>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-          Every purchase supports the gym. Checkout is handled by our payment provider &mdash; your
-          card details are never entered on this site.
-        </p>
+        <header className="mt-[var(--s4)] space-y-[var(--s3)] border-b-[3px] border-[color:rgba(107,78,18,.28)] pb-[var(--s5)]">
+          <p className="t-eyebrow">Shop</p>
+          <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>
+            Equipment
+          </h1>
+          <p className="t-body">
+            Every purchase supports the gym. Checkout is handled by our payment provider &mdash; your
+            card details are never entered on this site.
+          </p>
+        </header>
+
+        {!isLoaded ? (
+          <div role="status" className="mt-[var(--s5)] space-y-[var(--s3)]">
+            <p className="working">Loading the shop.</p>
+            <div className="skeleton skeleton--block" />
+            <div className="skeleton skeleton--block" />
+          </div>
+        ) : null}
 
         {errorMessage ? (
-          <p className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm">
-            {errorMessage}
-          </p>
+          <div role="alert" className="mt-[var(--s5)] flex flex-wrap items-center gap-[var(--s3)]">
+            <span className="badge badge--filed">
+              <i aria-hidden="true">✕</i>Could not load
+            </span>
+            <p className="t-body">{errorMessage}</p>
+          </div>
         ) : null}
 
         {isLoaded && !errorMessage && products.length === 0 ? (
-          <p className="mt-6 text-sm leading-6 text-[var(--gray-dark)]">
-            Nothing is on sale from this gym just now.
-          </p>
+          <p className="t-body mt-[var(--s5)]">Nothing is on sale from this gym just now.</p>
         ) : null}
 
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2">
-          {products.map((product) => {
-            const purchasable = product.checkout_url !== '' && product.availability !== 'unavailable';
-            return (
-              <li
-                key={product.product_id}
-                className="flex flex-col border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4"
-              >
-                <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-                  {product.category}
-                </p>
-                {product.brand ? (
-                  <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
-                    {product.brand}
+        {products.length > 0 ? (
+          <ul className="mt-[var(--s5)] grid grid-cols-1 gap-[var(--s4)] md:grid-cols-2 lg:grid-cols-3">
+            {products.map((product) => {
+              const purchasable = product.checkout_url !== '' && product.availability !== 'unavailable';
+              return (
+                <li
+                  key={product.product_id}
+                  className="mat-paper flex flex-col rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]"
+                >
+                  <p className="t-eyebrow">{product.category}</p>
+                  {product.brand ? <p className="t-label mt-[var(--s2)]">{product.brand}</p> : null}
+                  <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>
+                    {product.name}
+                  </h2>
+                  {product.description ? (
+                    <p className="t-body mt-[var(--s2)]">{product.description}</p>
+                  ) : null}
+
+                  <p className="t-data mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
+                    {formatPrice(product.retail_price_cents)}
                   </p>
-                ) : null}
-                <h2 className="mt-1 font-display text-lg font-black tracking-tight">{product.name}</h2>
-                {product.description ? (
-                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{product.description}</p>
-                ) : null}
+                  <p className="mt-[var(--s2)]">
+                    <span className="badge badge--filed">
+                      <i aria-hidden="true">▣</i>
+                      {AVAILABILITY_LABEL[product.availability]}
+                    </span>
+                  </p>
 
-                <p className="mt-3 font-display text-2xl font-black">
-                  {formatPrice(product.retail_price_cents)}
-                </p>
-                <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-                  {AVAILABILITY_LABEL[product.availability]}
-                </p>
-
-                <div className="mt-auto pt-4">
-                  {purchasable ? (
-                    <a
-                      href={product.checkout_url}
-                      // Opens the processor's own hosted checkout. noopener is
-                      // not optional on a target=_blank link: without it the
-                      // opened page can reach back through window.opener.
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-[44px] w-full items-center justify-center border-2 border-[var(--black)] bg-[color:var(--brass-800)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)]"
-                    >
-                      Buy
-                    </a>
-                  ) : (
-                    <p className="inline-flex min-h-[44px] w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 text-center text-xs font-bold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-                      Ask at the gym
-                    </p>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                  <div className="mt-auto pt-[var(--s4)]">
+                    {purchasable ? (
+                      <a
+                        href={product.checkout_url}
+                        // Opens the processor's own hosted checkout. noopener is
+                        // not optional on a target=_blank link: without it the
+                        // opened page can reach back through window.opener.
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn w-full"
+                      >
+                        Buy
+                      </a>
+                    ) : (
+                      <p className="t-body">Ask at the gym</p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
       </div>
     </main>
   );

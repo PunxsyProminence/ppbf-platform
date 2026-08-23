@@ -291,8 +291,9 @@ const UNPAINTED: Record<string, string> = {
     + 'paper ground. A wall behind paper that is about to leave the building on a printer '
     + 'is a wall nobody sees',
   '/store':
-    'NEEDS A SLICE -- legacy canvas-tan with --black type, and open to families and '
-    + 'signed-out visitors, so the ground is an audience question (T7) before it is a room one',
+    'FAMILY GROUND -- .on-canvas, open to families and signed-out visitors. The door '
+    + 'files it under office, which settles nothing: T7 is about who is reading, and a parent '
+    + 'reads this one',
   '/retro-lab':
     'NEEDS A SLICE -- the door says floor, but this is the component showroom on canvas-tan, '
     + 'not a gym surface. A room here would put a brick wall behind samples of the things that '

@@ -17,6 +17,9 @@ import { apiBase } from '@/lib/apiBase';
  * It exists so this is multi-store from the first commit rather than one gym's
  * shop with a general-sounding URL. Other gyms on the platform have their own
  * suppliers, their own prices and their own catalogue.
+ *
+ * Ground is family canvas (T7), not a room wall: the same audience that reads
+ * /help and /public reads this one, and they are not signed in.
  */
 
 interface StoreSummary {
@@ -53,18 +56,37 @@ export default function StoreIndexPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-10 text-[var(--black)]">
-      <div className="mx-auto max-w-3xl">
-        <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Shop</p>
-        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Equipment</h1>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-          Buying gear here supports the gym directly.
-        </p>
+    <main className="on-canvas min-h-screen">
+      <div className="mx-auto w-full max-w-3xl px-[var(--s5)] py-[var(--s6)]">
+        <header className="space-y-[var(--s3)] border-b-[3px] border-[color:rgba(107,78,18,.28)] pb-[var(--s5)]">
+          <p className="t-eyebrow">Shop</p>
+          <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>
+            Equipment
+          </h1>
+          <p className="t-body">Buying gear here supports the gym directly.</p>
+        </header>
+
+        {!isLoaded ? (
+          /* Law 3: a bare spinner is colour-and-motion-only and is banned.
+             .working already carries the glyph; the label is the sentence. */
+          <div role="status" className="mt-[var(--s5)] space-y-[var(--s3)]">
+            <p className="working">Loading the shop.</p>
+            <div className="skeleton skeleton--line" />
+            <div className="skeleton skeleton--line" />
+            <div className="skeleton skeleton--block" />
+          </div>
+        ) : null}
 
         {errorMessage ? (
-          <p className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm">
-            {errorMessage}
-          </p>
+          /* Administrative, not safety: a shop that failed to load is not a
+             gate. .badge--filed is the rung that is allowed on a public page.
+             The sentence below is the load-bearing copy and is not reworded. */
+          <div role="alert" className="mt-[var(--s5)] flex flex-wrap items-center gap-[var(--s3)]">
+            <span className="badge badge--filed">
+              <i aria-hidden="true">✕</i>Could not load
+            </span>
+            <p className="t-body">{errorMessage}</p>
+          </div>
         ) : null}
 
         {/*
@@ -73,26 +95,28 @@ export default function StoreIndexPage() {
           would be a shop that looks closed when it is not.
         */}
         {isLoaded && !errorMessage && stores.length === 0 ? (
-          <p className="mt-6 text-sm leading-6 text-[var(--gray-dark)]">
-            Nothing is on sale just now. Check back.
-          </p>
+          <p className="t-body mt-[var(--s5)]">Nothing is on sale just now. Check back.</p>
         ) : null}
 
-        <ul className="mt-6 grid gap-3">
-          {stores.map((store) => (
-            <li key={store.organization_id}>
-              <Link
-                href={`/store/${encodeURIComponent(store.organization_id)}`}
-                className="flex min-h-[44px] items-center justify-between border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 text-sm font-bold"
-              >
-                <span>{store.organization_name}</span>
-                <span className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-                  {store.listed_product_count} item{store.listed_product_count === 1 ? '' : 's'}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        {stores.length > 0 ? (
+          <ul className="mt-[var(--s5)] grid gap-[var(--s3)]">
+            {stores.map((store) => (
+              <li key={store.organization_id}>
+                <Link
+                  href={`/store/${encodeURIComponent(store.organization_id)}`}
+                  className="mat-paper flex min-h-[44px] min-w-[44px] items-center justify-between rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] px-[var(--s4)] py-[var(--s3)]"
+                >
+                  <span className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                    {store.organization_name}
+                  </span>
+                  <span className="t-data">
+                    {store.listed_product_count} item{store.listed_product_count === 1 ? '' : 's'}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     </main>
   );
