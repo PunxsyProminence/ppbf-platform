@@ -34,7 +34,12 @@ import { isFeatureEnabled } from './shadowUnlocks';
  * it is not. Closed on failure, in the direction that shares less.
  */
 export function personalizationAllowed(unlockState: ShadowUnlockState | null): boolean {
-  return Boolean(unlockState) && isFeatureEnabled(unlockState as ShadowUnlockState, 'strong_personalization');
+  // An explicit early return rather than `Boolean(x) && f(x as T)`. The cast
+  // was load-bearing for nothing: it silenced the compiler on a fact the
+  // narrowing already knows, and a cast on the argument to a privacy gate is
+  // exactly where a later type change should be made to shout.
+  if (!unlockState) return false;
+  return isFeatureEnabled(unlockState, 'strong_personalization');
 }
 
 /**
@@ -66,9 +71,22 @@ export const CONSISTENT_OBSERVATION_MINIMUM = 5;
  * inventing the very support this module exists to stop inventing.
  */
 export function describeFactSupport(observationCount: number | undefined): FactSupport {
-  const observed = typeof observationCount === 'number' && Number.isFinite(observationCount)
-    ? observationCount
+  // Clamped to a whole number of at least 1, because the field is a COUNT of
+  // things that happened: 0, a negative and 4.7 are all impossible readings,
+  // and the value arrives from a jsonb column no CHECK constraint guards.
+  //
+  // IT CHANGES NO OUTPUT TODAY, and saying so is the point of this comment.
+  // `Math.floor(x) >= n` is identical to `x >= n` for integer n, and both
+  // minimums below are integers; a value under 1 already falls to the weakest
+  // band on its own. This was added on review as defence, and it was verified
+  // by mutation that removing it fails nothing -- so it is documentation of an
+  // invariant, not a fix for a live defect. It starts earning its keep the day
+  // a minimum stops being a whole number, which is exactly when nobody would
+  // think to re-derive this.
+  const raw = typeof observationCount === 'number' && Number.isFinite(observationCount)
+    ? Math.floor(observationCount)
     : 1;
+  const observed = Math.max(1, raw);
   if (observed >= CONSISTENT_OBSERVATION_MINIMUM) return 'consistent';
   if (observed >= REPEATED_OBSERVATION_MINIMUM) return 'repeated';
   return 'single observation';

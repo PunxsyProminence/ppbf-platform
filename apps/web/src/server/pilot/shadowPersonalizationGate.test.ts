@@ -183,6 +183,25 @@ describe('fact support is ordinal, never a probability', () => {
     expect(describeFactSupport(undefined)).toBe('single observation');
   });
 
+  /* Impossible counts. These pin the OUTCOME -- an unreal number never
+     describes itself as more support than it has -- and they are honest about
+     what they do not prove: removing the Math.floor/Math.max clamp from
+     describeFactSupport fails none of them, because `floor(x) >= n` equals
+     `x >= n` for integer n and both minimums are integers. The clamp is
+     documented defence against a future non-integer minimum; these cases are
+     the behaviour, which holds either way. */
+  test.each([0, -3, Number.NaN, Number.POSITIVE_INFINITY])(
+    'an impossible count (%p) reads as the weakest support, never more',
+    (impossible) => {
+      expect(describeFactSupport(impossible)).toBe('single observation');
+    },
+  );
+
+  test('a fractional count never lands in a stronger band than its floor', () => {
+    expect(describeFactSupport(CONSISTENT_OBSERVATION_MINIMUM - 0.1)).toBe('repeated');
+    expect(describeFactSupport(REPEATED_OBSERVATION_MINIMUM - 0.1)).toBe('single observation');
+  });
+
   test('no rendered fact carries a percentage or the word confidence', () => {
     // The specific regression: `- prefers_deep_analysis: true (confidence:
     // 75%)`. 0.75 was a literal in a switch statement, and rendering it this
