@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 
 import GuardianMediaConsentPage from './page';
+import { readDesignSystemCss } from '../../../src/design/readDesignSystemCss';
 
 /**
  * RESOLVED GEOMETRY, NOT CLASS STRINGS.
@@ -112,7 +113,7 @@ function parseSheet(css: string, origin: string, startOrder: number): CssRule[] 
 
 /* Source order after @import inlining: globals.css imports tailwindcss, then
    ppbf.css, and only then states its own rules. */
-const PPBF_RULES = parseSheet(readFileSync(PPBF, 'utf8'), 'ppbf.css', 0);
+const PPBF_RULES = parseSheet(readDesignSystemCss(PPBF), 'ppbf.css', 0);
 const AUTHOR_RULES = [
   ...PPBF_RULES,
   ...parseSheet(readFileSync(GLOBALS, 'utf8'), 'globals.css', PPBF_RULES.length + 1),

@@ -74,14 +74,45 @@
     "licence": "SIL OFL 1.1 — all faces free and self-hosted, no CDN"
   },
   "tokenCounts": {
-    "total": 101,
+    "total": 117,
     "type": 9,
-    "space": 7,
+    "space": 8,
     "motionDurations": 6,
     "motionEasings": 5,
     "fonts": 8
   },
   "tokens": {
+    "--phi": "1.618",
+    "--phi-inv": "0.618",
+    "--phi-2": "2.618",
+    "--root-phi": "1.272",
+    "--t-xs": "11.8px",
+    "--t-sm": "15px",
+    "--t-md": "19.1px",
+    "--t-lg": "24.3px",
+    "--t-xl": "30.9px",
+    "--t-2xl": "39.3px",
+    "--t-3xl": "50px",
+    "--t-4xl": "63.6px",
+    "--t-5xl": "80.9px",
+    "--s1": "3px",
+    "--s5": "21px",
+    "--r-sm": "5px",
+    "--split-minor": "38.2%",
+    "--split-major": "61.8%",
+    "--tap": "55px",
+    "--focus": "0 0 0 3px rgba(212, 175, 74, .55)",
+    "--m-instant": "55ms",
+    "--m-quick": "89ms",
+    "--m-base": "144ms",
+    "--m-settle": "233ms",
+    "--m-travel": "377ms",
+    "--m-swing": "610ms",
+    "--e-stamp": "cubic-bezier(.2, .9, .1, 1)",
+    "--e-settle": "cubic-bezier(.16, .84, .28, 1)",
+    "--e-drawer": "cubic-bezier(.45, .05, .35, 1)",
+    "--e-lever": "cubic-bezier(.6, .04, .78, .9)",
+    "--e-swing": "cubic-bezier(.34, 1.56, .64, 1)",
     "--hide-950": "#14100D",
     "--hide-900": "#1E1712",
     "--hide-800": "#2A1F18",
@@ -122,9 +153,9 @@
     "--mortar": "#5C5246",
     "--lamp": "#FFE9B8",
     "--lamp-hot": "#FFF6DF",
-    "--cleared": "#3F7D4E",
-    "--monitor": "#2E6E96",
-    "--restricted": "#C05A1E",
+    "--cleared": "var(--cleared-deep)",
+    "--monitor": "var(--monitor-deep)",
+    "--restricted": "var(--restricted-deep)",
     "--locked": "#A81E22",
     "--filed": "#6B6355",
     "--cleared-deep": "#366A42",
@@ -150,39 +181,24 @@
     "--font-hand": "\"Caveat\", \"Segoe Print\", \"Bradley Hand\", \"Chalkboard SE\", cursive",
     "--font-data": "ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, monospace",
     "--font-gothic": "\"UnifrakturCook\", \"Cloister Black\", \"Old English Text MT\", serif",
-    "--phi": "1.618",
-    "--phi-inv": "0.618",
-    "--phi-2": "2.618",
-    "--root-phi": "1.272",
-    "--t-xs": "11.8px",
-    "--t-sm": "15px",
-    "--t-md": "19.1px",
-    "--t-lg": "24.3px",
-    "--t-xl": "30.9px",
-    "--t-2xl": "39.3px",
-    "--t-3xl": "50px",
-    "--t-4xl": "63.6px",
-    "--t-5xl": "80.9px",
-    "--s1": "3px",
-    "--s5": "21px",
-    "--r-sm": "5px",
-    "--split-minor": "38.2%",
-    "--split-major": "61.8%",
-    "--tap": "55px",
-    "--focus": "0 0 0 3px rgba(212, 175, 74, .55)",
-    "--m-instant": "55ms",
-    "--m-quick": "89ms",
-    "--m-base": "144ms",
-    "--m-settle": "233ms",
-    "--m-travel": "377ms",
-    "--m-swing": "610ms",
-    "--e-stamp": "cubic-bezier(.2, .9, .1, 1)",
-    "--e-settle": "cubic-bezier(.16, .84, .28, 1)",
-    "--e-drawer": "cubic-bezier(.45, .05, .35, 1)",
-    "--e-lever": "cubic-bezier(.6, .04, .78, .9)",
-    "--e-swing": "cubic-bezier(.34, 1.56, .64, 1)",
     "--grain": "<generated SVG data URI>",
-    "--grain-fine": "<generated SVG data URI>"
+    "--grain-fine": "<generated SVG data URI>",
+    "--sx": "1",
+    "--corner-red-900": "#2E141A",
+    "--corner-red-700": "#60303C",
+    "--corner-red-500": "#844F5C",
+    "--corner-red-300": "#AE7886",
+    "--corner-blue-900": "#1C1A2A",
+    "--corner-blue-700": "#42385C",
+    "--corner-blue-500": "#76668C",
+    "--corner-blue-300": "#A49CC6",
+    "--corner-none-edge-ink": "var(--patina-300)",
+    "--corner-none-edge-canvas": "var(--wood-700)",
+    "--corner-none-mid": "var(--patina-500)",
+    "--corner-edge": "var(--corner-none-edge-ink)",
+    "--corner-mid": "var(--corner-none-mid)",
+    "--corner-deep": "var(--patina-900)",
+    "--corner-wash": "color-mix(in srgb, var(--corner-mid) 6%, transparent)"
   },
   "previews": [
     {
@@ -190,7 +206,7 @@
       "group": "Foundations",
       "name": "Corridor & Card Catalog",
       "subtitle": "How you walk a building of 63 surfaces: room-level navigation, and a ⌘K drawer of index cards",
-      "bytes": 12715
+      "bytes": 12720
     },
     {
       "path": "foundations/materials.html",
@@ -204,14 +220,14 @@
       "group": "Foundations",
       "name": "Matter",
       "subtitle": "The display voice, paper as stock × age × soil × damage, light that shadows obey, placement, the seal, discoverables",
-      "bytes": 22033
+      "bytes": 22328
     },
     {
       "path": "foundations/motion.html",
       "group": "Foundations",
       "name": "Motion & Sound",
       "subtitle": "Fibonacci durations, five physical easings, pending states, the brass focus ring, and synthesized gym sound",
-      "bytes": 21991
+      "bytes": 21996
     },
     {
       "path": "foundations/palette.html",
@@ -225,7 +241,7 @@
       "group": "Foundations",
       "name": "Patterns & UX",
       "subtitle": "Persistent notifications, form undo, empty states, command reference, print parity",
-      "bytes": 17950
+      "bytes": 17955
     },
     {
       "path": "foundations/proportion.html",
@@ -246,7 +262,7 @@
       "group": "Foundations",
       "name": "Training Card",
       "subtitle": "One stamp per logged session, milestone seals on the Fibonacci series — a record, not a score, and deliberately not a streak",
-      "bytes": 17870
+      "bytes": 17875
     },
     {
       "path": "components/forms.html",
@@ -274,35 +290,35 @@
       "group": "Screens",
       "name": "Athlete Kiosk",
       "subtitle": "Gym-floor check-in: cleared and locked states, 19.1px type, 55px targets",
-      "bytes": 7657
+      "bytes": 7662
     },
     {
       "path": "screens/board-workspace.html",
       "group": "Screens",
       "name": "Board Workspace",
       "subtitle": "Seat binder rail, governance metrics, k-anonymity suppression in context",
-      "bytes": 9108
+      "bytes": 9113
     },
     {
       "path": "screens/capability-console.html",
       "group": "Screens",
       "name": "Capability Console",
       "subtitle": "Admin grid -- worn leather, patina brass, ledger tape",
-      "bytes": 7092
+      "bytes": 7097
     },
     {
       "path": "screens/coach-review-queue.html",
       "group": "Screens",
       "name": "Coach Review Queue",
       "subtitle": "Layer 10 decision queue + Shadow refusal protocol (Layer 20)",
-      "bytes": 9035
+      "bytes": 9040
     },
     {
       "path": "screens/floor-card.html",
       "group": "Screens",
       "name": "Floor Card",
       "subtitle": "The athlete's own locker bay and bench — earned gear, ringside. The space itself is the first thing you earn.",
-      "bytes": 27292
+      "bytes": 27297
     },
     {
       "path": "screens/guardian-portal.html",

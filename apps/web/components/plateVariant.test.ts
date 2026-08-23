@@ -9,6 +9,7 @@ import {
   plateVariantSlot,
   plateVariantTokens,
 } from './plateVariant';
+import { readDesignSystemCss } from '../src/design/readDesignSystemCss';
 
 /**
  * THE ROUTE-DERIVED PLATE VARIANT, AND THE CASCADE IT HAS TO SURVIVE.
@@ -43,7 +44,7 @@ import {
 
 const REPO = join(__dirname, '..', '..', '..');
 const CSS_PATH = join(REPO, 'design-system', 'ppbf.css');
-const CSS = readFileSync(CSS_PATH, 'utf8');
+const CSS = readDesignSystemCss(CSS_PATH);
 const SELECTOR_SOURCE = readFileSync(join(__dirname, 'plateVariant.ts'), 'utf8');
 
 /** The plate each room resolves to today, straight out of the locked inventory. */

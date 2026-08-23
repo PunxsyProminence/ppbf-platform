@@ -11,6 +11,7 @@ import { usePathname } from 'next/navigation';
 
 import WallLayout from '../../app/wall/layout';
 import GlobalRoleHeader from '../../components/GlobalRoleHeader';
+import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
  * The global session bar has to stand down on /wall: it is four controls on a
@@ -64,7 +65,7 @@ const SURFACE_VALUE = 'wall';
 
 describe('the wall surface', () => {
   const globals = readFileSync(GLOBALS, 'utf8');
-  const designSystem = readFileSync(DESIGN_SYSTEM, 'utf8');
+  const designSystem = readDesignSystemCss(DESIGN_SYSTEM);
 
   it('marks the wall subtree with the attribute the stylesheet targets', () => {
     const { container } = render(

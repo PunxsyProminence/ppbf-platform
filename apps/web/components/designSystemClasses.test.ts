@@ -12,6 +12,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { readDesignSystemCss } from '../src/design/readDesignSystemCss';
 
 const REPO = join(__dirname, '..', '..', '..');
 const CSS = join(REPO, 'design-system', 'ppbf.css');
@@ -103,7 +104,7 @@ function referencedClasses(): Map<string, string[]> {
 }
 
 describe('the app only names design-system classes that exist', () => {
-  const css = readFileSync(CSS, 'utf8');
+  const css = readDesignSystemCss(CSS);
   const appCss = readFileSync(APP_CSS, 'utf8');
   // Defined in either sheet. The room/component assertions below still require
   // ppbf.css specifically, so this cannot hide a loss from the design system.
@@ -138,14 +139,27 @@ describe('the app only names design-system classes that exist', () => {
      the token was the first version and it was useless: deleting `.room--office
      {` still left `room--office` present in `.corridor-room.room--office` and
      in the print block's ::before list, so the guard passed on a stylesheet
-     that had lost the room. Verified by deleting the rule and watching this
-     fail. */
+     that had lost the room.
+
+     THE SELECTOR ALONE WAS NOT ENOUGH EITHER, found 2026-08-23 during the
+     visual reset. Every room is named by three separate bare `.room--X { }`
+     rules -- its material, its shadow tokens (`--sx`/`--sy`/`--sh-*`) and its
+     plate (`--plate: url(...)`). All three satisfy a selector-shaped regex, so
+     deleting the material rule outright left this green: the wall was gone and
+     the guard said the room was fine. It now requires the rule that paints the
+     wall, which is the one that carries a `background`. Re-verified by deleting
+     .room--clinic's material rule and watching this fail. */
   it('keeps the defining rule for all six rooms', () => {
     const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
     for (const room of ['office', 'floor', 'board', 'file', 'clinic', 'night']) {
       // A rule whose selector is exactly .room--X (optionally with siblings in
-      // a selector list), not .something.room--X or .room--X::before.
-      const defining = new RegExp(`(^|,|\\}|\\s)\\.room--${room}\\s*(,[^{]*)?\\{`, 'm');
+      // a selector list), not .something.room--X or .room--X::before -- AND
+      // whose body paints something, which is what makes it the material rule
+      // rather than the shadow-token or plate rule of the same name.
+      const defining = new RegExp(
+        `(^|,|\\}|\\s)\\.room--${room}\\s*(,[^{]*)?\\{[^}]*background`,
+        'm',
+      );
       expect(defining.test(stripped)).toBe(true);
     }
   });

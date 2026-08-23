@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { readDesignSystemCss } from '../src/design/readDesignSystemCss';
 
 /* B7 — the enforcement half of T7 (Plate Set v1, owner-approved 2026-08-16).
  *
@@ -78,9 +79,8 @@ describe('T7: family surfaces never declare a non-warm room', () => {
 
 describe('T7: the warm ground is reachable and is not a room', () => {
   test('.on-canvas carries the warm plate, and no room-- class does', () => {
-    const css = readFileSync(
+    const css = readDesignSystemCss(
       join(__dirname, '..', '..', '..', 'design-system', 'ppbf.css'),
-      'utf8',
     );
 
     // The family ground resolves plate 7...
