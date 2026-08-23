@@ -107,7 +107,7 @@ export default function GymStorePage({ params }: { params: Promise<{ organizatio
         </header>
 
         {!isLoaded ? (
-          <div role="status" className="mt-[var(--s5)] space-y-[var(--s3)]">
+          <div role="status" aria-busy="true" className="mt-[var(--s5)] space-y-[var(--s3)]">
             <p className="working">Loading the shop.</p>
             <div className="skeleton skeleton--block" />
             <div className="skeleton skeleton--block" />

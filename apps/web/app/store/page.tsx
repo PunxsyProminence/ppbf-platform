@@ -69,7 +69,7 @@ export default function StoreIndexPage() {
         {!isLoaded ? (
           /* Law 3: a bare spinner is colour-and-motion-only and is banned.
              .working already carries the glyph; the label is the sentence. */
-          <div role="status" className="mt-[var(--s5)] space-y-[var(--s3)]">
+          <div role="status" aria-busy="true" className="mt-[var(--s5)] space-y-[var(--s3)]">
             <p className="working">Loading the shop.</p>
             <div className="skeleton skeleton--line" />
             <div className="skeleton skeleton--line" />

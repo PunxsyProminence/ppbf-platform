@@ -99,7 +99,12 @@ async function auditPage(page: Page) {
        has to refuse rather than guess. Getting that wrong in the other
        direction is not theoretical: reading .btn's transparent background
        instead of its brass gradient reports 1.59:1 for a button that
-       measures 9.6:1 in actual pixels. */
+       measures 9.6:1 in actual pixels.
+
+       Copied verbatim from e2e/public-homepage.spec.ts. Both .on-canvas and
+       .mat-paper carry a background-image, so this skips those materials on
+       purpose. Tightening it here would make the shop's audit stricter than
+       the one `/` already runs, which is not this PR. */
     const backdrop = (el: Element): string | null => {
       for (let node: Element | null = el; node; node = node.parentElement) {
         const cs = getComputedStyle(node);

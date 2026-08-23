@@ -38,6 +38,7 @@ test('loading is visible and is not an empty shop or a failed load', () => {
   render(<StoreIndexPage />);
 
   expect(screen.getByText(/loading the shop/i)).toBeTruthy();
+  expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true');
   expect(screen.queryByText(/nothing is on sale/i)).toBeNull();
   expect(screen.queryByText(/could not be loaded/i)).toBeNull();
 });
@@ -67,10 +68,11 @@ test('a failed load never looks like an empty shop', async () => {
 });
 
 test('a listed gym is a link, fetched without credentials', async () => {
-  const fetchMock = jest.fn(async () =>
-    jsonResponse({
-      stores: [{ organization_id: 'org-1', organization_name: 'Punxsy Prominence', listed_product_count: 3 }],
-    }),
+  const fetchMock = jest.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({
+        stores: [{ organization_id: 'org-1', organization_name: 'Punxsy Prominence', listed_product_count: 3 }],
+      }),
   );
   global.fetch = fetchMock as unknown as typeof fetch;
 
