@@ -425,16 +425,28 @@ describe('the room a door files a surface under is the room the page paints', ()
     }
   });
 
-  it('does not let the roomless set grow', () => {
-    const unpainted = resolved
-      .filter((r) => r.rendered.kind === 'none')
-      .map((r) => r.door.href)
-      .filter((href) => !(href in UNPAINTED));
+  /* RETIRED 2026-08-23 BY OWNER DECISION. This used to read:
+     "does not let the roomless set grow" -- a new page with no room failed
+     unless it was added to UNPAINTED with a reason. That made painting a room
+     compulsory, which is exactly the aesthetic controlling every screen.
 
-    // A new page with no room is a door onto a corridor with no wall. Give it
-    // one of the six, or add it here with what it paints instead and why.
-    expect(unpainted).toEqual([]);
-  });
+     Rooms are retired as a VISUAL concept. A new screen is not required to
+     paint one, so this assertion is gone rather than weakened -- a test that
+     no longer expresses a rule should not be left standing in a shape that
+     implies it does.
+
+     Nothing that still matters was dropped with it:
+       - 'files every painted surface under the room it paints' below still
+         catches drift for every page that DOES paint one, which is all 88 of
+         them today.
+       - legacyVisualVocabulary.test.ts now caps room-- usage at today's count
+         and fails on an increase, so the retirement has a guard pointing the
+         other way: rooms may leave, they may not spread.
+
+     UNPAINTED is kept, and kept honest by the two assertions below, because it
+     is a useful record of WHY a surface has no room -- '/print' is a print
+     sheet, '/admin/safety-escalations' returns no JSX at all. It is no longer
+     an exception list, so it does not need to be complete. */
 
   it('does not keep a roomless entry for a page that now has a room', () => {
     const stale = Object.keys(UNPAINTED).filter((href) => renderedRoom(href).kind !== 'none');

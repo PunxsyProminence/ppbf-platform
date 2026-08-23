@@ -242,7 +242,63 @@ readers in §7.
 
 ---
 
-## 11. Needs Jason
+## 11. Owner decisions — ANSWERED 2026-08-23
+
+All four were decided the same day. Recorded here rather than left as open
+questions, because the guards below now encode them.
+
+**1. Rooms — retired as a VISUAL concept.** Screens are no longer required to
+paint `room--office`, `room--clinic` and the rest. The taxonomy stays in
+`buildingMap.ts` as *structural metadata*, explicitly so the visual reset does
+not turn into a routing rewrite. The new system does not have to look like
+rooms.
+
+*Implemented:* `buildingMapRooms.test.ts`'s "does not let the roomless set
+grow" is retired — deleted rather than weakened, since a test that no longer
+expresses a rule should not be left in a shape that implies it does. The drift
+check for surfaces that still paint one is untouched, and
+`legacyVisualVocabulary.test.ts` now caps `room--` at 143 occurrences across 88
+files. Rooms may leave; they may not spread.
+
+**2. Fonts — the personality faces retire with the aesthetic.** Archive first;
+delete only after the new system is integrated and verified. Neutral body/data
+typography is preserved until the new system specifies replacements.
+
+*Implemented:* `design-system/fonts.css` → `design-system/legacy/legacy-fonts.css`;
+the `.woff2` files stay on disk. A guard fails on any app file naming a retired
+face in code (comments are stripped first — `app/layout.tsx` explains in prose
+which face arrives by which route, and a guard that cannot tell an explanation
+from a dependency earns an allowlist, which is what eventually hides a real
+one). **There are five faces, not four**: `UnifrakturCook` ships from the same
+folder and the same sheet for the clinic masthead. It is archived with the
+other four; say so if it was meant to survive.
+
+**One live binding is recorded, not removed.** `app/layout.tsx` loads
+`oswald-var.woff2` through `next/font` as `--font-tactical-display`, which
+`globals.css` reads for `--font-stencil` and `--font-ui`. That is a real
+rendering dependency, and cutting it now would change how the app looks — which
+decision 2 defers. It is pinned to exactly one binding and is the line to
+delete when the new system supplies a display face.
+
+**3. Safety palette — semantics preserved, colours not.** `locked`,
+`restricted`, `monitor`, `cleared` keep their meanings; their Leather & Brass
+values are not preserved for compatibility. Every state keeps a non-colour
+channel. No replacement palette is to be invented before the Grok board is
+approved.
+
+*Implemented:* `safetySemanticsSurviveTheThemeSwap.test.ts` requires the
+incoming theme — whatever it is — to define all four rungs and their ink pairs
+in a document-wide `:root`, and to keep `.badge` and its uppercase label. **It
+asserts no colour at all**, deliberately: pinning a hex would be inventing the
+palette one test at a time. The old values still render today because
+`current/` still imports the archive; they leave when it does.
+
+**4. `PRODUCT_CAPABILITIES.json` — yes, as a separate bounded PR**, contents
+unaltered. Not folded into the visual reset.
+
+*Status:* not in this PR, by instruction.
+
+## 12. Superseded — the questions as originally posed
 
 1. **Do "rooms" survive as a concept?** The taxonomy is wired into
    `buildingMap.ts` and enforced by two tests across 99 files. Keeping the

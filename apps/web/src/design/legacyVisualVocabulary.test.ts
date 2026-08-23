@@ -15,32 +15,31 @@ import path from 'node:path';
  * passes. One more use fails, and the failure names the file and the token.
  *
  * ---------------------------------------------------------------------------
- * WHAT THIS GUARD DOES NOT COVER, AND WHY — read before adding to it.
+ * ROOMS ARE COVERED AS OF 2026-08-23, BY OWNER DECISION.
  *
- * `room--*`, `mat-leather`, `mat-brass` and `on-canvas` are NOT guarded here,
- * even though they are unmistakably Leather & Brass vocabulary and the reset
- * direction named them. Guarding them today would contradict guards that
- * currently REQUIRE them:
+ * They were not, at first: buildingMapRooms.test.ts REQUIRED every route to
+ * paint the room its door filed it under, so capping `room--*` here would have
+ * left an author with no legal move, and that argument always ends with
+ * somebody weakening whichever guard is younger. The owner has since retired
+ * rooms as a visual concept, that mandate is gone, and the cap is live.
  *
- *   - buildingMapRooms.test.ts fails when a route does not paint the room its
- *     door in buildingMap.ts files it under. A new page MUST paint a room.
- *   - roomBaseClass.test.ts fails when `.room--X` appears without `.room`.
+ * The taxonomy itself is deliberately untouched. `buildingMap.ts` still files
+ * every door under a `room:` — as STRUCTURAL METADATA, per the same decision,
+ * so a visual reset does not turn into a routing rewrite. What ended is the
+ * requirement that a screen render it.
+ *
+ * WHAT REMAINS UNCOVERED, AND WHY — read before adding to it.
+ *
+ * `mat-leather`, `mat-brass` and `on-canvas` are still NOT capped here,
+ * because guards still REQUIRE them:
+ *
  *   - familyPlateGround.test.ts requires family surfaces to stand on
  *     `.on-canvas`.
  *   - wallSurface / darkPanelMaterials / lightGroundVoices assert material
  *     classes on the surfaces that carry them.
  *
- * So a new page cannot be written without them. Two controls pulling opposite
- * ways is worse than one control with an honest boundary: the author would
- * have no legal move, and the usual resolution to that is that somebody
- * weakens whichever guard is younger — this one.
- *
- * The room taxonomy is also not purely aesthetic. `buildingMap.ts` files every
- * door under a `room:`, so it is part of the navigation registry as well as
- * the look. Retiring the materials while keeping the taxonomy is an owner
- * decision, recorded in docs/VISUAL-RESET-PHASE-1-PLAN.md §11. When it is
- * made, those families move in here and the mandating guards change together,
- * in one reviewable step.
+ * Those move in here the same way rooms did: when the rule they encode is
+ * retired, in the same change that retires it.
  * ---------------------------------------------------------------------------
  */
 
@@ -82,6 +81,57 @@ const ALIAS_CEILINGS: Readonly<Record<string, number>> = {
   'accent-quiet': 0,
   'font-stencil': 0,
 };
+
+/**
+ * Class-level vocabulary, capped the same way and for the same reason.
+ *
+ * `room--*` is counted as OCCURRENCES rather than files, because a file that
+ * swaps one room for two has grown the debt while keeping its file count. 143
+ * across 88 files, measured 2026-08-23 by the same walk this test performs.
+ *
+ * Measured that way ON PURPOSE. The first figure here was 167, taken from a
+ * shell grep that filtered out matching LINES containing "test" rather than
+ * test FILES. A ceiling 24 above the real count is slack, and slack is a guard
+ * that quietly tolerates the thing it exists to stop -- a deliberate new
+ * `room--office` slipped straight through it. A ceiling has to be measured by
+ * the code that enforces it.
+ *
+ * Rooms may leave freely; they may not spread. A screen written from here on
+ * does not paint one — buildingMapRooms.test.ts no longer requires it — and
+ * this is the assertion that makes that real rather than advisory.
+ */
+const CLASS_CEILINGS: Readonly<Record<string, number>> = {
+  'room--': 143,
+};
+
+/**
+ * The personality typefaces, retired with the aesthetic by owner decision on
+ * 2026-08-23. Their @font-face declarations moved to
+ * design-system/legacy/legacy-fonts.css; the .woff2 files stay on disk, since
+ * the decision is "archive first, remove only after the new system is
+ * integrated and verified."
+ *
+ * Zero, not a ceiling: no app file names any of them today, so there is no
+ * debt to tolerate. Naming one in app source from here on is new work reaching
+ * for a retired voice.
+ *
+ * UnifrakturCook is here as the FIFTH face. The decision named four; this one
+ * ships from the same folder, is declared in the same sheet and exists for the
+ * clinic masthead alone, so archiving it with the other four is the reading
+ * that keeps the set coherent. If it was meant to survive, it comes back out
+ * of this list and out of legacy-fonts.css together.
+ *
+ * The neutral body/data faces are deliberately absent: Roboto Condensed and
+ * Geist Mono come through next/font and the same decision preserves them until
+ * the new system specifies replacements.
+ */
+const RETIRED_FACES: readonly string[] = [
+  'Alfa Slab One',
+  'Oswald',
+  'Special Elite',
+  'Caveat',
+  'UnifrakturCook',
+];
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -130,6 +180,83 @@ describe('the retired aesthetic does not grow back', () => {
       ).toBe(true);
     },
   );
+
+  it.each(Object.entries(CLASS_CEILINGS))(
+    'uses the %s class no more than its frozen ceiling',
+    (token, ceiling) => {
+      const pattern = new RegExp(token.replace(/[-]/g, '\\$&'), 'g');
+      const hits: string[] = [];
+
+      for (const file of FILES) {
+        // Test files name these classes in order to assert about them, which
+        // is not the app wearing the aesthetic.
+        if (/\.test\.tsx?$/.test(file)) continue;
+        const found = readFileSync(file, 'utf8').match(pattern);
+        if (found) {
+          hits.push(`${path.relative(REPO, file)} x${found.length}`);
+        }
+      }
+
+      const total = hits.reduce(
+        (sum, entry) => sum + Number(entry.slice(entry.lastIndexOf('x') + 1)),
+        0,
+      );
+
+      expect(
+        total <= ceiling
+          ? true
+          : `${token} used ${total} times, ceiling is ${ceiling}. In:\n  ${hits.join('\n  ')}`,
+      ).toBe(true);
+    },
+  );
+
+  it.each(RETIRED_FACES)('does not name the retired typeface %s', (face) => {
+    const hits: string[] = [];
+
+    for (const file of FILES) {
+      if (/\.test\.tsx?$/.test(file)) continue;
+      // Comments are stripped first. app/layout.tsx explains in prose which
+      // faces ride in through which mechanism, and a guard that cannot tell
+      // an explanation from a dependency reports four violations where there
+      // is one binding -- then gets an allowlist, and the allowlist is what
+      // eventually hides a real one.
+      const code = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      if (code.includes(face)) {
+        hits.push(path.relative(REPO, file));
+      }
+    }
+
+    expect(
+      hits.length === 0
+        ? true
+        : `"${face}" is retired but named in:\n  ${hits.join('\n  ')}`,
+    ).toBe(true);
+  });
+
+  /* THE ONE LIVE BINDING, recorded rather than removed.
+     app/layout.tsx loads oswald-var.woff2 through next/font as
+     --font-tactical-display, which globals.css reads for --font-stencil and
+     --font-ui. That is a real rendering dependency, not a mention, and cutting
+     it now would change how the app looks -- which the owner decision
+     explicitly defers: "archive first; remove only after the new system is
+     integrated and verified."
+
+     So it is pinned here instead. This test fails if the binding moves or
+     multiplies, and it is the line to delete when the new system supplies its
+     own display face. */
+  it('keeps the retired display face to exactly one recorded binding', () => {
+    const bindings: string[] = [];
+
+    for (const file of FILES) {
+      if (/\.test\.tsx?$/.test(file)) continue;
+      const found = readFileSync(file, 'utf8').match(/oswald-var\.woff2/g);
+      if (found) bindings.push(`${path.relative(REPO, file)} x${found.length}`);
+    }
+
+    expect(bindings).toEqual(['apps/web/app/layout.tsx x1']);
+  });
 
   /* The seam only works if everything goes through it. A sheet or a component
      that imports the archive directly re-welds the aesthetic to whatever

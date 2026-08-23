@@ -89,7 +89,7 @@ const rooms = [...css.matchAll(/^\.room--(\w+)\s*\{/gm)].map((m) => m[1])
   .filter((v, i, a) => a.indexOf(v) === i);
 
 /* ---- fonts --------------------------------------------------------------- */
-const fontsCss = readFileSync(join(ROOT, 'fonts.css'), 'utf8');
+const fontsCss = readFileSync(join(ROOT, 'legacy/legacy-fonts.css'), 'utf8');
 const faces = [...fontsCss.matchAll(/font-family:\s*'([^']+)'/g)].map((m) => m[1]);
 const fontFiles = readdirSync(join(ROOT, 'fonts')).filter((f) => f.endsWith('.woff2')).sort();
 const fontBytes = fontFiles.reduce((n, f) => n + statSync(join(ROOT, 'fonts', f)).size, 0);
@@ -108,7 +108,7 @@ const manifest = {
 
   entryPoints: {
     stylesheet: 'ppbf.css',
-    fonts: 'fonts.css',
+    fonts: 'legacy/legacy-fonts.css',
     sound: 'ppbf-sound.js',
     gallery: 'index.html',
     documentation: 'README.md',
@@ -119,7 +119,7 @@ const manifest = {
   // directory structure is preserved.
   paths: {
     previewsReference: '../ppbf.css',
-    stylesheetImports: './fonts.css',
+    stylesheetImports: './legacy/legacy-fonts.css',
     fontsReference: 'fonts/*.woff2',
     absolutePaths: 'none',
     externalRequests: 'none',

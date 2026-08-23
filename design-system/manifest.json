@@ -6,14 +6,14 @@
   "generatedBy": "design-system/build-manifest.mjs",
   "entryPoints": {
     "stylesheet": "ppbf.css",
-    "fonts": "fonts.css",
+    "fonts": "legacy/legacy-fonts.css",
     "sound": "ppbf-sound.js",
     "gallery": "index.html",
     "documentation": "README.md"
   },
   "paths": {
     "previewsReference": "../ppbf.css",
-    "stylesheetImports": "./fonts.css",
+    "stylesheetImports": "./legacy/legacy-fonts.css",
     "fontsReference": "fonts/*.woff2",
     "absolutePaths": "none",
     "externalRequests": "none"
