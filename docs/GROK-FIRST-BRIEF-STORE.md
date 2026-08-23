@@ -63,7 +63,7 @@ prize (one low-frequency route) but it cannot break anything.
 | Routes | `/store` and `/store/[organizationId]` |
 | Files | `apps/web/app/store/page.tsx` (99 lines)<br>`apps/web/app/store/[organizationId]/page.tsx` (170 lines) |
 | Components | **None.** Both are self-contained client components with no imported UI. |
-| Backing routes | `GET /api/pilot/public/store` · `GET /api/pilot/public/store/[organizationId]` |
+| Backing routes | **One route, not two:** `GET /api/public/store` — the index calls it bare, the detail page calls it with `?organization_id=…`. Corrected 2026-08-23: this row said `/api/pilot/public/store` and `/api/pilot/public/store/[organizationId]`, and **neither exists**. The `pilot` segment was wrong and there is no per-organization path segment. Read `app/api/public/store/route.ts:35` — it takes the id from `searchParams`. |
 | Room | **None today.** `/store` is in `UNPAINTED`; the detail page paints no room either. |
 
 Two files, no shared component, nothing else imports them. The blast radius is
@@ -358,7 +358,7 @@ family ground and its paper materials, and give them a visible loading state.**
 
 Not in this PR: the room decision for any other route; the `.btn` / `--tap`
 cascade repair (R1 — that is its own PR and it waits on #534); any change to
-`/api/pilot/public/store`; any new control; any copy change to the three
+`/api/public/store`; any new control; any copy change to the three
 availability labels or the two state sentences.
 
 **No collision.** PR #556 touches `/admin/{people,organizations,pin}` only.
