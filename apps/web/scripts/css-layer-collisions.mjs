@@ -204,6 +204,29 @@ function expandDeclaration(prop, value) {
   return longhands.map((lh) => [lh, UNKNOWN_VALUE]);
 }
 
+/* Every file an entry point pulls in, entry LAST so its own rules stay latest
+   in source order -- the order the cascade actually resolves in, and the order
+   `unlayered` below depends on for tie-breaking. Relative specifiers only;
+   bare ones (`tailwindcss`) resolve through the bundler, not from disk. */
+function resolveImportChain(entry, seen = new Set()) {
+  const resolved = path.resolve(entry);
+  if (seen.has(resolved)) return [];
+  seen.add(resolved);
+
+  const source = readFileSync(resolved, 'utf8');
+  const directory = path.dirname(resolved);
+  const files = [];
+
+  for (const [, specifier] of source.matchAll(/@import\s+(?:url\()?["']([^"']+)["']\)?[^;]*;/g)) {
+    if (specifier.startsWith('./') || specifier.startsWith('../')) {
+      files.push(...resolveImportChain(path.join(directory, specifier), seen));
+    }
+  }
+
+  files.push(resolved);
+  return files;
+}
+
 function parseCss(file) {
   const raw = readFileSync(file, 'utf8');
   const src = blankComments(raw);
@@ -1281,7 +1304,19 @@ function main() {
   if (has('self-test')) return selfTest();
 
   /* --- CSS side ---------------------------------------------------------- */
-  const ppbfRules = parseCss(PPBF_CSS);
+  /* ppbf.css stopped being one file on 2026-08-23: the visual reset split it
+     into a foundation, a swappable theme and the archived Leather & Brass
+     sheet, leaving the entry point as two @import lines.
+
+     Each file in that chain is parsed SEPARATELY and the rule lists are
+     concatenated, rather than inlining the imports into one string. Every rule
+     carries its own file and line, and this report's whole value is telling
+     someone which line to go and look at -- inlining would renumber all of
+     them against a text that exists nowhere on disk.
+
+     Parsing only the entry point is what this guards against: it reported 73
+     collisions instead of 639, an 88% under-report that looked like good news. */
+  const ppbfRules = resolveImportChain(PPBF_CSS).flatMap(parseCss);
   const globalRules = parseCss(GLOBALS_CSS);
   const vars = collectVars([...ppbfRules, ...globalRules]);
 

@@ -72,6 +72,7 @@ jest.mock('./roleSession', () => ({
 
 import CardCatalog from './CardCatalog';
 import { resetGymSoundForTests } from './useGymSound';
+import { readDesignSystemCss } from '../src/design/readDesignSystemCss';
 
 const CATALOG_SOURCE = readFileSync(path.resolve(__dirname, './CardCatalog.tsx'), 'utf8');
 const API_ROOT = path.resolve(__dirname, '../app/api');
@@ -185,9 +186,8 @@ describe('the acts', () => {
   it('does not put itself in what it prints', () => {
     // The design system's print block documents that it hides the catalog and
     // never did -- which did not matter until the catalog could start a print.
-    const sheet = readFileSync(
+    const sheet = readDesignSystemCss(
       path.resolve(__dirname, '../../../design-system/ppbf.css'),
-      'utf8',
     );
     const printBlocks = [...sheet.matchAll(/@media print\s*\{[\s\S]*?\n\}/g)].map((m) => m[0]);
     expect(printBlocks.some((block) => /\.catalog\b/.test(block))).toBe(true);

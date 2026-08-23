@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
  * LAW 6 GIVES THE APP TWO GROUNDS. A VOICE THAT ANSWERS ONLY ONE IS A BUG.
@@ -32,7 +32,7 @@ import path from 'node:path';
  */
 
 const CSS = path.join(__dirname, '../../../../design-system/ppbf.css');
-const sheet = readFileSync(CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+const sheet = readDesignSystemCss(CSS).replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** Selectors of the form `.ground .voice`, one entry per voice named. */
 function voicesRestatedFor(ground: string): Set<string> {

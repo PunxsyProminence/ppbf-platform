@@ -1,0 +1,33 @@
+/* ===========================================================================
+   PPBF CURRENT VISUAL THEME
+   ---------------------------------------------------------------------------
+   THIS FILE IS THE SEAM. It is the one place that decides what PPBF looks
+   like, and it is deliberately almost empty so that decision stays visible.
+
+   RIGHT NOW IT STILL POINTS AT THE RETIRED AESTHETIC, and that is on purpose.
+   Owner direction of 2026-08-23 retired "Leather & Brass" as the visual
+   authority, but retiring an aesthetic and replacing it are two different
+   jobs. Phase 1 does the first: it makes the aesthetic REPLACEABLE by moving
+   it behind this one import, instead of being welded into the same sheet as
+   the spacing scale and the type ladder.
+
+   So Phase 1 is a deliberate visual NO-OP. The app renders exactly as it did
+   before, because the same rules load in the same order. What changed is that
+   there is now a single line to replace.
+
+   WHEN THE NEW SYSTEM IS AUTHORED, the import below is deleted and the new
+   sheet takes its place. That is a one-line change to a two-line file --
+   not an edit to the 99 files that paint a room, or the 1,779 call sites that
+   name a Leather & Brass colour.
+
+   WHAT BELONGS HERE: colour, material, texture, typeface personality, page
+   ground, shadow, decorative treatment -- everything that makes PPBF look
+   like PPBF.
+
+   WHAT DOES NOT: box sizing, focus visibility, tap sizes, the spacing/type/
+   radius scales, form geometry, screen-reader utilities, reduced motion,
+   print legibility. Those are in design-system/foundation/ and must survive
+   any change of look.
+   =========================================================================== */
+
+@import "../legacy/ppbf-leather-brass.css";

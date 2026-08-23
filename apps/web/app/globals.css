@@ -1,17 +1,44 @@
 @import "tailwindcss";
 
-/* The PPBF "Leather & Brass" design system is the single source of truth for
-   every token below. It is imported, not copied, so the sheet the Claude
-   Design previews render against and the sheet the app ships are the same
-   file — a value can never drift between them.
+/* design-system/ppbf.css is the app's single entry into the design system. It
+   is imported, not copied, so the sheet the previews render against and the
+   sheet the app ships are the same file — a value cannot drift between them.
 
-   Everything in the :root block that follows is an ALIAS. The app's ~61 pages
-   style themselves with Tailwind arbitrary values reading these legacy names
-   (`bg-[var(--canvas-tan)]`, `text-[var(--safety-locked)]`), so pointing the old
-   names at design-system values re-themes the whole app without editing a
-   single page. Add new work against the ppbf tokens directly (--hide-*,
-   --brass-*, --t-*, --s*); the aliases exist to carry the pages that predate
-   the design system, not as a second vocabulary. */
+   WHAT THAT FILE IS CHANGED ON 2026-08-23. It used to BE the design system:
+   3,575 lines holding the neutral mechanics and the "Leather & Brass" identity
+   in one unlayered sheet. Owner direction retired that aesthetic as PPBF's
+   visual authority, so it is now two imports —
+
+     design-system/foundation/  structure, accessibility, responsive. No look.
+     design-system/current/     the visual identity. The seam.
+
+   — and the retired aesthetic is archived verbatim under design-system/legacy/,
+   which current/ still points at. That makes the reset a deliberate visual
+   no-op: same rules, same order, nothing looks different. What changed is that
+   replacing the look is now one line in one file instead of an edit to every
+   page.
+
+   THE :root BLOCK BELOW IS A CLOSED VOCABULARY. Everything in it is an ALIAS.
+   The app's pages style themselves with Tailwind arbitrary values reading these
+   legacy names (`bg-[var(--canvas-tan)]`), so pointing the old names at
+   design-system values re-themes the whole app without editing a single page —
+   and, for the same reason, keeps the whole app on whatever those values are.
+   That is the mechanism the reset is dismantling.
+
+   The aliases keep resolving, because the direction is explicit that existing
+   pages are not converted in this pass. But the vocabulary is closed: NEW work
+   may not use these names, and src/design/legacyVisualVocabulary.test.ts fails
+   on any increase, naming the file and the token. Write new work against the
+   foundation's mechanics (--t-*, --s*, --r-*, --tap) and the current theme's
+   own tokens.
+
+   NOT DONE HERE, DELIBERATELY: the alias VALUES are not neutralised yet. Doing
+   that would change how ~203 call sites render, and this repository has no
+   screenshot baselines to check the result against — Chromium shaping noise
+   measured larger than a real regression, which is why the baselines were
+   deleted. Neutral values arrive with the new theme, where they can be judged
+   on a deployed URL. Closing the vocabulary stops the debt growing in the
+   meantime; that part needs no visual verification. */
 @import "../../../design-system/ppbf.css";
 
 :root {

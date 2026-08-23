@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
  * THE PLATE LAWS, ENFORCED ON THE BYTES.
@@ -171,7 +172,7 @@ describe('the sheet and the directory agree', () => {
      Stripping costs this one nothing: what it exists to catch is a real
      declaration pointing at a missing file, and those are all still here -- the
      eight .png paths that resolved to nothing for months were declarations. */
-  const sheet = readFileSync(CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const sheet = readDesignSystemCss(CSS).replace(/\/\*[\s\S]*?\*\//g, '');
   const declared = [...sheet.matchAll(/url\("\/plates\/([^"]+)"\)/g)].map((m) => m[1]);
 
   it('declares plates in the sheet at all', () => {

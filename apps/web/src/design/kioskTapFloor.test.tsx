@@ -8,6 +8,7 @@ import path from 'node:path';
 import { render } from '@testing-library/react';
 
 import AthleteLayout from '../../app/athlete/layout';
+import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
  * The gym-floor tap floor has two halves, and each is useless without the
@@ -61,7 +62,7 @@ describe('kiosk tap floor', () => {
     // unlayered ppbf.css beat it and every athlete button rendered 44px while
     // its class string asked for var(--tap). The other half of the floor has to
     // live in ppbf.css or it does not apply at all.
-    const ppbf = readFileSync(PPBF, 'utf8');
+    const ppbf = readDesignSystemCss(PPBF);
     const rule = ppbf.match(/\[data-surface="kiosk"\]\s+\.btn\s*\{([^}]*)\}/);
 
     expect(rule).not.toBeNull();
