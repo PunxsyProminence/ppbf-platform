@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import ProfilePortrait from './ProfilePortrait';
 import { apiBase } from '@/lib/apiBase';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
@@ -54,18 +53,32 @@ interface LoggedIntervention {
   created_at: string;
 }
 
-// One row of "On the floor": the identity fields /api/pilot/profile/roster
-// already returns, and nothing else. No dob, no readiness colour, no medical
-// data -- the roster route itself deliberately carries none of those, and this
-// panel adds none back.
-interface FloorRosterEntry {
-  athlete_id: string;
-  account_id: string | null;
-  full_name: string;
-  initials: string;
-  ring_name: string | null;
-  photo_available: boolean;
-}
+// "On the floor" was here, and it was not presence.
+//
+// It listed every athlete whose id came back from
+// /api/pilot/coach/readiness-board, and called them "athletes with a fresh
+// check-in" in five places. The readiness board reads pilot.readiness, and
+// every row in pilot.readiness was TYPED BY STAFF DURING INTAKE REVIEW --
+// method 'staff_entered_intake' or 'UNKNOWN', nothing else exists. See
+// readinessProvenance.ts and docs/capabilities/READINESS_PROVENANCE_FACTS.md.
+//
+// So a staff member forming a judgement about an athlete at a desk, possibly
+// days before the session, put that athlete on a coach's screen under the
+// heading "On the floor". Nobody arrived, nobody checked in, and nothing was
+// observed. A coach running a live session read it as who was in the room.
+//
+// THERE IS NO AUTHORIZED PRESENCE SOURCE TO SWAP IN. Athlete self check-ins
+// live in pilot.athlete_check_ins, and that route is SELF ONLY by design:
+// app/api/pilot/athlete/check-in/route.ts:19-21 says "coach/admin views of
+// arrivals are a later, separate read surface". Reaching for it here would be
+// the same substitution with a better-looking source. Attendance is the
+// coach/terminal register the passbook counts, which is not this either.
+//
+// The panel is therefore removed rather than repointed. What remains as the
+// record of who was actually present is the athletes_present count the coach
+// enters at finish -- a human stating a fact they observed. Restoring a live
+// presence panel needs the separate arrival surface the check-in route already
+// names; that is a product decision, not a swap of one query for another.
 
 /** The four authored coaching fields, omitting the ones the author left empty. */
 function blockDetailLines(block: Block): { label: string; value: string }[] {
@@ -171,43 +184,6 @@ export default function SessionScriptLiveDelivery({
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
-
-  // ---- Who is on the floor -------------------------------------------
-  // Today's checked-in athletes, from the SAME two feeds the coach dashboard
-  // reads: identity from /api/pilot/profile/roster, freshness from
-  // /api/pilot/coach/readiness-board -- which returns ONLY athletes with a
-  // fresh check-in (READINESS_FRESHNESS_HOURS, 24h, enforced server-side in
-  // getReadinessBoard). Presence on the board is used here as the freshness
-  // filter and NOTHING else: the board's triage colours are deliberately not
-  // shown, so this panel carries names and faces only.
-  //
-  // Best-effort and independent of the run, like the plan and picklist reads
-  // above: a failed read renders its own unavailable copy and never touches
-  // the session controls. This is also a list of check-ins, not attendance --
-  // the athletes_present count the coach records at finish stays the record
-  // of who was actually in the room.
-  const [floorRoster, setFloorRoster] = useState<FloorRosterEntry[]>([]);
-  const [floorRosterState, setFloorRosterState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [rosterResponse, boardResponse] = await Promise.all([
-          fetch(`${apiBase()}/api/pilot/profile/roster`, { credentials: 'include' }),
-          fetch(`${apiBase()}/api/pilot/coach/readiness-board`, { credentials: 'include' }),
-        ]);
-        if (!rosterResponse.ok || !boardResponse.ok) throw new Error('floor-roster');
-        const rosterPayload = (await rosterResponse.json()) as { items?: FloorRosterEntry[] };
-        const boardPayload = (await boardResponse.json()) as { items?: Array<{ athlete_id: string }> };
-        const checkedIn = new Set((boardPayload.items ?? []).map((entry) => entry.athlete_id));
-        setFloorRoster((rosterPayload.items ?? []).filter((entry) => checkedIn.has(entry.athlete_id)));
-        setFloorRosterState('loaded');
-      } catch {
-        setFloorRoster([]);
-        setFloorRosterState('unavailable');
-      }
-    })();
-  }, []);
 
   // ---- Log an intervention against THIS run --------------------------
   // The picklists a coach needs to log one: the roster they coach, and the
@@ -484,56 +460,6 @@ export default function SessionScriptLiveDelivery({
           {actionError}
         </p>
       )}
-
-      {/* On the floor: who has a fresh check-in while this session runs.
-          Names and faces only -- the freshness feed's colours stay off this
-          panel, and its failure never blocks the controls above. */}
-      <section aria-label="On the floor" className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-        <p className="t-label">On the floor</p>
-
-        {floorRosterState === 'loading' && (
-          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">Checking today&apos;s check-ins...</p>
-        )}
-
-        {floorRosterState === 'unavailable' && (
-          <p className="t-body mt-[var(--s2)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
-            Today&apos;s check-ins could not be loaded. Check-ins may exist that are not shown --
-            this is a failed read, not an empty room, and the session controls above are unaffected.
-          </p>
-        )}
-
-        {floorRosterState === 'loaded' && floorRoster.length === 0 && (
-          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-            No athlete on your roster has a fresh check-in right now. This lists check-ins, not
-            attendance -- an athlete can be in the room without one.
-          </p>
-        )}
-
-        {floorRosterState === 'loaded' && floorRoster.length > 0 && (
-          <ul className="mt-[var(--s2)] flex flex-wrap gap-x-[var(--s4)] gap-y-[var(--s2)]">
-            {floorRoster.map((entry) => (
-              <li key={entry.athlete_id} className="flex items-center gap-[var(--s2)]">
-                <ProfilePortrait
-                  accountId={entry.account_id}
-                  initials={entry.initials}
-                  name={entry.full_name}
-                  photoAvailable={Boolean(entry.photo_available)}
-                  size="sm"
-                  decorative
-                />
-                <span className="min-w-0">
-                  <span className="block truncate t-body text-[color:var(--bone-200)]">{entry.full_name}</span>
-                  {entry.ring_name && (
-                    <span className="block truncate font-[family-name:var(--font-hand)] text-[length:var(--t-sm)] text-[color:var(--brass-300)]">
-                      &ldquo;{entry.ring_name}&rdquo;
-                    </span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
       {/* The plan, current block first-class. */}
       {detailState === 'loading' && (
