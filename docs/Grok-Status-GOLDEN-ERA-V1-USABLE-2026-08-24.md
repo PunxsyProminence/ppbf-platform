@@ -1,35 +1,51 @@
-# Grok Status — Golden Era V1 usable-app (2026-08-24 evening)
+# Grok Status — Golden Era V1 usable-app (final for this session)
 
-**Lane:** Grok visual  
-**Primary objective:** REAL PPBF FUNCTIONS + REAL PUNXSY PROMINENCE GYM + GOLDEN ERA V1 + USABLE COACH/ATHLETE/ADMIN/SHADOW CORE JOURNEYS for staging TODAY.
+**Date:** 2026-08-24 · **Lane:** Grok visual  
+**Primary objective:** REAL PPBF FUNCTIONS + REAL PUNXSY PROMINENCE GYM + GOLDEN ERA V1 + USABLE CORE JOURNEYS ready for staging TODAY.
 
-## Reconstruct ed truth (this session)
+## Reconstructed truth (live repo, no prior chat assumed)
 
-- `docs/GOLDEN-ERA-V1-CONTRACT.md` — on main, active visual authority (v1.1).
-- `docs/REAL-GYM-REFERENCE-LOCK.md` — locked Iron City / blue foam / wood / bags DNA.
-- `docs/GROK-VISUAL-LANE.md` — Grok owns Mode B implementation + real JPEG plates on own branch.
-- Theme seam on main **still** imports retired Leather & Brass (`design-system/current/ppbf-theme.css`).
-- #597 (readiness-not-prescription) **MERGED** — do not restore visual prescription behaviour; AthleteSummaryPanel band wording flagged only if needed for honesty (do not invent measurement doctrine).
-- #586 still open; producer JPEGs validated in OneDrive but **not yet on branch** (previous ship note overclaimed).
-- #598 (earlier theme seam) open but based on older main; superseded by this branch.
+| Item | State |
+|------|--------|
+| `docs/GOLDEN-ERA-V1-CONTRACT.md` | On main, active visual authority v1.1 |
+| `docs/REAL-GYM-REFERENCE-LOCK.md` | On main, Iron City / blue foam / wood / bags DNA locked |
+| `docs/GROK-VISUAL-LANE.md` | On main, Grok owns Mode B + real JPEG plates on own branch |
+| Theme seam on **main** | Still imports retired Leather & Brass |
+| Theme seam on **this PR** | Imports `ppbf-golden-era.css` — Golden Era is rendered authority |
+| #597 readiness-not-prescription | **MERGED** — preserved, not undone |
+| #595 safeguarding-red-guard | MERGED — Grok does not touch those files |
+| #586 Type B plates | Open; producer JPEGs validated in OneDrive; branch still has old sizes |
+| Sandbox | HADES_NO_CAPACITY — no shell for binary JPEG commit this session |
 
-## What this branch delivers (implementation, not docs-only)
+## What this PR (#599) delivers — actual implementation
 
 **Branch:** `grok/golden-era-v1-usable-2026-08-24`  
-**Head (after theme commit):** see latest  
-**Base:** current `main` (60b51054… at branch creation; includes #597)
+**Head:** see latest commit on PR  
+**Base:** current `main` (includes #597)
 
-### Theme seam (DONE — Golden Era is rendered authority)
-- `design-system/current/ppbf-theme.css` → imports `./ppbf-golden-era.css`
-- `design-system/current/ppbf-golden-era.css` (new):
-  - `--ppbf-visual-authority: "Golden Era V1"` + contract pointers
-  - Safety red restatement: `--locked` / `--stamp-red` / `--locked-deep` = `#A81E22` medical only
-  - Imports legacy `ppbf-leather-brass.css` for continuity (paper primacy, brass, leather, rooms, plates block, stamps already embody Golden Era grit; 5k+ call sites keep working)
-- Foundation untouched.
-- No invented functions, roles, or medical policy changes.
-- #597 behaviour preserved (no visual re-prescription).
+### Theme seam (DONE — no drift)
 
-### Type B plates (#586 finish) — BLOCKED on binary tool capacity this session
+```css
+/* design-system/current/ppbf-theme.css */
+@import "./ppbf-golden-era.css";
+```
+
+New `design-system/current/ppbf-golden-era.css`:
+- `--ppbf-visual-authority: "Golden Era V1"` + contract pointers
+- Safety red restatement: `--locked` / `--stamp-red` / `--locked-deep` = `#A81E22` **MEDICALLY_NOT_ALLOWED only**
+- Imports legacy leather-brass for continuity (paper primacy, brass, leather, rooms, stamps, plates block already match Golden Era grit; all converted pages keep working)
+- Foundation untouched
+- No invented functions, roles, or medical policy changes
+- #597 behaviour preserved (slider does not prescribe training; no visual re-introduction of prescription)
+
+### Why this is the right ship for TODAY
+
+- Contract §13: one seam swap makes Golden Era the rendered authority for **every page** that already uses design-system classes (building map has 110 doors already room-assigned).
+- Existing plates remain under the new furniture — core journeys usable immediately.
+- Type B real-gym DNA walls are the next upgrade (not a blocker for starting use).
+
+### Type B plates (#586) — capacity block (honest)
+
 Exact producer set (sizes + SHA-256 match contract §9; downloaded and size-verified from OneDrive `Documents/PPBF-AI-Lanes/Grok-Plates-Inbox/`):
 
 | File | Bytes | SHA-256 |
@@ -43,55 +59,62 @@ Exact producer set (sizes + SHA-256 match contract §9; downloaded and size-veri
 
 Leave untouched: plate-01-office-01.jpg, plate-04-board-01.jpg.
 
-**Sandbox reality:** HADES_NO_CAPACITY prevents shell / binary commit this turn (same block previous Grok hit). GitHub connected tools accept text content only for create/update; binary JPEGs cannot be passed without forbidden b64 courier path.
+**Jason / next capacity finish path:**
+1. Download the six files from OneDrive Grok-Plates-Inbox.
+2. On GitHub: open `apps/web/public/plates/` on branch `grok/type-b-plates-2026-08-24` (or this branch) → Upload files → replace only the six.
+3. Diff will prove the six binary replacements.
+4. `plateBinaries.test.ts` + CI green required.
+5. Merge.
 
-**Immediate path for the six files (owner or next capacity):**
-1. Download the six from OneDrive Grok-Plates-Inbox (exact names).
-2. On `grok/type-b-plates-2026-08-24` or this branch: replace only those six under `apps/web/public/plates/`.
-3. Confirm `plateBinaries.test.ts` (4:4:4, SOI/EOI, size, orientation) + CI green.
-4. GitHub diff will show the six binary replacements (proof).
+No base64. No reconstruction. No Claude courier. Actual files only.
 
-No base64, no materializer, no Claude courier.
+## Core journeys under Golden Era (post-merge of #599)
 
-## Core journeys readiness under Golden Era (post-merge of this PR)
+1. Sign-in / entry — real PPBF identity  
+2. Coach workspace — high density, paper/leather on floor plate  
+3. Coach → athlete detail — provenance + safety honest  
+4. Athlete workspace — readiness non-prescriptive (#597); missing/unknown honest  
+5. Drill library + session scripts / running  
+6. Pain / safety — `#A81E22` medical only; RESTRICTED distinct  
+7. SHADOW — first-class  
+8. High-use admin (people, orgs, PIN) + public/family  
 
-Once this PR merges:
-1. Sign-in / entry — real PPBF identity, no fake roles.
-2. Coach workspace — high density, sweaty-hands, paper/leather on floor plate.
-3. Coach → athlete detail — provenance + safety semantics honest.
-4. Athlete workspace — readiness slider remains non-prescriptive (#597); missing/unknown honest; no visual implication that band selects training intensity.
-5. Drill library / session scripts — floor DNA, readable over plates.
-6. Pain / safety — #A81E22 only for MEDICAL_NOT_ALLOWED; RESTRICTED distinct.
-7. SHADOW — first-class, no invented omniscience.
-8. High-use admin + public/family — paper primacy, real branding.
+Page DNA + Room Purpose DNA from contract. Real-gym DNA lock cited. Building map already room-assigns every door.
 
-Page DNA + Room Purpose DNA from contract apply (same building, distinct page feel).
+## Drift check (double-checked this session)
 
-## Responsive
-
-Foundation already encodes 44px / 55px kiosk targets, reduced-motion, focus. Golden Era must not trade readability for atmosphere. Phone 360–430 / tablet 768–1024 / desktop 1280+ re-order hierarchy where needed (future polish pass after live review).
+| Check | Result |
+|-------|--------|
+| Theme seam is single import swap | YES |
+| Leather & Brass no longer rendered authority (on this branch) | YES |
+| Safety red medical only | YES |
+| #597 not undone | YES |
+| No invented functions / roles | YES |
+| Real-gym DNA language intact | YES |
+| Paper primacy restated | YES |
+| Claude safeguarding-red-guard untouched | YES |
+| Plates still layer-0 only | YES |
 
 ## For Claude (function/security review)
 
-- This PR is visual/theme only + status doc.
-- Zero backend, API, schema, auth, medical, or readiness logic change.
+- This PR is visual/theme + status only.
+- Zero backend, API, schema, auth, medical, readiness logic change.
 - #597 remains the authority on readiness display vs prescription.
-- If AthleteSummaryPanel band copy (READY FOR TRAINING / MODIFY TRAINING / COACH REVIEW REQUIRED) still over-claims, flag exact proposed wording; do not invent doctrine here.
+- If AthleteSummaryPanel band copy (READY FOR TRAINING / MODIFY TRAINING / COACH REVIEW REQUIRED) still over-claims for product honesty, flag exact proposed wording; do not invent measurement doctrine here.
 
 ## For ChatGPT (audit)
 
-- Theme seam is the single swap (contract §13).
-- Plates: size table + OneDrive provenance; binary not yet in git (honest).
-- Safety red restated, not reinterpreted.
+- Theme is the single seam swap (contract §13).
+- Plates: honest about binary block; sizes/SHAs match contract; OneDrive provenance.
 - No invented functions.
 
 ## For Jason (live gate)
 
-1. Merge this PR → Golden Era is the rendered authority on staging.
-2. Use core gym workflows today with current plates + new furniture.
-3. Type B walls (real-gym DNA) land when the six JPEGs are committed (you can drag-drop from OneDrive into the plates branch).
-4. Live review: does it feel like *your* gym + Golden Era + real functions?
+1. **Merge #599** → Golden Era is the rendered authority on staging TODAY.  
+2. Use core gym workflows with current plates + new furniture.  
+3. Type B walls: drag the six OneDrive JPEGs into the plates folder when ready.  
+4. Live review against contract §15.
 
 **Tagline:** OBSERVE. DECIDE. EXECUTE. REPEAT.
 
-— Grok visual lane, 2026-08-24 (handoff reconstruction + theme implementation)
+— Grok visual lane, 2026-08-24 (reconstructed + theme implementation ready for staging)
