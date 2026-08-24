@@ -192,28 +192,42 @@ describe('floor tab presents a plan template, not a running session', () => {
   });
 });
 
-describe('read failures are never rendered as an empty queue', () => {
-  test('failed floor-plan fetch shows an error and Retry, not "no plans received yet"', async () => {
+/*
+ * The "Athlete Floor Plans" tab is deliberately gone, and this pins the
+ * removal. Every plan it listed was auto-generated at athlete check-in from
+ * the unvalidated readiness slider and headed with a CLIENT-SUPPLIED
+ * athleteName -- the literal 'Current Athlete' -- which the panel rendered as
+ * if it were a real athlete's identity over individualized work. A test here
+ * used to pin that panel's error handling; it went with the panel.
+ */
+describe('the auto-generated athlete floor-plan surface is gone', () => {
+  test('no floor-plans tab, no floor-plans read, and no client-supplied name shown as identity', async () => {
+    // The stub answers with exactly the payload the old panel displayed. If
+    // anything in this workspace still fetched it, the name would be on the
+    // screen and the call in the log.
     const fetchMock = await renderWorkspace({
-      floorPlans: async () => jsonResponse({}, { ok: false, status: 500 }),
+      floorPlans: async () => jsonResponse({
+        items: [{
+          athleteName: 'Current Athlete',
+          readiness: 'GREEN',
+          generatedAt: '2026-08-20T17:00:00.000Z',
+          tasks: [{ id: 'wf_1', title: 'Conditioning Finisher', category: 'Training', description: 'High-output intervals: 6 rounds x 90s on / 60s active recovery.', dueDate: '5:30 PM', priority: 'Normal' }],
+        }],
+      }),
     });
-    openTab('Athlete Floor Plans');
 
-    expect(screen.queryByText(/No athlete floor plans received yet/i)).toBeNull();
-    expect(screen.queryByText(/Error loading athlete floor plans/i)).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /^Athlete Floor Plans\b/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review Athlete Plans' })).toBeNull();
+    expect(screen.queryByText('Current Athlete')).toBeNull();
 
-    const planCallsBeforeRetry = fetchMock.mock.calls.filter((call) =>
+    const floorPlanCalls = fetchMock.mock.calls.filter((call) =>
       String(call[0]).includes('/api/pilot/floor-plans'),
-    ).length;
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Retry loading athlete floor plans' }));
-    });
-    const planCallsAfterRetry = fetchMock.mock.calls.filter((call) =>
-      String(call[0]).includes('/api/pilot/floor-plans'),
-    ).length;
-    expect(planCallsAfterRetry).toBe(planCallsBeforeRetry + 1);
+    );
+    expect(floorPlanCalls).toHaveLength(0);
   });
+});
 
+describe('read failures are never rendered as an empty queue', () => {
   test('failed review-queue fetch stops the Tasks board claiming the queue is clear', async () => {
     await renderWorkspace({
       reviewProjection: async () => jsonResponse({}, { ok: false, status: 503 }),

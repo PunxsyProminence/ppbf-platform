@@ -156,14 +156,21 @@ interface FloorTask {
 }
 
 interface WorkoutBuildInput {
-  readiness: ReadinessLevel;
   checkInAt: Date;
   activeGoal?: SMARTGoal;
 }
 
+/**
+ * What check-in stores. No `athleteName`: the route knows who the principal is,
+ * and the literal 'Current Athlete' this used to carry was rendered by the
+ * coach workspace as if it were an athlete's identity. No `readiness` either:
+ * the check-in slider is an unvalidated self-report (readinessProvenance.ts --
+ * nothing passes the established reliability/validity bar), and stamping its
+ * band on the stored plan presented the plan as derived from a measurement.
+ * The band is still recorded, once, where a record belongs: the session's
+ * auto check-in note.
+ */
 interface StoredAthleteFloorPlan {
-  athleteName: string;
-  readiness: ReadinessLevel;
   generatedAt: string;
   tasks: Array<{
     id: string;
@@ -353,8 +360,23 @@ function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
   return formatGymTimeOfDay(due) ?? '';
 }
 
-function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBuildInput): FloorTask[] {
-  const core: FloorTask[] = [
+/**
+ * THE SAME WORK WHATEVER THE SLIDER SAYS, ON PURPOSE.
+ *
+ * This used to branch on the check-in readiness band: GREEN got "High-output
+ * intervals" as a conditioning finisher and a normal-intensity technical
+ * block; everyone else got reduced, controlled work. That let an unvalidated
+ * 1-10 self-report slider decide what training a child was prescribed --
+ * and readinessProvenance.ts is explicit that no readiness method on this
+ * platform passes the established reliability/validity bar, so readiness may
+ * be recorded but may not decide anything. The branching is removed, not
+ * re-tuned: the readiness-specific conditioning slot is gone entirely rather
+ * than replaced with an invented "neutral" prescription, and what remains is
+ * the fixed, goal-linked list. A genuinely individualized plan is a coach's
+ * to author, not this function's to derive from a slider.
+ */
+function buildWorkoutFloorTasks({ checkInAt, activeGoal }: WorkoutBuildInput): FloorTask[] {
+  return [
     {
       id: `wf_${Date.now()}_1`,
       title: 'Dynamic Warmup + Mobility',
@@ -368,44 +390,14 @@ function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBui
       id: `wf_${Date.now()}_2`,
       title: 'Technical Boxing Block',
       category: 'Training',
-      description: readiness === 'GREEN'
-        ? 'Footwork progression + combination reps at normal intensity.'
-        : 'Controlled technical reps with clean form and reduced impact output.',
+      description: 'Footwork progression + combination reps.',
       dueDate: formatDueTime(checkInAt, 30),
       completed: false,
       priority: 'High',
       linkedGoalId: activeGoal?.id,
     },
-  ];
-
-  const readinessSpecific: FloorTask[] =
-    readiness === 'GREEN'
-      ? [
-          {
-            id: `wf_${Date.now()}_3`,
-            title: 'Conditioning Finisher',
-            category: 'Training',
-            description: 'High-output intervals: 6 rounds x 90s on / 60s active recovery.',
-            dueDate: formatDueTime(checkInAt, 55),
-            completed: false,
-            priority: 'Normal',
-          },
-        ]
-      : [
-          {
-            id: `wf_${Date.now()}_3`,
-            title: 'Recovery Conditioning',
-            category: 'Recovery',
-            description: 'Low-impact aerobic work and breath control. Keep intensity below threshold.',
-            dueDate: formatDueTime(checkInAt, 55),
-            completed: false,
-            priority: 'Normal',
-          },
-        ];
-
-  const closeout: FloorTask[] = [
     {
-      id: `wf_${Date.now()}_4`,
+      id: `wf_${Date.now()}_3`,
       title: 'Cooldown + Session Journal',
       category: 'Homework',
       description: 'Log notes, recovery signals, and one improvement point for next session.',
@@ -415,8 +407,6 @@ function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBui
       linkedGoalId: activeGoal?.id,
     },
   ];
-
-  return [...core, ...readinessSpecific, ...closeout];
 }
 
 // Fast-Track observation feed: best-effort only. The athlete's check-out
@@ -971,7 +961,6 @@ export default function AthleteWorkspace() {
       const data = (await response.json()) as {
         items?: Array<{
           generatedAt?: string;
-          readiness?: string;
           tasks?: Array<{
             id: string;
             title: string;
@@ -1386,10 +1375,15 @@ export default function AthleteWorkspace() {
     }
 
     const now = new Date();
+    // The band is classified here for exactly one purpose: the session's
+    // auto check-in NOTE -- a record of how the athlete said they felt. It is
+    // deliberately not an input to buildWorkoutFloorTasks and not a field on
+    // the stored plan: the slider is an unvalidated self-report
+    // (readinessProvenance.ts), so it may be written down but may not change
+    // what work is generated, shown, or sent anywhere.
     const readiness = getReadinessLevel(readinessToTrain);
     const activeGoal = smartGoals.find((goal) => goal.status === 'Active');
     const generatedTasks = buildWorkoutFloorTasks({
-      readiness,
       checkInAt: now,
       activeGoal,
     });
@@ -1401,8 +1395,6 @@ export default function AthleteWorkspace() {
     });
 
     const floorPlanPayload: StoredAthleteFloorPlan = {
-      athleteName: 'Current Athlete',
-      readiness,
       generatedAt: now.toISOString(),
       tasks: generatedTasks.map((task) => ({
         id: task.id,
@@ -1415,7 +1407,10 @@ export default function AthleteWorkspace() {
       })),
     };
 
-    setLastWorkoutBuildNote(`Built from your check-in. You came in ${readiness}.`);
+    // States the record and, in the same breath, that the record decided
+    // nothing -- the honest answer to an athlete wondering whether sliding
+    // low got them an easier day.
+    setLastWorkoutBuildNote(`Built at your check-in. You came in ${readiness} -- that is recorded on your session, and it does not change the work.`);
     setActiveTab('athlete-floor');
 
     if (!backendAthleteId) {
@@ -1913,8 +1908,9 @@ export default function AthleteWorkspace() {
 
                   <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
                     <p className="t-label">Your floor plan</p>
-                    {/* The plan is built at check-in from the athlete's own
-                        readiness and active goal (buildWorkoutFloorTasks), not
+                    {/* The plan is built at check-in around the athlete's
+                        active goal (buildWorkoutFloorTasks) -- the same fixed
+                        list whatever the readiness slider says, and not
                         handed down by a coach -- so this must never be worded
                         as "assignments from your coach". Saying where it comes
                         from is also the honest answer to why checking in is
