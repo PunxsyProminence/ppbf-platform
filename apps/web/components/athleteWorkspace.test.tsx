@@ -354,6 +354,65 @@ describe('athlete safety reporting', () => {
     expect(screen.queryByText(/saved locally/i)).toBeNull();
   });
 
+  /* No control on this safety card may record nothing.
+
+     Two tickboxes stood here whose ticked value reached nobody once the
+     fabricated check-in `session_rpe` observation -- the only thing that
+     carried them -- was removed. The "reviewed today's safety/medical notice"
+     box had no consumer at all. The "Injury or Pain Flag" box is the subtler
+     one: the flag it set is written for real by the pain report below, so as
+     an INDICATOR it tells the truth, but as a CONTROL a hand-tick went
+     nowhere. So the affordance is gone and the signal is kept, and these pin
+     both halves of that: no tickbox, and the indicator still appearing when a
+     pain report is actually filed. */
+  test('the Injury or Pain Flag tickbox is gone, because ticking it recorded nothing', async () => {
+    await renderWorkspace();
+
+    // The absence that matters is of a CONTROL. A child who ticks a box has
+    // every reason to believe a coach will see it.
+    expect(screen.queryByRole('checkbox', { name: /injury or pain flag/i })).toBeNull();
+    expect(screen.queryByLabelText(/injury or pain flag/i)).toBeNull();
+  });
+
+  test('the safety/medical acknowledgement tickbox is gone entirely, because nothing stored it', async () => {
+    await renderWorkspace();
+
+    // An attestation nobody stores is not an attestation, and reads as
+    // compliance to whoever ticks it. This one had no consumer at all, so
+    // unlike the injury flag there is no signal underneath worth keeping.
+    expect(screen.queryByRole('checkbox', { name: /safety\/medical notice/i })).toBeNull();
+    expect(screen.queryByText(/reviewed today.s safety\/medical notice/i)).toBeNull();
+  });
+
+  test('the pain report is left standing, and still carries its injury flag', async () => {
+    painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true, severity: 'high' } });
+    await openPainReport();
+
+    await screen.findByText(/flagged for a coach to look at/);
+    const [observation] = postedTo('/api/pilot/shadow/formulas/observations');
+    // The removed tickbox never fed this. `injuryFlag: true` here is a literal
+    // on the pain-report payload, which is why that path is unaffected -- and
+    // asserting it keeps the removal from quietly taking the real signal too.
+    expect(observation.body.dimensions).toEqual(
+      expect.objectContaining({ injuryFlag: true, location: 'Neck' }),
+    );
+  });
+
+  test('a filed pain report leaves a read-only indicator, not something to tick', async () => {
+    painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true, severity: 'high' } });
+    await openPainReport();
+
+    // Written by the pain report itself, so it states something that happened.
+    const indicator = await screen.findByTestId('pain-reported-indicator');
+    expect(indicator.textContent).toMatch(/pain reported this session/i);
+
+    // And it is a statement, not an affordance: nothing here invites a tick,
+    // which is exactly what the removed tickbox got wrong.
+    expect(indicator.tagName).not.toBe('INPUT');
+    expect(indicator.querySelector('input, button, select, textarea, [role="checkbox"]')).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /pain reported this session/i })).toBeNull();
+  });
+
   test('check-out puts the session notes on the session record', async () => {
     await renderWorkspace();
 
