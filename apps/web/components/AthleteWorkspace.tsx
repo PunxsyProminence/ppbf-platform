@@ -1613,10 +1613,15 @@ export default function AthleteWorkspace() {
     setPainSaveMessage('');
 
     try {
-      setPainLog((current) => [newPainLogEntry, ...current]);
-      setInjuryFlag(true);
-      setSoreness((current) => Math.max(current, currentPainSeverity));
-
+      /* NOTHING IS RECORDED UNTIL THE SERVER SAYS SO. These three state
+         writes used to sit here, before the guard and the fetch, and the
+         catch below never reverted them -- so a FAILED save still lit the
+         "Pain reported this session. A coach has been told." indicator and
+         the "Last report:" line, directly above the honest failure message.
+         On a safety card the optimistic line wins: a child who reads "a
+         coach has been told" stops looking for another way to tell someone.
+         The local record now follows the server's answer, never precedes
+         it. */
       if (!backendAthleteId) {
         // Nothing outside this browser tab holds a pain report, so a missing
         // session means it reached no one at all.
@@ -1653,6 +1658,10 @@ export default function AthleteWorkspace() {
       const payload = (await response.json().catch(() => ({}))) as {
         painReport?: { coachNotified?: boolean };
       };
+
+      setPainLog((current) => [newPainLogEntry, ...current]);
+      setInjuryFlag(true);
+      setSoreness((current) => Math.max(current, currentPainSeverity));
 
       setPainSaveMessage(payload.painReport?.coachNotified
         ? 'Logged, and flagged for a coach to look at.'

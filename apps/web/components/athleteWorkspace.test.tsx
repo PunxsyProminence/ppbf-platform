@@ -354,6 +354,21 @@ describe('athlete safety reporting', () => {
     expect(screen.queryByText(/saved locally/i)).toBeNull();
   });
 
+  test('a rejected pain report lights NO indicator and leaves NO last-report line', async () => {
+    painObservationResponse = jsonResponse({}, false);
+    await openPainReport();
+
+    await screen.findByText(/was not saved and no coach was told/);
+    /* The blocker this pins: the optimistic painLog/injuryFlag writes used to
+       precede the fetch and survive its failure, so the card said "Pain
+       reported this session. A coach has been told." directly above the
+       failure message. Both lines cannot be true, and the reassuring one is
+       the one a child believes. */
+    expect(screen.queryByTestId('pain-reported-indicator')).toBeNull();
+    expect(screen.queryByText(/a coach has been told/i)).toBeNull();
+    expect(screen.queryByText(/last report:/i)).toBeNull();
+  });
+
   /* No control on this safety card may record nothing.
 
      Two tickboxes stood here whose ticked value reached nobody once the
