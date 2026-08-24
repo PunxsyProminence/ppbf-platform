@@ -19,10 +19,17 @@
 >
 > **What has NOT changed, and is the reason this section still carries warnings:**
 >
-> - **Nothing in this repository reads or writes those folders.** That was true
->   before and is true now. It is a separate claim from "the folders exist", and
->   conflating the two is how the original note over-reached in one direction and
->   how a correction over-reaches in the other.
+> - **No research-specific route or configuration is wired to the permanent
+>   Research Archive, and no runtime code routes or files research by
+>   `archiveCode`.** Stated that way on purpose: an earlier draft of this
+>   correction said "nothing in this repository reads or writes those folders",
+>   which is too absolute to be true. The generic uploader in
+>   `apps/web/src/server/document-intake/sharepoint.ts` takes a **configurable**
+>   destination — `SHAREPOINT_FOLDER_PATH`, defaulting to `PPBF/Intake` — so a
+>   configuration value could in principle point it at the archive. What does
+>   not exist is any research-specific path that does so, or any code that
+>   derives a destination from a subject code. "The folders exist" and "we are
+>   wired to them" are two claims, and only the first one changed.
 > - **Custody is not citability.** A document sitting in the archive is not
 >   admissible SHADOW evidence. The gate chain in §3 is untouched.
 > - **Migration is not complete.** OneDrive `Library Intake/` remains the
@@ -155,7 +162,7 @@ to look like a single agreed system. They are not the same place.
 |---|---|---|
 | **Microsoft — OneDrive `Library Intake` tree (§1)** | *Proposed* governed archive: durable originals, acquisition provenance, duplicate/lineage preservation | Unconfirmed. No repository artifact corroborates it, and no code reads or writes it. Does not currently govern anything. |
 | **Microsoft — SharePoint `SHADOW AIML / 02 - Source Materials / Penn State Library Intake`** | The governed original-source archive named by open owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345) | Not addressed by any code in this repository either. Remains the durable contract on paper until the owner updates #345. |
-| **Microsoft — SharePoint site drive, `PPBF/Intake`** | The **only** Microsoft destination this repository actually writes to: `apps/web/src/server/document-intake/sharepoint.ts` uploads to `/sites/{SHAREPOINT_SITE_ID}/drives/{SHAREPOINT_DRIVE_ID}/root:/{SHAREPOINT_FOLDER_PATH}` (default `PPBF/Intake`, `config.ts`) | Knows nothing called "Library Intake" and has no R00-R98 structure. It is a flat ingest drop, not the governed archive either document describes. |
+| **Microsoft — configurable generic SharePoint destination, defaulting to `PPBF/Intake`** | The **only** Microsoft destination this repository actually writes to: `apps/web/src/server/document-intake/sharepoint.ts` uploads to `/sites/{SHAREPOINT_SITE_ID}/drives/{SHAREPOINT_DRIVE_ID}/root:/{SHAREPOINT_FOLDER_PATH}`. The path is configuration, not a constant: `config.ts` reads `SHAREPOINT_FOLDER_PATH` and falls back to `PPBF/Intake` only when it is unset | Knows nothing called "Library Intake" and has no R00-R98 structure. It is a flat ingest drop, not the governed archive either document describes. |
 | `/research` | Research requirements, general research registration, source-to-requirement links, answer-state workflow | Does not approve evidence or resolve a gap from submission alone |
 | `/research/review` | Applicability review of a submission against the requirement it was filed against: `responsive`, `partially_responsive`, `not_responsive`, `duplicate` (`apps/web/app/research/review/page.tsx`) | Does not verify, approve, index, or make anything citable — that is `/evidence`. A `responsive` verdict does not resolve the requirement. |
 | `/evidence` | Indexing, evidence review, verification, approval, rejection, and retrieval eligibility | Does not replace the original-source archive |
