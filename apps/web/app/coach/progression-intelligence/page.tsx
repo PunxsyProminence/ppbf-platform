@@ -506,7 +506,9 @@ export default function CoachProgressionIntelligencePage() {
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Detect performance gaps, assign drills, and track athlete completion and progression.
           </p>
-          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{errorMessage}</p> : null}
+          {/* --restricted-ink, not --locked-ink: see sports-medicine, where
+              the same correction is made and the reason written out. */}
+          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{errorMessage}</p> : null}
         </header>
 
         {/* Athlete Selector — roster first, free-text fallback for edge IDs */}
