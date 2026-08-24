@@ -60,6 +60,15 @@ const LAYERED_MIGRATIONS = [
   // The film-study admissibility gate had no Postgres-level proof while this
   // migration was absent here (the module header used to record that gap).
   'pilot_slice_postgres_film_study_proposals_migration.sql',
+  // listEvidence LEFT JOINs pilot.readiness for method/reliability/validity, and
+  // those three columns are added by this migration rather than by the base
+  // schema -- pilot.readiness exists without them. Absent here, the admissibility
+  // case died on `column r.method does not exist` while every other case passed,
+  // because only that one calls the shipped listEvidence against a real database.
+  // It alters pilot.readiness and pilot.accounts, both in the base schema; its
+  // several mentions of pilot.assessment_protocols are all comments and column
+  // COMMENT text, so it pulls in no further migration.
+  'pilot_slice_postgres_readiness_provenance_migration.sql',
 ];
 
 const ORG_ID = 'org-evidence';
@@ -371,9 +380,15 @@ describe('intervention evidence migration', () => {
          values ($1, 'att-1', $2, $3, 'session', 'reps', 'at_least', 12)`,
         [ORG_ID, ATHLETE_ID, ADMIN_ID],
       );
+      // `method` is stated rather than defaulted: the provenance migration drops
+      // the column default on purpose, so an insert that omits it fails instead
+      // of quietly claiming 'UNKNOWN'. 'staff_entered_intake' is what the only
+      // real writer (intake.ts#createReadiness) stamps. The three measurement
+      // properties keep their unvalidated defaults, which is how a real row
+      // arrives -- this case proves lookup scoping, not admissibility.
       const readiness = await client.query(
-        `insert into pilot.readiness (organization_id, readiness_id, athlete_id, score, category, measured_at)
-         values ($1, gen_random_uuid(), $2, 3, 'energy', now()) returning readiness_id`,
+        `insert into pilot.readiness (organization_id, readiness_id, athlete_id, score, category, measured_at, method)
+         values ($1, gen_random_uuid(), $2, 3, 'energy', now(), 'staff_entered_intake') returning readiness_id`,
         [ORG_ID, ATHLETE_ID],
       );
 
