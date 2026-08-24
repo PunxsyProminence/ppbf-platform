@@ -23,14 +23,21 @@ import path from 'node:path';
  * token swapped back) and would not catch a new surface introducing its own
  * mapping. That limit is the reason it names every known site explicitly.
  *
- * Verified by mutation: restoring `--locked` on any of the three fails this.
+ * Verified by mutation: restoring `--locked` on any listed site fails this.
  */
 
 const WEB = path.resolve(__dirname, '../..');
 
+/*
+ * `readinessBadgeTone` (CoachWorkspace.tsx) was the third site until
+ * 2026-08-24. It existed only to badge the coach's "Athlete Floor Plans"
+ * panel, and that panel is removed -- it presented plans auto-generated from
+ * the unvalidated check-in readiness slider, under a client-supplied athlete
+ * name, as individualized coaching input. The mapping went with its only
+ * consumer; a new readiness-colouring surface must add itself here.
+ */
 const SITES = [
   ['components/CoachWorkspace.tsx', 'readinessDotClass'],
-  ['components/CoachWorkspace.tsx', 'readinessBadgeTone'],
   ['components/RoleSummaryPanels.tsx', 'readinessColor'],
 ] as const;
 
