@@ -1,5 +1,5 @@
 /* ===========================================================================
-   PPBF GOLDEN ERA V1 — CURRENT VISUAL THEME
+   PPBF GOLDEN ERA V1 — CURRENT VISUAL THEME (IMPLEMENTED)
    ---------------------------------------------------------------------------
    Status: ACTIVE rendered visual authority for the usable-app release.
    Date: 2026-08-24 · Lane: Grok visual · Owner: Jason Neale
@@ -41,18 +41,7 @@
      on top in code. Quiet centre, outer-thirds interest, zero lettering,
      4:4:4, complete SOI/EOI. Real gym DNA required — no stock gym.
      Type B producer set lives under apps/web/public/plates/ (see contract §9).
-
-   IMPLEMENTATION NOTE:
-     The full visual implementation (tokens, materials, rooms, stamps, badges,
-     kiosk controls, plates block, etc.) currently lives in the retired
-     Leather & Brass sheet. That sheet already embodies the golden-era grit,
-     paper hierarchy, and room model this contract requires. For the usable-
-     app release TODAY we import it for continuity (every converted page and
-     the 5,884 call sites keep working), then declare this file the authority
-     and apply the few contract-critical overrides below.
-
-     Future work may extract a pure Golden Era sheet that no longer depends
-     on the legacy file; that is polish, not a blocker for gym use.
+     #586 is OFF today's critical path; current plates ship under this furniture.
 
    Tagline: OBSERVE. DECIDE. EXECUTE. REPEAT.
    =========================================================================== */
@@ -67,6 +56,7 @@
   --ppbf-visual-contract: "docs/GOLDEN-ERA-V1-CONTRACT.md";
   --ppbf-real-gym-lock: "docs/REAL-GYM-REFERENCE-LOCK.md";
   --ppbf-visual-date: "2026-08-24";
+  --ppbf-visual-impl: "core-ui-impl-2026-08-24";
 }
 
 /* --------------------------------------------------------------------------
@@ -82,15 +72,271 @@
 }
 
 /* --------------------------------------------------------------------------
-   Paper primacy reminder (hierarchy item 1)
-   --------------------------------------------------------------------------
-   Paper is the primary working surface. The legacy sheet already defines
-   .mat-paper, .pap--*, .on-canvas, and restatements. No behavioural change;
-   this comment + the authority tokens above are the contract hand-off. */
+   PAPER PRIMACY (hierarchy item 1) — working surfaces denser, warmer, more
+   present than leather so forms/lists/notices read as the primary desk.
+   -------------------------------------------------------------------------- */
+.mat-paper,
+.pap--,
+.on-canvas .mat-paper,
+.frame-in.mat-paper {
+  /* Slightly warmer bone + tighter grain emphasis for Golden Era desk feel */
+  background-color: color-mix(in srgb, var(--paper-1, #F4EDE0) 92%, #E8D9C0);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 250, 240, 0.55),
+    inset 0 -1px 0 rgba(120, 90, 50, 0.08),
+    0 1px 2px rgba(40, 25, 10, 0.06);
+}
+
+/* Paper cards on leather ground gain a quiet brass edge so they sit *on* the room */
+.mat-leather .mat-paper,
+.mat-leather--raised .mat-paper,
+.room--floor .mat-paper,
+.room--office .mat-paper {
+  border: 1px solid color-mix(in srgb, var(--brass-500, #C9A227) 28%, transparent);
+}
 
 /* --------------------------------------------------------------------------
-   Real-gym plate authority (already wired in legacy PLATES block)
-   --------------------------------------------------------------------------
-   room--* --plate URLs and plate-07 warm ground remain the layer-0 walls.
-   Drift test before any Mode B plate ship: Iron City / blue-foam / rough-wood
-   / bag DNA visible in the outer thirds; no stock grey brick. */
+   BRASS INTENSITY — aged metal accents, rivets, stamp edges, primary actions
+   -------------------------------------------------------------------------- */
+.rivet,
+.rivet--tl,
+.rivet--tr,
+.rivet--bl,
+.rivet--br {
+  /* Stronger presence so the frame reads as real hardware, not decoration */
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brass-700, #8B6914) 55%, transparent),
+    inset 0 1px 0 rgba(255, 220, 140, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.btn--kiosk,
+.btn:not(.btn--ghost) {
+  /* Primary actions read as brass metal, not flat fill */
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.stamp,
+.stamp--brass,
+.badge--cleared,
+.badge--monitor,
+.badge--restricted {
+  /* Stamp / badge edges hold brass character under gym fluorescent */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brass-600, #A67C00) 40%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   ROOM ATMOSPHERE DNA (Page DNA + Room Purpose DNA)
+   Same room ≠ same atmosphere. Continuous building story, distinct framing.
+   -------------------------------------------------------------------------- */
+
+/* FLOOR — open bags + ring edge + fluorescent, high energy, high density */
+.room--floor,
+body.ppbf.room--floor,
+.ge-room-floor {
+  /* Slightly cooler fluorescent top light + higher contrast for glanceable coach use */
+  --ge-floor-energy: 1;
+}
+.room--floor .mat-leather--raised,
+.ge-room-floor .mat-leather--raised {
+  /* Tighter visual weight so roster/cards scan faster under bags */
+  border-color: color-mix(in srgb, var(--brass-500, #C9A227) 38%, transparent);
+}
+.room--floor .t-eyebrow,
+.ge-room-floor .t-eyebrow {
+  letter-spacing: 0.14em;
+}
+
+/* OFFICE — quieter wood / desk-lamp, certificates corner */
+.room--office,
+.ge-room-office {
+  --ge-office-quiet: 1;
+}
+.room--office .mat-paper,
+.ge-room-office .mat-paper {
+  /* Soft lamp pool suggestion without inventing chrome */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255, 230, 180, 0.12), transparent 70%);
+}
+
+/* CLINIC — cleaner corner, cooler light, less bag drama; red only medical */
+.room--clinic,
+.ge-room-clinic {
+  --ge-clinic-cool: 1;
+}
+.room--clinic .mat-leather,
+.ge-room-clinic .mat-leather {
+  /* Slightly cooler hide + less brass saturation so medical red remains the only saturated signal */
+  filter: saturate(0.92);
+}
+
+/* NIGHT / SHADOW — darker, low lamp, bags as silhouettes */
+.room--night,
+.ge-room-night,
+.ge-shadow {
+  --ge-night: 1;
+}
+.room--night .mat-leather,
+.ge-shadow .mat-leather,
+.ge-room-night .mat-leather {
+  background-color: color-mix(in srgb, var(--hide-950, #1a120c) 88%, #0d0a08);
+  border-color: color-mix(in srgb, var(--brass-700, #8B6914) 22%, transparent);
+}
+.room--night .t-command,
+.ge-shadow .t-command {
+  color: color-mix(in srgb, var(--bone-100, #F5F0E6) 90%, #c9b896);
+}
+
+/* FILE — gear shelves / sticky density */
+.room--file,
+.ge-room-file {
+  --ge-file-dense: 1;
+}
+
+/* BOARD — formal quiet chalkboard / certificates */
+.room--board,
+.ge-room-board {
+  --ge-board-formal: 1;
+}
+.room--board .mat-paper,
+.ge-room-board .mat-paper {
+  border-left: 3px solid color-mix(in srgb, var(--brass-600, #A67C00) 55%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   SIGN-IN / THE BELL — entry surface (priority #1)
+   -------------------------------------------------------------------------- */
+.ge-sign-in .frame,
+.ge-bell .frame {
+  /* Stronger riveted frame so The Bell reads as the gym door, not a form card */
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--brass-600, #A67C00) 65%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brass-800, #5C4400) 30%, transparent),
+    0 8px 24px rgba(20, 12, 4, 0.28),
+    inset 0 1px 0 rgba(255, 230, 160, 0.12);
+}
+
+.ge-sign-in .frame-in.mat-paper,
+.ge-bell .frame-in.mat-paper {
+  /* Paper desk under the bell — primary working surface */
+  background-color: color-mix(in srgb, var(--paper-1, #F4EDE0) 94%, #E6D4B8);
+  padding-block: var(--s6);
+}
+
+.ge-sign-in .t-painted,
+.ge-bell .t-painted {
+  /* Command title for The Bell — Alfa Slab presence without inventing a new face */
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35), 0 -1px 0 rgba(80, 50, 10, 0.15);
+}
+
+/* --------------------------------------------------------------------------
+   COACH WORKSPACE — glanceable, sweaty-hands, high information density
+   -------------------------------------------------------------------------- */
+.ge-coach,
+.ge-coach-workspace {
+  /* Slight density increase: less air, more scan lines for floor tablet use */
+  --s5: calc(var(--s5, 1.25rem) * 0.92);
+}
+
+.ge-coach .mat-leather--raised,
+.ge-coach-workspace .mat-leather--raised {
+  /* Roster / KPI tiles hold a sharper brass edge for quick triage */
+  border: 1px solid color-mix(in srgb, var(--brass-500, #C9A227) 42%, transparent);
+}
+
+.ge-coach .t-eyebrow,
+.ge-coach-workspace .t-eyebrow {
+  letter-spacing: 0.13em;
+  color: color-mix(in srgb, var(--brass-300, #E0C56A) 88%, var(--bone-200));
+}
+
+/* Pain / safety bands stay locked red (medical only); brass for non-medical */
+.ge-coach section[aria-live="polite"] .border-\[color\:var\(--locked\)\],
+.ge-coach-workspace section[aria-live="polite"] .border-\[color\:var\(--locked\)\] {
+  /* Ensure medical border remains the saturated signal */
+  border-color: var(--locked) !important;
+}
+
+/* --------------------------------------------------------------------------
+   ATHLETE WORKSPACE — honest missing/unknown, non-prescriptive readiness
+   -------------------------------------------------------------------------- */
+.ge-athlete,
+.ge-athlete-workspace {
+  --ge-athlete-honest: 1;
+}
+.ge-athlete .mat-paper,
+.ge-athlete-workspace .mat-paper {
+  /* Paper primacy for athlete notes / goals so they never fight leather */
+  background-color: color-mix(in srgb, var(--paper-1, #F4EDE0) 93%, #E8D9C0);
+}
+
+/* --------------------------------------------------------------------------
+   SESSION SCRIPTS / DRILL LIBRARY — sequence + structure, floor energy
+   -------------------------------------------------------------------------- */
+.ge-session-script,
+.ge-drill-library {
+  --ge-session-flow: 1;
+}
+.ge-session-script .mat-leather--raised,
+.ge-drill-library .mat-leather--raised {
+  border-color: color-mix(in srgb, var(--brass-500, #C9A227) 36%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   HIGH-USE ADMIN — people, org, PIN — real role vocabulary only
+   -------------------------------------------------------------------------- */
+.ge-admin {
+  --ge-admin-desk: 1;
+}
+.ge-admin .mat-paper {
+  border: 1px solid color-mix(in srgb, var(--brass-500, #C9A227) 24%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   GLOBAL: ensure on-canvas + frame continuity under Golden Era authority
+   -------------------------------------------------------------------------- */
+body.ppbf.on-canvas,
+.on-canvas {
+  /* Warm second ground stays paper-family so entry + public feel continuous */
+  background-color: color-mix(in srgb, var(--canvas-warm, #EDE4D4) 96%, #D9C9A8);
+}
+
+/* Quiet centre bias: primary panels prefer centre of plate (layer 0 quiet) */
+.frame,
+.mat-leather--raised,
+.mat-paper {
+  /* No structural change — just ensure shadow does not fight plate interest */
+  position: relative;
+  z-index: 1;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive floors (foundation intact; Golden Era never trades usability)
+   -------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .ge-coach .mat-leather--raised,
+  .ge-coach-workspace .mat-leather--raised {
+    /* Phone: still glanceable, no desktop density that fights thumb reach */
+    padding: var(--s4);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion respected (foundation already owns the rest)
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .ge-sign-in .frame,
+  .ge-bell .frame,
+  .ge-coach .mat-leather--raised {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   End of Golden Era V1 core implementation overrides
+   Continuity: legacy sheet supplies tokens, materials, rooms, stamps, plates.
+   This file is the rendered authority and the place future pure Golden Era
+   extraction will land. Type B plates (#586) remain a later visual upgrade.
+   =========================================================================== */

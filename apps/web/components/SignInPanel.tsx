@@ -120,6 +120,10 @@ const UNKNOWN_AUTH_ERROR_REFUSAL: {
  * `embedded` controls only the two things that differ by context: the close
  * affordance (a link back to /public standalone, an actual close button in
  * the popover) and nothing about the auth flow itself.
+ *
+ * Golden Era V1 (2026-08-24): outer wrapper carries ge-sign-in / ge-bell so
+ * the riveted paper desk and brass frame treatment from ppbf-golden-era.css
+ * apply. No functional / auth / role change.
  */
 export default function SignInPanel({
   embedded = false,
@@ -349,7 +353,7 @@ export default function SignInPanel({
   const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
 
   return (
-    <div>
+    <div className="ge-sign-in ge-bell">
       <div className="frame">
       <span className="rivet rivet--tl" />
       <span className="rivet rivet--tr" />
