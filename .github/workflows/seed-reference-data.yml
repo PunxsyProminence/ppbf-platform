@@ -106,7 +106,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      # RESOURCE_GROUP is deliberately NOT set here. The staging literal used
+      # to sit at job level for BOTH targets, so a production dispatch looked
+      # up app-ppbf-production inside the staging-named resource group. It is
+      # resolved per target by the step below: staging keeps its literal, and
+      # production requires secrets.AZURE_PRODUCTION_RESOURCE_GROUP with no
+      # staging fallback, mirroring deploy-production.yml.
       CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
       # PPBF_SEED_ACCOUNT_ID is the loader's actual contract name -- see
       # seed-drill-library.mjs. It is deliberately NOT named after the
@@ -139,6 +144,25 @@ jobs:
           # database.
           if [ "$DATASET" = "drill-library" ] || [ "$DATASET" = "session-scripts" ] || [ "$DATASET" = "all" ]; then
             test -n "$SEED_ACCOUNT"
+          fi
+
+      # A wrong-resource-group lookup that happens to resolve is worse than one
+      # that refuses (deploy-production.yml records the same reasoning for its
+      # own RESOURCE_GROUP), so an unset secret stops the run here -- before
+      # the Azure login, and long before anything touches a database.
+      - name: Resolve Target Resource Group
+        env:
+          TARGET: ${{ inputs.target }}
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
           fi
 
       - name: Checkout Source Code

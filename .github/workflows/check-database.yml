@@ -81,10 +81,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      # RESOURCE_GROUP is deliberately NOT set here. The staging literal used
+      # to sit at job level for BOTH targets, so a production dispatch looked
+      # up app-ppbf-production inside the staging-named resource group. This
+      # workflow is read-only, but the connection string it resolves is real:
+      # it is resolved per target by the step below, and production requires
+      # secrets.AZURE_PRODUCTION_RESOURCE_GROUP with no staging fallback,
+      # mirroring deploy-production.yml.
       CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
 
     steps:
+      # A wrong-resource-group lookup that happens to resolve is worse than one
+      # that refuses (deploy-production.yml records the same reasoning for its
+      # own RESOURCE_GROUP), so an unset secret stops the run here -- before
+      # the Azure login.
+      - name: Resolve Target Resource Group
+        env:
+          TARGET: ${{ inputs.target }}
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
+          fi
+
       - name: Checkout Source Code
         uses: actions/checkout@v7
 
