@@ -6,6 +6,10 @@ import ShadowChatButton from './ShadowChatButton';
 
 interface AthleteSummaryPanelProps {
   readiness: 'GREEN' | 'YELLOW' | 'RED';
+  // The 1-10 number the athlete actually set on the slider. Shown so the tile
+  // reads back what they said instead of translating it into something the
+  // platform does not claim (see the tile comment below).
+  readinessValue: number;
   tasksDue: number;
   goalsActive: number;
   upcomingSession?: string;
@@ -100,6 +104,7 @@ function getAttendanceGlyph(attendancePercent: number): string {
 // ATHLETE SUMMARY PANEL
 export function AthleteSummaryPanel({
   readiness,
+  readinessValue,
   tasksDue,
   goalsActive,
   upcomingSession,
@@ -116,26 +121,25 @@ export function AthleteSummaryPanel({
     RED: 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[color:var(--restricted)]'
   }[readiness];
 
-  const readinessText = {
-    GREEN: 'READY FOR TRAINING',
-    YELLOW: 'MODIFY TRAINING',
-    RED: 'COACH REVIEW REQUIRED'
-  }[readiness];
-
-  const readinessGlyph = {
-    GREEN: '✓',
-    YELLOW: '▲',
-    RED: '✕'
-  }[readiness];
-
   return (
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
-      {/* Readiness */}
+      {/* Self-report, not a clearance. Until 2026-08-24 this tile translated
+          the band into an instruction -- GREEN said "READY FOR TRAINING",
+          YELLOW "MODIFY TRAINING", RED "COACH REVIEW REQUIRED". #597 removed
+          the slider's authority over training, so an instruction here claimed
+          a decision the platform no longer makes from this input, on the
+          strength of a child's own unvalidated 1-10. What survives is the
+          read-back: the number they chose, and the band word -- the same
+          descriptor check-in records on the session note -- never a
+          direction. Colour is never the only carrier (Law 3): the band is
+          spelled out in text. */}
       <div className={`rounded-[var(--r-md)] border-2 p-[var(--s4)] ${readinessColor}`}>
-        <p className="t-label">Status</p>
+        <p className="t-label">Your Self-Report</p>
         <p className="t-command mt-[var(--s3)]">
-          <span aria-hidden="true">{readinessGlyph} </span>
-          <span>{readinessText}</span>
+          {readinessValue}/10 · {readiness}
+        </p>
+        <p className="t-muted mt-[var(--s2)]">
+          How you say you feel. Not a clearance -- your workout does not change with it.
         </p>
       </div>
 
