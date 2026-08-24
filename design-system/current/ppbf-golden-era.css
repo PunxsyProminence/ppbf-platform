@@ -1,58 +1,21 @@
 /* ===========================================================================
-   PPBF GOLDEN ERA V1 — CURRENT VISUAL THEME
+   PPBF GOLDEN ERA V1 — CURRENT VISUAL THEME (REAL IMPLEMENTATION)
    ---------------------------------------------------------------------------
-   Status: ACTIVE rendered visual authority for the usable-app release.
+   Status: ACTIVE rendered visual authority.
    Date: 2026-08-24 · Lane: Grok visual · Owner: Jason Neale
 
-   Authority order (docs/GOLDEN-ERA-V1-CONTRACT.md):
-     1. Functional  — current main source + real APIs (no invented functions)
-     2. Visual      — this sheet + Golden Era contract
-     3. Environmental — docs/REAL-GYM-REFERENCE-LOCK.md + owner photos
-     4. Owner       — Jason's explicit choices
+   Authority: docs/GOLDEN-ERA-V1-CONTRACT.md · docs/REAL-GYM-REFERENCE-LOCK.md
 
-   IDENTITY: When Jason opens the app it must be unmistakably
-     - Punxsy Prominence (the real nonprofit)
-     - The real Punxsy Prominence gym (Iron City / blue foam / wood / bags)
-     - Golden Era interface (paper / brass / leather / iron-city feel)
-     - Real current PPBF functions
+   IDENTITY: Punxsy Prominence + real gym (Iron City / blue foam / wood / bags)
+   + Golden Era (paper / brass / leather / iron-city) + real functions.
 
-   MATERIALS (priority of presence):
-     1. Paper  — primary working surface (forms, cards, lists, notices)
-     2. Brass  — accents, rivets, stamp edges, primary action metal
-     3. Leather — secondary cards, coach notebooks, binding
-     4. Iron / industrial — structural frames, kiosk rails, night telemetry
-     5. Wood / plank — office and board wainscot / desk feel
-     6. Cork / file — file-room only
-     7. Varnished cabinetry + cooler green tint — clinic only
+   MATERIALS priority: 1 Paper  2 Brass  3 Leather  4 Iron  5 Wood  6 Cork  7 Clinic
 
-   SAFETY COLOUR (hard owner decision):
-     #A81E22 / --locked  = MEDICALLY_NOT_ALLOWED only.
-     Never ordinary network failures, loading, empty, form rejection,
-     generic overdue, normal validation, ordinary destructive buttons,
-     or generic unavailable. Restricted is visually distinct from Locked.
-     Claude's safeguarding-red-guard owns CI enforcement; Grok does not
-     touch those three reserved files.
+   SAFETY: #A81E22 / --locked = MEDICALLY_NOT_ALLOWED only. Restricted ≠ Locked.
 
-   PAGE DNA: Every page has its own feel while flowing from the previous
-     (same building, same day, same Golden Era chassis, same Iron City DNA).
-     Same room ≠ same atmosphere.
-
-   PLATES: Layer 0 only (the wall the room stands in). Real UI composites
-     on top in code. Quiet centre, outer-thirds interest, zero lettering,
-     4:4:4, complete SOI/EOI. Real gym DNA required — no stock gym.
-     Type B producer set lives under apps/web/public/plates/ (see contract §9).
-
-   IMPLEMENTATION NOTE:
-     The full visual implementation (tokens, materials, rooms, stamps, badges,
-     kiosk controls, plates block, etc.) currently lives in the retired
-     Leather & Brass sheet. That sheet already embodies the golden-era grit,
-     paper hierarchy, and room model this contract requires. For the usable-
-     app release TODAY we import it for continuity (every converted page and
-     the 5,884 call sites keep working), then declare this file the authority
-     and apply the few contract-critical overrides below.
-
-     Future work may extract a pure Golden Era sheet that no longer depends
-     on the legacy file; that is polish, not a blocker for gym use.
+   IMPLEMENTATION: Import legacy for call-site continuity, then OVERRIDE so the
+   rendered result is Golden Era — not a comment header. #597 readiness
+   non-prescription preserved. No invented functions.
 
    Tagline: OBSERVE. DECIDE. EXECUTE. REPEAT.
    =========================================================================== */
@@ -60,7 +23,7 @@
 @import "../legacy/ppbf-leather-brass.css";
 
 /* --------------------------------------------------------------------------
-   Golden Era identity marker (for audits and future extraction)
+   Identity markers
    -------------------------------------------------------------------------- */
 :root {
   --ppbf-visual-authority: "Golden Era V1";
@@ -70,27 +33,302 @@
 }
 
 /* --------------------------------------------------------------------------
-   Safety red contract restatement (hard owner decision)
-   --------------------------------------------------------------------------
-   --locked and --stamp-red remain #A81E22. Documented here so a future
-   session does not re-interpret medical red as generic chrome. */
+   Safety red — medical only (hard owner decision)
+   -------------------------------------------------------------------------- */
 :root {
-  --locked:     #A81E22;
-  --locked-ink: #F3C9C6;
-  --stamp-red:  #A81E22;
+  --locked:      #A81E22;
+  --locked-ink:  #F3C9C6;
+  --stamp-red:   #A81E22;
   --locked-deep: #A81E22;
 }
 
 /* --------------------------------------------------------------------------
-   Paper primacy reminder (hierarchy item 1)
-   --------------------------------------------------------------------------
-   Paper is the primary working surface. The legacy sheet already defines
-   .mat-paper, .pap--*, .on-canvas, and restatements. No behavioural change;
-   this comment + the authority tokens above are the contract hand-off. */
+   PAPER PRIMACY — primary working surface (warmer, more present)
+   -------------------------------------------------------------------------- */
+:root {
+  --paper:    #F6EEDC;
+  --paper-2:  #EFE4CC;
+  --paper-3:  #E6D9B8;
+  --bone-100: #FBF6EA;
+  --bone-200: #F3EAD4;
+  --bone-300: #E8DCC0;
+  --bone-400: #C9B896;
+}
+
+.mat-paper {
+  background: linear-gradient(180deg, #FBF6EA 0%, #F4EBD4 55%, #EFE4CC 100%);
+  color: #241B12;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.45) inset,
+    0 2px 6px rgba(36, 27, 18, 0.12),
+    0 8px 20px rgba(36, 27, 18, 0.08);
+}
+
+.mat-paper .t-command,
+.mat-paper .t-painted {
+  color: #1A140C;
+  text-shadow: none;
+}
+
+.mat-paper .t-body,
+.mat-paper .t-label,
+.mat-paper .t-eyebrow,
+.mat-paper .t-muted,
+.mat-paper .t-data {
+  color: #3A2E1D;
+}
+
+.mat-paper .t-muted,
+.mat-paper .t-label {
+  color: #4A3B26;
+}
+
+.on-canvas {
+  background: radial-gradient(ellipse at 50% 0%, #FBF6EA 0%, #F4EBD4 45%, #E8D9B8 100%);
+  color: #241B12;
+}
+
+.on-canvas .t-command,
+.on-canvas .t-painted {
+  color: #1A140C;
+  text-shadow: none;
+}
 
 /* --------------------------------------------------------------------------
-   Real-gym plate authority (already wired in legacy PLATES block)
-   --------------------------------------------------------------------------
-   room--* --plate URLs and plate-07 warm ground remain the layer-0 walls.
-   Drift test before any Mode B plate ship: Iron City / blue-foam / rough-wood
-   / bag DNA visible in the outer thirds; no stock grey brick. */
+   BRASS — aged / warm metal (never chrome)
+   -------------------------------------------------------------------------- */
+:root {
+  --brass-300: #E2C66A;
+  --brass-500: #C9A227;
+  --brass-600: #B08A1A;
+  --brass-700: #8C6B12;
+  --brass-800: #6B4E12;
+}
+
+.btn:not(.btn--ghost):not(.btn--kiosk) {
+  background: linear-gradient(180deg, var(--brass-600) 0%, var(--brass-800) 100%);
+  border-color: var(--brass-700);
+  color: var(--bone-100);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 2px 4px rgba(36, 27, 18, 0.25);
+}
+
+.btn--kiosk {
+  background: linear-gradient(180deg, var(--brass-500) 0%, var(--brass-800) 100%);
+  border-color: var(--brass-700);
+  color: var(--bone-100);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
+    0 3px 8px rgba(36, 27, 18, 0.3);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* --------------------------------------------------------------------------
+   LEATHER — secondary, bound notebook feel
+   -------------------------------------------------------------------------- */
+.mat-leather {
+  background: linear-gradient(165deg, #2A2118 0%, #1E1812 55%, #16120E 100%);
+  border-color: rgba(212, 175, 74, 0.28);
+  box-shadow:
+    0 1px 0 rgba(212, 175, 74, 0.12) inset,
+    0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.mat-leather--raised {
+  background: linear-gradient(165deg, #32281E 0%, #241C14 60%, #1A140E 100%);
+  box-shadow:
+    0 1px 0 rgba(212, 175, 74, 0.16) inset,
+    0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   ROOM DNA — same building, different atmospheres
+   -------------------------------------------------------------------------- */
+
+/* FLOOR — direct, high contrast, tablet/kiosk practical */
+.room--floor .mat-leather,
+.room--floor .mat-leather--raised {
+  border-width: 2px;
+  border-color: rgba(212, 175, 74, 0.38);
+}
+.room--floor .t-command {
+  letter-spacing: 0.02em;
+}
+.room--floor .btn--kiosk,
+.room--floor [data-surface="kiosk"] .btn {
+  min-block-size: var(--tap);
+  font-size: var(--t-md);
+}
+
+/* OFFICE — quieter paper/desk */
+.room--office .mat-paper {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.5) inset,
+    0 2px 8px rgba(36, 27, 18, 0.1);
+}
+.room--office .mat-leather {
+  border-color: rgba(212, 175, 74, 0.2);
+}
+
+/* BOARD — formal quiet */
+.room--board .t-command,
+.room--board .t-painted {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.room--board .mat-leather {
+  border-color: rgba(212, 175, 74, 0.18);
+}
+
+/* FILE — records density */
+.room--file .mat-paper {
+  background: linear-gradient(180deg, #F3EAD4 0%, #E8D9B8 100%);
+}
+.room--file .t-data {
+  font-family: var(--font-mono, "Special Elite", ui-monospace, monospace);
+}
+
+/* CLINIC — calmer, cooler; no invented clinical authority */
+.room--clinic .mat-paper {
+  background: linear-gradient(180deg, #F5F2E8 0%, #EAE4D4 100%);
+}
+.room--clinic .mat-leather {
+  background: linear-gradient(165deg, #252820 0%, #1A1C16 100%);
+  border-color: rgba(180, 190, 160, 0.2);
+}
+.room--clinic .t-command {
+  letter-spacing: 0.01em;
+}
+
+/* NIGHT — SHADOW / telemetry; low lamp, no neon sci-fi */
+.room--night .mat-leather,
+.room--night .mat-leather--raised {
+  background: linear-gradient(165deg, #14120F 0%, #0C0B09 100%);
+  border-color: rgba(212, 175, 74, 0.14);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5) inset,
+    0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.room--night .t-eyebrow,
+.room--night .t-label {
+  color: var(--brass-300);
+  opacity: 0.9;
+}
+.room--night .btn:not(.btn--ghost) {
+  box-shadow: 0 0 12px rgba(201, 162, 39, 0.15);
+}
+
+/* --------------------------------------------------------------------------
+   TYPOGRAPHY hierarchy
+   -------------------------------------------------------------------------- */
+.t-command {
+  font-family: var(--font-display, "Alfa Slab One", serif);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+.t-painted {
+  font-family: var(--font-display, "Alfa Slab One", serif);
+  letter-spacing: 0.02em;
+}
+
+.t-eyebrow,
+.t-label {
+  font-family: var(--font-rail, "Oswald", system-ui, sans-serif);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 600;
+}
+
+.t-data {
+  font-family: var(--font-mono, "Special Elite", ui-monospace, monospace);
+  letter-spacing: 0.02em;
+}
+
+/* --------------------------------------------------------------------------
+   SIGN-IN / The Bell — paper frame, rivets, gym identity
+   -------------------------------------------------------------------------- */
+.frame {
+  position: relative;
+  border: 3px solid var(--brass-700);
+  background: transparent;
+  box-shadow:
+    0 0 0 1px rgba(36, 27, 18, 0.35),
+    0 12px 32px rgba(36, 27, 18, 0.28);
+}
+
+.frame-in.mat-paper {
+  border-radius: 0;
+}
+
+.rivet {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #E8D080 0%, var(--brass-600) 45%, var(--brass-800) 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+.rivet--tl { top: 8px; left: 8px; }
+.rivet--tr { top: 8px; right: 8px; }
+.rivet--bl { bottom: 8px; left: 8px; }
+.rivet--br { bottom: 8px; right: 8px; }
+
+/* --------------------------------------------------------------------------
+   Badges — glyph + label (Law 3); locked medical only
+   -------------------------------------------------------------------------- */
+.badge {
+  font-family: var(--font-rail, "Oswald", system-ui, sans-serif);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: var(--t-xs);
+  font-weight: 700;
+}
+
+.badge--locked {
+  background: color-mix(in srgb, var(--locked) 22%, transparent);
+  color: var(--locked-ink);
+  border-color: var(--locked);
+}
+
+.badge--restricted {
+  background: color-mix(in srgb, var(--restricted) 18%, transparent);
+  border-color: var(--restricted);
+}
+
+/* --------------------------------------------------------------------------
+   RESPONSIVE — phone / tablet / desktop density
+   -------------------------------------------------------------------------- */
+@media (max-width: 430px) {
+  .t-command {
+    font-size: var(--t-xl) !important;
+  }
+  .mat-leather,
+  .mat-leather--raised,
+  .mat-paper {
+    border-radius: var(--r-md);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .room--floor .max-w-7xl {
+    max-width: 100%;
+  }
+}
+
+@media (min-width: 1280px) {
+  .room--floor .max-w-7xl {
+    max-width: 80rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Focus — brass theme ring on foundation visible outline
+   -------------------------------------------------------------------------- */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline-color: var(--brass-500);
+  outline-offset: 3px;
+}
