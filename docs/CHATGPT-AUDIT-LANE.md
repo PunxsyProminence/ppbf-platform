@@ -57,9 +57,16 @@ They are adopted as written.
 
 ```
 OneDrive / Documents / PPBF-AI-Lanes /
-    Grok-Plates-Inbox /      <- Claude polls this by name
+    Grok-Plates-Inbox /      <- provenance/archive drop (2026-08-24)
     ChatGPT-Handoffs /       <- Claude reads this by name
 ```
+
+`Grok-Plates-Inbox` stopped being a transport hop on 2026-08-24: Grok commits
+approved plate binaries straight to its own feature branch, and Claude no
+longer polls the folder as a prerequisite for a visual PR. The folder is
+retained for provenance and archive under the storage rules below, and it
+stays inside the carve-out -- a lane folder that nothing currently polls is
+exactly the kind of thing a tidy-up removes.
 
 Moving, renaming, reorganising or tidying anything under `PPBF-AI-Lanes/`
 breaks a lane silently, and nothing reports it until something goes missing.
@@ -92,16 +99,22 @@ until the first order failed.
 | Write this repository | **No, by contract.** Read-only. |
 | Load a deployed page | **No.** ChatGPT's browser tool could not load the staging URL. |
 | SharePoint / OneDrive / Google Drive in one conversation | **Yes**, as separate connector calls, not one unified query. |
-| Write to OneDrive | **No.** The Microsoft connector exposes no upload, create, overwrite, move, rename or delete action to ChatGPT. |
+| Write to OneDrive | **Owner reports this is now yes; not verified here.** The row read "No -- the Microsoft connector exposes no upload, create, overwrite, move, rename or delete action to ChatGPT". Owner decision 2026-08-24: the current tooling exposes controlled storage mutation actions, and any documentation saying ChatGPT categorically cannot write, move or rename in OneDrive is stale. **Claude has not observed a ChatGPT storage mutation and does not certify it** -- this table's whole premise is "proved, not claimed", and the proof for this row belongs to ChatGPT's own round trip. The storage mutation limits below are unchanged and bind whatever the capability turns out to be. |
 
 ### Two consequences, stated rather than implied
 
-**The handoff folder is not an automatic loop.** `ChatGPT-Handoffs/` exists,
-Claude can write to it, ChatGPT can read it -- so it works Claude-to-ChatGPT
-and as somewhere Jason can drop a file. It does **not** work
-ChatGPT-to-Claude, because ChatGPT cannot write. Until a write action is
-exposed and round-trip verified *from ChatGPT's side*, handoffs are relayed by
-Jason.
+**The handoff folder is not an automatic loop -- pending one round trip.**
+`ChatGPT-Handoffs/` exists, Claude can write to it, ChatGPT can read it -- so
+it works Claude-to-ChatGPT and as somewhere Jason can drop a file. As written
+on 2026-08-20 it did **not** work ChatGPT-to-Claude, because the connector
+exposed ChatGPT no write action.
+
+The owner's 2026-08-24 decision says that tooling limit is stale. The
+condition this paragraph set is unchanged and is now the operative one:
+**until a write action is round-trip verified from ChatGPT's own side**,
+handoffs are relayed by Jason. Claude has not observed that round trip and is
+not the party who can. This is a statement about which evidence exists, not a
+claim that the capability is absent.
 
 Claude built that folder, verified its own round trip, and declared the
 mechanism live. That was one side of a two-sided contract, and ChatGPT was
