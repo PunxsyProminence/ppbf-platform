@@ -67,17 +67,96 @@ function dimensionText(
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+/**
+ * Who reported the pain, as a bounded classification.
+ *
+ * The observations route admits four roles -- athlete, coach,
+ * organization_admin and admin -- and until 2026-08-24 every downstream
+ * sentence said the athlete had self-reported. A coach typing what they saw
+ * was rendered to the next coach as the child's own words.
+ *
+ * organization_admin and admin collapse into one value on purpose. The
+ * distinction between them is an administrative one that changes nothing about
+ * how a coach should read the report, and this classification travels to a
+ * screen showing a minor's health information -- so it carries what changes the
+ * reading and stops there. No account id is exposed, ever.
+ */
+export type PainReporter = 'athlete' | 'coach' | 'staff_admin' | 'unknown';
+
+/**
+ * Maps an actor role onto the bounded classification.
+ *
+ * Anything unrecognised is 'unknown', not 'athlete'. That direction matters: an
+ * unknown reporter described as the athlete is a fabricated attribution on a
+ * medical-adjacent record, while an athlete report described as unknown is
+ * merely less specific than it could be.
+ */
+export function classifyPainReporter(actorRole: string | null | undefined): PainReporter {
+  if (actorRole === 'athlete') return 'athlete';
+  if (actorRole === 'coach') return 'coach';
+  if (actorRole === 'organization_admin' || actorRole === 'admin') return 'staff_admin';
+  return 'unknown';
+}
+
+/**
+ * Validates an ALREADY-CLASSIFIED value read back off a stored row.
+ *
+ * Distinct from `classifyPainReporter`, which maps an actor ROLE. Feeding a
+ * stored classification through the role classifier looks equivalent and is
+ * not: 'athlete' and 'coach' happen to be valid in both vocabularies, but
+ * 'staff_admin' is a classification that is not a role, so it resolved to
+ * 'unknown' and every organization_admin/admin report silently lost its
+ * provenance on the way to the coach's screen. A regression test caught that.
+ *
+ * Unrecognised input is 'unknown', in the same direction as everything else
+ * here: never invent an attribution.
+ */
+export function readPainReporter(stored: string | null | undefined): PainReporter {
+  return stored === 'athlete' || stored === 'coach' || stored === 'staff_admin'
+    ? stored
+    : 'unknown';
+}
+
+/**
+ * The description a coach reads, which must not claim a self-report that did
+ * not happen.
+ *
+ * Only the athlete's own report is described as self-reported. A staff-entered
+ * observation says who entered it and says plainly that it is not a medical
+ * assessment -- because a coach reading "athlete reported pain 8/10" acts
+ * differently from one reading "a colleague wrote down that this athlete seemed
+ * to be in pain", and the platform was showing the first sentence for both.
+ *
+ * An unestablished reporter says so rather than guessing.
+ */
 function describe(
   athleteId: string,
   value: number,
   dimensions: Readonly<Record<string, string | number | boolean | null>>,
+  reporter: PainReporter,
 ): string {
   const location = dimensionText(dimensions, 'location') ?? 'an unspecified location';
   const painType = dimensionText(dimensions, 'painType');
 
-  return `Athlete ${athleteId} reported pain at ${location}`
-    + `${painType ? ` (${painType})` : ''} at severity ${value}/10. `
-    + 'Self-reported by the athlete, not assessed by a coach or a medical provider.';
+  const head = `Athlete ${athleteId} reported pain at ${location}`
+    + `${painType ? ` (${painType})` : ''} at severity ${value}/10. `;
+
+  const provenance: Record<PainReporter, string> = {
+    athlete:
+      'Self-reported by the athlete, not assessed by a coach or a medical provider.',
+    coach:
+      'Entered by a coach, not self-reported by the athlete. This is an '
+      + 'observation, not a medical assessment.',
+    staff_admin:
+      'Entered by staff, not self-reported by the athlete. This is an '
+      + 'observation, not a medical assessment.',
+    unknown:
+      'The reporter of this observation is not recorded. Do not read it as '
+      + 'self-reported by the athlete. This is an observation, not a medical '
+      + 'assessment.',
+  };
+
+  return head + provenance[reporter];
 }
 
 export interface PainReportAlertOutcome {
@@ -117,11 +196,12 @@ export async function alertCoachToPainReport(input: {
 
   const value = input.value as number;
   const severity = severityForPain(value);
+  const reporter = classifyPainReporter(input.actorRole);
 
   await flagNearMiss({
     organizationId: input.organizationId,
     athleteId: input.athleteId,
-    description: describe(input.athleteId, value, input.dimensions),
+    description: describe(input.athleteId, value, input.dimensions, reporter),
     severity,
     detectedBy: 'system',
     detectedByAccountId: input.actorAccountId,
@@ -133,6 +213,20 @@ export async function alertCoachToPainReport(input: {
       pain_type: input.dimensions.painType ?? null,
       context_id: input.contextId,
       observed_at: input.observedAt,
+      // PROVENANCE, PERSISTED ON THE ROW.
+      //
+      // `detectedByRole` above does NOT land here: pilot.shadow_near_misses has
+      // detected_by_account_id but no detected_by_role column, so that argument
+      // reaches only the audit event and the escalation. Every pain report
+      // written before 2026-08-24 therefore has no reporter role anywhere on
+      // its row, which is why the read path resolves those to 'unknown' rather
+      // than assuming.
+      //
+      // It goes in metadata rather than in a new column because metadata is
+      // already how this record carries its own shape (`trigger` is the only
+      // thing distinguishing a pain report from a hand-flagged near miss), and
+      // a migration is not needed to stop writing a false sentence.
+      reporter_role: reporter,
     },
   });
 
@@ -153,6 +247,10 @@ export async function alertCoachToPainReport(input: {
       pain_type: input.dimensions.painType ?? null,
       context_id: input.contextId,
       observed_at: input.observedAt,
+      // Carried on the payload as well as in actor_role, so a projection can
+      // label the event without joining, and so the classification the coach
+      // sees is the one that was computed at write time.
+      reporter_role: reporter,
     },
   });
 
@@ -180,10 +278,23 @@ export interface CoachPainReport {
   readonly painScore: number | null;
   readonly location: string | null;
   readonly painType: string | null;
-  /** When the athlete says it happened. */
+  /** When the reporter says it happened -- not necessarily the athlete. */
   readonly observedAt: string | null;
   /** When the platform recorded it. */
   readonly recordedAt: string | null;
+  /**
+   * Who reported it, bounded to what changes how a coach should read it.
+   *
+   * 'unknown' on every report written before provenance was persisted, and on
+   * any row whose stored value is not one this platform recognises. It is a
+   * real answer, not a gap to paper over: the alternative is telling a coach a
+   * child said something when nobody knows who said it.
+   *
+   * No account id accompanies this. The classification is the whole point --
+   * the coach needs to know whether the athlete spoke, not who the individual
+   * was.
+   */
+  readonly reporter: PainReporter;
 }
 
 export interface CoachPainReportPage {
@@ -229,6 +340,10 @@ function toCoachPainReport(row: CoachPainReportRow): CoachPainReport {
     painType: metadataText(metadata, 'pain_type'),
     observedAt: isoText(metadata.observed_at),
     recordedAt: isoText(row.created_at),
+    // Read back through the same classifier that wrote it, so a stored value
+    // this build does not recognise resolves to 'unknown' rather than leaking
+    // a raw role string onto a coach's screen.
+    reporter: readPainReporter(metadataText(metadata, 'reporter_role')),
   };
 }
 
