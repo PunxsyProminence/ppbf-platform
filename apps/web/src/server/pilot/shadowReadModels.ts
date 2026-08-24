@@ -2,7 +2,7 @@ import { athleteIdsForCoach, isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { query } from './db';
 import { guardianAthleteIds } from './guardianAccess';
-import { PAIN_REPORT_PENDING_REVIEW_EVENT_NAME } from './formulas/painReportAlert';
+import { PAIN_REPORT_PENDING_REVIEW_EVENT_NAME, classifyPainReporter, readPainReporter } from './formulas/painReportAlert';
 
 export interface ShadowReadContext {
   organizationId: string;
@@ -765,7 +765,25 @@ function describePainReportEvent(event: ShadowEventRow, athleteNames: ReadonlyMa
   const type = painType ? ` (${painType})` : '';
   const score = severity === null ? '' : `, severity ${severity}/10`;
 
-  return `Pain report: ${athleteName}${where}${type}${score}, pending review`;
+  /* WHO REPORTED IT, on the label a coach reads in the observation feed.
+     Preferring the payload over actor_role because the payload carries the
+     classification computed at write time, while actor_role is a raw role
+     string; both are consulted so an event written before reporter_role was
+     persisted still resolves from its actor, and a truly unestablished one
+     resolves to 'unknown' rather than to the athlete.
+
+     Only a non-athlete reporter is named. An athlete's own report reads as it
+     always has, because that is the sentence that was true for it. */
+  const stored = painReportPayloadText(payload, 'reporter_role');
+  const reporter = stored !== null
+    ? readPainReporter(stored)
+    : classifyPainReporter(event.actor_role);
+  const by = reporter === 'athlete' ? ''
+    : reporter === 'coach' ? ' (entered by a coach)'
+    : reporter === 'staff_admin' ? ' (entered by staff)'
+    : ' (reporter not recorded)';
+
+  return `Pain report: ${athleteName}${where}${type}${score}${by}, pending review`;
 }
 
 export async function getShadowObservationProjection(

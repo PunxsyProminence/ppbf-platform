@@ -164,9 +164,15 @@ interface ShadowObservationItem {
   created_at: string;
 }
 
-// One athlete's self-reported pain, already filtered server-side to the
-// athletes this coach is authorized for. Every nullable field is a detail the
-// athlete did not supply -- render it as "not stated" and never as a value.
+// One pain report, already filtered server-side to the athletes this coach is
+// authorized for. Every nullable field is a detail the REPORTER did not supply
+// -- render it as "not stated" and never as a value.
+//
+// NOT NECESSARILY SELF-REPORTED. The observations route admits athlete, coach,
+// organization_admin and admin, and this card said "Self-reported by the
+// athlete" for all four until 2026-08-24. A coach writing down what they
+// observed was shown to the next coach as the child's own words, which changes
+// what that coach does with it.
 interface CoachPainReport {
   nearMissId: string;
   athleteId: string;
@@ -177,7 +183,35 @@ interface CoachPainReport {
   painType: string | null;
   observedAt: string | null;
   recordedAt: string | null;
+  /** Bounded classification from the server. 'unknown' on reports written
+   *  before provenance was persisted -- see painReportAlert.ts. */
+  reporter: 'athlete' | 'coach' | 'staff_admin' | 'unknown';
 }
+
+/** What a missing detail is called, which depends on who was asked. */
+function painDetailAbsent(reporter: CoachPainReport['reporter']): string {
+  return reporter === 'athlete' ? 'Not stated by the athlete' : 'Not stated';
+}
+
+/** The label over the time the report refers to. */
+function painObservedLabel(reporter: CoachPainReport['reporter']): string {
+  return reporter === 'athlete' ? 'Athlete reported it happened' : 'Reported as happening';
+}
+
+/* The provenance sentence under each card. Only an athlete's own report is
+   described as self-reported; a staff-entered one says so and says it is not a
+   medical assessment; an unestablished reporter says that rather than
+   defaulting to the athlete. */
+const PAIN_PROVENANCE: Record<CoachPainReport['reporter'], string> = {
+  athlete:
+    'Self-reported by the athlete. This is not a coach assessment and not a medical assessment.',
+  coach:
+    'Entered by a coach, not self-reported by the athlete. This is an observation, not a medical assessment.',
+  staff_admin:
+    'Entered by staff, not self-reported by the athlete. This is an observation, not a medical assessment.',
+  unknown:
+    'The reporter is not recorded. Do not read this as self-reported by the athlete. This is an observation, not a medical assessment.',
+};
 
 interface CoachBarrierReport {
   note_id: string;
@@ -1338,17 +1372,17 @@ export default function CoachWorkspace() {
                     <div>
                       <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Body location</dt>
                       <dd className={report.location ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
-                        {report.location ?? 'Not stated by the athlete'}
+                        {report.location ?? painDetailAbsent(report.reporter)}
                       </dd>
                     </div>
                     <div>
                       <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Pain type</dt>
                       <dd className={report.painType ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
-                        {report.painType ?? 'Not stated by the athlete'}
+                        {report.painType ?? painDetailAbsent(report.reporter)}
                       </dd>
                     </div>
                     <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Athlete reported it happened</dt>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">{painObservedLabel(report.reporter)}</dt>
                       <dd className={report.observedAt ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
                         {painReportTime(report.observedAt)}
                       </dd>
@@ -1362,8 +1396,7 @@ export default function CoachWorkspace() {
                   </dl>
 
                   <p className="text-xs text-[color:var(--bone-300)]">
-                    Self-reported by the athlete. This is not a coach assessment and not a medical
-                    assessment.
+                    {PAIN_PROVENANCE[report.reporter]}
                   </p>
                 </article>
               ))}
