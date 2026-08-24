@@ -407,17 +407,57 @@ Phase 1 does not:
 - import the August 8 package as a research corpus (the importer cannot load it — §8);
 - remove, alter, or re-park the `warmup_decay` stop rules already in the drill seed. §8 records
   that they are live; whether they stay is the owner's decision, not this document's;
-- confirm the §1 archive tree, or treat it as confirmed;
+- treat the verified permanent-archive identity as a built pipeline. The target was
+  established on 2026-08-24; nothing in this repository reads it (see the standing open
+  item below);
 - deploy or run protected workflows;
 - alter SHADOW evidence-tier, algorithm, medical, safeguarding, contact, or sparring behavior.
 
-**Open items this document cannot close.** Two findings above need an owner decision, not a
-further documentation pass:
+**Closed — read-only audit, 2026-08-24.** Both items that stood here are resolved, and the
+text they replaced is quoted rather than deleted so a later reader can see what changed and
+why. They read:
 
-1. **§1 is unconfirmed.** Confirm or correct the OneDrive `Library Intake` tree, and produce
-   any artifact of it (an export, a manifest, a connector record) that a later reader can check.
-2. **§1 and issue #345 name different stores** — OneDrive vs SharePoint. One of them is wrong.
-   Whichever survives, #345 is the durable contract and should be the document that changes.
+> 1. **§1 is unconfirmed.** Confirm or correct the OneDrive `Library Intake` tree, and produce
+>    any artifact of it (an export, a manifest, a connector record) that a later reader can check.
+> 2. **§1 and issue #345 name different stores** — OneDrive vs SharePoint. One of them is wrong.
+>    Whichever survives, #345 is the durable contract and should be the document that changes.
+
+A read-only audit on 2026-08-24 established the permanent archive's stable Graph identity —
+site, document library, drive, canonical root folder and root item — on the nonprofit
+SharePoint workspace **Punxsy Prominence – Club Operations**, library `Documents`, root
+`Research Archive`. PR #585 records those identifiers in §1.
+
+That settles item 2 as well, but not symmetrically. Both stores are real — that much of the
+contradiction dissolves. The role assignment does not: the earlier draft of §1 gave OneDrive
+`Library Intake/` the **governed-archive role, and that was wrong**. Issue #345 had it right
+all along. SharePoint is the **permanent governed archive**; OneDrive is a **temporary
+migration source** that predates it and never held the governing role. Recording that
+plainly matters, because a later reader weighing the two documents' histories should know
+which one to trust on this point.
+
+**Retired — PR #507.** #507 recorded this same owner decision while its identifiers were
+unverified, and its stated purpose was that "the exact hostname, site, document library/drive,
+root folder, and stable IDs have not yet been verified". That premise no longer holds, so
+#507 is **not a merge candidate**: merging it would reintroduce the unverified framing this
+paragraph closes. It stayed a draft, on a base since superseded, and is retired as a route to
+`main` rather than as a record — what it decided is preserved here and in §1.
+
+**STILL OPEN, and not closed by any of the above — the archive-to-SHADOW runtime gate.**
+Knowing where the archive lives is not the same as being wired to it, and the distinction is easy
+to lose now that the identifiers are verified and precise. **No code, configuration value or
+test in this tree reads any of them.** There is no archive handoff, no
+source registration, no runtime retrieval path, and nothing fails closed when a governed
+original cannot be preserved — because none of it is built.
+
+Nothing in this repository should be described as archive-integrated, and no retrieval,
+citation, or evidence behaviour may depend on archive custody, until that slice exists and is
+demonstrated. A verified target is a prerequisite for building it, not evidence that it was
+built.
+
+That slice is a research-specific, idempotent archive handoff that reuses existing
+authenticated SharePoint upload primitives but adds source hashing, provenance,
+duplicate/lineage checks, stable archive identity, SHADOW source registration, and
+pending-review defaults. It must fail closed if the governed original cannot be preserved.
 
 **Closed — owner decision, 2026-08-19.** The `warmup_decay` stop rules (§8) are **confirmed and
 stay**. Jason Neale reconfirmed the 2026-08-08 decision on 2026-08-19, through the primary
@@ -425,5 +465,3 @@ working session, after the provenance review in PR #502: the re-warm-before-cont
 63 contact/maximal-effort drills is approved as operational drill data, independent of the
 unloadable research-corpus half of the same package. This paragraph is the durable record the
 2026-08-08 commit message lacked.
-
-The next implementation slice is a research-specific, idempotent archive handoff that reuses existing authenticated SharePoint upload primitives but adds source hashing, provenance, duplicate/lineage checks, stable archive identity, SHADOW source registration, and pending-review defaults. It must fail closed if the governed original cannot be preserved.
