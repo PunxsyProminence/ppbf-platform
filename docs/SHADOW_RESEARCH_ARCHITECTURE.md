@@ -5,16 +5,64 @@
 **Drafted:** 2026-08-19  
 **Scope:** Research originals, provenance, intake, evidence review, and SHADOW retrieval. This document does not authorize algorithm, medical, safeguarding, contact, sparring, or production-policy changes.
 
-## 1. Proposed archive baseline (unconfirmed)
+## 1. Archive baseline
 
-> **This section is the sole source of every string it contains.** `git grep` for
-> `Library Intake`, `_CONTROL`, or `R98 - Duplicate Hold` across this repository
-> returns only this document and `SHADOW_RESEARCH_INTAKE_IMPORT.md`. There is no
-> manifest, export, connector record, configuration value, or test fixture that
-> corroborates any of it. Until one exists, treat everything below as a
-> **proposal**, not as controlling fact. `AGENT_KERNEL.md:31` — "Claims need evidence."
+> **Corrected 2026-08-24.** This section was headed *"Proposed archive baseline
+> (unconfirmed)"* and opened: *"There is no manifest, export, connector record,
+> configuration value, or test fixture that corroborates any of it. Until one
+> exists, treat everything below as a proposal, not as controlling fact."*
+>
+> **The permanent archive target is now verified**, and it is SharePoint — which
+> is what issue #345 said all along. The `_CONTROL`, `R00`, `R01`–`R19` and `R98`
+> structure physically exists there. It is no longer a proposal and must not be
+> described as hypothetical or unverified.
+>
+> **What has NOT changed, and is the reason this section still carries warnings:**
+>
+> - **No research-specific route or configuration is wired to the permanent
+>   Research Archive, and no runtime code routes or files research by
+>   `archiveCode`.** Stated that way on purpose: an earlier draft of this
+>   correction said "nothing in this repository reads or writes those folders",
+>   which is too absolute to be true. The generic uploader in
+>   `apps/web/src/server/document-intake/sharepoint.ts` takes a **configurable**
+>   destination — `SHAREPOINT_FOLDER_PATH`, defaulting to `PPBF/Intake` — so a
+>   configuration value could in principle point it at the archive. What does
+>   not exist is any research-specific path that does so, or any code that
+>   derives a destination from a subject code. "The folders exist" and "we are
+>   wired to them" are two claims, and only the first one changed.
+> - **Custody is not citability.** A document sitting in the archive is not
+>   admissible SHADOW evidence. The gate chain in §3 is untouched.
+> - **Migration is not complete.** OneDrive `Library Intake/` remains the
+>   *temporary working and migration source*; the prior migration inventory
+>   states its recursive enumeration is not exhausted. No bulk copy or move is
+>   authorized, here or by the task that produced this correction.
 
-The proposed governed upstream archive baseline for the PPBF research workflow is:
+### 1.0 The permanent archive — verified 2026-08-24
+
+| Field | Value |
+|---|---|
+| Hostname | `punxsyprominenceboxing.sharepoint.com` |
+| Site path | `/sites/PunxsyProminenceClubOperations` |
+| Site display name | Punxsy Prominence – Club Operations |
+| Site Graph ID | `punxsyprominenceboxing.sharepoint.com,b23f5af9-6800-4d38-9ec5-d8546ac983d9,79c360dc-0f69-48de-af78-a7e76acb9499` |
+| Document library | `Documents` |
+| Drive ID | `b!-Vo_sgBoOE2exdhUasmD2dxgw3lpD95Ir3in52rLlJkPoxSpVsFoQI_NNbWdKzpJ` |
+| Canonical archive root | `Research Archive` |
+| Root item ID | `0154YZVWYXXDPDFKTSCBA3G2XDFG34WAO7` |
+
+Browser root:
+`https://punxsyprominenceboxing.sharepoint.com/sites/PunxsyProminenceClubOperations/Shared%20Documents/Research%20Archive`
+
+These identifiers were established by a read-only audit on 2026-08-24 and are
+recorded here so the target can be addressed by stable Graph identity rather than
+by a path a reorganisation can break. **This repository does not use them yet** —
+no code, configuration value or test in this tree reads any of them.
+
+### 1.1 The temporary migration source — OneDrive
+
+The tree below is **OneDrive `Library Intake/`**, a *different store* from the
+permanent archive above. It remains the working and migration source, and the
+structure it mirrors is the same taxonomy:
 
 ```text
 admin@punxsyprominence.org
@@ -22,12 +70,16 @@ admin@punxsyprominence.org
     └── Library Intake/
 ```
 
-**Attribution and evidence status.** The tree below was reported on 2026-08-19 by an
-AI agent reading the `admin@punxsyprominence.org` tenant through a Microsoft 365
-connector, and transcribed here by hand. It is an *observation claim*, not an export:
-no artifact of that read — no listing, no drive/item identity, no timestamped
-manifest — exists anywhere in this repository, so nothing here can be re-verified
-from the repository alone. It is recorded so the owner can confirm or correct it.
+**Attribution and evidence status.** This OneDrive tree was reported on 2026-08-19
+by an AI agent reading the `admin@punxsyprominence.org` tenant through a Microsoft
+365 connector, and transcribed here by hand. No artifact of that read — no listing,
+no drive/item identity, no timestamped manifest — exists in this repository, so the
+*OneDrive* listing still cannot be re-verified from the repository alone. The
+2026-08-24 audit verified the **SharePoint** archive above, not this tree.
+
+It is the migration SOURCE, not the destination, and the distinction is
+load-bearing: work that reads it is reading something being emptied, not the
+system of record.
 
 ```text
 Library Intake/
@@ -54,7 +106,7 @@ Library Intake/
 └── R98 - Duplicate Hold/
 ```
 
-### 1.1 Relationship to issue #345 — this document does not supersede it
+### 1.2 Relationship to issue #345 — this document does not supersede it
 
 An earlier draft of this document claimed to supersede "stale product-documentation
 pointers" naming `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...`.
@@ -72,12 +124,19 @@ That claim was wrong twice over and is withdrawn:
 
 | | Store | Path | Evidence status |
 |---|---|---|---|
-| Issue #345 (owner-authored, open) | SharePoint | `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...` | The durable contract. Governs until the owner updates it. |
-| This document (proposed) | OneDrive | `admin@punxsyprominence.org / OneDrive / Library Intake/` | Unconfirmed agent-connector observation, 2026-08-19. No repository artifact. |
+| Issue #345 (owner-authored, open) | SharePoint | `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...` | **The durable contract.** Governs until the owner updates it. |
+| Permanent archive (§1.0) | SharePoint | `/sites/PunxsyProminenceClubOperations` -> `Documents` -> `Research Archive` | **Verified 2026-08-24** by read-only audit. Drive and item identity recorded in §1.0. |
+| Temporary migration source (§1.1) | OneDrive | `admin@punxsyprominence.org / OneDrive / Library Intake/` | Unconfirmed agent-connector observation, 2026-08-19. No repository artifact. Being emptied, not the system of record. |
 
-**Issue #345 remains the durable contract until the owner updates it.** If the owner
-confirms the OneDrive tree, the correct remedy is to amend #345 and then align this
-document to it — not the reverse.
+**The store question is settled the way #345 said it was.** This document's earlier
+draft named OneDrive as the archive; #345 named SharePoint; the 2026-08-24 audit
+found the permanent archive on SharePoint. The contract was right and the draft was
+wrong, which is why #345 governs and this document aligns to it rather than the
+reverse.
+
+**Issue #345 remains the durable contract until the owner updates it.** What is now
+verified is the archive's *identity and structure*, not any change to what the
+contract requires. Nothing about custody, citability, or the gate chain moved.
 
 Nothing here authorizes deleting, moving, merging, or retiring any older Microsoft or
 Google tree. Older trees remain historical/provenance evidence until they are
@@ -103,7 +162,7 @@ to look like a single agreed system. They are not the same place.
 |---|---|---|
 | **Microsoft — OneDrive `Library Intake` tree (§1)** | *Proposed* governed archive: durable originals, acquisition provenance, duplicate/lineage preservation | Unconfirmed. No repository artifact corroborates it, and no code reads or writes it. Does not currently govern anything. |
 | **Microsoft — SharePoint `SHADOW AIML / 02 - Source Materials / Penn State Library Intake`** | The governed original-source archive named by open owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345) | Not addressed by any code in this repository either. Remains the durable contract on paper until the owner updates #345. |
-| **Microsoft — SharePoint site drive, `PPBF/Intake`** | The **only** Microsoft destination this repository actually writes to: `apps/web/src/server/document-intake/sharepoint.ts` uploads to `/sites/{SHAREPOINT_SITE_ID}/drives/{SHAREPOINT_DRIVE_ID}/root:/{SHAREPOINT_FOLDER_PATH}` (default `PPBF/Intake`, `config.ts`) | Knows nothing called "Library Intake" and has no R00-R98 structure. It is a flat ingest drop, not the governed archive either document describes. |
+| **Microsoft — configurable generic SharePoint destination, defaulting to `PPBF/Intake`** | The **only** Microsoft destination this repository actually writes to: `apps/web/src/server/document-intake/sharepoint.ts` uploads to `/sites/{SHAREPOINT_SITE_ID}/drives/{SHAREPOINT_DRIVE_ID}/root:/{SHAREPOINT_FOLDER_PATH}`. The path is configuration, not a constant: `config.ts` reads `SHAREPOINT_FOLDER_PATH` and falls back to `PPBF/Intake` only when it is unset | Knows nothing called "Library Intake" and has no R00-R98 structure. It is a flat ingest drop, not the governed archive either document describes. |
 | `/research` | Research requirements, general research registration, source-to-requirement links, answer-state workflow | Does not approve evidence or resolve a gap from submission alone |
 | `/research/review` | Applicability review of a submission against the requirement it was filed against: `responsive`, `partially_responsive`, `not_responsive`, `duplicate` (`apps/web/app/research/review/page.tsx`) | Does not verify, approve, index, or make anything citable — that is `/evidence`. A `responsive` verdict does not resolve the requirement. |
 | `/evidence` | Indexing, evidence review, verification, approval, rejection, and retrieval eligibility | Does not replace the original-source archive |
@@ -187,12 +246,18 @@ and the archive subject folders proposed in §1.
 and asserts it equals the shipped constant, so the two cannot drift apart. **Keep the table's
 three-column `| R-code | \`key\` | label |` shape** — the test reads it, and a reformat will fail it.
 
-**The `archiveCode` column is an unverified documentation crosswalk.** It maps an application
-key onto a folder name from §1, and §1 is an unconfirmed proposal (no manifest, no export, no
-connector record in this repository). Nothing in the running system verifies that folder `R16`
-exists, that it is named "Adaptive and Inclusive Practice", or that it is where an
-`adaptive_inclusive_practice` source ends up. `archiveCode` is a label this repository asserts,
-not a fact it has checked.
+**The `archiveCode` column is a documentation crosswalk that nothing enforces.** Corrected
+2026-08-24: this paragraph called it "unverified" on the grounds that §1 was "an unconfirmed
+proposal". The `R01`–`R19` structure is now verified to exist in the permanent archive (§1.0),
+so that reasoning no longer holds — but the column's status is unchanged for a different and
+still-true reason.
+
+**Nothing in the running system reads or writes it.** No code in this repository routes,
+files, or uploads by `archiveCode`; no configuration value names a folder; no test asserts
+that an `adaptive_inclusive_practice` source ends up in `R16`. The folders exist and the
+mapping is asserted here by hand. Those are two different claims, and only the first one
+changed. Do not build routing, filing, or upload behaviour on `archiveCode` as though the
+destination were wired.
 
 | Code | Application key | Label |
 |---|---|---|
@@ -342,17 +407,57 @@ Phase 1 does not:
 - import the August 8 package as a research corpus (the importer cannot load it — §8);
 - remove, alter, or re-park the `warmup_decay` stop rules already in the drill seed. §8 records
   that they are live; whether they stay is the owner's decision, not this document's;
-- confirm the §1 archive tree, or treat it as confirmed;
+- treat the verified permanent-archive identity as a built pipeline. The target was
+  established on 2026-08-24; nothing in this repository reads it (see the standing open
+  item below);
 - deploy or run protected workflows;
 - alter SHADOW evidence-tier, algorithm, medical, safeguarding, contact, or sparring behavior.
 
-**Open items this document cannot close.** Two findings above need an owner decision, not a
-further documentation pass:
+**Closed — read-only audit, 2026-08-24.** Both items that stood here are resolved, and the
+text they replaced is quoted rather than deleted so a later reader can see what changed and
+why. They read:
 
-1. **§1 is unconfirmed.** Confirm or correct the OneDrive `Library Intake` tree, and produce
-   any artifact of it (an export, a manifest, a connector record) that a later reader can check.
-2. **§1 and issue #345 name different stores** — OneDrive vs SharePoint. One of them is wrong.
-   Whichever survives, #345 is the durable contract and should be the document that changes.
+> 1. **§1 is unconfirmed.** Confirm or correct the OneDrive `Library Intake` tree, and produce
+>    any artifact of it (an export, a manifest, a connector record) that a later reader can check.
+> 2. **§1 and issue #345 name different stores** — OneDrive vs SharePoint. One of them is wrong.
+>    Whichever survives, #345 is the durable contract and should be the document that changes.
+
+A read-only audit on 2026-08-24 established the permanent archive's stable Graph identity —
+site, document library, drive, canonical root folder and root item — on the nonprofit
+SharePoint workspace **Punxsy Prominence – Club Operations**, library `Documents`, root
+`Research Archive`. PR #585 records those identifiers in §1.
+
+That settles item 2 as well, but not symmetrically. Both stores are real — that much of the
+contradiction dissolves. The role assignment does not: the earlier draft of §1 gave OneDrive
+`Library Intake/` the **governed-archive role, and that was wrong**. Issue #345 had it right
+all along. SharePoint is the **permanent governed archive**; OneDrive is a **temporary
+migration source** that predates it and never held the governing role. Recording that
+plainly matters, because a later reader weighing the two documents' histories should know
+which one to trust on this point.
+
+**Retired — PR #507.** #507 recorded this same owner decision while its identifiers were
+unverified, and its stated purpose was that "the exact hostname, site, document library/drive,
+root folder, and stable IDs have not yet been verified". That premise no longer holds, so
+#507 is **not a merge candidate**: merging it would reintroduce the unverified framing this
+paragraph closes. It stayed a draft, on a base since superseded, and is retired as a route to
+`main` rather than as a record — what it decided is preserved here and in §1.
+
+**STILL OPEN, and not closed by any of the above — the archive-to-SHADOW runtime gate.**
+Knowing where the archive lives is not the same as being wired to it, and the distinction is easy
+to lose now that the identifiers are verified and precise. **No code, configuration value or
+test in this tree reads any of them.** There is no archive handoff, no
+source registration, no runtime retrieval path, and nothing fails closed when a governed
+original cannot be preserved — because none of it is built.
+
+Nothing in this repository should be described as archive-integrated, and no retrieval,
+citation, or evidence behaviour may depend on archive custody, until that slice exists and is
+demonstrated. A verified target is a prerequisite for building it, not evidence that it was
+built.
+
+That slice is a research-specific, idempotent archive handoff that reuses existing
+authenticated SharePoint upload primitives but adds source hashing, provenance,
+duplicate/lineage checks, stable archive identity, SHADOW source registration, and
+pending-review defaults. It must fail closed if the governed original cannot be preserved.
 
 **Closed — owner decision, 2026-08-19.** The `warmup_decay` stop rules (§8) are **confirmed and
 stay**. Jason Neale reconfirmed the 2026-08-08 decision on 2026-08-19, through the primary
@@ -360,5 +465,3 @@ working session, after the provenance review in PR #502: the re-warm-before-cont
 63 contact/maximal-effort drills is approved as operational drill data, independent of the
 unloadable research-corpus half of the same package. This paragraph is the durable record the
 2026-08-08 commit message lacked.
-
-The next implementation slice is a research-specific, idempotent archive handoff that reuses existing authenticated SharePoint upload primitives but adds source hashing, provenance, duplicate/lineage checks, stable archive identity, SHADOW source registration, and pending-review defaults. It must fail closed if the governed original cannot be preserved.

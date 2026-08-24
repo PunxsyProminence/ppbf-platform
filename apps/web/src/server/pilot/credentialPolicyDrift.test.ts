@@ -14,6 +14,7 @@ import path from 'node:path';
 
 const PILOT_DIR = path.resolve(__dirname);
 const APP_DIR = path.resolve(__dirname, '../../../app');
+const COMPONENTS_DIR = path.resolve(__dirname, '../../../components');
 
 /**
  * The authentication surface: code that mints a session, validates one, or
@@ -31,6 +32,14 @@ const APP_DIR = path.resolve(__dirname, '../../../app');
 const AUTH_SURFACE = [
   path.join(PILOT_DIR, 'auth.ts'),
   path.join(APP_DIR, 'login', 'page.tsx'),
+  /* app/login/page.tsx is now a twenty-line Suspense wrapper, and its own
+     comment says where the decision went: "the auth logic itself lives in
+     exactly one place." That place is SignInPanel, which /public's popover
+     renders too -- one implementation, two mounts, which is stated in the
+     component header as a security property. Guarding only the wrapper left
+     this list pointed at a file with nothing left to drift: no violation
+     exists there today because nothing does anything there at all. */
+  path.join(COMPONENTS_DIR, 'SignInPanel.tsx'),
   path.join(APP_DIR, 'athlete', 'sign-in', 'page.tsx'),
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'login', 'route.ts'),
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'session', 'route.ts'),
@@ -70,7 +79,7 @@ describe('the credential policy is the only place that decides how someone signs
       expect(fs.existsSync(file)).toBe(true);
       expect(fs.readFileSync(file, 'utf8').length).toBeGreaterThan(0);
     }
-    expect(AUTH_SURFACE.length).toBeGreaterThanOrEqual(6);
+    expect(AUTH_SURFACE.length).toBeGreaterThanOrEqual(7);
   });
 
   test('the guard would catch a violation if one existed', () => {

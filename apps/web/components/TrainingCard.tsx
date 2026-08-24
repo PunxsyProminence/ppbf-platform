@@ -52,7 +52,18 @@ import WordsOnTheWall, { AnniversaryNote, BoxingNumberNote } from './WordsOnTheW
 export interface TrainingSession {
   session_id: string;
   date: string;
-  rpe: number;
+  /**
+   * Session RPE, or null when nobody has rated the session. Nullable since
+   * pilot_slice_postgres_session_rpe_semantics_migration.sql: an open check-in
+   * has not been trained yet, and every row written before that migration
+   * holds a pre-session readiness reading rather than an effort one.
+   *
+   * null is "not recorded" and must never be drawn, counted or announced as 0
+   * -- 0 is a real rung on this scale, so substituting it invents an athlete's
+   * self-report. Read it with an explicit null check, never through `||` or
+   * `Number()`, both of which turn the absence into a zero.
+   */
+  rpe: number | null;
   completed_flag: boolean;
 }
 
@@ -67,11 +78,13 @@ export const MILESTONES = [5, 13, 34, 89, 233] as const;
 /**
  * What counts as a hard session, so the wall has a hard session to answer.
  *
- * RPE is a 1-10 self-report the athlete already gives at check-in and which is
- * already on every row of this card, so nothing new is measured or asked for
- * here: 8 is the rung where "I worked" becomes "that was hard". It is
- * deliberately the ATHLETE's own number — the card never decides somebody's
- * session was hard when they said it was not.
+ * RPE is a 0-10 self-report the athlete gives at CHECK-OUT, about the session
+ * they have just finished, and it is already on the rows of this card that
+ * carry one, so nothing new is measured or asked for here: 8 is the rung where
+ * "I worked" becomes "that was hard". A row with no reading answers neither
+ * line rather than being read as a soft session. It is deliberately the
+ * ATHLETE's own number — the card never decides somebody's session was hard
+ * when they said it was not.
  *
  * This is not a score, a target or a badge. Nothing is unlocked by reaching it
  * and nothing is withheld below it. The only consequence is which of the gym's
@@ -116,8 +129,16 @@ export default function TrainingCard({
       ordered: asc,
       shown: visible,
       truncated: asc.length - visible.length,
+      /* `latest.rpe !== null` is load-bearing, not defensive: an unrated
+         session is not a hard one and is not a soft one either, so it answers
+         neither line. Without the check `null >= 8` is false, which happens to
+         be the right answer by accident -- stating it keeps the card honest if
+         the comparison ever changes direction. */
       hardSession:
-        latest && latest.completed_flag && latest.rpe >= HARD_SESSION_RPE ? latest : null,
+        latest && latest.completed_flag && latest.rpe !== null
+          && latest.rpe >= HARD_SESSION_RPE
+          ? latest
+          : null,
     };
   }, [sessions, maxStamps]);
 
@@ -204,22 +225,33 @@ export default function TrainingCard({
       <div className="tcard-grid" role="list">
         {shown.map((s) => {
           const done = s.completed_flag;
-          // RPE 1-10 -> 0-1 ink. Clamped, because a bad row must not blow out
+          // RPE 0-10 -> 0-1 ink. Clamped, because a bad row must not blow out
           // the visual scale of the whole card.
-          const ink = Math.min(Math.max((s.rpe || 0) / 10, 0), 1);
-          const label = done
-            ? `Session ${formatDate(s.date)}, effort ${s.rpe} of 10`
-            : `Session ${formatDate(s.date)}, booked, not completed`;
+          //
+          // null gets NO ink value rather than a zero one. `(s.rpe || 0)` used
+          // to stand here and it drew an unrated session exactly like a session
+          // the athlete rated 0 -- the ink channel cannot say "not recorded",
+          // so it says nothing and the text below carries it.
+          const ink = s.rpe === null ? null : Math.min(Math.max(s.rpe / 10, 0), 1);
+          const label = !done
+            ? `Session ${formatDate(s.date)}, booked, not completed`
+            : s.rpe === null
+              ? `Session ${formatDate(s.date)}, completed, effort not recorded`
+              : `Session ${formatDate(s.date)}, effort ${s.rpe} of 10`;
           return (
             <div
               key={s.session_id}
               role="listitem"
               className={`tcard-stamp ${done ? 'tcard-stamp--done' : 'tcard-stamp--open'}`}
-              style={done ? ({ ['--ink' as string]: String(ink) }) : undefined}
+              style={done && ink !== null ? ({ ['--ink' as string]: String(ink) }) : undefined}
               title={label}
             >
               <span className="sr-only">{label}</span>
-              <span aria-hidden="true">{done ? s.rpe : '·'}</span>
+              {/* The number only when there is one. '·' is already this
+                  card's mark for "no reading here"; the class still says
+                  whether the session was completed, so an unrated completed
+                  session is not mistaken for a booked one. */}
+              <span aria-hidden="true">{done && s.rpe !== null ? s.rpe : '·'}</span>
             </div>
           );
         })}

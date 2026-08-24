@@ -179,6 +179,68 @@ describe('visibleDoors', () => {
   });
 });
 
+/* OPERATIONS V1 (owner decision, 2026-08-21): ordinary roles land in their
+   operational work and stop being offered the lab. These pin the narrowed
+   visibility sets. Same rule as everywhere in this file: the hint is a
+   courtesy, not a boundary -- every lab page keeps its own guard (or its
+   deliberate lack of one), every lab API keeps its own access checks, and
+   every door here stays reachable by URL. */
+describe('the lab doors are offered to the admin desks only', () => {
+  const LAB_DOORS = [
+    '/retro-lab',
+    '/simulator',
+    '/knowledge-graph',
+    '/source-control',
+    '/source-control/publication-workflow',
+  ];
+
+  it.each(['admin', 'platform_owner'] as const)('%s keeps every lab door', (role) => {
+    const hrefs = visibleDoors(role).map((d) => d.href);
+    for (const href of LAB_DOORS) expect(hrefs).toContain(href);
+  });
+
+  it.each(['athlete', 'coach', 'parent', 'staff', 'volunteer', 'board'] as const)(
+    '%s is not offered the lab',
+    (role) => {
+      const hrefs = visibleDoors(role).map((d) => d.href);
+      for (const href of LAB_DOORS) expect(hrefs).not.toContain(href);
+    },
+  );
+
+  it('a signed-out visitor is not offered the lab either', () => {
+    const hrefs = visibleDoors(null).map((d) => d.href);
+    for (const href of LAB_DOORS) expect(hrefs).not.toContain(href);
+  });
+
+  it('the research desks stay with the working roles and leave the athlete and parent corridors', () => {
+    // Visibility narrower than the page's own member gate, on purpose:
+    // research intake is staff-side lab work, not a family surface. The pages
+    // still admit athlete and parent by URL -- see RESEARCH_GATE's comment.
+    for (const role of ['coach', 'admin', 'platform_owner', 'staff', 'volunteer'] as const) {
+      const hrefs = visibleDoors(role).map((d) => d.href);
+      expect(hrefs).toContain('/research');
+      expect(hrefs).toContain('/research/chat');
+    }
+    for (const role of ['athlete', 'parent', 'board'] as const) {
+      const hrefs = visibleDoors(role).map((d) => d.href);
+      expect(hrefs).not.toContain('/research');
+      expect(hrefs).not.toContain('/research/chat');
+    }
+  });
+
+  it('leaves the operational doors where they were', () => {
+    // The narrowing must not swallow a working surface: the staff/volunteer
+    // landing, the schedule, and the coach floor pages keep their audiences.
+    expect(visibleDoors('staff').map((d) => d.href)).toContain('/workspace');
+    expect(visibleDoors('volunteer').map((d) => d.href)).toContain('/workspace');
+    expect(visibleDoors('athlete').map((d) => d.href)).toContain('/schedule');
+    expect(visibleDoors('coach').map((d) => d.href)).toContain('/rabbit-holes');
+    expect(visibleDoors('coach').map((d) => d.href)).toContain('/coach/workout-templates');
+    expect(visibleDoors('athlete').map((d) => d.href)).not.toContain('/evidence');
+    expect(visibleDoors('admin').map((d) => d.href)).toContain('/evidence');
+  });
+});
+
 describe('doorsByRoom', () => {
   it('drops rooms with nothing in them rather than showing an empty hallway', () => {
     for (const group of doorsByRoom('athlete')) {

@@ -4,6 +4,7 @@ import { flagNearMiss } from '../shadowNearMisses';
 import {
   PAIN_REPORT_ALERT_WINDOW_DAYS,
   alertCoachToPainReport,
+  classifyPainReporter,
   isPainReport,
   listAthletesWithRecentPainReports,
   listPainReportsForAthletes,
@@ -180,7 +181,42 @@ describe('listPainReportsForAthletes', () => {
       painType: 'Sharp',
       observedAt: '2026-07-31T10:00:00.000Z',
       recordedAt: '2026-07-31T10:00:02.000Z',
+      // This fixture's metadata carries no reporter_role, which is what EVERY
+      // pain report written before 2026-08-24 looks like: the near-miss table
+      // has detected_by_account_id but no detected_by_role column, so the
+      // reporter was never on the row. 'unknown' is the honest read. Silently
+      // rewriting these as athlete reports is the thing this whole change
+      // exists to stop.
+      reporter: 'unknown',
     }]);
+  });
+
+  test('a historical row with no reporter_role reads as unknown, never as athlete', async () => {
+    mockQuery.mockResolvedValueOnce([painReportRow()]);
+
+    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25 });
+
+    expect(page.reports[0].reporter).toBe('unknown');
+  });
+
+  test.each([
+    ['athlete', 'athlete'],
+    ['coach', 'coach'],
+    ['staff_admin', 'staff_admin'],
+    ['volunteer', 'unknown'],
+    ['', 'unknown'],
+  ])('a stored reporter_role of %p reads back as %p', async (stored, expected) => {
+    const row = painReportRow();
+    mockQuery.mockResolvedValueOnce([{
+      ...row,
+      metadata: { ...(row.metadata as Record<string, unknown>), reporter_role: stored },
+    }]);
+
+    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25 });
+
+    // Read back through the same classifier that wrote it, so a value this
+    // build does not recognise cannot reach a coach's screen as a raw string.
+    expect(page.reports[0].reporter).toBe(expected);
   });
 
   // The description column carries the athlete id and the same facts in prose.
@@ -237,5 +273,115 @@ describe('listPainReportsForAthletes', () => {
       observedAt: null,
       painScore: 8,
     }));
+  });
+});
+
+describe('reporter provenance', () => {
+  /* THE DEFECT. POST /shadow/formulas/observations admits athlete, coach,
+     organization_admin and admin for a pain_report, and every downstream
+     sentence said the athlete had self-reported it. A coach writing down what
+     they observed was rendered to the next coach as the child's own words --
+     which changes what that coach does with it, on a medical-adjacent record
+     about a minor. */
+
+  test.each([
+    ['athlete', 'athlete'],
+    ['coach', 'coach'],
+    ['organization_admin', 'staff_admin'],
+    ['admin', 'staff_admin'],
+  ])('%s classifies as %s', (actorRole, expected) => {
+    expect(classifyPainReporter(actorRole)).toBe(expected);
+  });
+
+  test.each([null, undefined, '', 'volunteer', 'parent', 'platform_owner'])(
+    'an unrecognised or missing role (%p) is unknown, never athlete',
+    (actorRole) => {
+      // The direction matters. An unknown reporter described as the athlete is
+      // a fabricated attribution; an athlete report described as unknown is
+      // merely less specific.
+      expect(classifyPainReporter(actorRole as string)).toBe('unknown');
+    },
+  );
+
+  test('only the athlete branch claims a self-report', async () => {
+    const claims: Record<string, boolean> = {};
+    for (const role of ['athlete', 'coach', 'organization_admin', 'admin']) {
+      mockFlagNearMiss.mockClear();
+      mockEmitShadowEvent.mockClear();
+      await alertCoachToPainReport({ ...alertInput(), actorRole: role });
+      const description = mockFlagNearMiss.mock.calls[0][0].description as string;
+      // The negative lookbehind is load-bearing. A plain
+      // /self-reported by the athlete/ also matches inside "NOT self-reported
+      // by the athlete" -- the exact sentence the staff branches carry -- so
+      // the naive assertion reported every role as claiming a self-report and
+      // would have passed just as happily against the unfixed code.
+      claims[role] = /(?<!not )self-reported by the athlete/i.test(description);
+    }
+
+    expect(claims).toEqual({
+      athlete: true,
+      coach: false,
+      organization_admin: false,
+      admin: false,
+    });
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'])(
+    'a %s-entered report says it is not a medical assessment',
+    async (role) => {
+      await alertCoachToPainReport({ ...alertInput(), actorRole: role });
+
+      const description = mockFlagNearMiss.mock.calls[0][0].description as string;
+      expect(description).toMatch(/not self-reported by the athlete/i);
+      expect(description).toMatch(/not a medical assessment/i);
+    },
+  );
+
+  test('reporter_role is persisted on the near miss and on the event', async () => {
+    // Without this the classification cannot be read back: the near-miss table
+    // has detected_by_account_id but NO detected_by_role column, so the
+    // detectedByRole argument reaches only the audit event and the escalation.
+    await alertCoachToPainReport({ ...alertInput(), actorRole: 'coach' });
+
+    expect(mockFlagNearMiss.mock.calls[0][0].metadata).toMatchObject({
+      trigger: 'athlete_pain_report',
+      reporter_role: 'coach',
+    });
+    expect(mockEmitShadowEvent.mock.calls[0][0].payload).toMatchObject({
+      reporter_role: 'coach',
+    });
+  });
+
+  test('the persisted trigger and event name are unchanged', async () => {
+    // Existing rows depend on both. Renaming either for wording orphans every
+    // report already in the database from the coach's alert.
+    await alertCoachToPainReport({ ...alertInput(), actorRole: 'coach' });
+
+    expect(mockFlagNearMiss.mock.calls[0][0].metadata).toMatchObject({
+      trigger: 'athlete_pain_report',
+    });
+    expect(mockEmitShadowEvent.mock.calls[0][0].eventName)
+      .toBe('SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW');
+  });
+
+  test('severity banding is untouched by provenance', async () => {
+    for (const role of ['athlete', 'coach', 'admin']) {
+      mockFlagNearMiss.mockClear();
+      mockEmitShadowEvent.mockClear();
+      const outcome = await alertCoachToPainReport({
+        ...alertInput(), value: 8, actorRole: role,
+      });
+      expect(outcome).toEqual({ raised: true, severity: 'critical' });
+    }
+  });
+
+  test('a staff-entered report still raises the coach alert', async () => {
+    // The point is not to suppress staff reports. It is to stop describing
+    // them as something they are not.
+    const outcome = await alertCoachToPainReport({ ...alertInput(), actorRole: 'admin' });
+
+    expect(outcome.raised).toBe(true);
+    expect(mockFlagNearMiss).toHaveBeenCalledTimes(1);
+    expect(mockEmitShadowEvent).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -37,6 +37,14 @@ export const runtime = 'nodejs';
 //   WITHDRAWING an open nomination is coach/admin only: reversing a
 //   nomination is kept a staff action so a peer cannot un-nominate a
 //   teammate.
+//
+// A STAFF nominator must be able to reach the athlete they are nominating
+// (assertActorCanAccessAthlete) -- filing a record about a child a coach has
+// no relationship to is the same act here as anywhere else. The athlete path
+// is deliberately not gated that way: self/peer nomination is path 3 above
+// (source 'self_peer_nomination'), and the central gate admits an athlete
+// only for themselves, which would delete peer nomination rather than secure
+// it. Narrowing that is an owner decision about the design, not a gate fix.
 
 const STAFF_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const NOMINATOR_ROLES = ['coach', 'organization_admin', 'admin', 'athlete'] as const;
@@ -78,6 +86,7 @@ export async function POST(request: NextRequest) {
 
       const athleteId = text(body.athlete_id)?.trim();
       if (!athleteId) throw new ValidationError('nominate needs athlete_id.');
+      if (principal.role !== 'athlete') await assertActorCanAccessAthlete(principal, athleteId);
 
       const item = await createNomination({
         organizationId: principal.organizationId,

@@ -293,17 +293,48 @@ if (lock) {
 }
 
 // ---------------------------------------------------------------------------
-// design-system/ppbf.css -- the single stylesheet every room renders against.
+// design-system/ppbf.css -- the stylesheet every room renders against.
 // A truncated stylesheet still "builds", so check it structurally.
+//
+// It stopped being ONE file on 2026-08-23. The visual reset split it into a
+// neutral foundation, a swappable theme and the archived Leather & Brass
+// sheet, leaving ppbf.css as the entry point that imports them. Reading it
+// alone now finds two @import lines, no :root and no braces -- which is why
+// this check has to resolve imports the way a browser does.
+//
+// Resolving rather than repointing is deliberate. This check exists to catch a
+// stylesheet that has silently lost its contents; pointing it at one of the
+// pieces would narrow it to whichever piece was named, and the entry point is
+// what the app actually loads.
 // ---------------------------------------------------------------------------
 
 const stylesheetPath = 'design-system/ppbf.css';
 const stylesheetAbsolute = path.join(repositoryRoot, stylesheetPath);
 
+/** Inline every relative `@import` in place, recursively. Bare specifiers are
+ *  left alone: they resolve through the bundler, not from disk. */
+function readResolvedCss(entry, seen = new Set()) {
+  const resolved = path.resolve(entry);
+  if (seen.has(resolved)) return '';
+  seen.add(resolved);
+
+  const source = fs.readFileSync(resolved, 'utf8');
+  const directory = path.dirname(resolved);
+
+  return source.replace(
+    /@import\s+(?:url\()?["']([^"']+)["']\)?[^;]*;/g,
+    (whole, specifier) => (
+      specifier.startsWith('./') || specifier.startsWith('../')
+        ? readResolvedCss(path.join(directory, specifier), seen)
+        : whole
+    ),
+  );
+}
+
 if (!fs.existsSync(stylesheetAbsolute)) {
   fail(`${stylesheetPath} is missing.`);
 } else {
-  const stylesheet = fs.readFileSync(stylesheetAbsolute, 'utf8');
+  const stylesheet = readResolvedCss(stylesheetAbsolute);
   const opened = (stylesheet.match(/\{/g) ?? []).length;
   const closed = (stylesheet.match(/\}/g) ?? []).length;
 

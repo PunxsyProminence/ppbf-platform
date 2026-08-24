@@ -7,6 +7,7 @@ import type { PilotRole } from './contracts';
 import type { ShadowUserProfileRow, RememberedFact } from './shadowUserProfile';
 import type { ShadowQueryType } from './shadowContextWeights';
 import { detectQueryType } from './shadowContextWeights';
+import { describeFactSupport } from './shadowPersonalizationGate';
 
 export interface ShadowContextBuilderInput {
   tier: 'quick_round' | 'heavy_bag';
@@ -15,6 +16,19 @@ export interface ShadowContextBuilderInput {
   userRole: PilotRole;
   organizationId: string;
   athleteId?: string;
+  /**
+   * Whether the `strong_personalization` feature is unlocked for this request.
+   *
+   * REQUIRED, not optional, and deliberately so. This builder used to take no
+   * such argument and emitted the user's inferred communication style and their
+   * remembered facts on every call -- while the chat route checked the flag
+   * around a *different* prompt fragment and believed the feature gated. Making
+   * it required means a caller that has not decided cannot compile, which is
+   * the only version of this gate that a future call site cannot walk past.
+   *
+   * Resolve it with `personalizationAllowed(unlockState)`; do not re-derive it.
+   */
+  personalizationEnabled: boolean;
 }
 
 export interface ShadowContextOutput {
@@ -30,41 +44,55 @@ export interface ShadowContextOutput {
 }
 
 /**
+ * How a stored `communication_style` is stated to the model.
+ *
+ * PREFERENCE LANGUAGE ONLY. These strings describe what a person appeared to
+ * want from an answer. They must not describe how a person learns.
+ *
+ * 'example-heavy' read "Learns best through examples" until 2026-08-23. That is
+ * a learning-style claim -- a contested construct with no support in the
+ * evidence base, and one this platform has no instrument to measure. What the
+ * system actually observed was answer-format feedback: someone rated replies
+ * that opened with an example. "Wanted examples first" and "learns best through
+ * examples" are not the same sentence, and the second one, said about a child,
+ * is a claim about their mind rather than about their last few clicks.
+ */
+const STYLE_PREFERENCE: Record<string, string> = {
+  concise: 'Has preferred brief, direct answers',
+  detailed: 'Has preferred comprehensive explanations',
+  'example-heavy': 'Has preferred answers that open with a concrete example',
+  unknown: 'No preference recorded',
+};
+
+/**
  * Quick Round context: Minimal, fast-track
- * - User role (decision-making authority)
- * - Communication style (response format preference)
- * - Recent topics (avoid repetition, show continuity)
- * - Interaction count (expertise level)
+ * - User role (decision-making authority) — always
+ * - Recent topics (avoid repetition, show continuity) — always
+ * - Communication preference — ONLY when personalization is unlocked
  * - No athlete-specific data, no research context
+ *
+ * INTERACTION COUNT IS NOT EXPERTISE. This built a
+ * novice/intermediate/expert label from `interaction_count` -- 50 turns made
+ * someone an "expert" -- and put it in the prompt as a fact about the person.
+ * Nothing about how often someone opens a chat window evidences what they know
+ * about boxing, coaching, or a child in front of them, and a coach labelled
+ * "novice" to the model gets different answers for having been busy. The raw
+ * count stays, because it is a true and unremarkable fact; the grade is gone.
  */
 function buildQuickRoundContext(input: ShadowContextBuilderInput): string {
   const profile = input.userProfile;
-  
-  const getExpertiseLevel = (interactionCount: number): string => {
-    if (interactionCount > 50) return 'expert';
-    if (interactionCount > 20) return 'intermediate';
-    return 'novice';
-  };
-  const expertiseLevel = getExpertiseLevel(profile.interaction_count);
-
-  const styleMap: Record<string, string> = {
-    concise: 'Prefers brief, direct answers',
-    detailed: 'Prefers comprehensive explanations',
-    'example-heavy': 'Learns best through examples',
-    unknown: 'No preference yet',
-  };
 
   const userProfileSection = [
     `## User Profile`,
     `- Authenticated Role: ${input.userRole}`,
-    `- Expertise Level: ${expertiseLevel}`,
     `- Interaction History: ${profile.interaction_count} previous interactions`,
   ];
 
-  const communicationSection = profile.communication_style && profile.communication_style !== 'unknown'
+  const communicationSection = input.personalizationEnabled
+    && profile.communication_style && profile.communication_style !== 'unknown'
     ? [
         `## Communication Preference`,
-        `- ${styleMap[profile.communication_style] || 'Unknown'}`,
+        `- ${STYLE_PREFERENCE[profile.communication_style] || STYLE_PREFERENCE.unknown}`,
       ]
     : [];
 
@@ -106,8 +134,8 @@ function buildHeavyBagSections(profile: ShadowUserProfileRow, input: ShadowConte
     `- Last Interaction: ${profile.last_interaction_at || 'Never'}`,
   ];
 
-  const communicationSection = buildCommunicationSection(profile);
-  const factsSection = buildFactsSection(profile);
+  const communicationSection = buildCommunicationSection(profile, input.personalizationEnabled);
+  const factsSection = buildFactsSection(profile, input.personalizationEnabled);
   const topicsSection = buildTopicsSection(profile);
   const athleteSection = buildAthleteSection(profile, input);
   const querySection = buildQuerySection(queryType);
@@ -131,21 +159,41 @@ function buildHeavyBagSections(profile: ShadowUserProfileRow, input: ShadowConte
   ];
 }
 
-function buildCommunicationSection(profile: ShadowUserProfileRow): string[] {
+function buildCommunicationSection(
+  profile: ShadowUserProfileRow,
+  personalizationEnabled: boolean,
+): string[] {
+  if (!personalizationEnabled) return [];
   return profile.communication_style && profile.communication_style !== 'unknown'
-    ? [`## Interaction Patterns`, `- Communication Style: ${profile.communication_style}`]
+    ? [
+        `## Answer Format Preference`,
+        `- ${STYLE_PREFERENCE[profile.communication_style] || STYLE_PREFERENCE.unknown}`,
+      ]
     : [];
 }
 
-function buildFactsSection(profile: ShadowUserProfileRow): string[] {
+/**
+ * Remembered facts, described by how often they were observed.
+ *
+ * NOT A PROBABILITY. This rendered `(confidence: 80%)` from a stored 0.8 that a
+ * developer typed into a switch statement -- see `describeFactSupport`. An
+ * ordinal word replaces it, derived from the observation count rather than the
+ * weight, because the count is the only part of a remembered fact that was ever
+ * actually counted.
+ */
+function buildFactsSection(
+  profile: ShadowUserProfileRow,
+  personalizationEnabled: boolean,
+): string[] {
+  if (!personalizationEnabled) return [];
   if (!profile.remembered_facts || !Array.isArray(profile.remembered_facts) || profile.remembered_facts.length === 0) {
     return [];
   }
   return [
-    `## Key Facts About This User`,
+    `## Observed Preferences For This User`,
+    `- These are observations, not settings this person chose, and not claims about them.`,
     ...profile.remembered_facts.slice(0, 10).map((fact: RememberedFact) => {
-      const confidence = (fact.confidence * 100).toFixed(0);
-      return `- ${fact.key}: ${fact.value} (confidence: ${confidence}%)`;
+      return `- ${fact.key}: ${fact.value} (support: ${describeFactSupport(fact.observationCount)})`;
     }),
   ];
 }

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -33,6 +33,11 @@ export const runtime = 'nodejs';
 // computed, no causal claim is made, and the failure-learning rules
 // (a miss cannot validate success; confounded evidence strengthens
 // nothing) are enforced by the module and the database beneath it.
+//
+// The read is per-athlete authorized, not merely staff-authorized: a
+// supplied athlete_id goes through assertActorCanAccessAthlete, and an
+// unfiltered read returns only executions whose athlete the caller may
+// reach -- these rows carry the decision narrative and its linked evidence.
 
 const REVIEW_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
@@ -45,7 +50,13 @@ export async function GET(request: NextRequest) {
     requireRole(principal, [...REVIEW_ROLES]);
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id')?.trim() || undefined;
-    const executions = await listExecutions(principal.organizationId, athleteId);
+    if (athleteId) await assertActorCanAccessAthlete(principal, athleteId);
+
+    let executions = await listExecutions(principal.organizationId, athleteId);
+    if (!athleteId) {
+      const allowed = await accessibleAthleteIds(principal, executions.map((item) => item.athlete_id));
+      executions = executions.filter((item) => allowed.has(item.athlete_id));
+    }
     const decisionTexts = new Map(
       (await getDecisionTexts(principal.organizationId, executions.map((e) => e.execution_id)))
         .map((row) => [row.execution_id, row.decision_text]),

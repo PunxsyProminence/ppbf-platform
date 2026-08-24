@@ -68,12 +68,40 @@ export interface PilotSession {
   session_id: string;
   athlete_id: string;
   date: string;
-  rpe: number;
+  // Session RPE: perceived exertion across the COMPLETED session, collected
+  // after it ends. NULL between check-in and check-out, which is the honest
+  // state -- the session has not happened yet, so there is nothing to rate.
+  //
+  // This was `number` and NOT NULL, and that is precisely what produced the
+  // defect it now records: check-in had to supply some number, so it supplied
+  // the pre-session "Readiness to Train" slider, and a readiness self-report
+  // has been stored as session RPE for every row the application has written.
+  // Read this field only alongside rpe_method.
+  rpe: number | null;
+  rpe_method: SessionRpeMethod;
   notes: string;
   completed_flag: boolean;
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * What produced a session's rpe reading.
+ *
+ * Deliberately narrow, and matched to the CHECK constraint in
+ * pilot_slice_postgres_session_rpe_semantics_migration.sql. 'UNKNOWN' is the
+ * true answer for every row written before that migration -- those hold a
+ * pre-session readiness value -- and for anything the CSV seeder writes.
+ * 'athlete_post_session_self_report' is the only honest method the application
+ * has: the athlete rating the session they just finished, at check-out.
+ *
+ * A coach-entered RPE has no value here because no such write path exists;
+ * CoachWorkspace only reads the column. Adding one is a migration, which is
+ * the point -- it forces the decision to be recorded rather than absorbed.
+ */
+export type SessionRpeMethod = 'UNKNOWN' | 'athlete_post_session_self_report';
+
+export const SESSION_RPE_METHODS = ['UNKNOWN', 'athlete_post_session_self_report'] as const;
 
 export interface PilotCoachReview {
   review_id: string;
@@ -148,6 +176,7 @@ export const SESSION_FIELDS = [
   'athlete_id',
   'date',
   'rpe',
+  'rpe_method',
   'notes',
   'completed_flag',
   'created_at',

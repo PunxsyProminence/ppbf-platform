@@ -38,10 +38,22 @@ let sessionListFails = false;
 let sessionUpdateFails = false;
 let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
+let storedFloorPlans: Array<Record<string, unknown>> = [];
+let floorPlanPatchFails = false;
+let storedAssignments: Array<Record<string, unknown>> = [];
+let assignmentsFail = false;
 
 // pilot.sessions stores date as `date` and rpe as `numeric`, so node-postgres
-// hands back a timestamp and a string. Both are sent straight back by
-// check-out, where the session validator rejects either shape.
+// hands back a timestamp and a string, and the session validator rejects
+// either shape on the way back in.
+//
+// This fixture is deliberately a PRE-MIGRATION row: an open session carrying
+// rpe '8' and no rpe_method at all. That 8 is not an effort reading -- it is
+// the pre-session readiness slider, which is what check-in wrote into this
+// column before pilot_slice_postgres_session_rpe_semantics_migration.sql
+// separated the two. The tests below are about what the app does with such a
+// row now, which is: replay it untouched on a notes save, and never promote it
+// to a session RPE at check-out.
 function openSessionRow(overrides: Record<string, unknown> = {}) {
   return {
     session_id: 'session_1754000000000',
@@ -92,6 +104,10 @@ function postedTo(path: string): FetchCall[] {
   return fetchCalls.filter((call) => call.method === 'POST' && call.url.endsWith(path));
 }
 
+function patchedTo(path: string): FetchCall[] {
+  return fetchCalls.filter((call) => call.method === 'PATCH' && call.url.endsWith(path));
+}
+
 beforeEach(() => {
   fetchCalls.length = 0;
   authenticated = true;
@@ -106,6 +122,10 @@ beforeEach(() => {
   sessionUpdateFails = false;
   storedGoals = [];
   goalUpdateFails = false;
+  storedFloorPlans = [];
+  floorPlanPatchFails = false;
+  storedAssignments = [];
+  assignmentsFail = false;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -152,7 +172,19 @@ beforeEach(() => {
       return jsonResponse(goalUpdateFails ? { error: 'Internal server error' } : { ok: true }, !goalUpdateFails);
     }
     if (url.includes('/api/pilot/floor-plans')) {
-      return jsonResponse({ items: [] });
+      if (init?.method === 'PATCH') {
+        return jsonResponse(floorPlanPatchFails ? { error: 'Internal server error' } : { ok: true }, !floorPlanPatchFails);
+      }
+      if (init?.method === 'POST') {
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ items: storedFloorPlans });
+    }
+    if (url.includes('/api/pilot/progression/assignments')) {
+      if (assignmentsFail) {
+        throw new Error('assignments offline');
+      }
+      return jsonResponse({ items: storedAssignments });
     }
     if (url.includes('/api/pilot/shadow/observation-projection')) {
       return jsonResponse({ items: [] });
@@ -182,12 +214,9 @@ async function renderWorkspace() {
  * surface being filed somewhere an athlete would not look for it.
  */
 const GROUP_FOR_SURFACE: Record<string, string> = {
-  'Bio Check-In': 'Today',
   Dashboard: 'Today',
   Floor: 'Today',
   Goals: 'Development',
-  Tracks: 'Development',
-  Assessments: 'Development',
   Drills: 'Learn',
   'Rabbit Holes': 'Learn',
   Schedule: 'Schedule',
@@ -234,12 +263,13 @@ describe('athlete workspace honesty', () => {
     expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
   });
 
-  test('the Assessments tab does not present a start control that cannot start anything', async () => {
+  test('the Schedule tab no longer apologises for itself over the working link', async () => {
     await renderWorkspace();
-    openTab('Assessments');
+    openTab('Schedule');
 
-    const start = screen.getByRole('button', { name: 'Start Assessment' }) as HTMLButtonElement;
-    expect(start.disabled).toBe(true);
+    // The link was always real; the NOT BUILT wrapper around it is what left.
+    expect(screen.queryByText(/this tab cannot see the gym's classes/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
   });
 
   test('double-clicking Create Goal posts the goal once', async () => {
@@ -324,6 +354,65 @@ describe('athlete safety reporting', () => {
     expect(screen.queryByText(/saved locally/i)).toBeNull();
   });
 
+  /* No control on this safety card may record nothing.
+
+     Two tickboxes stood here whose ticked value reached nobody once the
+     fabricated check-in `session_rpe` observation -- the only thing that
+     carried them -- was removed. The "reviewed today's safety/medical notice"
+     box had no consumer at all. The "Injury or Pain Flag" box is the subtler
+     one: the flag it set is written for real by the pain report below, so as
+     an INDICATOR it tells the truth, but as a CONTROL a hand-tick went
+     nowhere. So the affordance is gone and the signal is kept, and these pin
+     both halves of that: no tickbox, and the indicator still appearing when a
+     pain report is actually filed. */
+  test('the Injury or Pain Flag tickbox is gone, because ticking it recorded nothing', async () => {
+    await renderWorkspace();
+
+    // The absence that matters is of a CONTROL. A child who ticks a box has
+    // every reason to believe a coach will see it.
+    expect(screen.queryByRole('checkbox', { name: /injury or pain flag/i })).toBeNull();
+    expect(screen.queryByLabelText(/injury or pain flag/i)).toBeNull();
+  });
+
+  test('the safety/medical acknowledgement tickbox is gone entirely, because nothing stored it', async () => {
+    await renderWorkspace();
+
+    // An attestation nobody stores is not an attestation, and reads as
+    // compliance to whoever ticks it. This one had no consumer at all, so
+    // unlike the injury flag there is no signal underneath worth keeping.
+    expect(screen.queryByRole('checkbox', { name: /safety\/medical notice/i })).toBeNull();
+    expect(screen.queryByText(/reviewed today.s safety\/medical notice/i)).toBeNull();
+  });
+
+  test('the pain report is left standing, and still carries its injury flag', async () => {
+    painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true, severity: 'high' } });
+    await openPainReport();
+
+    await screen.findByText(/flagged for a coach to look at/);
+    const [observation] = postedTo('/api/pilot/shadow/formulas/observations');
+    // The removed tickbox never fed this. `injuryFlag: true` here is a literal
+    // on the pain-report payload, which is why that path is unaffected -- and
+    // asserting it keeps the removal from quietly taking the real signal too.
+    expect(observation.body.dimensions).toEqual(
+      expect.objectContaining({ injuryFlag: true, location: 'Neck' }),
+    );
+  });
+
+  test('a filed pain report leaves a read-only indicator, not something to tick', async () => {
+    painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true, severity: 'high' } });
+    await openPainReport();
+
+    // Written by the pain report itself, so it states something that happened.
+    const indicator = await screen.findByTestId('pain-reported-indicator');
+    expect(indicator.textContent).toMatch(/pain reported this session/i);
+
+    // And it is a statement, not an affordance: nothing here invites a tick,
+    // which is exactly what the removed tickbox got wrong.
+    expect(indicator.tagName).not.toBe('INPUT');
+    expect(indicator.querySelector('input, button, select, textarea, [role="checkbox"]')).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /pain reported this session/i })).toBeNull();
+  });
+
   test('check-out puts the session notes on the session record', async () => {
     await renderWorkspace();
 
@@ -388,11 +477,33 @@ describe('an open session across a reload', () => {
     expect(checkOut.body).toEqual(expect.objectContaining({
       session_id: 'session_1754000000000',
       completed_flag: true,
-      rpe: 8,
       date: '2026-08-01',
       created_at: '2026-08-01T17:05:00.000Z',
       notes: 'Left hook felt slow all session, right shoulder tight.',
     }));
+  });
+
+  // CHANGED DELIBERATELY. This assertion used to read `rpe: 8` -- check-out
+  // handed back whatever was in the column, and what was in the column was the
+  // pre-session readiness slider check-in had put there. Completing the session
+  // therefore stamped a "how ready did I feel beforehand" number onto the field
+  // that means "how hard was that session", which is the defect
+  // pilot_slice_postgres_session_rpe_semantics_migration.sql exists to end.
+  //
+  // Session RPE is now collected at check-out or not at all. Nothing in this
+  // app collects it yet, so the honest write is null with an UNKNOWN method --
+  // and the stored 8 must not be promoted into it on the way past.
+  test('check-out does not turn the stored readiness reading into a session RPE', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check Out' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+    const [checkOut] = postedTo('/api/pilot/sessions/update');
+    expect(checkOut.body.rpe).toBeNull();
+    expect(checkOut.body.rpe).not.toBe(8);
+    expect(checkOut.body.rpe_method).toBe('UNKNOWN');
   });
 
   // The check-in placeholder is stored because pilot.sessions requires a
@@ -948,5 +1059,374 @@ describe('the athlete question box does not imply a coach reads it', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
 
     expect(screen.getByText(/your parent is not automatically copied and no coach is notified/)).toBeTruthy();
+  });
+});
+
+// The floor checkbox moved React state alone: an athlete ticked their work
+// off, reloaded, and the floor came back untouched. Completion lives on the
+// stored plan now (PATCH /api/pilot/floor-plans), and these pin the three
+// claims that has to hold up: the tick is written, the tick comes back, and a
+// refused write is never left on screen looking saved.
+function storedFloorPlan(tasks: Array<Record<string, unknown>>) {
+  return {
+    athleteName: 'Test Athlete',
+    readiness: 'GREEN',
+    generatedAt: '2026-08-20T17:00:00.000Z',
+    tasks,
+  };
+}
+
+function floorTask(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'wf_1',
+    title: 'Technical Boxing Block',
+    category: 'Training',
+    description: 'Footwork progression.',
+    dueDate: '5:30 PM',
+    priority: 'High',
+    ...overrides,
+  };
+}
+
+describe('the floor survives a reload', () => {
+  test('ticking a task off writes it to the stored plan', async () => {
+    storedFloorPlans = [storedFloorPlan([floorTask()])];
+    await renderWorkspace();
+    openTab('Floor');
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }));
+
+    await waitFor(() => expect(patchedTo('/api/pilot/floor-plans')).toHaveLength(1));
+    // task_id and the flag, nothing else -- above all no athlete_id, which the
+    // route must take from the session, never from this body.
+    expect(patchedTo('/api/pilot/floor-plans')[0].body).toEqual({ task_id: 'wf_1', completed: true });
+    expect(await screen.findByText('Marked done: Technical Boxing Block.')).toBeTruthy();
+  });
+
+  test('a task ticked off before a reload comes back ticked', async () => {
+    storedFloorPlans = [storedFloorPlan([
+      floorTask({ completed: true }),
+      floorTask({ id: 'wf_2', title: 'Cooldown + Session Journal' }),
+    ])];
+    await renderWorkspace();
+    openTab('Floor');
+
+    const done = await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }) as HTMLInputElement;
+    expect(done.checked).toBe(true);
+    // A task with no stored flag is not done -- absent must not read as true.
+    const open = screen.getByRole('checkbox', { name: 'Mark done: Cooldown + Session Journal' }) as HTMLInputElement;
+    expect(open.checked).toBe(false);
+  });
+
+  test('a refused write puts the box back and says nothing was saved', async () => {
+    storedFloorPlans = [storedFloorPlan([floorTask()])];
+    floorPlanPatchFails = true;
+    await renderWorkspace();
+    openTab('Floor');
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }));
+
+    expect(await screen.findByText(/the box went back to where it was/)).toBeTruthy();
+    expect((screen.getByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByText(/Marked done/)).toBeNull();
+  });
+});
+
+// The drills a coach assigned lived at /athlete/progression-intelligence,
+// reachable from this workspace only through a collapsed <details> at the foot
+// of the page. Today now carries the count and the door.
+describe('Today shows the work a coach assigned', () => {
+  test('open assignments are counted for the athlete the session names, and the card links out', async () => {
+    storedAssignments = [
+      { assignment_id: 'as-1', status: 'assigned' },
+      { assignment_id: 'as-2', status: 'in_progress' },
+      // Finished work is record, not today.
+      { assignment_id: 'as-3', status: 'completed' },
+    ];
+    await renderWorkspace();
+
+    expect(await screen.findByText('2 still to do.')).toBeTruthy();
+    const link = screen.getByRole('link', { name: 'Open your progression' });
+    expect(link.getAttribute('href')).toBe('/athlete/progression-intelligence');
+
+    const asked = fetchCalls.find((call) => call.url.includes('/api/pilot/progression/assignments'));
+    expect(asked?.url).toContain('athlete_id=ath_test');
+  });
+
+  test('no assignments reads as none recorded, not as zero', async () => {
+    await renderWorkspace();
+
+    expect(await screen.findByText('No assigned work recorded.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open your progression' })).toBeTruthy();
+  });
+
+  test('a failed read is reported as unavailable, never as no work assigned', async () => {
+    assignmentsFail = true;
+    await renderWorkspace();
+
+    expect(await screen.findByText('Not available right now.')).toBeTruthy();
+    expect(screen.queryByText('No assigned work recorded.')).toBeNull();
+  });
+});
+
+// Three surfaces carried nothing behind them: Bio Check-In persisted no field
+// (nothing calls /api/pilot/athlete/check-in), Tracks had every value reading
+// "Nobody has written this down yet", and Assessments said NOT BUILT YET over
+// a disabled button. A tab is a promise that there is something behind it, so
+// they are no longer offered; the panels stay in the file for when they earn
+// their entry back.
+describe('tabs with nothing behind them are not offered', () => {
+  test('Bio Check-In, Tracks and Assessments are gone from the nav', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(screen.queryByRole('button', { name: 'Bio Check-In' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    expect(screen.queryByRole('button', { name: 'Tracks' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assessments' })).toBeNull();
+  });
+
+  test('Development opens straight onto Goals, its one real surface', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+
+    expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
+  });
+
+  test('the surfaces with something behind them still render', async () => {
+    await renderWorkspace();
+
+    openTab('Floor');
+    // The honest-empty grammar appears both in the panel and as the sync
+    // message loadFloorTasks sets, so this asserts presence, not uniqueness.
+    expect((await screen.findAllByText(/Nothing on your floor yet/)).length).toBeGreaterThan(0);
+
+    openTab('Drills');
+    expect(await screen.findByText(/have not added any drills yet/)).toBeTruthy();
+
+    openTab('Schedule');
+    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
+  });
+
+  /* The empty floor names the action that fills it. Until the approved board
+     (AF-09) gave this state the room it has now, it named check-in in a single
+     grey line and offered no way to do it -- the athlete had to work out for
+     themselves that the control lives on another tab. */
+  test('an empty floor offers the check-in that fills it', async () => {
+    await renderWorkspace();
+
+    openTab('Floor');
+    await screen.findAllByText(/Nothing on your floor yet/);
+
+    expect(screen.getByRole('button', { name: 'Check In' })).toBeTruthy();
+  });
+
+  /* The masthead read "My Training Dashboard" on all eleven surfaces, so the
+     one line claiming to say where the athlete was agreed with the nav only
+     on the surface it was written for. */
+  test('the masthead names the surface that is actually open', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Learn' })).toBeTruthy();
+    expect(screen.getByText('Athlete workspace · Drills')).toBeTruthy();
+  });
+
+  test('the drill library no longer offers a completion it cannot store', async () => {
+    // "Mark Complete" set a React flag with no row behind it anywhere --
+    // pilot.assignment_completions is keyed on a coach's assignment, and no
+    // table records (athlete, library drill). Completions that ARE stored are
+    // logged on the progression page against assigned drills.
+    await renderWorkspace();
+    openTab('Drills');
+
+    expect(screen.queryByRole('button', { name: 'Mark Complete' })).toBeNull();
+  });
+});
+
+// normalizeStoredSession is not exported, and it does not need to be: the notes
+// draft save replays the rehydrated rpe and rpe_method back to
+// /api/pilot/sessions/update untouched, so what it wrote is exactly what
+// normalization produced. That replay is the observation point for every case
+// below.
+//
+// The rule being pinned is one line of normalizeStoredSession: absence is
+// tested BEFORE Number(), because Number(null) is 0, 0 is a real RPE, and
+// coercing first turns "not rated yet" into "rated it zero".
+describe('a rehydrated session keeps the RPE it was actually stored with', () => {
+  async function draftSaveBodyFor(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+    storedSessions = [row];
+    await renderWorkspace();
+
+    const notes = await screen.findByPlaceholderText(/Session notes for your coach/);
+    fireEvent.change(notes, { target: { value: 'Ribs sore on the left side.' } });
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
+    return postedTo('/api/pilot/sessions/update')[0].body;
+  }
+
+  test('a stored 0 is replayed as 0, not as null', async () => {
+    // numeric 0 arrives from node-postgres as the string '0'. It is a reading
+    // the athlete gave, and dropping it would erase a real self-report.
+    const body = await draftSaveBodyFor(openSessionRow({ rpe: '0' }));
+    expect(body.rpe).toBe(0);
+    expect(body.rpe).not.toBeNull();
+  });
+
+  test('a stored null is replayed as null, not as 0', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({ rpe: null }));
+    expect(body.rpe).toBeNull();
+    expect(body.rpe).not.toBe(0);
+  });
+
+  test('a missing rpe key is replayed as null, not as 0', async () => {
+    const withoutRpe = openSessionRow();
+    delete (withoutRpe as Record<string, unknown>).rpe;
+    const body = await draftSaveBodyFor(withoutRpe);
+    expect(body.rpe).toBeNull();
+  });
+
+  test('a stored numeric string is replayed as the number it names', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({ rpe: '8' }));
+    expect(body.rpe).toBe(8);
+  });
+
+  // A row predating the method column genuinely has unknown provenance, and
+  // that is what it must claim -- not the one honest method the app has.
+  test('an absent rpe_method is replayed as UNKNOWN', async () => {
+    const body = await draftSaveBodyFor(openSessionRow());
+    expect(body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('an unrecognised rpe_method is replayed as UNKNOWN rather than trusted', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({ rpe_method: 'coach_estimate' }));
+    expect(body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('a genuine post-session self-report keeps its method', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({
+      rpe: '4',
+      rpe_method: 'athlete_post_session_self_report',
+    }));
+    expect(body.rpe).toBe(4);
+    expect(body.rpe_method).toBe('athlete_post_session_self_report');
+  });
+
+  // A notes save is not a rating, and must not close the session either.
+  test('a notes save does not complete the session', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({ rpe: null }));
+    expect(body.completed_flag).toBe(false);
+  });
+});
+
+// Check-in happens BEFORE the session. There is no exertion to rate yet, so
+// there is nothing honest to put in the RPE column -- which is precisely why
+// the column being NOT NULL produced the defect: something had to go in it, and
+// what went in it was the pre-session readiness slider.
+describe('check-in records no session RPE at all', () => {
+  test('the created session carries a null rpe and an UNKNOWN method', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+
+    const [checkIn] = postedTo('/api/pilot/sessions');
+    expect(checkIn.body.rpe).toBeNull();
+    expect(checkIn.body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('no readiness value is submitted as a session RPE', async () => {
+    // The readiness slider still exists and still bands the check-in note. What
+    // it must never do again is reach pilot.sessions.rpe. A number here would
+    // be that regression whatever its value, so the assertion is on the type.
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+
+    const [checkIn] = postedTo('/api/pilot/sessions');
+    expect(typeof checkIn.body.rpe).not.toBe('number');
+  });
+});
+
+// The Session Load feed (SHADOW's rpe x duration input) used to run at
+// check-in on the two pre-session numbers: the readiness slider as
+// `session_rpe` and the PLANNED duration as `duration`. It runs at check-out
+// now, where both inputs would be real -- except nothing collects either one
+// yet, so the honest behaviour is to submit nothing at all.
+//
+// This is the test that stops the gap being closed with a prefill. A default
+// duration or a prefilled RPE would make an untouched control indistinguishable
+// from an answer, which is exactly how a planned 60 minutes became an observed
+// one.
+describe('no session observation is fabricated for SHADOW', () => {
+  test('check-out submits no observation while nothing collects one', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    expect(postedTo('/api/pilot/shadow/formulas/observations')).toHaveLength(0);
+  });
+
+  test('check-in submits no session observation either', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+
+    // Specifically: no session_rpe observation carrying the readiness slider.
+    const kinds = postedTo('/api/pilot/shadow/formulas/observations')
+      .map((call) => call.body.kind);
+    expect(kinds).not.toContain('session_rpe');
+    expect(kinds).not.toContain('duration');
+  });
+});
+
+// The training card is fed by its own mapper over the same /api/pilot/sessions/list
+// response, and that mapper is a second place the null could have been coerced.
+// It read `rpe: Number(s.rpe) || 0`, which fabricated a reading twice over:
+// Number(null) is 0, and `|| 0` then swallowed a genuine 0 as well. The card
+// itself is covered in trainingCard.test.tsx; what is covered here is that a
+// null survives the trip from the API response onto the card.
+describe('the training card is fed the RPE that was stored, not a substitute', () => {
+  function completedRow(overrides: Record<string, unknown> = {}) {
+    return openSessionRow({
+      session_id: 'session_done',
+      completed_flag: true,
+      ...overrides,
+    });
+  }
+
+  test('a completed session with no RPE reaches the card as not recorded', async () => {
+    storedSessions = [completedRow({ rpe: null })];
+    await renderWorkspace();
+    openTab('Dashboard');
+
+    const stamp = await screen.findByTitle(/effort not recorded/);
+    expect(stamp).toBeTruthy();
+    expect(stamp.getAttribute('title')).not.toMatch(/effort 0/);
+  });
+
+  test('a completed session rated 0 reaches the card as 0, not as absent', async () => {
+    storedSessions = [completedRow({ rpe: '0' })];
+    await renderWorkspace();
+    openTab('Dashboard');
+
+    const stamp = await screen.findByTitle(/effort 0 of 10/);
+    expect(stamp).toBeTruthy();
+    expect(screen.queryByTitle(/effort not recorded/)).toBeNull();
+  });
+
+  test('an ordinary reading is unaffected', async () => {
+    storedSessions = [completedRow({ rpe: '7' })];
+    await renderWorkspace();
+    openTab('Dashboard');
+
+    expect(await screen.findByTitle(/effort 7 of 10/)).toBeTruthy();
   });
 });

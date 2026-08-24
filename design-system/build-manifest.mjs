@@ -52,8 +52,25 @@ for (const group of GROUPS) {
 }
 
 /* ---- tokens: pull the custom properties straight out of the stylesheet --- */
-const css = readFileSync(join(ROOT, 'ppbf.css'), 'utf8');
-const rootBlock = css.slice(css.indexOf(':root {'), css.indexOf('\n}', css.indexOf(':root {')));
+/* The visual reset of 2026-08-23 turned ppbf.css into two @import lines, so
+   reading it directly would produce an empty manifest. The rules now live in
+   the foundation and in whatever design-system/current/ppbf-theme.css points
+   at -- today the archived Leather & Brass sheet.
+
+   Read in the same order the browser loads them, foundation first, so a token
+   the theme overrides resolves to the theme's value here too. WHEN THE THEME
+   STOPS IMPORTING THE ARCHIVE, THE SECOND PATH BELOW MOVES WITH IT. */
+const css = [
+  readFileSync(join(ROOT, 'foundation/ppbf-foundation.css'), 'utf8'),
+  readFileSync(join(ROOT, 'legacy/ppbf-leather-brass.css'), 'utf8'),
+].join('\n');
+/* EVERY :root block, not just the first. This used to be one slice because
+   there was one sheet with one token block. After the reset there are at least
+   two -- the foundation's mechanics and the theme's palette -- and slicing the
+   first alone silently dropped 50-odd tokens from the manifest. */
+const rootBlock = [...css.matchAll(/:root\s*\{([\s\S]*?)\n\}/g)]
+  .map((m) => m[1])
+  .join('\n');
 const tokens = {};
 for (const m of rootBlock.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)) {
   const name = m[1];
@@ -72,7 +89,7 @@ const rooms = [...css.matchAll(/^\.room--(\w+)\s*\{/gm)].map((m) => m[1])
   .filter((v, i, a) => a.indexOf(v) === i);
 
 /* ---- fonts --------------------------------------------------------------- */
-const fontsCss = readFileSync(join(ROOT, 'fonts.css'), 'utf8');
+const fontsCss = readFileSync(join(ROOT, 'legacy/legacy-fonts.css'), 'utf8');
 const faces = [...fontsCss.matchAll(/font-family:\s*'([^']+)'/g)].map((m) => m[1]);
 const fontFiles = readdirSync(join(ROOT, 'fonts')).filter((f) => f.endsWith('.woff2')).sort();
 const fontBytes = fontFiles.reduce((n, f) => n + statSync(join(ROOT, 'fonts', f)).size, 0);
@@ -91,7 +108,7 @@ const manifest = {
 
   entryPoints: {
     stylesheet: 'ppbf.css',
-    fonts: 'fonts.css',
+    fonts: 'legacy/legacy-fonts.css',
     sound: 'ppbf-sound.js',
     gallery: 'index.html',
     documentation: 'README.md',
@@ -102,7 +119,7 @@ const manifest = {
   // directory structure is preserved.
   paths: {
     previewsReference: '../ppbf.css',
-    stylesheetImports: './fonts.css',
+    stylesheetImports: './legacy/legacy-fonts.css',
     fontsReference: 'fonts/*.woff2',
     absolutePaths: 'none',
     externalRequests: 'none',

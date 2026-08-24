@@ -1,10 +1,38 @@
-# Agent Execution Policy — System Standard
+# Agent Execution Policy — superseded by AGENT_KERNEL.md
 
-**Last updated:** 2026-08-15
+**Last updated:** 2026-08-22
+
+> **NOT THE ENTRYPOINT. NOT BINDING. DO NOT PRELOAD.**
+>
+> **Corrected 2026-08-22.** This file used to declare itself "binding for all AI
+> agents", the thing to "read first" at session start, and it named
+> `docs/current/WORK_QUEUE.md` "the authoritative queue". All three were wrong,
+> and each contradicted a document that outranks this one:
+>
+> - [`CLAUDE.md`](../CLAUDE.md) and [`AGENTS.md`](../AGENTS.md) both open with
+>   "Read `AGENT_KERNEL.md` first. It is the single default execution contract
+>   for this repository." There is one entrypoint and this is not it.
+> - [`AGENT_KERNEL.md`](../AGENT_KERNEL.md) places `WORK_QUEUE.md` last in its
+>   source hierarchy — "historical/provenance evidence only" — and reaches it
+>   only for audit and provenance questions.
+> - [`docs/current/ACTIVE_WORK.md`](current/ACTIVE_WORK.md) asks that
+>   `WORK_QUEUE.md` not be preloaded at all.
+>
+> Where this file and the kernel disagree, **the kernel wins, without
+> exception.** An earlier audit (`docs/capabilities/NETWORK_STATUS.md`)
+> recommended retiring this document outright on the grounds that a second
+> binding policy nobody reads is the same overlap that got
+> `MULTI_AI_EXECUTION_PLAN.md` retired, and that it is referenced by zero files.
+> That remains the recommendation and it is an owner decision, not one an agent
+> makes by deleting the file. Until it is made, the corrections below stop this
+> file misdirecting a session that finds it.
 
 ## Purpose
 
-This repository operates under a strict execution-first agent model. All AI agents must follow this protocol when performing reasoning, planning, or code changes.
+This file records execution habits — triage, anti-speculation, conflict
+resolution, review discipline — that are compatible with the kernel and were
+worth writing down. It is **reference, not protocol**. The protocol is
+[`AGENT_KERNEL.md`](../AGENT_KERNEL.md).
 
 ## 1. Operating Mode
 
@@ -56,7 +84,7 @@ Before creating or modifying work:
 - If a PR is already in progress, add to it rather than opening a new one
 - If a ticket is claimed, do not reclaim it
 
-Reference `docs/current/WORK_QUEUE.md` as the authoritative queue — it is the single source of truth for what is open, in progress, or staged.
+**Corrected 2026-08-22.** This line read: "Reference `docs/current/WORK_QUEUE.md` as the authoritative queue — it is the single source of truth for what is open, in progress, or staged." It is not. `AGENT_KERNEL.md` ranks it last, as historical/provenance evidence, and `ACTIVE_WORK.md` asks that it not be preloaded. Current state is described by executable code and enforced infrastructure; open PR state belongs in GitHub and should be queried live. Read `WORK_QUEUE.md` for what already happened and what proved it — provenance, deployment evidence, collision notes — not to decide what is open.
 
 ## 6. Output Requirements
 
@@ -135,7 +163,9 @@ Agents do **not**:
 
 - **Detailed delivery pipeline:** [docs/AI_DELIVERY_PIPELINE.md](./AI_DELIVERY_PIPELINE.md)
 - **Contributor guardrails:** [docs/AI_CONTRIBUTOR_GUARDRAILS.md](./AI_CONTRIBUTOR_GUARDRAILS.md)
-- **Work queue (authoritative):** [docs/current/WORK_QUEUE.md](./current/WORK_QUEUE.md)
+- **Execution contract (the entrypoint, outranks this file):** [AGENT_KERNEL.md](../AGENT_KERNEL.md)
+- **Current blockers and parked work:** [docs/current/ACTIVE_WORK.md](./current/ACTIVE_WORK.md)
+- **Work queue (historical/provenance evidence only — corrected 2026-08-22, this line said "authoritative"):** [docs/current/WORK_QUEUE.md](./current/WORK_QUEUE.md)
 - **Git branch requirements:** See session startup instructions or branch label in Claude Code
 - **Production state:** [docs/current/PRODUCTION_STATE.json](./current/PRODUCTION_STATE.json)
 
@@ -145,13 +175,25 @@ This policy should be treated as **living documentation** — it changes as the 
 
 ## Session Initialization
 
+**Corrected 2026-08-22.** Steps 1 and 3 used to read "**Read this file first**
+(you are reading it now)" and "**Check WORK_QUEUE.md** — claim work or verify
+nothing overlaps". Both were wrong. `CLAUDE.md` and `AGENTS.md` name
+`AGENT_KERNEL.md` as the single entrypoint, and the kernel's read path is: the
+kernel, then `docs/current/ACTIVE_WORK.md`, then the request or ticket.
+
 When a Claude Code session starts:
 
-1. **Read this file first** (you are reading it now)
-2. **Check the designated branch** — it is provided in your session startup
-3. **Check WORK_QUEUE.md** — claim work or verify nothing overlaps with what you're doing
-4. **Search for existing code** before writing anything new
-5. **Verify your environment** — run a test suite to confirm the baseline is healthy
+1. **Read [`AGENT_KERNEL.md`](../AGENT_KERNEL.md) first.** Not this file.
+2. **Read [`docs/current/ACTIVE_WORK.md`](./current/ACTIVE_WORK.md)** for current
+   blockers and parked work.
+3. **Read the request or assigned ticket.** Load anything further only when the
+   task actually touches its domain — the kernel's read path names which
+   document covers which domain.
+4. **Check the designated branch** — it is provided in your session startup.
+5. **Search for existing code and open PRs** before writing anything new. Query
+   PR state live in GitHub rather than reading it out of a ledger.
+6. **Verify your environment** — run a targeted test first; the full gate is the
+   final check, not the opening one.
 
 ---
 
@@ -177,4 +219,9 @@ A: Check `docs/` for owner decisions already recorded. If none exists, ask in a 
 
 ---
 
-*This policy was authored as a durable system-level standard for multi-agent execution. It is binding for all AI agents working in this repository.*
+*Authored as a durable system-level standard for multi-agent execution, and
+superseded as one. **Corrected 2026-08-22** — this line claimed the file was
+"binding for all AI agents working in this repository". It is not, and was not
+the only binding policy even when it said so. `AGENT_KERNEL.md` binds; this file
+is compatible reference kept for its triage and review habits, pending the
+owner's decision on retiring it.*

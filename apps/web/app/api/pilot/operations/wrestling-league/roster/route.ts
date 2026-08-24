@@ -28,7 +28,8 @@ export const runtime = 'nodejs';
 // cover across the whole gym") and already lets any coach read every
 // athlete's name and gym status org-wide, restricting only dob and emergency
 // contact. A roster row exposes a name and a season membership, nothing that
-// list does not. See this capability's README.md for the full gate list.
+// list does not. Full gate list: competitionSafetyGates.ts and
+// docs/capabilities/GATES.md §9.
 
 export async function GET(request: NextRequest) {
   try {

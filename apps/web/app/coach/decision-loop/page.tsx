@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import WorkAxis from '@/components/WorkAxis';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
 type RecommendationStatus = 'provisional' | 'accepted' | 'rejected' | 'expired' | 'superseded';
@@ -501,7 +502,11 @@ export default function DecisionLoopReviewPage() {
               />
             </label>
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
-            {errorMessage && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--locked-ink)]">{errorMessage}</p>}
+            {/* --restricted-ink, not --locked-ink. A roster that would not
+                load is a network fact, not a medical one; sports-medicine
+                already made this correction and states the reason -- red is
+                left to mean a child is in danger. */}
+            {errorMessage && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{errorMessage}</p>}
           </section>
 
           {!athleteId ? (
@@ -915,6 +920,10 @@ export default function DecisionLoopReviewPage() {
               Back to Coach Workspace
             </Link>
           </div>
+
+        {/* The four words, at the foot of the page — the same foot the
+            approved boards put under every full screen. See WorkAxis. */}
+        <WorkAxis />
         </div>
       </div>
     </RoleStandaloneView>

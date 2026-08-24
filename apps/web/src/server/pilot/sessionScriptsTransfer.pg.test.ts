@@ -376,33 +376,55 @@ describe('transfer claims constraints against real Postgres', () => {
 });
 
 describe('seed-session-scripts.mjs against real Postgres', () => {
-  // The supplied seed_session_script_blocks.csv carries two blocks (both in the Friday
-  // sparring script, block_kind='instruction': "Sparring Drill Rounds" and "Open Sparring")
-  // with none of what_to_say/what_to_explain/what_to_watch/what_to_fix filled in. That is a
-  // real pilot_ssb_content violation in the supplied data, not a bug in the migration or the
-  // loader -- confirmed here rather than worked around.
-  test('the supplied CSV\'s two content-less "instruction" blocks are genuinely rejected by pilot_ssb_content', async () => {
+  // seed_session_script_blocks.csv used to carry two blocks (both in the Friday sparring
+  // script, block_kind='instruction': "Sparring Drill Rounds" blk_df4fb688e5b181 and
+  // "Open Sparring" blk_01b502a7e7336d) with none of what_to_say/what_to_explain/
+  // what_to_watch/what_to_fix filled in. pilot_ssb_content rejected them, and because
+  // seedAll runs in one transaction, 0 of 65 blocks loaded. Those two cells are now
+  // filled from the drill library's own sparring rows (seed-data/drill-library:
+  // Conditioned Sparring -- Single Task / Role Swap, Open Sparring, their cues and stop
+  // rules), so the package must load whole -- and stay stable on a re-run.
+  test('loads exactly 3 scripts / 65 blocks / 4 renderings, idempotently', async () => {
     const client = await freshDatabase('ppbf_test_session_scripts_seed');
     try {
       await applySessionScriptsMigration(client, sessionScriptsMigrationSql);
 
-      let contentCheckError: Error | null = null;
-      try {
-        await seedSessionScripts(client, SESSION_SCRIPTS_SEED_DIR, { organizationId: ORG_A, seedAccountId: COACH_A });
-      } catch (error) {
-        contentCheckError = error as Error;
-      }
-
-      expect(contentCheckError).not.toBeNull();
-      expect(contentCheckError?.message).toMatch(/pilot_ssb_content/);
+      // Twice on purpose: the second call must skip every already-present row rather
+      // than duplicate or fail, which is the loader's stated idempotency contract.
+      await seedSessionScripts(client, SESSION_SCRIPTS_SEED_DIR, { organizationId: ORG_A, seedAccountId: COACH_A });
+      await seedSessionScripts(client, SESSION_SCRIPTS_SEED_DIR, { organizationId: ORG_A, seedAccountId: COACH_A });
 
       const scripts = await client.query(`select count(*)::int as n from pilot.session_scripts where organization_id = $1`, [ORG_A]);
       const blocks = await client.query(`select count(*)::int as n from pilot.session_script_blocks where organization_id = $1`, [ORG_A]);
-      // The whole seedAll call runs inside one transaction, so the rejected block's failure
-      // rolls back everything else that ran before it in the same call, including the 3
-      // scripts and the blocks that preceded it.
-      expect(scripts.rows[0].n).toBe(0);
-      expect(blocks.rows[0].n).toBe(0);
+      const renderings = await client.query(`select count(*)::int as n from pilot.session_script_renderings where organization_id = $1`, [ORG_A]);
+      expect(scripts.rows[0].n).toBe(3);
+      expect(blocks.rows[0].n).toBe(65);
+      expect(renderings.rows[0].n).toBe(4);
+
+      // The two repaired sparring blocks carry supervision content -- the exact cells
+      // whose emptiness used to void the whole load under pilot_ssb_content.
+      const repaired = await client.query(
+        `select block_id, what_to_say, what_to_watch from pilot.session_script_blocks
+         where organization_id = $1 and block_id in ('blk_df4fb688e5b181', 'blk_01b502a7e7336d')
+         order by block_id`,
+        [ORG_A],
+      );
+      expect(repaired.rows).toHaveLength(2);
+      for (const row of repaired.rows) {
+        expect((row.what_to_say ?? '').trim()).not.toBe('');
+        expect((row.what_to_watch ?? '').trim()).not.toBe('');
+      }
+
+      // KNOWN CONTENT GAP, not a defect: "Week 2 Monday" (scr_e2ed38b1a19670) ships with
+      // zero blocks. It loads fine; sessionScriptRuns.ts refuses to start a run of it
+      // (SESSION_SCRIPT_HAS_NO_BLOCKS, 422) and the coach UI hides Start. Pinned here so
+      // a 0-block count on this script reads as the shipped state, not as data loss.
+      const emptyScript = await client.query(
+        `select count(*)::int as n from pilot.session_script_blocks
+         where organization_id = $1 and script_id = 'scr_e2ed38b1a19670'`,
+        [ORG_A],
+      );
+      expect(emptyScript.rows[0].n).toBe(0);
     } finally {
       await client.end();
     }

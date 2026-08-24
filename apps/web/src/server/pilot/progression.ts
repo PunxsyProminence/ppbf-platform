@@ -25,7 +25,9 @@ export interface ProgressionGap {
 
 export interface DrillAssignment {
   assignment_id: string;
-  gap_id: string;
+  // Null on a Coach Card (a coach-issued assignment with no detection gap
+  // behind it -- see coachCards.ts); always set on a gap-driven assignment.
+  gap_id: string | null;
   athlete_id: string;
   // The drill this assignment anchors to, when it has one. Null on every
   // assignment written before drills had identity, and on any assignment a
@@ -51,22 +53,46 @@ export interface DrillAssignment {
   due_date: string | null;
   status: 'assigned' | 'in_progress' | 'completed' | 'incomplete' | 'cancelled';
   completion_percentage: number;
+  // Who issued the work and when. Always present on the row (the column is
+  // NOT NULL); projected so the coach-facing card list never has to guess
+  // whose issuance it is looking at.
+  assigned_by_account_id: string;
+  assigned_at: string;
   created_at: string;
 }
 
 // One projection for every assignment read, so the display fields cannot exist
 // on one surface and not another. The join is composite and organization-scoped
 // exactly like the foreign key -- a drill_id alone would reach another gym's
-// drill.
-const ASSIGNMENT_FIELDS = `a.assignment_id, a.gap_id, a.athlete_id, a.drill_id,
+// drill. Exported for coachCards.ts, which reads the same rows and must not
+// grow a second projection that can drift from this one.
+//
+// EVERY COLUMN NAMED HERE MUST EXIST WITHOUT THE COACH-CARDS MIGRATION.
+// This projection is the read path for /athlete/progression-intelligence,
+// /coach/progression-intelligence and the assignments API -- all of which
+// shipped long before Coach Cards. issuance_id was briefly listed here and
+// it is added by pilot_slice_postgres_coach_cards_migration.sql, so every
+// one of those pre-existing reads started failing with `column
+// "issuance_id" does not exist` on any database that had not yet taken that
+// migration. drillsPersistence.pg.test.ts (base schema + progression +
+// drills, exactly a pre-cards database) caught it; in production the same
+// mistake is a deploy that 500s every assignment read until the migration
+// lands, which is the ordering hazard apply-migrations.yml exists to avoid.
+// coachCards.ts adds issuance_id to its OWN projection instead -- a card
+// cannot exist without that migration, so only the card reads require it.
+//
+// assigned_by_account_id and assigned_at are safe here: both are NOT NULL
+// columns of the original progression migration.
+export const ASSIGNMENT_FIELDS = `a.assignment_id, a.gap_id, a.athlete_id, a.drill_id,
            a.drill_name, a.drill_description,
            coalesce(d.name, a.drill_name) as drill_display_name,
            coalesce(nullif(d.focus, ''), a.drill_description) as drill_display_description,
            d.category as drill_category, d.cues as drill_cues,
            a.drill_difficulty, a.rep_count, a.duration_minutes, a.frequency_per_week,
-           a.due_date, a.status, a.completion_percentage, a.created_at`;
+           a.due_date, a.status, a.completion_percentage,
+           a.assigned_by_account_id, a.assigned_at, a.created_at`;
 
-const ASSIGNMENT_DRILL_JOIN = `left join pilot.drills d
+export const ASSIGNMENT_DRILL_JOIN = `left join pilot.drills d
       on d.organization_id = a.organization_id and d.drill_id = a.drill_id`;
 
 export interface AssignmentCompletion {
@@ -159,7 +185,8 @@ export async function assignDrill(params: {
         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'assigned', 0)
         returning assignment_id, organization_id, gap_id, athlete_id, drill_id, drill_name,
                  drill_description, drill_difficulty, rep_count, duration_minutes,
-                 frequency_per_week, due_date, status, completion_percentage, created_at
+                 frequency_per_week, due_date, status, completion_percentage,
+                 assigned_by_account_id, assigned_at, created_at
       )
       select ${ASSIGNMENT_FIELDS}
       from a

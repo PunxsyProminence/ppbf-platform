@@ -91,6 +91,28 @@ it('reports a refused capability load and stops saving over the stored registry'
   expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(0);
 });
 
+// The track-assignments hydrate effect used to mark itself hydrated even when
+// the GET failed, which released the save effect to POST the in-memory seed
+// over the stored record -- the exact overwrite the capabilities effect
+// guards against, one effect down.
+it('reports a refused track-assignments load and stops saving over the stored record', async () => {
+  const fetchMock = jest.fn(async (url: string) => {
+    if (String(url).includes('/api/pilot/admin/track-assignments')) {
+      return jsonResponse({ error: 'Forbidden: role not allowed' }, false, 403);
+    }
+    if (String(url).includes('/api/pilot/admin/capabilities')) {
+      return jsonResponse({ ok: true, capabilities: [] });
+    }
+    return jsonResponse({ ok: true });
+  });
+
+  await renderPage(fetchMock);
+
+  await screen.findByText(/Forbidden: role not allowed\. The tracks shown are the defaults and track changes are not being saved/);
+  await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/track-assignments', 'GET')).toHaveLength(1));
+  expect(callsTo(fetchMock, '/api/pilot/admin/track-assignments', 'POST')).toHaveLength(0);
+});
+
 it('reports a capability save that the server refused', async () => {
   const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
     if (String(url).includes('/api/pilot/admin/capabilities')) {

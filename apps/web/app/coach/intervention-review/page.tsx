@@ -36,6 +36,10 @@ interface EvidenceLink {
   note: string;
   status: string;
   removed_reason: string;
+  // Computed by the API at read time: false when a film-study source's
+  // proposal is not (or no longer) accepted. The row still renders -- links
+  // are stamped, never hidden -- it just may not pass for evidence.
+  source_admissible: boolean;
 }
 
 interface OutcomeReview {
@@ -267,6 +271,14 @@ export default function InterventionReviewPage() {
                                     <i aria-hidden="true">▪</i>{words(link.evidence_role)}
                                   </span>{' '}
                                   {words(link.source_kind)} {link.source_id}
+                                  {link.source_admissible === false && (
+                                    <>
+                                      {' '}
+                                      <span className="badge badge--locked">
+                                        <i aria-hidden="true">▪</i>inadmissible — no accepted proposal
+                                      </span>
+                                    </>
+                                  )}
                                   {link.note ? ` — ${link.note}` : ''}
                                   {link.status === 'removed' ? ` (removed: ${link.removed_reason})` : ''}
                                 </li>
@@ -373,7 +385,7 @@ export default function InterventionReviewPage() {
           <div className="mt-[var(--s5)]">
             <Link href="/coach/intervention-executions" className="btn btn--ghost">The Work</Link>{' '}
             <Link href="/coach/intervention-protocols" className="btn btn--ghost">Protocols</Link>{' '}
-            <Link href="/coach" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
           </div>
         </div>
       </main>

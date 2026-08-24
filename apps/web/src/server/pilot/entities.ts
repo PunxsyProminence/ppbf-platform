@@ -151,9 +151,10 @@ export async function upsertSession(organizationId: string, payload: PilotSessio
      set athlete_id = $3,
          date = $4,
          rpe = $5,
-         notes = $6,
-         completed_flag = $7,
-         updated_at = $8
+         rpe_method = $6,
+         notes = $7,
+         completed_flag = $8,
+         updated_at = $9
      where organization_id = $1 and session_id = $2
      returning session_id`,
     [
@@ -162,6 +163,7 @@ export async function upsertSession(organizationId: string, payload: PilotSessio
       payload.athlete_id,
       payload.date,
       payload.rpe,
+      payload.rpe_method,
       payload.notes,
       payload.completed_flag,
       payload.updated_at,
@@ -173,14 +175,15 @@ export async function upsertSession(organizationId: string, payload: PilotSessio
   }
 
   await query(
-    `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, notes, completed_flag, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
     [
       organizationId,
       payload.session_id,
       payload.athlete_id,
       payload.date,
       payload.rpe,
+      payload.rpe_method,
       payload.notes,
       payload.completed_flag,
       payload.created_at,

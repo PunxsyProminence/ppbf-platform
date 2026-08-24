@@ -15,6 +15,27 @@
 // Both reviewing roles get this. #149 gave the coach a Release button with no
 // way to look at what they were releasing; this is that missing half, and it
 // is why the view role set is wider than the decide one.
+//
+// NO GUARDIAN-CONSENT GATE HERE, AND THAT IS THE POINT OF THE ROUTE
+//
+// The sibling read route /api/pilot/video/[videoId] now refuses to mint a
+// playback URL when a guardian signed a photo-only consent (covers_video =
+// false). This route deliberately does NOT copy that check, and the next audit
+// comparing the two should stop here rather than "finish the job".
+//
+// authorizeVideoScanReview only ever returns a QUARANTINED video -- a 'ready'
+// one is refused as nothing to do. So every clip reachable through here is one
+// the content screen refused or could not settle, and the only reason anyone is
+// looking at it is to decide whether it is safe. Gating that on media consent
+// would mean a clip the scanner flagged 'blocked' becomes permanently
+// unreviewable because a guardian ticked photo-only or never signed at all --
+// consent withheld from MEDIA USE would have silently withdrawn the platform's
+// ability to check the footage for harm, and left it in quarantine with no
+// exit. That is the exact dead end videoScanReview.ts was written to remove.
+//
+// Media consent governs whether a child's footage may be USED. It says nothing
+// about whether a safeguarding reviewer may LOOK at footage already flagged as
+// possibly unsafe, and it must never be read as saying so.
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
@@ -68,7 +89,7 @@ export async function POST(request: NextRequest) {
     // -- in the browser or in any shared cache on the way back -- hands that
     // credential to a second holder nobody recorded, so the response carrying
     // it must not be stored. Same header the portrait routes use for the same
-    // reason (profile/README.md Gate 4).
+    // reason (docs/capabilities/GATES.md §5).
     return NextResponse.json({
       ok: true,
       video_session_id: videoSessionId,

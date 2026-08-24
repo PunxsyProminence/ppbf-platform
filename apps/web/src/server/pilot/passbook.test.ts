@@ -1,9 +1,14 @@
+import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import {
   getAthletePassbook,
   getCoachPassbookGapQueue,
+  passbookObservationNoteTypes,
+  PASSBOOK_ATHLETE_NOTE_TYPES,
   PASSBOOK_ATTENDANCE_STATUSES,
+  PASSBOOK_GUARDIAN_NOTE_TYPES,
   PASSBOOK_GYM_STATUSES,
+  PASSBOOK_STAFF_NOTE_TYPES,
 } from './passbook';
 
 jest.mock('./db', () => ({
@@ -22,7 +27,7 @@ describe('getAthletePassbook', () => {
   test('returns null without reading child tables when the athlete does not exist in the organization', async () => {
     mockQueryOne.mockResolvedValueOnce(null);
 
-    await expect(getAthletePassbook('org-1', 'ath-missing')).resolves.toBeNull();
+    await expect(getAthletePassbook('org-1', 'ath-missing', 'coach')).resolves.toBeNull();
 
     expect(mockQueryOne).toHaveBeenCalledWith(expect.stringContaining('organization_id = $1 and athlete_id = $2'), ['org-1', 'ath-missing']);
     expect(mockQuery).not.toHaveBeenCalled();
@@ -41,7 +46,7 @@ describe('getAthletePassbook', () => {
       created_at: '2026-01-01T00:00:00.000Z',
     });
 
-    await expect(getAthletePassbook('org-1', 'ath-1')).resolves.toBeNull();
+    await expect(getAthletePassbook('org-1', 'ath-1', 'coach')).resolves.toBeNull();
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
@@ -71,9 +76,16 @@ describe('getAthletePassbook', () => {
       ]);
       if (sql.includes('from pilot.readiness')) return Promise.resolve([{ organization_id: 'org-1', readiness_id: 'ready-1', score: 8, category: 'ready', measured_at: '2026-08-01T12:00:00.000Z', medical_detail: 'excluded' }]);
       if (sql.includes('from pilot.goals')) return Promise.resolve([{ organization_id: 'org-1', goal_id: 'goal-1', title: 'Footwork', target_date: '2026-09-01', metric: 'rounds', status: 'open', private_metadata: 'excluded' }]);
+      // note_type 'coach_observation' is intake/domain-upsert's real default
+      // for entity_type 'coach_note', not an invented label -- the fixture
+      // has to match a writer for the allow-list assertions below to mean
+      // anything. The home_barrier row is the guardian-authored one this
+      // athlete-audience read must drop even though the mocked query ignores
+      // the SQL filter, which is what makes the in-process filter observable.
       if (sql.includes('from pilot.coach_observations')) return Promise.resolve([
-        { organization_id: 'org-1', note_id: 'note-1', coach_account_id: 'coach-1', note_type: 'weekly_corner', note_text: 'Keep the lead hand home.', created_at: '2026-08-01T12:00:00.000Z', audit_internal: 'excluded' },
-        { organization_id: 'org-2', note_id: 'note-cross-org', coach_account_id: 'coach-2', note_type: 'weekly_corner', note_text: 'must not appear', created_at: '2026-08-01T12:00:00.000Z' },
+        { organization_id: 'org-1', note_id: 'note-1', coach_account_id: 'coach-1', note_type: 'coach_observation', note_text: 'Keep the lead hand home.', created_at: '2026-08-01T12:00:00.000Z', audit_internal: 'excluded' },
+        { organization_id: 'org-1', note_id: 'note-home-barrier', coach_account_id: 'parent-account-1', note_type: 'home_barrier', note_text: 'must not appear', created_at: '2026-08-01T12:00:00.000Z' },
+        { organization_id: 'org-2', note_id: 'note-cross-org', coach_account_id: 'coach-2', note_type: 'coach_observation', note_text: 'must not appear', created_at: '2026-08-01T12:00:00.000Z' },
       ]);
       if (sql.includes('from pilot.guardian_links')) return Promise.resolve([
         { organization_id: 'org-1', parent_id: 'parent-1', full_name: 'Jordan Boxer', relationship_to_athlete: 'guardian', phone: '555-0100', email: 'private@example.com', account_id: 'parent-account-1' },
@@ -86,7 +98,7 @@ describe('getAthletePassbook', () => {
       throw new Error(`Unexpected SQL: ${sql}`);
     });
 
-    const result = await getAthletePassbook('org-1', 'ath-1');
+    const result = await getAthletePassbook('org-1', 'ath-1', 'athlete');
 
     expect(result?.pages.attendance).toEqual([
       expect.objectContaining({ canonical_status: 'present', stamp_code: 'PRESENT', domain_status: 'canonical' }),
@@ -207,7 +219,14 @@ describe('getAthletePassbook', () => {
     expect(mockQuery).toHaveBeenCalledTimes(7);
     for (const call of mockQuery.mock.calls) {
       expect(call[0]).toContain('organization_id');
-      expect(call[1]).toEqual(['org-1', 'ath-1']);
+      // Every child read is organization- and athlete-scoped. The
+      // coach_observations read carries one parameter more -- the audience's
+      // note_type allow-list -- and nothing else may.
+      expect(call[1]).toEqual(
+        (call[0] as string).includes('from pilot.coach_observations')
+          ? ['org-1', 'ath-1', [...PASSBOOK_ATHLETE_NOTE_TYPES]]
+          : ['org-1', 'ath-1'],
+      );
     }
     const childSql = mockQuery.mock.calls.map((call) => call[0] as string);
     for (const table of ['sessions', 'attendance', 'readiness', 'goals', 'coach_observations', 'progression_gaps']) {
@@ -233,12 +252,192 @@ describe('getAthletePassbook', () => {
     });
     mockQuery.mockResolvedValue([]);
 
-    const result = await getAthletePassbook('org-1', 'ath-1');
+    const result = await getAthletePassbook('org-1', 'ath-1', 'coach');
 
     expect(result?.athlete.gym_status).toBe('paused');
     expect(result?.athlete.canonical_gym_status).toBeNull();
     expect(result?.athlete.gym_status_domain).toBe('unsupported');
     expect(result?.status_domains.gym_status.unsupported_value).toBe('paused');
+  });
+});
+
+/*
+ * pilot.coach_observations is shared, and this book is readable by the
+ * athlete themselves and by every linked guardian. These tests pin who may
+ * read which note_type out of it. The mocked `query` returns its rows
+ * regardless of the SQL it is handed, so the row-level assertions here
+ * exercise the in-process filter, and the separate SQL/parameter assertions
+ * pin the database-side one. Both filters have to be present for this block
+ * to pass; removing either one turns tests red.
+ */
+describe('passbook coach_observations note_type scope', () => {
+  // Every note_type a writer in this codebase actually files, with its
+  // writer named. Grown deliberately: adding a writer means adding a row
+  // here and deciding its audience in passbook.ts.
+  const EVERY_WRITTEN_NOTE_TYPE = [
+    'coach_observation',      // intake/domain-upsert default for 'coach_note'
+    'intake_observation',     // intake/review-action promotion default
+    'onboarding_observation', // scripts/pilot-shadow-intake-gate.mjs
+    'behavior_standard',      // coach/decision-loop, Behavior Note panel
+    'parent_message',         // coach/decision-loop, Message Home panel
+    'home_barrier',           // parent/barrier-report, GUARDIAN-authored
+    'transportation_barrier', // parent/barrier-report, GUARDIAN-authored
+  ] as const;
+
+  const BARRIER_TEXT = 'cannot get him there, and things at home are bad';
+
+  function arrangeOneNoteOfEveryType(): void {
+    mockQueryOne.mockResolvedValueOnce({
+      organization_id: 'org-1',
+      athlete_id: 'ath-1',
+      full_name: 'Avery Boxer',
+      dob: '2010-05-01',
+      weight_class: '125',
+      gym_status: 'active',
+      active_flag: true,
+      coach_id: 'coach-1',
+      created_at: '2026-01-01T00:00:00.000Z',
+    });
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(
+      sql.includes('from pilot.coach_observations')
+        ? EVERY_WRITTEN_NOTE_TYPE.map((noteType, index) => ({
+          organization_id: 'org-1',
+          note_id: `note-${index}`,
+          coach_account_id: noteType.endsWith('_barrier') ? 'parent-account-1' : 'coach-1',
+          note_type: noteType,
+          note_text: noteType.endsWith('_barrier') ? BARRIER_TEXT : `text for ${noteType}`,
+          created_at: '2026-08-01T12:00:00.000Z',
+        }))
+        : [],
+    ));
+  }
+
+  function observationSqlCall(): [string, unknown[]] {
+    const call = mockQuery.mock.calls.find((entry) => (entry[0] as string).includes('from pilot.coach_observations'));
+    if (!call) throw new Error('coach_observations was never queried');
+    return [call[0] as string, call[1] as unknown[]];
+  }
+
+  test.each([
+    ['athlete', ['coach_observation']],
+    ['parent', ['coach_observation', 'parent_message']],
+    ['coach', [...EVERY_WRITTEN_NOTE_TYPE]],
+    ['organization_admin', [...EVERY_WRITTEN_NOTE_TYPE]],
+    ['admin', [...EVERY_WRITTEN_NOTE_TYPE]],
+    ['volunteer', []],
+    ['staff', []],
+    ['board', []],
+    ['platform_owner', []],
+  ] as Array<[PilotRole, string[]]>)('a %s reads exactly its allowed note types out of the shared table', async (role, expected) => {
+    arrangeOneNoteOfEveryType();
+
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+
+    expect((result?.pages.corner.observations ?? []).map((note) => note.note_type).sort())
+      .toEqual([...expected].sort());
+  });
+
+  test.each(['athlete', 'parent'] as PilotRole[])(
+    'a guardian-authored barrier report never reaches a %s, text or label',
+    async (role) => {
+      arrangeOneNoteOfEveryType();
+
+      const result = await getAthletePassbook('org-1', 'ath-1', role);
+      const serialized = JSON.stringify(result);
+
+      expect(serialized).not.toContain(BARRIER_TEXT);
+      expect(serialized).not.toContain('home_barrier');
+      expect(serialized).not.toContain('transportation_barrier');
+    },
+  );
+
+  test('a behavior note and a coach-to-guardian message stay off the athlete page', async () => {
+    arrangeOneNoteOfEveryType();
+
+    const result = await getAthletePassbook('org-1', 'ath-1', 'athlete');
+    const noteTypes = (result?.pages.corner.observations ?? []).map((note) => note.note_type);
+
+    expect(noteTypes).not.toContain('behavior_standard');
+    expect(noteTypes).not.toContain('parent_message');
+    expect(noteTypes).not.toContain('intake_observation');
+    expect(noteTypes).not.toContain('onboarding_observation');
+  });
+
+  test.each([
+    ['athlete', PASSBOOK_ATHLETE_NOTE_TYPES],
+    ['parent', PASSBOOK_GUARDIAN_NOTE_TYPES],
+    ['coach', PASSBOOK_STAFF_NOTE_TYPES],
+    ['volunteer', []],
+  ] as Array<[PilotRole, readonly string[]]>)(
+    'the %s read is scoped in the database too, not only in process',
+    async (role, allowed) => {
+      arrangeOneNoteOfEveryType();
+
+      await getAthletePassbook('org-1', 'ath-1', role);
+      const [sql, params] = observationSqlCall();
+
+      expect(sql).toContain('and note_type = any($3::text[])');
+      expect(params).toEqual(['org-1', 'ath-1', [...allowed]]);
+    },
+  );
+
+  test('a note filed under an unrecognized label reaches nobody, including staff', async () => {
+    mockQueryOne.mockResolvedValueOnce({
+      organization_id: 'org-1',
+      athlete_id: 'ath-1',
+      full_name: 'Avery Boxer',
+      dob: '2010-05-01',
+      weight_class: '125',
+      gym_status: 'active',
+      active_flag: true,
+      coach_id: 'coach-1',
+      created_at: '2026-01-01T00:00:00.000Z',
+    });
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(
+      sql.includes('from pilot.coach_observations')
+        ? [
+          // Free text: intake/domain-upsert stores whatever note_type the
+          // caller sends, and '' survives `not null`. Neither is on a list.
+          { organization_id: 'org-1', note_id: 'note-invented', coach_account_id: 'coach-1', note_type: 'safeguarding_concern', note_text: 'must not appear', created_at: '2026-08-01T12:00:00.000Z' },
+          { organization_id: 'org-1', note_id: 'note-unlabelled', coach_account_id: 'coach-1', note_type: '', note_text: 'must not appear', created_at: '2026-08-01T12:00:00.000Z' },
+        ]
+        : [],
+    ));
+
+    const result = await getAthletePassbook('org-1', 'ath-1', 'coach');
+
+    expect(result?.pages.corner.observations).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain('must not appear');
+  });
+});
+
+describe('passbookObservationNoteTypes', () => {
+  test('the athlete list is exactly the coaching note about their own training', () => {
+    expect([...PASSBOOK_ATHLETE_NOTE_TYPES]).toEqual(['coach_observation']);
+  });
+
+  test('the guardian list adds only the message addressed to them', () => {
+    expect([...PASSBOOK_GUARDIAN_NOTE_TYPES].sort()).toEqual(['coach_observation', 'parent_message']);
+  });
+
+  test('neither the athlete nor the guardian list carries a guardian-authored barrier type', () => {
+    for (const barrierType of ['home_barrier', 'transportation_barrier']) {
+      expect(PASSBOOK_ATHLETE_NOTE_TYPES).not.toContain(barrierType);
+      // A guardian read here is EVERY linked guardian, not the author, so a
+      // read-back of one guardian's report would disclose it to the other.
+      expect(PASSBOOK_GUARDIAN_NOTE_TYPES).not.toContain(barrierType);
+      expect(PASSBOOK_STAFF_NOTE_TYPES).toContain(barrierType);
+    }
+  });
+
+  test('an unrecognized role resolves to no note types rather than to the widest list', () => {
+    for (const role of ['board', 'platform_owner', 'volunteer', 'staff'] as PilotRole[]) {
+      expect(passbookObservationNoteTypes(role)).toEqual([]);
+    }
+  });
+
+  test("the legacy 'admin' alias resolves to the same list as organization_admin", () => {
+    expect(passbookObservationNoteTypes('admin')).toEqual(passbookObservationNoteTypes('organization_admin'));
   });
 });
 

@@ -53,6 +53,40 @@ interface LoggedIntervention {
   created_at: string;
 }
 
+// "On the floor" was here, and it was not presence.
+//
+// It listed every athlete whose id came back from
+// /api/pilot/coach/readiness-board, and called them "athletes with a fresh
+// check-in" in five places. The readiness board reads pilot.readiness, and
+// every row in pilot.readiness was TYPED BY STAFF DURING INTAKE REVIEW --
+// method 'staff_entered_intake' or 'UNKNOWN', nothing else exists. See
+// readinessProvenance.ts and docs/capabilities/READINESS_PROVENANCE_FACTS.md.
+//
+// So a staff member forming a judgement about an athlete at a desk, possibly
+// days before the session, put that athlete on a coach's screen under the
+// heading "On the floor". Nobody arrived, nobody checked in, and nothing was
+// observed. A coach running a live session read it as who was in the room.
+//
+// THERE IS NO AUTHORIZED PRESENCE SOURCE TO SWAP IN. Athlete self check-ins
+// live in pilot.athlete_check_ins, and that route is SELF ONLY by design:
+// app/api/pilot/athlete/check-in/route.ts:19-21 says "coach/admin views of
+// arrivals are a later, separate read surface". Reaching for it here would be
+// the same substitution with a better-looking source. Attendance is the
+// coach/terminal register the passbook counts, which is not this either.
+//
+// The panel is therefore removed rather than repointed.
+//
+// What remains is athletes_present: a COUNT the coach enters at finish, a
+// human stating HOW MANY they observed. It is not a record of who, and this
+// comment said it was until review caught it -- which is the same conflation
+// of a number with a roster of named children that the panel above committed,
+// written into the note explaining the removal. Nothing in the platform
+// currently records who was in the room during a session.
+//
+// Restoring a live presence panel needs the separate arrival surface the
+// check-in route already names; that is a product decision, not a swap of one
+// query for another.
+
 /** The four authored coaching fields, omitting the ones the author left empty. */
 function blockDetailLines(block: Block): { label: string; value: string }[] {
   return [

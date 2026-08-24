@@ -17,7 +17,13 @@ export async function GET(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, athleteId);
-    const passbook = await getAthletePassbook(principal.organizationId, athleteId);
+    // assertActorCanAccessAthlete answers WHETHER this actor may open the
+    // book; principal.role is what lets getAthletePassbook decide which
+    // pilot.coach_observations rows belong in it. That table is shared with
+    // guardian-authored barrier reports and staff conduct notes, and this
+    // gate admits the athlete themselves plus every linked guardian, so the
+    // reader's role has to travel with the request.
+    const passbook = await getAthletePassbook(principal.organizationId, athleteId, principal.role);
     return passbook ? NextResponse.json({ passbook }) : hiddenNotFound();
   } catch (error) {
     return jsonError(error);

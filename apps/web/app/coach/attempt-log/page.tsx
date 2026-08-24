@@ -275,7 +275,7 @@ export default function AttemptLogPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
           </div>
         </div>
       </main>

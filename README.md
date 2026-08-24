@@ -1,57 +1,80 @@
 # PPBF Platform
 
 A nonprofit, safety-first training and development platform for boxing/combat
-sports gyms, built on Next.js (App Router) with a PostgreSQL backend. Supports
-multiple organizations (gyms) with strict data isolation, role-based
-workspaces for athletes, coaches, parents, board members, and admins, and
-SHADOW, an AI assistant that provides evidence-based training guidance.
+sports gyms. A Next.js (App Router) application in `apps/web` on a PostgreSQL
+backend, supporting multiple organizations with strict data isolation and
+role-based workspaces. Intelligence (SHADOW, AI, ML) is built into the
+platform's architecture from the start.
 
-See [MASTER_INDEX.md](MASTER_INDEX.md) for the full documentation map.
+## Current Operating Model
 
-## Quick Start
+The base user model is **Platform → Admin → Coach → Athlete**:
 
-```bash
-npm install
-```
+- **Platform** — operates the shared infrastructure: hosting, database,
+  organization onboarding, and cross-organization isolation.
+- **Admin** — runs one organization: members, roles, compliance, consent, and
+  organization-level configuration.
+- **Coach** — plans and delivers training, records observations, and is the
+  final human decision-maker for ordinary coaching decisions within medical,
+  consent, safeguarding, and policy boundaries.
+- **Athlete** — trains, tracks their own progress, and sees only their own
+  record.
 
-Configure `apps/web/.env.local` with your Azure credentials
-(`AZURE_POSTGRES_CONNECTION_STRING`, `AZURE_STORAGE_CONNECTION_STRING`,
-`PPBF_PILOT_BOOTSTRAP_KEY`) — see
-[DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md) for the full list.
+The full role vocabulary (board, guardian/parent, staff, volunteer, and the
+platform/organization admin split) is defined in
+[ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md).
 
-```bash
-cd apps/web
-npm run pilot:apply-schema   # apply the pilot.* Postgres schema
-npm run pilot:preflight      # verify environment/config
-npm run gate:pilot           # run the pilot readiness gate
-npm run dev                  # start the app
-```
+## Intelligence Foundation
 
-## Key Architecture
+SHADOW, AI, and ML are foundational platform capabilities baked into the
+architecture — not bolt-ons, and not slated for removal. Immature or advanced
+intelligence functions stay gated until validated, and an unfinished AI/ML/
+SHADOW capability must never prevent the conventional
+Platform/Admin/Coach/Athlete application from functioning. Final authority on
+any decision an intelligence capability informs remains human.
 
-- **Multi-organization isolation**: every organization-owned record carries
-  `organization_id`; roles and access are scoped per organization except for
-  Platform Owner (see [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md)).
-- **Roles**: `platform_owner`, `organization_admin`, `admin`, `board`,
-  `coach`, `athlete`, `parent`, `volunteer`, `staff` — see
-  [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md).
-- **Auth**: opaque session tokens over HTTP-only cookies, plus Microsoft
-  sign-in for staff/board roles — see [AUTH_CONTRACT.md](AUTH_CONTRACT.md).
-- **SHADOW**: an Azure OpenAI-backed assistant with doctrine filtering,
-  evidence citation, and a boxing-metrics formula engine. Strictly
-  educational, never diagnostic.
+## Capability Development
+
+Capabilities progress **DEVELOPMENT → VALIDATION → READY → ACTIVE**. A
+capability becomes ACTIVE only when its go-live contract is satisfied. Two
+additional statuses mark permanence rather than progress: **CORE** (required
+base functionality) and **FOUNDATION** (shared infrastructure other
+capabilities build on). **DEPRECATED** marks retired capabilities.
+Capability contracts live in [docs/capabilities/](docs/capabilities/).
+
+## Core Engineering Rules
+
+- Current source beats historical documentation.
+- Authentication is mandatory on every non-public surface.
+- Authorization is mandatory: role and assignment checks, never trust-the-client.
+- Organization isolation is mandatory: organization-owned data never crosses organizations.
+- Unfinished capabilities must not block unrelated core workflows.
+- Migrations are controlled — No HTTP route changes the schema.
+- Evidence must support claims; report the check that was actually run.
+- Protected `main`: every change lands by PR with green CI, no direct pushes.
+- Make the smallest safe change; one concern per branch/PR.
+- Executable tests beat duplicated prose.
 
 ## Development
 
-- `npm run typecheck` / `npm run lint` / `npm test` from the repo root run
-  against the `web` workspace.
-- Data seeding: [SEED_GUIDE.md](SEED_GUIDE.md).
-- Database migrations are applied only by the controlled operator scripts
-  (`npm run pilot:apply-*`), run either from an operator's shell or from the
-  manually dispatched `apply-migrations` workflow. No HTTP route changes the
-  schema, and no push, merge, or deploy applies a migration as a side effect.
+Setup, environment variables, run, and test commands are documented once:
 
-## Status
+- [apps/web/README.md](apps/web/README.md) — the application, its checks, and how to run them
+- [DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md) — first-run environment setup
 
-Active pilot. See [MASTER_INDEX.md](MASTER_INDEX.md)'s currency warning —
-verify current behavior against `origin/main`, not a local branch.
+## Documentation
+
+The authoritative hierarchy is deliberately small:
+
+1. **Current executable source, tests, and config** — the only description of
+   current behavior.
+2. **This README** — orientation: what the platform is and how it operates.
+3. **[AGENT_KERNEL.md](AGENT_KERNEL.md)** — working rules for AI-assisted work.
+4. **Domain contracts** — [AUTH_CONTRACT.md](AUTH_CONTRACT.md),
+   [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md),
+   [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md), and peers —
+   read when the task touches their boundary.
+5. **Capability contracts** in [docs/capabilities/](docs/capabilities/) — read
+   for the capability being changed.
+6. **[docs/archive/](docs/archive/)** and research material — historical and
+   research-only; never current authority.

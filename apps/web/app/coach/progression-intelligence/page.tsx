@@ -6,6 +6,8 @@ import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import WorkAxis from '@/components/WorkAxis';
+import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
 
 // A rabbit hole renders as a paper note pinned to the leather panel, so it
 // takes the design system's paper material (which carries its own dark ink)
@@ -52,11 +54,15 @@ interface AssignmentCompletion {
   verified_at: string | null;
 }
 
-interface RosterAthlete {
-  athlete_id: string;
-  display_name: string;
-  status?: string;
-}
+// The roster row as the server actually sends it. Typed from the producer
+// (getAthletesForCoach -> CoachRosterAthlete) rather than redeclared, which is
+// the fix /coach/cards already carries and the reason it carries it: this
+// picker read `display_name`, a key /api/pilot/athletes/list has never sent,
+// so `athlete.display_name || athlete.athlete_id` fell through to the raw id
+// and every coach chose an athlete from a list of `ath-0f3c...` strings.
+// A redeclared interface plus an unchecked `as` cast at the fetch boundary
+// cannot catch that -- only naming the producer's own type can.
+type RosterAthlete = Pick<CoachRosterAthlete, 'athlete_id' | 'full_name'>;
 
 interface GapSuggestionItem {
   athlete_id: string;
@@ -500,7 +506,9 @@ export default function CoachProgressionIntelligencePage() {
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Detect performance gaps, assign drills, and track athlete completion and progression.
           </p>
-          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{errorMessage}</p> : null}
+          {/* --restricted-ink, not --locked-ink: see sports-medicine, where
+              the same correction is made and the reason written out. */}
+          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{errorMessage}</p> : null}
         </header>
 
         {/* Athlete Selector — roster first, free-text fallback for edge IDs */}
@@ -517,7 +525,7 @@ export default function CoachProgressionIntelligencePage() {
                 <option value="">Choose from roster…</option>
                 {roster.map((athlete) => (
                   <option key={athlete.athlete_id} value={athlete.athlete_id}>
-                    {athlete.display_name || athlete.athlete_id}
+                    {athlete.full_name || athlete.athlete_id}
                   </option>
                 ))}
               </select>
@@ -895,6 +903,10 @@ export default function CoachProgressionIntelligencePage() {
           <Link href="/rabbit-holes" className="btn btn--ghost">
             Write a Rabbit Hole
           </Link>
+
+        {/* The four words, at the foot of the page — the same foot the
+            approved boards put under every full screen. See WorkAxis. */}
+        <WorkAxis />
         </div>
       </div>
     </RoleStandaloneView>

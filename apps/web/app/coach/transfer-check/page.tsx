@@ -174,7 +174,7 @@ export default function TransferCheckPage() {
 
           <div className="mt-[var(--s5)]">
             <Link href="/coach/attempt-log" className="btn btn--ghost">Attempt Log</Link>{' '}
-            <Link href="/coach" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
           </div>
         </div>
       </main>

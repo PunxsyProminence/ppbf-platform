@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { readDesignSystemCss } from '../src/design/readDesignSystemCss';
 
 /**
  * A ROOM MODIFIER ON ITS OWN IS NOT A ROOM.
@@ -174,7 +175,7 @@ describe('every surface that declares a room also carries the base .room class',
 });
 
 describe('the light and the plate hang off the base class, which is why it is required', () => {
-  const stripped = readFileSync(CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const stripped = readDesignSystemCss(CSS).replace(/\/\*[\s\S]*?\*\//g, '');
 
   /** The body of the first rule whose selector list begins with `selector`. */
   function ruleBody(selector: string): string {

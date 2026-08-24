@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
  * A DARK PANEL IS DARK EVERYWHERE, OR IT IS A BUG SOMEWHERE.
@@ -26,7 +27,7 @@ import path from 'node:path';
  * material to one place and not the others fails here instead of on a screen.
  */
 
-const SHEET = readFileSync(path.join(__dirname, '../../../../design-system/ppbf.css'), 'utf8')
+const SHEET = readDesignSystemCss(path.join(__dirname, '../../../../design-system/ppbf.css'))
   .replace(/\/\*[\s\S]*?\*\//g, '');
 const GLOBALS = readFileSync(path.join(__dirname, '../../app/globals.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '');

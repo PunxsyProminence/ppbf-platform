@@ -9,6 +9,43 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
 
+/*
+ * What an athlete reads when something on this page does not load.
+ *
+ * These lines used to be `Failed to fetch gaps: ${res.status}`,
+ * `Failed to fetch assignments: ${res.status}` and `Log failed (${res.status})`
+ * -- a stored HTTP status printed to a kid on a gym tablet, the same defect as
+ * the raw review_state enum /athlete/video-analysis used to show. A status code
+ * says nothing an athlete can act on, and "Failed" on its own reads as a
+ * verdict on them rather than on the network. Each line says what did not
+ * happen, what is still true, and what to do next.
+ *
+ * These are also the ONLY failure strings this page will show. `err.message` is
+ * never rendered straight through: on a dead network the browser writes that
+ * message itself, and what it writes is "Failed to fetch".
+ */
+const GAPS_DID_NOT_LOAD =
+  'The gaps your coach wrote down did not load. Nothing is lost — they are still there. Try again in a minute.';
+const DRILLS_DID_NOT_LOAD =
+  'Your drills did not load. Nothing is lost — the work your coach assigned is still there. Try again in a minute.';
+const SCREEN_DID_NOT_LOAD =
+  'This screen did not load. Nothing is lost — your gaps and your drills are still there. Try again in a minute.';
+const LOG_DID_NOT_SAVE =
+  'That log did not save. What you typed is still in the box — try Save log again in a minute.';
+
+// Pinned by e2e/athlete-journey.spec.ts, which asserts it is ABSENT on a
+// session the gate just accepted.
+const SESSION_UNRESOLVED = 'Unable to resolve athlete session. Sign in again.';
+
+// Only copy written in this file reaches the athlete; anything else that
+// arrives on an Error -- the browser's own network text, an API message
+// written for a developer -- is logged instead.
+const ATHLETE_LOAD_COPY: ReadonlySet<string> = new Set([
+  GAPS_DID_NOT_LOAD,
+  DRILLS_DID_NOT_LOAD,
+  SCREEN_DID_NOT_LOAD,
+]);
+
 interface ProgressionGap {
   gap_id: string;
   athlete_id: string;
@@ -22,7 +59,11 @@ interface ProgressionGap {
 
 interface DrillAssignment {
   assignment_id: string;
-  gap_id: string;
+  // Null on a Coach Card -- work a coach issued directly, with no detection
+  // gap behind it. getGapForAssignment already tolerates it (find over the
+  // gaps list simply misses), so the card renders without an "Assigned for"
+  // line rather than with an invented gap.
+  gap_id: string | null;
   drill_name: string;
   drill_description: string;
   drill_display_name?: string;
@@ -114,6 +155,10 @@ export default function AthleteProgressionIntelligencePage() {
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // A failed read is not an empty record. This says which one the page is
+  // looking at, so the empty state -- a claim about the athlete's COACH -- is
+  // never made on the strength of a network failure.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [loggingAssignmentId, setLoggingAssignmentId] = useState<string | null>(null);
   const [logReps, setLogReps] = useState('');
@@ -126,11 +171,17 @@ export default function AthleteProgressionIntelligencePage() {
         const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
         const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
         if (!response.ok || !payload.authenticated || !payload.athlete_id) {
-          throw new Error('Unable to resolve athlete session. Sign in again.');
+          throw new Error(SESSION_UNRESOLVED);
         }
         setAthleteId(payload.athlete_id);
       } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : 'Unable to resolve athlete session.');
+        // Logged, not displayed.
+        console.error({ event: 'athlete-progression-session-failed', error: err });
+        // A refused session is worth telling an athlete to sign in again. A
+        // network that never answered is not -- that advice would send a kid
+        // to the login screen over a dropped tablet connection.
+        setErrorMessage(err instanceof Error && err.message === SESSION_UNRESOLVED ? SESSION_UNRESOLVED : SCREEN_DID_NOT_LOAD);
+        setLoadFailed(true);
         setLoading(false);
       }
     })();
@@ -143,13 +194,15 @@ export default function AthleteProgressionIntelligencePage() {
       try {
         setLoading(true);
         setErrorMessage(null);
+        setLoadFailed(false);
 
         const gapsRes = await fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${encodeURIComponent(athleteId)}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
         });
-        if (!gapsRes.ok) throw new Error(`Failed to fetch gaps: ${gapsRes.status}`);
+        // The status rides along on `cause` -- logged for diagnosis below, never rendered.
+        if (!gapsRes.ok) throw new Error(GAPS_DID_NOT_LOAD, { cause: { status: gapsRes.status } });
         const gapsData = await gapsRes.json();
         setGaps(gapsData.items || []);
 
@@ -158,7 +211,7 @@ export default function AthleteProgressionIntelligencePage() {
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
         });
-        if (!assignRes.ok) throw new Error(`Failed to fetch assignments: ${assignRes.status}`);
+        if (!assignRes.ok) throw new Error(DRILLS_DID_NOT_LOAD, { cause: { status: assignRes.status } });
         const assignData = await assignRes.json();
         setAssignments(assignData.items || []);
 
@@ -180,7 +233,11 @@ export default function AthleteProgressionIntelligencePage() {
           setCompletions([]);
         }
       } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : 'Failed to load progression data');
+        // Logged, not displayed -- the status and the stack stay available to
+        // whoever is debugging the gym's tablet.
+        console.error({ event: 'athlete-progression-load-failed', error: err });
+        setErrorMessage(err instanceof Error && ATHLETE_LOAD_COPY.has(err.message) ? err.message : SCREEN_DID_NOT_LOAD);
+        setLoadFailed(true);
       } finally {
         setLoading(false);
       }
@@ -207,15 +264,23 @@ export default function AthleteProgressionIntelligencePage() {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || `Log failed (${res.status})`);
+        const detail = await res.json().catch(() => ({}));
+        // The API's `error` field is written for a developer -- "Assignment
+        // does not belong to the specified athlete", "Forbidden", "Not found"
+        // -- and none of it is a sentence to hand a child who just finished
+        // their reps. It rides on `cause` to the log instead.
+        throw new Error(LOG_DID_NOT_SAVE, { cause: { status: res.status, detail } });
       }
       setLoggingAssignmentId(null);
       setLogReps('');
       setLogNotes('');
       setReloadToken((t) => t + 1);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to log completion');
+      // Logged, not displayed.
+      console.error({ event: 'athlete-progression-log-failed', error: err });
+      // A failed log is not a failed read: the gaps and drills already on
+      // screen were read fine and stay exactly where they are.
+      setErrorMessage(LOG_DID_NOT_SAVE);
     } finally {
       setLogBusy(false);
     }
@@ -251,7 +316,11 @@ export default function AthleteProgressionIntelligencePage() {
           <div className="alert alert--critical" role="alert">
             <span className="alert-icon" aria-hidden="true">✕</span>
             <div className="alert-body">
-              <p className="alert-title">Failed</p>
+              {/* "Failed", alone and in bold, is a word this gym uses about
+                  rounds, not about a kid's screen. The title now says which
+                  thing did not happen; the message under it says what is
+                  still true. */}
+              <p className="alert-title">{loadFailed ? 'This screen did not load' : 'That log did not save'}</p>
               <p className="alert-msg">{errorMessage}</p>
             </div>
           </div>
@@ -262,13 +331,20 @@ export default function AthleteProgressionIntelligencePage() {
             <span className="working">Loading your progression data...</span>
           </div>
         ) : gaps.length === 0 && assignments.length === 0 ? (
-          <div className="mat-leather rounded-[var(--r-lg)]">
-            <div className="empty">
-              <div className="empty-glyph" aria-hidden="true">🥊</div>
-              <div className="empty-title">No progression gaps assigned</div>
-              <p className="empty-msg mx-auto">Your coaches will identify gaps and assign drills to help you improve</p>
+          /* An unread record and an empty one look identical and mean opposite
+             things. "No progression gaps assigned" is a claim about the
+             athlete's COACH; a read that failed gives no standing to make it,
+             so the alert above is left to speak alone. The same distinction
+             the loading branch above draws -- see page.test.tsx. */
+          loadFailed ? null : (
+            <div className="mat-leather rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-glyph" aria-hidden="true">🥊</div>
+                <div className="empty-title">No progression gaps assigned</div>
+                <p className="empty-msg mx-auto">Your coaches will identify gaps and assign drills to help you improve</p>
+              </div>
             </div>
-          </div>
+          )
         ) : (
           <div className="space-y-[var(--s6)]">
             <section>
@@ -297,11 +373,16 @@ export default function AthleteProgressionIntelligencePage() {
             <section>
               <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Drill Assignments</h2>
               {assignments.length === 0 ? (
-                <div className="mat-leather rounded-[var(--r-lg)]">
-                  <div className="empty" style={{ padding: 'var(--s6) var(--s5)' }}>
-                    <p className="empty-msg mx-auto">No drills assigned yet</p>
+                /* Same rule one level down: the gaps read can succeed while
+                   the assignments read fails, and "No drills assigned yet"
+                   would then be the network talking about the coach. */
+                loadFailed ? null : (
+                  <div className="mat-leather rounded-[var(--r-lg)]">
+                    <div className="empty" style={{ padding: 'var(--s6) var(--s5)' }}>
+                      <p className="empty-msg mx-auto">No drills assigned yet</p>
+                    </div>
                   </div>
-                </div>
+                )
               ) : (
                 <div className="space-y-[var(--s4)]">
                   {assignments.map((assignment) => {

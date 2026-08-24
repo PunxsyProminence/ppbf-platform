@@ -4,15 +4,24 @@ Working doc for turning the reference mockups into real pages.
 
 ## Division of labor
 
+**Superseded in part, 2026-08-22.** The Claude-engineers / Grok-decorates split
+below was retired by owner decision — Grok now owns visual design *and* visual
+implementation, per `docs/GROK-VISUAL-LANE.md` and the lanes in
+`AGENT_KERNEL.md`. What survives is everything about how to read a mockup
+against real code, which is the useful half of this document.
+
 - **The mockups are layout references.** They establish where things sit and what
   objects a screen is built from — not a pixel spec to be traced.
-- **Engineering (Claude):** the layout itself — structure, hierarchy, real routes, real
-  fields, real components, and the design-system classes that already exist.
-- **Decoration (Grok):** visual treatment on top of an engineered layout — textures,
-  imagery, atmosphere.
+- **Layout and decoration are one lane now (Grok):** structure, hierarchy,
+  presentation of real routes and real fields, the design-system classes that
+  already exist, and the visual treatment on top — textures, imagery,
+  atmosphere.
+- **Claude reviews rather than engineers** the presentation layer: that no
+  function, gate, boundary or safety rule moved, and that nothing was invented.
 
-Decoration goes on last, over a layout that already works. A page that is well laid out
-and undecorated is finishable; a decorated page with the wrong layout is not.
+Layout still comes before decoration, and that ordering did not change with the
+lane: a page that is well laid out and undecorated is finishable; a decorated
+page with the wrong layout is not.
 
 ---
 
@@ -64,28 +73,36 @@ All twelve map to routes that already exist. 125 routes total.
 | 11 | Compliance Center | `/admin/compliance-center` |
 | 12 | Progression Intelligence | `/athlete/progression-intelligence`, `/coach/progression-intelligence` |
 
-## Where the app actually drifts
+## Where the app drifted — RESOLVED, kept as a record
 
-Measured across all 125 route files — count of off-system color utilities
-(`slate-*`, `zinc-*`, `gray-*`, `bg-[#hex]`) against design-system class hits.
+**This table described the state on 2026-08-20 and every row of it has since
+been fixed. Do not use it as a work list.** It is kept because the measurement
+method is worth reusing, not because the targets are still there.
 
-| Route | Off-system | DS hits | Verdict |
-|---|---|---|---|
-| `/shadow` | **178** | 2 | Cold zinc/slate terminal. The single worst offender. |
-| `/board/dashboard` | 2 | 0 | `bg-[#09090b] font-mono text-slate-300` — same cold palette |
-| `/coach/operations` | 2 | 0 | minor |
-| `/admin/macro-analytics` | 2 | 0 | minor |
-| `/admin/curriculum` | 2 | 0 | minor |
-| `/admin/communications` | 2 | 0 | minor |
-| `/admin/retro-lab` | 1 | 0 | minor |
-| everything else | 0 | 1–33 | already on-system |
+The table read, at the time: `/shadow` 178 off-system colour utilities against
+2 design-system hits — "the single worst offender", 31×`zinc-700`,
+26×`slate-300`, `bg-[#09090b] font-mono text-slate-300` — with
+`/board/dashboard` at 2, `/coach/operations`, `/admin/macro-analytics`,
+`/admin/curriculum` and `/admin/communications` at 2 each, and
+`/admin/retro-lab` at 1.
 
-**The app is mostly on-system already.** The exception is `/shadow` (1,568 lines,
-`bg-[#09090b] font-mono text-slate-300`, 31×`zinc-700`, 26×`slate-300`), which reads as a
-generic AI chat app while its mockup is warm paper, cork and teletype. `/board/dashboard`
-carries the same cold palette in miniature.
+Re-measured 2026-08-22, same method:
 
-That is the highest-value target, and it is a real defect against Law 6 — not a taste call.
+```
+grep -oE "slate-[0-9]+|zinc-[0-9]+|gray-[0-9]+|bg-\[#[0-9a-fA-F]+\]" \
+  apps/web/app/shadow/page.tsx | wc -l          →  0
+grep -rhoE "slate-[0-9]+|zinc-[0-9]+|gray-[0-9]+" \
+  apps/web/app --include=page.tsx | wc -l        →  0
+```
+
+**Zero, on `/shadow` and across every route file in the app.** The Room DNA
+passes cleaned it. The only surviving cold-palette code is
+`apps/web/src/components/core/PunxsyEcosystemCore.tsx`, mounted only on
+`/admin/retro-lab` — a lab prototype (no fetch), not an operational route.
+The grep above is scoped to `app/**/page.tsx` and therefore does not see it.
+
+The method is still the right one for catching this class of defect, and
+running it before a visual batch is cheap. The verdict column is history.
 
 ---
 

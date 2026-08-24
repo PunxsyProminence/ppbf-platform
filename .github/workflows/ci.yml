@@ -96,6 +96,33 @@ jobs:
           assert.equal(classifyPaths(['apps/web/e2e/guardian-journey.spec.ts']).guardianE2e, true);
           assert.equal(classifyPaths(['apps/web/e2e/support/signIn.ts']).coachE2e, true);
 
+          // The homepage suite was the one journey whose own spec did not fire
+          // its flag, so an edit to public-homepage.spec.ts could not run
+          // itself -- exactly the "spec that never runs" this block exists to
+          // catch, missed because the assertion above stopped at three.
+          assert.equal(classifyPaths(['apps/web/e2e/public-homepage.spec.ts']).homepageE2e, true);
+
+          // That spec opens /login and asserts on the sign-in methods it
+          // offers, so the front door is a homepage surface. It reached only
+          // the three SIGNED-IN predicates before, which do not run this one:
+          // a change to SignInPanel went out with the homepage journey skipped.
+          assert.equal(classifyPaths(['apps/web/components/SignInPanel.tsx']).homepageE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/login/page.tsx']).homepageE2e, true);
+
+          // And the board suite, which was the remaining spec that could not
+          // fire its own flag. Its three tests are unauthenticated redirect
+          // checks that each assert on the 'The Bell' heading, so the sign-in
+          // door is one of its surfaces too.
+          assert.equal(classifyPaths(['apps/web/e2e/board-governance.spec.ts']).boardE2e, true);
+          assert.equal(classifyPaths(['apps/web/components/SignInPanel.tsx']).boardE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/login/page.tsx']).boardE2e, true);
+
+          // ...and still only that one. The rest of the signed-in plumbing is
+          // not on an unauthenticated visitor's path, and widening this
+          // predicate to all of it would run the homepage suite on every
+          // session-layer change for no coverage gained.
+          assert.equal(classifyPaths(['apps/web/src/server/pilot/pageGuard.ts']).homepageE2e, false);
+
           assert.equal(
             classifyPaths(['apps/web/app/board/page.tsx']).boardE2e,
             true

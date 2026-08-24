@@ -1,6 +1,6 @@
 # T-000 — <title: one capability, one concern>
 
-> Status: OPEN | CLAIMED (<builder, date>) | SHIPPED (see done/)
+> Status: READY | CLAIMED (<builder, date>) | BACKLOG | RESOLVED (delivery note appended below)
 > Lane: A (git-capable AI) or B (chat-only AI) — either unless stated
 > Priority: P0 safety / P1 pilot-blocking / P2 operator / P3 polish
 

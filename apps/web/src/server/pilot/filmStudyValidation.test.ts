@@ -13,6 +13,7 @@ import {
   type FilmStudyValidationReport,
 } from './filmStudyValidation';
 import { query } from './db';
+import { MODEL_PROPOSAL_SCOPE_SQL } from './shadowFilmStudyProposals';
 
 jest.mock('./db', () => ({ query: jest.fn() }));
 
@@ -288,6 +289,28 @@ describe('scope', () => {
 
     for (const call of mockQuery.mock.calls) {
       expect(call[1]).toEqual(['org-scoped']);
+    }
+  });
+
+  /* The rate is described as acceptance of MODEL proposals, so both queries
+   * must exclude coach-reported rows -- a coach's own observation, accepted, is
+   * evidence the model MISSED something, not evidence it was right.
+   *
+   * Compared against the imported constant rather than a literal typed here:
+   * if the predicate is ever tightened (say to spell out a null case), a
+   * hand-copied duplicate in filmStudyValidation.ts drifts away from it and
+   * this goes red. That is the property worth guarding -- a string match alone
+   * cannot tell reuse from a copy, so the real behavioural proof is
+   * filmStudyValidationOriginScope.pg.test.ts, which inserts rows of both
+   * origins and reads the counts back out of Postgres. */
+  test('both queries carry the shared model-proposal predicate', async () => {
+    mockRows(row({ reviewed_count: '5', accepted_count: '5' }));
+
+    await getFilmStudyValidation('org-scoped');
+
+    expect(mockQuery.mock.calls).toHaveLength(2);
+    for (const call of mockQuery.mock.calls) {
+      expect(String(call[0])).toContain(MODEL_PROPOSAL_SCOPE_SQL);
     }
   });
 

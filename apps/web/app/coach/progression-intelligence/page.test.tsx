@@ -12,6 +12,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react';
 
 import type { RabbitHoleLessonItem } from '@/components/RabbitHole';
+import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
 import CoachProgressionIntelligencePage from './page';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
@@ -409,5 +410,38 @@ describe('deterministic gap suggestions', () => {
 
     await screen.findByText(/Progression Gaps → Drills → Verification/);
     expect(screen.queryByText('Suggested Gaps')).toBeNull();
+  });
+});
+
+// The roster picker had no test, which is how it shipped listing raw athlete
+// ids to every coach: it read `display_name`, a key /api/pilot/athletes/list
+// has never sent, so `display_name || athlete_id` fell through silently.
+//
+// The type now comes from the producer (CoachRosterAthlete), so a recurrence
+// fails to compile. That matters more than this test does, and /coach/cards
+// records why: a hand-written mock inventing the same key kept its suite green
+// while production showed ids. The fixture below is therefore typed against
+// the contract -- a mock free to invent a field is a mock that can agree with
+// a bug.
+describe('the roster picker', () => {
+  const ROSTER: Pick<CoachRosterAthlete, 'athlete_id' | 'full_name'>[] = [
+    { athlete_id: 'ath-0f3c9a21', full_name: 'Rosa Delgado' },
+  ];
+
+  test('offers athletes by name, never by raw id', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/athletes/list')) {
+        return { ok: true, json: async () => ({ items: ROSTER }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<CoachProgressionIntelligencePage />);
+
+    expect(await screen.findByRole('option', { name: 'Rosa Delgado' })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByRole('option', { name: 'ath-0f3c9a21' })).toBeNull();
+    });
   });
 });

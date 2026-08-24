@@ -1,7 +1,41 @@
-# The 200-module capability backlog
+# Capabilities
 
-What these files are, what their statuses actually mean, and three things to fix
-about how they are maintained.
+This directory is the home of **capability documentation**: one concise
+contract per meaningful product capability, not one README per route. A route
+is not automatically a capability; a component is not automatically a
+capability. One capability may span UI, API, database, SHADOW, AI/ML, and
+tests — it gets **one** contract.
+
+## Lifecycle
+
+Every meaningful capability carries exactly one status:
+
+- **CORE** — required conventional platform functionality (Platform → Admin →
+  Coach → Athlete).
+- **FOUNDATION** — shared infrastructure: SHADOW, AI, ML, authentication,
+  organization isolation.
+- **DEVELOPMENT** — exists or being built; not approved for production use.
+- **VALIDATION** — implementation exists and is being tested against its
+  go-live requirements.
+- **READY** — all required go-live gates have been proven.
+- **ACTIVE** — enabled for its intended production users.
+- **DEPRECATED** — no longer part of the supported system.
+
+A capability becomes ACTIVE only when its Go-Live Contract is satisfied. An
+unfinished capability must never block unrelated core workflows. See
+[`GO_LIVE_CONTRACT_TEMPLATE.md`](GO_LIVE_CONTRACT_TEMPLATE.md) for the
+contract shape. Contracts are written for capabilities that actually exist or
+are actively being developed — never speculatively.
+
+Live gate state (what is actually enforced in code today) is tracked in
+[`GATES.md`](GATES.md).
+
+---
+
+# The 200-module capability backlog (historical planning artifact)
+
+What the `modules/` + CSV files are, what their statuses actually mean, and
+three things to fix about how they are maintained.
 
 Written when this tree was brought into version control on 2026-08-03. It had
 been produced by a PowerShell wave process running outside git, so nothing here
@@ -18,7 +52,7 @@ the rest matters: a repo-wide search for `expanded-200-backlog`,
 nothing a coach, athlete or board member sees.
 
 That matters because the owner's standing rule is that fake data must be gone
-before real athletes are onboarded, and a 200-row table with 19 modules marked
+before real athletes are onboarded, and a 200-row table with many modules marked
 DONE would be a serious truth-on-screen problem *if* a console rendered it. No
 console does. `Active` is `false` on every row, and `PPBF_CAPABILITIES.json`
 governance stays off.
@@ -128,15 +162,9 @@ from now needs and cannot reconstruct.
 ## Reading the CSV
 
 `expanded-200-backlog.csv` is the source of truth for status; the module stubs
-mirror it. As of this commit:
+mirror it. Counts drift as waves land — do not trust a count table in prose;
+read the CSV itself for current numbers.
 
-| Status | Count |
-|---|---|
-| DRAFT | 178 |
-| DONE | 19 |
-| QUEUED | 2 |
-| IN_PROGRESS | 1 |
-
-`Active` is `false` on all 200. `PromotionRequired` gates anything becoming
+`Active` is `false` on all rows. `PromotionRequired` gates anything becoming
 live. Neither should be flipped from this backlog — promotion is a separate,
 deliberate act.

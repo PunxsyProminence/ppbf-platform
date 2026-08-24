@@ -1,7 +1,12 @@
 # PPBF/SHADOW Research Intake — Seed Package
 
-**Status:** PROPOSED research output. Nothing here was applied to any live system.
-**Generated:** 2026-08-07 from the 1,193-claim verified evidence registry.
+> **RESEARCH SEED — NOT PRODUCTION AUTHORITY.** Research output. Loading this package approves
+> no evidence, adopts no methodology, and changes no algorithm or safety policy. What has
+> actually been imported into any database is recorded by `import-shadow-research.mjs` runs and
+> `docs/SHADOW_RESEARCH_INTAKE_IMPORT.md`, not by this file.
+
+**Generated:** 2026-08-07 from the 1,193-claim verified evidence registry
+(`../../research-evidence/2026-08-07/`).
 **Scope:** the research intake lane only — gap generation, seed corpus, coverage detection.
 
 Every file targets a table that already exists in the `pilot` schema. Column names, enum values, FK
@@ -21,10 +26,17 @@ relationships and uniqueness constraints were validated against the live DDL bef
 | `research_triage_view.sql` | new read-only view | 1 |
 | `EVIDENCE_TIER_SPEC.md` | spec for `shadowEvidenceTier.ts` | — |
 | `evidence_tier_mapping_table.csv` | supporting table for the spec | 54 |
+| `fig_intake_seed.png` | none — companion figure; not read by the importer | — |
 
 **Two placeholders must be substituted before loading:** `{{PPBF_ORG_ID}}` in every `organization_id`
 column, and `{{SEED_ACCOUNT_ID}}` in every `created_by_account_id` column. They are deliberately not
-real values — I have no authority to pick an org or an account.
+real values — the authoring pass had no authority to pick an org or an account.
+
+**Post-authoring corrections (PR #238):** the sources and documents CSVs were replaced with
+corrected versions carrying explicit `approval_state = pending_review` and
+`verification_state = unverified` columns, so the review gate is enforced by content and not only
+by column default; every other field is byte-identical. The capability map additionally carries
+`_feeder_tracks` and `_coverage_reason` working columns parsed by the importer.
 
 ## 2. Provenance and licensing
 
@@ -75,6 +87,11 @@ The 20% floor is a **PROPOSED PPBF PARAMETER — REQUIRES VALIDATION**. It is a 
 transfer is tolerable before a capability should warn, not a value derived from evidence. Change it in one
 place and re-run.
 
+(The 2026-08-08 package recomputed this map after a parsing-bug fix and the Penn State merge:
+20 covered, 10 partial, 0 uncovered. See
+`../2026-08-08/README_PENNSTATE_INTEGRATION.md` §5. This directory keeps the values the
+importer's `EXPECTED_COUNTS` pins to.)
+
 ## 5. Research requirements (229 seeded, all `status='open'`)
 
 Four gap types, each from a documented condition in the registry rather than a guess:
@@ -111,11 +128,14 @@ the natural key `(organization_id, source_event_name, source_entity_type, source
 7. Apply `research_triage_view.sql`.
 8. Review `EVIDENCE_TIER_SPEC.md` separately — it proposes a code change and is not part of the data load.
 
-`ingest_state` is set to `indexed` on the document rows. If your pipeline expects to drive that transition
-itself, set it to `pending` before loading.
+`ingest_state` is `pending` on all 14 document rows. An earlier revision of this package shipped
+`indexed`; that was corrected under PR #238 — indexing is a transition the pipeline must make
+itself, and `import-shadow-research.mjs` now rejects any seed row claiming `approved`,
+`verified`, or `indexed`.
 
 ## 7. What this package deliberately does not do
 
 No table is created or altered except the read-only triage view. No embedding is generated. No source is
-marked approved — `shadow_library_sources.approval_state` has a `pending_review` default and a
-reviewer-role guard (`requireEvidenceReviewer`), and that human review gate is left intact by design.
+marked approved — `shadow_library_sources.approval_state` ships as `pending_review` (explicitly in the
+CSV, and as the column default) behind a reviewer-role guard (`requireEvidenceReviewer`), and that human
+review gate is left intact by design.

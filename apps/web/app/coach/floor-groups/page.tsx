@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import WorkAxis from '@/components/WorkAxis';
 
 // Today's floor (modules 121 + 123): the room split for the people who
 // actually showed up. Groups may carry a station (a circuit) or not (small
@@ -188,10 +189,10 @@ export default function FloorGroupsPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
-                <p className="alert-title">Failed</p>
+                <p className="alert-title">Attention</p>
                 <p className="alert-msg">{errorMessage}</p>
               </div>
             </div>
@@ -338,8 +339,12 @@ export default function FloorGroupsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
           </div>
+
+        {/* The four words, at the foot of the page — the same foot the
+            approved boards put under every full screen. See WorkAxis. */}
+        <WorkAxis />
         </div>
       </main>
     </RoleSessionGate>

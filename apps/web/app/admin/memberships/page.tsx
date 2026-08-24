@@ -32,6 +32,16 @@ interface AthleteOption {
   full_name: string;
 }
 
+// The programs catalog (pilot.programs): enrollment picks a program from
+// here instead of retyping its name, so "Junior Boxing" can never drift
+// into "Jr Boxing" and silently split one group into two ledgers.
+interface ProgramRow {
+  program_id: string;
+  program_name: string;
+  status: string;
+  active_member_count: number;
+}
+
 const STATUS_BADGE: Record<string, { className: string; glyph: string }> = {
   active: { className: 'badge badge--cleared', glyph: '✓' },
   lapsed: { className: 'badge badge--restricted', glyph: '▲' },
@@ -46,6 +56,11 @@ const NEXT_ACTIONS: Record<string, Array<{ status: string; label: string }>> = {
 
 const SCHOLARSHIP_LEVELS = [0, 25, 50, 75, 100];
 
+const PROGRAM_BADGE: Record<string, { className: string; glyph: string }> = {
+  active: { className: 'badge badge--cleared', glyph: '✓' },
+  archived: { className: 'badge badge--filed', glyph: '▣' },
+};
+
 export default function MembershipsPage() {
   const [items, setItems] = useState<MembershipRow[]>([]);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
@@ -54,6 +69,10 @@ export default function MembershipsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ athlete_id: '', program_name: '', started_on: '', scholarship_percent: 0 });
+  const [programs, setPrograms] = useState<ProgramRow[]>([]);
+  const [showNewProgram, setShowNewProgram] = useState(false);
+  const [newProgramName, setNewProgramName] = useState('');
+  const [catalogProgramName, setCatalogProgramName] = useState('');
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
@@ -101,6 +120,104 @@ export default function MembershipsPage() {
     })();
     return () => controller.abort();
   }, []);
+
+  const reloadPrograms = useCallback(async (signal?: AbortSignal) => {
+    const response = await fetch(`${apiBase()}/api/pilot/admin/programs`, {
+      method: 'GET',
+      credentials: 'include',
+      signal,
+    });
+    if (!response.ok) throw new Error('Unable to load programs.');
+    const payload = (await response.json()) as { items?: ProgramRow[] };
+    setPrograms(payload.items ?? []);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        await reloadPrograms(controller.signal);
+      } catch {
+        // Silent like the athlete picker: the select degrades to empty and
+        // the catalog section shows its empty state; the page still renders.
+      }
+    })();
+    return () => controller.abort();
+  }, [reloadPrograms]);
+
+  /** POSTs a new program to the catalog; returns the created row or null. */
+  const postProgram = async (name: string): Promise<ProgramRow | null> => {
+    setBusyId('program-new');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/programs`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ program_name: name }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Create failed (${response.status})`);
+      }
+      const payload = (await response.json()) as { item?: ProgramRow };
+      const created = payload.item ?? null;
+      // The catalog write has already succeeded; from here on nothing may
+      // report the create as failed or lose the new program. The POST
+      // returns the counted row shape, so it can stand in for the list
+      // entry until a refresh lands.
+      if (created) {
+        setPrograms((current) => [
+          ...current.filter((program) => program.program_id !== created.program_id),
+          created,
+        ]);
+      }
+      try {
+        await reloadPrograms();
+        setErrorMessage(null);
+      } catch {
+        // Non-fatal: the optimistic row keeps the flow working; the banner
+        // only reports the stale list.
+        setErrorMessage('The program was created, but the program list could not be refreshed.');
+      }
+      return created;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to create the program.');
+      return null;
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** The enroll form's inline affordance: create, then select the new program. */
+  const handleAddProgram = async () => {
+    const created = await postProgram(newProgramName);
+    if (!created) return;
+    setForm((f) => ({ ...f, program_name: created.program_name }));
+    setNewProgramName('');
+    setShowNewProgram(false);
+  };
+
+  const patchProgram = async (programId: string, status: 'active' | 'archived') => {
+    setBusyId(`program-${programId}`);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/programs`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ program_id: programId, status }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Update failed (${response.status})`);
+      }
+      await reloadPrograms();
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to update the program.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const patch = async (membershipId: string, body: Record<string, unknown>) => {
     setBusyId(membershipId);
@@ -197,8 +314,29 @@ export default function MembershipsPage() {
                 </div>
                 <div className="field">
                   <label className="t-label" htmlFor="program-name">Program</label>
-                  <input id="program-name" className="input" value={form.program_name}
-                    onChange={(e) => setForm((f) => ({ ...f, program_name: e.target.value }))} />
+                  {/* A select fed by the catalog, not free text: retyping the
+                      name is how one group used to split into two spellings. */}
+                  <select id="program-name" className="select" value={form.program_name}
+                    onChange={(e) => setForm((f) => ({ ...f, program_name: e.target.value }))}>
+                    <option value="">Select a program…</option>
+                    {programs.filter((program) => program.status === 'active').map((program) => (
+                      <option key={program.program_id} value={program.program_name}>{program.program_name}</option>
+                    ))}
+                  </select>
+                  {showNewProgram ? (
+                    <div className="mt-[var(--s2)] flex items-center gap-[var(--s2)]">
+                      <input aria-label="New program name" className="input" value={newProgramName}
+                        onChange={(e) => setNewProgramName(e.target.value)} />
+                      <button type="button" className="btn" disabled={busyId === 'program-new' || !newProgramName.trim()}
+                        onClick={() => void handleAddProgram()}>
+                        {busyId === 'program-new' ? 'Adding…' : 'Add program'}
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" className="btn--lever mt-[var(--s2)]" onClick={() => setShowNewProgram(true)}>
+                      New program
+                    </button>
+                  )}
                 </div>
                 <div className="field">
                   <label className="t-label" htmlFor="started-on">Start date</label>
@@ -302,6 +440,62 @@ export default function MembershipsPage() {
               </table>
             </section>
           )}
+
+          {/* The catalog itself: every persistent group this gym runs, with
+              its live headcount. Archiving retires the name from the enroll
+              select; it never touches membership rows -- enrollment history
+              is a record, not a casualty of tidying the list. */}
+          <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
+            {programs.length === 0 ? (
+              <div className="empty">
+                <div className="empty-title">No programs on record</div>
+                <p className="empty-msg mx-auto">Create the first program to enroll athletes into it.</p>
+              </div>
+            ) : (
+              <table className="ledger">
+                <caption className="text-left">Programs</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Program</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Active members</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {programs.map((program) => {
+                    const badge = PROGRAM_BADGE[program.status] ?? PROGRAM_BADGE.active;
+                    return (
+                      <tr key={program.program_id}>
+                        <td className="font-bold">{program.program_name}</td>
+                        <td><span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{program.status}</span></td>
+                        <td>{program.active_member_count}</td>
+                        <td>
+                          <button type="button" className="btn--lever"
+                            disabled={busyId === `program-${program.program_id}`}
+                            onClick={() => void patchProgram(program.program_id, program.status === 'active' ? 'archived' : 'active')}>
+                            {program.status === 'active' ? 'Archive' : 'Reactivate'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            <div className="mt-[var(--s4)] flex items-center gap-[var(--s2)]">
+              <label className="t-label" htmlFor="program-create-name">Program name</label>
+              <input id="program-create-name" className="input" value={catalogProgramName}
+                onChange={(e) => setCatalogProgramName(e.target.value)} />
+              <button type="button" className="btn" disabled={busyId === 'program-new' || !catalogProgramName.trim()}
+                onClick={() => void (async () => {
+                  const created = await postProgram(catalogProgramName);
+                  if (created) setCatalogProgramName('');
+                })()}>
+                {busyId === 'program-new' ? 'Creating…' : 'Create program'}
+              </button>
+            </div>
+          </section>
 
           <div className="mt-[var(--s5)]">
             <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>

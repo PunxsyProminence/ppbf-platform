@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import {
   captureDataCollectionRequest,
   createDataCollectionRequest,
@@ -19,16 +20,32 @@ const QUEUE_ROLES = ['organization_admin', 'admin', 'coach'] as const;
 // queue itself; PATCH is the one-tap capture path (camera/upload already
 // happened client-side -- this call just records that it did, and what the
 // evidence is).
+//
+// A request names a child and says what to capture about them, so the
+// athlete_id on it is authorized per athlete (assertActorCanAccessAthlete),
+// and the unfiltered queue is scoped to the athletes the caller may reach.
+// Requests addressed to a non-athlete person carry no child and are not
+// athlete-scoped.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...QUEUE_ROLES]);
 
     const { searchParams } = new URL(request.url);
-    const requests = await listOpenDataCollectionRequests(principal.organizationId, {
-      athleteId: searchParams.get('athlete_id') ?? undefined,
+    const athleteId = searchParams.get('athlete_id')?.trim() || undefined;
+    if (athleteId) await assertActorCanAccessAthlete(principal, athleteId);
+
+    let requests = await listOpenDataCollectionRequests(principal.organizationId, {
+      athleteId,
       personAccountId: searchParams.get('person_account_id') ?? undefined,
     });
+    if (!athleteId) {
+      const named = requests
+        .map((row) => row.athlete_id)
+        .filter((id): id is string => id !== null);
+      const allowed = await accessibleAthleteIds(principal, named);
+      requests = requests.filter((row) => row.athlete_id === null || allowed.has(row.athlete_id));
+    }
     return NextResponse.json({ requests });
   } catch (error) {
     return jsonError(error);
@@ -57,9 +74,12 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing request_kind, prompt_text, or reason_code');
     }
 
+    const athleteId = body.athlete_id?.trim() || undefined;
+    if (athleteId) await assertActorCanAccessAthlete(principal, athleteId);
+
     const created = await createDataCollectionRequest({
       organizationId: principal.organizationId,
-      athleteId: body.athlete_id,
+      athleteId,
       personAccountId: body.person_account_id,
       requestKind: body.request_kind,
       protocolId: body.protocol_id,
