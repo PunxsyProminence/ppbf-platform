@@ -6,7 +6,8 @@ import {
 } from './readinessBoard';
 
 // The board's two honesty rules, pinned: the score bands are deterministic
-// over the check-in formula's 1-10 range, and the SQL only ever considers
+// over the 1-10 range these staff-entered scores are recorded on (there is
+// no check-in and no formula -- see readinessBoard.ts), and the SQL only ever considers
 // FRESH readings -- a stale GREEN shown as today's state is the false
 // reassurance the UNKNOWN default exists to prevent.
 

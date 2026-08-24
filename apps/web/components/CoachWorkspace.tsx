@@ -337,10 +337,22 @@ function normalizeSessionReview(row: unknown): SessionReview | null {
   };
 }
 
+/* READINESS RED IS NOT THE LOCKED RUNG.
+   readinessBoard defines its own bands as operational triage and says so:
+   "GREEN = train as planned, YELLOW = check in with the athlete first,
+   RED = adjust the plan", explicitly "not clinical judgments". --locked is
+   reserved by Jason's locked decision of 2026-08-19 for MEDICALLY_NOT_ALLOWED
+   -- a clinician saying no. "Adjust tonight's plan" wearing the same red as
+   "a doctor has barred this child" spends the colour that has to mean the
+   second thing, on a number a staff member typed at intake.
+
+   The ladder shifts down one rung and keeps three distinct, ordered steps:
+   cleared / monitor / restricted. No token is invented and none is added --
+   all three already exist and already carry this order. */
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
-  if (readiness === 'YELLOW') return 'bg-[var(--restricted)]';
-  if (readiness === 'RED') return 'bg-[var(--locked)]';
+  if (readiness === 'YELLOW') return 'bg-[var(--monitor)]';
+  if (readiness === 'RED') return 'bg-[var(--restricted)]';
   return 'bg-[var(--hide-600)]';
 }
 
@@ -387,10 +399,12 @@ function taskStatusTone(status: CoachTask['status']): BadgeTone {
   return 'cleared';
 }
 
+/* Same shift as readinessDotClass, for the floor-plan badge. See the note
+   there: triage is not a medical refusal. */
 function readinessBadgeTone(readiness: Athlete['readiness']): BadgeTone {
   if (readiness === 'GREEN') return 'cleared';
-  if (readiness === 'YELLOW') return 'restricted';
-  if (readiness === 'RED') return 'locked';
+  if (readiness === 'YELLOW') return 'monitor';
+  if (readiness === 'RED') return 'restricted';
   return 'neutral';
 }
 
@@ -477,7 +491,12 @@ export default function CoachWorkspace() {
   // method. Starts false so the caveat is present from first paint rather than
   // appearing a moment after the colours do -- the disclaimer must never lag
   // the number it qualifies.
-  const [readinessAnyValidated, setReadinessAnyValidated] = useState(false);
+  /* Readings that exist but may not be presented as measurements. Kept so a
+     coach sees the judgement and its caveat rather than having it vanish --
+     "not a measurement" is not "not written down". */
+  const [contextualReadiness, setContextualReadiness] = useState<
+    ReadonlyArray<{ athleteId: string; band: string; score: number | null }>
+  >([]);
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
 
@@ -628,7 +647,27 @@ export default function CoachWorkspace() {
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
   const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
   const unknownReadinessCount = athletes.filter((athlete) => athlete.readiness === 'UNKNOWN').length;
-  const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN');
+  /* "The feed told us something", NOT "somebody has a band".
+     This was `athletes.some(a => a.readiness !== 'UNKNOWN')`, which was the
+     same question while every reading became a band. Once unvalidated readings
+     stopped being promoted, an organization whose scores are ALL staff
+     judgements -- which is every organization today -- had no athlete with a
+     band, so the tile fell to "No signal": it called a working feed a dead one
+     AND took the provenance caveat down with it, since the caveat renders
+     inside this branch. "No signal" has to keep meaning no signal. */
+  const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN')
+    || contextualReadiness.length > 0;
+  /* How many readings the feed returned, and how many of those may not be
+     presented as measurements.
+     Counted from the two sources SEPARATELY, because an unvalidated reading no
+     longer becomes a band: it leaves the athlete UNKNOWN and lands in
+     contextualReadiness instead. Deriving "unvalidated" from the roster the way
+     an earlier draft did returned 0 for exactly the rows it was meant to count,
+     so the caveat silently stopped rendering the moment the gate started
+     working -- the opposite of the intent, and invisible without a test. */
+  const bandedReadinessCount = athletes.filter((athlete) => athlete.readiness !== 'UNKNOWN').length;
+  const unvalidatedReadinessCount = contextualReadiness.length;
+  const trackedReadinessCount = bandedReadinessCount + unvalidatedReadinessCount;
   // The task list is DERIVED from real pending work, not stored: the platform
   // has no coach-task store, and the fabricated five-item list this replaced
   // showed every coach the same stale to-dos with due dates that had already
@@ -852,13 +891,42 @@ export default function CoachWorkspace() {
             items?: Array<{
               athlete_id: string;
               status: 'GREEN' | 'YELLOW' | 'RED';
+              score?: number;
               method?: string;
               reliability_status?: string;
               validity_status?: string;
             }>;
           };
           const items = board.items ?? [];
-          const statusByAthlete = new Map(items.map((entry) => [entry.athlete_id, entry.status]));
+          /* ITEM 2: AN UNVALIDATED ROW IS NOT PROMOTED TO A BAND.
+             GREEN/YELLOW/RED on this roster is an authoritative reading a coach
+             acts on -- it drives the alert count, the dot and the floor-plan
+             badge. A score whose method nobody established cannot carry that,
+             so it does not become one: the athlete stays UNKNOWN, which this
+             tile already refuses to read as "clear", and the raw judgement is
+             kept beside it so nothing is lost.
+             The stored row is untouched. This decides what may be PRESENTED as
+             a measurement, not what is kept. */
+          const usable = new Set(items
+            .filter((entry) => isReadinessMethodValidated({
+              method: entry.method ?? 'UNKNOWN',
+              reliability_status: entry.reliability_status ?? '',
+              validity_status: entry.validity_status ?? '',
+            }))
+            .map((entry) => entry.athlete_id));
+          const statusByAthlete = new Map(items
+            .filter((entry) => usable.has(entry.athlete_id))
+            .map((entry) => [entry.athlete_id, entry.status]));
+          /* The contextual judgements, preserved with their raw value so a
+             coach can still see a colleague wrote something down -- as an
+             opinion, under its caveat, never as a rung. */
+          setContextualReadiness(items
+            .filter((entry) => !usable.has(entry.athlete_id))
+            .map((entry) => ({
+              athleteId: entry.athlete_id,
+              band: entry.status,
+              score: typeof entry.score === 'number' ? entry.score : null,
+            })));
           for (const athlete of athleteList) {
             const status = statusByAthlete.get(athlete.id);
             if (status) athlete.readiness = status;
@@ -869,13 +937,6 @@ export default function CoachWorkspace() {
           // below shows. It is computed from the feed rather than hardcoded so
           // it stops showing on its own if a validated method is ever wired,
           // instead of becoming a stale disclaimer nobody removes.
-          setReadinessAnyValidated(
-            items.some((entry) => isReadinessMethodValidated({
-              method: entry.method ?? 'UNKNOWN',
-              reliability_status: entry.reliability_status ?? '',
-              validity_status: entry.validity_status ?? '',
-            })),
-          );
         }
       } catch {
         // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
@@ -1761,9 +1822,20 @@ export default function CoachWorkspace() {
                           Disappears on its own if a validated method is ever
                           wired, because the condition is computed from the
                           feed. */}
-                      {!readinessAnyValidated && (
+                      {contextualReadiness.length > 0 && (
                         <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-400)]">
-                          {READINESS_UNVALIDATED_CAVEAT}
+                          {contextualReadiness.length} staff judgement(s) recorded but not counted
+                          above — they are written down, not measured, so they are not read as a
+                          readiness band.
+                        </p>
+                      )}
+                      {unvalidatedReadinessCount > 0 && (
+                        <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-400)]">
+                          {unvalidatedReadinessCount === trackedReadinessCount
+                            ? READINESS_UNVALIDATED_CAVEAT
+                            : `${unvalidatedReadinessCount} of ${trackedReadinessCount} of these `
+                              + `readings come from a method nobody has established. `
+                              + READINESS_UNVALIDATED_CAVEAT}
                         </p>
                       )}
                     </>
