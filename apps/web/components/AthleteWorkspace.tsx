@@ -2917,17 +2917,27 @@ export default function AthleteWorkspace() {
                   says that and gets out of the way. The scheduler owns
                   classes, booking and eligibility -- nothing here duplicates
                   them. */}
+              {/* This help claimed booking gates the scheduler does not
+                  have. "Readiness RED may limit contact work" / "Booking
+                  contact work with RED readiness": no code gates scheduling,
+                  competition entry or contact on the readiness band -- after
+                  #597 the band decides nothing. "Check your academic status
+                  first" / "Booking while on academic hold": no academic gate
+                  exists anywhere in the scheduler or the holds model (scopes
+                  are all_training / contact_only / conditioning_only). The
+                  one registration gate that IS enforced -- an active
+                  all_training hold blocks class registration
+                  (trainingHolds.findRegistrationBlockingHold) -- is what the
+                  help now names. Instructions may only name what the system
+                  does. */}
               <HelpPanel
                 title="Schedule Session"
                 description="Classes and sign-ups live in the unified scheduler. This is the door to it."
                 usage={[
-                  'Open the unified scheduler to see live classes',
-                  'Check your academic status first',
-                  'Readiness RED may limit contact work'
+                  'Open the unified scheduler to see live classes'
                 ]}
                 mistakes={[
-                  'Booking while on academic hold',
-                  'Booking contact work with RED readiness'
+                  'Booking while your training is on hold -- registration is blocked until a coach lifts it'
                 ]}
               />
             </div>
