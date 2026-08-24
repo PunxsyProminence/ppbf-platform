@@ -299,10 +299,17 @@ export default function SchedulerPage() {
           {/* These two were Tailwind's stock red-700/green-700 with no glyph:
               off the status ladder entirely, and colour as the only channel,
               which Law 3 forbids. They are queue outcomes, so they get the
-              badge component and the ladder's own locked/cleared rungs. */}
+              badge component and the ladder's own rungs.
+
+              The failure rung is --restricted, not --locked. #A81E22 /
+              --locked is reserved for MEDICALLY_NOT_ALLOWED (owner decision
+              2026-08-19), and a scheduler request that did not go through is
+              not a medical restriction on a child -- dressing it in the
+              medical channel is exactly the confusion the reservation exists
+              to prevent. Success keeps the cleared rung. */}
           {errorMessage ? (
-            <div className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.10)] p-[var(--s4)]" role="alert">
-              <span className="badge badge--locked"><i>✕</i>Failed</span>
+            <div className="rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[rgba(192,90,30,0.10)] p-[var(--s4)]" role="alert">
+              <span className="badge badge--restricted"><i>▲</i>Failed</span>
               <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
             </div>
           ) : null}
