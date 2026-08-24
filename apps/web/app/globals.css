@@ -209,10 +209,18 @@
   --foreground: var(--black);
 
   /* Retro stamp palette — remapped onto the real status ladder so a stamp and
-     a badge reporting the same state can no longer disagree on its colour. */
+     a badge reporting the same state can no longer disagree on its colour.
+
+     --stamp-restricted aliased var(--locked) until 2026-08-24, so a control
+     labelled RESTRICTED rendered in the LOCKED red and two adjacent rungs of
+     the ladder were byte-identical — a ladder collapse, invisible on screen.
+     Owner: RESTRICTED must not render in LOCKED red. It now sits on the
+     restricted rung, beside --stamp-hold, which was already there: both names
+     are mid-ladder restrictions, and neither is "may not participate".
+     safeguardingRedReservation.test.ts pins this. */
   --stamp-cleared: var(--cleared);
   --stamp-hold: var(--restricted);
-  --stamp-restricted: var(--locked);
+  --stamp-restricted: var(--restricted);
   --stamp-present: var(--monitor);
   --stamp-neutral: var(--patina-700);
   --brass: var(--brass-500);
@@ -505,9 +513,14 @@ h6 {
   font-size: var(--text-base);
 }
 
+/* This rule and .stamp-button:focus-visible below were the two survivors of
+   the Law 2 fix documented above the @layer base block: focus is chassis, so
+   it takes the standard ring colour — brass-700, the one value the sheet
+   measures as clearing 3:1 on every ground — not the safeguarding red. The
+   halo keeps its old 15% strength; only the colour moved off the gate. */
 .tactical-input:focus {
-  border-color: var(--safety-locked);
-  box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.15);
+  border-color: var(--brass-700);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brass-700) 15%, transparent);
 }
 
 .tactical-alert-critical {
@@ -545,7 +558,7 @@ h6 {
 }
 
 .stamp-button:focus-visible {
-  outline: 2px solid var(--safety-locked);
+  outline: 2px solid var(--brass-700);
   outline-offset: 3px;
 }
 
