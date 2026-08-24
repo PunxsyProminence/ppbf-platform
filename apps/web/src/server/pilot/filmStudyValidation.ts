@@ -1,4 +1,5 @@
 import { query } from './db';
+import { MODEL_PROPOSAL_SCOPE_SQL } from './shadowFilmStudyProposals';
 
 // Film Study model validation -- how often a coach actually accepts what the
 // vision model proposed.
@@ -7,10 +8,16 @@ import { query } from './db';
 // halves of a measurement and nothing ever computed it: the model's claim
 // (observation_text, model_deployment, frames_analyzed) and the coach's
 // verdict (review_state accepted/rejected, with an attestation the table's own
-// CHECK constraint enforces). Every settled proposal is one labelled example,
-// produced by this gym's own coaches on this gym's own footage. The accept
-// rate over those is the validation -- it has been accumulating in the
+// CHECK constraint enforces). Every settled MODEL proposal is one labelled
+// example, produced by this gym's own coaches on this gym's own footage. The
+// accept rate over those is the validation -- it has been accumulating in the
 // database the whole time, uncomputed.
+//
+// MODEL PROPOSALS ONLY. The same table also holds coach-reported observations:
+// what the model MISSED. Those are excluded from every figure here, for the
+// reason written above OVERALL_SQL below. They are not deleted and must not be
+// -- they are the false-negative record, and the only evidence this platform
+// has of what the model failed to see.
 //
 // That matters more than a benchmark number from a paper. A published
 // accuracy figure describes somebody else's athletes, camera, and lighting.
@@ -148,6 +155,24 @@ function toMetric(row: AcceptanceRow): FilmStudyAcceptanceMetric {
   };
 }
 
+/* ONLY MODEL PROPOSALS. `pilot.shadow_film_study_proposals` holds two kinds of
+   row, and only one of them is the model's claim.
+
+   A `coach_reported` row is an observation the model MISSED -- the queue's
+   missed-detection path. A coach accepting one is confirmation the model was
+   WRONG, so counting it as an acceptance inverts its meaning and inflates the
+   very number that path exists to keep honest. Both queries counted every
+   settled row until 2026-08-23, which made "coaches accepted 6 of 8" out of a
+   model that went 3 for 5.
+
+   The predicate is imported, not retyped. shadowFilmStudyProposals.ts owns it
+   and documents why it exists; a second copy here would be free to drift from
+   the definition it is supposed to be enforcing.
+
+   COACH REPORTS ARE NOT DELETED, ONLY EXCLUDED FROM THIS METRIC. They are the
+   only record of what the model failed to see, which makes them the most
+   valuable rows in the table for judging it. They are filtered out of an
+   answer about model proposals because they are not model proposals. */
 const OVERALL_SQL = `
   select
     null::text as model_deployment,
@@ -158,6 +183,7 @@ const OVERALL_SQL = `
     avg(frames_analyzed) filter (where review_state in ('accepted', 'rejected'))::text as mean_frames
   from pilot.shadow_film_study_proposals
   where organization_id = $1
+    and ${MODEL_PROPOSAL_SCOPE_SQL}
 `;
 
 const BY_DEPLOYMENT_SQL = `
@@ -170,6 +196,7 @@ const BY_DEPLOYMENT_SQL = `
     avg(frames_analyzed) filter (where review_state in ('accepted', 'rejected'))::text as mean_frames
   from pilot.shadow_film_study_proposals
   where organization_id = $1
+    and ${MODEL_PROPOSAL_SCOPE_SQL}
   group by model_deployment
   order by count(*) filter (where review_state in ('accepted', 'rejected')) desc, model_deployment asc
 `;
@@ -206,8 +233,14 @@ export async function getFilmStudyValidation(
     byDeployment: deploymentRows.map((row) => {
       const meanFrames = row.mean_frames === null ? null : Number(row.mean_frames);
       return {
-        // A settled proposal always carries a deployment (the column is
-        // `not null`), so this coalesce only covers a future nullable case.
+        // The column IS nullable -- it is null on exactly the coach-reported
+        // rows, which have no inference run to name. Those are excluded above,
+        // so within this scope a deployment is always present and the coalesce
+        // is unreachable. It is kept rather than removed because 'unknown' is
+        // the visible symptom if the origin filter is ever dropped again: a
+        // phantom deployment appearing beside the real ones in an operator's
+        // comparison. filmStudyValidationOriginScope.pg.test.ts asserts it
+        // does not appear.
         modelDeployment: row.model_deployment ?? 'unknown',
         ...toMetric(row),
         meanFramesAnalyzed:
