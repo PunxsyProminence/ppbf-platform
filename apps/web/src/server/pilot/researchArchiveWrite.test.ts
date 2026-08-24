@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { getClientCredentialToken } from '../document-intake/auth';
 import {
   ResearchArchiveConflictError,
   archiveResearchOriginal,
@@ -6,7 +8,8 @@ import {
 
 /**
  * The archive write's whole job is refusing. These tests are therefore mostly
- * about what it must NOT do: not replace, not rename, not delete.
+ * about what it must NOT do: not replace, not rename, not delete, not escape
+ * its folder, not call a failure a duplicate.
  *
  * Graph is mocked because there is no other option here -- this sandbox has no
  * Graph credentials and the proxy refuses SharePoint outright. That bounds what
@@ -16,6 +19,12 @@ import {
  * `conflictBehavior=fail`. That is a live-environment proof, and until it is
  * run the create-only guarantee rests on Microsoft's documented behaviour
  * rather than on anything observed here.
+ *
+ * Requests are asserted with EXACT string equality against the one canonical
+ * URL this input may address. Substring and some()-style negative checks were
+ * removed after review showed several could not fail under any mutation of the
+ * module; equality both proves where a request DID go and breaks under any
+ * rename, retry, or path drift.
  */
 
 jest.mock('../document-intake/auth', () => ({
@@ -36,12 +45,27 @@ const INPUT = {
   config: CONFIG,
   archiveDomainCode: 'R19',
   originalFilename: 'synthetic-pilot.pdf',
-  contentSha256: 'a'.repeat(64),
   fileBuffer: Buffer.from('%PDF-1.4 synthetic'),
   acquisitionProvider: 'synthetic',
   acquisitionChannel: 'pilot_test',
   acquiredAt: '2026-08-24T00:00:00.000Z',
 };
+
+/**
+ * Computed here, independently, from the same bytes. The implementation cannot
+ * satisfy the hash assertions by echoing an input back, because the input no
+ * longer carries a hash at all.
+ */
+const EXPECTED_SHA256 = createHash('sha256').update(INPUT.fileBuffer).digest('hex');
+
+/** The one path this INPUT may address, and the only write URL it may use. */
+const ITEM_URL = `https://graph.microsoft.com/v1.0/sites/${CONFIG.siteId}/drives/${CONFIG.driveId}/root:/Research%20Archive/R19/synthetic-pilot.pdf`;
+const PUT_URL = `${ITEM_URL}:/content?@microsoft.graph.conflictBehavior=fail`;
+
+/** Graph's real error envelope is { error: { code, message } }, not a string. */
+function graphError(code: string): { error: { code: string; message: string } } {
+  return { error: { code, message: `synthetic ${code}` } };
+}
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -55,6 +79,7 @@ function jsonResponse(status: number, body: unknown): Response {
 let fetchMock: jest.Mock;
 
 beforeEach(() => {
+  jest.clearAllMocks();
   fetchMock = jest.fn();
   global.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -91,80 +116,177 @@ describe('the research archive write refuses rather than replaces', () => {
 
     await archiveResearchOriginal(INPUT).catch(() => undefined);
 
-    // No second attempt under any name -- an auto `-2` suffix would create a
-    // second original with no recorded relationship to the first.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(calls().some((c) => /synthetic-pilot[-_ ]?\d/.test(c))).toBe(false);
+    // Exactly one request, and it is the probe of the canonical path. Any
+    // rename-and-retry logic must either add a request or move off this path,
+    // and either breaks the equality. (An earlier regex-based "no renamed
+    // URL" check could not fail under any mutation; this can.)
+    expect(calls()).toEqual([`GET ${ITEM_URL}`]);
   });
 
   test('the write is create-only: conflictBehavior=fail is on the request', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }))
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
       .mockResolvedValueOnce(jsonResponse(201, { id: 'new-item-id', webUrl: 'https://sharepoint/archive/item' }));
 
     await archiveResearchOriginal(INPUT);
 
-    const put = calls().find((c) => c.startsWith('PUT'));
-
     // Graph documents this as a URL query parameter, not a header or a body
     // field, and the default for PUT is *replace* -- so its absence is not a
-    // missing nicety, it is a silent overwrite. Asserted on the decoded URL
-    // because `@` is legal unencoded in a query (RFC 3986 pchar) and either
-    // spelling reaches Graph as the same parameter; what must never vary is
-    // that the parameter is there and says `fail`.
-    expect(put).toBeDefined();
-    expect(decodeURIComponent(String(put))).toContain('?@microsoft.graph.conflictBehavior=fail');
+    // missing nicety, it is a silent overwrite. `@` is legal unencoded in a
+    // query (RFC 3986 pchar); the exact-URL form pins the parameter and the
+    // path in one assertion.
+    expect(calls().find((c) => c.startsWith('PUT'))).toBe(`PUT ${PUT_URL}`);
   });
 
-  test('a 409 from Graph is a conflict, not a generic failure', async () => {
+  test('a write-time 409 nameAlreadyExists is a conflict, and the existing id is fetched for lineage', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }))
-      .mockResolvedValueOnce(jsonResponse(409, { error: 'nameAlreadyExists' }));
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
+      .mockResolvedValueOnce(jsonResponse(409, graphError('nameAlreadyExists')))
+      .mockResolvedValueOnce(jsonResponse(200, { id: 'raced-item-id' }));
 
     // The race the pre-check cannot close: the item appeared between probe and
-    // write. The caller must still be able to tell this from a broken archive.
-    await expect(archiveResearchOriginal(INPUT)).rejects.toBeInstanceOf(ResearchArchiveConflictError);
+    // write. Still a duplicate, and the caller still gets the id to record
+    // lineage against -- via a follow-up read of the same canonical path.
+    const error = await archiveResearchOriginal(INPUT).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ResearchArchiveConflictError);
+    expect((error as ResearchArchiveConflictError).existingItemId).toBe('raced-item-id');
+    expect(calls()).toEqual([`GET ${ITEM_URL}`, `PUT ${PUT_URL}`, `GET ${ITEM_URL}`]);
   });
 
-  test('a broken archive is NOT reported as a duplicate', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'service unavailable' }));
+  test('when the follow-up lookup fails, the refusal stands: null id, and the message says so', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
+      .mockResolvedValueOnce(jsonResponse(409, graphError('nameAlreadyExists')))
+      .mockResolvedValueOnce(jsonResponse(503, graphError('serviceNotAvailable')));
+
+    const error = await archiveResearchOriginal(INPUT).catch((e: unknown) => e);
+
+    // Best-effort means best-effort: a failed lookup must not turn the
+    // refusal into a crash, and must not fabricate an id either.
+    expect(error).toBeInstanceOf(ResearchArchiveConflictError);
+    expect((error as ResearchArchiveConflictError).existingItemId).toBeNull();
+    expect((error as Error).message).toMatch(/id could not be fetched/i);
+  });
+
+  test('a 409 that is NOT nameAlreadyExists is a failed write, never a duplicate', async () => {
+    // Graph answers 409 for more than duplicates: a missing parent folder and
+    // concurrency violations land here too. A new domain code whose folder
+    // does not exist yet must surface as "nothing was archived", not be
+    // recorded as "duplicate of an already-archived original".
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
+      .mockResolvedValueOnce(jsonResponse(409, graphError('resourceModified')));
 
     const error = await archiveResearchOriginal(INPUT).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(Error);
     expect(error).not.toBeInstanceOf(ResearchArchiveConflictError);
+    expect((error as Error).message).toContain('409 resourceModified');
+    // No lineage lookup either: there is no duplicate to record lineage against.
+    expect(calls()).toEqual([`GET ${ITEM_URL}`, `PUT ${PUT_URL}`]);
+  });
+
+  test('a broken archive is NOT reported as a duplicate', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, graphError('serviceNotAvailable')));
+
+    const error = await archiveResearchOriginal(INPUT).catch((e: unknown) => e);
+
+    expect(error).not.toBeInstanceOf(ResearchArchiveConflictError);
+    expect((error as Error).message).toMatch(/pre-check failed \(503\)/);
     expect(calls().filter((c) => c.startsWith('PUT'))).toHaveLength(0);
   });
 
-  test('nothing is ever deleted', async () => {
+  test('the success path is exactly one probe and one create, and nothing else', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }))
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
       .mockResolvedValueOnce(jsonResponse(201, { id: 'new-item-id', webUrl: 'https://sharepoint/archive/item' }));
 
     await archiveResearchOriginal(INPUT);
 
-    expect(calls().some((c) => c.startsWith('DELETE'))).toBe(false);
+    // Exact equality, deliberately. The earlier form of this test asserted
+    // "no DELETE call", which no mutation of this module could ever fail.
+    // This form fails if the module grows ANY extra request -- a delete, a
+    // rename retry, a second write -- or moves either request off the
+    // canonical path.
+    expect(calls()).toEqual([`GET ${ITEM_URL}`, `PUT ${PUT_URL}`]);
   });
 
   test('a write that returns no item id fails, because an unaddressable original is not archived', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }))
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
       .mockResolvedValueOnce(jsonResponse(201, { webUrl: 'https://sharepoint/archive/item' }));
 
     await expect(archiveResearchOriginal(INPUT)).rejects.toThrow(/no item id/i);
   });
 });
 
-describe('the identity it returns is the archive identity', () => {
-  beforeEach(() => {
+describe('names are validated before anything leaves the process', () => {
+  // `encodePathSegment` keeps `/` un-encoded and URL normalization collapses
+  // dot segments, so an unvalidated "../../evil.pdf" would write to the DRIVE
+  // ROOT while the returned identity still claimed the domain folder. The
+  // refusal must happen before ANY network call -- the token fetch included.
+
+  test.each(['../../evil.pdf', 'a/b.pdf', 'a\\b.pdf', '..', ''])(
+    'filename %j is refused with no request made',
+    async (originalFilename) => {
+      const error = await archiveResearchOriginal({ ...INPUT, originalFilename }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(ResearchArchiveConflictError);
+      expect((error as Error).message).toMatch(/refusing research archive write/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(getClientCredentialToken).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['R19/../', 'R19/..', '..', 'R191', ''])(
+    'archive domain code %j is refused with no request made',
+    async (archiveDomainCode) => {
+      const error = await archiveResearchOriginal({ ...INPUT, archiveDomainCode }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(ResearchArchiveConflictError);
+      expect((error as Error).message).toMatch(/refusing research archive write/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(getClientCredentialToken).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('the hash is computed from the bytes, never accepted from a caller', () => {
+  test('the returned contentSha256 is the sha256 of the buffer actually sent', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }))
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
+      .mockResolvedValueOnce(jsonResponse(201, { id: 'new-item-id' }));
+
+    const identity = await archiveResearchOriginal(INPUT);
+
+    expect(identity.contentSha256).toBe(EXPECTED_SHA256);
+  });
+
+  test('different bytes yield a different hash', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
+      .mockResolvedValueOnce(jsonResponse(201, { id: 'new-item-id' }));
+
+    const otherBuffer = Buffer.from('%PDF-1.4 different bytes');
+    const identity = await archiveResearchOriginal({ ...INPUT, fileBuffer: otherBuffer });
+
+    // Depends on the bytes, not on the input shape or a constant.
+    expect(identity.contentSha256).toBe(createHash('sha256').update(otherBuffer).digest('hex'));
+    expect(identity.contentSha256).not.toBe(EXPECTED_SHA256);
+  });
+});
+
+describe('the identity it returns is the archive identity', () => {
+  test('every structured value the contract requires is present', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
       .mockResolvedValueOnce(
         jsonResponse(201, { id: 'new-item-id', webUrl: 'https://sharepoint/sites/ops/Research%20Archive/R19/x.pdf' }),
       );
-  });
 
-  test('every structured value the contract requires is present', async () => {
     const identity = await archiveResearchOriginal(INPUT);
 
     expect(identity).toEqual({
@@ -176,7 +298,7 @@ describe('the identity it returns is the archive identity', () => {
       archiveRootItemId: CONFIG.archiveRootItemId,
       archiveDomainCode: 'R19',
       originalFilename: 'synthetic-pilot.pdf',
-      contentSha256: 'a'.repeat(64),
+      contentSha256: EXPECTED_SHA256,
       acquisitionProvider: 'synthetic',
       acquisitionChannel: 'pilot_test',
       acquiredAt: '2026-08-24T00:00:00.000Z',
@@ -184,34 +306,39 @@ describe('the identity it returns is the archive identity', () => {
     });
   });
 
-  test('webUrl is where Graph put the file, never a publisher or DOI url', async () => {
+  test('an absent webUrl is null, never a fabricated address', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
+      .mockResolvedValueOnce(jsonResponse(201, { id: 'new-item-id' }));
+
     const identity = await archiveResearchOriginal(INPUT);
 
-    // Conflating the two is how a reader ends up at a paywall instead of the
-    // governed artefact. This module only ever reports what Graph returned.
-    expect(identity.webUrl).toBe('https://sharepoint/sites/ops/Research%20Archive/R19/x.pdf');
-    expect(identity.webUrl).not.toMatch(/doi\.org|pubmed|sciencedirect/i);
-  });
-
-  test('the file lands under the archive root and its domain folder', async () => {
-    await archiveResearchOriginal(INPUT);
-
-    const put = calls().find((c) => c.startsWith('PUT'));
-    expect(put).toContain('Research%20Archive/R19/synthetic-pilot.pdf');
+    // webUrl is only ever what Graph reported for the archive item. When
+    // Graph reports none, the honest value is null -- constructing a
+    // plausible-looking URL from config would be the publisher/DOI confusion
+    // in a different coat. (An earlier assertion that the webUrl "is not a
+    // DOI url" tested only this file's own mock and was removed as vacuous.)
+    expect(identity.webUrl).toBeNull();
   });
 });
 
 describe('it is a different path from the generic intake uploader', () => {
-  test('it addresses the archive root, not SHAREPOINT_FOLDER_PATH', async () => {
+  test('it addresses the archive root even when the generic uploader is configured', async () => {
     process.env.SHAREPOINT_FOLDER_PATH = 'PPBF/Intake';
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }))
-      .mockResolvedValueOnce(jsonResponse(201, { id: 'new-item-id' }));
+    try {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(404, graphError('itemNotFound')))
+        .mockResolvedValueOnce(jsonResponse(201, { id: 'new-item-id' }));
 
-    await archiveResearchOriginal(INPUT);
+      await archiveResearchOriginal(INPUT);
 
-    // Configuring the generic uploader must never aim an archive write.
-    expect(calls().every((c) => !c.includes('PPBF/Intake'))).toBe(true);
-    delete process.env.SHAREPOINT_FOLDER_PATH;
+      // Exact equality with the env var set: were the module ever mutated to
+      // read the generic uploader's config, the path would change and this
+      // would fail. The earlier substring form ("no call contains
+      // PPBF/Intake") said nothing about where the write DID go.
+      expect(calls()).toEqual([`GET ${ITEM_URL}`, `PUT ${PUT_URL}`]);
+    } finally {
+      delete process.env.SHAREPOINT_FOLDER_PATH;
+    }
   });
 });
