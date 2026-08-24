@@ -600,14 +600,17 @@ export default function AthleteWorkspace() {
   const [sleepHours, setSleepHours] = useState(8);
   const [motivation, setMotivation] = useState(7);
   const [soreness, setSoreness] = useState(2);
+  /* Set by the pain report below, never by the athlete directly. It is a
+     display of "a pain report was filed this session", which is why it is
+     rendered as a status line and not as a tickbox: the tickbox let an athlete
+     set it by hand, and that hand-set value went nowhere. */
+  const [injuryFlag, setInjuryFlag] = useState(false);
   const [hydrationStatus, setHydrationStatus] = useState(8);
   const [readinessToTrain, setReadinessToTrain] = useState(8);
-  const [injuryFlag, setInjuryFlag] = useState(false);
   // Fast-Track: the minimum-friction data path so athletes who won't fill out
   // a rich Deep-Track sparring log still contribute something SHADOW's
   // formula engine can use (Session Load needs RPE * duration).
   const [sessionDurationMinutes, setSessionDurationMinutes] = useState(60);
-  const [medicalReadAck, setMedicalReadAck] = useState(false);
   const [expandedCheckIn, setExpandedCheckIn] = useState(false);
   const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
   const [showPainModal, setShowPainModal] = useState(false);
@@ -2040,10 +2043,6 @@ export default function AthleteWorkspace() {
                         className="input input--kiosk"
                       />
                     </div>
-                    <label className="flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)] text-[length:var(--t-md)]">
-                      <input type="checkbox" checked={medicalReadAck} onChange={(e) => setMedicalReadAck(e.target.checked)} className="h-[21px] w-[21px] accent-[var(--brass-600)]" />
-                      <span>I&apos;ve reviewed today&apos;s safety/medical notice</span>
-                    </label>
                   </div>
                 </div>
 
@@ -2051,28 +2050,38 @@ export default function AthleteWorkspace() {
                 <div className={PANEL_RAISED}>
                   <h3 className="t-label mb-[var(--s4)]">Pain/Soreness Report</h3>
                   <div className="space-y-[var(--s4)]">
-                    <label className="flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)] text-[length:var(--t-md)]">
-                      <input type="checkbox" checked={injuryFlag} onChange={(e) => setInjuryFlag(e.target.checked)} className="h-[21px] w-[21px] accent-[var(--brass-600)]" />
-                      <span>Injury or Pain Flag</span>
-                    </label>
-                    {/* NEITHER THIS FLAG NOR THE SORENESS SLIDER THAT STOOD
-                        BELOW IT REACHES A COACH. The slider never did. This
-                        flag did, but only by riding as a dimension on the
-                        check-in `session_rpe` observation -- and that
-                        observation was the readiness slider mislabelled as
-                        session RPE, which is the defect this branch removes.
-                        Deleting the fabricated measurement necessarily deletes
-                        the carrier the flag was hitching on; a pain signal
-                        whose only transport is a wrong measurement was never
-                        soundly recorded. Giving it a signal of its own is a
-                        separate change and is NOT done here.
+                    {/* THIS WAS A TICKBOX, AND TICKING IT DID NOTHING.
 
-                        On a safety card that is the worst place for the
-                        distinction to be invisible: an athlete who ticks this
-                        has every reason to believe a coach will see it. The
-                        pain report below -- location, type and severity -- is
-                        the path that actually reaches one, and it is the only
-                        one on this screen that does. */}
+                        The flag is written in one place -- setInjuryFlag(true)
+                        when a pain report is filed -- so as an INDICATOR it
+                        tells the truth. As a CONTROL it did not: an athlete
+                        could tick it by hand, and that hand-set value reached
+                        nobody. Its only transport was a dimension on the
+                        check-in `session_rpe` observation, and that observation
+                        was the readiness slider mislabelled as session RPE.
+                        Removing the fabricated measurement removed the
+                        transport with it.
+
+                        So the affordance is gone and the signal is kept. A
+                        control that silently records nothing on a safety card
+                        is worse than no control: an athlete who ticks it stops
+                        looking for another way to tell someone. Re-wiring it
+                        onto a measurement observation is what produced this in
+                        the first place and is not done here; giving it a signal
+                        of its own would be a separate safety change.
+
+                        A Soreness Level slider stood here too. It never
+                        recorded anything and is not reinstated.
+
+                        The pain report below -- location, type, severity -- is
+                        the path that actually reaches a coach. It raises a near
+                        miss and a pending-review shadow event, and it says so
+                        in plain words when it fails. */}
+                    {injuryFlag ? (
+                      <p className="text-[length:var(--t-md)]" data-testid="pain-reported-indicator">
+                        Pain reported this session. A coach has been told.
+                      </p>
+                    ) : null}
                     {/* All 10 locations, not just the first 3 -- a dropdown
                         scales to the list where a row of buttons did not, and
                         the other 7 were previously unreachable from this
