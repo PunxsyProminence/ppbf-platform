@@ -272,6 +272,27 @@ describe('athlete workspace honesty', () => {
     expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
   });
 
+  test('the Schedule help no longer claims a readiness gate on contact work', async () => {
+    await renderWorkspace();
+    openTab('Schedule');
+
+    // HelpPanel renders its lists only once expanded -- asserting on the
+    // collapsed panel proves nothing (watched this test pass with the bad
+    // line restored before this click was added).
+    fireEvent.click(screen.getByRole('button', { name: /HELP: Schedule Session/ }));
+    expect(screen.getByText('Open the unified scheduler to see live classes')).toBeTruthy();
+
+    // No code gates scheduling, competition entry or contact on the readiness
+    // band -- holds do that (all_training blocks registration, contact_only
+    // blocks competition entry too; readiness is an input to none of it).
+    // These lines told a child their RED reading limits contact work: a rule
+    // that does not exist, spoken by the same slider #597 already demoted.
+    expect(screen.queryByText(/Readiness RED may limit contact work/)).toBeNull();
+    expect(screen.queryByText(/Booking contact work with RED readiness/)).toBeNull();
+    // The door to the scheduler itself is untouched.
+    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
+  });
+
   test('double-clicking Create Goal posts the goal once', async () => {
     await renderWorkspace();
     openTab('Goals');
