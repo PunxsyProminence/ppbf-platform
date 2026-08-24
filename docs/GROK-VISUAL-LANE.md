@@ -1,6 +1,7 @@
 # Grok visual lane
 
-**Agreed 20 Aug 2026. Substantially amended 22 Aug 2026 by owner decision.**
+**Agreed 20 Aug 2026. Substantially amended 22 Aug 2026 by owner decision.
+Amended again 24 Aug 2026 by owner decision on plate binary delivery.**
 Originally authored by Grok, amended once by Claude on a point Grok could not
 check from outside the sandbox. Live contract — if the repo and this document
 disagree, the repo wins and this document is wrong.
@@ -14,17 +15,27 @@ visual work**, reading current source first and building only what the owner
 approved. The gate did not disappear; it moved onto the PR, where an
 independent reviewer belongs.
 
-Everything below concerning **plate binaries** — 4:4:4, the drop, the byte
-gate, the composition laws — is unchanged and still binds. What changed is who
-writes the code around them.
+**What changed on 24 Aug, and why.** The plate-binary courier route
+(Grok → OneDrive Grok-Plates-Inbox → Claude retrieves and commits) is
+**retired**. Claude is not the binary courier. Grok owns the complete approved
+visual implementation path, including putting the **real JPEG wall-plate
+binaries** directly onto its own feature branch under
+`apps/web/public/plates/` and opening the PR. Claude remains an independent
+functional/security reviewer of that PR. ChatGPT remains the independent
+auditor and storage lane. Jason decides.
+
+Everything below concerning **plate binaries** — 4:4:4, the byte gate, the
+composition laws — is unchanged and still binds. What changed is who places
+the real JPEG bytes into the repository and who is no longer asked to ferry
+them.
 
 ## The lanes
 
 | Lane | Owns | Never touches |
 |---|---|---|
 | **ChatGPT** | SharePoint, OneDrive, Google Drive taxonomy; independent audit of diffs, CI, scope | the repository (read-only), image generation |
-| **Grok** | visual design **and** visual implementation: image files, JSX presentation structure, design-system usage, CSS, responsive layout, typography, visual tests | functional/security code (see the two lists below), drive reorganisation |
-| **Claude** | functional and security engineering, migrations, release engineering; **independent review of Grok's visual PRs** | drive taxonomy, image generation, redesigning approved visual work |
+| **Grok** | visual design **and** visual implementation: image files, JSX presentation structure, design-system usage, CSS, responsive layout, typography, visual tests; **real JPEG plate binaries on Grok feature branches** | functional/security code (see the two lists below), drive reorganisation |
+| **Claude** | functional and security engineering, migrations, release engineering; **independent review of Grok's visual PRs** (function/security boundaries only) | drive taxonomy, image generation, redesigning approved visual work, **retrieving/relaying/re-encoding/committing plate binaries on Grok's behalf** |
 
 Nobody pushes to `main`. Everything lands by PR with green CI, including
 Claude's own work and Grok's. This is not a hierarchy — it is the rule in
@@ -41,8 +52,9 @@ changes** — working behaviour is not altered to make a picture fit.
 
 **May change:** JSX visual structure and presentation hierarchy;
 design-system classes; CSS; responsive layout; typography; visual assets
-within the image lane; accessibility markup belonging to its own layout; the
-visual and component tests covering all of it.
+within the image lane (including real JPEG wall plates under
+`apps/web/public/plates/`); accessibility markup belonging to its own layout;
+the visual and component tests covering all of it.
 
 **May not change without a separate owner-approved functional task:** database
 schema; migrations; API behaviour; authentication; authorization; organization
@@ -65,8 +77,11 @@ a feature branch, by PR. This is the bulk of the work under the 2026-08-22
 model.
 
 **Real JPEG wall plates**, **layer 0 only**: the photographed wall a room
-stands in. Real UI composites on top in code. Plates are binaries and still
-enter through the drop described below, never through a chat channel.
+stands in. Real UI composites on top in code. Plates are binaries. Under the
+2026-08-24 owner decision, **Grok uploads the real JPEG directly into its own
+feature branch** at `apps/web/public/plates/`, makes only the required approved
+visual/CSS/test changes, and opens the PR. Claude does not retrieve, relay,
+reconstruct, re-encode, or commit those binaries.
 
 Grok re-reads these two files before every plate order, and reads the current
 page, components and tests before every visual design, rather than working
@@ -77,7 +92,7 @@ from a summary of either:
 2. `apps/web/public/plates/README.md` — format, quiet centre, layer-0 rule,
    the delivery failures, variant rules
 
-### Two modes (owner correction 2026-08-20, extended 2026-08-22)
+### Two modes (owner correction 2026-08-20, extended 2026-08-22, binary path 2026-08-24)
 
 An earlier version of this contract said "one order = one file" as an absolute
 law. That was wrong, and it was Claude's error: it wrote a **delivery gate**
@@ -95,13 +110,21 @@ no inbox, no PR, no branch. This is where the design actually happens and it
 should be loose. It ends when Jason approves one direction — not before.
 
 **Mode B — implementation. The gate.** Grok builds the direction Jason
-approved, and only that direction. For a **plate**: one file, the exact
-ordered filename, 4:4:4, into `Grok-Plates-Inbox`. For **code**: a feature
-branch off current `main`, the approved design implemented against current
-source, visual tests added or updated to match, and a PR. Never a direct push
-to `main`. Then Claude reviews function and security, ChatGPT audits the diff
-against the claims, CI must be green on the exact head, and Jason reviews the
-result live.
+approved, and only that direction.
+
+- For a **plate**: one unambiguous shipped file per ordered slot, the exact
+  ordered filename, real JPEG, 4:4:4, complete SOI/EOI, >8 KB, ≤400 KB,
+  declared geometry, orientation matches filename, quiet centre, zero
+  lettering, one room material, set/family consistency. Grok verifies those
+  laws, then **uploads the real binary onto its own feature branch under
+  `apps/web/public/plates/`** and opens the PR. Never chat/base64/data URI.
+- For **code**: a feature branch off current `main`, the approved design
+  implemented against current source, visual tests added or updated to match,
+  and a PR. Never a direct push to `main`.
+
+Then Claude independently reviews function and security, ChatGPT independently
+audits the PR scope, binary evidence, claims, SHA and CI, CI must be green on
+the exact head, and Jason reviews the result live. Separate release decision.
 
 The one-file rule for plates exists so a plate entering the repository is
 unambiguous — so `plate-01-office-02.jpg` means one specific image and the
@@ -187,7 +210,7 @@ learned about these plates.
 What does not loosen, and all of it is Mode B: a shipped **plate** is one file
 carrying the exact ordered name; a shipped **change** is a feature branch and a
 PR, never a direct push to `main`; and Grok never touches a drive outside its
-own inbox.
+own optional archive inbox.
 
 Mode A carries none of that. Grok explores and mocks up freely, without waiting
 to be handed a filename, because that is the whole point of Mode A. What stays
@@ -220,6 +243,8 @@ owner approval and independent review**.
   file or one named set, and a Mode B code PR is one screen or one coherent
   small set. Mode A is deliberately unconstrained
 - weaken a test to make a redesign fit
+- ask Claude to retrieve, relay, reconstruct, re-encode, or commit plate
+  binaries on Grok's behalf
 
 **On review timing.** The old contract said "Jason reviews on the live URL
 only" and forbade mid-loop mock reviews. That was right when Grok could not
@@ -242,9 +267,10 @@ because both sides believe it is handled.
 So the clause is replaced by one that works with what exists:
 
 > **Claude verifies and refuses. Claude does not re-encode.**
+> **Grok produces and places the real binary. Grok does not ask Claude to ferry it.**
 
 **Grok accepted this on 20 Aug** and took 4:4:4 onto its own side: it
-re-encodes in its own pipeline before the drop, and verifies SOI/EOI and
+re-encodes in its own pipeline before shipping, and verifies SOI/EOI and
 dimensions there. Settled before the first order rather than discovered
 during one.
 
@@ -252,7 +278,7 @@ during one.
 committed plate in pure Node — no dependency — and fails the build on any
 plate whose colour components are not all `1x1`. A subsampled plate is
 rejected at the PR gate and sent back to whoever produced it, named for the
-law it broke.
+law it broke. **Do not weaken this test.**
 
 That is the better arrangement regardless of tooling: silently correcting a
 bad input hides the fact that the producer's pipeline is wrong, and the next
@@ -264,78 +290,83 @@ call and happens outside this repo, on a machine with the tools.
 
 ## The delivery paths
 
-**Visual implementation (the 2026-08-22 model):**
+**Visual implementation (the 2026-08-22 model, unchanged):**
 
 ```
 Grok reads current source: page, components, tests
   → Grok names the real fields, actions and states
   → Mode A: alternatives, critique, iteration
   → Jason approves ONE direction
-  → Grok branches, implements that direction, updates visual tests
+  → Grok branches off current main, implements that direction, updates visual tests
   → Grok opens a PR — never a direct push to main
-  → Claude reviews function and security; ChatGPT audits diff vs. claims
+  → Claude independently reviews function and security
+  → ChatGPT independently audits PR scope, claims, SHA, CI
   → green CI on the exact head → merge → staging
-  → Jason reviews on the live URL → release decision
+  → Jason reviews on the live URL → separate release decision
 ```
 
-**Plate binaries — the part that failed twice.** Unchanged, because the
-failure modes were about bytes, not about lanes:
+**Plate binaries — 2026-08-24 owner decision (replaces the retired courier route):**
 
 ```
-Jason orders one image (filename + room + size/variant note)
-  → Grok generates
-  → Grok re-encodes to 4:4:4, verifies SOI/EOI and dimensions
-  → real .jpg binary lands in the agreed drop
-  → picked up and PR'd — no re-encode, no chroma work
-  → if a new variant name: one line in the PLATES section of ppbf.css
-  → green CI → merge → staging → production
-  → Jason reviews on the live URL
+Jason approves plate/design (exact ordered filename + room + size/variant)
+  → Grok generates the exact ordered asset
+  → Grok prepares/verifies the actual JPEG (4:4:4, SOI/EOI, size, geometry, quiet centre, zero lettering)
+  → Grok uploads the REAL JPEG directly to its own feature branch under apps/web/public/plates/
+  → Grok makes only the required approved visual/CSS/test changes (e.g. one PLATES line if new variant)
+  → Grok opens the PR
+  → Claude independently reviews function/security boundaries (not redesign, not binary courier)
+  → ChatGPT independently audits PR scope, binary evidence, claims, SHA and CI
+  → required CI is green on the exact PR head
+  → merge → staging
+  → Jason performs live visual review
+  → separate release decision
 ```
 
-### The drop
+**Retired route (do not use):**
+
+```
+Grok → OneDrive Grok-Plates-Inbox → Claude picks up binary → Claude commits/PRs it
+```
+
+Claude is **not** the binary courier. Do not ask Claude to retrieve the JPEG
+from OneDrive, relay the bytes, reconstruct it, re-encode it, or commit it on
+Grok's behalf. If Grok can create the visual binary, Grok owns putting that
+exact binary in its branch.
+
+### Optional archive (not a shipping dependency)
 
 ```
 OneDrive (admin@punxsyprominence.org)
   Documents / PPBF-AI-Lanes / Grok-Plates-Inbox /
 ```
 
-Created and round-trip verified on 20 Aug: Claude can write to it, list it,
-and read from it **by path**, so the folder can be polled by name on a
-schedule rather than by tracking item ids. It carries its own
-`READ-ME-FIRST.md` stating the laws, so the rules are legible to anyone who
-opens the folder without having read this file.
+The folder may remain available for provenance, archive, or drop purposes.
+It is **no longer a mandatory shipping dependency** and no Claude polling step
+is required before a Grok visual PR. Drive taxonomy/reconciliation remains
+ChatGPT's lane. Do not reorganise the drive from this lane.
 
-One order, one file, named exactly as ordered. Nothing else belongs there --
-no drafts, no variations to pick between, no notes. Anything else found in it
-is reported rather than guessed at.
+### Claude's gate refuses (still)
 
-`PPBF-AI-Lanes/` is the parent for every lane hand-off, so the ChatGPT drive
-lane gets a sibling folder rather than a second convention.
-
-**Note for the drive reorganisation:** this folder is machine-read at a fixed
-path. It can be moved, but moving it silently breaks the pickup, so it is a
-coordinated change and not a tidy-up.
-
-### Claude's gate refuses
-
-A file is sent back, named for the law it broke, if it is:
+A file is refused by `plateBinaries.test.ts` (and should be sent back to the
+producer named for the law it broke) if it is:
 
 - not 4:4:4
 - truncated, or missing its end-of-image marker
 - the wrong size or orientation for the name it arrived under
 - base64, a data URI, or otherwise encoded through a chat channel
+- ≤ 8 KB or > 400 KB
 
-All four are enforced by `apps/web/src/design/plateBinaries.test.ts`, which
+All of these are enforced by `apps/web/src/design/plateBinaries.test.ts`, which
 runs on every PR. The third is held to the **filename**, since that is the
 only part of an order a test can read: a `-portrait-` name must be portrait,
 every other plate must be landscape, and neither may be square -- square is
 what an image model returns when an aspect instruction gets dropped.
 
 **Never base64. Never a data URI. Never bytes pasted into a chat channel.**
-If Grok cannot hand over a real file, Grok stops and says so, and a different
-route is used. Two attempts have already failed this way: 11–41 byte stubs
-from a relayed sidecar, and one file with a valid header, no end-of-image
-marker, and the wrong dimensions.
+If Grok cannot hand over a real file onto its own branch, Grok stops and says
+so, and a different route is used. Two attempts have already failed this way:
+11–41 byte stubs from a relayed sidecar, and one file with a valid header, no
+end-of-image marker, and the wrong dimensions.
 
 Variant selection must be **deterministic** — derived from the route — never
 random. A screen that changes appearance between loads breaks screenshot
@@ -377,6 +408,7 @@ the order.
   gradients alone with no network
 - every room sits at variant `-01`; the `-0N` slot is open and unused
 
-**Grok stays parked until Jason issues a specific image order.**
+**Grok ships Mode B plates only after Jason issues a specific image order and
+approves the design.** Mode A exploration is free.
 
 Tagline: **OBSERVE. DECIDE. EXECUTE. REPEAT.**
