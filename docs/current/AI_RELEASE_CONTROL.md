@@ -6,13 +6,15 @@ Claude (release commander) maintains this file. Grok does not edit it.
 ChatGPT audits it against live GitHub.
 
 MODE:
-RELEASE_FIRST — owner override 2026-08-24 ~20:45Z: FUNCTION FIRST. Grok /
+CONTINUE_BUILD — production is live and verified (2026-08-24T22:56Z). The
+release-first phase is complete; visual work returns through normal
+PR + CI + staging. History of this phase: owner override ~20:45Z, FUNCTION FIRST. Grok /
 Golden Era corrective work (#606), plates (#586) and #607 are explicitly
 OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-24T22:10Z
+2026-08-24T23:05Z
 
 CURRENT_MAIN:
 26519efd49d04b0f4b72779b921174567dd48ed0
@@ -30,10 +32,18 @@ STAGING_IMAGE_DIGEST:
 sha256:17773a8f55b07114e7585b1c86972e34cacef34af31a9015e2db1e0b53810b5e
 
 PRODUCTION_SHA:
-none yet — blocked at the owner approval gate (see OWNER_GATES)
+26519efd49d04b0f4b72779b921174567dd48ed0  <-- LIVE
 
 PRODUCTION_IMAGE_DIGEST:
-none yet
+sha256:17773a8f55b07114e7585b1c86972e34cacef34af31a9015e2db1e0b53810b5e
+IDENTICAL to STAGING_IMAGE_DIGEST above — the same tested image was
+promoted, not rebuilt.
+
+PRODUCTION_REVISION:
+app-ppbf-production--0000136
+
+PRODUCTION_URL:
+https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io
 
 ## COMBINED-TREE GATES AT THE FROZEN SHA (local, before dispatch)
 
@@ -111,18 +121,69 @@ The operational consequence is unchanged: `migrations_complete=CONFIRMED` is
 not truthfully attestable, and the deploy would refuse anyway, until
 apply-migrations has run against production.
 
-## OWNER_GATES (both waiting on Jason; nothing else blocks)
+## PRODUCTION RUNTIME — VERIFIED LIVE (deploy-production run 32783211177)
 
-1. **apply-migrations**, target=production, migration=all —
-   run **32774493452** — status `waiting` at the production protected
-   environment. THIS IS THE RELEASE-CRITICAL ONE (see above).
-2. **check-database**, target=production, check=seed-identity —
-   run **32770083477** — status `waiting`. Read-only; resolves production's
-   own privileged seed account id and proves
-   AZURE_PRODUCTION_RESOURCE_GROUP is populated. Needed before seeding
-   production reference data.
+Dispatched confirm_sha=26519efd…, release_digest=sha256:17773a8f…,
+migrations_complete=CONFIRMED, allow_rollback=NO.
+guard job success 22:08:58Z; build-and-deploy success 22:56:48Z after the
+owner approved the production environment. Every step read individually:
 
-deploy-production itself will queue at the same approval.
+- Resolve Production Resource Group: pass (the explicit refusal step added
+  in #604 — the secret is populated)
+- Verify Production Schema Matches This Commit: pass (read-only, live
+  production DB, AFTER apply-migrations run 32774493452 landed the
+  session-rpe-semantics migration)
+- Verify release digest exists in ACR: pass
+- Refuse a Rollback Nobody Asked For: pass (not an ancestor; proceeded)
+- Validate Production AI Configuration: pass
+- Deploy Tested Digest to Azure Container App (Production): pass
+- **Wait For Promoted Revision To Take Traffic: pass** — and this is the
+  step that earned its place. Log:
+    Latest revision app-ppbf-production--0000136 runs image
+      …/ppbf-frontend@sha256:17773a8f55b07114e7585b1c86972e34cacef34af31a9015e2db1e0b53810b5e
+      1: Activating 100
+      2: Activating 100
+      3: Running 100
+  The digest assertion passed AND the revision took ~15s to leave
+  Activating. Before #604 the smoke checks ran immediately after the
+  update, so they would have probed the PREVIOUS revision and passed —
+  a green run reporting a deploy that was not yet serving.
+- Pilot API Smoke Checks: pass, AFTER the wait — "Production smoke checks
+  passed." (login empty payload 400, session 200, unauthenticated shadow
+  events 401) against
+  https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io
+
+## PRODUCTION DATABASE
+
+- Migrations: apply-migrations run 32774493452, target=production,
+  migration=all — SUCCESS. Log: target_hostname ppbf-pg-195892…,
+  "Applied session RPE semantics migration",
+  "PILOT SESSION RPE SEMANTICS MIGRATION PASS", and the run's own summary
+  "Safe to attest migrations_complete for production".
+- Seed identity: check-database run 32770083477, check=seed-identity —
+  SUCCESS. Production seed account is **Admin@punxsyprominence.org**
+  (CAPITAL A), platform_owner, active, org ppbf-default-org. The
+  lowercase twin is active=NO; the check prints an explicit
+  CASE-DIFFERING DUPLICATES warning.
+- Reference-data seed: dry-run dispatched (run 32783198601,
+  seed_account_id=Admin@punxsyprominence.org, organization_id blank so it
+  resolves from the app's own default-org secret) and still WAITING at the
+  production approval as of 23:05Z. Read-only; it writes nothing and does
+  not gate the deploy. OPEN QUESTION, honestly unresolved: whether
+  production's drill / discipline / competence-cohort / session-script
+  catalogs are already populated. The dry-run answers it without writing.
+
+## OWNER_GATES (historical — the release-blocking ones are cleared)
+
+1. apply-migrations run 32774493452 — APPROVED and GREEN.
+2. check-database seed-identity run 32770083477 — APPROVED and GREEN.
+3. deploy-production run 32783211177 — APPROVED and GREEN. PRODUCTION LIVE.
+4. seed-reference-data dry-run run 32783198601 — STILL WAITING. Read-only,
+   non-blocking. Approve it to learn whether production's operational
+   catalogs need filling.
+
+Note for whoever runs the next release: GitHub requires a SEPARATE approval
+per run. Approving two runs does not carry to later dispatches.
 
 ## AFTER APPROVAL — the exact remaining sequence
 
