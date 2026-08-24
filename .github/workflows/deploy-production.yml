@@ -127,8 +127,6 @@ jobs:
     env:
       ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
       ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
-      # Preferred: explicit production RG secret. Fallback keeps current
-      # behavior for repositories that have not populated the new secret yet.
       # No fallback. This previously defaulted to the STAGING resource group,
       # so an unset secret pointed every production step -- the digest and SHA
       # guards, the image update, the post-deploy verification -- at staging,
@@ -145,6 +143,20 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      # Same deliberate refusal as apply-migrations / seed-reference-data /
+      # check-database (the #601 model). An empty RESOURCE_GROUP already fails
+      # closed here -- every consumer is an az call that errors on an empty
+      # `-g` -- but it fails late (after checkout, npm ci and the Azure login)
+      # and with a generic az error instead of naming the missing secret. Say
+      # it plainly, before spending anything.
+      - name: Resolve Production Resource Group
+        run: |
+          if [ -z "$RESOURCE_GROUP" ]; then
+            echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is not set. Refusing to guess a resource group for a production operation."
+            exit 1
+          fi
+          echo "Production resource group is configured."
 
       - name: Authenticate via Azure OIDC
         uses: azure/login@v3
@@ -559,6 +571,46 @@ jobs:
               AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
               PPBF_VIDEO_CONTENT_SCAN=vision \
               PPBF_DURABLE_RATE_LIMIT=true
+
+      # `az containerapp update` returns when the new revision is CREATED, not
+      # when it is serving. Staging learned this on run 30503641552 (its checks
+      # reached the PREVIOUS revision) and grew a wait step; production's smoke
+      # checks below are revision-generic 400/200/401 probes, so without this
+      # wait a new revision that never starts would leave the old one serving,
+      # the probes would pass against it, and the run would report a deploy
+      # that did not happen. Wait until the latest revision is Running with
+      # 100% of traffic -- and first assert that revision actually carries the
+      # digest this run promoted, so the thing being waited on is OUR deploy,
+      # not whatever revision happens to be latest.
+      - name: Wait For Promoted Revision To Take Traffic
+        run: |
+          LATEST="$(az containerapp show --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName -o tsv)"
+          test -n "$LATEST"
+          REVISION_IMAGE="$(az containerapp revision show --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" --revision "$LATEST" \
+            --query "properties.template.containers[0].image" -o tsv)"
+          echo "Latest revision $LATEST runs image $REVISION_IMAGE"
+          case "$REVISION_IMAGE" in
+            *"@${{ inputs.release_digest }}") ;;
+            *)
+              echo "::error::Latest revision $LATEST does not carry the promoted digest ${{ inputs.release_digest }}. The update did not produce the expected revision."
+              exit 1
+              ;;
+          esac
+          for i in $(seq 1 60); do
+            READ="$(az containerapp revision show --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" --revision "$LATEST" \
+              --query "[properties.runningState, properties.trafficWeight]" -o tsv | tr '\n' ' ')"
+            echo "  $i: $READ"
+            case "$READ" in
+              "Running 100"*) exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Revision $LATEST did not reach Running/100% traffic within 5 minutes."
+          exit 1
 
       - name: Resolve Production Base URL
         run: |
