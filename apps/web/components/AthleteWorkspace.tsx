@@ -436,52 +436,6 @@ function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBui
 // on purpose: a prefilled control that nobody touches is indistinguishable
 // from an answer, which is exactly how the planned 60 minutes became an
 // observed duration.
-async function submitFastTrackObservations(input: {
-  athleteId: string;
-  contextId: string;
-  observedAt: string;
-  rpe: number | null;
-  durationMinutes: number | null;
-  painFlag: boolean;
-  medicalReadAck: boolean;
-}): Promise<void> {
-  if (input.rpe === null || input.durationMinutes === null) {
-    return;
-  }
-
-  const rpe = input.rpe;
-  const durationMinutes = input.durationMinutes;
-
-  const observations = [
-    {
-      kind: 'session_rpe' as const,
-      value: rpe,
-      unit: 'rpe_0_10' as const,
-      dimensions: { painFlag: input.painFlag, medicalReadAck: input.medicalReadAck },
-    },
-    {
-      kind: 'duration' as const,
-      value: durationMinutes,
-      unit: 'minutes' as const,
-    },
-  ];
-
-  await Promise.allSettled(observations.map((observation) => fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      athleteId: input.athleteId,
-      contextId: input.contextId,
-      kind: observation.kind,
-      value: observation.value,
-      unit: observation.unit,
-      dimensions: observation.dimensions ?? {},
-      observedAt: input.observedAt,
-      idempotencyKey: `${input.contextId}-${observation.kind}`,
-    }),
-  })));
-}
 
 // The vocabularies this tab reads. A rabbit hole is stored against one stable
 // key, and the read takes one anchor at a time, so the tab asks for the terms
@@ -717,22 +671,14 @@ export default function AthleteWorkspace() {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
-  /* What the athlete reports AFTER training, at check-out. Both start empty and
-     neither is prefilled -- see submitFastTrackObservations. An untouched
-     prefill cannot be told apart from an answer, which is how a planned 60
-     minutes came to be recorded as an observed duration. Empty means the
-     athlete did not say, and that is stored as "did not say" rather than as a
-     number. */
-  /* No setter on either, and that is the current truth rather than an
-     oversight: nothing in this app collects a post-session RPE or an observed
-     duration yet. The check-in controls that used to supply them measured the
-     wrong thing -- readiness before training, and a PLANNED duration -- so they
-     were disconnected rather than repointed. Until a check-out control exists,
-     both stay null, pilot.sessions.rpe is written null with an UNKNOWN method,
-     and submitFastTrackObservations submits nothing. Adding the control is a
-     one-line change back to a full useState pair here. */
-  const [postSessionRpe] = useState<number | null>(null);
-  const [actualMinutesTrained] = useState<number | null>(null);
+  /* Nothing in this app collects a post-session RPE or an observed duration.
+     The check-in controls that used to supply them measured the wrong thing --
+     readiness before training, and a PLANNED duration -- so they were
+     disconnected rather than repointed, and check-out writes rpe null with an
+     UNKNOWN method. No placeholder state stands in for the missing control:
+     a variable that can only ever be null, feeding a call that can only ever
+     return early, reads as wired while recording nothing. Building the control
+     is the work; pretending it exists is not. */
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
@@ -1586,11 +1532,16 @@ export default function AthleteWorkspace() {
           session_id: record.sessionId,
           athlete_id: record.athleteId,
           date: record.date,
-          // The first and only point at which a real session RPE exists. Null
-          // when the athlete did not rate it, which stays null rather than
-          // becoming a number nobody gave.
-          rpe: postSessionRpe,
-          rpe_method: postSessionRpe === null ? 'UNKNOWN' : 'athlete_post_session_self_report',
+          // Check-out is the first and only point at which a real session RPE
+          // could exist -- and no control on this screen collects one, so it
+          // does not exist yet. Written null with an UNKNOWN method: the
+          // athlete rated nothing, and "not recorded" is what gets stored.
+          // These are literals rather than a variable that could only ever
+          // hold null. When a check-out rating control is built, it supplies
+          // the value here and 'athlete_post_session_self_report' becomes the
+          // method; until then nothing may put a number in this field.
+          rpe: null,
+          rpe_method: 'UNKNOWN' as const,
           // The check-in note is the fallback because the session record
           // requires a note and an empty box must not erase what check-in
           // already stored.
@@ -1633,27 +1584,12 @@ export default function AthleteWorkspace() {
       setIsCheckingOut(false);
     }
 
-    /* The Session Load feed, now at check-out where its two inputs exist. On
-       main this call sat at the end of check-IN and passed the readiness
-       slider as `session_rpe` and the planned duration as `duration`, so
-       SHADOW was multiplying two numbers that had measured nothing yet.
-       Moved, not deleted, and deliberately outside the try above: it is
-       best-effort enrichment and must never affect the check-out that already
-       succeeded or failed on its own.
-
-       Both inputs are null until a check-out control collects them, so today
-       this submits nothing at all -- submitFastTrackObservations returns early
-       rather than inventing a value for either. That is the honest state: no
-       observation is better than a fabricated one. */
-    void submitFastTrackObservations({
-      athleteId: record.athleteId,
-      contextId: record.sessionId,
-      observedAt: now.toISOString(),
-      rpe: postSessionRpe,
-      durationMinutes: actualMinutesTrained,
-      painFlag: injuryFlag,
-      medicalReadAck,
-    });
+    /* No Session Load feed here. It used to sit at the end of check-IN and pass
+       the readiness slider as `session_rpe` and the PLANNED duration as
+       `duration`, so SHADOW multiplied two numbers that had measured nothing
+       yet. Check-out has no post-session RPE and no observed duration to send
+       in their place, so it sends nothing: check-out records only what the
+       athlete actually supplied. */
   };
 
   const handleSavePainReport = async () => {
@@ -2119,13 +2055,24 @@ export default function AthleteWorkspace() {
                       <input type="checkbox" checked={injuryFlag} onChange={(e) => setInjuryFlag(e.target.checked)} className="h-[21px] w-[21px] accent-[var(--brass-600)]" />
                       <span>Injury or Pain Flag</span>
                     </label>
-                    {/* A Soreness Level slider stood here and recorded
-                        nothing, immediately below an Injury or Pain Flag that
-                        does. On a safety card that is the worst place for the
-                        distinction to be invisible: an athlete who moved this
-                        to 8 had every reason to believe a coach would see it.
-                        The pain report below -- location, type and severity --
-                        is the path that actually reaches one. */}
+                    {/* NEITHER THIS FLAG NOR THE SORENESS SLIDER THAT STOOD
+                        BELOW IT REACHES A COACH. The slider never did. This
+                        flag did, but only by riding as a dimension on the
+                        check-in `session_rpe` observation -- and that
+                        observation was the readiness slider mislabelled as
+                        session RPE, which is the defect this branch removes.
+                        Deleting the fabricated measurement necessarily deletes
+                        the carrier the flag was hitching on; a pain signal
+                        whose only transport is a wrong measurement was never
+                        soundly recorded. Giving it a signal of its own is a
+                        separate change and is NOT done here.
+
+                        On a safety card that is the worst place for the
+                        distinction to be invisible: an athlete who ticks this
+                        has every reason to believe a coach will see it. The
+                        pain report below -- location, type and severity -- is
+                        the path that actually reaches one, and it is the only
+                        one on this screen that does. */}
                     {/* All 10 locations, not just the first 3 -- a dropdown
                         scales to the list where a row of buttons did not, and
                         the other 7 were previously unreachable from this

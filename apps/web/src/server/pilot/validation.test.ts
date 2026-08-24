@@ -290,6 +290,22 @@ describe('the session validator holds new input to the scale its unit names', ()
     expect(statusOf(() => validateSessionPayload(sessionPayload({ rpe: Number.NaN })))).toBe(400);
   });
 
+  /* Infinity is the gap the NaN check does not close. `typeof Infinity` is
+     'number' and `Number.isNaN(Infinity)` is false, so it clears every type
+     guard; only the scale bound stops it. It is refused here by `value > 10`
+     rather than by anything naming it, which is why it is pinned explicitly:
+     a future edit that relaxed the bound while keeping the NaN check would
+     let Infinity through and nothing else would notice. Postgres `numeric`
+     accepts 'Infinity' on PG14+, so this is a real storable value, not a
+     theoretical one. */
+  test.each([Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    '%p clears the type guard but is refused by the scale',
+    (rpe) => {
+      expect(typeof rpe === 'number' && !Number.isNaN(rpe)).toBe(true);
+      expect(statusOf(() => validateSessionPayload(sessionPayload({ rpe })))).toBe(400);
+    },
+  );
+
   test('a numeric string is refused rather than coerced', () => {
     expect(statusOf(() => validateSessionPayload(sessionPayload({ rpe: '7' })))).toBe(400);
   });
