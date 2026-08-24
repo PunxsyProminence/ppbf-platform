@@ -12,7 +12,7 @@ OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-24T21:25Z
+2026-08-24T22:10Z
 
 CURRENT_MAIN:
 26519efd49d04b0f4b72779b921174567dd48ed0
@@ -69,15 +69,12 @@ All 26 steps success. Read individually, not inferred from the run colour:
 STAGING URL:
 https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io
 
-## PRODUCTION — REQUIRED MIGRATION FOUND (release-blocking without it)
+## PRODUCTION — REQUIRED MIGRATION (the pipeline DOES catch it)
 
 deploy-production is promote-only by construction (no build step; verified by
 audit and pinned by `deployPromotionContract.test.ts`, merged in #604).
 
-**A production migration is REQUIRED before the code deploy, and the
-pipeline's own schema gate would NOT have caught its absence.**
-
-Evidence:
+A production migration IS required before the code deploy:
 
 - Production last ran 2238ea17 (`docs/current/PRODUCTION_STATE.json`,
   2026-08-23T00:19:41Z).
@@ -90,15 +87,29 @@ Evidence:
   `insert into pilot.sessions (…, rpe, rpe_method, …)`, and athlete check-in
   sends `rpe: null, rpe_method: 'UNKNOWN'` (AthleteWorkspace.tsx:1461-1462,
   1541-1542).
-- `apps/web/scripts/pilot-verify-schema.mjs` contains NO rpe_method check —
-  so deploy-production's "Verify Production Schema Matches This Commit" step
-  would have PASSED against a production database lacking the column.
-- Consequence had this shipped unmigrated: every athlete check-in INSERT
-  fails in production (missing column; and `rpe` still NOT NULL), while the
-  deploy reported success.
 
-Therefore `migrations_complete=CONFIRMED` is NOT truthfully attestable for
-production until apply-migrations has run there.
+CORRECTION (2026-08-24T22:10Z). An earlier revision of this file claimed
+`pilot-verify-schema.mjs` does not check `rpe_method`, and therefore that
+deploy-production would have passed against an unmigrated production
+database and then failed every check-in while reporting success. **That was
+wrong.** The claim came from grepping the script for the literal string,
+which is not a valid test: the script DERIVES its expected objects from the
+migration SQL at deploy time.
+
+Verified by running the script's own `expectedObjectsFrom` over the real
+`infra/azure` tree (99 migration files):
+
+- `sessions.rpe_method` — EXPECTED: true
+- constraints expected: `pilot_sessions_rpe_method_check`,
+  `pilot_sessions_rpe_method_agrees_with_value`
+
+So deploy-production's "Verify Production Schema Matches This Commit" step
+would have REFUSED the deploy until apply-migrations ran, which is exactly
+what that step exists to do. There is no gap here, and no near miss to fix.
+
+The operational consequence is unchanged: `migrations_complete=CONFIRMED` is
+not truthfully attestable, and the deploy would refuse anyway, until
+apply-migrations has run against production.
 
 ## OWNER_GATES (both waiting on Jason; nothing else blocks)
 
@@ -182,8 +193,6 @@ approval on the two waiting runs above.
 - #602 `path.relative` Windows separators (guard fails loud, not open; all
   CI is ubuntu-latest).
 - Digest-to-SHA provenance binding in deploy-production.
-- `pilot-verify-schema.mjs` does not cover `rpe_method` — this release's near
-  miss. It should learn every migration's objects.
 - Lane A/C non-blocking findings: dead "Session Duration" input, coach roster
   row click, admin "Get Code" copy, UNKNOWN-method historical RPE rendering,
   track-assignments silent autosave, athlete "Messages 0" tile, holds not
@@ -205,4 +214,5 @@ approval on the two waiting runs above.
 - 2026-08-24T20:30Z | claude | dispatched deploy-staging at frozen SHA | run 32774306474
 - 2026-08-24T20:32Z | claude | dispatched production apply-migrations | run 32774493452 (waiting at owner gate)
 - 2026-08-24T20:38Z | claude | STAGING VERIFIED at 26519efd: SHADOW gate PASS, ledger PASS=72 with 0 failures, digest sha256:17773a8f… | run 32774306474
-- 2026-08-24T21:25Z | claude | found production needs the session-rpe-semantics migration, and that verify-schema would not have caught its absence | this file
+- 2026-08-24T21:25Z | claude | found production needs the session-rpe-semantics migration | this file
+- 2026-08-24T22:10Z | claude | CORRECTED that entry: verify-schema DOES derive and expect sessions.rpe_method plus both constraints (ran expectedObjectsFrom over all 99 migration files); deploy-production would have refused, not silently shipped | this file
