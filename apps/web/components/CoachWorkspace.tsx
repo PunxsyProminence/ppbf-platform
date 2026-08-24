@@ -14,7 +14,7 @@ import {
 } from '@/src/server/pilot/readinessProvenance';
 import { formatGymDateTimeShort, formatGymStamp } from '@/src/lib/gymTime';
 
-type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
+type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
 /**
  * An explicit element type for the tab-bar array, rather than letting it
@@ -35,7 +35,7 @@ interface CoachTab {
 }
 
 /**
- * The coach workspace's ten surfaces, in the order the tab row draws them.
+ * The coach workspace's nine surfaces, in the order the tab row draws them.
  *
  * Hoisted out of the JSX so the masthead can name the open one without a
  * second copy of the labels standing next to the first: two lists of the same
@@ -43,11 +43,13 @@ interface CoachTab {
  * are deliberately NOT here -- they are live counts read per render, not part
  * of the registry, and freezing one into a constant would be a lie the moment
  * the queue changed.
+ *
+ * 'Athlete Floor Plans' stood between Floor and Development until 2026-08-24.
+ * See the comment where its panel used to render for why it is gone.
  */
 const COACH_TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'floor', label: 'Floor' },
-  { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
   { id: 'development', label: 'Development' },
   { id: 'goals', label: 'Goals' },
   { id: 'tasks', label: 'Tasks' },
@@ -66,21 +68,6 @@ const COACH_TABS = [
 const REVIEW_BADGED_TABS: ReadonlySet<TabID> = new Set<TabID>(['tasks', 'shadow']);
 
 type SessionMode = 'Group' | 'One-on-One';
-type ReadinessStatus = 'GREEN' | 'YELLOW' | 'RED';
-
-interface CoachAthleteFloorPlan {
-  athleteName: string;
-  readiness: ReadinessStatus;
-  generatedAt: string;
-  tasks: Array<{
-    id: string;
-    title: string;
-    category: string;
-    description: string;
-    dueDate: string;
-    priority: 'High' | 'Normal';
-  }>;
-}
 
 interface Athlete {
   id: string;
@@ -406,15 +393,6 @@ function taskStatusTone(status: CoachTask['status']): BadgeTone {
   return 'cleared';
 }
 
-/* Same shift as readinessDotClass, for the floor-plan badge. See the note
-   there: triage is not a medical refusal. */
-function readinessBadgeTone(readiness: Athlete['readiness']): BadgeTone {
-  if (readiness === 'GREEN') return 'cleared';
-  if (readiness === 'YELLOW') return 'monitor';
-  if (readiness === 'RED') return 'restricted';
-  return 'neutral';
-}
-
 function painSeverityTone(severity: CoachPainReport['severity']): BadgeTone {
   if (severity === 'critical' || severity === 'high') return 'locked';
   if (severity === 'moderate') return 'restricted';
@@ -435,8 +413,6 @@ export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const activeTabLabel = COACH_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Dashboard';
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
-  const [athleteFloorPlans, setAthleteFloorPlans] = useState<CoachAthleteFloorPlan[]>([]);
-  const [floorPlansError, setFloorPlansError] = useState<string | null>(null);
   const [coachAccountId, setCoachAccountId] = useState('');
   const [reviewSessionId, setReviewSessionId] = useState('');
   // The review picker: which athlete's sessions are listed, and the list
@@ -779,33 +755,6 @@ export default function CoachWorkspace() {
     void loadPainReports();
     void loadBarrierReports();
   }, [loadPainReports, loadBarrierReports]);
-
-  const loadFloorPlans = useCallback(async () => {
-    try {
-      setFloorPlansError(null);
-      const response = await fetch(`${apiBase()}/api/pilot/floor-plans?limit=50`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error('Failed to load athlete floor plans');
-      }
-
-      const payload = (await response.json()) as { items?: CoachAthleteFloorPlan[] };
-      setAthleteFloorPlans(payload.items || []);
-    } catch (error) {
-      // A read failure must not fall through to the empty state: "no plans
-      // received yet" is a claim about the athletes, and a coach reading it
-      // after a failed fetch would skip plans that do exist.
-      setFloorPlansError(error instanceof Error ? error.message : 'Failed to load athlete floor plans');
-      setAthleteFloorPlans([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadFloorPlans();
-  }, [loadFloorPlans]);
 
   useEffect(() => {
     void (async () => {
@@ -1767,13 +1716,6 @@ export default function CoachWorkspace() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setActiveTab('athlete-floor-plans')}
-                    className="btn btn--ghost"
-                  >
-                    Review Athlete Plans
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setActiveTab('tasks')}
                     className="btn btn--ghost"
                   >
@@ -2071,76 +2013,19 @@ export default function CoachWorkspace() {
             </div>
           )}
 
-          {/* ATHLETE FLOOR PLANS */}
-          {activeTab === 'athlete-floor-plans' && (
-            <div className="space-y-6 animate-fadeIn">
-              <HelpPanel
-                title="Athlete Floor Plans"
-                description="Individual athlete workout plans generated at athlete check-in. Separate from coach group and one-on-one floor operations."
-                usage={[
-                  'Review each athlete\'s generated plan before live coaching decisions',
-                  'Use readiness color to adjust coaching intensity',
-                  'Confirm task order and due-time pacing',
-                  'Use this tab as individual plan intake, not class block control'
-                ]}
-                mistakes={[
-                  'Treating individual plans as group-session block plan',
-                  'Ignoring RED readiness plans during live coaching',
-                  'Overwriting individual targets with one-size-fits-all flow'
-                ]}
-              />
-
-              {floorPlansError ? (
-                <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                  <div className="flex items-center justify-between mb-[var(--s2)] gap-[var(--s3)]">
-                    <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">Error loading athlete floor plans</p>
-                    <button
-                      onClick={() => void loadFloorPlans()}
-                      className="btn btn--ghost"
-                      aria-label="Retry loading athlete floor plans"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                  <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)]">{floorPlansError}</p>
-                  <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)] mt-[var(--s2)]">Plans may exist that are not shown here. Do not read this as an empty queue.</p>
-                </div>
-              ) : athleteFloorPlans.length === 0 ? (
-                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-                  <p className="t-body font-semibold text-[color:var(--bone-100)]">No athlete floor plans received yet.</p>
-                  <p className="t-muted mt-[var(--s3)]">Once an athlete checks in and their floor plan auto-generates, it will appear here as an individual coach review tab.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {athleteFloorPlans.map((plan, index) => (
-                    <article key={`${plan.athleteName}-${plan.generatedAt}-${index}`} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                      <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-                        <div>
-                          <p className="t-eyebrow">Individual Plan</p>
-                          <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{plan.athleteName}</h4>
-                          <p className="t-muted">Generated {formatGymStamp(plan.generatedAt)}</p>
-                        </div>
-                        <StatusBadge tone={readinessBadgeTone(plan.readiness)} label={plan.readiness} />
-                      </div>
-
-                      <div className="grid gap-[var(--s3)] md:grid-cols-2">
-                        {plan.tasks.map((task) => (
-                          <div key={task.id} className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                            <div className="flex items-center justify-between gap-[var(--s3)]">
-                              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-200)]">{task.title}</p>
-                              <StatusBadge tone={task.priority === 'High' ? 'restricted' : 'monitor'} label={task.priority} />
-                            </div>
-                            <p className="t-label mt-[var(--s2)]">{task.category} - {task.dueDate}</p>
-                            <p className="t-muted mt-[var(--s3)]">{task.description}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* THE "ATHLETE FLOOR PLANS" TAB IS GONE, and honestly rather than
+              quietly. Every plan it listed was auto-generated at athlete
+              check-in from the readiness slider -- an unvalidated 1-10
+              self-report that readinessProvenance.ts says may not be treated
+              as an established measurement -- and was headed with a
+              client-supplied athleteName (the literal 'Current Athlete'),
+              which this panel rendered as if it were an athlete's verified
+              identity over individualized work. Nothing coach-authored ever
+              wrote to pilot.athlete_floor_plans, so there was no genuine
+              plan here to keep: the panel presented machine output over an
+              unverifiable name as operational coaching input. When coaches
+              get a surface for real individualized plans, it starts from
+              coach authorship and server-resolved identity, not this feed. */}
 
           {/* FLOOR */}
           {activeTab === 'floor' && (

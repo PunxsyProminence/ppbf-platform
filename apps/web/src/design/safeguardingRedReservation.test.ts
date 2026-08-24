@@ -658,10 +658,15 @@ const ALLOW_LIST: readonly AllowListEntry[] = [
   { file: 'components/AthleteWorkspace.tsx', channel: '.alert--critical', identifier: 'error', sites: 4, reason: DEFECT },
   { file: 'components/CoachRecognitionPad.tsx', channel: '--locked', identifier: 'fail', sites: 1, reason: DEFECT },
   { file: 'components/CoachRecognitionPad.tsx', channel: '--locked-ink', identifier: 'fail', sites: 1, reason: DEFECT },
-  { file: 'components/CoachWorkspace.tsx', channel: '--locked', identifier: 'error', sites: 5, reason: DEFECT },
+  // 2026-08-24: the "Athlete Floor Plans" panel was removed (it presented
+  // plans auto-generated from the unvalidated check-in readiness slider as
+  // individualized work), taking its --locked error box with it: one
+  // --locked site and three --locked-ink sites fewer, shrunk here in the
+  // same change as this guard requires.
+  { file: 'components/CoachWorkspace.tsx', channel: '--locked', identifier: 'error', sites: 4, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked', identifier: 'unable-to', sites: 1, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked', identifier: 'unavailable', sites: 1, reason: DEFECT },
-  { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'error', sites: 15, reason: DEFECT },
+  { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'error', sites: 12, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'incomplete', sites: 1, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'unable-to', sites: 1, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'unavailable', sites: 1, reason: DEFECT },

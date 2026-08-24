@@ -7,7 +7,7 @@
 // tab that states something the backend never said, and a control that looks
 // like it did something it did not.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 
 jest.mock('next/link', () => ({
@@ -1364,6 +1364,87 @@ describe('check-in records no session RPE at all', () => {
 
     const [checkIn] = postedTo('/api/pilot/sessions');
     expect(typeof checkIn.body.rpe).not.toBe('number');
+  });
+});
+
+// READINESS IS A RECORD, NOT A PRESCRIPTION. The check-in slider is a 1-10
+// self-report whose method nothing has validated -- readinessProvenance.ts is
+// explicit that NO readiness method passes the established
+// reliability/validity bar -- so its band may be written down, and may not
+// decide what training is generated, shown, or sent. Check-in used to hand
+// the band to buildWorkoutFloorTasks, which bought GREEN athletes a
+// 'High-output intervals' conditioning finisher and everyone else reduced
+// work, then stamped the band (and a client-supplied athleteName) on the
+// stored plan a coach surface displayed as individualized work. These pin
+// both halves of the fix: the work is identical whatever the slider says,
+// and the band still lands on the session note, where a record belongs.
+describe('the readiness slider cannot change the prescribed work', () => {
+  async function checkInWithSlider(value: number) {
+    await renderWorkspace();
+    fireEvent.change(screen.getByLabelText('Readiness to Train (1-10)'), {
+      target: { value: String(value) },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/floor-plans')).toHaveLength(1));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+    return {
+      plan: postedTo('/api/pilot/floor-plans')[0].body,
+      session: postedTo('/api/pilot/sessions')[0].body,
+    };
+  }
+
+  // Task ids and due times carry the check-in clock, so two check-ins made at
+  // different moments legitimately differ there. The comparison is on the
+  // prescriptive content: what work, in which words, at what priority.
+  function workContentOf(planBody: Record<string, unknown>) {
+    const plan = planBody.plan as { tasks: Array<Record<string, unknown>> };
+    return plan.tasks.map(({ title, category, description, priority, linkedGoalId }) => (
+      { title, category, description, priority, linkedGoalId }
+    ));
+  }
+
+  test('check-ins at 3 and at 9 submit identical work, differing only in the recorded band', async () => {
+    const low = await checkInWithSlider(3);
+    cleanup();
+    fetchCalls.length = 0;
+    const high = await checkInWithSlider(9);
+
+    expect(workContentOf(low.plan)).toEqual(workContentOf(high.plan));
+
+    // The record still moves -- on the session's auto check-in note, and
+    // nowhere else. The slider staying a live self-report is the point: it is
+    // kept as a record precisely so that removing its authority over the work
+    // does not quietly remove the athlete's voice too.
+    expect(low.session.notes).toBe('Auto check-in readiness RED');
+    expect(high.session.notes).toBe('Auto check-in readiness GREEN');
+  });
+
+  test('no intensity escalation is reachable from the slider', async () => {
+    // 10 is the value that used to buy the GREEN branch: a 'Conditioning
+    // Finisher' prescribing 'High-output intervals: 6 rounds x 90s on / 60s
+    // active recovery'. No slider value may buy an intensity prescription now.
+    await checkInWithSlider(10);
+
+    const everySentBody = JSON.stringify(fetchCalls.map((call) => call.body));
+    expect(everySentBody).not.toContain('High-output');
+    expect(everySentBody).not.toContain('Conditioning Finisher');
+    expect(screen.queryByText(/High-output/)).toBeNull();
+  });
+
+  test('the stored plan carries no client-supplied identity and no readiness classification', async () => {
+    const { plan } = await checkInWithSlider(8);
+    const stored = plan.plan as Record<string, unknown>;
+
+    // The route resolves who the athlete is from the session principal. The
+    // client literal that used to travel here ('Current Athlete') was rendered
+    // by the coach workspace as if it were an athlete's identity.
+    expect(stored.athleteName).toBeUndefined();
+    expect(JSON.stringify(plan)).not.toContain('Current Athlete');
+
+    // And the band stays off the stored plan: stamping an unvalidated
+    // self-report's band on a plan presents the plan as derived from a
+    // measurement (readinessProvenance.ts -- no such measurement exists).
+    expect(stored.readiness).toBeUndefined();
   });
 });
 
