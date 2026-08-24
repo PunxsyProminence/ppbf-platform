@@ -1995,18 +1995,25 @@ export default function AthleteWorkspace() {
                 </div>
               </section>
 
+              {/* This help copy predated #597 and kept promising what #597
+                  removed: it told the athlete to "check your readiness status"
+                  as if the slider were a gate, warned against "ignoring LOW
+                  readiness scores before intense training" when no reading
+                  gates anything, and sent them to "complete biological
+                  check-in" -- a surface deliberately unreachable because it
+                  persists nothing (see the TAB_GROUPS note at the top of this
+                  file). Instructions may only name things this screen actually
+                  does. */}
               <HelpPanel
                 title="My Dashboard"
-                description="Your daily command center. Track readiness, see assigned work, and monitor your progress toward goals."
+                description="Your daily command center. Say how you feel, check in, see assigned work, and monitor your progress toward goals."
                 usage={[
-                  'Check your readiness status first thing each morning',
-                  'Complete biological check-in for accuracy',
+                  'Check in to open your session and build today\'s floor',
                   'Review today\'s floor tasks',
                   'Monitor active SMART goals',
                   'Note any pain or injury concerns'
                 ]}
                 mistakes={[
-                  'Ignoring LOW readiness scores before intense training',
                   'Not reporting pain to your coach',
                   'Skipping the check-in process',
                   'Assuming academic status is still current'
@@ -2014,9 +2021,17 @@ export default function AthleteWorkspace() {
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s5)]">
-                {/* Readiness Card */}
+                {/* Self-report card. Headed "Current Readiness" over a
+                    "Readiness to Train" slider until 2026-08-24 -- vocabulary
+                    from when this number decided the generated work. #597
+                    ended that authority (an unvalidated self-report may be
+                    recorded, never prescribe), so the card now presents the
+                    slider as what it is: the athlete saying how they feel,
+                    written on their session, deciding nothing. The band and
+                    the stored note format are untouched; only what is said to
+                    the athlete changed. */}
                 <div className={PANEL_RAISED}>
-                  <h3 className="t-label mb-[var(--s4)]">Current Readiness</h3>
+                  <h3 className="t-label mb-[var(--s4)]">Before You Train: How You Feel</h3>
                   <div className="space-y-[var(--s4)]">
                     {/* Sleep and Energy Level stood here until 2026-08-23 and
                         recorded nothing: neither reached any request body, on
@@ -2032,9 +2047,16 @@ export default function AthleteWorkspace() {
                         on what a sleep or energy reading would mean and who, if
                         anyone, it should reach. */}
                     <div>
-                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">Readiness to Train (1-10)</label>
+                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">How ready do you feel today? (1-10)</label>
                       <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{readinessToTrain}/10</p>
+                      {/* Said here, at the control, not in a help panel: the
+                          number is a subjective self-report. It is recorded on
+                          the session at check-in and that is all it does. */}
+                      <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                        This is your own read on how you feel, recorded with your check-in.
+                        It does not clear you for training and it does not change your workout.
+                      </p>
                     </div>
                     <div className="field">
                       <label className="t-label" htmlFor="session-duration">Session Duration (minutes)</label>
@@ -3022,6 +3044,7 @@ export default function AthleteWorkspace() {
             tile must not name one. */}
         <AthleteSummaryPanel
           readiness={currentReadiness}
+          readinessValue={readinessToTrain}
           tasksDue={tasksDue}
           goalsActive={goalsActive}
           upcomingSession="Nothing posted yet."
