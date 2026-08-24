@@ -2,24 +2,34 @@
 
 **Owner decision 2026-08-24:** Grok owns real JPEG wall plates on its own feature branch. Claude is not the binary courier.
 
-## Get the six real JPEGs onto this branch (pick one)
+## Ready now — Jason drag-drop (Option A, fastest)
 
-### Option A — Jason drag-drop (fastest, real binaries)
+The six real producer JPEGs are live in OneDrive and as a zip on Drive. Exact sizes match the table below.
+
 1. Download the six files from OneDrive  
    `Documents / PPBF-AI-Lanes / Grok-Plates-Inbox /`  
    (or the zip: https://drive.google.com/file/d/1uTexg9iJJkupvGI38S-F20pfbFGzoOc6/view?usp=drivesdk )
 2. Open GitHub → this branch → `apps/web/public/plates/`
-3. Drag-drop replace these six only (leave plate-01-office and plate-04-board alone)
+3. Drag-drop replace **these six only** (leave `plate-01-office-01.jpg` and `plate-04-board-01.jpg` alone)
 
-### Option B — materializer (exact producer bytes, no re-encode)
-When the `scripts/plates-type-b-b64/*.jpg.b64` sidecars are fully present:
+After drag-drop, the files will be dirty; commit them on this branch (or open a follow-up commit) then re-run:
+
+```bash
+npx jest src/design/plateBinaries.test.ts
+```
+
+## Option B — materializer (exact producer bytes, no re-encode)
+
+Sidecars in `scripts/plates-type-b-b64/` are prepared for full fill. When complete:
+
 ```bash
 node scripts/materialize-type-b-plates.mjs
 npx jest src/design/plateBinaries.test.ts
 ```
+
 Then stage the six modified `.jpg` and push.
 
-## Exact sizes after ship
+## Exact sizes after ship (must match)
 
 | File | Dim | Bytes |
 |------|-----|-------|
