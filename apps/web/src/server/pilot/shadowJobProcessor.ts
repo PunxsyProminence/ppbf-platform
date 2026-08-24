@@ -614,15 +614,6 @@ function payloadToText(value: unknown, fallback: string): string {
   }
 }
 
-function payloadToStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.replace(/\s+/g, ' ').trim().slice(0, 200))
-    .filter(Boolean)
-    .slice(0, 50);
-}
-
 function requireAsyncTrustContext(payload: Record<string, unknown>): {
   role: PilotRole;
   authorizedContext: string;
@@ -757,52 +748,28 @@ ${trust.authorizedContext}`;
     };
   }
 
-  if (payload.requestMode !== 'profile' || typeof payload.authenticatedRole !== 'string') {
-    throw new Error('SHADOW_JOB_CONTEXT_INVALID');
-  }
-  const interactionCount = Number(payload.interactionCount ?? 0);
-  const recentTopics = payloadToStringArray(payload.recentTopics);
-  const openQuestions = payloadToStringArray(payload.openQuestions);
-  const communicationStyle = payloadToText(payload.communicationStyle, 'unknown');
-  const rememberedFactCount = Number(payload.rememberedFactCount ?? 0);
-
-  const systemPrompt = `${SHADOW_SYSTEM_PROMPT}
-
-## Scout Report Generation
-Generate a structured Scout Report — a user intelligence document that helps SHADOW personalize future interactions.
-Format your response as valid JSON matching this structure:
-{
-  "summary": "2-3 sentence overview",
-  "strengths": ["strength1", "strength2"],
-  "growthAreas": ["area1", "area2"],
-  "recommendedTopics": ["topic1", "topic2"],
-  "openQuestions": ["question1"],
-  "insightNotes": "free-form observations"
-}`;
-
-  const userMessage = `Generate a Scout Report for a user with:
-- ${interactionCount} total interactions
-- Communication style: ${communicationStyle}
-- Recent topics: ${recentTopics.join(', ') || 'none recorded'}
-- Open questions: ${openQuestions.join('; ') || 'none recorded'}
-- ${rememberedFactCount} remembered facts on file
-- Summary from recent session: ${payloadToText(payload.recentInteractionSummary, 'N/A')}`;
-
-  const raw = await callAI(systemPrompt, userMessage, 2048);
-
-  let report: Record<string, unknown>;
-  try {
-    const jsonText = extractJsonObjectText(raw);
-    report = jsonText ? JSON.parse(jsonText) : { summary: raw, strengths: [], growthAreas: [], recommendedTopics: [], openQuestions: [], insightNotes: '' };
-  } catch {
-    report = { summary: raw, strengths: [], growthAreas: [], recommendedTopics: [], openQuestions: [], insightNotes: '' };
-  }
-
-  return {
-    ...report,
-    generatedAt: new Date().toISOString(),
-    profileTier: payloadToText(payload.profileTier, 'gold'),
-  };
+  // PROFILE-MODE SCOUT REPORTS ARE REFUSED, NOT GENERATED.
+  //
+  // This branch used to build a "user intelligence document" from an
+  // interaction count and an inferred communication style, and asked a model
+  // to return `strengths`, `growthAreas` and free-form `insightNotes` about the
+  // person. On an account that may belong to a child, that is a generated
+  // character assessment: ability ranking and fixed traits, produced from
+  // click history, with no instrument behind it and no human in the loop.
+  //
+  // It was already dead. Its producer -- `generateScoutReport`, requestMode
+  // 'profile' -- was deleted in the 2026-07-31 audit (finding B5, see the note
+  // in shadowHeavyBag.ts) because it never gained a caller, and the live scout
+  // path has always been the chat route's `executeHeavyBagAsync` branch. Only
+  // the consumer survived, reachable by anything that could enqueue the
+  // payload.
+  //
+  // Deleting it rather than leaving it dormant is the point: dormant code that
+  // writes personality assessments is one enqueue away from writing one. The
+  // throw is deliberately the same SHADOW_JOB_CONTEXT_INVALID a malformed
+  // payload gets -- there is no valid profile-mode scout request to
+  // distinguish it from.
+  throw new Error('SHADOW_JOB_CONTEXT_INVALID');
 }
 
 // Boxing observation prompt for Film Study. Doctrine (#103, and the same

@@ -353,7 +353,17 @@ async function loadDurableResponseText(signal: LearningSignal): Promise<string |
 
 /**
  * Heuristically extract profile facts from positive outcome signals.
- * These become The Playbook entries for this specific user.
+ *
+ * THESE NUMBERS ARE NOT CONFIDENCES. 0.6, 0.7, 0.75 and 0.8 are literals
+ * chosen while writing this function. They are stored as an internal sort key
+ * that decides which facts survive the 20-fact prune, and they are never
+ * rendered -- what a reader sees is the observation count, through
+ * `describeFactSupport`. See the doc comment on `RememberedFact.confidence`.
+ *
+ * ONE SIGNAL IS ONE OBSERVATION. `upsertRememberedFact` counts each call, so
+ * the first thumbs-up on a topic produces a fact described as a single
+ * observation rather than as an established preference, and only repetition
+ * moves it. Nothing here writes a permanent statement about a person.
  */
 async function extractAndStoreFacts(signal: LearningSignal): Promise<number> {
   const factsToStore: Array<{ key: string; value: string; confidence: number }> = [];
@@ -363,6 +373,8 @@ async function extractAndStoreFacts(signal: LearningSignal): Promise<number> {
     factsToStore.push({
       key: `engaged_topic_${signal.topic}`,
       value: 'true',
+      // Internal prune weight, not a probability. Acting on advice outranks a
+      // thumbs-up when 20 facts have to become 19; that is all it decides.
       confidence: signal.outcome === 'followed_advice' ? 0.8 : 0.6,
     });
   }

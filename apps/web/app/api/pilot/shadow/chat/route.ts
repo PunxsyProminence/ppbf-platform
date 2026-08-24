@@ -22,6 +22,7 @@ import {
 } from '@/src/server/pilot/shadowUserProfile';
 import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
 import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
+import { personalizationAllowed } from '@/src/server/pilot/shadowPersonalizationGate';
 import { describeDeployment, sessionTypeToTier, tierToSessionType } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
@@ -29,7 +30,6 @@ import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
 import { resolveHandoff } from '@/src/server/pilot/shadowHandoff';
 import {
   evaluateShadowUnlockState,
-  isFeatureEnabled,
   buildShadowUnlockHints,
   type ShadowUnlockState,
   type ShadowUnlockHint,
@@ -360,7 +360,12 @@ Only describe a claim as supported, proven, or evidence-based when verified evid
     };
   }
 
-  const personalization = unlockState && isFeatureEnabled(unlockState, 'strong_personalization')
+  // Both personalization paths -- this prompt fragment and the request context
+  // spliced in below -- now read ONE decision. They did not: this fragment was
+  // gated and `contextOutput.context` was not, so locking the feature stopped
+  // half of it while the user's inferred style and remembered facts kept
+  // flowing into the same prompt.
+  const personalization = personalizationAllowed(unlockState)
     ? buildPersonalizationPrompt(userProfile, tierResult)
     : '';
   const capabilityAuthorizedPrompt = `${trustBoundaryPrompt}${personalization}`;
@@ -772,6 +777,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       userRole: userRole as PilotRole,
       organizationId,
       athleteId,
+      // Required by the builder's type. A null unlockState -- the
+      // `.catch(() => null)` above -- resolves to false: "could not determine"
+      // is not "unlocked".
+      personalizationEnabled: personalizationAllowed(unlockState),
     });
 
     if (!roleBasedContext.authorized) {

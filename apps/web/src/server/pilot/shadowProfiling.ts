@@ -2,6 +2,28 @@
 // Badges describe relationship maturity; they must never gate SHADOW capabilities.
 
 import type { ShadowUserProfileRow, RememberedFact } from './shadowUserProfile';
+import { describeFactSupport } from './shadowPersonalizationGate';
+
+/**
+ * The stored heuristic weight a fact must carry to be worth putting in a
+ * prompt at all. It is a cutoff on an internal sort key, not a probability
+ * threshold, and it is named for what it does rather than for what the number
+ * looked like. Unchanged in value from the 0.6 it replaced, so no user's facts
+ * enter or leave the prompt because of this change.
+ */
+const FACT_INCLUSION_WEIGHT = 0.6;
+
+/**
+ * The weight above which `scoreRememberedFacts` counts a fact toward a tier.
+ *
+ * DELIBERATELY LEFT READING THE WEIGHT rather than the observation count.
+ * Switching it to counts would re-tier every existing user downward in one
+ * deploy -- rows written before observation counting read as a single
+ * observation -- and demoting people's badges is not what this repair is for.
+ * The number is unchanged; only the word "confidence" is gone from how it is
+ * described.
+ */
+const FACT_TIER_WEIGHT = 0.7;
 
 // ─── Tier Definitions ─────────────────────────────────────────────────────────
 
@@ -117,10 +139,10 @@ export function calculateProfileCompleteness(
 
 function scoreRememberedFacts(facts: RememberedFact[], reasons: string[]): number {
   const factCount = facts.length;
-  const highConf = facts.filter((f) => f.confidence >= 0.7).length;
-  if (highConf >= 5)                      { reasons.push(`${highConf} high-confidence facts`); return 20; }
-  if (highConf >= 2 || factCount >= 3)    { reasons.push(`${factCount} facts (${highConf} high-confidence)`); return 12; }
-  if (factCount > 0)                      { reasons.push(`${factCount} fact(s) recorded`); return 5; }
+  const stronglyWeighted = facts.filter((f) => f.confidence >= FACT_TIER_WEIGHT).length;
+  if (stronglyWeighted >= 5)                        { reasons.push(`${stronglyWeighted} strongly weighted facts`); return 20; }
+  if (stronglyWeighted >= 2 || factCount >= 3)      { reasons.push(`${factCount} facts (${stronglyWeighted} strongly weighted)`); return 12; }
+  if (factCount > 0)                                { reasons.push(`${factCount} fact(s) recorded`); return 5; }
   return 0;
 }
 
@@ -187,7 +209,9 @@ export function buildPersonalizationPrompt(
     `- Interactions: ${profile.interaction_count}`,
   ];
 
-  // Light personalization: style + recent topics only
+  // Answer-format preference. These are instructions about how to write, not
+  // claims about how the reader learns -- see STYLE_PREFERENCE in
+  // shadowContextBuilder.ts for why that distinction is load-bearing.
   if (profile.communication_style !== 'unknown') {
     const styleGuide: Record<string, string> = {
       concise: 'Keep responses brief and direct. Use bullet points.',
@@ -195,19 +219,21 @@ export function buildPersonalizationPrompt(
       'example-heavy': 'Lead with concrete examples before theory.',
     };
     const guide = styleGuide[profile.communication_style];
-    if (guide) lines.push(`- Communication Preference: ${guide}`);
+    if (guide) lines.push(`- Preferred answer format: ${guide}`);
   }
 
   if (config.systemPromptPersonalization === 'full') {
-    // Gold tier: include facts and open questions
     const facts = (profile.remembered_facts ?? [])
-      .filter((f: RememberedFact) => f.confidence >= 0.6)
+      .filter((f: RememberedFact) => f.confidence >= FACT_INCLUSION_WEIGHT)
       .slice(0, config.maxRememberedFacts);
 
     if (facts.length > 0) {
-      lines.push('', '### Key Facts About This User');
+      lines.push('', '### Observed Preferences For This User');
       facts.forEach((f: RememberedFact) => {
-        lines.push(`- ${f.key}: ${f.value} (confidence: ${Math.round(f.confidence * 100)}%)`);
+        // Ordinal support from the observation count, never the weight as a
+        // percentage. `- prefers_deep_analysis: true (confidence: 75%)` claimed
+        // a calibrated probability that was a literal typed into a switch.
+        lines.push(`- ${f.key}: ${f.value} (support: ${describeFactSupport(f.observationCount)})`);
       });
     }
   }

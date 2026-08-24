@@ -4,7 +4,33 @@ import type { PilotRole } from './contracts';
 export interface RememberedFact {
   key: string;      // e.g. "prefers_concise_answers", "coaches_welterweights"
   value: string;    // e.g. "true", "3 athletes: A, B, C"
-  confidence: number; // 0-1, how reliable this fact is
+  /**
+   * A HAND-PICKED HEURISTIC WEIGHT. NOT A PROBABILITY, NOT A CONFIDENCE.
+   *
+   * The values are 0.6, 0.7, 0.75 and 0.8, chosen by a developer writing a
+   * switch statement in shadowLearningLoop.ts. Nothing was measured, nothing
+   * was calibrated, and there is no event whose frequency they estimate. Until
+   * 2026-08-23 they were rendered into model prompts as "confidence: 80%",
+   * which stated a calibrated probability that has never existed.
+   *
+   * It is retained as an internal sort key only -- it decides which facts
+   * survive the 20-fact prune -- and it is NEVER rendered. `observationCount`
+   * is what gets described, through `describeFactSupport`. The stored key name
+   * is kept because renaming it would mean rewriting every persisted jsonb row,
+   * and a misleading field name is a smaller problem than a data rewrite.
+   */
+  confidence: number;
+  /**
+   * How many separate positive signals produced this fact.
+   *
+   * This is the honest support: a thing that happened once, counted once. It is
+   * what a reader sees, and it is what stops a single thumbs-up reading like an
+   * established trait. Absent on rows written before 2026-08-23; those are read
+   * as a single observation, which is all their contents evidence.
+   */
+  observationCount?: number;
+  /** First time this fact was observed. Absent on pre-2026-08-23 rows. */
+  firstObservedAt?: string;
   updatedAt: string;
 }
 
@@ -66,11 +92,27 @@ export async function getOrCreateShadowUserProfile(
   return created;
 }
 
-// Add or update a remembered fact for this user
+/**
+ * Record one observation of a fact about this user.
+ *
+ * REPEAT OBSERVATIONS ACCUMULATE. This used to overwrite the stored row
+ * wholesale, so seeing the same signal a second time changed nothing: one
+ * thumbs-up and fifty thumbs-up produced an identical row, and the fact was
+ * described to the model in identical terms. A single click became a permanent
+ * statement about a person, indistinguishable from a settled pattern.
+ *
+ * Now each observation increments a count, and it is the count that gets
+ * described (`describeFactSupport`). The first observation reads as a single
+ * observation, because that is what it is.
+ *
+ * `firstObservedAt` is preserved across updates; `updatedAt` moves. A fact that
+ * has not been seen again is therefore visible as stale to anything that later
+ * wants to expire one -- and `forgetRememberedFact` is how it goes away.
+ */
 export async function upsertRememberedFact(
   accountId: string,
   organizationId: string,
-  fact: Omit<RememberedFact, 'updatedAt'>,
+  fact: Omit<RememberedFact, 'updatedAt' | 'observationCount' | 'firstObservedAt'>,
 ): Promise<void> {
   const profile = await queryOne<{ remembered_facts: RememberedFact[] }>(
     `SELECT remembered_facts FROM pilot.shadow_user_profiles
@@ -82,7 +124,18 @@ export async function upsertRememberedFact(
 
   const existing = profile.remembered_facts || [];
   const idx = existing.findIndex(f => f.key === fact.key);
-  const updated: RememberedFact = { ...fact, updatedAt: new Date().toISOString() };
+  const now = new Date().toISOString();
+  const previous = idx >= 0 ? existing[idx] : undefined;
+
+  const updated: RememberedFact = {
+    ...fact,
+    // A row written before counting existed evidences one observation; this one
+    // makes two. Absent means one, never zero -- the fact is on the row because
+    // something was seen.
+    observationCount: (previous?.observationCount ?? (previous ? 1 : 0)) + 1,
+    firstObservedAt: previous?.firstObservedAt ?? now,
+    updatedAt: now,
+  };
 
   if (idx >= 0) {
     existing[idx] = updated;
@@ -90,8 +143,13 @@ export async function upsertRememberedFact(
     existing.push(updated);
   }
 
-  // Keep only top 20 highest-confidence facts
-  const sorted = existing.toSorted((a, b) => b.confidence - a.confidence);
+  // Keep 20 facts. Most-observed first, heuristic weight breaking ties -- the
+  // weight alone used to decide this, which meant a 0.8 seen once outranked a
+  // 0.6 seen forty times.
+  const sorted = existing.toSorted((a, b) => {
+    const observed = (b.observationCount ?? 1) - (a.observationCount ?? 1);
+    return observed !== 0 ? observed : b.confidence - a.confidence;
+  });
   const pruned = sorted
     .slice(0, 20);
 
@@ -101,6 +159,47 @@ export async function upsertRememberedFact(
      WHERE account_id = $1 AND organization_id = $2`,
     [accountId, organizationId, JSON.stringify(pruned)],
   );
+}
+
+/**
+ * Remove one remembered fact, or every remembered fact, for this user.
+ *
+ * A PREFERENCE HAS TO BE REVISABLE. Without this there was no code path in the
+ * platform that could un-remember anything: facts were written by the learning
+ * loop and lived until the row was deleted. That is a permanent profile
+ * identity assembled from clicks, and for an account that may belong to a
+ * child, it is the wrong default in both directions -- they cannot correct it
+ * and nobody can correct it for them.
+ *
+ * Returns the number of facts removed. Omit `key` to clear all of them.
+ */
+export async function forgetRememberedFact(
+  accountId: string,
+  organizationId: string,
+  key?: string,
+): Promise<number> {
+  const profile = await queryOne<{ remembered_facts: RememberedFact[] }>(
+    `SELECT remembered_facts FROM pilot.shadow_user_profiles
+     WHERE account_id = $1 AND organization_id = $2`,
+    [accountId, organizationId],
+  );
+
+  if (!profile) return 0;
+
+  const existing = profile.remembered_facts || [];
+  const kept = key === undefined ? [] : existing.filter((f) => f.key !== key);
+  const removed = existing.length - kept.length;
+
+  if (removed === 0) return 0;
+
+  await query(
+    `UPDATE pilot.shadow_user_profiles
+     SET remembered_facts = $3::jsonb, updated_at = NOW()
+     WHERE account_id = $1 AND organization_id = $2`,
+    [accountId, organizationId, JSON.stringify(kept)],
+  );
+
+  return removed;
 }
 
 // Update communication style based on feedback patterns
