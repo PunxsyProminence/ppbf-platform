@@ -44,8 +44,16 @@ let storedAssignments: Array<Record<string, unknown>> = [];
 let assignmentsFail = false;
 
 // pilot.sessions stores date as `date` and rpe as `numeric`, so node-postgres
-// hands back a timestamp and a string. Both are sent straight back by
-// check-out, where the session validator rejects either shape.
+// hands back a timestamp and a string, and the session validator rejects
+// either shape on the way back in.
+//
+// This fixture is deliberately a PRE-MIGRATION row: an open session carrying
+// rpe '8' and no rpe_method at all. That 8 is not an effort reading -- it is
+// the pre-session readiness slider, which is what check-in wrote into this
+// column before pilot_slice_postgres_session_rpe_semantics_migration.sql
+// separated the two. The tests below are about what the app does with such a
+// row now, which is: replay it untouched on a notes save, and never promote it
+// to a session RPE at check-out.
 function openSessionRow(overrides: Record<string, unknown> = {}) {
   return {
     session_id: 'session_1754000000000',
@@ -410,11 +418,33 @@ describe('an open session across a reload', () => {
     expect(checkOut.body).toEqual(expect.objectContaining({
       session_id: 'session_1754000000000',
       completed_flag: true,
-      rpe: 8,
       date: '2026-08-01',
       created_at: '2026-08-01T17:05:00.000Z',
       notes: 'Left hook felt slow all session, right shoulder tight.',
     }));
+  });
+
+  // CHANGED DELIBERATELY. This assertion used to read `rpe: 8` -- check-out
+  // handed back whatever was in the column, and what was in the column was the
+  // pre-session readiness slider check-in had put there. Completing the session
+  // therefore stamped a "how ready did I feel beforehand" number onto the field
+  // that means "how hard was that session", which is the defect
+  // pilot_slice_postgres_session_rpe_semantics_migration.sql exists to end.
+  //
+  // Session RPE is now collected at check-out or not at all. Nothing in this
+  // app collects it yet, so the honest write is null with an UNKNOWN method --
+  // and the stored 8 must not be promoted into it on the way past.
+  test('check-out does not turn the stored readiness reading into a session RPE', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check Out' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+    const [checkOut] = postedTo('/api/pilot/sessions/update');
+    expect(checkOut.body.rpe).toBeNull();
+    expect(checkOut.body.rpe).not.toBe(8);
+    expect(checkOut.body.rpe_method).toBe('UNKNOWN');
   });
 
   // The check-in placeholder is stored because pilot.sessions requires a
@@ -1155,5 +1185,189 @@ describe('tabs with nothing behind them are not offered', () => {
     openTab('Drills');
 
     expect(screen.queryByRole('button', { name: 'Mark Complete' })).toBeNull();
+  });
+});
+
+// normalizeStoredSession is not exported, and it does not need to be: the notes
+// draft save replays the rehydrated rpe and rpe_method back to
+// /api/pilot/sessions/update untouched, so what it wrote is exactly what
+// normalization produced. That replay is the observation point for every case
+// below.
+//
+// The rule being pinned is one line of normalizeStoredSession: absence is
+// tested BEFORE Number(), because Number(null) is 0, 0 is a real RPE, and
+// coercing first turns "not rated yet" into "rated it zero".
+describe('a rehydrated session keeps the RPE it was actually stored with', () => {
+  async function draftSaveBodyFor(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+    storedSessions = [row];
+    await renderWorkspace();
+
+    const notes = await screen.findByPlaceholderText(/Session notes for your coach/);
+    fireEvent.change(notes, { target: { value: 'Ribs sore on the left side.' } });
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
+    return postedTo('/api/pilot/sessions/update')[0].body;
+  }
+
+  test('a stored 0 is replayed as 0, not as null', async () => {
+    // numeric 0 arrives from node-postgres as the string '0'. It is a reading
+    // the athlete gave, and dropping it would erase a real self-report.
+    const body = await draftSaveBodyFor(openSessionRow({ rpe: '0' }));
+    expect(body.rpe).toBe(0);
+    expect(body.rpe).not.toBeNull();
+  });
+
+  test('a stored null is replayed as null, not as 0', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({ rpe: null }));
+    expect(body.rpe).toBeNull();
+    expect(body.rpe).not.toBe(0);
+  });
+
+  test('a missing rpe key is replayed as null, not as 0', async () => {
+    const withoutRpe = openSessionRow();
+    delete (withoutRpe as Record<string, unknown>).rpe;
+    const body = await draftSaveBodyFor(withoutRpe);
+    expect(body.rpe).toBeNull();
+  });
+
+  test('a stored numeric string is replayed as the number it names', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({ rpe: '8' }));
+    expect(body.rpe).toBe(8);
+  });
+
+  // A row predating the method column genuinely has unknown provenance, and
+  // that is what it must claim -- not the one honest method the app has.
+  test('an absent rpe_method is replayed as UNKNOWN', async () => {
+    const body = await draftSaveBodyFor(openSessionRow());
+    expect(body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('an unrecognised rpe_method is replayed as UNKNOWN rather than trusted', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({ rpe_method: 'coach_estimate' }));
+    expect(body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('a genuine post-session self-report keeps its method', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({
+      rpe: '4',
+      rpe_method: 'athlete_post_session_self_report',
+    }));
+    expect(body.rpe).toBe(4);
+    expect(body.rpe_method).toBe('athlete_post_session_self_report');
+  });
+
+  // A notes save is not a rating, and must not close the session either.
+  test('a notes save does not complete the session', async () => {
+    const body = await draftSaveBodyFor(openSessionRow({ rpe: null }));
+    expect(body.completed_flag).toBe(false);
+  });
+});
+
+// Check-in happens BEFORE the session. There is no exertion to rate yet, so
+// there is nothing honest to put in the RPE column -- which is precisely why
+// the column being NOT NULL produced the defect: something had to go in it, and
+// what went in it was the pre-session readiness slider.
+describe('check-in records no session RPE at all', () => {
+  test('the created session carries a null rpe and an UNKNOWN method', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+
+    const [checkIn] = postedTo('/api/pilot/sessions');
+    expect(checkIn.body.rpe).toBeNull();
+    expect(checkIn.body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('no readiness value is submitted as a session RPE', async () => {
+    // The readiness slider still exists and still bands the check-in note. What
+    // it must never do again is reach pilot.sessions.rpe. A number here would
+    // be that regression whatever its value, so the assertion is on the type.
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+
+    const [checkIn] = postedTo('/api/pilot/sessions');
+    expect(typeof checkIn.body.rpe).not.toBe('number');
+  });
+});
+
+// The Session Load feed (SHADOW's rpe x duration input) used to run at
+// check-in on the two pre-session numbers: the readiness slider as
+// `session_rpe` and the PLANNED duration as `duration`. It runs at check-out
+// now, where both inputs would be real -- except nothing collects either one
+// yet, so the honest behaviour is to submit nothing at all.
+//
+// This is the test that stops the gap being closed with a prefill. A default
+// duration or a prefilled RPE would make an untouched control indistinguishable
+// from an answer, which is exactly how a planned 60 minutes became an observed
+// one.
+describe('no session observation is fabricated for SHADOW', () => {
+  test('check-out submits no observation while nothing collects one', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    expect(postedTo('/api/pilot/shadow/formulas/observations')).toHaveLength(0);
+  });
+
+  test('check-in submits no session observation either', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+
+    // Specifically: no session_rpe observation carrying the readiness slider.
+    const kinds = postedTo('/api/pilot/shadow/formulas/observations')
+      .map((call) => call.body.kind);
+    expect(kinds).not.toContain('session_rpe');
+    expect(kinds).not.toContain('duration');
+  });
+});
+
+// The training card is fed by its own mapper over the same /api/pilot/sessions/list
+// response, and that mapper is a second place the null could have been coerced.
+// It read `rpe: Number(s.rpe) || 0`, which fabricated a reading twice over:
+// Number(null) is 0, and `|| 0` then swallowed a genuine 0 as well. The card
+// itself is covered in trainingCard.test.tsx; what is covered here is that a
+// null survives the trip from the API response onto the card.
+describe('the training card is fed the RPE that was stored, not a substitute', () => {
+  function completedRow(overrides: Record<string, unknown> = {}) {
+    return openSessionRow({
+      session_id: 'session_done',
+      completed_flag: true,
+      ...overrides,
+    });
+  }
+
+  test('a completed session with no RPE reaches the card as not recorded', async () => {
+    storedSessions = [completedRow({ rpe: null })];
+    await renderWorkspace();
+    openTab('Dashboard');
+
+    const stamp = await screen.findByTitle(/effort not recorded/);
+    expect(stamp).toBeTruthy();
+    expect(stamp.getAttribute('title')).not.toMatch(/effort 0/);
+  });
+
+  test('a completed session rated 0 reaches the card as 0, not as absent', async () => {
+    storedSessions = [completedRow({ rpe: '0' })];
+    await renderWorkspace();
+    openTab('Dashboard');
+
+    const stamp = await screen.findByTitle(/effort 0 of 10/);
+    expect(stamp).toBeTruthy();
+    expect(screen.queryByTitle(/effort not recorded/)).toBeNull();
+  });
+
+  test('an ordinary reading is unaffected', async () => {
+    storedSessions = [completedRow({ rpe: '7' })];
+    await renderWorkspace();
+    openTab('Dashboard');
+
+    expect(await screen.findByTitle(/effort 7 of 10/)).toBeTruthy();
   });
 });

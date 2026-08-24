@@ -60,13 +60,6 @@ function requireBoolean(value: unknown, field: string): boolean {
   return value;
 }
 
-function requireNumber(value: unknown, field: string): number {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    throw new TypeError(`Request body field ${field} must be a valid number`);
-  }
-  return value;
-}
-
 // Absent and explicitly null both mean "not recorded" and both store as NULL.
 // The distinction the column exists to keep is between null and 0: null is
 // nobody has reported progress, 0 is an athlete reporting they have not started.

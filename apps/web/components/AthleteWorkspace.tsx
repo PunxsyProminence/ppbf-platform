@@ -20,6 +20,7 @@ import { cx } from './uiStyles';
 import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
+import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
@@ -259,6 +260,23 @@ const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$
  * identity or timing is unreadable must not become the one the athlete is
  * offered a check-out for.
  */
+/**
+ * pilot.sessions.rpe as the training card needs it: a number, or null for
+ * "nobody has rated this session".
+ *
+ * The column is `numeric` and node-postgres hands it back as a string, so a
+ * coercion is unavoidable -- but absence is tested first, because Number(null)
+ * is 0 and 0 is a real RPE. An unparseable value is absent too: a row that
+ * cannot be read is not a row rated zero.
+ */
+function normalizeCardRpe(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeStoredSession(row: unknown): StoredSession | null {
   if (!row || typeof row !== 'object') {
     return null;
@@ -705,8 +723,16 @@ export default function AthleteWorkspace() {
      minutes came to be recorded as an observed duration. Empty means the
      athlete did not say, and that is stored as "did not say" rather than as a
      number. */
-  const [postSessionRpe, setPostSessionRpe] = useState<number | null>(null);
-  const [actualMinutesTrained, setActualMinutesTrained] = useState<number | null>(null);
+  /* No setter on either, and that is the current truth rather than an
+     oversight: nothing in this app collects a post-session RPE or an observed
+     duration yet. The check-in controls that used to supply them measured the
+     wrong thing -- readiness before training, and a PLANNED duration -- so they
+     were disconnected rather than repointed. Until a check-out control exists,
+     both stay null, pilot.sessions.rpe is written null with an UNKNOWN method,
+     and submitFastTrackObservations submits nothing. Adding the control is a
+     one-line change back to a full useState pair here. */
+  const [postSessionRpe] = useState<number | null>(null);
+  const [actualMinutesTrained] = useState<number | null>(null);
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
@@ -946,7 +972,13 @@ export default function AthleteWorkspace() {
         (data.items ?? []).map((s) => ({
           session_id: s.session_id,
           date: s.date,
-          rpe: Number(s.rpe) || 0,
+          // `Number(s.rpe) || 0` stood here and it fabricated a reading twice
+          // over: Number(null) is 0, and `|| 0` then swallowed a genuine 0 as
+          // well. pilot.sessions.rpe is nullable, so an un-checked-out session
+          // arrives as null and must reach the card as null -- the card draws
+          // "not recorded" for it. Absence is tested before the coercion, and
+          // a value that will not parse stays absent rather than becoming 0.
+          rpe: normalizeCardRpe(s.rpe),
           completed_flag: Boolean(s.completed_flag),
         })),
       );
@@ -1600,6 +1632,28 @@ export default function AthleteWorkspace() {
     } finally {
       setIsCheckingOut(false);
     }
+
+    /* The Session Load feed, now at check-out where its two inputs exist. On
+       main this call sat at the end of check-IN and passed the readiness
+       slider as `session_rpe` and the planned duration as `duration`, so
+       SHADOW was multiplying two numbers that had measured nothing yet.
+       Moved, not deleted, and deliberately outside the try above: it is
+       best-effort enrichment and must never affect the check-out that already
+       succeeded or failed on its own.
+
+       Both inputs are null until a check-out control collects them, so today
+       this submits nothing at all -- submitFastTrackObservations returns early
+       rather than inventing a value for either. That is the honest state: no
+       observation is better than a fabricated one. */
+    void submitFastTrackObservations({
+      athleteId: record.athleteId,
+      contextId: record.sessionId,
+      observedAt: now.toISOString(),
+      rpe: postSessionRpe,
+      durationMinutes: actualMinutesTrained,
+      painFlag: injuryFlag,
+      medicalReadAck,
+    });
   };
 
   const handleSavePainReport = async () => {

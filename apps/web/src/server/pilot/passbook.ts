@@ -201,7 +201,11 @@ interface SessionRow {
   organization_id: string;
   session_id: string;
   date: string;
-  rpe: number;
+  // Nullable since pilot_slice_postgres_session_rpe_semantics_migration.sql.
+  // The passbook passes the value through untouched, so null reaches the
+  // reader as null and is theirs to render as "not recorded"; the type is what
+  // stops a consumer doing arithmetic on it as though a number were promised.
+  rpe: number | null;
   notes: string;
   completed_flag: boolean;
 }

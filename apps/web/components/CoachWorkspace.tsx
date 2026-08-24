@@ -253,13 +253,20 @@ function normalizeReviewableSession(row: unknown): ReviewableSession | null {
     return null;
   }
 
-  const rpe = Number(record.rpe);
+  // Absence is checked BEFORE Number(), because Number(null) is 0, 0 is a
+  // legitimate RPE, and Number.isFinite(0) is true -- so the previous
+  // `Number(record.rpe)` turned every unrated session into one the athlete
+  // had rated zero effort, and the label said so. pilot.sessions.rpe is
+  // nullable as of pilot_slice_postgres_session_rpe_semantics_migration.sql,
+  // and an open check-in is exactly the row that arrives here as null.
+  const rpeIsAbsent = record.rpe === null || record.rpe === undefined;
+  const rpe = rpeIsAbsent ? null : Number(record.rpe);
   return {
     sessionId,
     date,
-    // null, not 0: an unreadable RPE is omitted from the label rather than
-    // shown as a fabricated zero-effort session.
-    rpe: Number.isFinite(rpe) ? rpe : null,
+    // null, not 0: an RPE that is absent or unreadable is omitted from the
+    // label rather than shown as a fabricated zero-effort session.
+    rpe: rpe !== null && Number.isFinite(rpe) ? rpe : null,
     completed: Boolean(record.completed_flag),
     createdAt,
   };
