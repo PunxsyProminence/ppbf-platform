@@ -264,6 +264,39 @@ describe('it is still a moment, not wallpaper', () => {
     expect(view.container.querySelector('.wallwords-line')).toBeNull();
   });
 
+  // pilot.sessions.rpe is nullable now, so "how hard was it" has a third
+  // answer: nobody said. An unrated session is not a hard one and it is not a
+  // soft one -- it answers neither line. Reading null as 0 here would have been
+  // silent (0 < 8, so no line either way), which is exactly why it is pinned:
+  // the card must decline because there is no reading, not because it coerced
+  // the absence into the lowest possible one.
+  it('says nothing for the newest session when nobody rated it', () => {
+    const { container } = render(
+      <TrainingCard
+        sessions={[
+          { session_id: 'a', date: '2026-01-01', rpe: HARD_SESSION_RPE, completed_flag: true },
+          { session_id: 'b', date: '2026-01-02', rpe: null, completed_flag: true },
+        ]}
+      />,
+    );
+    expect(container.querySelector('.wallwords-line')).toBeNull();
+  });
+
+  it('takes the line down when an unrated session lands on top of a hard one', () => {
+    const hard: TrainingSession[] = [
+      { session_id: 'a', date: '2026-01-01', rpe: HARD_SESSION_RPE, completed_flag: true },
+    ];
+    const view = render(<TrainingCard sessions={hard} />);
+    expect(view.container.querySelector('.wallwords-line')).not.toBeNull();
+
+    view.rerender(
+      <TrainingCard
+        sessions={[...hard, { session_id: 'b', date: '2026-01-02', rpe: null, completed_flag: true }]}
+      />,
+    );
+    expect(view.container.querySelector('.wallwords-line')).toBeNull();
+  });
+
   it('says nothing for a hard session that was booked and never completed', () => {
     // An RPE on an uncompleted row is not a session anybody did.
     const { container } = render(

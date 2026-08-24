@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
  * THE CORNER MUST NEVER BE MISTAKEN FOR A SAFETY STATE.
@@ -35,7 +35,7 @@ import path from 'node:path';
 const PPBF_CSS = path.resolve(__dirname, '../../../../design-system/ppbf.css');
 
 function tokens(): Map<string, string> {
-  const css = readFileSync(PPBF_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const css = readDesignSystemCss(PPBF_CSS).replace(/\/\*[\s\S]*?\*\//g, '');
   const found = new Map<string, string>();
   for (const match of css.matchAll(/(--[a-z0-9-]+)\s*:\s*(#[0-9A-Fa-f]{6})\s*[;}]/g)) {
     found.set(match[1], match[2].toUpperCase());
@@ -214,13 +214,13 @@ describe('the 6% wash never costs a text voice its contrast', () => {
   });
 
   it('is stated as 6% in the stylesheet, so this test measures what ships', () => {
-    const css = readFileSync(PPBF_CSS, 'utf8');
+    const css = readDesignSystemCss(PPBF_CSS);
     expect(css).toMatch(/--corner-wash:\s*color-mix\(in srgb, var\(--corner-mid\) 6%, transparent\)/);
   });
 });
 
 describe('Law 3 -- the corner is never the only channel', () => {
-  const css = readFileSync(PPBF_CSS, 'utf8');
+  const css = readDesignSystemCss(PPBF_CSS);
 
   it('states both corner edges per ground, rather than one value for both', () => {
     // The status ladder's own convention. A single value cannot hold 3:1

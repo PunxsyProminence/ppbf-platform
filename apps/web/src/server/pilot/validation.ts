@@ -5,10 +5,12 @@ import {
   GOAL_FIELDS,
   GOAL_OPTIONAL_FIELDS,
   SESSION_FIELDS,
+  SESSION_RPE_METHODS,
   type PilotAthlete,
   type PilotCoachReview,
   type PilotGoal,
   type PilotSession,
+  type SessionRpeMethod,
 } from './contracts';
 
 function asRecord(payload: unknown): Record<string, unknown> {
@@ -58,13 +60,6 @@ function requireBoolean(value: unknown, field: string): boolean {
   return value;
 }
 
-function requireNumber(value: unknown, field: string): number {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    throw new TypeError(`Request body field ${field} must be a valid number`);
-  }
-  return value;
-}
-
 // Absent and explicitly null both mean "not recorded" and both store as NULL.
 // The distinction the column exists to keep is between null and 0: null is
 // nobody has reported progress, 0 is an athlete reporting they have not started.
@@ -91,6 +86,43 @@ function optionalCategory(value: unknown, field: string): string | null {
     );
   }
   return value;
+}
+
+// Session RPE is the athlete's rating of the session that has FINISHED. Until
+// it finishes there is nothing to rate, so null is a real, required value here
+// -- it is what check-in sends. The column was NOT NULL until
+// pilot_slice_postgres_session_rpe_semantics_migration.sql, and that is exactly
+// why check-in reached for the pre-session readiness slider to fill it.
+//
+// The 0-10 bound is checked here and NOT in the database, deliberately. New
+// input can be held to the scale its unit names (`rpe_0_10`); existing rows
+// never were, so a CHECK constraint could fail against real data. A bad value
+// is a 400 naming the field rather than a constraint violation surfacing as a
+// 500 -- the same reasoning optionalCategory records above.
+function requireSessionRpe(value: unknown, field: string): number | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new TypeError(`Request body field ${field} must be a valid number or null`);
+  }
+  if (value < 0 || value > 10) {
+    throw new Error(`Request body field ${field} must be from 0 to 10`);
+  }
+  return value;
+}
+
+// Checked against the vocabulary here rather than left to the database, and
+// required rather than defaulted, mirroring the migration that drops the
+// column default: a writer must state where the number came from instead of
+// silently inheriting 'UNKNOWN' on a row whose provenance it actually knew.
+function requireSessionRpeMethod(value: unknown, field: string): SessionRpeMethod {
+  if (typeof value !== 'string' || !(SESSION_RPE_METHODS as readonly string[]).includes(value)) {
+    throw new Error(
+      `Request body field ${field} must be one of: ${SESSION_RPE_METHODS.join(', ')}`,
+    );
+  }
+  return value as SessionRpeMethod;
 }
 
 export function validateAthletePayload(payload: unknown): PilotAthlete {
@@ -133,11 +165,27 @@ export function validateSessionPayload(payload: unknown): PilotSession {
   const record = asRecord(payload);
   assertOnlyAllowedKeys(record, SESSION_FIELDS);
 
+  const rpe = requireSessionRpe(record.rpe, 'rpe');
+  const rpeMethod = requireSessionRpeMethod(record.rpe_method, 'rpe_method');
+
+  // The same agreement the database CHECK enforces, stated here so a caller
+  // gets a 400 naming the field instead of a constraint violation. A row with
+  // no reading must not claim a method for one: an open check-in has nothing
+  // to attribute yet. The converse is deliberately unconstrained -- a reading
+  // whose method is UNKNOWN is the honest description of every row written
+  // before this contract existed.
+  if (rpe === null && rpeMethod !== 'UNKNOWN') {
+    throw new Error(
+      'Request body field rpe_method must be UNKNOWN when rpe is null',
+    );
+  }
+
   return {
     session_id: requireString(record.session_id, 'session_id'),
     athlete_id: requireString(record.athlete_id, 'athlete_id'),
     date: requireString(record.date, 'date'),
-    rpe: requireNumber(record.rpe, 'rpe'),
+    rpe,
+    rpe_method: rpeMethod,
     notes: requireString(record.notes, 'notes'),
     completed_flag: requireBoolean(record.completed_flag, 'completed_flag'),
     created_at: requireString(record.created_at, 'created_at'),

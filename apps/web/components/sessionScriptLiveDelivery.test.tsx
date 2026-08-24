@@ -90,6 +90,8 @@ interface Handlers {
   athletes?: () => Response | Promise<Response>;
   protocols?: () => Response | Promise<Response>;
   logPost?: (body: Record<string, unknown>) => Response | Promise<Response>;
+  roster?: () => Response | Promise<Response>;
+  readinessBoard?: () => Response | Promise<Response>;
 }
 
 const DEFAULT_LOG_ATHLETES = [{ athlete_id: 'ath-1', full_name: 'Jordan P.' }];
@@ -107,6 +109,12 @@ function mockFetch(handlers: Handlers = {}) {
     }
     if (url.includes('/api/pilot/athletes/list')) {
       return handlers.athletes ? handlers.athletes() : jsonResponse({ items: DEFAULT_LOG_ATHLETES });
+    }
+    if (url.includes('/api/pilot/profile/roster')) {
+      return handlers.roster ? handlers.roster() : jsonResponse({ items: [] });
+    }
+    if (url.includes('/api/pilot/coach/readiness-board')) {
+      return handlers.readinessBoard ? handlers.readinessBoard() : jsonResponse({ items: [] });
     }
     if (url.includes('/api/pilot/coach/intervention-protocols')) {
       return handlers.protocols ? handlers.protocols() : jsonResponse({ items: DEFAULT_LOG_PROTOCOLS });
@@ -561,5 +569,103 @@ describe('logging an intervention against this run', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
     expect(await screen.findByText(/athlete roster could not be loaded/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Log intervention' })).toBeDisabled();
+  });
+});
+
+describe('readiness is not presence', () => {
+  /* THE DEFECT THIS REPLACES.
+   *
+   * This screen carried an "On the floor" panel that listed every athlete
+   * returned by /api/pilot/coach/readiness-board and called them "athletes
+   * with a fresh check-in". The readiness board reads pilot.readiness, and
+   * every row in that table was typed by a staff member during intake review
+   * -- method 'staff_entered_intake' or 'UNKNOWN', and nothing else exists
+   * (readinessProvenance.ts). Nobody arrived. Nobody checked in. Nothing was
+   * observed.
+   *
+   * The test that used to stand here asserted the substitution was working:
+   * it fed one board row and required that athlete to render as present. It
+   * was green, and it was pinning the bug.
+   *
+   * THE MUTATION IS THE CASE ITSELF. A fresh staff-entered readiness row, with
+   * no presence fact anywhere, must not put an athlete on the floor. Because
+   * there is no authorized presence source for a coach today -- athlete
+   * check-ins are self-only by contract, and attendance is the register --
+   * the honest outcome is that the panel does not exist, so the assertion is
+   * that nothing on this screen makes a presence claim at all.
+   */
+  const freshStaffEnteredReadiness = (id: string) => ({
+    athlete_id: id,
+    status: 'GREEN',
+    score: 8,
+    measured_at: new Date().toISOString(),
+    // The provenance that proves this is a desk judgement, not an arrival.
+    method: 'staff_entered_intake',
+    reliability_status: '',
+    validity_status: '',
+    evidence_class: '',
+  });
+
+  it('a fresh staff-entered readiness row does not put an athlete on the floor', async () => {
+    await renderLive(liveRun(), {
+      roster: () => jsonResponse({
+        items: [{
+          athlete_id: 'ath-1',
+          account_id: null,
+          full_name: 'Jordan Packer',
+          initials: 'JP',
+          ring_name: null,
+          photo_available: false,
+        }],
+      }),
+      readinessBoard: () => jsonResponse({ items: [freshStaffEnteredReadiness('ath-1')] }),
+    });
+
+    // The requirement stated directly: athlete A is not on this screen. The
+    // region and phrasing assertions below are the supporting cast -- this is
+    // the one that fails if a future panel renders the same substitution under
+    // any other heading.
+    expect(screen.queryByText('Jordan Packer')).not.toBeInTheDocument();
+
+    expect(screen.queryByRole('region', { name: 'On the floor' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/on the floor/i)).not.toBeInTheDocument();
+    // And no weaker phrasing of the same claim survived the removal.
+    expect(screen.queryByText(/fresh check-in/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/checked in/i)).not.toBeInTheDocument();
+  });
+
+  it('does not read the readiness board at all', async () => {
+    // Repointing the panel at a different query would satisfy the assertions
+    // above while keeping a triage feed on a delivery screen. The request
+    // itself is what must be gone.
+    const { fetchMock } = await renderLive(liveRun(), {
+      readinessBoard: () => jsonResponse({ items: [freshStaffEnteredReadiness('ath-1')] }),
+    });
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('/api/pilot/coach/readiness-board'))).toBe(false);
+  });
+
+  it('does not reach for athlete check-ins instead', async () => {
+    // app/api/pilot/athlete/check-in/route.ts is SELF ONLY and says so:
+    // "coach/admin views of arrivals are a later, separate read surface".
+    // Swapping one unauthorized presence proxy for another is the failure
+    // mode this case exists to catch.
+    const { fetchMock } = await renderLive(liveRun());
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('check-in'))).toBe(false);
+  });
+
+  it('the session controls are unaffected by the removal', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      patch: () => jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'pause' }]);
+    expect(screen.getByText('PAUSED')).toBeInTheDocument();
   });
 });

@@ -44,9 +44,19 @@ Do **not** change application code, migrations, or any formula's coefficients or
 thresholds. Your output is the evidence base a separate, owner-approved change
 would later cite. Recommend; do not implement.
 
-**Priority order: 6 → 1 → 2 → 3 → 5 → 4.** Item 6 already governs live
-decisions about children's training. Items 1 and 2 are blocking gates in review
-now.
+**Priority order: 1 → 2 → 6 → 3 → 5 → 4.** Corrected 2026-08-24. This read
+*"6 → 1 → 2 → 3 → 5 → 4"* on the stated ground that *"Item 6 already governs
+live decisions about children's training"* — which is not true of most of item
+6, and the section itself now carries the measurement. Of the constants it
+covers, only the 24-hour readiness staleness window actually runs; the 5.0
+readiness gate does not exist, and the delta-RPE lockout and the formulas engine
+have no production caller.
+
+Items 1 and 2 are blocking gates in review now, which is a real reason to take
+them first. Item 6 stays high because an unwired constant becomes a live one the
+moment somebody wires it, and knowing whether it is defensible is cheaper before
+that than after — but it is no longer first, and no longer first for a reason
+that was not so.
 
 ---
 
@@ -174,15 +184,44 @@ Needed:
 
 ## 6. Are the existing youth safety thresholds right?
 
-Unlike items 1–5 this one is **live in production logic today**, which makes it
-first if you only do one. The formulas engine already computes and stores
-per-athlete **contact exposure** and **acute:chronic workload ratio**, and other
-constants gate real behaviour: a readiness score below 5.0 triggers protective
-route and drill constraints; a delta-RPE of 2 or more engages a lockout until a
-rationale is provided; a readiness reading older than 24h is discarded as stale
-(`READINESS_FRESHNESS_HOURS`).
+> **Corrected 2026-08-24.** This section previously opened: *"Unlike items 1–5
+> this one is **live in production logic today**, which makes it first if you
+> only do one"*, and listed a readiness score below 5.0 triggering "protective
+> route and drill constraints", a delta-RPE lockout, and a formulas engine that
+> "already computes and stores" contact exposure and acute:chronic workload
+> ratio.
+>
+> **Most of that is not live, and the 5.0 threshold does not exist at all.**
+> The urgency framing was the load-bearing error: it told a researcher to
+> prioritise this item over items 1–5 on the strength of gates that are not
+> running. Measured against `main` at `ed755ab7`:
+>
+> | Claimed | Actual |
+> |---|---|
+> | readiness < 5.0 constrains routes and drills | **No such threshold exists.** The real constants are `READINESS_GREEN_MIN = 7` and `READINESS_YELLOW_MIN = 4` in `readinessBoard.ts`, and they are display triage colours over a staff-typed score. They constrain nothing. |
+> | delta-RPE ≥ 2 engages a lockout | The function exists (`readinessMath.ts#isDeltaRPELocked`) and is unit-tested. **It has no production caller.** |
+> | the formulas engine computes and stores contact exposure / ACWR | `formulas/engine.ts` and `formulas/primitives.ts#acuteChronicWorkloadRatio` exist. **Nothing outside their own tests imports the engine.** `sparringExposure.ts` likewise has no route or page caller. |
+> | a reading older than 24h is discarded as stale | **True and live.** `READINESS_FRESHNESS_HOURS = 24`, enforced in `getReadinessBoard`'s SQL. |
+>
+> `app/operations/page.tsx` already carried this correction for the 5.0 claim
+> and the delta-RPE lockout; the research brief simply never received it. Two
+> documents disagreeing about what gates a child's training is the kind of gap
+> this correction exists to close.
+>
+> **What this does not change:** the research is still worth doing. An unwired
+> constant becomes a live one the moment somebody wires it, and it is cheaper to
+> know whether 24 hours, a 2-point delta, or an adult ACWR band is defensible
+> for adolescent boxers *before* that happens than after. What changes is the
+> priority claim and the reason — do this because the numbers are unverified,
+> not because they are currently gating anything.
 
-Nobody has verified these numbers against published youth guidance.
+The formulas engine defines per-athlete **contact exposure** and
+**acute:chronic workload ratio**, `readinessMath.ts` defines a delta-RPE
+lockout, and `readinessBoard.ts` discards a readiness reading older than 24h as
+stale (`READINESS_FRESHNESS_HOURS`). Of those, only the 24-hour staleness
+window currently runs in production.
+
+Nobody has verified any of these numbers against published youth guidance.
 
 Needed, for **adolescent boxers specifically**: sparring and contact exposure
 limits per week and per session (USA Boxing rules, plus any published guidance

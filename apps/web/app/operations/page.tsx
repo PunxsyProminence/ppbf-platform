@@ -1,7 +1,11 @@
+'use client';
+
 import Link from 'next/link';
+import { useSyncExternalStore } from 'react';
 import AnnouncementBanner from '@/components/AnnouncementBanner';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 
 const roleSelector = [
@@ -57,6 +61,12 @@ const workspaces = [
   },
 ];
 
+/* OPERATIONS V1 (owner decision, 2026-08-21): the OTHER DESKS section below
+   renders only for the admin desks -- see showsLabDesks in the component.
+   The list itself stays whole: it is the record of what the lab holds, and
+   hiding a desk from a corridor is a visibility decision, never an
+   authorization one (buildingMap.ts's own rule). The data behind every one
+   of these surfaces is guarded by its own API checks. */
 const developmentLab = [
   { label: 'Research Intake', href: '/research' },
   { label: 'Evidence Review', href: '/evidence' },
@@ -96,17 +106,22 @@ const CAPABILITY_STATE_LABEL: Record<CapabilityState, string> = {
    register read a database schema out loud to whoever walked up to the desk.
    A clerk writes the file number in the margin instead: it stays on the page,
    in the mono record voice, in its own ruled column. */
-const capabilityRadar: Array<{ name: string; state: CapabilityState; href: string; record?: string; notes: string }> = [
+/* `lab` marks the rows whose desk is a development-lab surface rather than an
+   operational one. The register keeps every row -- the record is the record --
+   but a lab row prints only for the admin desks (Operations V1, 2026-08-21),
+   the same visibility-only narrowing the building map applies to the same
+   doors. */
+const capabilityRadar: Array<{ name: string; state: CapabilityState; href: string; record?: string; notes: string; lab?: true }> = [
   { name: 'Athlete Readiness', state: 'EXISTS', href: '/athlete/dashboard', notes: 'Check-ins, session logs, and goals are open to athletes today.' },
   { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/environment/intake-router', notes: 'The coach workspace, the review queue, and the floor controls are open.' },
-  { name: 'Research Intelligence', state: 'EXISTS', href: '/research', notes: 'Research intake and the question-and-answer workflow are open.' },
-  { name: 'Knowledge Graph', state: 'EXISTS', href: '/knowledge-graph', notes: 'The knowledge and relationship view is open.' },
-  { name: 'Scenario Simulation', state: 'EXISTS', href: '/simulator', notes: 'The what-if simulator and its promotion links are open.' },
-  { name: 'Source Governance', state: 'EXISTS', href: '/source-control', notes: 'The route from an audit entry through to source control is visible end to end.' },
+  { name: 'Research Intelligence', lab: true, state: 'EXISTS', href: '/research', notes: 'Research intake and the question-and-answer workflow are open.' },
+  { name: 'Knowledge Graph', lab: true, state: 'EXISTS', href: '/knowledge-graph', notes: 'The knowledge and relationship view is open.' },
+  { name: 'Scenario Simulation', lab: true, state: 'EXISTS', href: '/simulator', notes: 'The what-if simulator and its promotion links are open.' },
+  { name: 'Source Governance', lab: true, state: 'EXISTS', href: '/source-control', notes: 'The route from an audit entry through to source control is visible end to end.' },
   { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', record: 'CAP-012', notes: 'The revenue desk, the payment record, and the Stripe Connect sign-up round trip are all in place. Nothing can be charged yet: that waits on the owner registering the platform account and on compliance signing it off.' },
   { name: 'Scholarship Tracking', state: 'EXISTS', href: '/admin/memberships', record: 'pilot.program_memberships', notes: 'A scholarship is a discount written on a real membership record — 100% is a full scholarship — and never bypasses one. Working the fee out from those records arrives with the payment lanes.' },
   { name: 'Membership Tracking', state: 'EXISTS', href: '/admin/memberships', record: 'pilot.program_memberships', notes: 'Enrollment records with an active, lapsed, or ended life, and one active membership per program. Billing is not built — fees arrive with the payment lanes and will read these records.' },
-  { name: 'SHADOW Monitoring', state: 'EXISTS', href: '/shadow', notes: 'The SHADOW consoles read the live record. The record itself is kept in the after-hours room rather than at this desk. Which of the recorded facts deserves an alarm remains a human decision, and nothing claims more than what is written down.' },
+  { name: 'SHADOW Monitoring', lab: true, state: 'EXISTS', href: '/shadow', notes: 'The SHADOW consoles read the live record. The record itself is kept in the after-hours room rather than at this desk. Which of the recorded facts deserves an alarm remains a human decision, and nothing claims more than what is written down.' },
   { name: 'AI Video Analysis', state: 'PARTIAL', href: '/coach/video-analysis', record: 'BACKLOG-video-skill-scoring · 2026-08-15', notes: 'Upload, release, and playback are real and kept on file, and a released video can go to Film Study for a person to watch and write up. Film Study is the analysis path. Scoring a clip skill by skill is parked for a later phase by owner decision: part built on purpose, not by neglect.' },
   { name: 'Video Review Intelligence', state: 'EXISTS', href: '/admin/video-review', notes: 'The organization admin\u2019s desk for a clip the content scan has held back: watch it, then approve or block. Whether the clip is also appropriate, consented to, and private on audio is a separate read with a desk of its own.' },
   { name: 'Session Script Delivery', state: 'EXISTS', href: '/coach/session-scripts', record: 'pilot.session_script_runs', notes: 'Browsing a script, running it on the floor against a clock the server owns, and the settled history afterwards are all kept on file.' },
@@ -120,7 +135,7 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href: strin
   { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'The volunteer roster, their status, and their availability are kept on file.' },
   { name: 'Wrestling League Management', state: 'PARTIAL', href: '/operations/wrestling-league', record: 'pilot.wrestling_league_* · 2026-08-15', notes: 'Season, event, and roster records are real, and deliberately bare by owner decision. Match cards, brackets, weigh-ins, scoring, and scheduling stay unbuilt until a real league defines them.' },
   { name: 'External Competition Platform', state: 'PARTIAL', href: '/operations/external-competition', record: 'pilot.external_competition* · 2026-08-15', notes: 'Competition and entry records are real, and deliberately bare by owner decision. Federation links, result sync, brackets, travel, and compliance checklists stay unbuilt until real competitions define them.' },
-  { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', record: 'BACKLOG-publication-automation · 2026-08-15', notes: 'Parked by an owner-approved assessment. What already exists inside the building — video compliance, research evidence review, retraction — is human-gated on purpose, and sending anything outward has no destination and no agreed disclosure set yet. The front-end placeholder stays visible.' },
+  { name: 'Publication Workflow Automation', lab: true, state: 'PLACEHOLDER', href: '/source-control/publication-workflow', record: 'BACKLOG-publication-automation · 2026-08-15', notes: 'Parked by an owner-approved assessment. What already exists inside the building — video compliance, research evidence review, retraction — is human-gated on purpose, and sending anything outward has no destination and no agreed disclosure set yet. The front-end placeholder stays visible.' },
 ];
 
 /* Build state is deliberately kept OFF the status ladder.
@@ -169,6 +184,17 @@ function capabilityChip(state: CapabilityState): { cls: string; glyph: string } 
 const operationsRoles: ClubRole[] = [...roleRoutes.map((route) => route.role), 'platform_owner'];
 
 export default function OperationsHubPage() {
+  /* The viewer's own role, read the way Corridor and CardCatalog read it. By
+     the time RoleSessionGate lets the children mount it has persisted the
+     authoritative session, so the snapshot is the server's answer, not a
+     guess. Used for VISIBILITY ONLY (buildingMap.ts's rule): the lab desks
+     leave every ordinary role's launcher (Operations V1, 2026-08-21), while
+     the pages behind them keep their own guards and every lab API keeps its
+     own access checks. */
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const viewerRole = session?.role ?? null;
+  const showsLabDesks = viewerRole === 'admin' || viewerRole === 'platform_owner';
+
   return (
     <RoleSessionGate allowedRoles={operationsRoles}>
       {/* Front office. The hub is a launcher and a notice board -- the role
@@ -292,23 +318,25 @@ export default function OperationsHubPage() {
                 </div>
               </section>
 
-              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>OTHER DESKS</h2>
-                <p className="t-body">
-                  The research, evidence, and publication desks, and the rooms that keep their records.
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {developmentLab.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="btn btn--ghost justify-start text-left"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              </section>
+              {showsLabDesks && (
+                <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>OTHER DESKS</h2>
+                  <p className="t-body">
+                    The research, evidence, and publication desks, and the rooms that keep their records.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {developmentLab.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="btn btn--ghost justify-start text-left"
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               <section className="space-y-[var(--s4)]" aria-labelledby="capability-register">
                 <h2 id="capability-register" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
@@ -345,7 +373,7 @@ export default function OperationsHubPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {capabilityRadar.map((item) => (
+                        {capabilityRadar.filter((item) => showsLabDesks || item.lab !== true).map((item) => (
                           <tr key={item.name}>
                             <td>
                               {/* Still a heading -- a row label in a register is

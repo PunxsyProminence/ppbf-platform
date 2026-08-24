@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 
 import GuardianMediaConsentPage from './page';
+import { readDesignSystemCss } from '../../../src/design/readDesignSystemCss';
 
 /**
  * RESOLVED GEOMETRY, NOT CLASS STRINGS.
@@ -112,7 +113,7 @@ function parseSheet(css: string, origin: string, startOrder: number): CssRule[] 
 
 /* Source order after @import inlining: globals.css imports tailwindcss, then
    ppbf.css, and only then states its own rules. */
-const PPBF_RULES = parseSheet(readFileSync(PPBF, 'utf8'), 'ppbf.css', 0);
+const PPBF_RULES = parseSheet(readDesignSystemCss(PPBF), 'ppbf.css', 0);
 const AUTHOR_RULES = [
   ...PPBF_RULES,
   ...parseSheet(readFileSync(GLOBALS, 'utf8'), 'globals.css', PPBF_RULES.length + 1),
@@ -248,17 +249,44 @@ async function renderConsentPage() {
 
 describe('the cascade resolver these assertions stand on', () => {
   it('reproduces the defect it was written to catch', () => {
-    // The exact class string this page shipped: a 44px utility behind an
-    // unlayered 38px rule. If the resolver cannot see 38 here, nothing below
-    // means anything.
-    const broken = document.createElement('button');
-    broken.className = 'btn--lever min-h-[44px] disabled:opacity-50';
+    // The shape of the #498 trap: a geometry utility behind an unlayered rule
+    // that speaks for the same property. If the resolver cannot see the sheet
+    // win here, nothing below means anything.
+    //
+    // This used to assert `.btn--lever min-h-[44px]` -> 38px, which was the
+    // literal class string that shipped broken. `.btn--lever` is 44px now (38
+    // is under the WCAG target floor and every lever call site had been asking
+    // for 44 and losing), so that pairing agrees and no longer demonstrates
+    // anything. The mechanism is unchanged, so the probe moves to a pairing
+    // that still exhibits it rather than being deleted.
+    const broken = document.createElement('textarea');
+    broken.className = 'textarea min-h-[84px]';
     document.body.append(broken);
 
     const resolved = resolve(broken, 'min-height');
-    expect(resolved.value).toBe('38px');
-    expect(resolved.from).toContain('.btn--lever');
+    expect(resolved.value).toBe('46px');
+    // The resolver names a rule by the first part of its selector list, and
+    // this one is `.input, .select, .textarea` -- so the textarea's height
+    // arrives under the name `.input`.
+    expect(resolved.from).toContain('ppbf.css .input');
+    expect(resolved.layered).toBe(false);
     broken.remove();
+  });
+
+  it('holds the lever at the WCAG target floor', () => {
+    // The rule that used to be this file's example of the bug. It is now the
+    // thing being protected: if `.btn--lever` slips back under 44px, the levers
+    // on the admin screens go sub-floor again and their `min-h-[44px]` utility
+    // will not save them.
+    const lever = document.createElement('button');
+    lever.className = 'btn--lever min-h-[44px] disabled:opacity-50';
+    document.body.append(lever);
+
+    const resolved = resolve(lever, 'min-height');
+    expect(resolved.from).toContain('.btn--lever');
+    expect(resolved.layered).toBe(false);
+    expect(toPx(resolved.value)).toBeGreaterThanOrEqual(44);
+    lever.remove();
   });
 
   it('lets a utility win when no unlayered rule speaks for the property', () => {

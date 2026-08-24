@@ -38,9 +38,21 @@ import { query } from './db';
  * are a daily habit; yesterday's body is not today's. */
 export const READINESS_FRESHNESS_HOURS = 24;
 
-/** Score bands over the check-in formula's 1-10 range. Operational triage
- * colors for a coach's glance, not clinical judgments: GREEN = train as
- * planned, YELLOW = check in with the athlete first, RED = adjust the plan. */
+/** Score bands over the 1-10 range these scores are entered on. Operational
+ * triage colors for a coach's glance, not clinical judgments: GREEN = train as
+ * planned, YELLOW = check in with the athlete first, RED = adjust the plan.
+ *
+ * NOT A CHECK-IN AND NOT A FORMULA. This comment said "the check-in formula's
+ * 1-10 range" and both halves were wrong: pilot.readiness holds scores TYPED BY
+ * STAFF during intake review (method 'staff_entered_intake' or 'UNKNOWN' -- see
+ * readinessProvenance.ts), no formula writes to that table, and no athlete
+ * checks anything in to it. calculateReadinessL14 exists and is deliberately
+ * never called in production. The wording is corrected rather than the
+ * behaviour: the bands are unchanged.
+ *
+ * Nor does the range validate anything. A number being between 1 and 10 is not
+ * evidence that readiness was ever established as a construct; see
+ * isReadinessValueInContract, which is named for the input contract it is. */
 export const READINESS_GREEN_MIN = 7;
 export const READINESS_YELLOW_MIN = 4;
 

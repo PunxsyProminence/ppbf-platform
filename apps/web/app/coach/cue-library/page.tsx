@@ -135,8 +135,16 @@ export default function CueLibraryPage() {
                     {familyCues.map((cue) => (
                       <li key={cue.cue_id}>
                         <p className="t-body font-semibold text-[color:var(--bone-100)]">&ldquo;{cue.cue_text}&rdquo;</p>
+                        {/* This carried `?drill_id=${cue.drill_id}` until 2026-08-23.
+                            /coach/drills has no useSearchParams and never read it,
+                            so the parameter promised a jump to one drill and
+                            delivered the top of the library -- a dead affordance
+                            that also told the next reader deep-linking worked.
+                            Whether the library should support opening on a named
+                            drill is a real question and a separate one; the link
+                            is honest without it in the meantime. */}
                         <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>
-                          {cue.focus_type} · from <Link className="underline" href={`/coach/drills?drill_id=${encodeURIComponent(cue.drill_id)}`}>{cue.drill_name}</Link> ({cue.discipline} / {cue.category})
+                          {cue.focus_type} · from <Link className="underline" href="/coach/drills">{cue.drill_name}</Link> ({cue.discipline} / {cue.category})
                         </p>
                         {cue.evidence_note ? (
                           <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>{cue.evidence_note}</p>

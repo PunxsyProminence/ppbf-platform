@@ -3,6 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { query, queryOne } from './db';
 import { getExecution } from './interventionExecutions';
 import type { FilmStudyProposalReviewState } from './shadowFilmStudyProposals';
+import {
+  isReadinessUsableAsMeasurement,
+  type ReadinessProvenance,
+} from './readinessProvenance';
 
 // Intervention evidence + outcome review (register module 026 slice 3) --
 // the loop-closing layer: typed evidence links with semantic roles, and
@@ -24,10 +28,13 @@ import type { FilmStudyProposalReviewState } from './shadowFilmStudyProposals';
 // have explicitly refused. So that kind carries a second condition --
 // review state -- described at ADMISSIBLE_FILM_STUDY_REVIEW_STATES below.
 //
-// Every gate on this capability, what each one refuses with, and what is
-// deliberately NOT gated, is written up in
-// app/api/pilot/coach/intervention-review/README.md (documentation only --
-// nothing imports it).
+// Admissibility is checked at link time AND annotated at read time.
+// linkEvidence refuses an inadmissible film-study source outright; but a
+// link can also become inadmissible after the fact (a pre-gate link, or a
+// proposal whose review state changed), and doctrine says removal stamps,
+// never deletes -- so listEvidence never filters. It returns every row with
+// a computed `source_admissible`, so a consumer can present a link citing a
+// rejected or unreviewed proposal as exactly what it is.
 
 export const EVIDENCE_ROLES = [
   'baseline', 'during_intervention', 'immediate_post', 'retention',
@@ -259,13 +266,106 @@ export async function removeEvidence(input: {
   );
 }
 
-export async function listEvidence(organizationId: string, executionId: string): Promise<EvidenceLinkRow[]> {
-  return query<EvidenceLinkRow>(
-    `select * from pilot.intervention_evidence_links
-     where organization_id = $1 and execution_id = $2
-     order by created_at asc`,
+export interface EvidenceLinkListRow extends EvidenceLinkRow {
+  /** Whether the link's source may stand as formal evidence about the child
+   * RIGHT NOW. See computeSourceAdmissible: film study re-reads the proposal's
+   * review state, readiness re-reads its provenance and value contract, and
+   * every other kind records something that actually happened and is always
+   * admissible. A link is never refused or deleted on this basis -- it is
+   * annotated, so a reviewer sees a citation for exactly what it is. */
+  source_admissible: boolean;
+}
+
+/** Every link for the execution, stamped rows included, oldest first --
+ * removal stamps, never deletes, and this read never filters either. The
+ * LEFT JOIN reaches the film-study proposal only for film_study rows; a
+ * film_study link whose proposal row is gone reads as inadmissible (the
+ * helper refuses null), which is the fail-closed direction. */
+export async function listEvidence(organizationId: string, executionId: string): Promise<EvidenceLinkListRow[]> {
+  const rows = await query<EvidenceLinkRow & {
+    film_study_review_state: string | null;
+    readiness_method: string | null;
+    readiness_reliability_status: string | null;
+    readiness_validity_status: string | null;
+    readiness_score: number | null;
+  }>(
+    `select l.*,
+            p.review_state as film_study_review_state,
+            r.method as readiness_method,
+            r.reliability_status as readiness_reliability_status,
+            r.validity_status as readiness_validity_status,
+            r.score::float8 as readiness_score
+     from pilot.intervention_evidence_links l
+     left join pilot.shadow_film_study_proposals p
+       on l.source_kind = 'film_study'
+      and p.organization_id = l.organization_id
+      and p.proposal_id::text = l.source_id
+     left join pilot.readiness r
+       on l.source_kind = 'readiness'
+      and r.organization_id = l.organization_id
+      and r.readiness_id::text = l.source_id
+     where l.organization_id = $1 and l.execution_id = $2
+     order by l.created_at asc`,
     [organizationId, executionId],
   );
+  return rows.map(({
+    film_study_review_state,
+    readiness_method,
+    readiness_reliability_status,
+    readiness_validity_status,
+    readiness_score,
+    ...link
+  }) => ({
+    ...link,
+    source_admissible: computeSourceAdmissible(link.source_kind, {
+      filmStudyReviewState: film_study_review_state,
+      readiness: {
+        method: readiness_method ?? '',
+        reliability_status: readiness_reliability_status ?? '',
+        validity_status: readiness_validity_status ?? '',
+        score: readiness_score,
+      },
+    }),
+  }));
+}
+
+/**
+ * Whether a link's source may stand as formal evidence about a child right now.
+ *
+ * TWO KINDS CARRY A CONDITION, not one. Film study was the only kind checked:
+ * a model's claim a human may not have accepted. Readiness is the second and
+ * was admitted unconditionally, so a score a staff member typed at intake --
+ * method 'UNKNOWN' or 'staff_entered_intake', reliability
+ * 'UNVALIDATED - PPBF MUST ESTABLISH' -- was exactly as citable as anything
+ * else, in any role including baseline, retention and transfer. Those roles are
+ * measurement claims: "this is where the child was before, and this is where
+ * they were after". An unvalidated judgement cannot carry them.
+ *
+ * THE LINK IS NOT REFUSED AND NOT DELETED. Doctrine here is that removal
+ * stamps, never deletes, and listEvidence never filters -- so an existing
+ * readiness link keeps its row, its role and its place in the record, and
+ * simply presents as what it is. A reviewer can still see that a coach cited
+ * it, and why.
+ *
+ * A missing readiness row reads as inadmissible: the left join yields nulls,
+ * the empty strings fail the predicate, and that is the fail-closed direction
+ * the film-study branch already takes for a deleted proposal.
+ */
+export function computeSourceAdmissible(
+  sourceKind: EvidenceSourceKind,
+  sources: {
+    filmStudyReviewState?: string | null;
+    readiness?: ReadinessProvenance & { score?: number | null };
+  },
+): boolean {
+  if (sourceKind === 'film_study') {
+    return isAdmissibleFilmStudyReviewState(sources.filmStudyReviewState);
+  }
+  if (sourceKind === 'readiness') {
+    return sources.readiness !== undefined
+      && isReadinessUsableAsMeasurement(sources.readiness);
+  }
+  return true;
 }
 
 /** Records the human review of a CLOSED execution. Reviewing work still in

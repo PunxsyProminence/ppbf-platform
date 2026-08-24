@@ -4,6 +4,7 @@ import {
   assertAthleteBelongsToOrganization,
   assertAthleteUpdateAllowed,
   assertCoachAssignedToAthlete,
+  athleteIdsForCoach,
   DEFAULT_COVERAGE_TTL_HOURS,
   grantCoachCoverage,
   isOrganizationAdminRole,
@@ -614,6 +615,64 @@ describe('accessibleAthleteIds', () => {
       await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set());
       expect(mockQuery).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ─── athleteIdsForCoach ──────────────────────────────────────────────────────
+//
+// OPERATIONS V1 acceptance points 11 and 40. This is the "everything mine"
+// counterpart to accessibleAthleteIds, and it is the access boundary for
+// FIVE coach-facing aggregates: the Morning Read digest, the readiness
+// board, performance analytics, progression suggestions, and escalations.
+// Every one of those route tests mocks this function, so until now the
+// scope itself -- the union, its coverage window, and its behavior when the
+// coverage table is absent -- was asserted by nothing at all. A mocked
+// boundary is a boundary nobody has watched hold.
+
+describe('athleteIdsForCoach', () => {
+  test('is the union of assignment of record and coverage that is live RIGHT NOW', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }, { athlete_id: 'ath-2' }]);
+
+    await expect(athleteIdsForCoach('org-1', 'coach-1')).resolves.toEqual(['ath-1', 'ath-2']);
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('pilot.athletes');
+    expect(sql).toContain('pilot.coach_coverage');
+    // The two halves of the window. Without BOTH, a grant that has not
+    // started yet, or one that lapsed months ago, still returns the athlete
+    // -- and coverage stops being bounded exposure at all.
+    expect(sql).toContain('starts_at <= now()');
+    expect(sql).toContain('expires_at > now()');
+    // Both halves are scoped by organization and by this coach, and nothing
+    // else is passed: there is no third parameter a caller could widen.
+    expect(params).toEqual(['org-1', 'coach-1']);
+  });
+
+  test('a missing coach_coverage table (42P01) falls back to assigned athletes only, never a 500', async () => {
+    const missingTable = Object.assign(new Error('relation "pilot.coach_coverage" does not exist'), { code: '42P01' });
+    mockQuery
+      .mockRejectedValueOnce(missingTable)
+      .mockResolvedValueOnce([{ athlete_id: 'ath-1' }]);
+
+    await expect(athleteIdsForCoach('org-1', 'coach-1')).resolves.toEqual(['ath-1']);
+
+    // The fallback is the pre-coverage scope, not a wider one: it must still
+    // ask for this coach's own athletes, and must not mention coverage.
+    const [fallbackSql, fallbackParams] = mockQuery.mock.calls[1];
+    expect(fallbackSql).toContain('coach_id = $2');
+    expect(fallbackSql).not.toContain('coach_coverage');
+    expect(fallbackParams).toEqual(['org-1', 'coach-1']);
+  });
+
+  test('any other database error still propagates rather than degrading to a partial roster', async () => {
+    const dbDown = Object.assign(new Error('connection refused'), { code: '08006' });
+    mockQuery.mockRejectedValueOnce(dbDown);
+
+    await expect(athleteIdsForCoach('org-1', 'coach-1')).rejects.toThrow('connection refused');
+    // Critically, no second query: a coach surface that answered with a
+    // silently-shortened roster during an outage would read as "these are
+    // your athletes" while hiding some of them.
+    expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -402,5 +402,13 @@ what the key rule is
 what success looks like
 what athletes should feel",transition,,,light_technical
 {{PPBF_ORG_ID}},blk_3bc86d4ec3c442,scr_6db2b8c6917dc0,1,0,10,Arrival and Preparation,,,,,arrival,,,none
-{{PPBF_ORG_ID}},blk_df4fb688e5b181,scr_6db2b8c6917dc0,2,10,40,Sparring Drill Rounds,,,,,instruction,,,controlled_sparring
-{{PPBF_ORG_ID}},blk_01b502a7e7336d,scr_6db2b8c6917dc0,3,40,110,Open Sparring,,,,,instruction,,,controlled_sparring
+{{PPBF_ORG_ID}},blk_df4fb688e5b181,scr_6db2b8c6917dc0,2,10,40,Sparring Drill Rounds,"“One thing to work on this round - name it before you start.”
+“Technical round - speed yes, power no.”",,"only the named action is thrown - stop the pair on the first mixed-in punch or returned shot, name the constraint again out loud, and restart from stance
+contact stays at touch level throughout - watch for pace or power creeping up past the controlled standard
+both boxers reset to stance and hands-up before the next rep starts
+stand at the pairing and watch the exchange directly - stop when fatigue breaks decision quality",,instruction,,,controlled_sparring
+{{PPBF_ORG_ID}},blk_01b502a7e7336d,scr_6db2b8c6917dc0,3,40,110,Open Sparring,"“Technical round - speed yes, power no.”
+“Look after your partner - you both leave better than you came.”",,"registration and current medical clearance confirmed for both boxers before gloves touch - contact does not continue without a current clearance on file
+boxers break cleanly and stop instantly on the coach's call - no additional punches after “stop”
+direct, uninterrupted supervision with a full sightline on both boxers - reposition immediately if attention is split
+stop on sight of any head-blow stoppage criteria - a boxer who takes a blow to the head is out of sparring and routes through the concussion return protocol before any resumption",,instruction,,,controlled_sparring

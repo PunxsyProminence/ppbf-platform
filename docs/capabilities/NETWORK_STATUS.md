@@ -344,7 +344,8 @@ second holder no audit row names and no authorization check ever saw.
 **Verified the "four" precisely rather than trusting the finding** — grepped
 both SAS-minting entry points in `blob.ts` and read every caller; confirmed no
 fifth exists. **Matched an existing documented convention instead of
-inventing one**: `apps/web/app/api/pilot/profile/README.md`'s Gate 4 already
+inventing one**: the portrait gate (now recorded in
+`docs/capabilities/GATES.md` §5, then in a per-route README) already
 states the exact reasoning ("a signed URL to a child's face is a bearer
 capability that outlives the session … `no-store` rather than `max-age`
 because a photograph whose release is revoked has to stop being served") and

@@ -21,9 +21,15 @@ import {
 // with one comparison. A wrong pairing on either side now fails here.
 //
 // NOTE ON SCOPE. This proves the constant matches the DOCUMENT. It cannot prove
-// either matches the archive: section 1 of that document is an unconfirmed
-// proposal with no manifest, export, or connector record in this repository, so
-// archiveCode is a documentation crosswalk, not verified archive conformance.
+// either matches the archive.
+//
+// Corrected 2026-08-24: this note said section 1 was "an unconfirmed proposal
+// with no manifest, export, or connector record". The R01-R19 structure is now
+// verified to exist in the permanent SharePoint archive. What this test can
+// prove did not change -- it reads a markdown table and a TypeScript constant,
+// and neither is the archive. archiveCode remains a documentation crosswalk
+// rather than verified archive conformance, now because nothing in this
+// repository is wired to it rather than because the folders were in doubt.
 // The test names below say only what is actually asserted.
 
 const ARCHITECTURE_DOC = path.resolve(

@@ -6,6 +6,7 @@ import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
+import WorkAxis from './WorkAxis';
 import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
@@ -19,6 +20,7 @@ import { cx } from './uiStyles';
 import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
+import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
@@ -34,13 +36,30 @@ type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'sh
  *
  * The order is the order of a visit: check in, do the work, look at your own
  * record, study, then the things that are not about today at all.
+ *
+ * WHAT IS NOT LISTED HERE, AND WHY (2026-08-21). Three surfaces an athlete
+ * could reach carried nothing behind them, and a tab is a promise that there
+ * is something behind it:
+ *
+ * - Bio Check-In: every field was local React state. Nothing in this app calls
+ *   /api/pilot/athlete/check-in, so a "Daily Biological Check-In" screen told a
+ *   child they had checked in and wrote nothing down. openingTabFor's comment
+ *   below already said Today must not open there; it opened there anyway,
+ *   because this list made it the first tab. The real check-in is the Session
+ *   Log's button on the Dashboard, which writes pilot.sessions.
+ * - Tracks: every field read "Nobody has written this down yet". Honest, and
+ *   still a tab an athlete opens to find nothing.
+ * - Assessments: labelled "NOT BUILT YET" over a disabled Start button.
+ *
+ * The panels themselves are left in place further down, unreachable rather
+ * than deleted -- the work stands, and each comes back by adding its entry
+ * here once something stores what it collects.
  */
 const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string }[] }[] = [
   {
     id: 'today',
     label: 'Today',
     tabs: [
-      { id: 'bio-checkin', label: 'Bio Check-In' },
       { id: 'my-dashboard', label: 'Dashboard' },
       { id: 'athlete-floor', label: 'Floor' },
     ],
@@ -50,8 +69,6 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
     label: 'Development',
     tabs: [
       { id: 'smart-goals', label: 'Goals' },
-      { id: 'tracks', label: 'Tracks' },
-      { id: 'assessments', label: 'Assessments' },
     ],
   },
   {
@@ -193,7 +210,10 @@ interface ActiveSessionRecord {
   sessionId: string;
   athleteId: string;
   date: string;
-  rpe: number;
+  // NULL until check-out. An open session has not been trained yet, so there
+  // is no exertion to rate -- see the rpe comment on PilotSession.
+  rpe: number | null;
+  rpeMethod: SessionRpeMethod;
   checkInNote: string;
   createdAt: string;
 }
@@ -203,7 +223,8 @@ interface StoredSession {
   sessionId: string;
   athleteId: string;
   date: string;
-  rpe: number;
+  rpe: number | null;
+  rpeMethod: SessionRpeMethod;
   notes: string;
   completed: boolean;
   createdAt: string;
@@ -239,6 +260,23 @@ const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$
  * identity or timing is unreadable must not become the one the athlete is
  * offered a check-out for.
  */
+/**
+ * pilot.sessions.rpe as the training card needs it: a number, or null for
+ * "nobody has rated this session".
+ *
+ * The column is `numeric` and node-postgres hands it back as a string, so a
+ * coercion is unavoidable -- but absence is tested first, because Number(null)
+ * is 0 and 0 is a real RPE. An unparseable value is absent too: a row that
+ * cannot be read is not a row rated zero.
+ */
+function normalizeCardRpe(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeStoredSession(row: unknown): StoredSession | null {
   if (!row || typeof row !== 'object') {
     return null;
@@ -249,17 +287,34 @@ function normalizeStoredSession(row: unknown): StoredSession | null {
   const athleteId = typeof record.athlete_id === 'string' ? record.athlete_id.trim() : '';
   const date = typeof record.date === 'string' ? record.date.slice(0, 10) : '';
   const createdAt = typeof record.created_at === 'string' ? record.created_at : '';
-  const rpe = Number(record.rpe);
 
-  if (!sessionId || !athleteId || !date || !createdAt || !Number.isFinite(rpe)) {
+  // null and undefined are checked BEFORE Number(), because Number(null) is 0
+  // and 0 is a legitimate RPE. Coercing first would turn "not rated yet" into
+  // "rated it zero" -- a fabricated reading, and the exact class of defect the
+  // rpe/readiness separation exists to end.
+  const rpeIsAbsent = record.rpe === null || record.rpe === undefined;
+  const rpe = rpeIsAbsent ? null : Number(record.rpe);
+
+  if (!sessionId || !athleteId || !date || !createdAt) {
     return null;
   }
+  if (rpe !== null && !Number.isFinite(rpe)) {
+    return null;
+  }
+
+  // An unrecognised method is not silently treated as the honest one. Anything
+  // this client does not know reads as UNKNOWN, which is what a row predating
+  // the method column genuinely is.
+  const rpeMethod: SessionRpeMethod = record.rpe_method === 'athlete_post_session_self_report'
+    ? 'athlete_post_session_self_report'
+    : 'UNKNOWN';
 
   return {
     sessionId,
     athleteId,
     date,
     rpe,
+    rpeMethod,
     notes: typeof record.notes === 'string' ? record.notes : '',
     completed: record.completed_flag === true,
     createdAt,
@@ -364,50 +419,23 @@ function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBui
   return [...core, ...readinessSpecific, ...closeout];
 }
 
-// Fast-Track observation feed: best-effort only. The athlete's session
-// check-in (POST /api/pilot/sessions, above) already fully succeeds or fails
-// on its own -- these calls only enrich SHADOW's formula engine with a
-// Session Load (RPE x duration) input, so a failure here must never block or
-// roll back the primary check-in.
-async function submitFastTrackObservations(input: {
-  athleteId: string;
-  contextId: string;
-  observedAt: string;
-  rpe: number;
-  durationMinutes: number;
-  painFlag: boolean;
-  medicalReadAck: boolean;
-}): Promise<void> {
-  const observations = [
-    {
-      kind: 'session_rpe' as const,
-      value: input.rpe,
-      unit: 'rpe_0_10' as const,
-      dimensions: { painFlag: input.painFlag, medicalReadAck: input.medicalReadAck },
-    },
-    {
-      kind: 'duration' as const,
-      value: input.durationMinutes,
-      unit: 'minutes' as const,
-    },
-  ];
-
-  await Promise.allSettled(observations.map((observation) => fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      athleteId: input.athleteId,
-      contextId: input.contextId,
-      kind: observation.kind,
-      value: observation.value,
-      unit: observation.unit,
-      dimensions: observation.dimensions ?? {},
-      observedAt: input.observedAt,
-      idempotencyKey: `${input.contextId}-${observation.kind}`,
-    }),
-  })));
-}
+// Fast-Track observation feed: best-effort only. The athlete's check-out
+// (POST /api/pilot/sessions/update) already fully succeeds or fails on its
+// own -- these calls only enrich SHADOW's formula engine with a Session Load
+// (RPE x duration) input, so a failure here must never block or roll back the
+// primary write.
+//
+// THIS RUNS AT CHECK-OUT, NOT CHECK-IN, and that is the whole point. Session
+// Load multiplies session RPE by duration; both inputs only exist once the
+// session is over. It used to run at check-in with the pre-session readiness
+// slider as `session_rpe` and the pre-session duration box as `duration`, so
+// SHADOW was multiplying two numbers that had not measured anything yet.
+//
+// Both values are passed as null when the athlete did not give them, and
+// NOTHING is submitted in that case. There is no default and no prefill here
+// on purpose: a prefilled control that nobody touches is indistinguishable
+// from an answer, which is exactly how the planned 60 minutes became an
+// observed duration.
 
 // The vocabularies this tab reads. A rabbit hole is stored against one stable
 // key, and the read takes one anchor at a time, so the tab asks for the terms
@@ -570,17 +598,19 @@ export default function AthleteWorkspace() {
 
   // Bio Check-In State
   const [sleepHours, setSleepHours] = useState(8);
-  const [energyLevel, setEnergyLevel] = useState(7);
   const [motivation, setMotivation] = useState(7);
   const [soreness, setSoreness] = useState(2);
+  /* Set by the pain report below, never by the athlete directly. It is a
+     display of "a pain report was filed this session", which is why it is
+     rendered as a status line and not as a tickbox: the tickbox let an athlete
+     set it by hand, and that hand-set value went nowhere. */
+  const [injuryFlag, setInjuryFlag] = useState(false);
   const [hydrationStatus, setHydrationStatus] = useState(8);
   const [readinessToTrain, setReadinessToTrain] = useState(8);
-  const [injuryFlag, setInjuryFlag] = useState(false);
   // Fast-Track: the minimum-friction data path so athletes who won't fill out
   // a rich Deep-Track sparring log still contribute something SHADOW's
   // formula engine can use (Session Load needs RPE * duration).
   const [sessionDurationMinutes, setSessionDurationMinutes] = useState(60);
-  const [medicalReadAck, setMedicalReadAck] = useState(false);
   const [expandedCheckIn, setExpandedCheckIn] = useState(false);
   const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
   const [showPainModal, setShowPainModal] = useState(false);
@@ -608,12 +638,22 @@ export default function AthleteWorkspace() {
   const [floorTasks, setFloorTasks] = useState<FloorTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
+  // One tick at a time. The whole plan payload is rewritten by each write, so
+  // two in flight at once would lose one -- and a lost tick is exactly the
+  // failure this persistence exists to end. Held boxes are visible; a
+  // silently dropped write is not.
+  const [savingFloorTaskId, setSavingFloorTaskId] = useState<string | null>(null);
+
+  // The work a coach assigned this athlete, counted for the Today card. The
+  // page it belongs to has always existed; nothing on this screen read it.
+  const [assignedWorkOpen, setAssignedWorkOpen] = useState(0);
+  const [assignedWorkLoading, setAssignedWorkLoading] = useState(true);
+  const [assignedWorkError, setAssignedWorkError] = useState<string | null>(null);
 
   // The gym's own drill library, written by its coaches.
   const [drills, setDrills] = useState<Drill[]>([]);
   const [drillsLoading, setDrillsLoading] = useState(true);
   const [drillsError, setDrillsError] = useState<string | null>(null);
-  const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
 
   // Shadow State
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
@@ -633,6 +673,15 @@ export default function AthleteWorkspace() {
   const [notesSaveState, setNotesSaveState] = useState<NotesSaveState>('idle');
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  /* Nothing in this app collects a post-session RPE or an observed duration.
+     The check-in controls that used to supply them measured the wrong thing --
+     readiness before training, and a PLANNED duration -- so they were
+     disconnected rather than repointed, and check-out writes rpe null with an
+     UNKNOWN method. No placeholder state stands in for the missing control:
+     a variable that can only ever be null, feeding a call that can only ever
+     return early, reads as wired while recording nothing. Building the control
+     is the work; pretending it exists is not. */
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
@@ -651,6 +700,14 @@ export default function AthleteWorkspace() {
   const floorTasksRemaining = floorTasks.filter((task) => !task.completed).length;
   const activeGroup = groupForTab(activeTab);
   const activeGroupTabs = TAB_GROUPS.find((group) => group.id === activeGroup)?.tabs ?? [];
+  /* The masthead names where you actually are, the way the approved board
+     does: the open group as the title, the open surface underneath it. It
+     used to read "My Training Dashboard" no matter which of the eleven
+     surfaces was showing, so the one line on the page that claimed to say
+     where you were was wrong nine times out of eleven. Both fall out of
+     activeTab, so neither can drift from the nav. */
+  const activeGroupLabel = TAB_GROUPS.find((group) => group.id === activeGroup)?.label ?? 'Today';
+  const activeTabLabel = activeGroupTabs.find((tab) => tab.id === activeTab)?.label ?? activeGroupLabel;
 
   /* Where a group opens when its button is pressed. Only Today varies: it
      opens on check-in until the athlete has checked in, then on their
@@ -660,10 +717,13 @@ export default function AthleteWorkspace() {
     /* Today always opens on the dashboard, checked in or not, because that is
        where the real check-in lives: the Session Log's button calls
        handleCheckIn, which opens the session AND generates the day's floor
-       plan. The Bio Check-In tab is a separate surface whose fields are local
-       state only -- nothing in this app calls /api/pilot/athlete/check-in --
-       so opening there would put an athlete in front of controls that record
-       nothing and tell them they had checked in. */
+       plan. This said so before Today's first tab was the dashboard, and was
+       wrong about its own behaviour: tabs[0] was Bio Check-In, whose fields
+       are local state only -- nothing in this app calls
+       /api/pilot/athlete/check-in -- so pressing Today put an athlete in front
+       of controls that recorded nothing and told them they had checked in.
+       That surface is no longer listed (see TAB_GROUPS), so this is now a
+       description rather than an intention. */
     return TAB_GROUPS.find((entry) => entry.id === group)?.tabs[0]?.id ?? 'my-dashboard';
   };
   const notesDraft = checkInNotes.trim();
@@ -795,6 +855,54 @@ export default function AthleteWorkspace() {
   }, [loadGoals]);
 
   /**
+   * How much coach-assigned work is still open.
+   *
+   * This is the one thing on the athlete's screen that a person put there by
+   * hand, and it was the hardest thing on the screen to find: the drills a
+   * coach assigned live at /athlete/progression-intelligence, reachable from
+   * here only through a collapsed "More in your workspace" at the foot of the
+   * page. Today states the day back to the athlete, so it has to include the
+   * part of the day somebody else set.
+   *
+   * Counted, not listed -- the page owns the list. 'assigned' and
+   * 'in_progress' are the two statuses that mean "still to do"; 'completed',
+   * 'incomplete' and 'cancelled' are record, not today.
+   *
+   * The route derives nothing from this id beyond the athlete named: it runs
+   * assertActorCanAccessAthlete, which refuses an athlete any record but their
+   * own. The value sent is the one the session handed back.
+   */
+  const loadAssignedWork = useCallback(async () => {
+    if (!backendAthleteId) {
+      return;
+    }
+
+    try {
+      setAssignedWorkLoading(true);
+      setAssignedWorkError(null);
+      const response = await fetch(
+        `${apiBase()}/api/pilot/progression/assignments?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('Your assigned work did not load.');
+
+      const data = (await response.json()) as { items?: Array<{ status?: string }> };
+      setAssignedWorkOpen(
+        (data.items ?? []).filter((item) => item.status === 'assigned' || item.status === 'in_progress').length,
+      );
+    } catch (error) {
+      setAssignedWorkError(error instanceof Error ? error.message : 'Your assigned work did not load.');
+    } finally {
+      setAssignedWorkLoading(false);
+    }
+  }, [backendAthleteId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadAssignedWork();
+  }, [loadAssignedWork]);
+
+  /**
    * The training card's rows. Read-only and honest: one stamp per session row,
    * so the card cannot show progress the ledger does not have. Failure is silent
    * on purpose -- an athlete's card is an encouragement, not an operational
@@ -813,7 +921,13 @@ export default function AthleteWorkspace() {
         (data.items ?? []).map((s) => ({
           session_id: s.session_id,
           date: s.date,
-          rpe: Number(s.rpe) || 0,
+          // `Number(s.rpe) || 0` stood here and it fabricated a reading twice
+          // over: Number(null) is 0, and `|| 0` then swallowed a genuine 0 as
+          // well. pilot.sessions.rpe is nullable, so an un-checked-out session
+          // arrives as null and must reach the card as null -- the card draws
+          // "not recorded" for it. Absence is tested before the coercion, and
+          // a value that will not parse stays absent rather than becoming 0.
+          rpe: normalizeCardRpe(s.rpe),
           completed_flag: Boolean(s.completed_flag),
         })),
       );
@@ -833,6 +947,12 @@ export default function AthleteWorkspace() {
    * Check-in writes the generated plan to pilot.athlete_floor_plans via
    * POST /api/pilot/floor-plans, so that table — not the session list — is the
    * durable source for what is on the floor. GET returns plans newest-first.
+   *
+   * `completed` is read off the stored task rather than hardcoded to false,
+   * which it was until PATCH existed to write it. A plan that has just been
+   * generated carries no flag at all, so an absent one is not done -- but a
+   * task the athlete ticked off yesterday comes back ticked, which is the
+   * whole point of storing it.
    */
   const loadFloorTasks = useCallback(async () => {
     if (!backendAthleteId) {
@@ -860,6 +980,7 @@ export default function AthleteWorkspace() {
             dueDate?: string;
             priority?: string;
             linkedGoalId?: string;
+            completed?: boolean;
           }>;
         }>;
       };
@@ -871,7 +992,7 @@ export default function AthleteWorkspace() {
         category: (task.category || 'Training') as FloorTask['category'],
         description: task.description || '',
         dueDate: task.dueDate || 'Scheduled',
-        completed: false,
+        completed: task.completed === true,
         priority: (task.priority || 'Normal') as FloorTask['priority'],
         linkedGoalId: task.linkedGoalId,
       }));
@@ -956,6 +1077,7 @@ export default function AthleteWorkspace() {
             athleteId: open.athleteId,
             date: open.date,
             rpe: open.rpe,
+            rpeMethod: open.rpeMethod,
             checkInNote: open.notes,
             createdAt: open.createdAt,
           }
@@ -1017,7 +1139,10 @@ export default function AthleteWorkspace() {
               session_id: record.sessionId,
               athlete_id: record.athleteId,
               date: record.date,
+              // Replayed unchanged: this is a notes save, not a rating. For an
+              // open session both are still null/UNKNOWN.
               rpe: record.rpe,
+              rpe_method: record.rpeMethod,
               notes: draft,
               completed_flag: false,
               created_at: record.createdAt,
@@ -1183,6 +1308,76 @@ export default function AthleteWorkspace() {
     }
   };
 
+  /**
+   * Tick a floor task off, and write it down.
+   *
+   * The checkbox moved React state and nothing else until now: an athlete
+   * marked their work done, reloaded, and the floor came back untouched. The
+   * flag is stored on the plan (PATCH /api/pilot/floor-plans), so the floor
+   * after a reload is the floor the record describes.
+   *
+   * Optimistic then reverted, the same shape handleUpdateGoalProgress already
+   * uses -- a checkbox that waits for a round trip reads as broken on a gym
+   * tablet. What must not happen is a tick that stays on screen with nothing
+   * behind it, so a refused write puts the box back and says so.
+   *
+   * The route takes no athlete_id: it writes the principal's own current plan.
+   */
+  const handleToggleFloorTask = async (taskId: string) => {
+    const task = floorTasks.find((candidate) => candidate.id === taskId);
+    if (!task || savingFloorTaskId) {
+      return;
+    }
+
+    const wasCompleted = task.completed;
+    const nextCompleted = !wasCompleted;
+    const putItBack = () => setFloorTasks((current) => current.map(
+      (candidate) => (candidate.id === taskId ? { ...candidate, completed: wasCompleted } : candidate),
+    ));
+
+    setFloorTasks((current) => current.map(
+      (candidate) => (candidate.id === taskId ? { ...candidate, completed: nextCompleted } : candidate),
+    ));
+
+    if (!backendAthleteId) {
+      // There is no local task store -- the plan exists only in
+      // pilot.athlete_floor_plans -- so without a session nothing is written
+      // anywhere.
+      putItBack();
+      setBackendSyncMessage("That did not save. You are not signed in right now -- sign in again and tick it off.");
+      return;
+    }
+
+    setSavingFloorTaskId(taskId);
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/floor-plans`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId, completed: nextCompleted }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ error: 'That did not save.' }))) as { error?: string };
+        putItBack();
+        setBackendSyncMessage(`${payload.error || 'That did not save.'} `
+          + 'Nothing was written down, so the box went back to where it was.');
+        return;
+      }
+
+      setBackendSyncMessage(nextCompleted
+        ? `Marked done: ${task.title}.`
+        : `Put back on your floor: ${task.title}.`);
+    } catch (error) {
+      putItBack();
+      setBackendSyncMessage(`${error instanceof Error ? error.message : 'That did not save.'} `
+        + 'Nothing was written down, so the box went back to where it was.');
+    } finally {
+      setSavingFloorTaskId(null);
+    }
+  };
+
   const handleCheckIn = async () => {
     // A second check-in over an open session would leave the first one open
     // forever, which is the state this screen exists to get out of.
@@ -1263,7 +1458,13 @@ export default function AthleteWorkspace() {
           session_id: sessionId,
           athlete_id: backendAthleteId,
           date: sessionDate,
-          rpe: readinessToTrain,
+          // No RPE at check-in. The session has not happened, so there is no
+          // exertion to rate; `rpe` stays null until check-out collects a real
+          // one. This field used to carry `readinessToTrain` -- a pre-session
+          // readiness self-report stored in the column named for session RPE,
+          // which is the defect this change exists to end.
+          rpe: null,
+          rpe_method: 'UNKNOWN',
           notes: checkInNote,
           completed_flag: false,
           created_at: now.toISOString(),
@@ -1279,7 +1480,8 @@ export default function AthleteWorkspace() {
           sessionId,
           athleteId: backendAthleteId,
           date: sessionDate,
-          rpe: readinessToTrain,
+          rpe: null,
+          rpeMethod: 'UNKNOWN',
           checkInNote,
           createdAt: now.toISOString(),
         });
@@ -1304,15 +1506,11 @@ export default function AthleteWorkspace() {
       setIsCheckingIn(false);
     }
 
-    void submitFastTrackObservations({
-      athleteId: backendAthleteId,
-      contextId: sessionId,
-      observedAt: now.toISOString(),
-      rpe: readinessToTrain,
-      durationMinutes: sessionDurationMinutes,
-      painFlag: injuryFlag,
-      medicalReadAck,
-    });
+    // Nothing is sent to SHADOW here any more. Check-in used to post the
+    // readiness slider as `session_rpe` and the planned-duration box as
+    // `duration` -- two pre-session numbers submitted as observations of a
+    // session that had not started. Both now come from check-out, from what
+    // the athlete actually reports afterwards.
   };
 
   const handleCheckOut = async () => {
@@ -1337,7 +1535,16 @@ export default function AthleteWorkspace() {
           session_id: record.sessionId,
           athlete_id: record.athleteId,
           date: record.date,
-          rpe: record.rpe,
+          // Check-out is the first and only point at which a real session RPE
+          // could exist -- and no control on this screen collects one, so it
+          // does not exist yet. Written null with an UNKNOWN method: the
+          // athlete rated nothing, and "not recorded" is what gets stored.
+          // These are literals rather than a variable that could only ever
+          // hold null. When a check-out rating control is built, it supplies
+          // the value here and 'athlete_post_session_self_report' becomes the
+          // method; until then nothing may put a number in this field.
+          rpe: null,
+          rpe_method: 'UNKNOWN' as const,
           // The check-in note is the fallback because the session record
           // requires a note and an empty box must not erase what check-in
           // already stored.
@@ -1379,6 +1586,13 @@ export default function AthleteWorkspace() {
     } finally {
       setIsCheckingOut(false);
     }
+
+    /* No Session Load feed here. It used to sit at the end of check-IN and pass
+       the readiness slider as `session_rpe` and the PLANNED duration as
+       `duration`, so SHADOW multiplied two numbers that had measured nothing
+       yet. Check-out has no post-session RPE and no observed duration to send
+       in their place, so it sends nothing: check-out records only what the
+       athlete actually supplied. */
   };
 
   const handleSavePainReport = async () => {
@@ -1529,8 +1743,16 @@ export default function AthleteWorkspace() {
                 of as theirs. Same information, said the way it would be said
                 across the floor. */}
             <p className="t-eyebrow">Your Floor</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>My Training Dashboard</h1>
-            <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today&apos;s work, and keep your goals where you can see them.</p>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>{activeGroupLabel}</h1>
+            <p className="t-label mt-[var(--s3)] text-[color:var(--bone-400)]">
+              Athlete workspace · {activeTabLabel}
+            </p>
+            {/* The standing description of the workspace, kept on Today only.
+                Under "SHADOW" or "Messages" it would be describing a screen
+                the athlete is not looking at. */}
+            {activeGroup === 'today' && (
+              <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today&apos;s work, and keep your goals where you can see them.</p>
+            )}
             {/* The motto strip is gone from here, from the coach workspace, from
                 the parent hub and from the funding centre -- the same six words
                 at --t-xs, four times, always directly above the fold.
@@ -1657,7 +1879,7 @@ export default function AthleteWorkspace() {
                   them is true before anything has happened. */}
               <section className={PANEL}>
                 <h3 className="t-label">Today</h3>
-                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-3">
+                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-3 lg:grid-cols-4">
                   <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
                     <p className="t-label">Check in</p>
                     <p className="t-body text-[color:var(--bone-300)]">
@@ -1724,6 +1946,34 @@ export default function AthleteWorkspace() {
                       Open goals
                     </button>
                   </div>
+
+                  {/* The one card on Today that is not about what the athlete
+                      decided. The floor plan above is generated from their own
+                      check-in; this is what a coach assigned them, and until
+                      now the only route to it from this workspace was a
+                      collapsed <details> at the very foot of the page.
+
+                      Same grammar as its siblings: an empty collection says
+                      "none recorded" rather than showing a 0, and a read that
+                      failed says so instead of reporting nothing assigned. */}
+                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                    <p className="t-label">From your coach</p>
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {assignedWorkError
+                        ? 'Not available right now.'
+                        : assignedWorkLoading
+                          ? 'Checking...'
+                          : assignedWorkOpen === 0
+                            ? 'No assigned work recorded.'
+                            : `${assignedWorkOpen} still to do.`}
+                    </p>
+                    <Link
+                      href="/athlete/progression-intelligence"
+                      className="btn btn--kiosk btn--ghost w-full"
+                    >
+                      Open your progression
+                    </Link>
+                  </div>
                 </div>
 
                 <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
@@ -1763,16 +2013,19 @@ export default function AthleteWorkspace() {
                 <div className={PANEL_RAISED}>
                   <h3 className="t-label mb-[var(--s4)]">Current Readiness</h3>
                   <div className="space-y-[var(--s4)]">
-                    <div>
-                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
-                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{sleepHours} hours</p>
-                    </div>
-                    <div>
-                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
-                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{energyLevel}/10</p>
-                    </div>
+                    {/* Sleep and Energy Level stood here until 2026-08-23 and
+                        recorded nothing: neither reached any request body, on
+                        check-in or anywhere else. They sat in the same card as
+                        Readiness to Train, Session Duration and the medical
+                        acknowledgement, which all do write, in identical
+                        styling -- so the card asked a child for five things and
+                        kept three, with nothing on screen saying which. Removed
+                        rather than stamped, the way the guardian consent
+                        prototype was: a control that silently discards what it
+                        asks for is worse than no control. Wiring them is a real
+                        option and a separate decision -- it needs an owner call
+                        on what a sleep or energy reading would mean and who, if
+                        anyone, it should reach. */}
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">Readiness to Train (1-10)</label>
                       <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
@@ -1790,10 +2043,6 @@ export default function AthleteWorkspace() {
                         className="input input--kiosk"
                       />
                     </div>
-                    <label className="flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)] text-[length:var(--t-md)]">
-                      <input type="checkbox" checked={medicalReadAck} onChange={(e) => setMedicalReadAck(e.target.checked)} className="h-[21px] w-[21px] accent-[var(--brass-600)]" />
-                      <span>I&apos;ve reviewed today&apos;s safety/medical notice</span>
-                    </label>
                   </div>
                 </div>
 
@@ -1801,15 +2050,38 @@ export default function AthleteWorkspace() {
                 <div className={PANEL_RAISED}>
                   <h3 className="t-label mb-[var(--s4)]">Pain/Soreness Report</h3>
                   <div className="space-y-[var(--s4)]">
-                    <label className="flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)] text-[length:var(--t-md)]">
-                      <input type="checkbox" checked={injuryFlag} onChange={(e) => setInjuryFlag(e.target.checked)} className="h-[21px] w-[21px] accent-[var(--brass-600)]" />
-                      <span>Injury or Pain Flag</span>
-                    </label>
-                    <div>
-                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
-                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
-                    </div>
+                    {/* THIS WAS A TICKBOX, AND TICKING IT DID NOTHING.
+
+                        The flag is written in one place -- setInjuryFlag(true)
+                        when a pain report is filed -- so as an INDICATOR it
+                        tells the truth. As a CONTROL it did not: an athlete
+                        could tick it by hand, and that hand-set value reached
+                        nobody. Its only transport was a dimension on the
+                        check-in `session_rpe` observation, and that observation
+                        was the readiness slider mislabelled as session RPE.
+                        Removing the fabricated measurement removed the
+                        transport with it.
+
+                        So the affordance is gone and the signal is kept. A
+                        control that silently records nothing on a safety card
+                        is worse than no control: an athlete who ticks it stops
+                        looking for another way to tell someone. Re-wiring it
+                        onto a measurement observation is what produced this in
+                        the first place and is not done here; giving it a signal
+                        of its own would be a separate safety change.
+
+                        A Soreness Level slider stood here too. It never
+                        recorded anything and is not reinstated.
+
+                        The pain report below -- location, type, severity -- is
+                        the path that actually reaches a coach. It raises a near
+                        miss and a pending-review shadow event, and it says so
+                        in plain words when it fails. */}
+                    {injuryFlag ? (
+                      <p className="text-[length:var(--t-md)]" data-testid="pain-reported-indicator">
+                        Pain reported this session. A coach has been told.
+                      </p>
+                    ) : null}
                     {/* All 10 locations, not just the first 3 -- a dropdown
                         scales to the list where a row of buttons did not, and
                         the other 7 were previously unreachable from this
@@ -2019,10 +2291,13 @@ export default function AthleteWorkspace() {
                       <input
                         type="checkbox"
                         checked={task.completed}
-                        onChange={() => {
-                          setFloorTasks(floorTasks.map(t => t.id === task.id ? {...t, completed: !t.completed} : t));
-                        }}
-                        className="h-[21px] w-[21px] cursor-pointer accent-[var(--brass-600)]"
+                        // Held while any tick is being written, because the
+                        // whole plan is rewritten by each write and two at
+                        // once would lose one. See handleToggleFloorTask.
+                        disabled={savingFloorTaskId !== null}
+                        onChange={() => void handleToggleFloorTask(task.id)}
+                        aria-label={`Mark done: ${task.title}`}
+                        className="h-[21px] w-[21px] cursor-pointer accent-[var(--brass-600)] disabled:cursor-wait"
                       />
                     </div>
                     <p className="mb-[var(--s4)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{task.description}</p>
@@ -2038,9 +2313,47 @@ export default function AthleteWorkspace() {
                 ))}
               </div>
 
+              {/* AN EMPTY FLOOR IS THE HERO, not a footnote.
+                  Same two sentences as before, word for word, given the room
+                  the approved board gives them -- because on the day an
+                  athlete first opens this tab, this IS the screen, and it used
+                  to be one grey line under a help panel.
+
+                  The button is the point. The old empty state named the action
+                  ("check in") and offered no way to do it: the athlete had to
+                  work out that check-in lives on a different tab. This calls
+                  the same handleCheckIn as the Dashboard's card and the
+                  Session Log's button -- one behaviour, three doors -- and it
+                  is drawn only when there is no open session, exactly as the
+                  Dashboard card is. */}
               {!tasksLoading && !tasksError && floorTasks.length === 0 && (
-                <div className={`${PANEL} text-center`}>
-                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Nothing on your floor yet. Check in and today&apos;s work gets built.</p>
+                <div className={`${PANEL} px-[var(--s5)] py-[var(--s7)] text-center`}>
+                  <span
+                    aria-hidden="true"
+                    className="mx-auto grid h-[var(--s7)] w-[var(--s7)] place-items-center rounded-full border-2 border-[color:var(--brass-600)] text-[color:var(--brass-300)]"
+                    style={{ fontSize: 'var(--t-lg)' }}
+                  >
+                    ☑
+                  </span>
+                  <h3 className="t-command mt-[var(--s5)]" style={{ fontSize: 'var(--t-xl)' }}>
+                    Nothing on your floor yet.
+                  </h3>
+                  <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+                    Check in and today&apos;s work gets built.
+                  </p>
+                  {activeSessionRecord ? null : (
+                    <>
+                      <span className="mx-auto mt-[var(--s5)] block h-px w-[144px] bg-[color:var(--brass-800)]" />
+                      <button
+                        type="button"
+                        onClick={() => void handleCheckIn()}
+                        disabled={isCheckingIn}
+                        className="btn btn--kiosk mx-auto mt-[var(--s5)] w-auto disabled:opacity-50 disabled:grayscale"
+                      >
+                        {isCheckingIn ? 'Checking in...' : 'Check In'}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -2282,10 +2595,25 @@ export default function AthleteWorkspace() {
               <p className="t-label">
                 NOT BUILT YET -- there is nothing behind this tab, so nothing here can start or score anything.
               </p>
+              {/* The card here advertised an "MBTI Personality Test" that would
+                  "Discover your personality type and learning style." Both
+                  halves promise something this platform will not do: MBTI sorts
+                  a person into a fixed type, and learning styles are a contested
+                  construct with no instrument here to measure them. Advertised
+                  to a child, on their own screen, it says the gym is going to
+                  decide what kind of person they are.
+
+                  Nothing was ever built behind it, so this is copy removal
+                  rather than a feature removal -- but the copy had to go BEFORE
+                  the tab could ever be re-enabled, because whoever turns it on
+                  would have built what the card promised. What replaces it
+                  names the one thing an assessment tab could honestly hold. */}
               <div className="space-y-[var(--s4)]">
                 <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                  <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">MBTI Personality Test</p>
-                  <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">Discover your personality type and learning style.</p>
+                  <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">Skill checks</p>
+                  <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    If this is ever built, it records what you did on a given day — not what kind of person you are.
+                  </p>
                   <button
                     type="button"
                     disabled
@@ -2375,13 +2703,12 @@ export default function AthleteWorkspace() {
                 usage={[
                   'Search by drill name or category',
                   'Review coaching cues before executing',
-                  'Mark drills complete as you master them',
+                  'Log what you finished against the drills your coach assigned you',
                   'Work up through the difficulty levels'
                 ]}
                 mistakes={[
                   'Skipping coaching cues',
-                  'Attempting drills above your level',
-                  'Not practicing enough before marking complete'
+                  'Attempting drills above your level'
                 ]}
               />
 
@@ -2427,12 +2754,17 @@ export default function AthleteWorkspace() {
                         ))}
                       </div>
                     </div>
-                    <button
-                      onClick={() => setCompletedDrills({...completedDrills, [drill.id]: !completedDrills[drill.id]})}
-                      className={`btn btn--kiosk ${completedDrills[drill.id] ? 'btn--ghost' : ''}`}
-                    >
-                      {completedDrills[drill.id] ? '✓ Drill Complete' : 'Mark Complete'}
-                    </button>
+                    {/* "Mark Complete" stood here and set a React flag. There
+                        is no row anywhere for "this athlete practised this
+                        library drill": pilot.assignment_completions is keyed on
+                        an assignment_id, which only a coach's assignment
+                        creates, and no table is keyed on (athlete, drill_id).
+                        So the button recorded a completion that reloading
+                        erased -- the same defect as the floor checkbox, minus
+                        anything to fix it with. It is removed rather than
+                        wired: the completions that ARE stored are logged
+                        against assigned drills on the progression page, which
+                        Today now links to. This library is reference. */}
                   </div>
                 ))}
               </div>
@@ -2549,9 +2881,16 @@ export default function AthleteWorkspace() {
                   Open Unified Scheduler
                 </Link>
               </div>
+              {/* This tab was a "NOT BUILT YET" wrapper around a link to a
+                  scheduler that IS built. A tab whose whole content is an
+                  apology for itself teaches an athlete to stop opening tabs;
+                  what it actually holds is the door to the real thing, so it
+                  says that and gets out of the way. The scheduler owns
+                  classes, booking and eligibility -- nothing here duplicates
+                  them. */}
               <HelpPanel
                 title="Schedule Session"
-                description="Booking happens in the unified scheduler; this tab is a placeholder until it can read the gym's classes."
+                description="Classes and sign-ups live in the unified scheduler. This is the door to it."
                 usage={[
                   'Open the unified scheduler to see live classes',
                   'Check your academic status first',
@@ -2562,12 +2901,6 @@ export default function AthleteWorkspace() {
                   'Booking contact work with RED readiness'
                 ]}
               />
-
-              {/* Statement of fact, not a refusal or safety state (Law 2). */}
-              <p className="t-label">
-                NOT BUILT YET -- this tab cannot see the gym&apos;s classes or sign you up for one. Open the
-                scheduler above for real classes and real sign-ups.
-              </p>
             </div>
           )}
 
@@ -2807,6 +3140,10 @@ export default function AthleteWorkspace() {
             belongs. See the note where it used to hang, above the daily
             reminder. */}
         <GymWallModule className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]" />
+
+        {/* The four words, at the foot of the page. See WorkAxis for why this
+            is not the motto strip that was taken out of this header. */}
+        <WorkAxis />
       </div>
     </div>
   );

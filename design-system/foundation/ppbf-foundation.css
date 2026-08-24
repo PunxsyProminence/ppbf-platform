@@ -1,0 +1,163 @@
+/* ===========================================================================
+   PPBF NEUTRAL FOUNDATION
+   ---------------------------------------------------------------------------
+   Structure, accessibility and responsive mechanics. NO AESTHETIC.
+
+   This file prescribes no colour, no material, no texture, no typeface
+   personality and no page ground. It cannot make a screen look like anything.
+   That is the point: the visual identity lives in design-system/current/,
+   and swapping it must not disturb anything in here.
+
+   WHY THIS EXISTS. Until 2026-08-23 one 3,575-line sheet held the mechanics
+   and the "Leather & Brass" identity together in a single unlayered :root,
+   and apps/web/app/globals.css imported it whole. So the aesthetic controlled
+   the app by construction -- not through any page's choice -- and there was
+   no way to retire it without also taking the spacing scale, the type ladder
+   and the tap-target floor with it.
+
+   THE NAMES ARE THE CONTRACT. Every token below is copied VERBATIM from the
+   legacy sheet, values and comments intact, because 5,884 call sites across
+   apps/web already use these exact names (4,089 spacing, 977 type, 759
+   radius, 59 tap). Renaming any of them is not a refactor, it is a rewrite of
+   the application. foundationMatchesLegacy.test.ts asserts the copy has not
+   drifted.
+
+   WHAT MAY BE ADDED HERE. Only things that are true of any visual system:
+   box sizing, focus visibility, minimum control size, spacing/type/radius
+   mechanics, form geometry, disabled affordance, screen-reader utilities,
+   reduced motion, print legibility. If a rule could not survive a complete
+   change of look, it does not belong in this file.
+   =========================================================================== */
+
+:root {
+  /* --- Proportion — φ ---------------------------------------------------
+     Law 8. Every measurement in the system descends from the golden ratio.
+     Type climbs by √φ (1.272) so adjacent steps stay usable; space and radius
+     follow the Fibonacci sequence, which converges on φ; layout splits at
+     38.2 / 61.8. Nothing is sized by eye. */
+  --phi: 1.618;
+  --phi-inv: 0.618;
+  --phi-2: 2.618;     /* φ²  */
+  --root-phi: 1.272;  /* √φ  */
+
+  /* Type ladder — √φ steps from a 15px base */
+  --t-xs:  11.8px;   /* 15 ÷ √φ    · captions, mono labels        */
+  --t-sm:  15px;     /* base       · body copy                   */
+  --t-md:  19.1px;   /* 15 × √φ    · KIOSK MINIMUM (Law 5)        */
+  --t-lg:  24.3px;   /* 15 × φ     · panel headings               */
+  --t-xl:  30.9px;   /* 15 × φ√φ   · screen titles                */
+  --t-2xl: 39.3px;   /* 15 × φ²    · command headers              */
+  --t-3xl: 50px;     /* 15 × φ²√φ  · mottos                       */
+  --t-4xl: 63.6px;   /* 15 × φ³    · display                      */
+  --t-5xl: 80.9px;   /* 15 × φ³√φ  · hero, one per screen at most */
+
+  /* Space + radius — Fibonacci */
+  --s1: 3px;  --s2: 5px;  --s3: 8px;  --s4: 13px;
+  --s5: 21px; --s6: 34px; --s7: 55px; --s8: 89px;
+  --r-sm: 5px; --r-md: 8px; --r-lg: 13px; --r-xl: 21px; --r-pill: 999px;
+
+  /* Layout — the golden section */
+  --split-minor: 38.2%;
+  --split-major: 61.8%;
+
+  /* --- Ergonomics ------------------------------------------------------- */
+  --tap: 55px;        /* Fibonacci, and comfortably above the 44px WCAG floor */
+  --focus: 0 0 0 3px rgba(212, 175, 74, .55);
+
+  /* --- Motion — Law 8 applied to time ------------------------------------
+     Durations were the one axis still picked by eye (.12s, .28s, .34s, .42s,
+     .6s — no relationship to each other or to anything else in the system).
+     They are Fibonacci milliseconds now, the same series that governs space,
+     so a drawer opening and a gutter measuring 21px come from one source.
+
+     Easings are named for the PHYSICS, not for a curve. Nothing in this
+     building floats: a stamp is driven down by a hand and stops dead against
+     the paper, a drawer drags on its runners, a hung sign swings past level
+     before it settles. `ease` describes none of that, which is why every
+     skeuomorphic surface that uses it feels like software. */
+  --m-instant:  55ms;   /* state flip — pressed, checked. Perceived as "now" */
+  --m-quick:    89ms;   /* hover, focus ring, small colour shift */
+  --m-base:    144ms;   /* the default: buttons, tags, tiles */
+  --m-settle:  233ms;   /* something with mass arriving — a sheet, a panel */
+  --m-travel:  377ms;   /* something crossing distance — a drawer, a peeled corner */
+  --m-swing:   610ms;   /* a pendulum: gloves, a hung sign, the bell */
+
+  /* Driven and stopped: fast off the mark, dead halt. No overshoot — a stamp
+     does not bounce off paper, and a latch does not wobble shut. */
+  --e-stamp:  cubic-bezier(.2, .9, .1, 1);
+  /* Mass arriving under friction — decelerates long, never quite bounces. */
+  --e-settle: cubic-bezier(.16, .84, .28, 1);
+  /* Runners and grit: reluctant to start, then steady. */
+  --e-drawer: cubic-bezier(.45, .05, .35, 1);
+  /* Mechanical linkage — a lever is close to linear with a snap at the end. */
+  --e-lever:  cubic-bezier(.6, .04, .78, .9);
+  /* Pendulum: overshoots level, comes back. The one curve allowed to pass 1. */
+  --e-swing:  cubic-bezier(.34, 1.56, .64, 1);
+}
+
+/* ================================================================ RESET == */
+/* Border-box everywhere. Structural, and independent of any look. */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ========================================================= ACCESSIBILITY == */
+
+/* Visible focus is a functional requirement, not decoration. The RING COLOUR
+   is deliberately `currentColor` here rather than the legacy brass --focus:
+   a foundation must not choose a colour. A theme overrides this with its own
+   ring; if no theme loads, focus is still visible, which is the state that
+   matters. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+/* Controls stay reachable by a thumb on the gym floor. --tap is the kiosk
+   figure; the 44px floor is the WCAG minimum every surface must clear. */
+:where([data-surface="kiosk"]) :where(button, [role="button"], input, select, textarea) {
+  min-block-size: var(--tap);
+}
+
+/* A disabled control must be distinguishable without relying on colour. */
+:where(button, input, select, textarea):disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Screen-reader-only text: present to assistive technology, absent visually.
+   Law 3 leans on this -- a state carries a glyph AND a label, and the label
+   is frequently only here. */
+.sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ================================================================ MOTION == */
+/* Honouring the OS setting is an accessibility obligation, so it lives here
+   rather than in a theme where a redesign could drop it. Durations collapse
+   to near-zero instead of 0s: a real 0s can cancel transitionend handlers
+   that code depends on firing. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ================================================================= PRINT == */
+/* Board packets and safety records get printed. Legibility on paper is a
+   functional requirement; the ink a theme uses is not this file's business. */
+@media print {
+  *, *::before, *::after {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+}

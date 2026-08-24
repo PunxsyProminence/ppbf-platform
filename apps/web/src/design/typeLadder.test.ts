@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
  * The type ladder must never go DOWN as the name goes up.
@@ -101,7 +102,7 @@ function resolvePx(name: string, tokens: Map<string, string>, seen = new Set<str
 
 describe('type ladder', () => {
   const tokens = declarations(
-    `${readFileSync(DESIGN_SYSTEM, 'utf8')}\n${readFileSync(GLOBALS, 'utf8')}`,
+    `${readDesignSystemCss(DESIGN_SYSTEM)}\n${readFileSync(GLOBALS, 'utf8')}`,
   );
 
   // Only the sizes globals.css actually sets. Anything it does not set falls

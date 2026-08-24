@@ -8,6 +8,7 @@ import {
 } from '@/src/server/pilot/formulas/painReportAlert';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
+import type { PainReporter } from '@/src/server/pilot/formulas/painReportAlert';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -50,7 +51,7 @@ function principal(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function painReport(athleteId: string) {
+function painReport(athleteId: string, reporter: PainReporter = 'athlete') {
   return {
     nearMissId: `nm-${athleteId}`,
     athleteId,
@@ -61,6 +62,7 @@ function painReport(athleteId: string) {
     painType: 'Sharp',
     observedAt: '2026-07-31T10:00:00.000Z',
     recordedAt: '2026-07-31T10:00:02.000Z',
+    reporter,
   };
 }
 

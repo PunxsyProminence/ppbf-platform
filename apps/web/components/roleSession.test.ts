@@ -177,8 +177,8 @@ describe('roleSession in-memory cache (no localStorage writes)', () => {
 describe('authoritative server role resolution', () => {
   test.each([
     ['platform_owner', 'platform_owner', '/admin/platform'],
-    ['organization_admin', 'admin', '/admin'],
-    ['admin', 'admin', '/admin'],
+    ['organization_admin', 'admin', '/admin/people'],
+    ['admin', 'admin', '/admin/people'],
     ['coach', 'coach', '/coach/environment/intake-router'],
     ['athlete', 'athlete', '/athlete/dashboard'],
     ['parent', 'parent', '/parent/dashboard'],
@@ -188,6 +188,17 @@ describe('authoritative server role resolution', () => {
   ])('maps supported server role %s explicitly', (serverRole, expectedRole, expectedDestination) => {
     expect(mapPilotRoleToClubRole(serverRole)).toBe(expectedRole);
     expect(getPilotRoleDestination(serverRole)).toBe(expectedDestination);
+  });
+
+  // Operations V1 (owner decision, 2026-08-21): an admin lands in the people
+  // desk -- operational work -- not the Capability Room catalog. The catalog
+  // stays at /admin, intact and one click away; only the landing moved, the
+  // same way the coach's landing moved off the mock review queue.
+  test('an admin signs in to the people desk, not the capability catalog', () => {
+    expect(getPilotRoleDestination('admin')).toBe('/admin/people');
+    expect(getPilotRoleDestination('organization_admin')).toBe('/admin/people');
+    // Omega keeps its own platform desk -- the people console's APIs refuse it.
+    expect(getPilotRoleDestination('platform_owner')).toBe('/admin/platform');
   });
 
   // An invited staff member or volunteer authenticates successfully and has no
@@ -320,7 +331,7 @@ describe('authoritative server role resolution', () => {
     expect(resolution).toMatchObject({
       ok: true,
       session: { role: 'admin' },
-      destination: '/admin',
+      destination: '/admin/people',
     });
   });
 
@@ -372,7 +383,7 @@ describe('the board seat routes a member to their own page', () => {
 
   test('a seat changes nothing for any other role', () => {
     expect(getPilotRoleDestination('coach', 'treasurer')).toBe('/coach/environment/intake-router');
-    expect(getPilotRoleDestination('organization_admin', 'president')).toBe('/admin');
+    expect(getPilotRoleDestination('organization_admin', 'president')).toBe('/admin/people');
     expect(getPilotRoleDestination('athlete', 'president')).toBe('/athlete/dashboard');
   });
 

@@ -1,4 +1,9 @@
 import { query } from './db';
+import {
+  READINESS_VALUE_MAX,
+  READINESS_VALUE_MIN,
+  readinessValidatedScopeSql,
+} from './readinessProvenance';
 
 // Read-only performance rollup for the coach/admin analytics surface.
 //
@@ -124,7 +129,16 @@ export async function getPerformanceRollup(
               (count(*) filter (where measured_at < $4::timestamptz))::int as readiness_early_count,
               (count(*) filter (where measured_at >= $4::timestamptz))::int as readiness_late_count
        from pilot.readiness
+       -- MEASUREMENT CLAIMS ONLY. avg_readiness and the early/late halves feed
+       -- a "rising"/"falling" badge and a card-urgency rung. Every stored row
+       -- is a staff judgement typed at intake against unvalidated defaults, and
+       -- averaging those produced a trend line about a child out of opinions
+       -- nobody established a method for. Rows stay; they no longer average.
+       -- The bounds close the other half: score has no CHECK and both writers
+       -- accept any finite number, so one 1e9 row moved the mean arbitrarily.
        where organization_id = $1 and athlete_id = any($2::text[]) and measured_at >= $3::timestamptz
+         and ${readinessValidatedScopeSql()}
+         and score between ${READINESS_VALUE_MIN} and ${READINESS_VALUE_MAX}
        group by athlete_id`,
       [organizationId, ids, cutoffIso, midpointIso],
     ),

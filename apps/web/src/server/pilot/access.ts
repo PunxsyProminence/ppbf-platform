@@ -434,6 +434,47 @@ export async function accessibleAthleteIds(
   return new Set();
 }
 
+/**
+ * Every athlete id a coach may currently reach -- the "my athletes" set, as a
+ * list rather than a per-candidate check. Promoted verbatim from
+ * app/api/pilot/escalations/route.ts so that every coach-facing aggregate
+ * (escalations, morning read, readiness board, performance analytics,
+ * progression suggestions) derives its scope from this one contract instead
+ * of re-deciding it locally.
+ *
+ * Assigned athletes PLUS actively covered ones (T-002): a covering coach
+ * who can read the athlete's records through the access gate must also see
+ * the aggregates those records feed -- coverage that excluded them would
+ * hand the substitute the data but not the alarm. Same relationship rule as
+ * assertCoachAssignedToAthlete / accessibleAthleteIds, shaped for callers
+ * that start from "everything mine" rather than a candidate list.
+ */
+export async function athleteIdsForCoach(organizationId: string, coachAccountId: string): Promise<string[]> {
+  try {
+    const rows = await query<{ athlete_id: string }>(
+      `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2
+       union
+       select athlete_id from pilot.coach_coverage
+       where organization_id = $1 and covering_coach_id = $2
+         and starts_at <= now() and expires_at > now()`,
+      [organizationId, coachAccountId],
+    );
+    return rows.map((row) => row.athlete_id);
+  } catch (error) {
+    // Pre-migration window (operator-applied migrations): a missing
+    // coach_coverage relation means assigned athletes only, exactly the
+    // pre-T-002 scope -- never a 500 on a coach surface.
+    if ((error as { code?: unknown }).code !== '42P01') {
+      throw error;
+    }
+    const rows = await query<{ athlete_id: string }>(
+      `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2`,
+      [organizationId, coachAccountId],
+    );
+    return rows.map((row) => row.athlete_id);
+  }
+}
+
 export function assertAthleteUpdateAllowed(
   actor: ActorIdentity,
   before: { coach_id: string; active_flag: boolean; gym_status: string },

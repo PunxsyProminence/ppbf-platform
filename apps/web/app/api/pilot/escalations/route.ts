@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole } from '@/src/server/pilot/access';
-import { query } from '@/src/server/pilot/db';
+import { athleteIdsForCoach, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import {
   acknowledgeEscalation,
   detectRepeatedPatternEscalations,
@@ -19,36 +18,12 @@ export const runtime = 'nodejs';
 // auto-escalated. Board is deliberately not a role this route serves --
 // see escalationLadder.ts / the safety-escalations migration for why; board
 // reads only the k-anonymity-gated summary via a separate route.
-async function coachAthleteIds(organizationId: string, coachAccountId: string): Promise<string[]> {
-  // Assigned athletes PLUS actively covered ones (T-002): a covering coach
-  // who can read the athlete's pain reports through the access gate must
-  // also see the escalations those reports feed -- this pull surface is the
-  // platform's only notification mechanism, and coverage that excluded it
-  // would hand the substitute the data but not the alarm.
-  try {
-    const rows = await query<{ athlete_id: string }>(
-      `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2
-       union
-       select athlete_id from pilot.coach_coverage
-       where organization_id = $1 and covering_coach_id = $2
-         and starts_at <= now() and expires_at > now()`,
-      [organizationId, coachAccountId],
-    );
-    return rows.map((row) => row.athlete_id);
-  } catch (error) {
-    // Pre-migration window (operator-applied migrations): a missing
-    // coach_coverage relation means assigned athletes only, exactly the
-    // pre-T-002 scope -- never a 500 on the safety feed.
-    if ((error as { code?: unknown }).code !== '42P01') {
-      throw error;
-    }
-    const rows = await query<{ athlete_id: string }>(
-      `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2`,
-      [organizationId, coachAccountId],
-    );
-    return rows.map((row) => row.athlete_id);
-  }
-}
+//
+// The coach scope (assigned athletes PLUS actively covered ones, T-002) was
+// born here as a local query and is now the central contract in access.ts:
+// athleteIdsForCoach. This pull surface is the platform's only notification
+// mechanism, and coverage that excluded it would hand the substitute the
+// data but not the alarm.
 
 export async function GET(request: NextRequest) {
   try {
@@ -66,7 +41,7 @@ export async function GET(request: NextRequest) {
     }
     const status = (statusParam ?? undefined) as SafetyEscalationStatus | undefined;
 
-    const athleteIds = isCoach ? await coachAthleteIds(principal.organizationId, principal.accountId) : undefined;
+    const athleteIds = isCoach ? await athleteIdsForCoach(principal.organizationId, principal.accountId) : undefined;
     // athlete_voice rows are admin-surface only: their existence alone says
     // "this child said something", and the coach may be who it is about.
     const escalations = await listEscalations(principal.organizationId, {
@@ -114,7 +89,7 @@ export async function POST(request: NextRequest) {
       // neither see nor act on a disclosure-driven escalation, and probing
       // this path with a guessed id yields the same Missing as a bogus id.
       if (isCoach) {
-        const allowedAthleteIds = await coachAthleteIds(principal.organizationId, principal.accountId);
+        const allowedAthleteIds = await athleteIdsForCoach(principal.organizationId, principal.accountId);
         const ownEscalations = await listEscalations(principal.organizationId, {
           athleteIds: allowedAthleteIds,
           excludeAthleteVoice: true,

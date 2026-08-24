@@ -1,10 +1,12 @@
 import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
+import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   createProtocol,
+  listProtocols,
   reviseProtocol,
   retireProtocol,
 } from '@/src/server/pilot/interventionProtocols';
@@ -13,6 +15,15 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return {
+    ...actual,
+    assertActorCanAccessAthlete: jest.fn(),
+    accessibleAthleteIds: jest.fn().mockResolvedValue(new Set()),
+  };
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -29,10 +40,22 @@ jest.mock('@/src/server/pilot/interventionProtocols', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockAccess = assertActorCanAccessAthlete as jest.Mock;
+const mockAccessible = accessibleAthleteIds as jest.Mock;
+const mockListProtocols = listProtocols as jest.Mock;
 const mockCreate = createProtocol as jest.Mock;
 const mockRevise = reviseProtocol as jest.Mock;
 const mockRetire = retireProtocol as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+
+// The athlete gate is permissive by default so each test states its own
+// access decision rather than inheriting the previous test's --
+// clearAllMocks clears calls, not implementations.
+beforeEach(() => {
+  mockAccess.mockResolvedValue(undefined);
+  mockAccessible.mockResolvedValue(new Set());
+  mockListProtocols.mockResolvedValue([]);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -111,6 +134,10 @@ test('an invented exposure dimension or a dose scalar is a 400, not a stored met
 
 test('an athlete outside the organization is a hidden not-found, not a protocol', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
+  // The gate is granted here, so this 404 is the MODULE's hidden not-found
+  // (mockCreate resolves null), not an access decision. The gate's own
+  // refusal is the next test.
+  mockAccess.mockResolvedValue(undefined);
   mockCreate.mockResolvedValue(null);
 
   expect((await POST(bodyRequest('POST', { ...CONTENT, athlete_id: 'ath-other-org' }))).status).toBe(404);
@@ -139,4 +166,35 @@ test('an unknown action is a 400; retire routes and audits', async () => {
   const response = await PATCH(bodyRequest('PATCH', { action: 'retire', protocol_id: 'p-1' }));
   expect(response.status).toBe(200);
   expect(mockRetire).toHaveBeenCalledWith('org-1', 'p-1');
+});
+
+test('a coach cannot file an athlete-specific protocol about an athlete who is not theirs', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockAccess.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+
+  const response = await POST(bodyRequest('POST', { ...CONTENT, athlete_id: 'ath-not-mine' }));
+
+  expect(response.status).toBe(403);
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('the list returns gym-wide protocols plus only the athlete-specific ones the caller may reach', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockListProtocols.mockResolvedValueOnce([
+    { protocol_id: 'p-doctrine', athlete_id: null },
+    { protocol_id: 'p-mine', athlete_id: 'ath-mine' },
+    { protocol_id: 'p-theirs', athlete_id: 'ath-theirs' },
+  ]);
+  mockAccessible.mockResolvedValueOnce(new Set(['ath-mine']));
+
+  const response = await GET(getRequest());
+
+  expect(response.status).toBe(200);
+  expect(mockAccessible).toHaveBeenCalledWith(
+    expect.objectContaining({ accountId: 'acct-1', role: 'coach' }),
+    ['ath-mine', 'ath-theirs'],
+  );
+  const payload = (await response.json()) as { items: Array<{ protocol_id: string }> };
+  expect(payload.items.map((item) => item.protocol_id)).toEqual(['p-doctrine', 'p-mine']);
 });

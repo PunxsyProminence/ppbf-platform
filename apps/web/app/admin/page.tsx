@@ -519,6 +519,7 @@ export default function AdminCapabilitiesPage() {
   const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
   const [capabilityStoreError, setCapabilityStoreError] = useState('');
   const [gymCapabilityStoreError, setGymCapabilityStoreError] = useState('');
+  const [trackAssignmentsStoreError, setTrackAssignmentsStoreError] = useState('');
 
   function logTrace(action: string, detail: string) {
     const trace: EventTrace = {
@@ -530,6 +531,9 @@ export default function AdminCapabilitiesPage() {
     setEventTraces((current) => [trace, ...current].slice(0, 40));
   }
 
+  // Hydrated stays false on any failed load, same rule as the capability
+  // registry effect below: marking a failed GET as hydrated would release the
+  // save effect to POST the in-memory seed over the stored assignments.
   useEffect(() => {
     void (async () => {
       try {
@@ -539,16 +543,19 @@ export default function AdminCapabilitiesPage() {
         });
 
         if (!response.ok) {
-          setTrackAssignmentsHydrated(true);
+          setTrackAssignmentsStoreError(
+            `${await readResponseError(response, 'Track assignments could not be loaded')}. The tracks shown are the defaults and track changes are not being saved.`,
+          );
           return;
         }
 
         const payload = (await response.json()) as { assignments?: unknown };
         setTrackAssignments(normalizeTrackAssignments(payload.assignments));
-      } catch {
-        // Keep default track assignments if backend load fails.
-      } finally {
         setTrackAssignmentsHydrated(true);
+      } catch (error) {
+        setTrackAssignmentsStoreError(
+          `${toErrorMessage(error, 'Track assignments could not be loaded')}. The tracks shown are the defaults and track changes are not being saved.`,
+        );
       }
     })();
   }, []);
@@ -1122,7 +1129,15 @@ export default function AdminCapabilitiesPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <ShadowChatButton context="Admin Hub" />
+              {/*
+                The SHADOW button (-> /admin/shadow) and the chat launcher used
+                to open this row. Operations V1 (2026-08-21) takes them off the
+                default header: this desk's job is capabilities and people, and
+                the night room keeps its own door in the corridor and the card
+                catalog (buildingMap.ts lists /admin/shadow under ADMIN_GATE),
+                so it stays one search away and fully reachable by URL. The
+                overview tab keeps its own chat launcher.
+              */}
               {canManagePeople && (
                 <Link
                   href="/admin/people"
@@ -1131,12 +1146,6 @@ export default function AdminCapabilitiesPage() {
                   PEOPLE
                 </Link>
               )}
-              <Link
-                href="/admin/shadow"
-                className="btn"
-              >
-                SHADOW
-              </Link>
               {/*
                 Video upload lives on a COACH page, and an organization_admin
                 lands here -- so the only surface that calls
@@ -1281,10 +1290,13 @@ export default function AdminCapabilitiesPage() {
           Capability, assignment, and gym feature changes are saved to your organization&apos;s record as you make them. Jason approval is still required for platform-wide changes.
         </section>
 
-        {(capabilityStoreError || gymCapabilityStoreError) && (
+        {(capabilityStoreError || gymCapabilityStoreError || trackAssignmentsStoreError) && (
           <section role="alert" className="border-b border-[color:var(--brass-700)] bg-[var(--rust-900)] px-6 py-3 text-[length:var(--t-sm)] text-[var(--locked-ink)]">
             {capabilityStoreError && <p>{capabilityStoreError}</p>}
             {gymCapabilityStoreError && <p className={capabilityStoreError ? 'mt-1' : undefined}>{gymCapabilityStoreError}</p>}
+            {trackAssignmentsStoreError && (
+              <p className={capabilityStoreError || gymCapabilityStoreError ? 'mt-1' : undefined}>{trackAssignmentsStoreError}</p>
+            )}
           </section>
         )}
 

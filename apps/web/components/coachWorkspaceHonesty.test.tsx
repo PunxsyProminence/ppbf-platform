@@ -947,7 +947,11 @@ describe('authored announcements on the coach workspace', () => {
     });
 
     expect(screen.queryByText('From the Gym')).toBeNull();
-    expect(screen.queryByText('Live Session Management')).not.toBeNull();
+    // The masthead. It named the workspace on every tab until the approved
+    // board (AF-09) put the open surface in the heading and the workspace's
+    // name on the line under it -- this checks the line, which is the half
+    // that does not move when the coach changes tabs.
+    expect(screen.queryByText('Coach workspace · Live session management')).not.toBeNull();
 
     openTab('Floor');
     expect(screen.queryByText(/Session Workout Plan/i)).not.toBeNull();
@@ -968,21 +972,70 @@ describe('roster readiness comes from the board feed, honestly', () => {
       ],
     });
 
-  test('fresh statuses color the tile and the absent athlete stays unknown, said out loud', async () => {
+  /** A board entry from a method somebody actually established. Nothing in
+   *  production produces one today -- that is the point of the gate -- so the
+   *  cases that need an authoritative band have to construct it. */
+  const validatedEntry = (athleteId: string, status: string, score: number) => ({
+    athlete_id: athleteId,
+    status,
+    score,
+    measured_at: '2026-08-15T12:00:00.000Z',
+    method: 'established_instrument',
+    reliability_status: 'ESTABLISHED',
+    validity_status: 'ESTABLISHED',
+    evidence_class: 'ESTABLISHED',
+  });
+
+  test('validated statuses color the tile and the absent athlete stays unknown, said out loud', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [validatedEntry('ath_1', 'GREEN', 8), validatedEntry('ath_2', 'RED', 2)],
+      }),
+    });
+
+    // One RED, zero YELLOW; ath_3 has no fresh reading and is counted as
+    // unknown rather than silently folded into "no alerts".
+    expect(screen.getByText(/1 RED, 0 YELLOW, 1 unknown — unknown is not clear/)).toBeTruthy();
+    expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
+  });
+
+  /* THE GATE ITSELF. The same two entries, from the method every stored row
+     actually has, must NOT become a band. GREEN/YELLOW/RED here is an
+     authoritative reading a coach acts on; a staff judgement cannot carry it.
+     The athletes fall back to unknown -- which this tile already refuses to
+     read as "clear" -- and the judgements are still shown, as judgements. */
+  test('an unvalidated reading is not promoted into a RED or YELLOW count', async () => {
     await renderWorkspace({
       athletesList: threeAthletes,
       readinessBoard: () => jsonResponse({
         items: [
-          { athlete_id: 'ath_1', status: 'GREEN', score: 8, measured_at: '2026-08-15T12:00:00.000Z' },
-          { athlete_id: 'ath_2', status: 'RED', score: 2, measured_at: '2026-08-15T12:00:00.000Z' },
+          {
+            athlete_id: 'ath_1', status: 'GREEN', score: 8,
+            measured_at: '2026-08-15T12:00:00.000Z',
+            method: 'staff_entered_intake',
+            reliability_status: 'UNVALIDATED - PPBF MUST ESTABLISH',
+            validity_status: 'UNKNOWN',
+          },
+          {
+            athlete_id: 'ath_2', status: 'RED', score: 2,
+            measured_at: '2026-08-15T12:00:00.000Z',
+            method: 'staff_entered_intake',
+            reliability_status: 'UNVALIDATED - PPBF MUST ESTABLISH',
+            validity_status: 'UNKNOWN',
+          },
         ],
       }),
     });
 
-    // One RED, zero YELLOW; ath_3 has no fresh check-in and is counted as
-    // unknown rather than silently folded into "no alerts".
-    expect(screen.getByText(/1 RED, 0 YELLOW, 1 unknown — unknown is not clear/)).toBeTruthy();
-    expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
+    expect(screen.getByText(/0 RED, 0 YELLOW, 3 unknown — unknown is not clear/)).toBeTruthy();
+    // Not deleted, not hidden: still on screen, as something written down.
+    expect(screen.getByText(/staff judgement\(s\) recorded but not counted above/i)).toBeTruthy();
+    expect(screen.getByText(/written down, not measured/i)).toBeTruthy();
+    // AND NOT "No signal". A feed that answered is not a feed that failed --
+    // gating the bands made every athlete unknown, which briefly flipped this
+    // tile to the failure copy and took the caveat down with it.
+    expect(screen.queryByText('No signal')).toBeNull();
   });
 
   // The scores driving these colours are typed by staff during intake review;
@@ -1011,6 +1064,33 @@ describe('roster readiness comes from the board feed, honestly', () => {
 
     expect(screen.getByText(/entered by staff during intake review/i)).toBeTruthy();
     expect(screen.getByText(/not as a measurement/i)).toBeTruthy();
+  });
+
+  /* PER ATHLETE, NOT ACROSS THE FEED. This was `items.some(...)`: one validated
+     reading anywhere in the organization retired the caveat for every athlete
+     on the tile, including the ones still carrying staff judgements. A mixed
+     feed is exactly what the first validated method will produce, and it is
+     exactly when the old flag went quiet. */
+  test('one validated reading does not retire the caveat for the unvalidated ones', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [
+          validatedEntry('ath_1', 'GREEN', 8),
+          {
+            athlete_id: 'ath_2', status: 'RED', score: 2,
+            measured_at: '2026-08-15T12:00:00.000Z',
+            method: 'staff_entered_intake',
+            reliability_status: 'UNVALIDATED - PPBF MUST ESTABLISH',
+            validity_status: 'UNKNOWN',
+          },
+        ],
+      }),
+    });
+
+    // ath_1 is a real reading; ath_2 and ath_3 are not, and the caveat says so
+    // rather than disappearing because ath_1 qualified.
+    expect(screen.getByText(/staff judgement\(s\) recorded but not counted above/i)).toBeTruthy();
   });
 
   // Fail-closed: a feed that omits provenance entirely (an older server, or a
@@ -1113,5 +1193,92 @@ describe('family barrier reports', () => {
     await renderWorkspace();
 
     expect(screen.getByText(/No guardian on your roster has reported a barrier/)).not.toBeNull();
+  });
+});
+
+describe('the hub links to the session-delivery surfaces', () => {
+  // The delivery loop worked end to end while nothing linked to it: the
+  // scripts page, floor groups, the drill library, the cue library and the
+  // template catalog were all reachable only by typing the URL. These pin
+  // the Quick Actions links that make that loop part of the coach's day.
+  test.each([
+    ["Session Scripts: Run Tonight's Plan", '/coach/session-scripts'],
+    ["Today's Floor Groups", '/coach/floor-groups'],
+    ['Open Drill Library', '/coach/drills'],
+    ['Open Cue Library', '/coach/cue-library'],
+    ['Browse Workout Templates', '/coach/workout-templates'],
+  ])('the dashboard links "%s" to %s', async (label, href) => {
+    await renderWorkspace();
+
+    const link = screen.getByRole('link', { name: label });
+    expect(link.getAttribute('href')).toBe(href);
+  });
+
+  test('the existing operational quick actions were not displaced by the new links', async () => {
+    await renderWorkspace();
+
+    expect(screen.getByRole('link', { name: 'Open Scheduler' }).getAttribute('href')).toBe('/schedule');
+  });
+
+  // Operations V1 (2026-08-21): the SHADOW Chat launcher and the Rabbit Hole
+  // shortcut left the quick-action row -- a coach's Quick Actions are
+  // operational work. Neither surface lost any access: the SHADOW Intel tab
+  // below remains the coach's own intelligence surface, and /rabbit-holes
+  // keeps its corridor door for the coach role.
+  test('the lab shortcuts are gone from Quick Actions, and SHADOW Intel stays', async () => {
+    await renderWorkspace();
+
+    expect(screen.queryByRole('link', { name: /SHADOW Chat/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Write a Rabbit Hole' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open SHADOW Intel' })).toBeTruthy();
+  });
+});
+
+// pilot.sessions.rpe is nullable as of
+// pilot_slice_postgres_session_rpe_semantics_migration.sql, and the review
+// picker labels each session with its RPE. normalizeReviewableSession ran
+// `Number(record.rpe)` straight into `Number.isFinite`, and since Number(null)
+// is 0 and Number.isFinite(0) is true, every unrated session was labelled for a
+// coach as "RPE 0" -- a self-report the athlete never gave, on the screen where
+// a coach decides what to say about that session.
+describe('the review picker does not invent an RPE for a session nobody rated', () => {
+  async function sessionOptionLabel(row: Record<string, unknown>): Promise<string> {
+    await renderWorkspace({
+      athletesList: () => jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Jordan P.' }] }),
+      sessionsList: () => jsonResponse({ items: [row] }),
+    });
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+
+    const option = screen
+      .getAllByRole('option')
+      .find((element) => (element as HTMLOptionElement).value === 'session_1');
+    expect(option).toBeTruthy();
+    return option?.textContent ?? '';
+  }
+
+  test('a null RPE is left off the label rather than shown as 0', async () => {
+    const label = await sessionOptionLabel(sessionRow('session_1', { rpe: null }));
+    expect(label).not.toMatch(/RPE/);
+    expect(label).not.toMatch(/RPE 0/);
+    // The rest of the label is real stored data and still has to be there.
+    expect(label).toContain('2026-08-10');
+    expect(label).toContain('completed');
+  });
+
+  test('a missing rpe key is left off the label too', async () => {
+    const withoutRpe = sessionRow('session_1');
+    delete withoutRpe.rpe;
+    expect(await sessionOptionLabel(withoutRpe)).not.toMatch(/RPE/);
+  });
+
+  // The other half of the same rule: 0 is a real rung on this scale, so a
+  // session the athlete genuinely rated 0 must still be labelled 0.
+  test('a genuine RPE of 0 is still shown as 0', async () => {
+    expect(await sessionOptionLabel(sessionRow('session_1', { rpe: 0 }))).toContain('RPE 0');
+  });
+
+  test('an ordinary reading is unaffected', async () => {
+    expect(await sessionOptionLabel(sessionRow('session_1', { rpe: 6 }))).toContain('RPE 6');
   });
 });

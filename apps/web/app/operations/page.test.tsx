@@ -10,6 +10,7 @@ import type { ReactNode } from 'react';
 import { act, render, screen } from '@testing-library/react';
 
 import OperationsHubPage from './page';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import type { ClubRole } from '@/components/roleRoutes';
 
 const capturedRoles: ClubRole[][] = [];
@@ -38,10 +39,16 @@ beforeEach(() => {
 
 afterEach(() => {
   global.fetch = originalFetch;
+  clearRoleSession();
   jest.clearAllMocks();
 });
 
-async function renderPage() {
+/* The hub reads the viewer's role for VISIBILITY (Operations V1): the lab
+   desks and the lab rows of the register render only for the admin desks.
+   Most of this file describes the full register, so the default viewer is an
+   admin; the role-visibility tests below pass the role they mean. */
+async function renderPage(role: ClubRole = 'admin') {
+  createPersistentRoleSession(role);
   await act(async () => {
     render(<OperationsHubPage />);
   });
@@ -53,6 +60,43 @@ test('the platform owner can reach the hub alongside every gym role', async () =
   expect(capturedRoles[0]).toContain('platform_owner');
   expect(capturedRoles[0]).toContain('athlete');
   expect(capturedRoles[0]).toContain('coach');
+});
+
+// OPERATIONS V1 (2026-08-21): ordinary roles land in operational work and are
+// not offered the lab. This is VISIBILITY ONLY -- hiding a desk from the
+// launcher gates nothing, and the data behind every lab surface keeps its own
+// API access checks (the same rule buildingMap.ts states for its rows).
+describe('the lab desks are offered to the admin desks only', () => {
+  test.each(['admin', 'platform_owner'] as const)('%s sees OTHER DESKS and the lab register rows', async (role) => {
+    await renderPage(role);
+
+    expect(screen.getByRole('heading', { name: 'OTHER DESKS' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Research Intake' }).getAttribute('href')).toBe('/research');
+    expect(screen.getByRole('heading', { name: 'SHADOW Monitoring' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Scenario Simulation' })).toBeTruthy();
+  });
+
+  test.each(['coach', 'athlete', 'parent', 'staff', 'volunteer', 'board'] as const)(
+    '%s sees the operational desks only',
+    async (role) => {
+      await renderPage(role);
+
+      expect(screen.queryByRole('heading', { name: 'OTHER DESKS' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Research Intake' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Scenario Simulator' })).toBeNull();
+      // The lab rows leave the register for these roles...
+      expect(screen.queryByRole('heading', { name: 'Research Intelligence' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Knowledge Graph' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Scenario Simulation' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Source Governance' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'SHADOW Monitoring' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Publication Workflow Automation' })).toBeNull();
+      // ...and the operational rows and directories stay.
+      expect(screen.getByRole('heading', { name: 'Session Script Delivery' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Drill Library' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'WORKSPACES' })).toBeTruthy();
+    },
+  );
 });
 
 test('no invented safety or governance alert is presented as live data', async () => {

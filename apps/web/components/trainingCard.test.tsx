@@ -196,3 +196,97 @@ describe('TrainingCard', () => {
     expect([...MILESTONES]).toEqual([5, 13, 34, 89, 233]);
   });
 });
+
+// pilot.sessions.rpe is nullable as of
+// pilot_slice_postgres_session_rpe_semantics_migration.sql, so this card now
+// receives rows with no effort reading at all: every open check-in, and every
+// completed session nobody rated. The card draws effort as ink density, and
+// `(s.rpe || 0)` used to stand in that expression -- which drew an unrated
+// session in exactly the ink of a session the athlete rated 0, and announced it
+// as "effort 0 of 10". That is a self-report the athlete never gave.
+describe('a session nobody rated is not a session rated zero', () => {
+  function stamps() {
+    return screen.getAllByRole('listitem');
+  }
+
+  test('an unrated completed session says so, and never says zero', () => {
+    render(<TrainingCard sessions={[session({ session_id: 'a', rpe: null })]} />);
+
+    const [stamp] = stamps();
+    expect(stamp.getAttribute('title')).toBe('Session Jul 1 2026, completed, effort not recorded');
+    expect(stamp.getAttribute('title')).not.toMatch(/effort 0/);
+    // The same words reach a screen reader, not just the tooltip.
+    expect(screen.getByText('Session Jul 1 2026, completed, effort not recorded')).toBeTruthy();
+  });
+
+  test('an unrated session is given no ink value at all, rather than a zero one', () => {
+    render(<TrainingCard sessions={[session({ session_id: 'a', rpe: null })]} />);
+    // No --ink written means no number was invented. The card says nothing in
+    // the ink channel, because the ink channel cannot say "not recorded".
+    expect(stamps()[0].getAttribute('style') ?? '').not.toContain('--ink');
+  });
+
+  test('a genuine RPE of 0 is kept, drawn and announced as 0', () => {
+    render(<TrainingCard sessions={[session({ session_id: 'a', rpe: 0 })]} />);
+
+    const [stamp] = stamps();
+    expect(stamp.getAttribute('title')).toBe('Session Jul 1 2026, effort 0 of 10');
+    expect(stamp.getAttribute('style') ?? '').toContain('--ink');
+  });
+
+  // The whole point of the pair above: these two rows are different facts and
+  // the card has to render them differently. If either the label or the ink
+  // ever collapses them, an athlete who was never asked reads as an athlete who
+  // said the session took nothing out of them.
+  test('rated 0 and not rated are told apart', () => {
+    render(
+      <TrainingCard
+        sessions={[
+          session({ session_id: 'rated', date: '2026-07-01', rpe: 0 }),
+          session({ session_id: 'unrated', date: '2026-07-02', rpe: null }),
+        ]}
+      />,
+    );
+
+    const [rated, unrated] = stamps();
+    expect(rated.getAttribute('title')).not.toBe(unrated.getAttribute('title'));
+    expect(rated.getAttribute('title')).toMatch(/effort 0 of 10/);
+    expect(unrated.getAttribute('title')).toMatch(/effort not recorded/);
+  });
+
+  // "Completed but unrated" and "booked and never done" are different facts
+  // too. The number is missing from both, so the class has to carry the
+  // difference.
+  test('an unrated completed session is still a completed one, not a booked one', () => {
+    render(
+      <TrainingCard
+        sessions={[
+          session({ session_id: 'done', date: '2026-07-01', rpe: null }),
+          session({ session_id: 'booked', date: '2026-07-02', rpe: null, completed_flag: false }),
+        ]}
+      />,
+    );
+
+    const [done, booked] = stamps();
+    expect(done.className).toContain('tcard-stamp--done');
+    expect(done.className).not.toContain('tcard-stamp--open');
+    expect(booked.className).toContain('tcard-stamp--open');
+    expect(booked.getAttribute('title')).toBe('Session Jul 2 2026, booked, not completed');
+  });
+
+  test('unrated sessions still count as sessions logged', () => {
+    // The count is about attendance, not effort. Losing an unrated session from
+    // the tally would take a session off a child's card for not rating it.
+    render(
+      <TrainingCard
+        sessions={[
+          session({ session_id: 'a', rpe: null }),
+          session({ session_id: 'b', rpe: null }),
+          session({ session_id: 'c', rpe: 7 }),
+        ]}
+      />,
+    );
+    expect(screen.getByText('3')).toBeTruthy();
+    expect(screen.getByText(/sessions logged/i)).toBeTruthy();
+  });
+});

@@ -3,10 +3,15 @@
 //
 // The proposals table has been recording both halves of a measurement since it
 // shipped -- the model's claim and the coach's verdict -- and nothing ever
-// divided one by the other. This is that division. Every settled proposal is a
-// labelled example produced by this gym's coaches on this gym's footage, which
-// is a better validation set than any published benchmark: a paper's accuracy
-// figure describes somebody else's athletes, camera and room.
+// divided one by the other. This is that division. Every settled MODEL
+// proposal is a labelled example produced by this gym's coaches on this gym's
+// footage, which is a better validation set than any published benchmark: a
+// paper's accuracy figure describes somebody else's athletes, camera and room.
+//
+// Coach-reported observations share the table and are excluded from every
+// figure here: they are what the model MISSED, so a coach accepting one is
+// evidence the model was wrong, not evidence it was right. They are kept in
+// the table -- that false-negative record is the point of them.
 //
 // It reports on the MODEL, never on an athlete. No athlete id is read, no
 // per-athlete breakdown is offered, and nothing here is a skill score. A low

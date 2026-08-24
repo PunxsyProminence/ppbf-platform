@@ -32,6 +32,11 @@ describe('SHADOW Context Builder', () => {
     userMessage: 'What techniques should I focus on?',
     userRole: 'coach',
     organizationId: 'org-123',
+    // These cases were written against a builder that personalized on every
+    // call, so `true` is what preserves what each of them was actually
+    // asserting. The gate itself is exercised in 'the strong_personalization
+    // gate' below, which is the only place that passes false.
+    personalizationEnabled: true,
   };
 
   describe('Quick Round context', () => {
@@ -158,7 +163,7 @@ describe('SHADOW Context Builder', () => {
         tier: 'heavy_bag',
       });
 
-      expect(result.context).toContain('Key Facts');
+      expect(result.context).toContain('Observed Preferences');
       expect(result.context).toContain('data_driven');
     });
 

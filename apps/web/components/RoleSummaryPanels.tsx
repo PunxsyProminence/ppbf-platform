@@ -107,8 +107,13 @@ export function AthleteSummaryPanel({
 }: Readonly<AthleteSummaryPanelProps>) {
   const readinessColor = {
     GREEN: 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[color:var(--cleared)]',
-    YELLOW: 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[color:var(--restricted)]',
-    RED: 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]'
+    YELLOW: 'bg-[color-mix(in_srgb,var(--monitor)_16%,transparent)] border-[color:var(--monitor)]',
+    // Not --locked. This is the CHILD'S OWN screen, and the rung reserved for
+    // "a clinician said no" was being painted from a triage number a staff
+    // member typed at intake. --restricted keeps it serious and ordered
+    // without claiming a medical refusal nobody made. See readinessDotClass in
+    // CoachWorkspace.tsx for the full reasoning.
+    RED: 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[color:var(--restricted)]'
   }[readiness];
 
   const readinessText = {

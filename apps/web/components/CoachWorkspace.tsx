@@ -4,8 +4,8 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import ProfilePortrait from './ProfilePortrait';
+import WorkAxis from './WorkAxis';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
-import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -33,6 +33,37 @@ interface CoachTab {
   readonly label: string;
   readonly badge?: CoachTabBadge;
 }
+
+/**
+ * The coach workspace's ten surfaces, in the order the tab row draws them.
+ *
+ * Hoisted out of the JSX so the masthead can name the open one without a
+ * second copy of the labels standing next to the first: two lists of the same
+ * tabs is how a heading starts disagreeing with the nav underneath it. Badges
+ * are deliberately NOT here -- they are live counts read per render, not part
+ * of the registry, and freezing one into a constant would be a lie the moment
+ * the queue changed.
+ */
+const COACH_TABS = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'floor', label: 'Floor' },
+  { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
+  { id: 'development', label: 'Development' },
+  { id: 'goals', label: 'Goals' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'assessments', label: 'Assessments' },
+  { id: 'film-study', label: 'Film Study' },
+  { id: 'athlete-reviews', label: 'Athlete Reviews' },
+  { id: 'shadow', label: 'SHADOW Intel' },
+] as const satisfies readonly CoachTab[];
+
+/**
+ * Both of these badge the same value by construction -- coachTasks is derived
+ * entirely from shadowQueue's pending_review items (see the comment above
+ * coachTasks) -- so Tasks and SHADOW Intel show the same underlying work seen
+ * from two angles, not two counts that could disagree.
+ */
+const REVIEW_BADGED_TABS: ReadonlySet<TabID> = new Set<TabID>(['tasks', 'shadow']);
 
 type SessionMode = 'Group' | 'One-on-One';
 type ReadinessStatus = 'GREEN' | 'YELLOW' | 'RED';
@@ -133,9 +164,15 @@ interface ShadowObservationItem {
   created_at: string;
 }
 
-// One athlete's self-reported pain, already filtered server-side to the
-// athletes this coach is authorized for. Every nullable field is a detail the
-// athlete did not supply -- render it as "not stated" and never as a value.
+// One pain report, already filtered server-side to the athletes this coach is
+// authorized for. Every nullable field is a detail the REPORTER did not supply
+// -- render it as "not stated" and never as a value.
+//
+// NOT NECESSARILY SELF-REPORTED. The observations route admits athlete, coach,
+// organization_admin and admin, and this card said "Self-reported by the
+// athlete" for all four until 2026-08-24. A coach writing down what they
+// observed was shown to the next coach as the child's own words, which changes
+// what that coach does with it.
 interface CoachPainReport {
   nearMissId: string;
   athleteId: string;
@@ -146,7 +183,35 @@ interface CoachPainReport {
   painType: string | null;
   observedAt: string | null;
   recordedAt: string | null;
+  /** Bounded classification from the server. 'unknown' on reports written
+   *  before provenance was persisted -- see painReportAlert.ts. */
+  reporter: 'athlete' | 'coach' | 'staff_admin' | 'unknown';
 }
+
+/** What a missing detail is called, which depends on who was asked. */
+function painDetailAbsent(reporter: CoachPainReport['reporter']): string {
+  return reporter === 'athlete' ? 'Not stated by the athlete' : 'Not stated';
+}
+
+/** The label over the time the report refers to. */
+function painObservedLabel(reporter: CoachPainReport['reporter']): string {
+  return reporter === 'athlete' ? 'Athlete reported it happened' : 'Reported as happening';
+}
+
+/* The provenance sentence under each card. Only an athlete's own report is
+   described as self-reported; a staff-entered one says so and says it is not a
+   medical assessment; an unestablished reporter says that rather than
+   defaulting to the athlete. */
+const PAIN_PROVENANCE: Record<CoachPainReport['reporter'], string> = {
+  athlete:
+    'Self-reported by the athlete. This is not a coach assessment and not a medical assessment.',
+  coach:
+    'Entered by a coach, not self-reported by the athlete. This is an observation, not a medical assessment.',
+  staff_admin:
+    'Entered by staff, not self-reported by the athlete. This is an observation, not a medical assessment.',
+  unknown:
+    'The reporter is not recorded. Do not read this as self-reported by the athlete. This is an observation, not a medical assessment.',
+};
 
 interface CoachBarrierReport {
   note_id: string;
@@ -222,13 +287,20 @@ function normalizeReviewableSession(row: unknown): ReviewableSession | null {
     return null;
   }
 
-  const rpe = Number(record.rpe);
+  // Absence is checked BEFORE Number(), because Number(null) is 0, 0 is a
+  // legitimate RPE, and Number.isFinite(0) is true -- so the previous
+  // `Number(record.rpe)` turned every unrated session into one the athlete
+  // had rated zero effort, and the label said so. pilot.sessions.rpe is
+  // nullable as of pilot_slice_postgres_session_rpe_semantics_migration.sql,
+  // and an open check-in is exactly the row that arrives here as null.
+  const rpeIsAbsent = record.rpe === null || record.rpe === undefined;
+  const rpe = rpeIsAbsent ? null : Number(record.rpe);
   return {
     sessionId,
     date,
-    // null, not 0: an unreadable RPE is omitted from the label rather than
-    // shown as a fabricated zero-effort session.
-    rpe: Number.isFinite(rpe) ? rpe : null,
+    // null, not 0: an RPE that is absent or unreadable is omitted from the
+    // label rather than shown as a fabricated zero-effort session.
+    rpe: rpe !== null && Number.isFinite(rpe) ? rpe : null,
     completed: Boolean(record.completed_flag),
     createdAt,
   };
@@ -272,10 +344,22 @@ function normalizeSessionReview(row: unknown): SessionReview | null {
   };
 }
 
+/* READINESS RED IS NOT THE LOCKED RUNG.
+   readinessBoard defines its own bands as operational triage and says so:
+   "GREEN = train as planned, YELLOW = check in with the athlete first,
+   RED = adjust the plan", explicitly "not clinical judgments". --locked is
+   reserved by Jason's locked decision of 2026-08-19 for MEDICALLY_NOT_ALLOWED
+   -- a clinician saying no. "Adjust tonight's plan" wearing the same red as
+   "a doctor has barred this child" spends the colour that has to mean the
+   second thing, on a number a staff member typed at intake.
+
+   The ladder shifts down one rung and keeps three distinct, ordered steps:
+   cleared / monitor / restricted. No token is invented and none is added --
+   all three already exist and already carry this order. */
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
-  if (readiness === 'YELLOW') return 'bg-[var(--restricted)]';
-  if (readiness === 'RED') return 'bg-[var(--locked)]';
+  if (readiness === 'YELLOW') return 'bg-[var(--monitor)]';
+  if (readiness === 'RED') return 'bg-[var(--restricted)]';
   return 'bg-[var(--hide-600)]';
 }
 
@@ -322,10 +406,12 @@ function taskStatusTone(status: CoachTask['status']): BadgeTone {
   return 'cleared';
 }
 
+/* Same shift as readinessDotClass, for the floor-plan badge. See the note
+   there: triage is not a medical refusal. */
 function readinessBadgeTone(readiness: Athlete['readiness']): BadgeTone {
   if (readiness === 'GREEN') return 'cleared';
-  if (readiness === 'YELLOW') return 'restricted';
-  if (readiness === 'RED') return 'locked';
+  if (readiness === 'YELLOW') return 'monitor';
+  if (readiness === 'RED') return 'restricted';
   return 'neutral';
 }
 
@@ -347,6 +433,7 @@ function painReportTime(value: string | null): string {
 
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
+  const activeTabLabel = COACH_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Dashboard';
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
   const [athleteFloorPlans, setAthleteFloorPlans] = useState<CoachAthleteFloorPlan[]>([]);
   const [floorPlansError, setFloorPlansError] = useState<string | null>(null);
@@ -411,7 +498,12 @@ export default function CoachWorkspace() {
   // method. Starts false so the caveat is present from first paint rather than
   // appearing a moment after the colours do -- the disclaimer must never lag
   // the number it qualifies.
-  const [readinessAnyValidated, setReadinessAnyValidated] = useState(false);
+  /* Readings that exist but may not be presented as measurements. Kept so a
+     coach sees the judgement and its caveat rather than having it vanish --
+     "not a measurement" is not "not written down". */
+  const [contextualReadiness, setContextualReadiness] = useState<
+    ReadonlyArray<{ athleteId: string; band: string; score: number | null }>
+  >([]);
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
 
@@ -562,7 +654,27 @@ export default function CoachWorkspace() {
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
   const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
   const unknownReadinessCount = athletes.filter((athlete) => athlete.readiness === 'UNKNOWN').length;
-  const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN');
+  /* "The feed told us something", NOT "somebody has a band".
+     This was `athletes.some(a => a.readiness !== 'UNKNOWN')`, which was the
+     same question while every reading became a band. Once unvalidated readings
+     stopped being promoted, an organization whose scores are ALL staff
+     judgements -- which is every organization today -- had no athlete with a
+     band, so the tile fell to "No signal": it called a working feed a dead one
+     AND took the provenance caveat down with it, since the caveat renders
+     inside this branch. "No signal" has to keep meaning no signal. */
+  const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN')
+    || contextualReadiness.length > 0;
+  /* How many readings the feed returned, and how many of those may not be
+     presented as measurements.
+     Counted from the two sources SEPARATELY, because an unvalidated reading no
+     longer becomes a band: it leaves the athlete UNKNOWN and lands in
+     contextualReadiness instead. Deriving "unvalidated" from the roster the way
+     an earlier draft did returned 0 for exactly the rows it was meant to count,
+     so the caveat silently stopped rendering the moment the gate started
+     working -- the opposite of the intent, and invisible without a test. */
+  const bandedReadinessCount = athletes.filter((athlete) => athlete.readiness !== 'UNKNOWN').length;
+  const unvalidatedReadinessCount = contextualReadiness.length;
+  const trackedReadinessCount = bandedReadinessCount + unvalidatedReadinessCount;
   // The task list is DERIVED from real pending work, not stored: the platform
   // has no coach-task store, and the fabricated five-item list this replaced
   // showed every coach the same stale to-dos with due dates that had already
@@ -786,13 +898,42 @@ export default function CoachWorkspace() {
             items?: Array<{
               athlete_id: string;
               status: 'GREEN' | 'YELLOW' | 'RED';
+              score?: number;
               method?: string;
               reliability_status?: string;
               validity_status?: string;
             }>;
           };
           const items = board.items ?? [];
-          const statusByAthlete = new Map(items.map((entry) => [entry.athlete_id, entry.status]));
+          /* ITEM 2: AN UNVALIDATED ROW IS NOT PROMOTED TO A BAND.
+             GREEN/YELLOW/RED on this roster is an authoritative reading a coach
+             acts on -- it drives the alert count, the dot and the floor-plan
+             badge. A score whose method nobody established cannot carry that,
+             so it does not become one: the athlete stays UNKNOWN, which this
+             tile already refuses to read as "clear", and the raw judgement is
+             kept beside it so nothing is lost.
+             The stored row is untouched. This decides what may be PRESENTED as
+             a measurement, not what is kept. */
+          const usable = new Set(items
+            .filter((entry) => isReadinessMethodValidated({
+              method: entry.method ?? 'UNKNOWN',
+              reliability_status: entry.reliability_status ?? '',
+              validity_status: entry.validity_status ?? '',
+            }))
+            .map((entry) => entry.athlete_id));
+          const statusByAthlete = new Map(items
+            .filter((entry) => usable.has(entry.athlete_id))
+            .map((entry) => [entry.athlete_id, entry.status]));
+          /* The contextual judgements, preserved with their raw value so a
+             coach can still see a colleague wrote something down -- as an
+             opinion, under its caveat, never as a rung. */
+          setContextualReadiness(items
+            .filter((entry) => !usable.has(entry.athlete_id))
+            .map((entry) => ({
+              athleteId: entry.athlete_id,
+              band: entry.status,
+              score: typeof entry.score === 'number' ? entry.score : null,
+            })));
           for (const athlete of athleteList) {
             const status = statusByAthlete.get(athlete.id);
             if (status) athlete.readiness = status;
@@ -803,13 +944,6 @@ export default function CoachWorkspace() {
           // below shows. It is computed from the feed rather than hardcoded so
           // it stops showing on its own if a validated method is ever wired,
           // instead of becoming a stale disclaimer nobody removes.
-          setReadinessAnyValidated(
-            items.some((entry) => isReadinessMethodValidated({
-              method: entry.method ?? 'UNKNOWN',
-              reliability_status: entry.reliability_status ?? '',
-              validity_status: entry.validity_status ?? '',
-            })),
-          );
         }
       } catch {
         // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
@@ -1205,8 +1339,21 @@ export default function CoachWorkspace() {
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Coach Development Workspace</p>
-            <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">Live Session Management</h1>
-            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            {/* The masthead names the open surface, the way the approved
+                athlete board does. It read "Live Session Management" on all
+                ten tabs, so the one line claiming to say where the coach was
+                was wrong nine times out of ten. Derived from activeTab, so it
+                cannot drift from the tab row below. */}
+            <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">{activeTabLabel}</h1>
+            <p className="t-label mt-[var(--s3)] text-[color:var(--bone-400)]">
+              Coach workspace · Live session management
+            </p>
+            {/* The standing description of the workspace, kept on the tab it
+                describes. Under "Film Study" it was describing somewhere
+                else. */}
+            {activeTab === 'dashboard' && (
+              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            )}
           </div>
           {/* Two SHADOW buttons used to sit here and both were already on the
               page. RoleStandaloneView renders a context-carrying Open SHADOW
@@ -1293,17 +1440,17 @@ export default function CoachWorkspace() {
                     <div>
                       <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Body location</dt>
                       <dd className={report.location ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
-                        {report.location ?? 'Not stated by the athlete'}
+                        {report.location ?? painDetailAbsent(report.reporter)}
                       </dd>
                     </div>
                     <div>
                       <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Pain type</dt>
                       <dd className={report.painType ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
-                        {report.painType ?? 'Not stated by the athlete'}
+                        {report.painType ?? painDetailAbsent(report.reporter)}
                       </dd>
                     </div>
                     <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Athlete reported it happened</dt>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">{painObservedLabel(report.reporter)}</dt>
                       <dd className={report.observedAt ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
                         {painReportTime(report.observedAt)}
                       </dd>
@@ -1317,8 +1464,7 @@ export default function CoachWorkspace() {
                   </dl>
 
                   <p className="text-xs text-[color:var(--bone-300)]">
-                    Self-reported by the athlete. This is not a coach assessment and not a medical
-                    assessment.
+                    {PAIN_PROVENANCE[report.reporter]}
                   </p>
                 </article>
               ))}
@@ -1561,26 +1707,16 @@ export default function CoachWorkspace() {
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
           <div className={ui.tabRow}>
-            {([
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'floor', label: 'Floor' },
-              { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
-              { id: 'development', label: 'Development' },
-              { id: 'goals', label: 'Goals' },
-              // Both badges are the same value by construction -- coachTasks
-              // is derived entirely from shadowQueue's pending_review items
-              // (see the comment above coachTasks) -- so Tasks and SHADOW
-              // Intel badge the same underlying work seen from two angles,
-              // not two different counts that could disagree.
-              { id: 'tasks', label: 'Tasks', badge: reviewQueueBadge },
-              { id: 'assessments', label: 'Assessments' },
-              { id: 'film-study', label: 'Film Study' },
-              { id: 'athlete-reviews', label: 'Athlete Reviews' },
-              { id: 'shadow', label: 'SHADOW Intel', badge: reviewQueueBadge }
-            ] satisfies CoachTab[]).map(tab => (
+            {COACH_TABS.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                /* Which tab is open was carried by colour alone. A coach using
+                   a screen reader, or a colour-blind coach on a bright gym
+                   floor, got no answer at all -- Law 3, and the athlete
+                   workspace's own tab row has said aria-current since it was
+                   built. */
+                aria-current={activeTab === tab.id ? 'page' : undefined}
                 className={cx(
                   ui.tabButtonBase,
                   'gap-2',
@@ -1588,7 +1724,9 @@ export default function CoachWorkspace() {
                 )}
               >
                 {tab.label}
-                {tab.badge ? <StatusBadge tone={tab.badge.tone} label={tab.badge.label} /> : null}
+                {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
+                  <StatusBadge tone={reviewQueueBadge.tone} label={reviewQueueBadge.label} />
+                ) : null}
               </button>
             ))}
           </div>
@@ -1601,17 +1739,24 @@ export default function CoachWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
                 <h3 className="t-eyebrow">Quick Actions</h3>
+                {/* The SHADOW Chat launcher and the Write a Rabbit Hole link
+                    used to open this grid. Operations V1 (2026-08-21) keeps
+                    Quick Actions operational: the SHADOW Intel tab below is
+                    the coach's own intelligence surface and stays, and
+                    /rabbit-holes keeps its corridor door -- neither surface
+                    lost any access, only this shortcut row. */}
                 <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  <ShadowChatButton
-                    context="Coach Dashboard"
-                    label="SHADOW Chat"
-                    className="btn"
-                  />
                   <Link
                     href="/schedule"
                     className="btn"
                   >
                     Open Scheduler
+                  </Link>
+                  <Link
+                    href="/coach/session-scripts"
+                    className="btn"
+                  >
+                    Session Scripts: Run Tonight&apos;s Plan
                   </Link>
                   <button
                     type="button"
@@ -1642,10 +1787,28 @@ export default function CoachWorkspace() {
                     Open SHADOW Intel
                   </button>
                   <Link
-                    href="/rabbit-holes"
+                    href="/coach/floor-groups"
                     className="btn btn--ghost"
                   >
-                    Write a Rabbit Hole
+                    Today&apos;s Floor Groups
+                  </Link>
+                  <Link
+                    href="/coach/drills"
+                    className="btn btn--ghost"
+                  >
+                    Open Drill Library
+                  </Link>
+                  <Link
+                    href="/coach/cue-library"
+                    className="btn btn--ghost"
+                  >
+                    Open Cue Library
+                  </Link>
+                  <Link
+                    href="/coach/workout-templates"
+                    className="btn btn--ghost"
+                  >
+                    Browse Workout Templates
                   </Link>
                 </div>
               </section>
@@ -1666,9 +1829,20 @@ export default function CoachWorkspace() {
                           Disappears on its own if a validated method is ever
                           wired, because the condition is computed from the
                           feed. */}
-                      {!readinessAnyValidated && (
+                      {contextualReadiness.length > 0 && (
                         <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-400)]">
-                          {READINESS_UNVALIDATED_CAVEAT}
+                          {contextualReadiness.length} staff judgement(s) recorded but not counted
+                          above — they are written down, not measured, so they are not read as a
+                          readiness band.
+                        </p>
+                      )}
+                      {unvalidatedReadinessCount > 0 && (
+                        <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-400)]">
+                          {unvalidatedReadinessCount === trackedReadinessCount
+                            ? READINESS_UNVALIDATED_CAVEAT
+                            : `${unvalidatedReadinessCount} of ${trackedReadinessCount} of these `
+                              + `readings come from a method nobody has established. `
+                              + READINESS_UNVALIDATED_CAVEAT}
                         </p>
                       )}
                     </>
@@ -2475,7 +2649,8 @@ export default function CoachWorkspace() {
                     value={reviewNotes}
                     onChange={(event) => setReviewNotes(event.target.value)}
                     placeholder="Review notes"
-                    className="textarea min-h-[84px]"
+                    rows={4}
+                    className="textarea"
                   />
                 </label>
                 <button
@@ -2498,8 +2673,11 @@ export default function CoachWorkspace() {
             </div>
           )}
         </div>
+
+        {/* The four words, at the foot of the page. See WorkAxis for why this
+            is not the motto line that was taken out of this header. */}
+        <WorkAxis />
       </div>
     </div>
   );
 }
-

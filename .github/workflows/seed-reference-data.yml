@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────
-# Reference-data seeding -- manual only, one loader per dispatch or all three.
+# Reference-data seeding -- manual only, one loader per dispatch or all of them.
 #
 # Before this existed, the only way to load the drill library, the discipline
 # list or the competence ladder into a real environment was to point
@@ -23,17 +23,21 @@
 # six approval clicks for one deploy. Worse, firing them together does not
 # work: the concurrency group holds a single pending run, so a third dispatch
 # CANCELS the second, and a cancelled run is easy to read as a finished one.
-# `all` runs the three in the required order inside one gated run.
+# `all` runs the loaders in the required order inside one gated run.
 #
-# TWO LOADERS ARE DELIBERATELY ABSENT from the choices below, because both fail
+# session-scripts joined the choices once its two content-less Friday-sparring
+# blocks were given real what_to_* text; it needs only its own migration
+# (`npm run pilot:apply-session-scripts`, which runs
+# scripts/pilot-apply-session-scripts-migration.mjs) -- its blocks reference
+# no drills -- so it runs
+# after the original three.
+#
+# ONE LOADER IS DELIBERATELY ABSENT from the choices below, because it fails
 # whole against the shipped schema and there is nothing to be gained by making
-# them one click away:
-#   * session-scripts -- two Friday-sparring blocks are block_kind='instruction'
-#     with no what_to_* content, violating pilot_ssb_content. 0 of 65 blocks
-#     load, not 63.
+# it one click away:
 #   * transfer-claims -- all 173 rows reference a drill-id generation that
 #     resolves against nothing shipped, violating pilot_transfer_drill_fk.
-# Add them here when the underlying data is fixed, not before.
+# Add it here when the underlying data is fixed, not before.
 # ─────────────────────────────────────────────────────────────────────────
 
 name: seed-reference-data
@@ -53,7 +57,7 @@ on:
         required: true
         type: string
       dataset:
-        description: Which reference dataset to load ("all" runs all three in dependency order)
+        description: Which reference dataset to load ("all" runs every loader in dependency order)
         required: true
         type: choice
         options:
@@ -61,6 +65,7 @@ on:
           - drill-library
           - disciplines
           - competence-cohorts
+          - session-scripts
       mode:
         description: Rehearse inside a rolled-back transaction, or write for real
         required: true
@@ -81,7 +86,7 @@ on:
         required: false
         type: string
       seed_account_id:
-        description: Existing privileged account_id recorded as the seeder (drill-library only)
+        description: Existing privileged account_id recorded as the seeder (drill-library and session-scripts)
         required: false
         type: string
 
@@ -128,10 +133,11 @@ jobs:
           if [ "$MODE" = "apply" ]; then
             test "$CONFIRM_SEED" = "SEED REFERENCE DATA"
           fi
-          # seed-drill-library.mjs stamps a seeder onto every row it writes and
-          # fails at the insert without one. Catching that here costs a second
-          # instead of an aborted transaction against a real database.
-          if [ "$DATASET" = "drill-library" ] || [ "$DATASET" = "all" ]; then
+          # seed-drill-library.mjs and seed-session-scripts.mjs stamp a seeder
+          # onto every row they write and fail without one. Catching that here
+          # costs a second instead of an aborted transaction against a real
+          # database.
+          if [ "$DATASET" = "drill-library" ] || [ "$DATASET" = "session-scripts" ] || [ "$DATASET" = "all" ]; then
             test -n "$SEED_ACCOUNT"
           fi
 
@@ -219,9 +225,11 @@ jobs:
       # --dry-run still performs every insert for real inside a transaction and
       # then rolls back, so it proves the data actually fits the live schema
       # rather than only that the files parse.
-      # The steps are ordered drill-library -> disciplines -> competence-cohorts,
-      # which is the order the runbook requires, so `all` cannot run them wrong.
-      # Each loader still opens its own transaction, so `all` is three
+      # The steps are ordered drill-library -> disciplines -> competence-cohorts
+      # -> session-scripts, which is the order the runbook requires, so `all`
+      # cannot run them wrong (session-scripts depends on nothing before it and
+      # runs last).
+      # Each loader still opens its own transaction, so `all` is a chain of
       # independent commits and not one giant one -- a later failure leaves the
       # earlier datasets loaded, and every loader is idempotent, so the fix is
       # to re-run rather than to unpick anything.
@@ -239,6 +247,11 @@ jobs:
         if: inputs.dataset == 'competence-cohorts' || inputs.dataset == 'all'
         working-directory: apps/web
         run: npm run seed:competence-cohorts ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
+
+      - name: Seed Session Scripts
+        if: inputs.dataset == 'session-scripts' || inputs.dataset == 'all'
+        working-directory: apps/web
+        run: npm run seed:session-scripts ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
 
       - name: Record What Ran
         run: |
