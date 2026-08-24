@@ -32,9 +32,37 @@ every room with no network.
   the name means taller than wide; never square).
 - Every `/plates/` URL declared in `design-system/ppbf.css` exists here.
 
-Binary assets enter this repository **by real file upload, never re-encoded
-through a chat channel** (`AGENT_KERNEL.md`, "Working channel"). Producer
-contract: `docs/GROK-VISUAL-LANE.md`.
+Binary assets enter this repository **by real file upload on the producer's
+feature branch, never re-encoded through a chat channel** (`AGENT_KERNEL.md`,
+"Working channel"; `docs/GROK-VISUAL-LANE.md`).
+
+## Who ships the real JPEG (owner decision 2026-08-24)
+
+**Grok owns the complete approved visual implementation path, including the
+real JPEG wall-plate binaries.**
+
+```
+Jason approves plate/design
+  → Grok generates the exact ordered asset
+  → Grok prepares/verifies the actual JPEG
+  → Grok uploads the REAL JPEG directly to its own feature branch
+    under apps/web/public/plates/
+  → Grok makes only the required approved visual/CSS/test changes
+  → Grok opens the PR
+  → Claude independently reviews function/security boundaries
+  → ChatGPT independently audits PR scope, binary evidence, claims, SHA, CI
+  → required CI green on the exact PR head
+  → merge → staging
+  → Jason live visual review
+  → separate release decision
+```
+
+**Retired:** Grok → OneDrive Grok-Plates-Inbox → Claude picks up / relays /
+commits the binary. Claude is **not** the binary courier. Do not ask Claude to
+retrieve, reconstruct, re-encode, or commit plate binaries on Grok's behalf.
+
+The OneDrive folder `Documents / PPBF-AI-Lanes / Grok-Plates-Inbox /` may remain
+for provenance/archive. It is no longer a mandatory shipping step.
 
 ## Adding a variant
 
@@ -43,8 +71,8 @@ route: `apps/web/components/PlateVariantGround.tsx` (one `display: contents`
 marker in the root layout) hashes the route and writes
 `data-plate-variant="2of2 1of3 …"`; the PLATES section of
 `design-system/ppbf.css` states how many plates a room has. To add a second
-office plate, drop `plate-01-office-02.jpg` here and add one rule to the
-route-derived variants block:
+office plate, drop `plate-01-office-02.jpg` here on a Grok feature branch and
+add one rule to the route-derived variants block:
 
 ```css
 :where([data-plate-variant~="2of2"]) .room--office {
@@ -61,7 +89,8 @@ portrait variant goes *inside* the orientation block, after its generic rule.
 
 - Plate URLs and all plate styling: **PLATES section of
   `design-system/ppbf.css`** — the single source of truth; no override sheets.
-- Byte gate: `apps/web/src/design/plateBinaries.test.ts`
+- Byte gate: `apps/web/src/design/plateBinaries.test.ts` (do not weaken)
 - Variant-rule gate: `apps/web/components/plateVariant.test.ts`
 - T7 (family surfaces take the warm plate or none):
   `apps/web/components/familyPlateGround.test.ts`
+- Producer contract: `docs/GROK-VISUAL-LANE.md`
