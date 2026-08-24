@@ -64,6 +64,49 @@ section stands unchanged -- nobody direct-pushes `main`, every change lands by
 PR with green CI, and binary assets still enter by real file upload rather
 than through a chat channel.
 
+**Amendment (owner decision, 2026-08-24).** The 2026-08-22 amendment let Grok
+write code to this repository but left the *binary* on a relay: an approved
+plate went Grok -> OneDrive inbox -> Claude -> GitHub. That hop is removed.
+**Grok uploads the real JPEG binary directly into its own visual feature
+branch at the correct repository path**, performs its own 4:4:4 preparation
+and verification, makes any approved visual/CSS/test change the plate needs,
+and opens the PR. The path is now:
+
+    Grok real binary -> Grok feature branch -> PR -> independent review and
+    gates -> merge
+
+**Claude is removed from the transport step for plate binaries.** On a Grok
+visual PR, Claude reviews -- functional behaviour, auth, authorization,
+organization isolation, safeguarding, medical and hold semantics, role
+vocabulary, business logic, SHADOW logic, tests, scope, CI -- and may
+independently verify the committed plate against the byte gate. It does not
+download a plate from OneDrive in order to commit it, and does not relay,
+reconstruct, re-encode, rename, or otherwise courier a binary. `Grok-Plates-
+Inbox` is retained as a provenance and archive drop under storage governance;
+it is **no longer a mandatory transport hop, and Claude must not poll it as a
+prerequisite for a Grok visual PR.** A Grok visual PR must be able to ship
+without it.
+
+The reason is the same failure the relay was meant to prevent, arriving from
+the other direction. On 2026-08-24 Claude spent several exchanges trying to
+retrieve six approved plates it could see but could not fetch: the connector
+returns a rendered image rather than bytes, and the storage host is refused at
+the sandbox proxy. Nothing was wrong with the plates. The courier could not
+carry them, and the only ways past that -- reconstructing an image from a
+rendering, or relaying it through a chat channel -- are precisely what the
+plate laws forbid, for the reason recorded above. A step that can only be
+completed by breaking the rule it serves is not a step.
+
+**No plate law changes.** Real `.jpg` binary only; never base64, data URI, or
+chat-byte relay; JPEG SOI and EOI present; larger than 8 KB; at most 400 KB;
+4:4:4 with every component 1x1; only the declared landscape and portrait
+geometries; filename orientation matching the image; every CSS-declared plate
+existing on disk; the exact ordered filename; no silent re-encode inside the
+repository; bad input refused rather than quietly corrected.
+`apps/web/src/design/plateBinaries.test.ts` enforces these on the bytes and is
+not to be weakened. Moving who carries the file changes nothing about what the
+file must be.
+
 The reason for the change is drift, and it is worth stating plainly because
 the original rule was not wrong when it was written. Routing every visual
 design through one party to be re-implemented by another lost fidelity at the
@@ -81,18 +124,22 @@ So the lanes are:
   PRs, CI, staging, and explicitly authorized production deployment. Reports
   exact evidence.
 
-  **On visual PRs Claude is an independent reviewer, not a redesigner.** It
-  checks that no function, role gate, organization boundary or safety rule
-  changed, that nothing unsupported was invented, that no existing action
-  disappeared, and that tests stayed meaningful. A visual preference that is
-  not a defect is not grounds to rewrite another lane's approved work.
+  **On visual PRs Claude is an independent reviewer, not a redesigner, and not
+  a courier.** It checks that no function, role gate, organization boundary or
+  safety rule changed, that nothing unsupported was invented, that no existing
+  action disappeared, and that tests stayed meaningful. It may independently
+  verify a committed plate against the byte gate. It does not fetch, relay,
+  re-encode or rename a binary on another lane's behalf (2026-08-24). A visual
+  preference that is not a defect is not grounds to rewrite another lane's
+  approved work.
 - **ChatGPT** -- independent audit, research, full-spectrum review, storage
   inventory and reconciliation, documentation, control ledger, exact-head SHA
   and CI verification, scope auditing, and deployed-versus-specification
   verification. Read-only on this repository; no branches, commits, pushes,
   merges, deploys, or migrations.
-- **Grok** -- visual design **and** visual implementation, per
-  `docs/GROK-VISUAL-LANE.md`. Reads current source before designing; explores
+- **Grok** -- visual design **and** visual implementation, including
+  committing approved plate binaries to its own feature branch (2026-08-24),
+  per `docs/GROK-VISUAL-LANE.md`. Reads current source before designing; explores
   and proposes freely; implements only what the owner approved. May change
   presentation: JSX visual structure, design-system classes, CSS, responsive
   layout, typography, visual assets, presentation-related accessibility
