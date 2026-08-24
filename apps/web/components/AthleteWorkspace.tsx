@@ -2031,12 +2031,13 @@ export default function AthleteWorkspace() {
                     the stored note format are untouched; only what is said to
                     the athlete changed. */}
                 <div className={PANEL_RAISED}>
-                  <h3 className="t-label mb-[var(--s4)]">Before You Train: How You Feel</h3>
+                  <h3 className="t-label mb-[var(--s4)]">Pre-Session Self-Report</h3>
                   <div className="space-y-[var(--s4)]">
                     {/* Sleep and Energy Level stood here until 2026-08-23 and
                         recorded nothing: neither reached any request body, on
                         check-in or anywhere else. They sat in the same card as
-                        Readiness to Train, Session Duration and the medical
+                        the self-report slider (then labelled "Readiness to
+                        Train"), Session Duration and the medical
                         acknowledgement, which all do write, in identical
                         styling -- so the card asked a child for five things and
                         kept three, with nothing on screen saying which. Removed
@@ -2052,10 +2053,11 @@ export default function AthleteWorkspace() {
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{readinessToTrain}/10</p>
                       {/* Said here, at the control, not in a help panel: the
                           number is a subjective self-report. It is recorded on
-                          the session at check-in and that is all it does. */}
+                          the session at check-in and that is all it does. The
+                          sentence is the owner's (2026-08-24). */}
                       <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
-                        This is your own read on how you feel, recorded with your check-in.
-                        It does not clear you for training and it does not change your workout.
+                        This records how you say you feel before training.
+                        It does not medically clear you and does not determine your workout.
                       </p>
                     </div>
                     <div className="field">
