@@ -120,6 +120,9 @@ const UNKNOWN_AUTH_ERROR_REFUSAL: {
  * `embedded` controls only the two things that differ by context: the close
  * affordance (a link back to /public standalone, an actual close button in
  * the popover) and nothing about the auth flow itself.
+ *
+ * Golden Era V1: ge-signin-shell establishes Punxsy Prominence identity,
+ * paper form on brass chassis, real-gym atmosphere. Visual only.
  */
 export default function SignInPanel({
   embedded = false,
@@ -349,13 +352,13 @@ export default function SignInPanel({
   const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
 
   return (
-    <div>
+    <div className="ge-signin-shell">
       <div className="frame">
       <span className="rivet rivet--tl" />
       <span className="rivet rivet--tr" />
       <span className="rivet rivet--bl" />
       <span className="rivet rivet--br" />
-      <div className="frame-in mat-paper" style={{ padding: 'var(--s6)' }}>
+      <div className="frame-in mat-paper ge-paper-primary" style={{ padding: 'var(--s6)' }}>
         {/* The eyebrow and the way out stay on the top rail; the masthead is
             centred under them, the way the approved board is laid out. */}
         <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
@@ -522,7 +525,7 @@ export default function SignInPanel({
         >
           <div>
             <h2 id="signin-pin-heading" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
-              Account ID &amp; PIN
+              Account ID & PIN
             </h2>
             <p className="t-body mt-[var(--s3)]">
               Enter your Account ID and PIN. Ask your coach or admin if you do not have one.
