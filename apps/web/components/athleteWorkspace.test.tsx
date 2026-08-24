@@ -649,7 +649,7 @@ describe('authored announcements on the athlete workspace', () => {
     // A board that could not be read is a blank board, and says nothing about
     // its own plumbing on top of the page's real work.
     expect(screen.getByText('Nothing on the board.')).toBeTruthy();
-    expect(screen.getByText('Current Readiness')).toBeTruthy();
+    expect(screen.getByText('Pre-Session Self-Report')).toBeTruthy();
     expect(await screen.findByRole('button', { name: 'Check In' })).toBeTruthy();
   });
 });
@@ -1381,7 +1381,7 @@ describe('check-in records no session RPE at all', () => {
 describe('the readiness slider cannot change the prescribed work', () => {
   async function checkInWithSlider(value: number) {
     await renderWorkspace();
-    fireEvent.change(screen.getByLabelText('Readiness to Train (1-10)'), {
+    fireEvent.change(screen.getByLabelText('How ready do you feel today? (1-10)'), {
       target: { value: String(value) },
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
@@ -1524,5 +1524,81 @@ describe('the training card is fed the RPE that was stored, not a substitute', (
     openTab('Dashboard');
 
     expect(await screen.findByTitle(/effort 7 of 10/)).toBeTruthy();
+  });
+});
+
+// THE SLIDER'S PRESENTATION MAY NOT OUT-CLAIM ITS AUTHORITY. #597 removed the
+// check-in slider's power over the generated work, but the copy around it kept
+// the old voice: a card headed "Current Readiness" over a "Readiness to Train"
+// slider, help text ordering a morning readiness check and warning against
+// "ignoring LOW readiness scores before intense training", and a summary tile
+// translating the band into an instruction (READY FOR TRAINING / MODIFY
+// TRAINING / COACH REVIEW REQUIRED). All of that told a child their 1-10
+// governs training when it decides nothing. These pin the honest presentation:
+// the number they chose is read back, the screen says outright that it neither
+// clears them nor changes the work, and no band buys an instruction. The band
+// word itself survives only as the descriptor of what they reported -- the
+// stored note format is pinned separately above and is deliberately untouched.
+describe('the check-in slider presents as a self-report, not a clearance', () => {
+  const SLIDER_LABEL = 'How ready do you feel today? (1-10)';
+
+  test('the number the athlete chose is shown back to them', async () => {
+    await renderWorkspace();
+
+    fireEvent.change(screen.getByLabelText(SLIDER_LABEL), {
+      target: { value: '4' },
+    });
+
+    // At the control, and again on the summary tile -- their number, not a
+    // platform verdict derived from it.
+    expect(screen.getByText('4/10')).toBeTruthy();
+    expect(screen.getByText('4/10 · RED')).toBeTruthy();
+  });
+
+  test('the screen states that the report neither clears the athlete nor changes the work', async () => {
+    await renderWorkspace();
+
+    // At the slider itself, not buried in a help panel. The sentence is the
+    // owner's own (2026-08-24), pinned verbatim.
+    expect(
+      screen.getByText(/It does not medically clear you and does not determine your workout/)
+    ).toBeTruthy();
+    // And on the summary tile.
+    expect(
+      screen.getByText(/Not a clearance -- your workout does not change with it/)
+    ).toBeTruthy();
+  });
+
+  test('no slider value buys a training instruction', async () => {
+    await renderWorkspace();
+
+    // Default 8 is the GREEN band: the tile used to say READY FOR TRAINING.
+    expect(screen.getByText('8/10 · GREEN')).toBeTruthy();
+    expect(screen.queryByText('READY FOR TRAINING')).toBeNull();
+
+    // 5 is the YELLOW band: it used to say MODIFY TRAINING.
+    fireEvent.change(screen.getByLabelText(SLIDER_LABEL), { target: { value: '5' } });
+    expect(screen.getByText('5/10 · YELLOW')).toBeTruthy();
+    expect(screen.queryByText('MODIFY TRAINING')).toBeNull();
+
+    // 2 is the RED band: it used to say COACH REVIEW REQUIRED.
+    fireEvent.change(screen.getByLabelText(SLIDER_LABEL), { target: { value: '2' } });
+    expect(screen.getByText('2/10 · RED')).toBeTruthy();
+    expect(screen.queryByText('COACH REVIEW REQUIRED')).toBeNull();
+  });
+
+  test('the dashboard help no longer instructs readiness-gated training', async () => {
+    await renderWorkspace();
+
+    expect(screen.queryByText(/Check your readiness status first thing/)).toBeNull();
+    expect(screen.queryByText(/Ignoring LOW readiness/)).toBeNull();
+    // The stale pointer at the Bio Check-In surface, which is intentionally
+    // unreachable because it persists nothing. An instruction to go complete
+    // it was a promise the app cannot keep.
+    expect(screen.queryByText(/Complete biological check-in/)).toBeNull();
+
+    // The old authority vocabulary is gone with it.
+    expect(screen.queryByText('Current Readiness')).toBeNull();
+    expect(screen.queryByLabelText('Readiness to Train (1-10)')).toBeNull();
   });
 });
