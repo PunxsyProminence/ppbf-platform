@@ -972,21 +972,70 @@ describe('roster readiness comes from the board feed, honestly', () => {
       ],
     });
 
-  test('fresh statuses color the tile and the absent athlete stays unknown, said out loud', async () => {
+  /** A board entry from a method somebody actually established. Nothing in
+   *  production produces one today -- that is the point of the gate -- so the
+   *  cases that need an authoritative band have to construct it. */
+  const validatedEntry = (athleteId: string, status: string, score: number) => ({
+    athlete_id: athleteId,
+    status,
+    score,
+    measured_at: '2026-08-15T12:00:00.000Z',
+    method: 'established_instrument',
+    reliability_status: 'ESTABLISHED',
+    validity_status: 'ESTABLISHED',
+    evidence_class: 'ESTABLISHED',
+  });
+
+  test('validated statuses color the tile and the absent athlete stays unknown, said out loud', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [validatedEntry('ath_1', 'GREEN', 8), validatedEntry('ath_2', 'RED', 2)],
+      }),
+    });
+
+    // One RED, zero YELLOW; ath_3 has no fresh reading and is counted as
+    // unknown rather than silently folded into "no alerts".
+    expect(screen.getByText(/1 RED, 0 YELLOW, 1 unknown — unknown is not clear/)).toBeTruthy();
+    expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
+  });
+
+  /* THE GATE ITSELF. The same two entries, from the method every stored row
+     actually has, must NOT become a band. GREEN/YELLOW/RED here is an
+     authoritative reading a coach acts on; a staff judgement cannot carry it.
+     The athletes fall back to unknown -- which this tile already refuses to
+     read as "clear" -- and the judgements are still shown, as judgements. */
+  test('an unvalidated reading is not promoted into a RED or YELLOW count', async () => {
     await renderWorkspace({
       athletesList: threeAthletes,
       readinessBoard: () => jsonResponse({
         items: [
-          { athlete_id: 'ath_1', status: 'GREEN', score: 8, measured_at: '2026-08-15T12:00:00.000Z' },
-          { athlete_id: 'ath_2', status: 'RED', score: 2, measured_at: '2026-08-15T12:00:00.000Z' },
+          {
+            athlete_id: 'ath_1', status: 'GREEN', score: 8,
+            measured_at: '2026-08-15T12:00:00.000Z',
+            method: 'staff_entered_intake',
+            reliability_status: 'UNVALIDATED - PPBF MUST ESTABLISH',
+            validity_status: 'UNKNOWN',
+          },
+          {
+            athlete_id: 'ath_2', status: 'RED', score: 2,
+            measured_at: '2026-08-15T12:00:00.000Z',
+            method: 'staff_entered_intake',
+            reliability_status: 'UNVALIDATED - PPBF MUST ESTABLISH',
+            validity_status: 'UNKNOWN',
+          },
         ],
       }),
     });
 
-    // One RED, zero YELLOW; ath_3 has no fresh check-in and is counted as
-    // unknown rather than silently folded into "no alerts".
-    expect(screen.getByText(/1 RED, 0 YELLOW, 1 unknown — unknown is not clear/)).toBeTruthy();
-    expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
+    expect(screen.getByText(/0 RED, 0 YELLOW, 3 unknown — unknown is not clear/)).toBeTruthy();
+    // Not deleted, not hidden: still on screen, as something written down.
+    expect(screen.getByText(/staff judgement\(s\) recorded but not counted above/i)).toBeTruthy();
+    expect(screen.getByText(/written down, not measured/i)).toBeTruthy();
+    // AND NOT "No signal". A feed that answered is not a feed that failed --
+    // gating the bands made every athlete unknown, which briefly flipped this
+    // tile to the failure copy and took the caveat down with it.
+    expect(screen.queryByText('No signal')).toBeNull();
   });
 
   // The scores driving these colours are typed by staff during intake review;
@@ -1015,6 +1064,33 @@ describe('roster readiness comes from the board feed, honestly', () => {
 
     expect(screen.getByText(/entered by staff during intake review/i)).toBeTruthy();
     expect(screen.getByText(/not as a measurement/i)).toBeTruthy();
+  });
+
+  /* PER ATHLETE, NOT ACROSS THE FEED. This was `items.some(...)`: one validated
+     reading anywhere in the organization retired the caveat for every athlete
+     on the tile, including the ones still carrying staff judgements. A mixed
+     feed is exactly what the first validated method will produce, and it is
+     exactly when the old flag went quiet. */
+  test('one validated reading does not retire the caveat for the unvalidated ones', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [
+          validatedEntry('ath_1', 'GREEN', 8),
+          {
+            athlete_id: 'ath_2', status: 'RED', score: 2,
+            measured_at: '2026-08-15T12:00:00.000Z',
+            method: 'staff_entered_intake',
+            reliability_status: 'UNVALIDATED - PPBF MUST ESTABLISH',
+            validity_status: 'UNKNOWN',
+          },
+        ],
+      }),
+    });
+
+    // ath_1 is a real reading; ath_2 and ath_3 are not, and the caveat says so
+    // rather than disappearing because ath_1 qualified.
+    expect(screen.getByText(/staff judgement\(s\) recorded but not counted above/i)).toBeTruthy();
   });
 
   // Fail-closed: a feed that omits provenance entirely (an older server, or a

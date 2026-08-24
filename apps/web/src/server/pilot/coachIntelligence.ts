@@ -9,6 +9,11 @@ import {
 import { getPerformanceRollup } from './performanceAnalytics';
 import { TRAINING_DAYS_MIN_EARLY, TRAINING_DAYS_DROP_RATIO } from './progressionSuggestions';
 import { READINESS_YELLOW_MIN } from './readinessBoard';
+import {
+  READINESS_VALUE_MAX,
+  READINESS_VALUE_MIN,
+  readinessValidatedScopeSql,
+} from './readinessProvenance';
 
 // Coach Intelligence v1 (register module 111) -- the definition the owner
 // approved 2026-08-16, verbatim: five deterministic, read-only observations
@@ -159,6 +164,13 @@ export async function getCoachIntelligence(
          from pilot.readiness r
          where r.organization_id = $1 and r.athlete_id = any($2::text[])
            and r.measured_at >= now() - make_interval(days => $3)
+           -- A RED day is a claim about a child's week that a coach acts on.
+           -- Every row here was typed by staff at intake against unvalidated
+           -- defaults, and nothing asked before counting them. Rows whose
+           -- method was never established no longer count; the rows stay
+           -- exactly where they are.
+           and ${readinessValidatedScopeSql('r')}
+           and r.score between ${READINESS_VALUE_MIN} and ${READINESS_VALUE_MAX}
          order by r.athlete_id, r.measured_at::date, r.measured_at desc
        )
        select d.athlete_id, a.full_name as athlete_name, count(*)::int as red_days
