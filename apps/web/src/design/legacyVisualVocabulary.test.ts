@@ -308,8 +308,20 @@ describe('the retired aesthetic does not grow back', () => {
       for (const file of walkAny(root)) {
         const relative = path.relative(REPO, file);
 
-        // The theme is the seam and is supposed to import it.
-        if (relative === 'design-system/current/ppbf-theme.css') {
+        /* The current-theme LAYER is the seam and is supposed to import it.
+           Until 2026-08-24 this exempted the single file ppbf-theme.css; the
+           Golden Era V1 seam swap made that file a one-line pointer at
+           ppbf-golden-era.css, which now carries the legacy import (declared
+           authority + continuity, per docs/GOLDEN-ERA-V1-CONTRACT.md §13).
+           The guard's intent was never "one filename" -- it is that the
+           retired aesthetic reaches the app ONLY through the current theme,
+           so a page, a component sheet, or globals.css can never quietly weld
+           itself to legacy again. Exempting the current/ directory keeps that
+           intent exactly: everything outside it is still an offender, and the
+           directory is the one place a theme is allowed to be. Watched red
+           under mutation on 2026-08-24: an @import of the legacy sheet from
+           a file under app/ still fails, naming the file. */
+        if (relative.startsWith('design-system/current/')) {
           continue;
         }
 
