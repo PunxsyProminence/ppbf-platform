@@ -1,7 +1,7 @@
 # GOLDEN ERA V1 — Real-Gym Visual Contract
-**Version:** 1.0 · **Date:** 2026-08-24 · **Author:** Grok (visual lane) · **Owner:** Jason Neale  
+**Version:** 1.1 · **Date:** 2026-08-24 · **Author:** Grok (visual lane) · **Owner:** Jason Neale  
 **Status:** Active authority for the usable-app visual release.  
-**Sibling law:** `docs/GROK-VISUAL-LANE.md` (process) · this file (look & feel)
+**Sibling law:** `docs/GROK-VISUAL-LANE.md` (process) · this file (look & feel) · `docs/REAL-GYM-REFERENCE-LOCK.md` (environmental DNA)
 
 > This document is the durable visual authority.  
 > A future Grok session must be able to reproduce the approved direction from this file alone.  
@@ -33,7 +33,7 @@ It must **not** look like:
 |------|-----------|--------|
 | 1 | Functional | Current `main` source + real APIs |
 | 2 | Visual | This contract + Jason-approved Golden Era |
-| 3 | Environmental | Real Punxsy Prominence gym reference photographs |
+| 3 | Environmental | **`docs/REAL-GYM-REFERENCE-LOCK.md`** + owner photos |
 | 4 | Owner | Jason’s explicit choices override earlier mockups |
 
 If a design board shows something with no real backend: **omit it**, adapt the composition around the real function, or report it as a future functional requirement. Never fake it.
@@ -42,24 +42,32 @@ If a design board shows something with no real backend: **omit it**, adapt the c
 
 ## 3. Real-gym environmental truth
 
+**Full lock:** `docs/REAL-GYM-REFERENCE-LOCK.md`  
+That file is the permanent environmental authority. Summary only below.
+
 The actual gym is the reference, not a stock template.
 
-**Use for:**
-- spatial character (brick, mortar, plank, caged lamps, ring/floor wear)
-- material roughness and authenticity
-- lighting character (warm industrial, desk lamp, gooseneck, cooler clinic)
-- signage character (real Iron City red oval logo, chalkboard, red apron)
-- photographic/environmental texture
+**Locked DNA (must appear):**
+- Iron City Brewery teal ring canvas + red/white circular logo
+- Blue foam ceiling pads / gray plywood
+- Rough wood beams, posts, A-frames
+- Everlast / Powercore / red bags / speed bags / Sting gloves
+- Wood-framed mirrors, chalkboards, handwritten workout signs
+- 3rd Infantry banner, Rocky + fight posters, American flag, lockers
+- Fluorescent + red LED + natural light — lived-in, rustic, nonprofit
 
-**Do not fabricate:**
-- rooms that do not exist
-- equipment that does not exist
-- architectural features that do not exist
-- fictional logos, trophies, athletes, or historical claims
-- faces of minors or non-consensual likenesses
+**Forbidden (causes drift):**
+- Generic grey-brown brick + caged industrial lamps as default
+- Stock polished commercial boxing gym
+- Fictional logos, trophies, athletes, faces of minors
+
+**Use for:** spatial character, material roughness, lighting, signage, photographic texture.  
+**Do not fabricate** rooms, equipment, architecture, or claims that do not exist.
 
 Stylization is allowed. Fabrication of real-world facts is not.  
 The interface does not need to literally recreate every physical wall; it must feel *derived from this gym*.
+
+**Drift test before every Mode B ship:** Would Jason recognise this as *his* gym? Is Iron City / blue-foam / rough-wood / bag DNA visible in the outer thirds?
 
 ---
 
@@ -91,7 +99,7 @@ It still **flows** from the previous page (same building, same day, same Golden 
 But it is **distinct** — different framing of the wall, different light temperature, different density of material interest, different chrome density, different voice of the cards, different quiet/active balance.
 
 Same room ≠ same atmosphere.  
-A coach floor-group page and a session-script delivery page both sit in `.room--floor`, yet one can feel like the open gym floor under caged lamps while the other feels like the corner desk with a chalkboard edge and tighter light.
+A coach floor-group page and a session-script delivery page both sit in `.room--floor`, yet one can feel like the open gym floor under bags while the other feels like the corner desk with a chalkboard edge and tighter light.
 
 **Rule of thumb when designing any screen:**  
 1. Which room does it belong to?  
@@ -104,12 +112,12 @@ A coach floor-group page and a session-script delivery page both sit in `.room--
 
 | Room | Purpose feel | Allowed chrome | Forbidden |
 |------|--------------|----------------|-----------|
-| **Office** | Plank wall, desk lamp, paper forms, riveted cards | Notices, chalk, roster badges | Clinic green, night telemetry, floor drama |
-| **Floor** | Brick + mortar, caged lamps, gloves/bags as DNA | Chalk, WordsOnTheWall, CLEARED badges | Board tables, file cork, clinic red theater |
-| **Board** | Painted wainscot, plaster, dark ink, formal quiet | Count tiles, PLANNED tabs | Chat, athlete detail, eggs |
-| **File** | Cork wall, gooseneck, pins, dossiers | Queues, Observation→Lesson columns | Hype, eggs |
-| **Clinic** | Varnished cabinetry, cooler green-tinted light | Brass Training Hold, red only for critical medical/safety | Wall sayings, “tough it out” eggs |
-| **Night** | Dark ink ground, low lamp, telemetry | Mode labels only (Scout / Architect / Omega) | Board chrome on deny, Master Mode toggle |
+| **Office** | Quieter wood / mirror / certificates corner, desk-lamp | Notices, chalk, roster badges | Clinic green, night telemetry, floor drama |
+| **Floor** | Open bags + ring edge + fluorescent, high energy | Chalk, WordsOnTheWall, CLEARED badges | Board tables, file cork, clinic red theater |
+| **Board** | Formal quiet — chalkboard / certificates wall | Count tiles, PLANNED tabs | Chat, athlete detail, eggs |
+| **File** | Gear shelves / sticky-note tagged storage density | Queues, Observation→Lesson columns | Hype, eggs |
+| **Clinic** | Cleaner corner, cooler light, less bag drama | Brass Training Hold, red only for critical medical/safety | Wall sayings, “tough it out” eggs |
+| **Night** | Darker, low lamp, bags as silhouettes | Mode labels only (Scout / Architect / Omega) | Board chrome on deny, Master Mode toggle |
 
 Easter eggs: primary home is Floor. Never on Board, File, Clinic, Night (deny).
 
@@ -123,7 +131,7 @@ Easter eggs: primary home is Floor. Never on Board, File, Clinic, Night (deny).
 | Restricted | Visually distinct from Locked | — |
 | Destructive action | Separate destructive semantic treatment | Medical locked red |
 
-If you encounter `--stamp-restricted: var(--locked)`, treat it as existing semantic debt, not design authority. Do not reinterpret medical/safeguarding logic.
+If you encounter `--stamp-restricted: var(--locked)`, treat it as existing semantic debt, not design authority. Do not reinterpret medical/safeguarding logic. (Claude’s safeguarding-red-guard owns the CI enforcement; Grok does not touch those three reserved files.)
 
 ---
 
@@ -147,7 +155,7 @@ Unknown / missing values must look **unknown**, never zero or “normal complete
 
 - Layer 0 only (the wall the room stands in). Real UI composites on top in code.
 - Quiet centre, outer-thirds interest, zero lettering, 4:4:4, complete SOI/EOI, declared geometry, orientation matches filename.
-- Variants from a shared root reference (one building, one day).
+- Variants from a shared root reference (one building, one day) derived from the Real Gym Reference Lock.
 - Grok owns placing the real JPEG binaries directly on its feature branch. No base64, materializer, Claude/Copilot relay.
 - `plateBinaries.test.ts` is the hard gate. Do not weaken it.
 
@@ -246,7 +254,7 @@ If YES → ship the staging candidate for Jason’s live review.
 
 ## 16. Asset & plate manifest (pointer only)
 
-- Real-gym reference photographs: held by Jason / Grok conversation context; never invent new ones.
+- **Real-gym environmental lock:** `docs/REAL-GYM-REFERENCE-LOCK.md` (asset UUIDs + DNA table). Owner photos stay with Jason / conversation assets — full-res personal photos are not committed to the public repo.
 - Shipped plates: `apps/web/public/plates/` (see §9 for exact producer set).
 - Do not place binary images inside this Markdown or any JSON.
 - Optional archive: OneDrive `Documents/PPBF-AI-Lanes/Grok-Plates-Inbox/` (provenance only, not a shipping dependency).
@@ -261,4 +269,4 @@ If YES → ship the staging candidate for Jason’s live review.
 
 Tagline remains: **OBSERVE. DECIDE. EXECUTE. REPEAT.**
 
-— Grok visual lane, 2026-08-24
+— Grok visual lane, 2026-08-24 (v1.1 — real-gym lock linked)
