@@ -649,7 +649,6 @@ const ALLOW_LIST: readonly AllowListEntry[] = [
   { file: 'app/research/page.tsx', channel: '--locked', identifier: 'error', sites: 2, reason: DEFECT },
   { file: 'app/research/page.tsx', channel: '--locked', identifier: 'reject', sites: 1, reason: DEFECT },
   { file: 'app/research/review/page.tsx', channel: '--locked', identifier: 'error', sites: 2, reason: DEFECT },
-  { file: 'app/schedule/page.tsx', channel: '--locked', identifier: 'error', sites: 2, reason: DEFECT },
   { file: 'app/shadow/scout/page.tsx', channel: '--locked', identifier: 'fail', sites: 1, reason: DEFECT },
   { file: 'app/shadow/scout/page.tsx', channel: '.stamp', identifier: 'unavailable', sites: 2, reason: DEFECT },
   { file: 'app/source-control/publication-workflow/page.tsx', channel: '.alert--critical', identifier: 'error', sites: 1, reason: DEFECT },
