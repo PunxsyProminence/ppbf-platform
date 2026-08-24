@@ -69,6 +69,7 @@
     "pilot:apply-emergency-contact-note": "node scripts/pilot-apply-emergency-contact-note-migration.mjs",
     "pilot:apply-research-requirement-subject": "node scripts/pilot-apply-research-requirement-subject-migration.mjs",
     "pilot:apply-readiness-provenance": "node scripts/pilot-apply-readiness-provenance-migration.mjs",
+    "pilot:apply-session-rpe-semantics": "node scripts/pilot-apply-session-rpe-semantics-migration.mjs",
     "pilot:apply-attendance-precedence": "node scripts/pilot-apply-attendance-precedence-migration.mjs",
     "pilot:apply-one-percent-club": "node scripts/pilot-apply-one-percent-club-migration.mjs",
     "pilot:apply-data-retention-deletion": "node scripts/pilot-apply-data-retention-deletion-migration.mjs",

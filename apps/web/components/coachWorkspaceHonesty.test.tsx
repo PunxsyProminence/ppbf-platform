@@ -1233,3 +1233,52 @@ describe('the hub links to the session-delivery surfaces', () => {
     expect(screen.getByRole('button', { name: 'Open SHADOW Intel' })).toBeTruthy();
   });
 });
+
+// pilot.sessions.rpe is nullable as of
+// pilot_slice_postgres_session_rpe_semantics_migration.sql, and the review
+// picker labels each session with its RPE. normalizeReviewableSession ran
+// `Number(record.rpe)` straight into `Number.isFinite`, and since Number(null)
+// is 0 and Number.isFinite(0) is true, every unrated session was labelled for a
+// coach as "RPE 0" -- a self-report the athlete never gave, on the screen where
+// a coach decides what to say about that session.
+describe('the review picker does not invent an RPE for a session nobody rated', () => {
+  async function sessionOptionLabel(row: Record<string, unknown>): Promise<string> {
+    await renderWorkspace({
+      athletesList: () => jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Jordan P.' }] }),
+      sessionsList: () => jsonResponse({ items: [row] }),
+    });
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+
+    const option = screen
+      .getAllByRole('option')
+      .find((element) => (element as HTMLOptionElement).value === 'session_1');
+    expect(option).toBeTruthy();
+    return option?.textContent ?? '';
+  }
+
+  test('a null RPE is left off the label rather than shown as 0', async () => {
+    const label = await sessionOptionLabel(sessionRow('session_1', { rpe: null }));
+    expect(label).not.toMatch(/RPE/);
+    expect(label).not.toMatch(/RPE 0/);
+    // The rest of the label is real stored data and still has to be there.
+    expect(label).toContain('2026-08-10');
+    expect(label).toContain('completed');
+  });
+
+  test('a missing rpe key is left off the label too', async () => {
+    const withoutRpe = sessionRow('session_1');
+    delete withoutRpe.rpe;
+    expect(await sessionOptionLabel(withoutRpe)).not.toMatch(/RPE/);
+  });
+
+  // The other half of the same rule: 0 is a real rung on this scale, so a
+  // session the athlete genuinely rated 0 must still be labelled 0.
+  test('a genuine RPE of 0 is still shown as 0', async () => {
+    expect(await sessionOptionLabel(sessionRow('session_1', { rpe: 0 }))).toContain('RPE 0');
+  });
+
+  test('an ordinary reading is unaffected', async () => {
+    expect(await sessionOptionLabel(sessionRow('session_1', { rpe: 6 }))).toContain('RPE 6');
+  });
+});

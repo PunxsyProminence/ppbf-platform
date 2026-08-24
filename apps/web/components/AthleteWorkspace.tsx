@@ -20,6 +20,7 @@ import { cx } from './uiStyles';
 import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
+import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
@@ -209,7 +210,10 @@ interface ActiveSessionRecord {
   sessionId: string;
   athleteId: string;
   date: string;
-  rpe: number;
+  // NULL until check-out. An open session has not been trained yet, so there
+  // is no exertion to rate -- see the rpe comment on PilotSession.
+  rpe: number | null;
+  rpeMethod: SessionRpeMethod;
   checkInNote: string;
   createdAt: string;
 }
@@ -219,7 +223,8 @@ interface StoredSession {
   sessionId: string;
   athleteId: string;
   date: string;
-  rpe: number;
+  rpe: number | null;
+  rpeMethod: SessionRpeMethod;
   notes: string;
   completed: boolean;
   createdAt: string;
@@ -255,6 +260,23 @@ const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$
  * identity or timing is unreadable must not become the one the athlete is
  * offered a check-out for.
  */
+/**
+ * pilot.sessions.rpe as the training card needs it: a number, or null for
+ * "nobody has rated this session".
+ *
+ * The column is `numeric` and node-postgres hands it back as a string, so a
+ * coercion is unavoidable -- but absence is tested first, because Number(null)
+ * is 0 and 0 is a real RPE. An unparseable value is absent too: a row that
+ * cannot be read is not a row rated zero.
+ */
+function normalizeCardRpe(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeStoredSession(row: unknown): StoredSession | null {
   if (!row || typeof row !== 'object') {
     return null;
@@ -265,17 +287,34 @@ function normalizeStoredSession(row: unknown): StoredSession | null {
   const athleteId = typeof record.athlete_id === 'string' ? record.athlete_id.trim() : '';
   const date = typeof record.date === 'string' ? record.date.slice(0, 10) : '';
   const createdAt = typeof record.created_at === 'string' ? record.created_at : '';
-  const rpe = Number(record.rpe);
 
-  if (!sessionId || !athleteId || !date || !createdAt || !Number.isFinite(rpe)) {
+  // null and undefined are checked BEFORE Number(), because Number(null) is 0
+  // and 0 is a legitimate RPE. Coercing first would turn "not rated yet" into
+  // "rated it zero" -- a fabricated reading, and the exact class of defect the
+  // rpe/readiness separation exists to end.
+  const rpeIsAbsent = record.rpe === null || record.rpe === undefined;
+  const rpe = rpeIsAbsent ? null : Number(record.rpe);
+
+  if (!sessionId || !athleteId || !date || !createdAt) {
     return null;
   }
+  if (rpe !== null && !Number.isFinite(rpe)) {
+    return null;
+  }
+
+  // An unrecognised method is not silently treated as the honest one. Anything
+  // this client does not know reads as UNKNOWN, which is what a row predating
+  // the method column genuinely is.
+  const rpeMethod: SessionRpeMethod = record.rpe_method === 'athlete_post_session_self_report'
+    ? 'athlete_post_session_self_report'
+    : 'UNKNOWN';
 
   return {
     sessionId,
     athleteId,
     date,
     rpe,
+    rpeMethod,
     notes: typeof record.notes === 'string' ? record.notes : '',
     completed: record.completed_flag === true,
     createdAt,
@@ -380,50 +419,23 @@ function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBui
   return [...core, ...readinessSpecific, ...closeout];
 }
 
-// Fast-Track observation feed: best-effort only. The athlete's session
-// check-in (POST /api/pilot/sessions, above) already fully succeeds or fails
-// on its own -- these calls only enrich SHADOW's formula engine with a
-// Session Load (RPE x duration) input, so a failure here must never block or
-// roll back the primary check-in.
-async function submitFastTrackObservations(input: {
-  athleteId: string;
-  contextId: string;
-  observedAt: string;
-  rpe: number;
-  durationMinutes: number;
-  painFlag: boolean;
-  medicalReadAck: boolean;
-}): Promise<void> {
-  const observations = [
-    {
-      kind: 'session_rpe' as const,
-      value: input.rpe,
-      unit: 'rpe_0_10' as const,
-      dimensions: { painFlag: input.painFlag, medicalReadAck: input.medicalReadAck },
-    },
-    {
-      kind: 'duration' as const,
-      value: input.durationMinutes,
-      unit: 'minutes' as const,
-    },
-  ];
-
-  await Promise.allSettled(observations.map((observation) => fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      athleteId: input.athleteId,
-      contextId: input.contextId,
-      kind: observation.kind,
-      value: observation.value,
-      unit: observation.unit,
-      dimensions: observation.dimensions ?? {},
-      observedAt: input.observedAt,
-      idempotencyKey: `${input.contextId}-${observation.kind}`,
-    }),
-  })));
-}
+// Fast-Track observation feed: best-effort only. The athlete's check-out
+// (POST /api/pilot/sessions/update) already fully succeeds or fails on its
+// own -- these calls only enrich SHADOW's formula engine with a Session Load
+// (RPE x duration) input, so a failure here must never block or roll back the
+// primary write.
+//
+// THIS RUNS AT CHECK-OUT, NOT CHECK-IN, and that is the whole point. Session
+// Load multiplies session RPE by duration; both inputs only exist once the
+// session is over. It used to run at check-in with the pre-session readiness
+// slider as `session_rpe` and the pre-session duration box as `duration`, so
+// SHADOW was multiplying two numbers that had not measured anything yet.
+//
+// Both values are passed as null when the athlete did not give them, and
+// NOTHING is submitted in that case. There is no default and no prefill here
+// on purpose: a prefilled control that nobody touches is indistinguishable
+// from an answer, which is exactly how the planned 60 minutes became an
+// observed duration.
 
 // The vocabularies this tab reads. A rabbit hole is stored against one stable
 // key, and the read takes one anchor at a time, so the tab asks for the terms
@@ -658,6 +670,15 @@ export default function AthleteWorkspace() {
   const [notesSaveState, setNotesSaveState] = useState<NotesSaveState>('idle');
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  /* Nothing in this app collects a post-session RPE or an observed duration.
+     The check-in controls that used to supply them measured the wrong thing --
+     readiness before training, and a PLANNED duration -- so they were
+     disconnected rather than repointed, and check-out writes rpe null with an
+     UNKNOWN method. No placeholder state stands in for the missing control:
+     a variable that can only ever be null, feeding a call that can only ever
+     return early, reads as wired while recording nothing. Building the control
+     is the work; pretending it exists is not. */
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
@@ -897,7 +918,13 @@ export default function AthleteWorkspace() {
         (data.items ?? []).map((s) => ({
           session_id: s.session_id,
           date: s.date,
-          rpe: Number(s.rpe) || 0,
+          // `Number(s.rpe) || 0` stood here and it fabricated a reading twice
+          // over: Number(null) is 0, and `|| 0` then swallowed a genuine 0 as
+          // well. pilot.sessions.rpe is nullable, so an un-checked-out session
+          // arrives as null and must reach the card as null -- the card draws
+          // "not recorded" for it. Absence is tested before the coercion, and
+          // a value that will not parse stays absent rather than becoming 0.
+          rpe: normalizeCardRpe(s.rpe),
           completed_flag: Boolean(s.completed_flag),
         })),
       );
@@ -1047,6 +1074,7 @@ export default function AthleteWorkspace() {
             athleteId: open.athleteId,
             date: open.date,
             rpe: open.rpe,
+            rpeMethod: open.rpeMethod,
             checkInNote: open.notes,
             createdAt: open.createdAt,
           }
@@ -1108,7 +1136,10 @@ export default function AthleteWorkspace() {
               session_id: record.sessionId,
               athlete_id: record.athleteId,
               date: record.date,
+              // Replayed unchanged: this is a notes save, not a rating. For an
+              // open session both are still null/UNKNOWN.
               rpe: record.rpe,
+              rpe_method: record.rpeMethod,
               notes: draft,
               completed_flag: false,
               created_at: record.createdAt,
@@ -1424,7 +1455,13 @@ export default function AthleteWorkspace() {
           session_id: sessionId,
           athlete_id: backendAthleteId,
           date: sessionDate,
-          rpe: readinessToTrain,
+          // No RPE at check-in. The session has not happened, so there is no
+          // exertion to rate; `rpe` stays null until check-out collects a real
+          // one. This field used to carry `readinessToTrain` -- a pre-session
+          // readiness self-report stored in the column named for session RPE,
+          // which is the defect this change exists to end.
+          rpe: null,
+          rpe_method: 'UNKNOWN',
           notes: checkInNote,
           completed_flag: false,
           created_at: now.toISOString(),
@@ -1440,7 +1477,8 @@ export default function AthleteWorkspace() {
           sessionId,
           athleteId: backendAthleteId,
           date: sessionDate,
-          rpe: readinessToTrain,
+          rpe: null,
+          rpeMethod: 'UNKNOWN',
           checkInNote,
           createdAt: now.toISOString(),
         });
@@ -1465,15 +1503,11 @@ export default function AthleteWorkspace() {
       setIsCheckingIn(false);
     }
 
-    void submitFastTrackObservations({
-      athleteId: backendAthleteId,
-      contextId: sessionId,
-      observedAt: now.toISOString(),
-      rpe: readinessToTrain,
-      durationMinutes: sessionDurationMinutes,
-      painFlag: injuryFlag,
-      medicalReadAck,
-    });
+    // Nothing is sent to SHADOW here any more. Check-in used to post the
+    // readiness slider as `session_rpe` and the planned-duration box as
+    // `duration` -- two pre-session numbers submitted as observations of a
+    // session that had not started. Both now come from check-out, from what
+    // the athlete actually reports afterwards.
   };
 
   const handleCheckOut = async () => {
@@ -1498,7 +1532,16 @@ export default function AthleteWorkspace() {
           session_id: record.sessionId,
           athlete_id: record.athleteId,
           date: record.date,
-          rpe: record.rpe,
+          // Check-out is the first and only point at which a real session RPE
+          // could exist -- and no control on this screen collects one, so it
+          // does not exist yet. Written null with an UNKNOWN method: the
+          // athlete rated nothing, and "not recorded" is what gets stored.
+          // These are literals rather than a variable that could only ever
+          // hold null. When a check-out rating control is built, it supplies
+          // the value here and 'athlete_post_session_self_report' becomes the
+          // method; until then nothing may put a number in this field.
+          rpe: null,
+          rpe_method: 'UNKNOWN' as const,
           // The check-in note is the fallback because the session record
           // requires a note and an empty box must not erase what check-in
           // already stored.
@@ -1540,6 +1583,13 @@ export default function AthleteWorkspace() {
     } finally {
       setIsCheckingOut(false);
     }
+
+    /* No Session Load feed here. It used to sit at the end of check-IN and pass
+       the readiness slider as `session_rpe` and the PLANNED duration as
+       `duration`, so SHADOW multiplied two numbers that had measured nothing
+       yet. Check-out has no post-session RPE and no observed duration to send
+       in their place, so it sends nothing: check-out records only what the
+       athlete actually supplied. */
   };
 
   const handleSavePainReport = async () => {
@@ -2005,13 +2055,24 @@ export default function AthleteWorkspace() {
                       <input type="checkbox" checked={injuryFlag} onChange={(e) => setInjuryFlag(e.target.checked)} className="h-[21px] w-[21px] accent-[var(--brass-600)]" />
                       <span>Injury or Pain Flag</span>
                     </label>
-                    {/* A Soreness Level slider stood here and recorded
-                        nothing, immediately below an Injury or Pain Flag that
-                        does. On a safety card that is the worst place for the
-                        distinction to be invisible: an athlete who moved this
-                        to 8 had every reason to believe a coach would see it.
-                        The pain report below -- location, type and severity --
-                        is the path that actually reaches one. */}
+                    {/* NEITHER THIS FLAG NOR THE SORENESS SLIDER THAT STOOD
+                        BELOW IT REACHES A COACH. The slider never did. This
+                        flag did, but only by riding as a dimension on the
+                        check-in `session_rpe` observation -- and that
+                        observation was the readiness slider mislabelled as
+                        session RPE, which is the defect this branch removes.
+                        Deleting the fabricated measurement necessarily deletes
+                        the carrier the flag was hitching on; a pain signal
+                        whose only transport is a wrong measurement was never
+                        soundly recorded. Giving it a signal of its own is a
+                        separate change and is NOT done here.
+
+                        On a safety card that is the worst place for the
+                        distinction to be invisible: an athlete who ticks this
+                        has every reason to believe a coach will see it. The
+                        pain report below -- location, type and severity -- is
+                        the path that actually reaches one, and it is the only
+                        one on this screen that does. */}
                     {/* All 10 locations, not just the first 3 -- a dropdown
                         scales to the list where a row of buttons did not, and
                         the other 7 were previously unreachable from this

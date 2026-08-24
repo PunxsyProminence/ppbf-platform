@@ -1,4 +1,4 @@
-import { GOAL_CATEGORIES } from './contracts';
+import { GOAL_CATEGORIES, SESSION_RPE_METHODS } from './contracts';
 import { jsonError } from './http';
 import {
   validateAthletePayload,
@@ -29,6 +29,7 @@ function sessionPayload(overrides: Record<string, unknown> = {}) {
     athlete_id: 'ath-1',
     date: '2026-07-29',
     rpe: 7,
+    rpe_method: 'athlete_post_session_self_report',
     notes: 'Six rounds on the bag',
     completed_flag: true,
     created_at: '2026-07-29T12:00:00.000Z',
@@ -52,7 +53,10 @@ describe('validators accept a complete payload', () => {
   });
 
   test('session', () => {
-    expect(validateSessionPayload(sessionPayload())).toMatchObject({ rpe: 7 });
+    expect(validateSessionPayload(sessionPayload())).toMatchObject({
+      rpe: 7,
+      rpe_method: 'athlete_post_session_self_report',
+    });
   });
 });
 
@@ -219,5 +223,174 @@ describe('the goal validator refuses what the column would refuse', () => {
 
     const body = await jsonError(refusal).json();
     expect(body.error).toContain('category');
+  });
+});
+
+// pilot.sessions.rpe became nullable and gained rpe_method on 2026-08-24
+// (pilot_slice_postgres_session_rpe_semantics_migration.sql). The column was
+// NOT NULL, so check-in had to put SOME number in it, and the number it reached
+// for was the pre-session "Readiness to Train" slider -- a reading of how ready
+// an athlete felt BEFORE training, stored in the column that means how hard the
+// session WAS. Everything below is about not letting that back in: an absent
+// reading has to stay absent, a real 0 has to stay 0, and a row carrying a
+// number has to say where the number came from.
+describe('session RPE is nullable, and null means nobody rated the session', () => {
+  test('a null rpe is preserved as null rather than defaulted to a number', () => {
+    expect(validateSessionPayload(sessionPayload({
+      rpe: null,
+      rpe_method: 'UNKNOWN',
+    })).rpe).toBeNull();
+  });
+
+  // The distinction the nullable column exists to preserve, and the reason
+  // every reader must test for null before coercing: Number(null) is 0, and 0
+  // is a real rung on this scale. An athlete who finished a session and rated
+  // it 0 must not be indistinguishable from an athlete who was never asked.
+  test('a reported 0 is not the same value as no report', () => {
+    expect(validateSessionPayload(sessionPayload({
+      rpe: 0,
+      rpe_method: 'athlete_post_session_self_report',
+    })).rpe).toBe(0);
+    expect(validateSessionPayload(sessionPayload({
+      rpe: null,
+      rpe_method: 'UNKNOWN',
+    })).rpe).toBeNull();
+  });
+
+  // An absent key is not the same thing as an explicit null. rpe is a required
+  // field, so a caller that simply forgets it is told so rather than having the
+  // omission read as "not rated".
+  test('omitting rpe entirely is a 400, not a silent null', () => {
+    const withoutRpe: Record<string, unknown> = sessionPayload();
+    delete withoutRpe.rpe;
+    expect(statusOf(() => validateSessionPayload(withoutRpe))).toBe(400);
+  });
+});
+
+// The 0-10 bound lives in the API and deliberately NOT in a CHECK constraint,
+// because rows written before this contract were never held to it. That makes
+// these the only place the scale is enforced at all.
+describe('the session validator holds new input to the scale its unit names', () => {
+  test('both ends of the scale are accepted', () => {
+    expect(validateSessionPayload(sessionPayload({
+      rpe: 0,
+      rpe_method: 'athlete_post_session_self_report',
+    })).rpe).toBe(0);
+    expect(validateSessionPayload(sessionPayload({
+      rpe: 10,
+      rpe_method: 'athlete_post_session_self_report',
+    })).rpe).toBe(10);
+  });
+
+  test.each([-1, 11, 10.5, -0.5])('%p is outside the scale and is refused', (rpe) => {
+    expect(statusOf(() => validateSessionPayload(sessionPayload({ rpe })))).toBe(400);
+  });
+
+  test('NaN is refused rather than stored as a number', () => {
+    expect(statusOf(() => validateSessionPayload(sessionPayload({ rpe: Number.NaN })))).toBe(400);
+  });
+
+  /* Infinity is the gap the NaN check does not close. `typeof Infinity` is
+     'number' and `Number.isNaN(Infinity)` is false, so it clears every type
+     guard; only the scale bound stops it. It is refused here by `value > 10`
+     rather than by anything naming it, which is why it is pinned explicitly:
+     a future edit that relaxed the bound while keeping the NaN check would
+     let Infinity through and nothing else would notice. Postgres `numeric`
+     accepts 'Infinity' on PG14+, so this is a real storable value, not a
+     theoretical one. */
+  test.each([Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    '%p clears the type guard but is refused by the scale',
+    (rpe) => {
+      expect(typeof rpe === 'number' && !Number.isNaN(rpe)).toBe(true);
+      expect(statusOf(() => validateSessionPayload(sessionPayload({ rpe })))).toBe(400);
+    },
+  );
+
+  test('a numeric string is refused rather than coerced', () => {
+    expect(statusOf(() => validateSessionPayload(sessionPayload({ rpe: '7' })))).toBe(400);
+  });
+
+  test('the rejection names rpe so the caller knows what to fix', async () => {
+    let refusal: unknown;
+    try {
+      validateSessionPayload(sessionPayload({ rpe: 11 }));
+    } catch (error) {
+      refusal = error;
+    }
+    const body = await jsonError(refusal).json();
+    expect(body.error).toContain('rpe');
+  });
+});
+
+describe('a session RPE has to say where it came from', () => {
+  test.each(SESSION_RPE_METHODS)('%s is accepted', (method) => {
+    // UNKNOWN is paired with a null reading and the self-report with a real
+    // one, so each case is a row the application could actually write.
+    const rpe = method === 'UNKNOWN' ? null : 6;
+    expect(validateSessionPayload(sessionPayload({ rpe, rpe_method: method })).rpe_method)
+      .toBe(method);
+  });
+
+  test('a method outside the vocabulary is a 400, not a constraint violation', () => {
+    expect(statusOf(() => validateSessionPayload(sessionPayload({
+      rpe_method: 'coach_estimate',
+    })))).toBe(400);
+  });
+
+  // Required, not defaulted. The migration drops the column default for the
+  // same reason: a writer that knows the provenance must state it rather than
+  // inherit 'UNKNOWN' by saying nothing.
+  test('omitting rpe_method is a 400 rather than an inherited UNKNOWN', () => {
+    const withoutMethod: Record<string, unknown> = sessionPayload();
+    delete withoutMethod.rpe_method;
+    expect(statusOf(() => validateSessionPayload(withoutMethod))).toBe(400);
+  });
+
+  test('the rejection names rpe_method so the caller knows what to fix', async () => {
+    let refusal: unknown;
+    try {
+      validateSessionPayload(sessionPayload({ rpe_method: 'coach_estimate' }));
+    } catch (error) {
+      refusal = error;
+    }
+    const body = await jsonError(refusal).json();
+    expect(body.error).toContain('rpe_method');
+  });
+});
+
+// The agreement rule, mirroring the CHECK the migration adds. It is deliberately
+// one-directional, and both directions are pinned here so neither drifts.
+describe('rpe and rpe_method have to agree', () => {
+  test('a row with no reading may not claim a method for one', () => {
+    expect(statusOf(() => validateSessionPayload(sessionPayload({
+      rpe: null,
+      rpe_method: 'athlete_post_session_self_report',
+    })))).toBe(400);
+  });
+
+  test('the refusal explains which pairing is wrong', async () => {
+    let refusal: unknown;
+    try {
+      validateSessionPayload(sessionPayload({ rpe: null, rpe_method: 'athlete_post_session_self_report' }));
+    } catch (error) {
+      refusal = error;
+    }
+    const body = await jsonError(refusal).json();
+    expect(body.error).toContain('rpe_method');
+    expect(body.error).toContain('UNKNOWN');
+  });
+
+  test('no reading with no claimed method is the honest open check-in, and is accepted', () => {
+    expect(validateSessionPayload(sessionPayload({ rpe: null, rpe_method: 'UNKNOWN' })))
+      .toMatchObject({ rpe: null, rpe_method: 'UNKNOWN' });
+  });
+
+  // The converse is NOT constrained, on purpose. Every row written before this
+  // contract holds a number whose provenance is genuinely unknown -- in fact a
+  // readiness reading -- and refusing that pairing would make those rows
+  // unwritable and force a lie about where they came from.
+  test('a reading whose provenance is unknown is accepted, because that is what the old rows are', () => {
+    expect(validateSessionPayload(sessionPayload({ rpe: 7, rpe_method: 'UNKNOWN' })))
+      .toMatchObject({ rpe: 7, rpe_method: 'UNKNOWN' });
   });
 });
