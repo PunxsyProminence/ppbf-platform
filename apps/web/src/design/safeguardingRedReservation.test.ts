@@ -379,7 +379,7 @@ function stripTsComments(source: string): { code: string; stringMask: Uint8Array
         const closer = state === 'single' ? "'" : '"';
         if (c === '\n') {
           state = 'code';
-        } else if (c === '\\\\') {
+        } else if (c === '\\') {
           mask[i] = 1;
           if (n !== undefined && n !== '\n') {
             mask[i + 1] = 1;
@@ -393,7 +393,7 @@ function stripTsComments(source: string): { code: string; stringMask: Uint8Array
       }
 
       case 'template':
-        if (c === '\\\\') {
+        if (c === '\\') {
           mask[i] = 1;
           if (n !== undefined) {
             mask[i + 1] = 1;
@@ -408,7 +408,7 @@ function stripTsComments(source: string): { code: string; stringMask: Uint8Array
       case 'regex':
         if (c === '\n') {
           state = 'code';
-        } else if (c === '\\\\') {
+        } else if (c === '\\') {
           i += 1;
         } else if (c === '[') {
           inCharClass = true;
@@ -464,7 +464,7 @@ const IDENTIFIER_PROBES: ReadonlyArray<{ name: string; probe: RegExp }> = [
 ];
 
 function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\\\]/g, '\\\\$&');
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 interface Finding {
