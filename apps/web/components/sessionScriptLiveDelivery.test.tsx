@@ -572,79 +572,100 @@ describe('logging an intervention against this run', () => {
   });
 });
 
-describe('the "On the floor" panel', () => {
-  // "Who is training tonight" used to exist on this screen only as the
-  // hand-typed athletes_present count at finish. This panel shows the coach
-  // dashboard's fresh-check-in feed during delivery: identity from the
-  // profile roster, freshness from the readiness board (which returns only
-  // athletes with a fresh check-in), names and faces only.
-  function rosterEntry(id: string, name: string, overrides: Record<string, unknown> = {}) {
-    return {
-      athlete_id: id,
-      account_id: null,
-      full_name: name,
-      initials: name.split(' ').map((part) => part[0]).join(''),
-      ring_name: null,
-      photo_available: false,
-      ...overrides,
-    };
-  }
-
-  const boardEntry = (id: string) => ({
+describe('readiness is not presence', () => {
+  /* THE DEFECT THIS REPLACES.
+   *
+   * This screen carried an "On the floor" panel that listed every athlete
+   * returned by /api/pilot/coach/readiness-board and called them "athletes
+   * with a fresh check-in". The readiness board reads pilot.readiness, and
+   * every row in that table was typed by a staff member during intake review
+   * -- method 'staff_entered_intake' or 'UNKNOWN', and nothing else exists
+   * (readinessProvenance.ts). Nobody arrived. Nobody checked in. Nothing was
+   * observed.
+   *
+   * The test that used to stand here asserted the substitution was working:
+   * it fed one board row and required that athlete to render as present. It
+   * was green, and it was pinning the bug.
+   *
+   * THE MUTATION IS THE CASE ITSELF. A fresh staff-entered readiness row, with
+   * no presence fact anywhere, must not put an athlete on the floor. Because
+   * there is no authorized presence source for a coach today -- athlete
+   * check-ins are self-only by contract, and attendance is the register --
+   * the honest outcome is that the panel does not exist, so the assertion is
+   * that nothing on this screen makes a presence claim at all.
+   */
+  const freshStaffEnteredReadiness = (id: string) => ({
     athlete_id: id,
     status: 'GREEN',
     score: 8,
-    measured_at: '2026-08-21T00:00:00.000Z',
-    method: 'UNKNOWN',
+    measured_at: new Date().toISOString(),
+    // The provenance that proves this is a desk judgement, not an arrival.
+    method: 'staff_entered_intake',
     reliability_status: '',
     validity_status: '',
     evidence_class: '',
   });
 
-  it('shows the names of athletes with a fresh check-in, and only those', async () => {
+  it('a fresh staff-entered readiness row does not put an athlete on the floor', async () => {
     await renderLive(liveRun(), {
-      roster: () => jsonResponse({ items: [rosterEntry('ath-1', 'Jordan Packer'), rosterEntry('ath-2', 'Riley Stone')] }),
-      readinessBoard: () => jsonResponse({ items: [boardEntry('ath-1')] }),
+      roster: () => jsonResponse({
+        items: [{
+          athlete_id: 'ath-1',
+          account_id: null,
+          full_name: 'Jordan Packer',
+          initials: 'JP',
+          ring_name: null,
+          photo_available: false,
+        }],
+      }),
+      readinessBoard: () => jsonResponse({ items: [freshStaffEnteredReadiness('ath-1')] }),
     });
 
-    const panel = within(screen.getByRole('region', { name: 'On the floor' }));
-    expect(panel.getByText('Jordan Packer')).toBeInTheDocument();
-    // No fresh check-in means not on the floor panel -- the board is the
-    // freshness filter, exactly as the dashboard applies it.
-    expect(panel.queryByText('Riley Stone')).not.toBeInTheDocument();
-    // Names only: the board's triage colour is used as a filter, never shown.
-    expect(panel.queryByText('GREEN')).not.toBeInTheDocument();
-    // The run controls are untouched by the panel loading.
-    expect(screen.getByRole('button', { name: 'Pause session' })).toBeEnabled();
+    // The requirement stated directly: athlete A is not on this screen. The
+    // region and phrasing assertions below are the supporting cast -- this is
+    // the one that fails if a future panel renders the same substitution under
+    // any other heading.
+    expect(screen.queryByText('Jordan Packer')).not.toBeInTheDocument();
+
+    expect(screen.queryByRole('region', { name: 'On the floor' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/on the floor/i)).not.toBeInTheDocument();
+    // And no weaker phrasing of the same claim survived the removal.
+    expect(screen.queryByText(/fresh check-in/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/checked in/i)).not.toBeInTheDocument();
   });
 
-  it('a failed read shows the unavailable copy instead of an empty room, and the controls still work', async () => {
+  it('does not read the readiness board at all', async () => {
+    // Repointing the panel at a different query would satisfy the assertions
+    // above while keeping a triage feed on a delivery screen. The request
+    // itself is what must be gone.
     const { fetchMock } = await renderLive(liveRun(), {
-      roster: () => jsonResponse({}, false, 500),
+      readinessBoard: () => jsonResponse({ items: [freshStaffEnteredReadiness('ath-1')] }),
+    });
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('/api/pilot/coach/readiness-board'))).toBe(false);
+  });
+
+  it('does not reach for athlete check-ins instead', async () => {
+    // app/api/pilot/athlete/check-in/route.ts is SELF ONLY and says so:
+    // "coach/admin views of arrivals are a later, separate read surface".
+    // Swapping one unauthorized presence proxy for another is the failure
+    // mode this case exists to catch.
+    const { fetchMock } = await renderLive(liveRun());
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('check-in'))).toBe(false);
+  });
+
+  it('the session controls are unaffected by the removal', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
       patch: () => jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) }),
     });
 
-    const panel = within(screen.getByRole('region', { name: 'On the floor' }));
-    expect(panel.getByText(/could not be loaded/)).toBeInTheDocument();
-    expect(panel.getByText(/not an empty room/)).toBeInTheDocument();
-    expect(panel.queryByText(/No athlete on your roster has a fresh check-in/)).not.toBeInTheDocument();
-
-    // The panel's failure must never block the run: pausing still round-trips.
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
     });
     expect(patchCalls(fetchMock)).toEqual([{ action: 'pause' }]);
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
-  });
-
-  it('an empty result is an honest empty state, not the unavailable copy', async () => {
-    await renderLive(liveRun(), {
-      roster: () => jsonResponse({ items: [rosterEntry('ath-1', 'Jordan Packer')] }),
-      readinessBoard: () => jsonResponse({ items: [] }),
-    });
-
-    const panel = within(screen.getByRole('region', { name: 'On the floor' }));
-    expect(panel.getByText(/No athlete on your roster has a fresh check-in/)).toBeInTheDocument();
-    expect(panel.queryByText(/could not be loaded/)).not.toBeInTheDocument();
   });
 });
