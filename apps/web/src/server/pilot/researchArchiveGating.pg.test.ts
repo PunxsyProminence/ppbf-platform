@@ -40,12 +40,22 @@
 //      land -- would not have been caught.
 //
 // SCOPE LIMIT, STATED PLAINLY. This proves the DATABASE half. It does not and
-// cannot prove that a SharePoint write failed, because no code in this
-// repository writes to the research archive at all:
-// src/server/document-intake/sharepoint.ts has no caller, and nothing on the
-// registration path performs an archive write whose failure could be observed.
-// The archive-side assertion ("no second original") is therefore out of reach
-// from here; see the accompanying report.
+// cannot prove that a SharePoint write failed, because NO SHADOW
+// RESEARCH-REGISTRATION PATH CURRENTLY PERFORMS A GOVERNED RESEARCH ARCHIVE
+// WRITE. Nothing on the registration path performs an archive write whose
+// failure could be observed, so the archive-side assertion ("no second
+// original") is out of reach from here; see the accompanying report.
+//
+// Corrected 2026-08-24. This paragraph used to say
+// "src/server/document-intake/sharepoint.ts has no caller", which was simply
+// false: app/api/document-ingest/route.ts imports uploadToSharePoint and calls
+// it. That helper is the GENERIC intake uploader, writing to a configurable
+// destination (SHAREPOINT_FOLDER_PATH, defaulting to PPBF/Intake) -- a
+// different concern from the governed Research Archive, and not a research
+// authority. The scope limit survives the correction because it never rested
+// on that file being dead; it rests on no RESEARCH registration path making an
+// archive write. Getting the reason wrong while getting the conclusion right
+// is how a limit outlives the thing that justified it.
 //
 // Spins up the same disposable, local-only embedded Postgres the sibling pg
 // suites use (scripts/test-embedded-pg-server.mjs). It NEVER connects to
