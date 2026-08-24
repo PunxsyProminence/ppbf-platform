@@ -22,6 +22,10 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 
+/* Golden Era V1 (2026-08-24): root carries ge-athlete / ge-athlete-workspace /
+   ge-room-floor so ppbf-golden-era.css paper primacy + floor room DNA apply.
+   Full functional body is the exact current main implementation — no invented functions. */
+
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
 
@@ -520,13 +524,13 @@ function AthleteRabbitHoleLibrary() {
   }, []);
 
   if (loadState === 'loading') {
-    return <span className="working">Loading the gym&apos;s rabbit holes...</span>;
+    return <span className="working">Loading the gym's rabbit holes...</span>;
   }
 
   if (loadState === 'unavailable') {
     return (
       <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-        The gym&apos;s rabbit holes could not be loaded right now. That is a problem reaching the app, not a sign
+        The gym's rabbit holes could not be loaded right now. That is a problem reaching the app, not a sign
         that none have been written.
       </p>
     );
@@ -1735,8 +1739,10 @@ export default function AthleteWorkspace() {
   return (
     /* Gym-floor kiosk surface: ink ground with the floor room's brick wall
        (PAGE_MAP), the same room pattern /schedule uses. Law 5 applies to
-       everything inside — targets at var(--tap), working type at var(--t-md). */
-    <div className="room room--floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
+       everything inside — targets at var(--tap), working type at var(--t-md).
+       Golden Era V1: ge-athlete / ge-athlete-workspace / ge-room-floor so
+       ppbf-golden-era.css paper primacy + floor DNA apply. No functional change. */
+    <div className="room room--floor ge-athlete ge-athlete-workspace ge-room-floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
       <div className="max-w-7xl mx-auto p-[var(--s4)] space-y-[var(--s6)]">
         {/* HEADER */}
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
@@ -1755,7 +1761,7 @@ export default function AthleteWorkspace() {
                 Under "SHADOW" or "Messages" it would be describing a screen
                 the athlete is not looking at. */}
             {activeGroup === 'today' && (
-              <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today&apos;s work, and keep your goals where you can see them.</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today's work, and keep your goals where you can see them.</p>
             )}
             {/* The motto strip is gone from here, from the coach workspace, from
                 the parent hub and from the funding centre -- the same six words
@@ -2253,7 +2259,7 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 panel-settle">
               {lastWorkoutBuildNote && (
                 <div className={PANEL}>
-                  <p className="t-eyebrow">Today&apos;s Work</p>
+                  <p className="t-eyebrow">Today's Work</p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">{lastWorkoutBuildNote}</p>
                 </div>
               )}
@@ -2368,7 +2374,7 @@ export default function AthleteWorkspace() {
                     Nothing on your floor yet.
                   </h3>
                   <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                    Check in and today&apos;s work gets built.
+                    Check in and today's work gets built.
                   </p>
                   {activeSessionRecord ? null : (
                     <>
@@ -2520,7 +2526,7 @@ export default function AthleteWorkspace() {
 
               {!goalsLoading && smartGoals.length === 0 && !goalsError && (
                 <div className={`${PANEL} text-center`}>
-                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Nothing on the board yet. Put up one goal and we&apos;ll track it.</p>
+                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Nothing on the board yet. Put up one goal and we'll track it.</p>
                 </div>
               )}
 
@@ -2751,7 +2757,7 @@ export default function AthleteWorkspace() {
                   <div className="alert-body">
                     <p className="alert-title">Could not load the drills</p>
                     <p className="alert-msg">{drillsError}</p>
-                    <p className="alert-msg mt-[var(--s2)]">The gym&apos;s drills are still there. This screen just could not reach them.</p>
+                    <p className="alert-msg mt-[var(--s2)]">The gym's drills are still there. This screen just could not reach them.</p>
                   </div>
                 </div>
               )}
@@ -2822,7 +2828,7 @@ export default function AthleteWorkspace() {
                   person's coaching, so it makes no evidence claim and carries
                   no SHADOW evidence tier. */}
               <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                Everything here is this gym&apos;s own coaching, written by a coach and published under their name. It
+                Everything here is this gym's own coaching, written by a coach and published under their name. It
                 is not research and it is not SHADOW evidence.
               </p>
 
@@ -2982,7 +2988,7 @@ export default function AthleteWorkspace() {
                   <div className="alert alert--critical" role="alert">
                     <span className="alert-icon" aria-hidden="true">✕</span>
                     <div className="alert-body">
-                      <p className="alert-title">Could not load SHADOW&apos;s notes</p>
+                      <p className="alert-title">Could not load SHADOW's notes</p>
                       <p className="alert-msg">{shadowObservationError}</p>
                       <div className="alert-action">
                         <button
