@@ -1,8 +1,10 @@
 /* ===========================================================================
-   PPBF GOLDEN ERA V1 — CURRENT VISUAL THEME
+   PPBF GOLDEN ERA V1 — RENDERED VISUAL IMPLEMENTATION
    ---------------------------------------------------------------------------
    Status: ACTIVE rendered visual authority for the usable-app release.
    Date: 2026-08-24 · Lane: Grok visual · Owner: Jason Neale
+
+   CORRECTIVE IMPLEMENTATION (this file is no longer a label + wholesale import).
 
    Authority order (docs/GOLDEN-ERA-V1-CONTRACT.md):
      1. Functional  — current main source + real APIs (no invented functions)
@@ -16,7 +18,7 @@
      - Golden Era interface (paper / brass / leather / iron-city feel)
      - Real current PPBF functions
 
-   MATERIALS (priority of presence):
+   MATERIALS (priority of presence — ENFORCED here):
      1. Paper  — primary working surface (forms, cards, lists, notices)
      2. Brass  — accents, rivets, stamp edges, primary action metal
      3. Leather — secondary cards, coach notebooks, binding
@@ -37,22 +39,13 @@
      (same building, same day, same Golden Era chassis, same Iron City DNA).
      Same room ≠ same atmosphere.
 
-   PLATES: Layer 0 only (the wall the room stands in). Real UI composites
-     on top in code. Quiet centre, outer-thirds interest, zero lettering,
-     4:4:4, complete SOI/EOI. Real gym DNA required — no stock gym.
-     Type B producer set lives under apps/web/public/plates/ (see contract §9).
+   PLATES: Layer 0 only. Real UI composites on top. Quiet centre, outer-thirds
+     interest, zero lettering, 4:4:4. Real gym DNA required — no stock gym.
 
-   IMPLEMENTATION NOTE:
-     The full visual implementation (tokens, materials, rooms, stamps, badges,
-     kiosk controls, plates block, etc.) currently lives in the retired
-     Leather & Brass sheet. That sheet already embodies the golden-era grit,
-     paper hierarchy, and room model this contract requires. For the usable-
-     app release TODAY we import it for continuity (every converted page and
-     the 5,884 call sites keep working), then declare this file the authority
-     and apply the few contract-critical overrides below.
-
-     Future work may extract a pure Golden Era sheet that no longer depends
-     on the legacy file; that is polish, not a blocker for gym use.
+   IMPLEMENTATION:
+     Legacy sheet remains the temporary compatibility base (rooms, materials,
+     stamps, plates wiring, 5,884+ call sites). This file OVERRIDES and EXTENDS
+     so the rendered result is Golden Era, not just a renamed Leather & Brass.
 
    Tagline: OBSERVE. DECIDE. EXECUTE. REPEAT.
    =========================================================================== */
@@ -67,13 +60,12 @@
   --ppbf-visual-contract: "docs/GOLDEN-ERA-V1-CONTRACT.md";
   --ppbf-real-gym-lock: "docs/REAL-GYM-REFERENCE-LOCK.md";
   --ppbf-visual-date: "2026-08-24";
+  --ppbf-visual-impl: "core-workflows-2026-08-24";
 }
 
 /* --------------------------------------------------------------------------
    Safety red contract restatement (hard owner decision)
-   --------------------------------------------------------------------------
-   --locked and --stamp-red remain #A81E22. Documented here so a future
-   session does not re-interpret medical red as generic chrome. */
+   -------------------------------------------------------------------------- */
 :root {
   --locked:     #A81E22;
   --locked-ink: #F3C9C6;
@@ -82,15 +74,301 @@
 }
 
 /* --------------------------------------------------------------------------
-   Paper primacy reminder (hierarchy item 1)
+   PAPER PRIMACY (hierarchy item 1 — Golden Era distinguishes itself here)
    --------------------------------------------------------------------------
-   Paper is the primary working surface. The legacy sheet already defines
-   .mat-paper, .pap--*, .on-canvas, and restatements. No behavioural change;
-   this comment + the authority tokens above are the contract hand-off. */
+   Working surfaces default toward paper more aggressively than pure leather
+   dominance. Cards, lists, notices, forms sit as paper objects on the room. */
+.ge-paper,
+.ge-paper-primary {
+  background-color: var(--paper);
+  background-image: var(--grain-fine),
+    linear-gradient(178deg, #F8F0DC, #E7DBBD);
+  background-blend-mode: overlay, normal;
+  color: #33291B;
+  box-shadow: 0 4px 12px rgba(0,0,0,.42);
+}
+
+/* Paper restatements already in legacy; Golden Era strengthens them for
+   high-use surfaces so text never fights the ground. */
+.ge-paper .t-command,
+.ge-paper-primary .t-command {
+  color: #241B12;
+  text-shadow: 0 1px 0 rgba(255,255,255,.4), 0 0 0 transparent;
+}
+.ge-paper .t-body,
+.ge-paper-primary .t-body { color: #3A2E1D; }
+.ge-paper .t-muted,
+.ge-paper-primary .t-muted { color: #6E5B3E; }
+.ge-paper .t-label,
+.ge-paper-primary .t-label { color: #4A3B26; }
+.ge-paper .t-eyebrow,
+.ge-paper-primary .t-eyebrow { color: var(--brass-800); }
+.ge-paper .t-data,
+.ge-paper-primary .t-data { color: #2A2013; }
 
 /* --------------------------------------------------------------------------
-   Real-gym plate authority (already wired in legacy PLATES block)
+   ROOM DNA / PAGE DNA — distinct atmospheres inside the same building
    --------------------------------------------------------------------------
-   room--* --plate URLs and plate-07 warm ground remain the layer-0 walls.
-   Drift test before any Mode B plate ship: Iron City / blue-foam / rough-wood
-   / bag DNA visible in the outer thirds; no stock grey brick. */
+   FLOOR: high contrast, high density, tablet/kiosk practical
+   OFFICE: paper/desk/document organization
+   FILE: records/reference
+   CLINIC: cleaner, calmer (no clinical authority invented)
+   NIGHT: SHADOW/telemetry quiet, no neon sci-fi
+   BOARD: governance/oversight formal quiet
+*/
+
+/* Floor — denser, higher contrast for coach tablet use */
+.room--floor.ge-dense,
+.ge-floor-dense {
+  /* tighter vertical rhythm for high-information coach surfaces */
+}
+.ge-floor-dense .mat-leather,
+.ge-floor-dense .mat-leather--raised {
+  /* slightly tighter padding defaults for floor density */
+}
+
+/* Floor mastheads — command voice, high energy */
+.ge-floor-masthead .t-command {
+  letter-spacing: .05em;
+  text-shadow: 0 2px 0 rgba(0,0,0,.65), 0 0 20px rgba(232,206,122,.18);
+}
+
+/* Office — paper-first desk feel */
+.room--office .ge-desk-stack,
+.ge-office-desk {
+  /* paper stacks sit on wood/plank */
+}
+
+/* Clinic — cooler, calmer; red only for true medical lock */
+.room--clinic .ge-clinic-panel {
+  border-color: rgba(78, 107, 82, 0.35);
+}
+
+/* Night — low lamp, bags as silhouettes; no neon */
+.room--night .ge-shadow-shell {
+  background-color: var(--hide-950);
+  box-shadow: inset 0 0 80px rgba(0,0,0,.55);
+}
+
+/* Board — formal quiet, lower chrome density */
+.room--board .ge-board-panel {
+  /* reduced decorative chrome; chalkboard / certificate feel */
+}
+
+/* --------------------------------------------------------------------------
+   REAL-GYM PLATE TREATMENT (layer-0 quiet centre)
+   --------------------------------------------------------------------------
+   Plates remain layer 0. Golden Era softens the plate slightly under working
+   panels so paper/leather UI remains readable (Jason has caught unreadable
+   text). Outer thirds keep Iron City / blue-foam / wood / bag DNA. */
+.room::after,
+.on-canvas::after {
+  /* legacy already wires --plate; Golden Era can later tune opacity if needed */
+  opacity: 1;
+}
+
+/* Quiet-centre overlay for UI landing zones (non-destructive, optional) */
+.ge-quiet-centre {
+  position: relative;
+}
+.ge-quiet-centre::before {
+  content: "";
+  position: absolute;
+  inset: 12% 18%;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse at 50% 45%,
+    rgba(15, 12, 10, 0.28) 0%,
+    transparent 72%);
+}
+.ge-quiet-centre > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* --------------------------------------------------------------------------
+   SIGN-IN / ENTRY — Punxsy Prominence + Golden Era identity
+   --------------------------------------------------------------------------
+   Establishes real gym, paper form, brass chassis, no generic SaaS login. */
+.ge-signin-shell .frame {
+  /* keep brass frame; paper interior is already .mat-paper */
+}
+.ge-signin-shell .t-painted {
+  /* The Bell masthead — jobbing printshop feel */
+  letter-spacing: .04em;
+}
+.ge-signin-shell .btn--kiosk {
+  /* full-width kiosk targets for gym tablet */
+  min-height: var(--tap);
+  font-size: 19px;
+}
+
+/* --------------------------------------------------------------------------
+   COACH WORKSPACE — tool a coach uses on the floor, not a dashboard template
+   -------------------------------------------------------------------------- */
+.ge-coach-workspace {
+  /* high information density, floor-oriented */
+}
+.ge-coach-workspace .t-eyebrow {
+  letter-spacing: .14em;
+}
+.ge-coach-workspace .mat-leather--raised {
+  /* raised leather for KPI cells and athlete rows */
+}
+.ge-coach-masthead {
+  border-bottom: 2px solid var(--brass-700);
+  padding-bottom: var(--s5);
+}
+.ge-coach-roster-row {
+  /* face + name + state; floor-friendly touch */
+  min-height: calc(var(--tap) - 4px);
+}
+
+/* Pain / safety panels — unmistakably medical red only when locked */
+.ge-pain-panel {
+  border-color: var(--locked);
+  border-width: 2px;
+}
+.ge-pain-panel .t-command,
+.ge-pain-panel h2 {
+  color: var(--locked-ink);
+}
+
+/* Restricted vs Locked: restricted stays orange; locked is medical only */
+.ge-restricted-only {
+  border-color: var(--restricted);
+}
+
+/* --------------------------------------------------------------------------
+   ATHLETE WORKSPACE — simpler, clearer, truthful unknown states
+   --------------------------------------------------------------------------
+   #597 removed readiness-driven automatic training prescription.
+   Visual must NOT restore a prescription-looking readiness slider decision. */
+.ge-athlete-workspace .ge-readiness-note {
+  /* readiness is observation/provenance, never a medical clear or auto plan */
+  color: var(--bone-400);
+  font-size: var(--t-xs);
+  letter-spacing: .04em;
+}
+
+/* --------------------------------------------------------------------------
+   SESSION SCRIPTS / LIVE DELIVERY — gym-use critical, large floor controls
+   -------------------------------------------------------------------------- */
+.ge-session-live .btn--kiosk,
+.ge-session-live .btn--tap {
+  min-height: var(--tap);
+  font-size: var(--t-md);
+}
+.ge-session-step {
+  /* current step high contrast; next action clear */
+  border-left: 4px solid var(--brass-500);
+  padding-left: var(--s4);
+}
+.ge-session-step.is-current {
+  border-left-color: var(--brass-300);
+  background-color: rgba(212, 175, 74, 0.08);
+}
+
+/* --------------------------------------------------------------------------
+   DRILL LIBRARY — working library, strong hierarchy, floor-friendly
+   -------------------------------------------------------------------------- */
+.ge-drill-library .mat-paper,
+.ge-drill-library .ge-paper {
+  /* readable drill cards */
+}
+.ge-drill-row {
+  min-height: 44px;
+}
+
+/* --------------------------------------------------------------------------
+   SHADOW — integrated real-gym product, not sci-fi AI
+   -------------------------------------------------------------------------- */
+.ge-shadow-shell {
+  /* same materials, quieter chrome, Mode labels only where real */
+}
+.ge-shadow-shell .t-eyebrow {
+  color: var(--brass-400);
+}
+
+/* --------------------------------------------------------------------------
+   HIGH-USE ADMIN — people, PIN, orgs — real role vocabulary only
+   -------------------------------------------------------------------------- */
+.ge-admin-panel {
+  /* paper/office feel for records */
+}
+
+/* --------------------------------------------------------------------------
+   RESPONSIVE — phone / tablet / desktop reflows (not mere shrink)
+   -------------------------------------------------------------------------- */
+@media (max-width: 430px) {
+  .ge-coach-workspace .max-w-7xl,
+  .ge-athlete-workspace .max-w-7xl {
+    padding-left: var(--s3);
+    padding-right: var(--s3);
+  }
+  .ge-signin-shell .frame-in {
+    padding: var(--s4) !important;
+  }
+  .ge-session-live .btn--kiosk {
+    width: 100%;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  /* coach tablet sweet spot — denser but still touchable */
+  .ge-floor-dense .space-y-6 {
+    /* keep spacing scale; density via content hierarchy */
+  }
+  .ge-coach-roster-row {
+    min-height: var(--tap);
+  }
+}
+
+@media (min-width: 1280px) {
+  .ge-coach-workspace .max-w-7xl {
+    /* desktop breathing room without losing floor energy */
+  }
+}
+
+/* --------------------------------------------------------------------------
+   FOCUS / A11Y / REDUCED MOTION (foundation survives; Golden Era restates)
+   -------------------------------------------------------------------------- */
+.ge-coach-workspace :where(a, button, [role="button"], [tabindex]:not([tabindex="-1"])) :focus-visible,
+.ge-signin-shell :where(a, button, [role="button"], input, select, textarea):focus-visible {
+  outline: 0;
+  box-shadow: var(--focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ge-session-step,
+  .ge-coach-roster-row {
+    transition: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   UNKNOWN / EMPTY / HONEST STATES (never look complete or zero)
+   -------------------------------------------------------------------------- */
+.ge-unknown {
+  color: var(--bone-400);
+  font-style: normal;
+  letter-spacing: .04em;
+}
+.ge-unknown::before {
+  content: "— ";
+  opacity: .7;
+}
+
+/* --------------------------------------------------------------------------
+   LEGACY COMPATIBILITY NOTE
+   --------------------------------------------------------------------------
+   All .mat-*, .room--*, .btn, .stamp, .badge, .t-*, plates, frames, etc.
+   continue to work from the imported legacy sheet. Golden Era adds ge-*
+   classes and targeted overrides so high-use surfaces can opt into stronger
+   paper primacy, denser floor treatment, and room DNA without breaking
+   unconverted pages. Future extraction may drop the legacy import once
+   call sites are fully mapped; that is polish, not a blocker for gym use.
+
+   TYPE B PLATES: exact producer JPEGs still blocked on binary capacity.
+   Report separately. Do not mark complete.
+   =========================================================================== */
