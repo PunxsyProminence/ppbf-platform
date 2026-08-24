@@ -5,16 +5,57 @@
 **Drafted:** 2026-08-19  
 **Scope:** Research originals, provenance, intake, evidence review, and SHADOW retrieval. This document does not authorize algorithm, medical, safeguarding, contact, sparring, or production-policy changes.
 
-## 1. Proposed archive baseline (unconfirmed)
+## 1. Archive baseline
 
-> **This section is the sole source of every string it contains.** `git grep` for
-> `Library Intake`, `_CONTROL`, or `R98 - Duplicate Hold` across this repository
-> returns only this document and `SHADOW_RESEARCH_INTAKE_IMPORT.md`. There is no
-> manifest, export, connector record, configuration value, or test fixture that
-> corroborates any of it. Until one exists, treat everything below as a
-> **proposal**, not as controlling fact. `AGENT_KERNEL.md:31` — "Claims need evidence."
+> **Corrected 2026-08-24.** This section was headed *"Proposed archive baseline
+> (unconfirmed)"* and opened: *"There is no manifest, export, connector record,
+> configuration value, or test fixture that corroborates any of it. Until one
+> exists, treat everything below as a proposal, not as controlling fact."*
+>
+> **The permanent archive target is now verified**, and it is SharePoint — which
+> is what issue #345 said all along. The `_CONTROL`, `R00`, `R01`–`R19` and `R98`
+> structure physically exists there. It is no longer a proposal and must not be
+> described as hypothetical or unverified.
+>
+> **What has NOT changed, and is the reason this section still carries warnings:**
+>
+> - **Nothing in this repository reads or writes those folders.** That was true
+>   before and is true now. It is a separate claim from "the folders exist", and
+>   conflating the two is how the original note over-reached in one direction and
+>   how a correction over-reaches in the other.
+> - **Custody is not citability.** A document sitting in the archive is not
+>   admissible SHADOW evidence. The gate chain in §3 is untouched.
+> - **Migration is not complete.** OneDrive `Library Intake/` remains the
+>   *temporary working and migration source*; the prior migration inventory
+>   states its recursive enumeration is not exhausted. No bulk copy or move is
+>   authorized, here or by the task that produced this correction.
 
-The proposed governed upstream archive baseline for the PPBF research workflow is:
+### 1.0 The permanent archive — verified 2026-08-24
+
+| Field | Value |
+|---|---|
+| Hostname | `punxsyprominenceboxing.sharepoint.com` |
+| Site path | `/sites/PunxsyProminenceClubOperations` |
+| Site display name | Punxsy Prominence – Club Operations |
+| Site Graph ID | `punxsyprominenceboxing.sharepoint.com,b23f5af9-6800-4d38-9ec5-d8546ac983d9,79c360dc-0f69-48de-af78-a7e76acb9499` |
+| Document library | `Documents` |
+| Drive ID | `b!-Vo_sgBoOE2exdhUasmD2dxgw3lpD95Ir3in52rLlJkPoxSpVsFoQI_NNbWdKzpJ` |
+| Canonical archive root | `Research Archive` |
+| Root item ID | `0154YZVWYXXDPDFKTSCBA3G2XDFG34WAO7` |
+
+Browser root:
+`https://punxsyprominenceboxing.sharepoint.com/sites/PunxsyProminenceClubOperations/Shared%20Documents/Research%20Archive`
+
+These identifiers were established by a read-only audit on 2026-08-24 and are
+recorded here so the target can be addressed by stable Graph identity rather than
+by a path a reorganisation can break. **This repository does not use them yet** —
+no code, configuration value or test in this tree reads any of them.
+
+### 1.1 The temporary migration source — OneDrive
+
+The tree below is **OneDrive `Library Intake/`**, a *different store* from the
+permanent archive above. It remains the working and migration source, and the
+structure it mirrors is the same taxonomy:
 
 ```text
 admin@punxsyprominence.org
@@ -22,12 +63,16 @@ admin@punxsyprominence.org
     └── Library Intake/
 ```
 
-**Attribution and evidence status.** The tree below was reported on 2026-08-19 by an
-AI agent reading the `admin@punxsyprominence.org` tenant through a Microsoft 365
-connector, and transcribed here by hand. It is an *observation claim*, not an export:
-no artifact of that read — no listing, no drive/item identity, no timestamped
-manifest — exists anywhere in this repository, so nothing here can be re-verified
-from the repository alone. It is recorded so the owner can confirm or correct it.
+**Attribution and evidence status.** This OneDrive tree was reported on 2026-08-19
+by an AI agent reading the `admin@punxsyprominence.org` tenant through a Microsoft
+365 connector, and transcribed here by hand. No artifact of that read — no listing,
+no drive/item identity, no timestamped manifest — exists in this repository, so the
+*OneDrive* listing still cannot be re-verified from the repository alone. The
+2026-08-24 audit verified the **SharePoint** archive above, not this tree.
+
+It is the migration SOURCE, not the destination, and the distinction is
+load-bearing: work that reads it is reading something being emptied, not the
+system of record.
 
 ```text
 Library Intake/
@@ -54,7 +99,7 @@ Library Intake/
 └── R98 - Duplicate Hold/
 ```
 
-### 1.1 Relationship to issue #345 — this document does not supersede it
+### 1.2 Relationship to issue #345 — this document does not supersede it
 
 An earlier draft of this document claimed to supersede "stale product-documentation
 pointers" naming `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...`.
@@ -72,12 +117,19 @@ That claim was wrong twice over and is withdrawn:
 
 | | Store | Path | Evidence status |
 |---|---|---|---|
-| Issue #345 (owner-authored, open) | SharePoint | `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...` | The durable contract. Governs until the owner updates it. |
-| This document (proposed) | OneDrive | `admin@punxsyprominence.org / OneDrive / Library Intake/` | Unconfirmed agent-connector observation, 2026-08-19. No repository artifact. |
+| Issue #345 (owner-authored, open) | SharePoint | `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...` | **The durable contract.** Governs until the owner updates it. |
+| Permanent archive (§1.0) | SharePoint | `/sites/PunxsyProminenceClubOperations` -> `Documents` -> `Research Archive` | **Verified 2026-08-24** by read-only audit. Drive and item identity recorded in §1.0. |
+| Temporary migration source (§1.1) | OneDrive | `admin@punxsyprominence.org / OneDrive / Library Intake/` | Unconfirmed agent-connector observation, 2026-08-19. No repository artifact. Being emptied, not the system of record. |
 
-**Issue #345 remains the durable contract until the owner updates it.** If the owner
-confirms the OneDrive tree, the correct remedy is to amend #345 and then align this
-document to it — not the reverse.
+**The store question is settled the way #345 said it was.** This document's earlier
+draft named OneDrive as the archive; #345 named SharePoint; the 2026-08-24 audit
+found the permanent archive on SharePoint. The contract was right and the draft was
+wrong, which is why #345 governs and this document aligns to it rather than the
+reverse.
+
+**Issue #345 remains the durable contract until the owner updates it.** What is now
+verified is the archive's *identity and structure*, not any change to what the
+contract requires. Nothing about custody, citability, or the gate chain moved.
 
 Nothing here authorizes deleting, moving, merging, or retiring any older Microsoft or
 Google tree. Older trees remain historical/provenance evidence until they are
@@ -187,12 +239,18 @@ and the archive subject folders proposed in §1.
 and asserts it equals the shipped constant, so the two cannot drift apart. **Keep the table's
 three-column `| R-code | \`key\` | label |` shape** — the test reads it, and a reformat will fail it.
 
-**The `archiveCode` column is an unverified documentation crosswalk.** It maps an application
-key onto a folder name from §1, and §1 is an unconfirmed proposal (no manifest, no export, no
-connector record in this repository). Nothing in the running system verifies that folder `R16`
-exists, that it is named "Adaptive and Inclusive Practice", or that it is where an
-`adaptive_inclusive_practice` source ends up. `archiveCode` is a label this repository asserts,
-not a fact it has checked.
+**The `archiveCode` column is a documentation crosswalk that nothing enforces.** Corrected
+2026-08-24: this paragraph called it "unverified" on the grounds that §1 was "an unconfirmed
+proposal". The `R01`–`R19` structure is now verified to exist in the permanent archive (§1.0),
+so that reasoning no longer holds — but the column's status is unchanged for a different and
+still-true reason.
+
+**Nothing in the running system reads or writes it.** No code in this repository routes,
+files, or uploads by `archiveCode`; no configuration value names a folder; no test asserts
+that an `adaptive_inclusive_practice` source ends up in `R16`. The folders exist and the
+mapping is asserted here by hand. Those are two different claims, and only the first one
+changed. Do not build routing, filing, or upload behaviour on `archiveCode` as though the
+destination were wired.
 
 | Code | Application key | Label |
 |---|---|---|

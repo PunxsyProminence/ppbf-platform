@@ -8,16 +8,20 @@ Start with [SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md) fo
 
 The research system deliberately separates three layers:
 
-1. **Governed originals and provenance** — *proposed, unconfirmed.*
-   `SHADOW_RESEARCH_ARCHITECTURE.md` §1 describes `admin@punxsyprominence.org / OneDrive /
-   Library Intake` with `_CONTROL`, R00, R01-R19, and R98, on the strength of a 2026-08-19
-   agent-connector observation for which no artifact exists in this repository. Open,
-   owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345)
-   instead names **SharePoint** `SHADOW AIML / 02 - Source Materials / Penn State Library
-   Intake / ...` and remains the durable contract. The only Microsoft destination this
-   repository's code writes to is a third thing again — a SharePoint site drive at
-   `PPBF/Intake` (`apps/web/src/server/document-intake/sharepoint.ts`). Do not treat any of
-   the three as settled; see §1 and §3 of the architecture document.
+1. **Governed originals and provenance.** Corrected 2026-08-24; this read
+   *"proposed, unconfirmed"* and described three stores none of which were settled. The
+   permanent archive is now verified, and the three are distinct on purpose:
+
+   | | Store | What it is |
+   |---|---|---|
+   | **Permanent research archive** | SharePoint `/sites/PunxsyProminenceClubOperations` -> `Documents` -> `Research Archive` | **Verified 2026-08-24.** Physically contains `_CONTROL`, `R00`, `R01`-`R19`, `R98`. Drive and item identity in `SHADOW_RESEARCH_ARCHITECTURE.md` §1.0. This is what open, owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345) meant by SharePoint, and #345 remains the durable contract. |
+   | **Temporary migration source** | OneDrive `admin@punxsyprominence.org / Library Intake/` | Still the working/migration source, mirroring the same taxonomy. Its listing rests on a 2026-08-19 agent-connector observation with no artifact in this repository. **Migration is not complete** — the prior inventory states its recursive enumeration is not exhausted. |
+   | **Generic intake uploader** | SharePoint site drive at `PPBF/Intake` (`apps/web/src/server/document-intake/sharepoint.ts`) | A third thing again, and the *only* Microsoft destination this repository's code writes to. It is a configurable general uploader, not the research archive, and it decides no research authority or subject classification. |
+
+   **Custody is not citability.** A document living in the permanent archive is not
+   admissible SHADOW evidence and does not resolve a research requirement. The gate chain
+   in §3 of the architecture document is unchanged, and the research-specific
+   archive-to-SHADOW automation described in §7 below still does not exist.
 2. **Reviewer-facing evidence reference package** — `apps/web/seed-data/research-evidence/2026-08-07/`; this package is not loaded into the database.
 3. **Loadable SHADOW corpus** — `apps/web/seed-data/shadow-research/2026-08-07/`; this is the current importer's default seed directory.
 

@@ -5,13 +5,22 @@
 // that table out of the shipped markdown and asserts it equals this constant,
 // so the two cannot drift apart.
 //
-// `archiveCode` IS AN UNVERIFIED DOCUMENTATION CROSSWALK, NOT ARCHIVE TRUTH.
-// It points at folder names in section 1 of that document, which is an
-// unconfirmed proposal: no manifest, export, connector record, or configuration
-// value anywhere in this repository corroborates that those folders exist or
-// are named that way, and no code in this repository reads or writes them. Do
-// not build routing, filing, or upload behavior on `archiveCode` as though the
-// destination were established.
+// `archiveCode` IS A DOCUMENTATION CROSSWALK THAT NOTHING ENFORCES.
+//
+// Corrected 2026-08-24. This comment read "UNVERIFIED ... NOT ARCHIVE TRUTH"
+// and said section 1 of that document was "an unconfirmed proposal: no
+// manifest, export, connector record, or configuration value anywhere in this
+// repository corroborates that those folders exist". The R01-R19 structure is
+// now verified to exist in the permanent SharePoint archive, so that ground is
+// gone.
+//
+// THE CONCLUSION IS UNCHANGED, for the half of the original reason that was
+// always the load-bearing half: NO CODE IN THIS REPOSITORY READS OR WRITES
+// THEM. Nothing routes, files or uploads by `archiveCode`; no configuration
+// value names a folder; no test asserts where an `adaptive_inclusive_practice`
+// source lands. "The folder exists" and "this mapping is wired to it" are two
+// claims, and only the first one changed. Do not build routing, filing, or
+// upload behavior on `archiveCode` as though the destination were wired.
 //
 // R00 (Unsorted Drop) and R98 (Duplicate Hold) are workflow states, not subject
 // domains, so neither belongs in this list -- by code and by key alike. Note
