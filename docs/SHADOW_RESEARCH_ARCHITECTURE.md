@@ -362,11 +362,13 @@ site, document library, drive, canonical root folder and root item — on the no
 SharePoint workspace **Punxsy Prominence – Club Operations**, library `Documents`, root
 `Research Archive`. PR #585 records those identifiers in §1.
 
-That settles item 2 as well, and it settles it by dissolving the contradiction rather than by
-picking a winner: the two stores are not rivals for one role. SharePoint is the **permanent
-governed archive**; OneDrive `Library Intake/` is a **temporary migration source** that
-predates it. Both are real, and neither document was wrong about what it named — only about
-the relationship between them.
+That settles item 2 as well, but not symmetrically. Both stores are real — that much of the
+contradiction dissolves. The role assignment does not: the earlier draft of §1 gave OneDrive
+`Library Intake/` the **governed-archive role, and that was wrong**. Issue #345 had it right
+all along. SharePoint is the **permanent governed archive**; OneDrive is a **temporary
+migration source** that predates it and never held the governing role. Recording that
+plainly matters, because a later reader weighing the two documents' histories should know
+which one to trust on this point.
 
 **Retired — PR #507.** #507 recorded this same owner decision while its identifiers were
 unverified, and its stated purpose was that "the exact hostname, site, document library/drive,
