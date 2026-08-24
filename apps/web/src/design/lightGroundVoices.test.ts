@@ -34,6 +34,20 @@ import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 const CSS = path.join(__dirname, '../../../../design-system/ppbf.css');
 const sheet = readDesignSystemCss(CSS).replace(/\/\*[\s\S]*?\*\//g, '');
 
+/* A GROUND IS NOT A VOICE.
+ *
+ * The two light grounds can nest: `.on-canvas .mat-paper` is a paper panel
+ * standing on canvas, exactly the way the compound selectors this file already
+ * excludes are a dark panel standing on canvas. It names no type voice, so
+ * there is nothing for the other ground to restate -- and read as a voice it
+ * demands the absurdity `.mat-paper .mat-paper`, paper restating itself.
+ *
+ * Found when Golden Era V1 grouped `.on-canvas .mat-paper` into the paper rule
+ * (2026-08-24): every voice comparison still held, and the guard went red
+ * asking paper to answer for being paper. The assertion below is unchanged --
+ * this only stops a ground being classified as a voice in the first place. */
+const GROUNDS = ['on-canvas', 'mat-paper'];
+
 /** Selectors of the form `.ground .voice`, one entry per voice named. */
 function voicesRestatedFor(ground: string): Set<string> {
   const found = new Set<string>();
@@ -46,7 +60,7 @@ function voicesRestatedFor(ground: string): Set<string> {
   for (const rule of sheet.matchAll(/([^{}]*)\{/g)) {
     for (const selector of rule[1].split(',')) {
       const match = selector.trim().match(new RegExp(`^${escaped}\\s+\\.([a-z][a-z0-9-]*)$`));
-      if (match) found.add(match[1]);
+      if (match && !GROUNDS.includes(match[1])) found.add(match[1]);
     }
   }
   return found;
