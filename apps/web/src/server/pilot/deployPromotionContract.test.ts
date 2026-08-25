@@ -62,6 +62,30 @@ describe('deploy-production promotes a tested digest and never builds', () => {
     expect(verifyAt).toBeLessThan(deployAt);
   });
 
+  /* confirm_sha and release_digest arrive as two independent strings. Proving
+     each one valid on its own is not the same as proving they belong together:
+     a transposed pair deploys the wrong image under the right name, and
+     PPBF_RELEASE_SHA then records the mismatch as fact for the rollback guard
+     to trust. deploy-staging tags every push `ppbf-frontend:<github.sha>`, so
+     the binding is already in the registry and the verify step must assert it. */
+  test('the ACR check binds the digest to the commit, not just to existence', () => {
+    const verifyAt = production.indexOf('- name: Verify release digest exists in ACR');
+    const nextStepAt = production.indexOf('- name:', verifyAt + 1);
+    const step = production.slice(verifyAt, nextStepAt === -1 ? undefined : nextStepAt);
+
+    // It must read the manifest's tags and compare them against confirm_sha.
+    expect(step).toMatch(/\$\{\{ inputs\.confirm_sha \}\}/);
+    expect(step).toMatch(/\.tags/);
+    expect(step).toMatch(/PROVENANCE MISMATCH/);
+    // And refuse, rather than warn, when they do not agree.
+    expect(step).toMatch(/^\s*exit 1$/m);
+  });
+
+  test('staging tags every image it pushes with the commit sha, or the binding has nothing to read', () => {
+    // The assertion above is only meaningful while this remains true.
+    expect(staging).toMatch(/tags:\s*\$\{\{ env\.ACR_LOGIN_SERVER \}\}\/ppbf-frontend:\$\{\{ github\.sha \}\}/);
+  });
+
   test('staging is the only workflow that builds the frontend image', () => {
     // The digest production promotes has to come from somewhere that tested
     // it. If this moves, the promotion story needs re-verifying, not just a
