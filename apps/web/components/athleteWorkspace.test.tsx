@@ -254,9 +254,12 @@ describe('athlete workspace honesty', () => {
     await renderWorkspace();
 
     expect(screen.getByText('Tasks Due')).toBeTruthy();
+    // Both label styles the summary row uses (stat tiles wear stat-label,
+    // KPI tiles wear t-label), so a tile reintroduced in either dress fails;
+    // the nav group's <button> matches neither.
     const messageTiles = screen
       .queryAllByText('Messages')
-      .filter((element) => element.classList.contains('stat-label'));
+      .filter((element) => element.classList.contains('stat-label') || element.classList.contains('t-label'));
     expect(messageTiles).toHaveLength(0);
   });
 
