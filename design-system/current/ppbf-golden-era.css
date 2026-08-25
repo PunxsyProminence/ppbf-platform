@@ -487,6 +487,20 @@
     inset 0 -2px 4px rgba(0,0,0,.34),
     0 2px 5px rgba(0,0,0,.5);
 }
+/* THE RING THAT RULE KNOCKED OUT. `.btn:focus-visible` carries the whole focus
+   indicator for every button in this app inside its BOX-SHADOW, alongside
+   `outline: 0` -- so any later rule that sets box-shadow on the same control at
+   equal or higher specificity takes the indicator away and leaves the outline
+   suppressed. Measured: the control focused with the screen BYTE-IDENTICAL.
+   Restated here with the rule's own bevel intact; the resting control does not
+   change. WCAG 2.4.7. */
+.ge-board .btn--ghost:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.5);
+}
 .ge-board .btn--ghost:hover {
   color: #241B12;
   border-color: var(--brass-900);
@@ -3393,6 +3407,20 @@
     inset 0 -2px 4px rgba(0,0,0,.34),
     0 2px 5px rgba(0,0,0,.5);
 }
+/* THE RING THAT RULE KNOCKED OUT. `.btn:focus-visible` carries the whole focus
+   indicator for every button in this app inside its BOX-SHADOW, alongside
+   `outline: 0` -- so any later rule that sets box-shadow on the same control at
+   equal or higher specificity takes the indicator away and leaves the outline
+   suppressed. Measured: the control focused with the screen BYTE-IDENTICAL.
+   Restated here with the rule's own bevel intact; the resting control does not
+   change. WCAG 2.4.7. */
+.ge-clinic .btn:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.5);
+}
 .ge-clinic .btn:hover {
   background-image:
     radial-gradient(circle at 9px 50%,
@@ -3444,6 +3472,20 @@
     inset 0 -2px 4px rgba(0,0,0,.34),
     0 2px 5px rgba(0,0,0,.46);
 }
+/* THE RING THAT RULE KNOCKED OUT. `.btn:focus-visible` carries the whole focus
+   indicator for every button in this app inside its BOX-SHADOW, alongside
+   `outline: 0` -- so any later rule that sets box-shadow on the same control at
+   equal or higher specificity takes the indicator away and leaves the outline
+   suppressed. Measured: the control focused with the screen BYTE-IDENTICAL.
+   Restated here with the rule's own bevel intact; the resting control does not
+   change. WCAG 2.4.7. */
+.ge-clinic .btn--ghost:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(233,236,238,.26),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.46);
+}
 .ge-clinic .btn--ghost:hover {
   color: var(--bone-100);
   border-color: #1A1E21;
@@ -3475,6 +3517,18 @@
   background-color: #161B1E;
   border: 1px solid var(--ge-steel-700);
   box-shadow:
+    inset 0 2px 6px rgba(0,0,0,.7),
+    inset 0 -1px 0 rgba(233,236,238,.10),
+    0 1px 0 rgba(233,236,238,.12);
+}
+/* THE SAME HOLE ON THE FIELDS. `.input:focus` / `.select:focus` /
+   `.textarea:focus` carry their indicator the same way, and the sunk-well rule
+   above out-ranks them. `:focus` rather than `:focus-visible` here because a
+   field shows its ring on pointer focus too -- that is the stock behaviour and
+   this only restores it. The well's own recess is kept. WCAG 2.4.7. */
+.ge-clinic :is(.input, .select, .textarea):focus {
+  box-shadow:
+    var(--focus),
     inset 0 2px 6px rgba(0,0,0,.7),
     inset 0 -1px 0 rgba(233,236,238,.10),
     0 1px 0 rgba(233,236,238,.12);
