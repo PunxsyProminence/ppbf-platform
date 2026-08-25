@@ -94,3 +94,199 @@
    room--* --plate URLs and plate-07 warm ground remain the layer-0 walls.
    Drift test before any Mode B plate ship: Iron City / blue-foam / rough-wood
    / bag DNA visible in the outer thirds; no stock grey brick. */
+
+/* ==========================================================================
+   GOLDEN ERA 007 — THE FRONT DESK (People Console)
+
+   Packet 007_FRONT_OFFICE_ADMIN, route /admin/people, room .room--office.
+   The locked reference is a DESK BOARD on a plank wall: brass nameplate
+   plaques across the top rail, a parchment register hung in a screwed bronze
+   frame, hanging lamps overhead. That is a fourth distinct object alongside
+   The Bell's parchment plaque, the coach's slate board and the athlete's wood
+   locker, which is what ROOM-PURPOSE-DNA asks for -- the front office's own
+   line is "plank wall, desk lamp, paper forms, riveted cards", and every one
+   of those four things is already in this page's markup (.lamp over the
+   header, .frame + .rivet around the roster, .mat-paper under the .ledger).
+   Nothing here invents a surface; it dresses the ones that exist.
+
+   SCOPE. Everything is under `.ge-frontoffice`, one class added to the page's
+   existing <main>. The bronze ramp is redefined on that scope for the same
+   leak-proof reason as .ge-bell, .ge-floorboard and .ge-locker: .btn,
+   .btn--ghost, .frame, .rivet, .badge and the tab rail all resolve
+   var(--brass-*), and app/globals.css aliases --accent-strong to
+   var(--brass-500), so one token override re-skins the whole desk -- including
+   the ACTIVE tab's fill -- and legacy gold cannot leak through a property
+   nobody remembered to restate. Outside the scope nothing moves.
+
+   WHAT IS DELIBERATELY NOT DONE HERE. The reference draws a tab rail reading
+   PEOPLE / NOTICES / VOLUNTEERS and four panels: Roster, Notices, PIN
+   Management, Attendance KPIs. Only the roster is this route. Notices is
+   /notices, Volunteers is /admin/volunteer-management, PIN Management is
+   /admin/pin and Attendance is /admin/attendance -- four separate doors in the
+   same room, drawn together because the packet is a picture of the ROOM. This
+   page's real tabs are Everyone / Add Coach, Staff Or Guardian / Add Athlete.
+   Styling the image literally would rename three working controls and invent
+   three panels with nothing behind them, so the materials are applied to the
+   REAL control set and the difference is reported to the owner instead of
+   being resolved by a stylesheet.
+
+   The refusal surfaces on this route (WrongRoleNotice, the loading state) are
+   deliberately left OUTSIDE the scope: they are what an unauthorised or
+   not-yet-resolved caller sees, and a visual pass has no business anywhere
+   near them. FUNCTIONAL_CHANGES: NONE. */
+.ge-frontoffice {
+  --brass-200: #E7C88A;
+  --brass-300: #D6B063;
+  --brass-400: #BE9440;
+  --brass-500: #9F7A30;
+  --brass-600: #896628;
+  --brass-700: #6E5220;
+  --brass-800: #533D18;
+  --brass-900: #392910;
+}
+
+/* The plank wall the desk stands against. Wide vertical boards with a lit
+   bevel down each seam -- the office's own grain direction, distinct from the
+   locker's narrow verticals and the floor board's horizontal slate. The warm
+   wash is dropped from the TOP CENTRE because that is where .lamp hangs on
+   this page; the panel is lit by the fixture the markup already draws rather
+   than by a gradient that agrees with nothing. Unlayered sheet vs Tailwind's
+   @layer utilities, so these win without !important. */
+.ge-frontoffice .mat-leather {
+  background-color: var(--wood-700);
+  background-image:
+    radial-gradient(120% 78% at 50% 0%, rgba(255,232,186,0.13) 0%, transparent 64%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.34) 0 2px,
+      rgba(255,236,196,0.07) 2px 4px,
+      transparent 4px 52px),
+    linear-gradient(180deg, var(--wood-600) 0%, var(--wood-800) 72%, var(--wood-900) 100%);
+  border-color: color-mix(in srgb, var(--brass-700) 54%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.15),
+    inset 0 -3px 8px rgba(0,0,0,0.52);
+}
+
+/* The desk lamp. The stock pool is a general room light; a desk lamp throws a
+   tighter, warmer circle onto the paperwork directly under it, which is the
+   whole reason the front office reads as a DESK and not a hall. */
+.ge-frontoffice .lamp::after {
+  width: 208px;
+  height: 150px;
+  background-image: radial-gradient(50% 44% at 50% 0%,
+    var(--lamp-hot) 0%, rgba(255,226,168,0.5) 22%, transparent 66%);
+}
+
+/* Tab plaques. Engraved nameplates screwed to the top rail: a screw head at
+   each end, a bronze edge, an engraved-letter shadow.
+
+   THE SHEEN IS TRANSLUCENT ON PURPOSE. The active tab is signalled by
+   background-COLOR (Tailwind's bg-[var(--accent-strong)]) and the inactive
+   ones by bg-transparent; an opaque background-image here would paint over
+   both and leave the two states looking identical -- a real affordance
+   destroyed by a decorative rule. A translucent sheen sits on top of whichever
+   colour the component chose, so the state distinction survives intact and
+   only gets brighter, because --accent-strong now resolves to bronze. */
+.ge-frontoffice nav.mat-leather button {
+  position: relative;
+  background-image: linear-gradient(180deg,
+    rgba(255,244,214,0.16) 0%, rgba(255,244,214,0.04) 44%, rgba(0,0,0,0.26) 100%);
+  border-color: color-mix(in srgb, var(--brass-700) 78%, #000);
+  box-shadow:
+    inset 0 1px 0 rgba(255,244,214,0.24),
+    inset 0 -2px 4px rgba(0,0,0,0.34),
+    0 2px 4px rgba(0,0,0,0.40);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.45);
+}
+.ge-frontoffice nav.mat-leather button::before,
+.ge-frontoffice nav.mat-leather button::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  translate: 0 -50%;
+  border-radius: 50%;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 34% 30%,
+    var(--brass-200) 0%, var(--brass-400) 40%, var(--brass-700) 72%, var(--brass-900) 100%);
+  box-shadow: inset 0 -1px 1px rgba(0,0,0,0.6);
+}
+.ge-frontoffice nav.mat-leather button::before { left: 7px; }
+.ge-frontoffice nav.mat-leather button::after  { right: 7px; }
+
+/* The register frame. The stock .frame is polished specular brass; the office
+   keeps its records in a screwed oak surround with a bronze bead, which is
+   what the reference hangs the roster in. Same object, aged to this room. */
+.ge-frontoffice .frame {
+  background-image: linear-gradient(158deg,
+    var(--wood-900) 0%,  var(--wood-600) 16%, var(--brass-400) 31%,
+    var(--wood-700) 47%, var(--wood-900) 63%, var(--brass-600) 81%,
+    var(--wood-900) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.34),
+    inset 0 -2px 3px rgba(0,0,0,0.55),
+    0 10px 26px rgba(0,0,0,0.58);
+}
+
+/* Slotted screws, not domed rivets. A rivet is hammered in once; a register
+   frame is unscrewed when the sheet is changed, and the front office is the
+   room where paper gets changed. Decorative only -- .rivet is already
+   aria-hidden at every call site on this page. */
+.ge-frontoffice .rivet {
+  background-image:
+    linear-gradient(92deg, transparent 0 3px, rgba(0,0,0,0.62) 3px 8px, transparent 8px),
+    radial-gradient(circle at 34% 28%,
+      var(--brass-200) 0%, var(--brass-400) 38%, var(--brass-700) 68%, var(--brass-900) 100%);
+}
+
+/* The register sheet. Sepia margin rule down the left and faint horizontal
+   ruling, so the roster reads as a bound register rather than a white card.
+   The ruling is BRONZE INK, never the reserved red: .pap--ruled draws its
+   margin in rgba(168,30,34,…) and that colour is #A81E22 -- the safeguarding
+   red, reserved for MEDICALLY_NOT_ALLOWED, which may not be spent on a
+   decorative line. No `color` is set here at all: .mat-paper's own light-
+   ground ink restatement is already correct and is not this pass's business. */
+.ge-frontoffice .mat-paper {
+  background-image:
+    linear-gradient(90deg, transparent 0 29px,
+      rgba(110,82,32,0.42) 29px 30px, transparent 30px),
+    repeating-linear-gradient(180deg,
+      transparent 0 25px, rgba(110,82,32,0.11) 25px 26px),
+    var(--grain-fine),
+    linear-gradient(178deg, #F6EEDA, #E4D7B6);
+  background-blend-mode: normal, normal, overlay, normal;
+}
+
+/* The register head. A clerk rules the column headings off in ink and writes
+   the book's title across the top; both are dark bronze on cream, the paper
+   ink this ground already uses, so nothing here reintroduces a rung tuned for
+   leather. */
+.ge-frontoffice .ledger caption {
+  color: #2A2116;
+  letter-spacing: 0.09em;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+}
+.ge-frontoffice .ledger th {
+  color: var(--brass-900);
+  border-bottom-color: rgba(57,41,16,0.78);
+}
+
+/* Front-desk voice, on the dark boards only. Scoped under .mat-leather rather
+   than the bare class because the roster panel is .mat-paper -- a light ground
+   with its own ink restatement -- and a bare `.ge-frontoffice .t-eyebrow`
+   would out-order `.mat-paper .t-eyebrow` and print brass on cream.
+   The eyebrow is the stamped nameplate above each section; the command line is
+   painted onto the board and lit by the lamp. */
+.ge-frontoffice .mat-leather .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 74%, var(--bone-100));
+  letter-spacing: 0.2em;
+}
+.ge-frontoffice .mat-leather .t-command {
+  color: var(--bone-100);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.6), 0 0 14px rgba(255,232,186,0.12);
+}
+.ge-frontoffice .mat-leather .t-label {
+  color: var(--bone-300);
+  letter-spacing: 0.11em;
+}
