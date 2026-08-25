@@ -94,3 +94,158 @@
    room--* --plate URLs and plate-07 warm ground remain the layer-0 walls.
    Drift test before any Mode B plate ship: Iron City / blue-foam / rough-wood
    / bag DNA visible in the outer thirds; no stock grey brick. */
+
+/* ==========================================================================
+   GOLDEN ERA VISUAL 001 — THE BELL (sign-in)
+   ==========================================================================
+   Visual authority: Documents/PPBF-AI-Lanes/Visual-Handoffs/01_READY_FOR_GROK/
+   001_SIGN_IN/ (REFERENCE_APPROVED.jpg desktop, REFERENCE_MOBILE_APPROVED.jpg
+   phone), STATUS APPROVED_BY_JASON 2026-08-24.
+
+   Everything here is scoped to `.ge-bell` (the /login <main>), so it restyles
+   THE BELL alone -- the shared .frame / .rivet / .t-painted / .btn / .input
+   rules are untouched, and the /public sign-in popover (no .ge-bell) is
+   unchanged. No selector below leaves the scope. Functional markup is not
+   touched; this sheet is the whole implementation besides one class name.
+
+   Reserved-red rule holds: nothing here uses --locked / --stamp-red / #A81E22.
+   ========================================================================== */
+
+/* The wall: swap the warm-ground plate for the real-gym floor plate (heavy
+   bag + ring ropes + brick), reusing the legacy .on-canvas::after plate
+   machinery -- only the --plate URL changes. Portrait plate on phones, the
+   same responsive swap .room--floor already ships. */
+.ge-bell { --plate: url("/plates/plate-02a-floor-landscape-01.jpg"); }
+@media (max-width: 640px) {
+  .ge-bell { --plate: url("/plates/plate-02b-floor-portrait-01.jpg"); }
+}
+
+/* Soft, not hard full-bleed: a warm scrim + centre vignette keeps the quiet
+   reading centre the handoff calls for and stops the plate fighting the card.
+   Sits above the plate (z -1) and below the card column (z 1). */
+.ge-bell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 82% at 50% 42%,
+      rgba(24,16,10,0.30) 0%, rgba(20,13,8,0.58) 58%, rgba(15,10,6,0.82) 100%);
+}
+.ge-bell .ge-bell__column {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* The riveted door: the shared .frame is already a brass gradient with ball
+   rivets. The Bell adds the torn dark-hide margin the reference wears around
+   the brass, a deeper cast shadow, and a warm inner brass keyline -- so the
+   card reads as a mounted brass plate on a hide-bound board rather than a flat
+   panel. Approximation, not a literal deckled tear (noted in the handoff). */
+.ge-bell .frame {
+  padding: 18px;
+  background-color: var(--hide-900);
+  border: 7px solid var(--hide-950);
+  border-radius: 22px 20px 21px 23px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,244,214,0.45),
+    inset 0 -3px 6px rgba(0,0,0,0.55),
+    0 2px 0 rgba(0,0,0,0.4),
+    0 26px 60px rgba(0,0,0,0.62);
+}
+.ge-bell .frame > .frame-in {
+  border-radius: 13px;
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--brass-500) 62%, transparent),
+    inset 0 0 0 4px rgba(0,0,0,0.35),
+    inset 0 2px 12px rgba(0,0,0,0.55);
+}
+
+/* Larger, warmer parchment padding on the working surface -- generous
+   vertical room, per RESPONSIVE_NOTES desktop. */
+.ge-bell .frame-in.mat-paper {
+  padding: clamp(var(--s6), 4.5vw, var(--s8)) !important;
+}
+
+/* "The Bell": the reference paints it upright, mixed-case, dominant -- Alfa
+   Slab One (the DS --font-stencil) already IS that heavy slab face, so this
+   only removes the stencil stamp's uppercase + rotation and lifts the scale
+   and ink weight to the poster presence the reference shows. */
+.ge-bell .t-painted {
+  text-transform: none;
+  transform: none;
+  letter-spacing: 0.005em;
+  color: var(--hide-950);
+  text-shadow:
+    0 1px 0 rgba(255,255,255,0.35),
+    0 2px 3px rgba(60,36,20,0.28);
+}
+.ge-bell header .t-painted {
+  font-size: clamp(2.6rem, 7vw, 4.1rem) !important;
+  line-height: 0.98;
+}
+
+/* Primary metal: the Microsoft and Sign In doors read as struck brass plates
+   -- a brighter bevel and letter-spaced face over the shared .btn brass, big
+   gym-tablet targets. Scoped to the kiosk primaries so .btn--ghost stays the
+   quiet outline it is elsewhere. */
+.ge-bell .btn--kiosk {
+  letter-spacing: 0.03em;
+  border: 2px solid color-mix(in srgb, var(--brass-900) 70%, #000);
+  background-image:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--brass-300) 80%, #fff) 0%,
+      var(--brass-500) 44%,
+      var(--brass-700) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,246,214,0.75),
+    inset 0 -2px 4px rgba(0,0,0,0.45),
+    0 2px 4px rgba(0,0,0,0.4);
+}
+.ge-bell .btn--kiosk:hover {
+  background-image:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--brass-200) 82%, #fff) 0%,
+      var(--brass-400) 44%,
+      var(--brass-600) 100%);
+}
+
+/* Parchment fields: clear inset writing surface with a warm brass keyline,
+   dark ink -- large enough for sweaty-hands entry (Law 5 --tap already sets
+   the height via input--kiosk). */
+.ge-bell .input--kiosk {
+  background-color: color-mix(in srgb, var(--bone-100) 88%, var(--paper));
+  border: 1.5px solid color-mix(in srgb, var(--brass-800) 42%, transparent);
+  box-shadow: inset 0 2px 4px rgba(60,40,20,0.16);
+}
+.ge-bell .input--kiosk:focus {
+  border-color: var(--brass-700);
+  box-shadow:
+    inset 0 2px 4px rgba(60,40,20,0.16),
+    0 0 0 3px color-mix(in srgb, var(--brass-500) 34%, transparent);
+}
+
+/* Phone (REFERENCE_MOBILE_APPROVED.jpg): card near full-width with safe side
+   margins, tighter frame, title still dominant, methods already stack in a
+   single column. Not a shrunk desktop -- the column claims the width. */
+@media (max-width: 640px) {
+  .ge-bell .ge-bell__column {
+    padding-left: var(--s3);
+    padding-right: var(--s3);
+    padding-top: var(--s4);
+    padding-bottom: var(--s4);
+  }
+  .ge-bell .frame {
+    padding: 12px;
+    border-width: 5px;
+    border-radius: 16px 15px 16px 17px;
+  }
+  .ge-bell .frame-in.mat-paper {
+    padding: var(--s5) var(--s4) !important;
+  }
+}
