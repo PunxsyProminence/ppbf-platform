@@ -32,7 +32,16 @@ const SESSION_PATH = '/api/pilot/auth/session';
 
 const submittedObservations: Array<Record<string, unknown>> = [];
 
-function mockFetch(observationOk: (index: number) => boolean) {
+function mockFetch(
+  observationOk: (index: number) => boolean,
+  // What the observations API answers with. Defaults to the empty object the
+  // ordinary path sees; a test that drives the safety-review branch passes a
+  // payload carrying safetyReview -- without this hook, no test could ever
+  // make safetyReviewRaised true, and the safety branch sat unguarded (found
+  // by mutation audit 2026-08-25: the whole branch could be deleted with the
+  // suite green).
+  observationPayload: (index: number) => Record<string, unknown> = () => ({}),
+) {
   let index = 0;
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).endsWith(SESSION_PATH)) {
@@ -46,16 +55,20 @@ function mockFetch(observationOk: (index: number) => boolean) {
       submittedObservations.push(JSON.parse(init.body) as Record<string, unknown>);
     }
 
+    const at = index++;
     return {
-      ok: observationOk(index++),
-      json: async () => ({}),
+      ok: observationOk(at),
+      json: async () => observationPayload(at),
     } as Response;
   });
 }
 
-async function renderAndSubmit(observationOk: (index: number) => boolean) {
+async function renderAndSubmit(
+  observationOk: (index: number) => boolean,
+  observationPayload?: (index: number) => Record<string, unknown>,
+) {
   submittedObservations.length = 0;
-  global.fetch = mockFetch(observationOk) as unknown as typeof fetch;
+  global.fetch = mockFetch(observationOk, observationPayload) as unknown as typeof fetch;
   const { container } = render(<SparringTelemetryPage />);
 
   const submit = await screen.findByRole('button', { name: 'Log This Session' });
@@ -101,6 +114,28 @@ describe('sparring log submission status', () => {
   // coach has been asked to look at it"), which a flagged near miss really
   // does back -- and it renders only when the safety gate raised it, not on
   // an ordinary save.
+  test('a raised safety review tells the athlete a coach has been asked to look', async () => {
+    // The one coach claim this page is allowed to make, because it is backed:
+    // missing clearance or contact-during-hold files a flagged near miss a
+    // coach really receives. This drives the branch with a real payload --
+    // the harness default of {} means no other test can reach it, so without
+    // this pin the entire safety message was deletable with the suite green.
+    await renderAndSubmit(() => true, (index) => (index === 0 ? { safetyReview: { raised: true } } : {}));
+
+    const status = await screen.findByText(/your coach has been asked to look at it/);
+    expect(status.textContent).toContain('no current medical clearance');
+    expect(status.textContent).toContain('do not put it in again');
+    // And it must not fall through to the ordinary wording.
+    expect(screen.queryByText('Saved to your training record.')).toBeNull();
+  });
+
+  test('a safety-review lesson from the server is shown to the athlete verbatim', async () => {
+    await renderAndSubmit(() => true, () => ({ safetyReview: { raised: true, lesson: 'Contact stays off until a coach clears it.' } }));
+
+    const status = await screen.findByText(/your coach has been asked to look at it/);
+    expect(status.textContent).toContain('Contact stays off until a coach clears it.');
+  });
+
   test('an ordinary save claims no coach visibility anywhere on the page', async () => {
     await renderAndSubmit(() => true);
 
