@@ -17,9 +17,14 @@ import path from 'node:path';
  * "a wrong-environment deploy that announces success is worse than one that
  * refuses".
  *
- * This test pins the same model onto the target-switching workflows in
- * COVERED: no unconditional staging literal, the production branch reads the
- * secret, and a guard step fails on an empty secret before the Azure login.
+ * This test pins the same model onto every target-switching workflow: no
+ * unconditional staging literal, the production branch reads the secret, and a
+ * guard step fails on an empty secret before the Azure login. backup.yml and
+ * retention-cleanup.yml run on a SCHEDULE with no `environment:` and default
+ * to production, so for them the guard also depends on the secret being
+ * readable at repository scope -- if it is scoped to the production
+ * environment only, the nightly run refuses loudly, which is the intended
+ * direction (their own comments say the same).
  *
  * METHOD, stated honestly: raw workflow text plus regex, the same idiom as
  * seedWorkflowContract.test.ts, migrationDispatchCoverage.test.ts and
@@ -39,25 +44,25 @@ const WORKFLOW_DIR = path.resolve(__dirname, '../../../../../.github/workflows')
 /** Converted to the fail-closed model; held to the full contract below. */
 const COVERED = [
   'apply-migrations.yml',
+  'approve-library-baseline.yml',
+  'backup.yml',
   'check-database.yml',
+  'import-shadow-research.yml',
+  'rescope-library-baseline.yml',
+  'retention-cleanup.yml',
+  'run-checks.yml',
   'seed-reference-data.yml',
 ];
 
 /**
  * Accept target=production and still hardcode the staging resource group at
- * job level. Known, and deliberately NOT fixed in the bounded change that
- * introduced this test. Kept as an exact list rather than tolerated silently:
- * fixing one of these fails the set-equality test until it is promoted into
- * COVERED, and a NEW workflow shipping the defect fails it immediately.
+ * job level. The list is empty -- the defect class is closed -- but the
+ * mechanism stays: a NEW workflow shipping the defect fails the set-equality
+ * test immediately, and a covered workflow regressing to the hardcoded form
+ * fails the exact-defect test below, naming the file. Adding an entry here is
+ * a deliberate, reviewable act of recording a gap, never a default.
  */
-const KNOWN_UNFIXED = [
-  'approve-library-baseline.yml',
-  'backup.yml',
-  'import-shadow-research.yml',
-  'rescope-library-baseline.yml',
-  'retention-cleanup.yml',
-  'run-checks.yml',
-];
+const KNOWN_UNFIXED: string[] = [];
 
 const STAGING_RG = 'rg-ppbf-enterprise-staging';
 
