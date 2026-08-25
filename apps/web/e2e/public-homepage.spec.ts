@@ -187,3 +187,74 @@ test.describe('Public homepage', () => {
     await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
   });
 });
+
+/* THE RESOLVED-STYLE PROOF that legacy does not leak into the migrated Bell.
+ *
+ * The static guard (src/design/goldenEraTokenScope.test.ts) checks the source
+ * declares the `.ge-bell` bronze contract, but a text scan cannot prove a
+ * browser RESOLVES a component inside the scope to bronze rather than the
+ * legacy gold underneath. This reads the browser's own getComputedStyle on the
+ * real /login, so it holds across Chromium revisions (no pixels) and fails the
+ * moment a required Bell token regresses.
+ *
+ * Legacy vs golden-era values under test:
+ *   --brass-500  legacy #B8912F rgb(184,145,47)  ->  golden #9F7A30 rgb(159,122,48)
+ *   --brass-200  legacy #F2E2A8 rgb(242,226,168) (bright gold; must not appear)
+ *   frame edge   legacy --hide-950 rgb(20,16,13) ->  golden --hide-700 rgb(59,44,33)
+ *
+ * MUTATION EVIDENCE: remove `--brass-500` (or any rung) from the `.ge-bell`
+ * block in ppbf-golden-era.css and the frame's --brass-500 resolves to the
+ * root legacy value and its gradient carries rgb(184,145,47) -- both assertions
+ * below go red. Restore -> green.
+ */
+test.describe('The Bell resolves to the golden-era scope, with no legacy leak', () => {
+  const noSpace = (s: string) => s.replace(/\s+/g, '');
+
+  test('the .ge-bell scope wins over the document root, and the frame computes to bronze on brown leather', async ({ page }) => {
+    const response = await page.goto('/login');
+    expect(response?.ok()).toBeTruthy();
+    await expect(page.getByRole('heading', { name: 'The Bell' })).toBeVisible();
+
+    const resolved = await page.evaluate(() => {
+      const frame = document.querySelector('.ge-bell .frame') as HTMLElement | null;
+      const button = document.querySelector('.ge-bell .btn--kiosk') as HTMLElement | null;
+      if (!frame || !button) return null;
+      const fcs = getComputedStyle(frame);
+      const bcs = getComputedStyle(button);
+      const rootBrass = getComputedStyle(document.documentElement).getPropertyValue('--brass-500').trim();
+      return {
+        frameBrass500: fcs.getPropertyValue('--brass-500').trim().toLowerCase(),
+        rootBrass500: rootBrass.toLowerCase(),
+        frameBorderColor: fcs.borderTopColor,
+        frameBackground: fcs.backgroundImage,
+        buttonBackground: bcs.backgroundImage,
+      };
+    });
+
+    expect(resolved, 'expected .ge-bell .frame and .ge-bell .btn--kiosk on /login').not.toBeNull();
+    const r = resolved as NonNullable<typeof resolved>;
+
+    // 1. Resolved inheritance: the scope supplies bronze; the root still holds
+    //    legacy gold; the two genuinely differ (so the scope, not the root, is
+    //    what a component inside .ge-bell resolves).
+    expect(r.frameBrass500).toBe('#9f7a30');
+    expect(r.rootBrass500).toBe('#b8912f');
+    expect(r.frameBrass500).not.toBe(r.rootBrass500);
+
+    // 2. The frame edge computes to brown leather, not the legacy near-black hide.
+    expect(noSpace(r.frameBorderColor)).toBe('rgb(59,44,33)');
+    expect(noSpace(r.frameBorderColor)).not.toBe('rgb(20,16,13)');
+
+    // 3. The frame's metal computes to bronze, and carries none of the legacy
+    //    brass rgb -- neither the nominal gold nor the bright top rung.
+    const frameBg = noSpace(r.frameBackground);
+    expect(frameBg).toContain('rgb(159,122,48)'); // bronze-500
+    expect(frameBg).not.toContain('rgb(184,145,47)'); // legacy brass-500
+    expect(frameBg).not.toContain('rgb(242,226,168)'); // legacy brass-200 (bright gold)
+
+    // 4. The kiosk button metal is bronze too, not legacy gold.
+    const btnBg = noSpace(r.buttonBackground);
+    expect(btnBg).not.toContain('rgb(242,226,168)');
+    expect(btnBg).not.toContain('rgb(184,145,47)');
+  });
+});
