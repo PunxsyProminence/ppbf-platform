@@ -500,3 +500,52 @@
   color: color-mix(in srgb, var(--brass-300) 80%, var(--bone-200));
   letter-spacing: 0.16em;
 }
+
+/* ==========================================================================
+   GOLDEN ERA 003 — MY CORNER (Athlete Workspace)
+
+   Packet 02_READY_FOR_CLAUDE/003_ATHLETE_WORKSPACE, route /athlete/dashboard.
+   The locked reference is an OPEN WOOD LOCKER -- brass nameplate and hinges,
+   a parchment clipboard hung inside -- which is a third distinct room identity
+   alongside The Bell's parchment plaque and the coach's slate board. Same
+   Golden Era materials, different physical object, per ROOM PURPOSE DNA.
+
+   Unlike 002, this packet's stated tabs (Today / Development / Learn /
+   Schedule / Messages / SHADOW Intel) match TAB_GROUPS on current main exactly,
+   so there is no information-architecture conflict to escalate here.
+
+   Scoped to `.ge-locker` on the page wrapper; the bronze ramp is redefined on
+   that scope for the same leak-proof reason as .ge-bell and .ge-floorboard.
+   AthleteWorkspace and every control in it are untouched.
+   FUNCTIONAL_CHANGES: NONE. */
+.ge-locker {
+  --brass-200: #E7C88A;
+  --brass-300: #D6B063;
+  --brass-400: #BE9440;
+  --brass-500: #9F7A30;
+  --brass-600: #896628;
+  --brass-700: #6E5220;
+  --brass-800: #533D18;
+  --brass-900: #392910;
+}
+
+/* The locker carcass: dark wood with a warm interior wash, so panels read as
+   the inside of an open locker rather than floating cards. */
+.ge-locker .mat-leather {
+  background-color: var(--wood-800);
+  background-image:
+    linear-gradient(178deg, rgba(255,238,208,0.06) 0%, transparent 38%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.14) 0 3px, transparent 3px 11px);
+  border-color: color-mix(in srgb, var(--brass-700) 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.14),
+    inset 0 -3px 7px rgba(0,0,0,0.5);
+}
+
+/* Brass nameplate voice for the section eyebrows -- the engraved plate above
+   each compartment. */
+.ge-locker .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 82%, var(--bone-200));
+  letter-spacing: 0.15em;
+}
