@@ -445,15 +445,15 @@ function useAutosaveLane<T>(
     inFlight: false,
     queued: null,
   });
-  // Read through refs inside the effect so the dependency list is honestly
-  // [hydrated, value]: the send closure is rebuilt every render, and naming it
-  // as a dependency would refire the effect on renders where nothing changed.
+  // The send closure is rebuilt every render; naming it as a dependency of
+  // the save effect would refire that effect on renders where nothing
+  // changed. It is read through a ref instead, synced in its own effect --
+  // declared FIRST, because effects run in declaration order, so the save
+  // effect below always sees the closure from the same render.
   const sendRef = useRef(send);
-  sendRef.current = send;
-  const setErrorRef = useRef(setError);
-  setErrorRef.current = setError;
-  const refusalNounRef = useRef(refusalNoun);
-  refusalNounRef.current = refusalNoun;
+  useEffect(() => {
+    sendRef.current = send;
+  });
 
   useEffect(() => {
     if (!hydrated) {
@@ -471,10 +471,10 @@ function useAutosaveLane<T>(
       try {
         const response = await sendRef.current(snapshot);
         if (!response.ok) {
-          message = `${await readResponseError(response, refusalNounRef.current)}. This change is not saved and will be lost on reload.`;
+          message = `${await readResponseError(response, refusalNoun)}. This change is not saved and will be lost on reload.`;
         }
       } catch (error) {
-        message = `${toErrorMessage(error, refusalNounRef.current)}. The save was not confirmed -- it may or may not have been stored. Reload to see what the server kept.`;
+        message = `${toErrorMessage(error, refusalNoun)}. The save was not confirmed -- it may or may not have been stored. Reload to see what the server kept.`;
       }
       state.inFlight = false;
       if (state.queued !== null) {
@@ -484,11 +484,13 @@ function useAutosaveLane<T>(
         state.queued = null;
         return run(next);
       }
-      setErrorRef.current(message ?? '');
+      setError(message ?? '');
     };
 
     void run(value);
-  }, [hydrated, value]);
+    // refusalNoun is a literal and setError a useState setter: both are
+    // render-stable, so only hydration and the record itself refire this.
+  }, [hydrated, value, refusalNoun, setError]);
 }
 
 async function readResponseError(response: Response, fallback: string): Promise<string> {
