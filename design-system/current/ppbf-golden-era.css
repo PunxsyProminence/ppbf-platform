@@ -2705,3 +2705,617 @@
     padding: var(--s5) var(--s4) !important;
   }
 }
+
+/* ==========================================================================
+   GOLDEN ERA 009 — THE CLINIC (Sports Medicine clearance board)
+   ==========================================================================
+   Packet 02_READY_FOR_CLAUDE/009_CLINIC, HANDOFF.md STATUS
+   "VISUAL_APPROVED (desktop) — Jason 2026-08-25", plus REFERENCE_APPROVED.jpg.
+   Route /coach/sports-medicine (apps/web/app/coach/sports-medicine/page.tsx),
+   room .room--clinic, mounted inside RoleStandaloneView room="clinic".
+
+   THE OBJECT THE REFERENCE DRAWS. One thing hangs on the clinic wall: a dark
+   instrument board with a heavy dark surround and softly rounded corners. A
+   brass nameplate is bolted across the top of it, flanked at each end by a
+   riveted brass corner bracket. On the board's dark field stand pinned
+   parchment notes and riveted metal plaques. That is the whole identity, and
+   it is a seventh distinct object beside The Bell's riveted door, the coach's
+   slate board, the athlete's open locker, the drill cabinet's index cards, the
+   scheduler's pinned session cards, After Hours' instrument board and the
+   board room's framed parchment sheet. ROOM PURPOSE DNA asks for a different
+   physical object made of the same materials, not a different palette.
+
+   THE PLATE CARRIES THE ROOM, AND THIS SCOPE DOES NOT TOUCH IT. The room in
+   the reference — the pale wall, the floor, the shelving, the flat daylight —
+   is the WALL, and the wall is a photograph: plate-03-clinic-01.jpg, committed
+   and already wired to .room--clinic in the legacy PLATES block. So nothing
+   below draws a room. `--plate` is not named, `.room--clinic`'s own wall is not
+   restated, `.room::before` is left exactly as it is, and `.lamp` /
+   `.lamp--green` — the hung banker's shade and the pool it throws — is not
+   touched either. Retuning the clinic's green light to match the reference's
+   flat daylight was the obvious move and it is the one the corrected
+   architecture forbids: lighting the room is the photograph's job. What this
+   scope styles is the interface standing in front of that wall.
+
+   THE HANDOFF'S "CLINICAL NEUTRAL GREYS/WHITES (NO MINT TINT)" IS READ AS AN
+   INSTRUCTION ABOUT THE INTERFACE, NOT A LICENCE TO REPAINT THE ROOM. Every
+   material introduced below is a neutral cool grey — the steel ramp is
+   declared with blue above green on every rung, so no stop can read as mint —
+   and the only warm material kept is the brass the ramp itself carries. The
+   room's own green light is left alone because it is the plate's and the
+   room's, not this pass's. Both halves of that sentence are deliberate.
+
+   WHY THE FIELD STAYS DARK, MEASURED AGAINST TWO DIFFERENT WALLS. The
+   committed plate was decoded rather than assumed: plate-03-clinic-01.jpg is
+   1280x720, mean #607571, relative luminance 0.164 — a mid-dark sage-green
+   painted panelled wall. A brighter, near-white clinic portrait plate exists
+   in the handoff drive and is NOT in this repository, so this board has to
+   look intentional over both. Measured:
+
+     dark field #1D2225 vs the committed sage wall .......... 3.27:1
+     dark field #1D2225 vs a near-white wall (#EDEFF0) ..... 13.92:1
+     bright steel bead #C2C8CC vs the sage wall ............. 2.90:1
+     bright steel bead #C2C8CC vs a near-white wall ......... 1.46:1
+
+   A bright bezel is the treatment that FAILS: it holds against sage and
+   dissolves into white. Dark is the only value that separates the board from
+   both, which is also exactly what the reference draws — a dark surround with
+   a bright bead on its INNER edge, where the bead reads against the field it
+   encloses rather than against a wall that may change under it. The outer
+   surround is therefore dark graphite and the bright metal is kept inboard.
+   That is the whole answer to "a heavy surround on a clean clinical room looks
+   like scaffolding": the band is thin, machined and dark, not a heavy frame.
+
+   The field staying dark is also what makes this pass safe to reason about.
+   Every voice that stands loose on it is already answered for a dark ground —
+   `.working` resolves --brass-300 at 7.84:1 on the field's lightest stop,
+   WorkAxis inherits the room's --bone-200 at 12.92:1, and `.alert--warning`
+   keeps the dark reading it was measured for. No ground is flipped, so no ink
+   anywhere on this route has to be re-derived, and no rung is moved.
+
+   WHAT IS STYLED, AND WHAT IS DELIBERATELY NOT.
+
+   THE ROW CARDS STAY DARK, AND THAT IS A SAFETY BOUNDARY RATHER THAN A
+   PREFERENCE. Every athlete row is a `.mat-leather`, and each one carries both
+   a `.stamp` (the training-hold mark, and the refusal mark a bounced write
+   leaves) and a `.badge` whose `--locked` variant is the reserved safeguarding
+   red for `not_cleared` — a clinician looked at this child and said no. On a
+   dark material the sheet resolves a bare `.stamp` to `--locked-ink` (#F3C9C6)
+   and `.badge--locked` composes its own ground from `--locked`. Flipping these
+   cards to the reference's paper would print --locked-ink at about 1.1:1 and
+   the only fix would be to restate the reserved tint — a safety-semantics
+   change wearing a visual change's clothes. So the cards stay dark and become
+   the reference's OTHER material instead: brushed steel instrument trays,
+   riveted. The steel stops were chosen to sit at the SAME luminance band as
+   the leather they replace (#3E2E22 L=.0309 -> #2F3538 L=.0344; #2A1F18
+   L=.0154 -> #262C2F L=.0242; #1D1611 L=.0088 -> #1E2427 L=.0168), so the
+   change is a hue change at matched value and every contrast already measured
+   on those cards is preserved rather than re-argued. Worst voice on the
+   lightest stop: `.empty`'s --bone-400 at 5.20:1; the brass stamp at 6.07:1;
+   a bare stamp's --locked-ink at 8.29:1.
+
+   NOTHING BELOW NAMES `.stamp`, `.badge`, `--locked`, `--stamp-red`,
+   `--locked-ink` OR #A81E22. The reference draws its "Stamps" column as eight
+   steel plaques reading CLEARED and draws no refusal at all, so it offers no
+   approved treatment for the mark that matters most here. Restyling the stamp
+   family from a reference that only shows the happy case is exactly how a
+   safety mark gets quietly re-tinted, and `.badge` cannot be touched at all
+   without reaching `badge--locked` through the base rule. Left alone and
+   recorded, the same call PR #655 made for the board room.
+
+   WHAT THE REFERENCE DRAWS THAT THIS ROUTE DOES NOT HAVE, AND WHICH WAS
+   THEREFORE NOT BUILT.
+
+     1. TOGGLE SWITCHES — five of them, brass and steel, under "Readiness
+        Checks" and "Pain Honesty Log". There is no toggle, switch or boolean
+        control anywhere behind /coach/sports-medicine. Its controls are two
+        selects, a textarea, three text inputs and four buttons. A toggle on
+        this surface would imply a coach can flip a clearance or a hold, which
+        is precisely what the route does not allow — holds are placed through a
+        form the server validates, and clearance is set by the office.
+     2. "READINESS CHECKS" — Body / Mind / Focus. No readiness model, no
+        body/mind/focus axis and no self-report of any kind is stored against
+        an athlete here. Three engraved plaques with nothing behind them, on
+        the page that gates participation, is the worst place in the building
+        for an invented control.
+     3. "INJURY NOTES" and "PAIN HONESTY LOG". This board shows clearance state
+        and athlete-safe hold text ONLY, by an explicit owner decision recorded
+        at the top of the page: no diagnoses, no clinical notes, no restriction
+        detail, no reason beyond what the athlete themselves reads. An injury
+        note panel here would not just be an empty control, it would contradict
+        the constraint the surface exists to enforce.
+     4. THE TITLE "Golden Era CLINIC". The page's <h1> says Clearance Board,
+        which is what it is. A stylesheet does not rename a surface.
+
+   All four are reported to the owner on the PR as information-architecture
+   questions, each of which would need its own change, its own API and its own
+   tests. The MATERIALS are applied to the controls that are really there.
+
+   AND WHAT THE REFERENCE OMITS IS KEPT. The image draws no roster, no
+   clearance state, no "no clearance record on file" copy, no "unknown is not
+   cleared" warning, no hold scope, no lift condition, no place-hold form and
+   no refusal. Every one of those is real and every one of them stays. A
+   reference that omits a control is not an instruction to delete it, and a
+   visual pass is exactly when one goes quietly missing;
+   src/design/goldenEraClinicScope.test.ts pins both halves.
+
+   DESKTOP ONLY. The packet carries one reference and it is the desktop clinic;
+   there is no mobile approval, and the absence of one is not licence to invent
+   a phone layout. The narrow-width block at the foot of this scope therefore
+   does one thing — it thins the surround so a 12px band does not eat the field
+   on a small viewport. No layout, no stacking rule and no control placement is
+   invented for phones here.
+
+   FUNCTIONAL_CHANGES: NONE. One class on the page's wrapper <div> is the only
+   markup touched; no control is added, removed, renamed or re-labelled. No
+   focus rule is weakened: `.input:focus` keeps the brass border and the shared
+   --focus ring exactly as the foundation states them.
+   ========================================================================== */
+
+/* THE TOKEN SCOPE. Everything this route renders that resolves metal -- the
+   panel keylines, `.btn`, `.btn--ghost`, the `.t-eyebrow` voice, the input
+   borders, the focus ring -- reads var(--brass-*). Redefining the ramp on the
+   bare scope re-skins all of them at once, custom properties inherit, and
+   legacy gold cannot leak in through a property nobody overrode. Outside
+   .ge-clinic the app keeps its legacy values untouched.
+
+   THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines, the
+   inset top-light on every tile, every input border, the focus ring. Those
+   rules read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle
+   this scope has on them. Redefine a rung and leave its triple behind and the
+   scope splits down the middle: everything solid turns bronze while every
+   alpha rule beside it keeps painting the inherited legacy gold, with no
+   forgotten property to find. src/design/brassAlphaChannel.test.ts fails any
+   scope that moves only one of them, and checks each triple against its own
+   hex. */
+.ge-clinic {
+  --brass-900: #392910;  --brass-900-rgb:  57  41  16;
+  --brass-800: #533D18;  --brass-800-rgb:  83  61  24;
+  --brass-700: #6E5220;  --brass-700-rgb: 110  82  32;
+  --brass-600: #896628;  --brass-600-rgb: 137 102  40;
+  --brass-500: #9F7A30;  --brass-500-rgb: 159 122  48;
+  --brass-400: #BE9440;  --brass-400-rgb: 190 148  64;
+  --brass-300: #D6B063;  --brass-300-rgb: 214 176  99;
+  --brass-200: #E7C88A;  --brass-200-rgb: 231 200 138;
+
+  /* THE CLINIC'S OWN METAL, and the one material this room has that the other
+     eight scopes do not. The handoff asks for "clinical neutral greys/whites
+     (no mint tint)" and the reference answers it in surgical steel, so the
+     steel is the packet's instruction rather than a decoration.
+
+     Scope-local on purpose: these are `--ge-*` helpers, not platform
+     vocabulary. A `--bone-*` or `--hide-*` rung is a promise about contrast
+     everywhere in the app and cornerColor.test.ts reads the LAST declaration
+     of a token as its value, so redefining one here would move it app-wide.
+     Only the brass ramp above and these four scope-local helpers are declared.
+
+     EVERY RUNG PUTS BLUE ABOVE GREEN. #E9ECEE 233/236/238, #C2C8CC 194/200/204,
+     #939BA0 147/155/160, #5C6469 92/100/105. That is what keeps "no mint tint"
+     a property of the values rather than a note in a comment: a green-leaning
+     grey is the exact drift the handoff names, and a rung with B > G cannot
+     produce one. */
+  --ge-steel-100: #E9ECEE;
+  --ge-steel-300: #C2C8CC;
+  --ge-steel-500: #939BA0;
+  --ge-steel-700: #5C6469;
+}
+
+/* ---- The board ----------------------------------------------------------
+   The page's single content column IS the instrument board. `> div` because
+   the wrapper has exactly one child div -- the max-w-4xl column every section
+   already sits inside -- and there is no class on it to hook without adding a
+   second markup change. The `<i class="lamp">` beside it is an <i>, not a div,
+   so the child combinator cannot reach the fixture.
+
+   NO `position` IS SET ON `.ge-clinic` ITSELF, and that is load-bearing rather
+   than an omission. `.lamp` is `position:absolute; top:0` and resolves against
+   the nearest positioned ancestor, which is `.room`. Positioning the wrapper
+   would silently re-anchor the room's hung lamp to the page column -- moving a
+   light fixture, which this scope is not allowed to do. The board below is
+   positioned; the wrapper above it is not.
+
+   Dark graphite by border-box, dark field by padding-box: the same two-clip
+   construction the board room uses, with both halves dark because the
+   measurement above says a bright outer band is the one treatment that cannot
+   survive the wall changing under it. */
+.ge-clinic > div {
+  position: relative;
+  border: 12px solid transparent;
+  border-radius: 14px;
+  padding: var(--s4);
+  background-color: #101315;
+  background-image:
+    /* the field: a soft daylight fall from the top left, the room's own
+       falloff into the bottom right, its tooth, and the dark board */
+    radial-gradient(58% 42% at 10% 4%, rgba(233,236,238,.07), transparent 70%),
+    radial-gradient(74% 56% at 92% 98%, rgba(0,0,0,.42), transparent 74%),
+    var(--grain-fine),
+    linear-gradient(174deg, #1D2225 0%, #151A1D 56%, #101315 100%),
+    /* the surround: brushed graphite, the brush running the short way across
+       the band so it reads as a machined edge rather than a flat keyline */
+    repeating-linear-gradient(90deg, rgba(0,0,0,.26) 0 2px, transparent 2px 6px),
+    linear-gradient(150deg,
+      #2B3134 0%, #171B1E 26%, #333A3D 54%, #12161A 78%, #23282B 100%);
+  background-clip: padding-box, padding-box, padding-box, padding-box, border-box, border-box;
+  background-origin: padding-box, padding-box, padding-box, padding-box, border-box, border-box;
+  background-blend-mode: normal, normal, overlay, normal, normal, normal;
+  box-shadow:
+    /* THE BRIGHT BEAD, and it is deliberately INBOARD. Drawn on the inside of
+       the padding box, so what it reads against is the dark field it encloses
+       -- never the wall, whose value is the thing this scope cannot pin. */
+    inset 0 0 0 1px rgb(var(--brass-400-rgb) / .34),
+    inset 0 2px 14px rgba(0,0,0,.55),
+    /* the lit top lip of the metal, and the board's weight off the wall */
+    0 1px 0 rgba(233,236,238,.16),
+    0 20px 46px rgba(0,0,0,.58);
+}
+
+/* ---- The masthead band --------------------------------------------------
+   The reference bolts a brass nameplate across the top of the board and puts a
+   riveted brass bracket at each end of it. The page's masthead block is
+   `.mat-wood`, and it stays a DARK material: the sheet classifies wood as one
+   (`.mat-wood .stamp` resolves --locked-ink), and all four voices standing in
+   it -- the eyebrow, the blackletter title and two paragraphs -- are pinned to
+   bone and brass rungs measured for a dark ground.
+
+   Cool slate rather than warm varnish, per the handoff's neutral greys. This
+   also FIXES a tight spot the page documents against itself: `.mat-wood`'s lit
+   top edge is --wood-500 (#7A5029), where the eyebrow measured 3.34:1 and the
+   page had to pin --brass-200 by hand to reach 5.39:1. On the slate band below
+   that same --brass-200 eyebrow measures 8.30:1, the --bone-100 title 11.87:1
+   and the --bone-300 paragraphs 8.67:1, all on the band's LIGHTEST stop. The
+   restatement is an improvement on the measurement, not a re-argument of it. */
+.ge-clinic .mat-wood {
+  position: relative;
+  background-color: #1F2528;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(172deg, #2A3033 0%, #1F2528 58%, #171C1F 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(233,236,238,.16),
+    inset 0 -2px 6px rgba(0,0,0,.5),
+    0 3px 0 rgba(0,0,0,.28),
+    0 10px 24px rgba(0,0,0,.5);
+}
+
+/* The two riveted brackets, one at each end of the nameplate, exactly as the
+   reference flanks it. Gradient layers rather than an SVG data URI so they
+   resolve the scoped ramp above -- a data URI could not, and would drift the
+   moment the ramp was retuned.
+
+   Absolutely positioned and pointer-events:none -- a bracket can never eat a
+   tap meant for a control underneath it, and a pseudo-element is never in the
+   accessibility tree. */
+.ge-clinic .mat-wood::before,
+.ge-clinic .mat-wood::after {
+  --ge-bracket: linear-gradient(144deg,
+    var(--brass-200) 0%, var(--brass-400) 32%,
+    var(--brass-600) 64%, var(--brass-900) 100%);
+  --ge-rivet: radial-gradient(circle,
+    var(--brass-200) 0 1.5px, var(--brass-500) 1.5px 2.8px,
+    var(--brass-900) 2.8px 3.5px, transparent 3.8px);
+  content: "";
+  position: absolute;
+  top: 10px;
+  width: 34px;
+  height: 34px;
+  z-index: 2;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image: var(--ge-rivet), var(--ge-rivet), var(--ge-bracket);
+  background-size: 9px 9px, 9px 9px, 34px 34px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
+}
+.ge-clinic .mat-wood::before {
+  left: 10px;
+  background-position: 5px 21px, 21px 5px, left top;
+}
+.ge-clinic .mat-wood::after {
+  right: 10px;
+  background-position: calc(100% - 5px) 21px, calc(100% - 21px) 5px, right top;
+}
+
+/* THE NAMEPLATE ITSELF. The reference's single most recognisable element: the
+   title struck into a solid brass plate bolted across the band. The title is
+   the ONE voice on this page set in `.t-gothic`, the blackletter the design
+   system reserves for "the clinic masthead only" and only at display size --
+   so the reference's blackletter title and the app's one blackletter voice are
+   already the same decision, arrived at twice.
+
+   Scoped under `.mat-wood` rather than stated bare, and that is load-bearing
+   rather than tidy: a bare `.ge-clinic .t-gothic` would out-order every
+   material restatement in the legacy sheet on source order and could reach a
+   blackletter title on any other ground. Naming the material keeps the
+   restatement on the ground it was measured against.
+
+   INK CONTRAST IS WHY THE FACE STOPS AT --brass-400. The plate's darkest stop
+   is the 400 rung, where engraved ink #241B12 measures 6.05:1; the lit stops
+   above it reach 8.26:1 and 10.50:1. The title renders at --t-2xl, which WCAG
+   counts as large text at 3:1, so the worst point on the plate carries twice
+   what it owes. The two studs are drawn INTO the background rather than as a
+   pseudo-element, because the plate is a voice restatement on an <h1> that
+   already has its own children. */
+.ge-clinic .mat-wood .t-gothic {
+  display: block;
+  padding: var(--s3) var(--s5);
+  border: 1px solid var(--brass-800);
+  border-radius: 4px;
+  color: #241B12;
+  background-color: var(--brass-400);
+  background-image:
+    radial-gradient(circle at 12px 50%,
+      var(--brass-200) 0 1.4px, var(--brass-700) 1.4px 2.6px, transparent 3px),
+    radial-gradient(circle at calc(100% - 12px) 50%,
+      var(--brass-200) 0 1.4px, var(--brass-700) 1.4px 2.6px, transparent 3px),
+    linear-gradient(180deg,
+      var(--brass-200) 0%, var(--brass-300) 44%, var(--brass-400) 100%);
+  text-shadow: 0 1px 0 rgba(255,244,214,.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 5px rgba(0,0,0,.32),
+    0 2px 6px rgba(0,0,0,.5);
+}
+
+/* ---- The instrument trays -----------------------------------------------
+   Every athlete row, and the empty state, becomes a brushed steel tray screwed
+   to the board: a dark steel face so the bone voices and the stamps standing
+   on it keep the contrast the leather gave them, a steel bead round the edge,
+   and a rivet through each corner as the reference's plaques carry.
+
+   The stops are luminance-matched to the leather they replace (see the header),
+   so this is a hue change at value, and no contrast on these cards is
+   re-argued. Measured on the face's LIGHTEST stop (#2F3538): `.empty`'s
+   --bone-400 at 5.20:1, `.t-body`'s inherited --bone-200 at 10.02:1, the
+   --bone-100 athlete name at 12.21:1, `.stamp--brass`'s --brass-300 at 6.07:1
+   and a bare `.stamp`'s reserved --locked-ink at 8.29:1.
+
+   No rule here names `.stamp` or `.badge`. Both live on these cards and both
+   carry safety semantics; the tray is what changes, never the mark on it. */
+.ge-clinic .mat-leather {
+  position: relative;
+  background-color: #262C2F;
+  background-image:
+    linear-gradient(178deg, rgba(233,236,238,.09) 0%, transparent 26%),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 1px, transparent 1px 4px),
+    var(--grain-fine),
+    linear-gradient(172deg, #2F3538 0%, #262C2F 56%, #1E2427 100%);
+  background-blend-mode: screen, overlay, overlay, normal;
+  border: 1px solid var(--ge-steel-700);
+  box-shadow:
+    inset 0 1px 0 rgba(233,236,238,.20),
+    inset 0 -3px 8px rgba(0,0,0,.5),
+    0 3px 0 rgba(0,0,0,.24),
+    0 9px 20px rgba(0,0,0,.44);
+}
+
+/* The four corner rivets. Absolutely positioned because a static
+   pseudo-element on a card that turns out to be a flex container becomes a
+   flex ITEM and would silently add a cell to every row on the page. Inert to
+   the pointer, and never in the accessibility tree. */
+.ge-clinic .mat-leather::after {
+  --ge-rivet: radial-gradient(circle,
+    var(--ge-steel-100) 0 1.3px, var(--ge-steel-500) 1.3px 2.6px,
+    #1A1E21 2.6px 3.3px, transparent 3.5px);
+  content: "";
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  background-image: var(--ge-rivet), var(--ge-rivet), var(--ge-rivet), var(--ge-rivet);
+  background-repeat: no-repeat;
+  background-size: 9px 9px;
+  background-position: 0 0, 100% 0, 0 100%, 100% 100%;
+}
+
+/* ---- The pinned notes ---------------------------------------------------
+   The reference's parchment cards are torn notes pinned to the board at four
+   corners, and this route already has exactly that object: `.mat-paper` under
+   an active hold (the athlete-safe explanation and the path back) and under
+   the place-hold form.
+
+   NO `color` IS SET IN ANY RULE BELOW THAT NAMES `.mat-paper`, and that is a
+   hard rule rather than an oversight. `.mat-paper` is a LIGHT ground with its
+   own complete ink restatement in the legacy sheet -- .t-eyebrow, .t-command,
+   .t-body, .t-label, .t-data, .working and all four alert severities -- and
+   src/design/lightGroundVoices.test.ts fails any `.mat-paper` rule that
+   answers a voice with a rung tuned for leather. The paper's own answer is
+   already correct and is not this pass's business; the scoped ramp only
+   improves it, since `.mat-paper .t-eyebrow` resolves --brass-800 and this
+   scope darkens that rung from #6B4E12 to #533D18 -- 6.71:1 on the parchment's
+   darkest stop, against 6.49:1 before. Texture, pins and a rule: no ink. */
+.ge-clinic .mat-paper {
+  position: relative;
+  background-color: #EFE4C7;
+  background-image:
+    radial-gradient(58% 44% at 6% 4%, rgba(255,252,240,.55), transparent 70%),
+    radial-gradient(66% 50% at 96% 96%, rgba(122,88,42,.16), transparent 74%),
+    var(--grain-fine),
+    linear-gradient(176deg, #F8F0DC 0%, #E7DBBD 58%, #DED0AE 100%);
+  background-blend-mode: normal, normal, overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.5),
+    0 2px 0 rgba(0,0,0,.18),
+    0 8px 18px rgba(0,0,0,.42);
+}
+
+/* The four pins. Same absolute positioning and the same pointer-events:none as
+   the tray rivets, for the same two reasons -- these sit over a panel that
+   holds a text input and a button. */
+.ge-clinic .mat-paper::before {
+  --ge-pin: radial-gradient(circle,
+    #6B563A 0 2.2px, #3E3122 2.2px 3.4px, transparent 3.7px);
+  content: "";
+  position: absolute;
+  inset: 5px;
+  pointer-events: none;
+  background-image: var(--ge-pin), var(--ge-pin), var(--ge-pin), var(--ge-pin);
+  background-repeat: no-repeat;
+  background-size: 10px 10px;
+  background-position: 0 0, 100% 0, 0 100%, 100% 100%;
+}
+
+/* The reference rules a hairline under each column heading. The eyebrow above
+   each note is that heading, and a border draws the rule without naming a
+   colour property at all -- `border-bottom` is a shorthand, so nothing here
+   can be read as an ink answer for a light ground. */
+.ge-clinic .mat-paper .t-eyebrow {
+  display: block;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgb(var(--brass-800-rgb) / .38);
+}
+
+/* ---- The engraved plaques -----------------------------------------------
+   The reference's affirmative controls are riveted brass plaques with the
+   label cut into the face. `.btn` is the one such control on this route:
+   "Place hold", the write that puts a training hold on a child.
+
+   INK CONTRAST IS WHY THE FACE STOPS AT --brass-400. `.btn` is 15px at weight
+   700, which WCAG counts as normal text, so it owes 4.5:1. Engraved ink
+   #241B12 measures 4.27:1 on --brass-500 and 6.05:1 on --brass-400, so the
+   face ends on the 400 rung and the darker metal goes into the bevel shadow;
+   the worst point on the plate is 6.05:1. `.btn` already pins a dark ink of
+   its own (#2A1B04) but resolves a gradient whose bottom stop is --brass-800,
+   which on this scoped ramp is #392910 -- dark ink on dark metal at the foot
+   of the control. Restating the face fixes that where it is cheapest.
+
+   The studs are background layers, NOT a pseudo-element, deliberately:
+   `.btn[aria-busy="true"]::after` is the shared winding spinner, and a plaque
+   that claimed ::after would erase the busy indicator on the one control that
+   commits a medical hold. */
+.ge-clinic .btn {
+  color: #241B12;
+  border: 1px solid var(--brass-800);
+  background-image:
+    radial-gradient(circle at 9px 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 9px) 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    linear-gradient(180deg,
+      var(--brass-200) 0%, var(--brass-300) 46%, var(--brass-400) 100%);
+  text-shadow: 0 1px 0 rgba(255,244,214,.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.5);
+}
+.ge-clinic .btn:hover {
+  background-image:
+    radial-gradient(circle at 9px 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 9px) 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    linear-gradient(180deg,
+      var(--brass-200) 0%, var(--brass-300) 58%, var(--brass-400) 100%);
+}
+
+/* ---- The steel levers ---------------------------------------------------
+   THE SECONDARY CONTROLS ARE STEEL, NOT BRASS, AND THAT IS A SAFETY
+   DISTINCTION RATHER THAN A PREFERENCE. The board room could plaque its ghost
+   buttons in brass because that route has no primary/secondary pair for a
+   plaque to blur. This route does, and it is the worst pair in the app to
+   blur: inside the place-hold form, `.btn` ("Place hold") and `.btn--ghost`
+   ("Cancel") sit side by side, and the first one puts a medical hold on a
+   child. Giving both the same brass plaque would make the commit and the
+   escape indistinguishable at a glance.
+
+   So the reference's OTHER metal does the work it is already doing in the
+   image, where brass plaques and steel plaques are two visibly different
+   objects: brass is the affirmative action, steel is everything secondary --
+   Cancel, Lift this hold, Place a training hold, and the two footer links.
+   The hierarchy gets stronger rather than flatter, and the room gets the
+   clinical grey the handoff asks for.
+
+   `.btn--ghost` already pins --bone-200, and its :hover pins --bone-100. Both
+   are kept and neither is restated, because a DARK steel face is what the
+   reference's plaques actually are -- light engraved letters on mid-dark
+   metal. Measured on the face's lightest stop (#565E62): --bone-200 at 5.33:1
+   and the hover's --bone-100 at 5.87:1, both clear of the 4.5:1 a 15px/700
+   label owes. */
+.ge-clinic .btn--ghost {
+  color: var(--bone-200);
+  border: 1px solid #2B3134;
+  border-radius: var(--r-md);
+  background-color: #4A5155;
+  background-image:
+    radial-gradient(circle at 9px 50%,
+      var(--ge-steel-100) 0 1.2px, #2B3134 1.2px 2.4px, transparent 2.7px),
+    radial-gradient(circle at calc(100% - 9px) 50%,
+      var(--ge-steel-100) 0 1.2px, #2B3134 1.2px 2.4px, transparent 2.7px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #565E62 0%, #4A5155 52%, #3A4144 100%);
+  text-shadow: 0 1px 0 rgba(0,0,0,.55);
+  box-shadow:
+    inset 0 1px 0 rgba(233,236,238,.26),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.46);
+}
+.ge-clinic .btn--ghost:hover {
+  color: var(--bone-100);
+  border-color: #1A1E21;
+  background-color: #525A5E;
+  background-image:
+    radial-gradient(circle at 9px 50%,
+      var(--ge-steel-100) 0 1.2px, #2B3134 1.2px 2.4px, transparent 2.7px),
+    radial-gradient(circle at calc(100% - 9px) 50%,
+      var(--ge-steel-100) 0 1.2px, #2B3134 1.2px 2.4px, transparent 2.7px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #626A6E 0%, #525A5E 52%, #414043 100%);
+}
+
+/* ---- The instrument wells -----------------------------------------------
+   A clinic's fittings are steel, so the form controls get a machined steel
+   bezel. THE WELL ITSELF STAYS DARK, and that is a deliberate refusal rather
+   than a half-finished idea: `.input`/`.select`/`.textarea` pin --bone-100 on
+   #17110D, and lightGroundVoices.test.ts records in as many words that whether
+   a light ground wants a light field is an OPEN DESIGN QUESTION for the design
+   system -- one it deliberately leaves unanswered. A visual scope on one route
+   is not where that gets settled. So the well keeps its dark inset and its
+   bone ink (--bone-100 at 15.40:1 on the cooled well) and only the bezel
+   changes.
+
+   No :focus rule is written here. `.input:focus` keeps the brass border and
+   the shared --focus ring exactly as the foundation states them; a visual pass
+   does not touch focus visibility. */
+.ge-clinic :is(.input, .select, .textarea) {
+  background-color: #161B1E;
+  border: 1px solid var(--ge-steel-700);
+  box-shadow:
+    inset 0 2px 6px rgba(0,0,0,.7),
+    inset 0 -1px 0 rgba(233,236,238,.10),
+    0 1px 0 rgba(233,236,238,.12);
+}
+
+/* ---- Narrow viewports ---------------------------------------------------
+   009 is a DESKTOP packet. There is no approved mobile reference, and the
+   absence of one is not permission to design a phone. This block therefore
+   changes nothing about layout, order or which controls appear -- the page's
+   own responsive grid still decides that. It thins the surround and shrinks
+   the masthead brackets, because a 12px band and two 34px brackets on a 390px
+   viewport stop being an instrument board and start being the page. */
+@media (max-width: 900px) {
+  .ge-clinic > div {
+    border-width: 7px;
+    border-radius: 10px;
+    padding: var(--s3);
+  }
+  .ge-clinic .mat-wood::before,
+  .ge-clinic .mat-wood::after {
+    top: 7px;
+    width: 24px;
+    height: 24px;
+    background-size: 8px 8px, 8px 8px, 24px 24px;
+  }
+  .ge-clinic .mat-wood::before {
+    left: 7px;
+    background-position: 4px 15px, 15px 4px, left top;
+  }
+  .ge-clinic .mat-wood::after {
+    right: 7px;
+    background-position: calc(100% - 4px) 15px, calc(100% - 15px) 4px, right top;
+  }
+  .ge-clinic .mat-wood .t-gothic {
+    padding: var(--s2) var(--s3);
+  }
+}
