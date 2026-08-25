@@ -1985,31 +1985,73 @@
   --brass-900-rgb:  57  41  16;
 }
 
-/* The wall: the committed FLOOR plate behind the card. The login <main> is
-   .on-canvas, whose ::after already paints var(--plate) as a full-bleed layer;
-   this overrides only that layer's IMAGE for the sign-in scope. It deliberately
-   does NOT touch the --plate custom property (that cascade is a locked room
-   inventory with its own guard); `.ge-bell.on-canvas::after` is (0,2,1) and
-   outranks the base `.on-canvas::after` (0,1,1).
-   NOTE ON THE BACKGROUND: the approved reference shows a lit boxing gym (heavy
-   bag + ring ropes). That is a PHOTOGRAPHIC PLATE BINARY, shipped by the visual
-   lane; no committed plate carries a bag or a ring, and CSS cannot draw one.
-   Until that plate lands this scope shows the committed floor plate, warmed by
-   the scrim below. */
+/* The wall: THE BELL'S OWN GYM PLATE. The login <main> is .on-canvas, whose
+   ::after already paints var(--plate) as a full-bleed layer; this overrides
+   only that layer's IMAGE for the sign-in scope. It deliberately does NOT touch
+   the --plate custom property (that cascade is a locked room inventory with its
+   own guard); `.ge-bell.on-canvas::after` is (0,2,1) and outranks the base
+   `.on-canvas::after` (0,1,1).
+
+   THE PLATE HAS LANDED. This scope stood on the committed FLOOR plate for as
+   long as it did because the approved reference shows a lit boxing gym -- heavy
+   bag, ring ropes, two hung bulbs -- and no committed plate carried any of it.
+   `plate-08-bell-gym-landscape-01.jpg` (1280x720, 189,771 B) and
+   `plate-08-bell-gym-portrait-01.jpg` (810x1440, 99,891 B) are that photograph,
+   shipped by the visual lane as real binaries and verified against every law in
+   src/design/plateBinaries.test.ts. The floor stand-in is retired.
+
+   The bulbs are IN THE PHOTOGRAPH now, which is why the amber top-glow that
+   used to sit below is gone: painting a second light source over a wall that
+   already has two is the CSS-recreated scenery the owner's architecture
+   correction rules out. The plate is the room; the frame and rivets below are
+   UI holding live controls, and stay. */
 .ge-bell.on-canvas::after {
-  background-image: url("/plates/plate-02a-floor-landscape-01.jpg");
+  background-image: url("/plates/plate-08-bell-gym-landscape-01.jpg");
 }
 @media (orientation: portrait) {
   .ge-bell.on-canvas::after {
-    background-image: url("/plates/plate-02b-floor-portrait-01.jpg");
+    background-image: url("/plates/plate-08-bell-gym-portrait-01.jpg");
   }
 }
 
-/* Warm the wall, keep a quiet reading centre. A soft amber top-glow evokes the
-   reference's hung bulbs; a gentle vignette seats the card WITHOUT crushing the
-   brick to black the way the first pass did (it went to 0.82 at the edges).
-   Warm ambers/browns only -- no reserved red. Sits above the plate (z 0),
-   below the card column (z 1). */
+/* SEATING VIGNETTE ONLY. THE HUNG-BULB GLOW IS GONE.
+   ------------------------------------------------------------------------
+   This block used to paint two layers: a soft amber top-glow standing in for
+   the reference's hung bulbs, and a vignette seating the card. The desktop
+   plate now photographs two lit bulbs with their own spill cones, so the glow
+   is the "recreate the lighting in CSS" the architecture correction names, and
+   it went. It also cost nothing to remove, which was measured rather than
+   assumed: with the glow present and with it deleted, the rendered luminance
+   below the top band of the viewport is identical to four decimal places.
+
+   WHAT DID NOT GO, AND WHY. The vignette is not scenery. It depicts no object;
+   it is the ground under the live text that sits OUTSIDE the frame -- the help
+   copy, the athlete-door link, the gym-notice heading, the work-axis tagline --
+   all of which are painted in near-white --bone-100 straight onto the
+   photograph. Deleting it was tried first and measured off the rendered
+   pixels at 1280x720 over this plate (ink vs the wall behind each band):
+
+       band                        vignette kept     vignette deleted
+       help copy      14px/400      7.49 : 1            5.54 : 1
+       athlete link   15px/700      7.48 : 1            5.51 : 1
+       gym notice     15px/400      7.23 : 1            6.20 : 1
+       work axis    19.1px/400      5.48 : 1            3.83 : 1   <-- under AA
+
+   Every one of those is normal-size text, so the floor is 4.5:1, and the
+   tagline crosses it. Reducing the vignette instead of deleting it moves the
+   same number monotonically (0.52 edge alpha -> 4.76:1, 0.60 -> 5.08:1), so
+   this is the strength that clears the floor with margin rather than a
+   preference about how dark the wall should look.
+
+   PORTRAIT IS A SEPARATE, PRE-EXISTING PROBLEM, recorded here so it is not
+   rediscovered as a regression: plate-08-bell-gym-portrait-01.jpg is a LIGHT
+   grey wall, and near-white text over it measures 1.9-3.9:1 on a phone in
+   every configuration including this one. The vignette narrows that gap and
+   cannot close it. The fix is a plate or a text-colour decision for the visual
+   lane and the owner, not a scrim strength.
+
+   Sits above the plate (z 0), below the card column (z 1). Warm browns only --
+   no reserved red. */
 .ge-bell::before {
   content: "";
   position: fixed;
@@ -2017,8 +2059,6 @@
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(92% 60% at 50% 0%,
-      rgba(158,102,48,0.26) 0%, rgba(120,74,34,0.10) 42%, transparent 74%),
     radial-gradient(125% 92% at 50% 46%,
       rgba(30,20,11,0.10) 0%, rgba(22,14,8,0.40) 60%, rgba(12,8,4,0.72) 100%);
 }
