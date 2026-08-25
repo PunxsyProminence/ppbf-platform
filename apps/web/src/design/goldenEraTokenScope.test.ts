@@ -4,50 +4,52 @@ import path from 'node:path';
 import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss';
 
 /**
- * LEGACY MAY NOT SNEAK INTO A GOLDEN-ERA SURFACE.
+ * STATIC CONTRACT CHECK for the golden-era Bell token scope.
  *
- * The visual migration is per-page: a surface opts into the golden era by
- * adding the `theme-golden` scope class, and the rest of the app stays on the
- * retired "Leather & Brass" sheet until its own turn. The danger that motivates
- * this guard is a surface that LOOKS migrated but still resolves a legacy value
- * underneath -- the exact drift that made The Bell render bright legacy gold on
- * staging.
+ * The Bell migrates off the retired "Leather & Brass" look by redefining the
+ * brass ramp on its one scope, `.ge-bell`; the shared components it renders
+ * (.frame, .rivet, .btn, keylines, eyebrows) resolve `var(--brass-*)`, so the
+ * scope re-skins them to aged bronze at once and nothing falls through to
+ * legacy gold. This test guards the SOURCE contract:
  *
- * The seam is token-level on purpose (design-system/current/ppbf-golden-era.css,
- * `.theme-golden`): the shared components (`.frame`, `.rivet`, `.btn`, keylines,
- * eyebrows) all resolve `var(--brass-*)`, so redefining that ramp on the scope
- * re-skins them at once and nothing can fall through. This guard proves the seam
- * is intact:
+ *   1. `.ge-bell` redefines every brass rung 200..900, and each value differs
+ *      from its legacy `:root` value -- so no golden-era component can resolve
+ *      a rung that still holds legacy gold.
+ *   2. The bronze values are NOT placed on a bare `:root` (that would move the
+ *      whole app); they live on the class scope, so un-migrated pages, which
+ *      never carry `.ge-bell`, are untouched.
+ *   3. The Bell (app/login) actually carries the `ge-bell` scope class.
  *
- *   1. `.theme-golden` exists as a CLASS scope (not `:root`), so legacy pages,
- *      which never carry the class, are untouched.
- *   2. Every brass rung 200..900 is redefined on the scope AND differs from its
- *      legacy `:root` value -- so no golden-era component can resolve a rung
- *      that still holds legacy gold.
- *   3. The Bell (the first migrated surface, and the template) actually carries
- *      `theme-golden`, so the scope is real rather than dead CSS.
+ * WHAT THIS TEST DOES NOT DO, ON PURPOSE. A text scan cannot prove that a
+ * browser RESOLVES a component inside `.ge-bell` to bronze -- inheritance and
+ * the cascade are the browser's to compute. That proof is a separate,
+ * authoritative guard: e2e/public-homepage.spec.ts opens the real /login and
+ * reads getComputedStyle off `.ge-bell .frame` (bronze gradient + brown-leather
+ * border) and off the scope's own `--brass-500` vs the document root's, and it
+ * is the one that fails if the resolved styling regresses. This static check is
+ * the fast precheck that the contract is even declared.
  *
- * MUTATION CHECK (how to know this guard bites): delete any `--brass-NNN:` line
- * from the `.theme-golden` block, or set one equal to its legacy value, or drop
- * `theme-golden` from app/login/page.tsx -- each turns this suite red. Restore
- * and it is green.
+ * MUTATION CHECK: delete any `--brass-NNN:` line from the `.ge-bell` token
+ * block, or set one equal to its legacy value, or drop `ge-bell` from
+ * app/login/page.tsx -- each turns this suite red. Restore -> green.
  */
 
 const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
 
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
-/** The `.theme-golden { … }` body. The block holds only custom-property
- *  declarations (no nested rules), so a non-greedy brace match is exact. */
-function themeGoldenBody(source: string): string | null {
-  const match = source.match(/\.theme-golden\s*\{([^}]*)\}/);
+/** The bare `.ge-bell { … }` token rule (at line start), NOT the descendant
+ *  rules like `.ge-bell .frame {`. The block holds only custom-property
+ *  declarations, so a non-greedy brace match is exact. */
+function bellScopeBody(source: string): string | null {
+  const match = source.match(/^\.ge-bell\s*\{([^}]*)\}/m);
   return match ? match[1] : null;
 }
 
-/** First value a rung is given OUTSIDE the golden scope -- i.e. its legacy
+/** First value a rung is given OUTSIDE the Bell scope block -- its legacy
  *  `:root` definition in the leather-brass sheet. */
 function legacyRung(source: string, rung: string): string | null {
-  const withoutScope = source.replace(/\.theme-golden\s*\{[^}]*\}/, '');
+  const withoutScope = source.replace(/^\.ge-bell\s*\{[^}]*\}/m, '');
   const m = withoutScope.match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
   return m ? m[1].toLowerCase() : null;
 }
@@ -57,40 +59,34 @@ function scopeRung(body: string, rung: string): string | null {
   return m ? m[1].toLowerCase() : null;
 }
 
-describe('golden-era token scope keeps legacy from leaking in', () => {
-  test('.theme-golden exists as a class scope, not on :root', () => {
-    expect(themeGoldenBody(css)).not.toBeNull();
-    // The redefinitions must be scoped so un-migrated pages are unaffected: the
-    // ramp is NOT re-pointed on a bare :root.
+describe('golden-era Bell token scope — static contract', () => {
+  test('the bronze ramp is declared on the .ge-bell class scope, not on :root', () => {
+    expect(bellScopeBody(css)).not.toBeNull();
     const rootBlocks = css.match(/:root\s*\{[^}]*\}/g) ?? [];
     for (const block of rootBlocks) {
-      // A :root block may still legitimately DEFINE the legacy ramp; what it may
-      // not do is carry the golden-era bronze values (that would move every page).
+      // A :root block may DEFINE the legacy ramp; it may not carry the golden
+      // bronze values (that would re-skin every un-migrated page).
       expect(block).not.toContain('#E7C88A');
     }
   });
 
-  test.each(BRASS_RUNGS)('brass rung %s is redefined on the scope and differs from legacy', (rung) => {
-    const body = themeGoldenBody(css);
+  test.each(BRASS_RUNGS)('brass rung %s is redefined on .ge-bell and differs from legacy', (rung) => {
+    const body = bellScopeBody(css);
     expect(body).not.toBeNull();
 
     const scoped = scopeRung(body as string, rung);
     const legacy = legacyRung(css, rung);
 
-    // Present on the scope...
     expect(scoped).not.toBeNull();
-    // ...the legacy ramp still exists to migrate away from...
     expect(legacy).not.toBeNull();
-    // ...and the golden-era value is genuinely different, so a golden-era
-    // component cannot resolve this rung to its legacy gold.
     expect(scoped).not.toEqual(legacy);
   });
 
-  test('The Bell carries the theme-golden scope class', () => {
+  test('The Bell carries the ge-bell scope class', () => {
     const page = readFileSync(
       path.resolve(__dirname, '../../app/login/page.tsx'),
       'utf8',
     );
-    expect(page).toMatch(/className="[^"]*\btheme-golden\b[^"]*"/);
+    expect(page).toMatch(/className="[^"]*\bge-bell\b[^"]*"/);
   });
 });
