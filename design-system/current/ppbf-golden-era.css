@@ -111,13 +111,23 @@
    Reserved-red rule holds: nothing here uses --locked / --stamp-red / #A81E22.
    ========================================================================== */
 
-/* The wall: swap the warm-ground plate for the real-gym floor plate (heavy
-   bag + ring ropes + brick), reusing the legacy .on-canvas::after plate
-   machinery -- only the --plate URL changes. Portrait plate on phones, the
-   same responsive swap .room--floor already ships. */
-.ge-bell { --plate: url("/plates/plate-02a-floor-landscape-01.jpg"); }
-@media (max-width: 640px) {
-  .ge-bell { --plate: url("/plates/plate-02b-floor-portrait-01.jpg"); }
+/* The wall: the real-gym floor plate (heavy bag + ring ropes + brick) behind
+   the card. The login <main> is .on-canvas, whose ::after already paints
+   var(--plate) as a full-bleed layer; this overrides only that layer's image
+   for the sign-in scope, so The Bell shows the floor plate instead of the
+   warm-ground default. It deliberately does NOT touch the --plate custom
+   property: that cascade is a locked room inventory with its own guard, and
+   The Bell is a one-off surface, not a new room. `.ge-bell.on-canvas::after`
+   is (0,2,1), so it outranks the base `.on-canvas::after` (0,1,1) cleanly.
+   Portrait plate on an upright viewport -- the same orientation the gym
+   tablet stands in, and the swap .room--floor already ships. */
+.ge-bell.on-canvas::after {
+  background-image: url("/plates/plate-02a-floor-landscape-01.jpg");
+}
+@media (orientation: portrait) {
+  .ge-bell.on-canvas::after {
+    background-image: url("/plates/plate-02b-floor-portrait-01.jpg");
+  }
 }
 
 /* Soft, not hard full-bleed: a warm scrim + centre vignette keeps the quiet
