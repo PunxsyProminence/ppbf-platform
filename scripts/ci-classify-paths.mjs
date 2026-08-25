@@ -102,6 +102,54 @@ const isSignedInJourneyPath = (file) =>
     'apps/web/e2e/support/',
   ]) || file === 'apps/web/playwright.config.ts';
 
+/* THE GOLDEN-ERA RESOLVED-STYLE PROOFS (e2e/golden-era-scope-proofs.spec.ts).
+   ------------------------------------------------------------------------
+
+   One suite, eight scope classes, eight routes, and one deliberate rule about
+   when it runs: A CHANGE TO THE GOLDEN-ERA SHEET MUST RUN EVERY SCOPE PROOF,
+   not just the homepage one.
+
+   That is why this predicate exists at all. `design-system/**` already sets
+   homepage_e2e, and public-homepage.spec.ts is where the `.ge-bell` proof
+   lives -- so before this, editing ppbf-golden-era.css ran the Bell's resolved
+   -style check and nothing else, while the same file declares the ramp for
+   `.ge-scripts`, `.ge-afterhours`, `.ge-scheduler`, `.ge-frontoffice`,
+   `.ge-drillcase`, `.ge-locker` and `.ge-floorboard`. A regression on any of
+   the other seven went out with its proof unexecuted.
+
+   The surfaces below are the ones a scope proof actually reads:
+
+     * the sheets that declare the ramps, and app/globals.css, whose `:root`
+       token ALIASES (--accent, --accent-strong) are the source of a leak this
+       suite records;
+     * the routes that carry a scope class, plus the two workspace components
+       mounted inside two of them;
+     * the suite's own spec -- every other journey predicate matches the spec
+       it runs, and the two that did not could not run themselves;
+     * the signed-in plumbing, via isSignedInJourneyPath: seven of the eight
+       scopes are behind a role gate, so the gate, the session cache, the role
+       routing table, the shared sign-in helper and the Playwright config are
+       all surfaces this suite stands on. */
+const isGoldenEraE2ePath = (file) => {
+  const component = directComponentName(file);
+  return (
+    isSignedInJourneyPath(file) ||
+    startsWithAny(file, [
+      'design-system/',
+      'apps/web/app/globals.css',
+      'apps/web/app/admin/people/',
+      'apps/web/app/admin/shadow/',
+      'apps/web/app/athlete/dashboard/',
+      'apps/web/app/coach/drills/',
+      'apps/web/app/coach/environment/',
+      'apps/web/app/coach/session-scripts/',
+      'apps/web/app/schedule/',
+      'apps/web/e2e/golden-era-scope-proofs',
+    ]) ||
+    ['CoachWorkspace', 'AthleteWorkspace'].some((token) => component.includes(token))
+  );
+};
+
 const isCoachE2ePath = (file) => {
   const component = directComponentName(file);
   return (
@@ -162,6 +210,7 @@ export function classifyPaths(paths) {
   const coachE2e = files.some(isCoachE2ePath);
   const athleteE2e = files.some(isAthleteE2ePath);
   const guardianE2e = files.some(isGuardianE2ePath);
+  const goldenEraE2e = files.some(isGoldenEraE2ePath);
   const unknownCode =
     !docsOnly &&
     files.length > 0 &&
@@ -170,7 +219,8 @@ export function classifyPaths(paths) {
     !homepageE2e &&
     !coachE2e &&
     !athleteE2e &&
-    !guardianE2e;
+    !guardianE2e &&
+    !goldenEraE2e;
 
   return {
     docsOnly,
@@ -180,6 +230,7 @@ export function classifyPaths(paths) {
     coachE2e,
     athleteE2e,
     guardianE2e,
+    goldenEraE2e,
     unknownCode,
   };
 }
@@ -193,6 +244,7 @@ function outputLines(result) {
     `coach_e2e=${result.coachE2e}`,
     `athlete_e2e=${result.athleteE2e}`,
     `guardian_e2e=${result.guardianE2e}`,
+    `golden_era_e2e=${result.goldenEraE2e}`,
     `unknown_code=${result.unknownCode}`,
   ].join('\n');
 }
@@ -230,6 +282,7 @@ if (
         `- coach journey E2E: ${result.coachE2e}`,
         `- athlete journey E2E: ${result.athleteE2e}`,
         `- guardian journey E2E: ${result.guardianE2e}`,
+        `- golden-era scope proofs E2E: ${result.goldenEraE2e}`,
         `- unknown/general code: ${result.unknownCode}`,
         '',
       ].join('\n'),
