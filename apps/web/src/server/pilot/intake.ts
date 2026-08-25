@@ -974,6 +974,47 @@ export function coachObservationNoteTypesForReader(role: PilotRole): string[] | 
   return [];
 }
 
+/**
+ * WHICH COLUMNS OF A GUARDIAN'S RECORD A READER MAY SEE.
+ *
+ * The reader-scoped sibling of coachObservationNoteTypesForReader above, and
+ * it exists for the same reason: both intake reads that join pilot.parents
+ * (getIntakeCaseAggregate, and the domain-get route) selected `p.*`, and both
+ * are reachable by 'athlete' and 'parent' -- assertActorCanAccessAthlete
+ * admits the athlete themself and every linked guardian, and
+ * assertActorCanAccessIntakeCase gates on that same function.
+ *
+ * pilot.parents carries phone, email and account_id. An athlete with two
+ * guardians therefore read both guardians' contact details, and each guardian
+ * read the other's -- which in a split household, or one with a protective
+ * order, is precisely the disclosure the platform must not make. The note_type
+ * filter above already stopped one household reading the other's barrier
+ * report; this stops the same crossing through the column list rather than
+ * through the row filter.
+ *
+ * The identity set is byte-for-byte the one passbook.ts already hands these
+ * two readers, so the two guardian-facing reads cannot give different answers
+ * to "what may this child see about their parents". Contact details stay with
+ * staff, who need them to make the emergency call -- that is the whole reason
+ * the columns exist. The platform is stricter still one step further out:
+ * duplicateGuardians.ts masks a guardian email even for an organization admin.
+ *
+ * Column lists, not `*`: a table that grows a column must not widen a response
+ * by default. Any role outside the four falls through to identity only, the
+ * closed side, for the same reason the note-type sets do.
+ */
+export const GUARDIAN_IDENTITY_COLUMNS = ['p.parent_id', 'p.full_name'] as const;
+
+export const GUARDIAN_CONTACT_COLUMNS = ['p.account_id', 'p.phone', 'p.email'] as const;
+
+export function guardianColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...GUARDIAN_IDENTITY_COLUMNS, ...GUARDIAN_CONTACT_COLUMNS];
+  }
+
+  return [...GUARDIAN_IDENTITY_COLUMNS];
+}
+
 export async function upsertGuardian(params: {
   organizationId: string;
   parentId: string;
@@ -1031,6 +1072,14 @@ export async function getIntakeCaseAggregate(
     return null;
   }
 
+  // Same reader scoping the domain-get route applies, because this aggregate
+  // is reachable by the same roles: /api/pilot/intake/cases/get admits
+  // 'athlete' and 'parent', and assertActorCanAccessIntakeCase gates on
+  // assertActorCanAccessAthlete for every subject the case names. Without a
+  // context there is no reader to scope to, so this falls to identity only --
+  // the closed side.
+  const guardianColumns = guardianColumnsForReader(context?.actorRole ?? 'athlete');
+
   const [documents, emergencyContacts, medical, waivers, assessments, attendance, readiness, notes, guardians, shadowTimeline] = await Promise.all([
     query('select * from pilot.intake_documents where organization_id = $1 and intake_case_id = $2 order by created_at asc', [organizationId, intakeCaseId]),
     query(
@@ -1047,7 +1096,7 @@ export async function getIntakeCaseAggregate(
     query('select * from pilot.readiness where organization_id = $1 and athlete_id = $2 order by measured_at desc', [organizationId, intakeCase.primary_athlete_id]),
     query('select * from pilot.coach_observations where organization_id = $1 and athlete_id = $2 order by created_at desc', [organizationId, intakeCase.primary_athlete_id]),
     query(
-      `select p.*, g.relationship_to_athlete, g.athlete_id
+      `select ${guardianColumns.join(', ')}, g.relationship_to_athlete, g.athlete_id
        from pilot.guardian_links g
        join pilot.parents p
          on p.organization_id = g.organization_id

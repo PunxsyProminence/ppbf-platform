@@ -152,11 +152,31 @@ export interface GearProductInput {
 const AVAILABILITY = new Set(['in_stock', 'order_only', 'unavailable']);
 
 /**
- * Long enough for "Everlast Powerlock 2 Pro", short enough that the field is
- * not a place to paste a description. Bounded because it is free text that
- * reaches a public page.
+ * Every free-text field that reaches a public page, and how long it may be.
+ *
+ * `brand` was bounded here first, and its reason -- "it is free text that
+ * reaches a public page" -- is the whole argument. It applies unchanged to the
+ * other four: /api/public/store selects product_id, name, brand, description
+ * and category out of PUBLIC_FIELDS above and serves them to an anonymous
+ * caller, and pilot.gear_products declares all of them plain `text` with no
+ * length constraint. So one admin save could put an unbounded blob on the one
+ * page this platform answers without asking who is calling, and every load
+ * afterwards would carry it.
+ *
+ * Sizes are what the field is for, not a guess at an attacker: long enough for
+ * "Everlast Powerlock 2 Pro" and a paragraph about it, short enough that none
+ * of them is a place to paste a document. checkout_url is bounded at the
+ * conventional browser-safe URL length -- a link nothing can follow is not a
+ * link.
  */
-const MAX_BRAND_LENGTH = 120;
+export const GEAR_TEXT_LIMITS = {
+  product_id: 120,
+  name: 200,
+  brand: 120,
+  description: 4000,
+  category: 80,
+  checkout_url: 2000,
+} as const;
 
 /**
  * Why a product cannot be saved, or empty if it can.
@@ -173,10 +193,14 @@ export function gearValidationError(input: GearProductInput): string {
   if (!input.name.trim()) {
     return 'Missing product name';
   }
-  // A brand is optional -- plenty of gym equipment is unbranded or the gym does
-  // not care to say -- but if given it goes on a public page, so it is bounded.
-  if (input.brand.trim().length > MAX_BRAND_LENGTH) {
-    return `Unsupported brand: it must be ${MAX_BRAND_LENGTH} characters or fewer`;
+  // Length is checked for every field that reaches the public store, not only
+  // for brand. Trimmed, because the stored value is trimmed -- checking the
+  // untrimmed length would refuse a legitimate value padded with whitespace
+  // while accepting nothing longer.
+  for (const [field, limit] of Object.entries(GEAR_TEXT_LIMITS) as Array<[keyof typeof GEAR_TEXT_LIMITS, number]>) {
+    if (input[field].trim().length > limit) {
+      return `Unsupported ${field}: it must be ${limit} characters or fewer`;
+    }
   }
   if (!Number.isInteger(input.wholesale_cost_cents) || input.wholesale_cost_cents < 0) {
     return 'Unsupported cost: it must be a whole number of cents, and not negative';

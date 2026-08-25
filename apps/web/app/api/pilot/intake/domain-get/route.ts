@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { coachObservationNoteTypesForReader } from '@/src/server/pilot/intake';
+import { coachObservationNoteTypesForReader, guardianColumnsForReader } from '@/src/server/pilot/intake';
 
 export const runtime = 'nodejs';
 
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     // meant for them. The per-role sets, and the reasoning behind each, live
     // next to that one in intake.ts.
     const readableNoteTypes = coachObservationNoteTypesForReader(principal.role);
+    const guardianColumns = guardianColumnsForReader(principal.role);
 
     const [emergencyContacts, medicalIntake, waivers, assessments, attendance, readiness, coachObservations, guardians] = await Promise.all([
       query('select * from pilot.emergency_contacts where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
@@ -50,8 +51,16 @@ export async function POST(request: NextRequest) {
          order by created_at desc`,
         [principal.organizationId, athleteId, readableNoteTypes],
       ),
+      // `select p.*` here handed every column of pilot.parents -- phone,
+      // email, account_id -- to whoever passed the athlete gate above, and
+      // that gate admits the athlete themself and EVERY linked guardian. One
+      // household read the other household's contact details, and the child
+      // read both. Same crossing the note_type filter above closes, arriving
+      // through the column list instead of the row filter. See
+      // guardianColumnsForReader for the per-role sets and why staff keep the
+      // contact columns.
       query(
-        `select p.*, g.relationship_to_athlete
+        `select ${guardianColumns.join(', ')}, g.relationship_to_athlete
          from pilot.guardian_links g
          join pilot.parents p
            on p.organization_id = g.organization_id

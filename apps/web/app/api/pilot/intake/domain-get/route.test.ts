@@ -130,3 +130,108 @@ describe('POST /api/pilot/intake/domain-get', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// THE CO-GUARDIAN PROJECTION.
+//
+// The guardian read was `select p.*` over pilot.parents, whose columns include
+// phone, email and account_id. requireRole here admits 'athlete' and 'parent',
+// and assertActorCanAccessAthlete admits the athlete themself and EVERY linked
+// guardian -- so one household received the other household's phone number and
+// email address, and the child received both.
+//
+// That is the same disclosure the note_type filter directly above it was
+// written to stop, arriving through the column list instead of through the row
+// filter. The platform's posture elsewhere is stricter still: duplicateGuardians.ts
+// masks a guardian email even for an organization admin, and passbook.ts's
+// guardian read -- the athlete-and-guardian-facing one -- selects parent_id,
+// full_name and relationship only.
+//
+// These assert the SELECT LIST because the route passes database rows straight
+// through to the response: for this read, the projection IS the control, so a
+// wildcard in it is the disclosure. The lists are compared for EQUALITY rather
+// than probed with `not.toContain`, since "p.*" contains no substring named
+// "p.phone" and a containment check would pass over the very defect it names.
+
+/** The SQL and parameters the guardian read was issued with. */
+function guardianCall(): [string, unknown[]] {
+  const call = mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.guardian_links'));
+  if (!call) {
+    throw new Error('the route never read the guardian links');
+  }
+  return [String(call[0]), call[1] as unknown[]];
+}
+
+/** Every column between `select` and `from`, normalized and split. */
+function guardianSelectList(): string[] {
+  const [sql] = guardianCall();
+  const match = /select\s+([\s\S]*?)\s+from\s/i.exec(sql);
+  if (!match) {
+    throw new Error(`the guardian read has no parsable select list: ${sql}`);
+  }
+  return match[1].split(',').map((column) => column.trim().replace(/\s+/g, ' ')).filter(Boolean);
+}
+
+const NON_STAFF_READERS: Array<[string, Partial<PilotPrincipal>]> = [
+  ['a linked guardian', { accountId: 'acct-parent', role: 'parent' }],
+  ['the athlete themself', { accountId: 'acct-athlete', role: 'athlete', athleteId: 'ath-1' }],
+];
+
+const STAFF_READERS: Array<[string, Partial<PilotPrincipal>]> = [
+  ['an organization admin', { accountId: 'acct-admin', role: 'organization_admin' }],
+  ['a coach', { accountId: 'acct-coach', role: 'coach' }],
+];
+
+describe('the guardian projection is an explicit column list, never p.*', () => {
+  // A table-driven guard over an empty list passes without ever running.
+  test('the reader tables are not empty', () => {
+    expect(NON_STAFF_READERS.length).toBeGreaterThan(0);
+    expect(STAFF_READERS.length).toBeGreaterThan(0);
+  });
+
+  test.each([...NON_STAFF_READERS, ...STAFF_READERS])(
+    'for %s the guardian read names its columns instead of taking the whole row',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      // A wildcard ships whatever pilot.parents grows next. Naming the columns
+      // makes adding one to this response a decision rather than an accident.
+      expect(guardianSelectList()).not.toContain('p.*');
+    },
+  );
+
+  test.each(NON_STAFF_READERS)(
+    'THE DEFECT: %s receives identity and relationship only -- no other guardian\'s contact details',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      // Equality, not containment: this is the whole list, so a column added
+      // later fails here rather than riding along unnoticed. Matches the set
+      // passbook.ts already hands the same two readers.
+      expect(guardianSelectList()).toEqual([
+        'p.parent_id',
+        'p.full_name',
+        'g.relationship_to_athlete',
+      ]);
+    },
+  );
+
+  test.each(STAFF_READERS)(
+    '%s still reads guardian contact details -- the roster and the emergency call need them',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      const columns = guardianSelectList();
+      expect(columns).toContain('p.phone');
+      expect(columns).toContain('p.email');
+      expect(columns).toContain('p.parent_id');
+      expect(columns).toContain('g.relationship_to_athlete');
+    },
+  );
+});

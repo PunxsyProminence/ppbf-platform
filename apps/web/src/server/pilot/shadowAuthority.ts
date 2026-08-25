@@ -3,6 +3,24 @@ import { query } from './db';
 
 export type ShadowAutomationMode = 'automatic' | 'assisted' | 'manual';
 
+/**
+ * The closed vocabulary, as data rather than as a type.
+ *
+ * `ShadowAutomationMode` is erased at runtime, so every route that took
+ * automation_mode off a request body and cast it to that type was asserting
+ * something nothing checked. It matters here more than in most places because
+ * every automation refusal in decideShadowAuthority below compares for EXACT
+ * equality with 'automatic' -- so "Automatic", "AUTOMATIC" or "automatic "
+ * skipped all of them and were recorded as a check that passed. Exported so
+ * the callers validate against the same list the decider compares against,
+ * rather than each writing their own copy and drifting from it.
+ */
+export const SHADOW_AUTOMATION_MODES: readonly ShadowAutomationMode[] = ['automatic', 'assisted', 'manual'];
+
+export function isShadowAutomationMode(value: unknown): value is ShadowAutomationMode {
+  return typeof value === 'string' && (SHADOW_AUTOMATION_MODES as readonly string[]).includes(value);
+}
+
 export type ShadowConfidenceTier =
   | 'SUFFICIENT_FOR_LOW_RISK_ACTION'
   | 'SUFFICIENT_FOR_REVIEW'
@@ -43,6 +61,22 @@ function isForbiddenAutomaticClearanceAction(action: string): boolean {
 }
 
 function decideShadowAuthority(input: ShadowAuthorityCheckInput): ShadowAuthorityDecision {
+  // Checked FIRST, and it fails closed.
+  //
+  // Every automation refusal below compares `automationMode === 'automatic'`.
+  // A value outside the vocabulary therefore matched none of them and was read
+  // as a non-automatic actor -- which is the opposite of what an unrecognised
+  // mode means. Nobody has reasoned about a mode nobody named, so the only
+  // safe reading of one is refusal.
+  //
+  // The callers validate their own input too, so this is a backstop rather
+  // than the primary gate: it exists so the NEXT call site cannot reintroduce
+  // the gap by forgetting to check, which is exactly how the two intake routes
+  // acquired it.
+  if (!isShadowAutomationMode(input.automationMode)) {
+    return { allowed: false, reason: 'Automation mode is not a recognised value.' };
+  }
+
   if (input.automationMode === 'automatic' && isForbiddenAutomaticClearanceAction(input.action)) {
     return { allowed: false, reason: 'Automatic clearance and medical authority actions are prohibited.' };
   }
