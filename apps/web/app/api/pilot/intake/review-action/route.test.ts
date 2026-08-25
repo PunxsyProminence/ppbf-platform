@@ -6,7 +6,7 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { upsertAthlete } from '@/src/server/pilot/entities';
-import { createReadiness, getIntakeCaseById } from '@/src/server/pilot/intake';
+import { assertActorCanAccessIntakeCase, createReadiness, getIntakeCaseById, updateIntakeCaseStatus } from '@/src/server/pilot/intake';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -37,6 +37,7 @@ jest.mock('@/src/server/pilot/entities', () => ({ upsertAthlete: jest.fn() }));
 jest.mock('@/src/server/pilot/shadow', () => ({ buildReviewResearchFields: jest.fn(() => ({})) }));
 jest.mock('@/src/server/pilot/shadowResearch', () => ({ createShadowResearchRequirement: jest.fn() }));
 jest.mock('@/src/server/pilot/intake', () => ({
+  assertActorCanAccessIntakeCase: jest.fn(),
   getIntakeCaseById: jest.fn(),
   // Promotion refuses outright when a case has no scanned documents, so the
   // fixture supplies one that passes review.
@@ -61,6 +62,8 @@ const mockStaffProvision = createOrUpdateMicrosoftStaffAccount as jest.MockedFun
 >;
 const mockAthleteAccount = createOrUpdateAthleteAccount as jest.MockedFunction<typeof createOrUpdateAthleteAccount>;
 const mockGetIntakeCase = getIntakeCaseById as jest.MockedFunction<typeof getIntakeCaseById>;
+const mockAuthority = assertActorCanAccessIntakeCase as jest.MockedFunction<typeof assertActorCanAccessIntakeCase>;
+const mockUpdateStatus = updateIntakeCaseStatus as jest.MockedFunction<typeof updateIntakeCaseStatus>;
 const mockCreateResearchRequirement = createShadowResearchRequirement as jest.MockedFunction<
   typeof createShadowResearchRequirement
 >;
@@ -106,6 +109,7 @@ beforeEach(() => {
   process.env.PPBF_INTAKE_PROMOTION_ENABLED = 'true';
   mockRequirePrincipal.mockResolvedValue(principal());
   mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
+  mockAuthority.mockResolvedValue({ found: true, submittedByAccountId: 'acct-admin', subjectAthleteIds: [] });
   mockStaffProvision.mockResolvedValue({
     accountId: 'guardian-1',
     organizationId: 'org-real',
@@ -333,5 +337,54 @@ describe('promotion readiness is validated before it reaches pilot.readiness', (
     expect(response.status).toBe(400);
     expect(mockUpsertAthlete).not.toHaveBeenCalled();
     expect(mockCreateReadiness).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('review-action authorizes the actor against the case before mutating it', () => {
+  // The bug: the only case-authority gate was
+  //   if (intakeCase.primary_athlete_id) await assertActorCanAccessAthlete(...)
+  // and intake_cases.primary_athlete_id is NULL on every row, so that gate never
+  // ran once -- requireRole admitted every coach in the organization and any coach
+  // could reject/approve/promote any case. Authorization must resolve the case and
+  // refuse an unrelated actor BEFORE the status write. The gate's own decision
+  // logic runs against the real gate + a mocked DB in document-review/route.test.ts;
+  // the property under test here is that this MUTATING route consults the gate at
+  // all and honors a refusal before writing.
+  function rejectRequest() {
+    return new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ intake_case_id: 'case-1', action: 'reject' }),
+    });
+  }
+
+  test('an actor with no relationship to the case is refused 403 and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValue({
+      accountId: 'acct-coach',
+      role: 'coach',
+      organizationId: 'org-real',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft',
+    });
+    mockAuthority.mockRejectedValueOnce(
+      new Error('Forbidden: actor has no relationship to this intake case'),
+    );
+
+    const response = await POST(rejectRequest());
+
+    expect(response.status).toBe(403);
+    expect(mockAuthority).toHaveBeenCalledWith(expect.anything(), 'org-real', 'case-1');
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+
+  test('an authorized actor reject is written', async () => {
+    mockAuthority.mockResolvedValue({ found: true, submittedByAccountId: 'acct-admin', subjectAthleteIds: [] });
+
+    const response = await POST(rejectRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateStatus).toHaveBeenCalledTimes(1);
   });
 });
