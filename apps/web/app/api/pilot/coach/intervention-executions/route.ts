@@ -9,6 +9,7 @@ import {
   adherenceError,
   closeExecution,
   correctExecution,
+  getExecution,
   listExecutions,
   recordExecutionFacts,
   startExecution,
@@ -135,6 +136,19 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json()) as Record<string, unknown>;
     const executionId = optionalString(body.execution_id)?.trim();
     if (!executionId) throw new ValidationError('Missing execution_id.');
+
+    // GET and POST both gate on the athlete (lines 73, 95); PATCH did not, so
+    // any coach could record/close/correct ANY execution in the org -- an
+    // intervention record for a child they have no relationship to -- by
+    // naming its execution_id. record/close key their UPDATE on
+    // (org, execution_id) with no athlete predicate, and correct supersedes by
+    // lineage, so the org scope alone was the only barrier. Resolve the
+    // execution's athlete and run it through the same central gate before any
+    // action. A hidden-not-found (not a 403) for an id in another org keeps
+    // this from being an existence oracle, matching the reads.
+    const target = await getExecution(principal.organizationId, executionId);
+    if (!target) return hiddenNotFound();
+    await assertActorCanAccessAthlete(principal, target.athlete_id);
 
     // One act per call: record facts, close, or correct.
     if (body.action === 'record') {

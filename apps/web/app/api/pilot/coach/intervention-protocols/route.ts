@@ -7,6 +7,7 @@ import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/
 import {
   exposureShapeError,
   createProtocol,
+  getProtocol,
   listProtocols,
   reviseProtocol,
   retireProtocol,
@@ -113,6 +114,18 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json()) as Record<string, unknown>;
     const protocolId = typeof body.protocol_id === 'string' ? body.protocol_id.trim() : '';
     if (!protocolId) throw new ValidationError('Missing protocol_id.');
+
+    // POST gates an athlete-specific protocol on its athlete (line 83) and the
+    // GET filters the list to reachable athletes; PATCH did neither, so any
+    // coach could retire or revise ANOTHER coach's athlete-specific protocol
+    // -- a stated plan for a child they have no relationship to -- by naming
+    // its protocol_id (retire/revise key on (org, protocol_id) only). Resolve
+    // the protocol and, when it is athlete-specific, run its athlete through
+    // the same central gate before either action. An org-wide protocol
+    // (athlete_id null) stays staff-authorized, as it is on read.
+    const target = await getProtocol(principal.organizationId, protocolId);
+    if (!target) return hiddenNotFound();
+    if (target.athlete_id) await assertActorCanAccessAthlete(principal, target.athlete_id);
 
     // One act per call: retire, or revise (which is a full re-statement of
     // content -- a version is not a diff).
