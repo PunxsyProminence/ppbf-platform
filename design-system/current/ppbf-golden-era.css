@@ -96,6 +96,446 @@
    / bag DNA visible in the outer thirds; no stock grey brick. */
 
 /* ==========================================================================
+   GOLDEN ERA 008 — THE BOARD (Board Hub)
+   ==========================================================================
+   Packet 02_READY_FOR_CLAUDE/008_BOARD, HANDOFF.md STATUS
+   "VISUAL_APPROVED (desktop) — Jason 2026-08-25", plus REFERENCE_APPROVED.jpg.
+   Route /board (apps/web/app/board/page.tsx), room .room--board.
+
+   THE OBJECT THE REFERENCE DRAWS. One thing hangs on the board room's wall: a
+   large sheet of aged parchment held in a heavy bronze surround, with a
+   riveted brass plate bolted over each of the four corners. On the sheet, a
+   struck title with a rule under it; below and beside it, engraved bronze
+   plates. That is the whole identity, and it is a sixth distinct object beside
+   The Bell's riveted door, the coach's slate board, the athlete's open locker,
+   the drill cabinet's index cards, the scheduler's pinned session cards and
+   After Hours' instrument board. ROOM PURPOSE DNA asks for a different physical
+   object made of the same materials, not a different palette.
+
+   THE PLATE CARRIES THE ROOM, AND THIS SCOPE DOES NOT TOUCH IT. The panelled
+   room, the wainscot, the sconces and the framed certificates in the reference
+   are the WALL, and the wall is a photograph: plate-04-board-01.jpg, already
+   committed, already wired to .room--board in the legacy PLATES block. So
+   nothing below draws a room. `--plate` is not named, `.room--board`'s own wall
+   is not restated, and — deliberately — `.room::before` is left exactly as it
+   is. Retuning the room's two hung pools to match the reference's two sconces
+   was the obvious move and it is the one thing the corrected architecture
+   forbids: lighting the room is the photograph's job. What this scope styles is
+   the interface standing in front of that wall — the board, its frame, and the
+   plates the live controls are screwed to.
+
+   WHY THE FIELD IS PARCHMENT AND THE PANELS ARE NOT. The reference's sheet is
+   the surface the work is read off, so the page's one content column becomes
+   that sheet: bronze surround by border-box, parchment by padding-box, two
+   background layers clipped differently, no wrapper element and no markup
+   change. The field carries NO loose text — every voice on this route stands
+   either inside the <header> (which already wears `on-plaster`, the sheet's own
+   dark-ink light-ground set) or inside a material that carries its own dark
+   ground. That is what makes this ground flip safe to reason about: there is no
+   voice on the page whose ink has to be re-derived for it, and no rung is moved
+   to achieve it. Measured against the field's darkest stop (#D8C296): the
+   header's .t-command #241B12 at 9.74:1, .t-body #3A2E1D at 7.60:1, and its
+   .t-eyebrow — which resolves var(--brass-800), so it follows the ramp below —
+   at 5.90:1.
+
+   The reference's own parchment CARDS are the one place this diverges from the
+   image, and it is a safety boundary rather than a preference. The two card
+   families on this route both carry a `.stamp`: the seat directory's "Seat
+   held" governance refusal, and the aggregate panel's "Suppressed" k-anonymity
+   withholding. On a dark material the sheet resolves that mark to
+   `--locked-ink`, the reserved safeguarding tint, at 11.26:1 here. Flipping
+   those cards to paper would print that ink at about 1.1:1 and the fix would be
+   to restate the reserved tint — which is a safety-semantics change wearing a
+   visual change's clothes. So the cards stay dark and become the reference's
+   OTHER material instead: engraved bronze plates, riveted, standing off the
+   sheet. Recorded rather than resolved quietly.
+
+   WHAT THE REFERENCE DRAWS THAT THIS ROUTE DOES NOT HAVE, AND WHICH WAS
+   THEREFORE NOT BUILT.
+
+     1. FIVE VOTE / APPROVE PLAQUES. There is no resolution record, no motion,
+        no ballot and no approval action anywhere behind /board — not in the
+        page, not in BoardSummaryPanel's one endpoint (/api/pilot/board/summary,
+        read-only), not in boardWorkspaceConfig. An APPROVE control with nothing
+        behind it is bad anywhere; on the governance surface of a youth
+        safeguarding platform it is the worst place in the building for one.
+     2. A NUMBERED AGENDA — Call to Order / Approval of Minutes / Old Business.
+        The platform holds no meeting record. The seat workspace states that in
+        so many words ("Meeting and compliance calendars" is on its list of
+        records that do not exist), so drawing an agenda here would contradict a
+        claim the product makes one click away.
+     3. A POLICY REVIEW CARD STACK. Same answer: "Policy reviews and due dates"
+        is explicitly a record this platform does not hold.
+     4. THE TITLE "BOARD RESOLUTIONS". The page's <h1> says Board Hub, which is
+        what it is. A stylesheet does not rename a surface.
+
+   All four are reported to the owner on the PR as information-architecture
+   questions with their own change, their own API and their own tests. The
+   MATERIALS are applied to the controls that are really there.
+
+   AND WHAT THE REFERENCE OMITS IS KEPT. The image draws no aggregate boundary
+   statement, no six-tile organization aggregate with its three distinct states
+   (a measured figure, "No records", and a "Suppressed" stamp that must never
+   collapse into a zero), no eight-seat directory, no seat-held refusal, no
+   measured-at timestamp. Every one of those is real and every one of them
+   stays. A reference that omits a control is not an instruction to delete it,
+   and a visual pass is exactly when one goes quietly missing;
+   src/design/goldenEraBoardScope.test.ts pins both halves.
+
+   DESKTOP ONLY. The packet carries one reference and it is the desktop board;
+   there is no mobile approval, and the absence of one is not licence to invent
+   a phone layout. The narrow-width block at the foot of this scope therefore
+   does one thing — it thins the surround and the corner plates so a 16px frame
+   does not eat the field on a small viewport. No layout, no stacking rule and
+   no control placement is invented for phones here.
+
+   RESERVED RED. Nothing below names --locked, --stamp-red or #A81E22, and no
+   `.stamp` on this route is restyled at all: safeguarding ink is not a visual
+   pass's to touch, and the status it carries is not decorative.
+
+   FUNCTIONAL_CHANGES: NONE. One class on the page's <main> is the only markup
+   touched; no control is added, removed, renamed or re-labelled. The other
+   board doors — the eight seat workspaces behind BoardMemberDashboard,
+   /board/dashboard, /board/compliance-monitoring, /board/escalation-monitoring
+   — are deliberately untouched by this pass and keep exactly what they have.
+   The refusal and interim states in BoardRoleGate are outside the scope by
+   construction: the gate returns its own <main> and never renders children, so
+   a visual pass cannot reach what an unverified caller sees.
+   ========================================================================== */
+
+/* THE TOKEN SCOPE. Everything this route renders that resolves metal -- the
+   panel keylines, .btn--ghost, the .t-eyebrow voice, .stat-note, the focus
+   ring -- reads var(--brass-*). Redefining the ramp on the bare scope re-skins
+   all of them at once, custom properties inherit, and legacy gold cannot leak
+   in through a property nobody overrode. Outside .ge-board the app keeps its
+   legacy values untouched.
+
+   THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the scope
+   splits down the middle: everything solid turns bronze while every alpha rule
+   beside it keeps painting the inherited legacy gold -- a bronze frame wearing
+   a gold hairline, with no forgotten property to find. That is the exact leak
+   this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one of
+   them, and checks each triple against its own hex. */
+.ge-board {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* ---- The board ----------------------------------------------------------
+   The page's single content column IS the sheet and its surround. `> div`
+   because /board's <main> has exactly one child -- the max-w-7xl column every
+   section already sits inside -- and there is no class on it to hook without
+   adding a second markup change.
+
+   Bronze by border-box, parchment by padding-box: the same two-clip
+   construction the schedule board uses, inverted. There the surround was
+   stained wood around a near-black field; here it is aged bronze around
+   paper, because this room's working surface is the sheet rather than the
+   board it is pinned to. */
+.ge-board > div {
+  position: relative;
+  border: 16px solid transparent;
+  border-radius: 10px;
+  background-color: var(--wood-900);
+  background-image:
+    /* the sheet: a lit corner where the light falls on it, a foxed corner
+       where it has aged against the frame, its own tooth, and the paper */
+    radial-gradient(62% 46% at 8% 5%, rgba(255,250,232,.50), transparent 68%),
+    radial-gradient(72% 54% at 94% 97%, rgba(122,88,42,.20), transparent 72%),
+    var(--grain-fine),
+    linear-gradient(176deg, #F0E4C6 0%, #E6D5AE 54%, #D8C296 100%),
+    /* the surround: brushed bronze, the brush running the short way across
+       the band so the frame reads as metal rather than as a flat keyline */
+    repeating-linear-gradient(90deg, rgba(0,0,0,.24) 0 2px, transparent 2px 7px),
+    linear-gradient(152deg,
+      var(--brass-700) 0%,  var(--brass-900) 24%, var(--brass-600) 52%,
+      var(--brass-900) 76%, var(--brass-800) 100%);
+  background-clip: padding-box, padding-box, padding-box, padding-box, border-box, border-box;
+  background-origin: padding-box, padding-box, padding-box, padding-box, border-box, border-box;
+  background-blend-mode: normal, normal, overlay, normal, normal, normal;
+  box-shadow:
+    /* the sheet sunk behind the frame -- a warm shadow, because what is
+       casting it is bronze on paper and not black on black */
+    inset 0 2px 12px rgba(74,54,24,.34),
+    /* the lit top lip of the metal, and the board's weight on the wall */
+    0 1px 0 rgb(var(--brass-200-rgb) / .18),
+    0 18px 40px rgba(0,0,0,.60);
+}
+
+/* ---- The riveted corner plates ------------------------------------------
+   The signature of the object: a solid brass plate bolted over each corner of
+   the surround, two studs through each. Drawn as gradient layers rather than
+   an SVG data URI so they resolve the scoped ramp above -- a data URI could
+   not, and would drift the moment the ramp was retuned.
+
+   These are SOLID PLATES, not the thin L-arms the schedule board wears. The
+   reference's hardware is heavier and squarer than the scheduler's, which is
+   the difference between a board room's fittings and a gym counter's, and it
+   is the cheapest honest way to keep the two objects from reading as the same
+   frame with different paint.
+
+   ::before carries the top pair, ::after the bottom pair. Absolutely
+   positioned, pointer-events: none -- a bracket can never eat a tap meant for
+   a control underneath it, and a pseudo-element is never in the accessibility
+   tree. */
+.ge-board > div::before,
+.ge-board > div::after {
+  --ge-plate: linear-gradient(146deg,
+    var(--brass-200) 0%,  var(--brass-400) 30%,
+    var(--brass-600) 62%, var(--brass-900) 100%);
+  --ge-stud: radial-gradient(circle,
+    var(--brass-200) 0 1.7px, var(--brass-500) 1.7px 3.1px,
+    var(--brass-900) 3.1px 3.8px, transparent 4px);
+  content: "";
+  position: absolute;
+  left: -16px;
+  right: -16px;
+  height: 44px;
+  z-index: 2;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    var(--ge-stud), var(--ge-stud), var(--ge-stud), var(--ge-stud),
+    var(--ge-plate), var(--ge-plate);
+  background-size: 10px 10px, 10px 10px, 10px 10px, 10px 10px, 44px 44px, 44px 44px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.62));
+}
+.ge-board > div::before {
+  top: -16px;
+  background-position:
+    11px 29px, 29px 11px,
+    calc(100% - 11px) 29px, calc(100% - 29px) 11px,
+    left top, right top;
+}
+.ge-board > div::after {
+  bottom: -16px;
+  background-position:
+    11px calc(100% - 29px), 29px calc(100% - 11px),
+    calc(100% - 11px) calc(100% - 29px), calc(100% - 29px) calc(100% - 11px),
+    left bottom, right bottom;
+}
+
+/* ---- The masthead -------------------------------------------------------
+   The reference strikes the title across the top of the sheet and rules it off
+   underneath with a heavy line and a hairline below it. The <header> already
+   IS that band and already draws the heavy line (border-b-4
+   border-[--brass-700], which the scoped ramp turns bronze on its own), so the
+   only thing added is the second rule -- a background hairline sitting just
+   inside the border, which needs no wrapper and no new element.
+
+   The header's ink is deliberately NOT restated. It wears `on-plaster`, the
+   sheet's own dark-ink light-ground set, because room--board's upper wall was
+   always meant to be light; putting real paper under those inks is the first
+   time they have stood on the ground they were written for. Restating them
+   here would be a second, competing answer to a question the sheet already
+   answers. */
+.ge-board > div > header {
+  background-image: linear-gradient(180deg,
+    rgb(var(--brass-700-rgb) / .55), rgb(var(--brass-700-rgb) / .55));
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+  background-position: left calc(100% - 5px);
+}
+
+/* ---- The plates ---------------------------------------------------------
+   Every panel on this route becomes an engraved bronze plate screwed to the
+   sheet: a dark face so the bone voices standing on it keep the contrast the
+   sheet gave them, a bronze bead round the edge, and a warm shadow onto the
+   paper rather than the black one a panel throws on leather.
+
+   THIS IS ALSO WHERE THE LEGACY GOLD LEAK CLOSES. Both /board's own panel and
+   BoardSummaryPanel's frame state their keyline as
+   `border-[color:rgba(212,175,74,.22)]` -- a literal, not a token, so the
+   bronze ramp above cannot reach it and every panel would have kept a
+   legacy-gold edge inside a golden-era board. The border colour is restated
+   here in the scope's own metal. This sheet is unlayered and Tailwind's
+   utilities sit in @layer utilities, so it wins without !important.
+
+   Measured on the face's darkest stop (#17110C): .t-body's --bone-200 at
+   15.06:1, .t-label's --bone-400 at 7.82:1, .stat-note's --brass-300 at
+   9.14:1, and the reserved --locked-ink a `.stamp` resolves at 12.46:1. */
+.ge-board .mat-leather {
+  background-color: #221A13;
+  background-image:
+    linear-gradient(178deg, rgb(var(--brass-200-rgb) / .07) 0%, transparent 30%),
+    linear-gradient(176deg, #2E241A 0%, #221A13 56%, #17110C 100%);
+  background-blend-mode: screen, normal;
+  border-color: color-mix(in srgb, var(--brass-600) 62%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .18),
+    inset 0 -3px 9px rgba(0,0,0,.58),
+    0 3px 0 rgba(74,54,24,.22),
+    0 10px 22px rgba(58,42,18,.38);
+}
+
+/* The seat cards and the aggregate tiles are the plates that carry a figure or
+   a name, so they take the reference's studs -- one through each corner. Both
+   are flex containers, which is why the stud ring is absolutely positioned: a
+   static pseudo-element on a flex container becomes a flex ITEM and would
+   silently add a cell to every card on the page. Inert to the pointer. */
+.ge-board .mat-leather--raised,
+.ge-board .stat {
+  position: relative;
+  background-color: #2E241A;
+  background-image:
+    linear-gradient(178deg, rgb(var(--brass-200-rgb) / .10) 0%, transparent 26%),
+    linear-gradient(172deg, #3B2D20 0%, #2C2118 54%, #241B14 100%);
+  background-blend-mode: screen, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-700) 58%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .22),
+    inset 0 -3px 8px rgba(0,0,0,.55),
+    0 3px 0 rgba(74,54,24,.22),
+    0 9px 20px rgba(58,42,18,.40);
+}
+.ge-board .mat-leather--raised::after,
+.ge-board .stat::after {
+  --ge-rivet: radial-gradient(circle,
+    var(--brass-200) 0 1.4px, var(--brass-500) 1.4px 2.7px,
+    var(--brass-900) 2.7px 3.4px, transparent 3.6px);
+  content: "";
+  position: absolute;
+  inset: 7px;
+  pointer-events: none;
+  background-image: var(--ge-rivet), var(--ge-rivet), var(--ge-rivet), var(--ge-rivet);
+  background-repeat: no-repeat;
+  background-size: 9px 9px;
+  background-position: 0 0, 100% 0, 0 100%, 100% 100%;
+}
+
+/* ---- Voices on the plates -----------------------------------------------
+   Scoped UNDER a material rather than on the bare class, and that is
+   load-bearing rather than tidy. `.ge-board .t-command` and
+   `.on-plaster .t-command` are both (0,2,0); this sheet is imported after the
+   legacy one, so a bare rule here would win on source order and print bone
+   display type onto the parchment masthead. Naming the material keeps every
+   restatement on the ground it was measured against and leaves the sheet's own
+   light-ground answer holding the header.
+
+   The letters on a board room's plates are CUT IN, not lit from behind: a dark
+   cut below the glyph and a thin bronze edge above it, which is what an
+   engraved plate under a hung light actually shows. The eyebrow is the small
+   nameplate above each compartment; it keeps the metal voice rather than
+   collapsing into body copy. */
+.ge-board :is(.mat-leather, .mat-leather--raised, .stat) .t-command {
+  color: var(--bone-100);
+  letter-spacing: .05em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.72), 0 -1px 0 rgb(var(--brass-200-rgb) / .12);
+}
+.ge-board :is(.mat-leather, .mat-leather--raised, .stat) .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 84%, var(--bone-200));
+  letter-spacing: .18em;
+}
+.ge-board :is(.mat-leather, .mat-leather--raised) .t-label {
+  color: var(--bone-300);
+  letter-spacing: .13em;
+}
+
+/* ---- The engraved plaques -----------------------------------------------
+   The reference's controls are riveted bronze plaques with the label cut into
+   the face, and every control inside this scope is a `.btn--ghost` -- the eight
+   seat-directory links, one per card. There is no primary/secondary pair on
+   this route for a plaque to blur, which is the same reason the schedule
+   board's top rail could plaque its ghosts safely; below, `.stamp` is what
+   marks a seat that cannot be opened, and that is ink rather than a control.
+
+   INK CONTRAST IS WHY THE FACE STOPS AT --brass-400. `.btn` is 15px at weight
+   700, which WCAG counts as normal text, so it owes 4.5:1. Engraved ink
+   #241B12 measures 4.27:1 on --brass-500 and 6.05:1 on --brass-400, so the
+   face ends on the 400 rung and the darker metal goes into the bevel shadow;
+   the worst point on the plate is 6.05:1.
+
+   The hover state MUST be restated with it. `.btn--ghost:hover` pins
+   `color: var(--bone-100)`, which is correct over the ghost's black wash and
+   would print pale bone on bright bronze here -- about 2:1 -- so hovering a
+   plaque would erase its own label. */
+.ge-board .btn--ghost {
+  color: #241B12;
+  border: 1px solid var(--brass-800);
+  border-radius: 3px;
+  background-color: var(--brass-400);
+  background-image:
+    radial-gradient(circle at 8px 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 8px) 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    linear-gradient(180deg,
+      var(--brass-200) 0%, var(--brass-300) 46%, var(--brass-400) 100%);
+  text-shadow: 0 1px 0 rgba(255,244,214,.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.5);
+}
+.ge-board .btn--ghost:hover {
+  color: #241B12;
+  border-color: var(--brass-900);
+  background-color: var(--brass-300);
+  background-image:
+    radial-gradient(circle at 8px 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 8px) 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    linear-gradient(180deg,
+      var(--brass-200) 0%, var(--brass-300) 58%, var(--brass-400) 100%);
+}
+
+/* ---- Narrow viewports ---------------------------------------------------
+   008 is a DESKTOP packet. There is no approved mobile reference, and the
+   absence of one is not permission to design a phone. This block therefore
+   changes nothing about layout, order or which controls appear -- the page's
+   own responsive grid still decides that. It thins the surround and shrinks
+   the corner plates, because a 16px bronze band and four 44px plates on a
+   390px viewport stop being a frame and start being the page. */
+@media (max-width: 900px) {
+  .ge-board > div {
+    border-width: 9px;
+    border-radius: 7px;
+  }
+  .ge-board > div::before,
+  .ge-board > div::after {
+    left: -9px;
+    right: -9px;
+    height: 30px;
+    background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px, 30px 30px, 30px 30px;
+  }
+  .ge-board > div::before {
+    top: -9px;
+    background-position:
+      8px 20px, 20px 8px,
+      calc(100% - 8px) 20px, calc(100% - 20px) 8px,
+      left top, right top;
+  }
+  .ge-board > div::after {
+    bottom: -9px;
+    background-position:
+      8px calc(100% - 20px), 20px calc(100% - 8px),
+      calc(100% - 8px) calc(100% - 20px), calc(100% - 20px) calc(100% - 8px),
+      left bottom, right bottom;
+  }
+}
+
+/* ==========================================================================
    GOLDEN ERA 004A — SESSION SCRIPTS (the coach's clipboard)
    ==========================================================================
    Route: /coach/session-scripts (apps/web/app/coach/session-scripts/page.tsx),
