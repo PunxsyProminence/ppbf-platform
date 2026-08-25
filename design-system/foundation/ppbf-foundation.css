@@ -62,7 +62,14 @@
 
   /* --- Ergonomics ------------------------------------------------------- */
   --tap: 55px;        /* Fibonacci, and comfortably above the 44px WCAG floor */
-  --focus: 0 0 0 3px rgba(212, 175, 74, .55);
+  /* Colour comes from whichever scope this is used in, with the foundation
+     supplying its own channels as the var() fallback. The fallback is what
+     keeps this layer independent: with no theme loaded --brass-400-rgb does
+     not exist and the ring is still the visible one it always was, so the
+     foundation does not depend on the theme. With a theme loaded, a scope
+     that redefines the brass ramp moves the focus ring with it instead of
+     leaving one legacy-gold ring inside a re-skinned room. */
+  --focus: 0 0 0 3px rgb(var(--brass-400-rgb, 212 175 74) / .55);
 
   /* --- Motion — Law 8 applied to time ------------------------------------
      Durations were the one axis still picked by eye (.12s, .28s, .34s, .42s,
