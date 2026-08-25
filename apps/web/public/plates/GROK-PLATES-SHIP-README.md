@@ -1,39 +1,53 @@
-# Grok plate binary ship — 2026-08-25
+# Grok plate binary ship — 2026-08-25 (READY)
 
 Environment-only JPEG plates for `apps/web/public/plates/`.
 No UI, no text baked in. SOI+EOI verified.
 
-## Binaries (download from OneDrive, then land here)
-**OneDrive package:** `Documents/PPBF-AI-Lanes/Visual-Handoffs/02_READY_FOR_CLAUDE/REPO-PLATES-SHIP/`
-**Zip:** `REPO-PLATES-SHIP.zip` in same Visual-Handoffs control area
+## Download the 12 real JPEGs (1 click)
 
-| File | Role |
-|------|------|
-| plate-08-bell-gym-landscape-01.jpg | The Bell desktop bg 16:9 |
-| plate-08-bell-gym-portrait-01.jpg | The Bell mobile bg 9:16 |
-| plate-02b-floor-portrait-02.jpg | Floor portrait (seam fixed) |
-| plate-02b-floor-portrait-ring-01.jpg | Ring portrait option |
-| plate-06-night-02.jpg | Night room landscape |
-| plate-06-night-portrait-01.jpg | Night portrait |
-| plate-01-office-01.jpg | Office landscape |
-| plate-01-office-portrait-01.jpg | Office portrait |
-| plate-03-clinic-portrait-01.jpg | Clinic portrait (neutral) |
-| plate-04-board-01.jpg | Board landscape |
-| plate-04-board-portrait-01.jpg | Board portrait |
-| plate-05-file-portrait-01.jpg | File portrait |
+**Google Drive zip:**  
+https://drive.google.com/file/d/1RRIYsHYYSWB7til-Wy_fLJumvaNkBCAt/view?usp=drivesdk
 
-Do not replace plate-02a / plate-03-clinic-01 / plate-05-file-01 / plate-07-warm-ground-01 unless owner says (already passed on main).
+File: `REPO-PLATES-SHIP-FINAL-2026-08-25.zip` (~1.5 MB)  
+MD5: `955d39af48a10b787114242f329d58b5`
 
-## Land command (Claude / Jason)
+Also on OneDrive: `Documents/PPBF-AI-Lanes/Visual-Handoffs/02_READY_FOR_CLAUDE/REPO-PLATES-SHIP/`
+
+## Exact files + sizes
+
+| File | Dim | Bytes |
+|------|-----|-------|
+| plate-08-bell-gym-landscape-01.jpg | 1280×720 | 189771 |
+| plate-08-bell-gym-portrait-01.jpg | 810×1440 | 99891 |
+| plate-01-office-01.jpg | 1280×720 | 148739 |
+| plate-01-office-portrait-01.jpg | 810×1440 | 186248 |
+| plate-02b-floor-portrait-02.jpg | 810×1440 | 189337 |
+| plate-02b-floor-portrait-ring-01.jpg | 810×1440 | 82185 |
+| plate-03-clinic-portrait-01.jpg | 810×1440 | 119124 |
+| plate-04-board-01.jpg | 1280×720 | 72943 |
+| plate-04-board-portrait-01.jpg | 810×1440 | 104274 |
+| plate-05-file-portrait-01.jpg | 810×1440 | 222851 |
+| plate-06-night-02.jpg | 1280×720 | 86167 |
+| plate-06-night-portrait-01.jpg | 810×1440 | 80048 |
+
+## Land command (Jason — 2 min)
+
 ```bash
 git fetch origin
 git checkout grok/plates-full-ship
-# copy the 12 JPGs from OneDrive REPO-PLATES-SHIP into apps/web/public/plates/
-cp /path/to/REPO-PLATES-SHIP/plate-*.jpg apps/web/public/plates/
+# unzip the Drive package, then:
+cp REPO-PLATES-SHIP-FINAL/plate-*.jpg apps/web/public/plates/
+rm -f apps/web/public/plates/_smoke_binary_test.jpg
 git add apps/web/public/plates/plate-*.jpg
-git commit -m "feat(plates): Grok env plate binaries (Bell + Type-B corrections)"
-git push -u origin grok/plates-full-ship
+git add -u apps/web/public/plates/_smoke_binary_test.jpg
+git commit -m "feat(plates): land Grok env JPEGs (Bell + Type-B corrections)"
+git push
 ```
 
-Then open/merge PR. Point `.ge-bell` CSS at plate-08 filenames.
+Or drag-drop the 12 JPGs via GitHub web UI onto this branch under `apps/web/public/plates/`.
+
+Then point `.ge-bell` CSS at plate-08 filenames. Run `plateBinaries.test.ts`.
+
+Do not replace plate-02a / plate-03-clinic-01 / plate-05-file-01 / plate-07-warm-ground-01.
+
 FUNCTIONAL_CHANGES: NONE. PR #606 DEAD.
