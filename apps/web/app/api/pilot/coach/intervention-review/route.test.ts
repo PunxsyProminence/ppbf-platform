@@ -10,7 +10,7 @@ import {
   removeEvidence,
   reviewOutcome,
 } from '@/src/server/pilot/interventionEvidence';
-import { listExecutions } from '@/src/server/pilot/interventionExecutions';
+import { getExecution, listExecutions } from '@/src/server/pilot/interventionExecutions';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -44,7 +44,7 @@ jest.mock('@/src/server/pilot/interventionEvidence', () => {
 
 jest.mock('@/src/server/pilot/interventionExecutions', () => {
   const actual = jest.requireActual('@/src/server/pilot/interventionExecutions');
-  return { ...actual, listExecutions: jest.fn().mockResolvedValue([]) };
+  return { ...actual, getExecution: jest.fn(), listExecutions: jest.fn().mockResolvedValue([]) };
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
@@ -53,6 +53,7 @@ const mockAccessible = accessibleAthleteIds as jest.Mock;
 const mockLink = linkEvidence as jest.Mock;
 const mockListEvidence = listEvidence as jest.Mock;
 const mockListExecutions = listExecutions as jest.Mock;
+const mockGetExecution = getExecution as jest.Mock;
 const mockRemove = removeEvidence as jest.Mock;
 const mockReview = reviewOutcome as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
@@ -63,6 +64,10 @@ const mockAudit = writePilotAuditEvent as jest.Mock;
 beforeEach(() => {
   mockAccess.mockResolvedValue(undefined);
   mockAccessible.mockResolvedValue(new Set());
+  // POST resolves the execution's athlete before acting; default to an
+  // existing, accessible one so the action tests exercise the action, not
+  // the gate. The gate has its own test.
+  mockGetExecution.mockResolvedValue({ execution_id: 'ex-1', athlete_id: 'ath-1' });
 });
 
 afterEach(() => {
@@ -165,6 +170,39 @@ test('a review carries the three separate answers and audits them; invented voca
   mockReview.mockClear();
   expect((await POST(bodyRequest('POST', { ...REVIEW_BODY, hypothesis_result: 'proven' }))).status).toBe(400);
   expect((await POST(bodyRequest('POST', { ...REVIEW_BODY, performance_notes: '  ' }))).status).toBe(400);
+  expect(mockReview).not.toHaveBeenCalled();
+});
+
+test('a coach with no relationship to the execution\'s athlete cannot link evidence or file a review', async () => {
+  // GET is per-athlete authorized; this POST was not, so a coach could attach
+  // evidence or a recorded verdict to any execution in the org by naming its
+  // id. The gate resolves the execution's athlete and refuses before either
+  // action or its audit.
+  mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach', role: 'coach' }));
+  mockGetExecution.mockResolvedValue({ execution_id: 'ex-victim', athlete_id: 'ath-victim' });
+  mockAccess.mockImplementation(async (_p: unknown, athleteId: string) => {
+    if (athleteId === 'ath-victim') throw new Error('Forbidden: not your athlete');
+  });
+
+  const link = await POST(bodyRequest('POST', {
+    action: 'link_evidence', execution_id: 'ex-victim', evidence_role: 'baseline',
+    source_kind: 'training_attempt', source_id: 'att-1',
+  }));
+  const review = await POST(bodyRequest('POST', { ...REVIEW_BODY, execution_id: 'ex-victim' }));
+
+  expect(link.status).toBeGreaterThanOrEqual(400);
+  expect(review.status).toBeGreaterThanOrEqual(400);
+  expect(mockAccess).toHaveBeenCalledWith(expect.anything(), 'ath-victim');
+  expect(mockLink).not.toHaveBeenCalled();
+  expect(mockReview).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('a POST naming an execution id absent from the org is a hidden 404 before any action', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockGetExecution.mockResolvedValue(null);
+  const response = await POST(bodyRequest('POST', REVIEW_BODY));
+  expect(response.status).toBe(404);
   expect(mockReview).not.toHaveBeenCalled();
 });
 

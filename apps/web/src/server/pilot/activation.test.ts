@@ -43,6 +43,7 @@ import {
   redeemActivationCode,
 } from './activation';
 import { query, withTransaction } from './db';
+import { DEFAULT_FIRST_LOGIN_PIN } from './pinPolicy';
 import { hashPin } from './security';
 
 const mockQuery = query as jest.Mock;
@@ -225,14 +226,30 @@ describe('redeemActivationCode', () => {
     expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 
+  // The starting PIN is public by design (printed in the admin UI, named in
+  // pinPolicy.ts). It is only safe while it is ISSUED alongside
+  // must_change_pin = true. Activation is the path where the athlete CHOOSES a
+  // PIN, and its UPDATE never touches must_change_pin -- which defaults to
+  // false -- so accepting it here produced a fully active athlete account
+  // reachable by anyone who knows the published PIN. validatePinPolicy cannot
+  // catch it: it deliberately exempts DEFAULT_FIRST_LOGIN_PIN so the admin
+  // reset flow can issue it.
+  test('rejects the published starting PIN without touching the database', async () => {
+    await expect(redeemActivationCode('ABCD-2345-EFGH', DEFAULT_FIRST_LOGIN_PIN)).rejects.toThrow(
+      'starting PIN',
+    );
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+    expect(mockHashPin).not.toHaveBeenCalled();
+  });
+
   test('rejects a malformed code without touching the database', async () => {
-    await expect(redeemActivationCode('TOO-SHORT', '123456')).rejects.toThrow('Missing code');
+    await expect(redeemActivationCode('TOO-SHORT', '481902')).rejects.toThrow('Missing code');
     expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 
   test('locks the token row so a code cannot be redeemed twice concurrently', async () => {
     stubRedeemableToken();
-    await redeemActivationCode('ABCD-2345-EFGH', '123456');
+    await redeemActivationCode('ABCD-2345-EFGH', '481902');
 
     const [sql] = callsMatching(/from pilot\.account_activation_tokens/)[0];
     expect(sql).toContain('for update');
@@ -243,7 +260,7 @@ describe('redeemActivationCode', () => {
 
   test('sets the PIN, activates membership, consumes the token and revokes sessions', async () => {
     stubRedeemableToken();
-    const result = await redeemActivationCode('ABCD-2345-EFGH', '123456');
+    const result = await redeemActivationCode('ABCD-2345-EFGH', '481902');
 
     expect(result).toEqual({
       accountId: 'ath-1',
@@ -268,7 +285,7 @@ describe('redeemActivationCode', () => {
   test('rejects an unknown, consumed, superseded, or expired code', async () => {
     // Token lookup returns nothing -- all four conditions are folded into the
     // same WHERE clause and the same message, so they are indistinguishable.
-    await expect(redeemActivationCode('ABCD-2345-EFGH', '123456')).rejects.toThrow(
+    await expect(redeemActivationCode('ABCD-2345-EFGH', '481902')).rejects.toThrow(
       'Unauthorized: activation code is invalid, already used, or expired',
     );
   });
@@ -277,7 +294,7 @@ describe('redeemActivationCode', () => {
     respond(/from pilot\.account_activation_tokens/, [{ account_id: 'ath-1', organization_id: 'org-1' }]);
     respond(/from pilot\.organizations/, [{ status: 'suspended' }]);
 
-    await expect(redeemActivationCode('ABCD-2345-EFGH', '123456')).rejects.toThrow(
+    await expect(redeemActivationCode('ABCD-2345-EFGH', '481902')).rejects.toThrow(
       'Unauthorized: activation code is invalid, already used, or expired',
     );
 
@@ -290,7 +307,7 @@ describe('redeemActivationCode', () => {
     respond(/from pilot\.organizations/, [{ status: 'active' }]);
     // The guarded UPDATE matches no row because role is no longer 'athlete'.
 
-    await expect(redeemActivationCode('ABCD-2345-EFGH', '123456')).rejects.toThrow(
+    await expect(redeemActivationCode('ABCD-2345-EFGH', '481902')).rejects.toThrow(
       'Unauthorized: activation code is invalid, already used, or expired',
     );
     expect(callsMatching(/set consumed_at = now\(\)/)).toHaveLength(0);
@@ -299,7 +316,7 @@ describe('redeemActivationCode', () => {
   test('accepts a code typed with confusable glyphs', async () => {
     stubRedeemableToken();
     // Same code as the issue-time canonical form, typed with O for 0.
-    await expect(redeemActivationCode('abcd-2345-efgh', '123456')).resolves.toBeDefined();
+    await expect(redeemActivationCode('abcd-2345-efgh', '481902')).resolves.toBeDefined();
   });
 });
 

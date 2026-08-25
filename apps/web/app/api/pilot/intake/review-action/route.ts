@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { requireRole } from '@/src/server/pilot/access';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { upsertAthlete } from '@/src/server/pilot/entities';
@@ -13,6 +13,7 @@ import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResear
 import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import {
+  assertActorCanAccessIntakeCase,
   bindIntakeDocumentsToOwner,
   createAssessment,
   createAttendance,
@@ -118,8 +119,24 @@ export async function POST(request: NextRequest) { // NOSONAR
       throw new Error('Missing intake case');
     }
 
-    if (intakeCase.primary_athlete_id) {
-      await assertActorCanAccessAthlete(principal, intakeCase.primary_athlete_id);
+    // Authorize the actor against THIS case before any status mutation. The
+    // former gate here -- `if (intakeCase.primary_athlete_id) await
+    // assertActorCanAccessAthlete(...)` -- was dead: intake_cases.primary_athlete_id
+    // is NULL on every row (no code path writes it; see resolveIntakeCaseAuthority
+    // in intake.ts), so the athlete check never ran and requireRole admitted every
+    // coach in the organization to act on any case. The sibling READ routes
+    // (cases/get, document-review, document-link) already gate on
+    // assertActorCanAccessIntakeCase, which narrows an owner-less case to
+    // organization_admin or the submitting account and enforces full athlete-scope
+    // once the case is athlete-bound. This is the one MUTATING route; it needs the
+    // same gate, before the write rather than after.
+    const authority = await assertActorCanAccessIntakeCase(
+      principal,
+      principal.organizationId,
+      intakeCaseId,
+    );
+    if (!authority.found) {
+      throw new Error('Missing intake case');
     }
 
     const intakeDocuments = action === 'reject'

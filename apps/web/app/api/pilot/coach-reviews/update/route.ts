@@ -36,7 +36,10 @@ export async function POST(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, payloadAthleteId);
-    await upsertCoachReview(principal.organizationId, payload);
+    await upsertCoachReview(principal.organizationId, payload, {
+      mode: 'update',
+      expectedSessionId: current.session_id,
+    });
 
     await writePilotAuditEvent({
       event_type: 'update',

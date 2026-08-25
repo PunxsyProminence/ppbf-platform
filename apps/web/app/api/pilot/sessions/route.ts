@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { upsertSession } from '@/src/server/pilot/entities';
+import { getSessionById, upsertSession } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { validateSessionPayload } from '@/src/server/pilot/validation';
 
@@ -16,7 +16,26 @@ export async function POST(request: NextRequest) {
     const payload = validateSessionPayload(await request.json());
     await assertActorCanAccessAthlete(principal, payload.athlete_id);
 
-    await upsertSession(principal.organizationId, payload);
+    // upsertSession is UPDATE-first keyed on session_id alone, so a POST with
+    // an EXISTING session_id rewrites that row -- including reassigning its
+    // athlete_id. Authorizing only payload.athlete_id (the caller's own
+    // athlete) let any athlete or coach hijack another athlete's session by
+    // reusing its id. Authorize the STORED owner too, exactly as
+    // sessions/update/route.ts already does; a genuinely new id has no stored
+    // owner and this is a no-op.
+    const existing = await getSessionById(principal.organizationId, payload.session_id);
+    if (existing) {
+      await assertActorCanAccessAthlete(principal, existing.athlete_id);
+      // Compare-and-set on the authorized owner: the UPDATE carries
+      // existing.athlete_id in its WHERE, so a concurrent owner change between
+      // this lookup and the write fails closed rather than letting the
+      // UPDATE-first upsert rewrite a row that moved (TOCTOU).
+      await upsertSession(principal.organizationId, payload, { mode: 'update', expectedAthleteId: existing.athlete_id });
+    } else {
+      // No row existed at authorization time; INSERT ... ON CONFLICT DO
+      // NOTHING refuses rather than updating an id that appeared concurrently.
+      await upsertSession(principal.organizationId, payload, { mode: 'create' });
+    }
 
     await writePilotAuditEvent({
       event_type: 'create',
