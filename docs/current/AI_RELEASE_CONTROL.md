@@ -6,7 +6,8 @@ Claude (release commander) maintains this file. Grok does not edit it.
 ChatGPT audits it against live GitHub.
 
 MODE:
-CONTINUE_BUILD — production is live and verified (2026-08-24T22:56Z). The
+CONTINUE_BUILD — production is live and verified (2026-08-25T13:46Z, a830eae2 —
+the SECOND production release; the first was 26519efd at 2026-08-24T22:56Z). The
 release-first phase is complete; visual work returns through normal
 PR + CI + staging. History of this phase: owner override ~20:45Z, FUNCTION FIRST. Grok /
 Golden Era corrective work (#606), plates (#586) and #607 are explicitly
@@ -14,10 +15,10 @@ OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-25T01:30Z
+2026-08-25T14:35Z
 
 CURRENT_MAIN:
-d1f39c52dd02ed43a62b973ae990523fd0f7e60d
+a830eae24fdec92ebdf325235716aeb9d54482f4
 NOTE FOR GROK / #606: main has moved past the 26519efd base your restore
 artifacts were packaged against. Since then #607 #609 #610 #612 (and #615
 once merged) changed athlete-side and test files -- #612 rewrote copy in
@@ -28,27 +29,43 @@ AthleteWorkspace: re-cut it from the CURRENT main tip + ge- hooks only, or
 the restore will conflict (or worse, silently resurrect removed copy).
 
 RELEASE_CANDIDATE_SHA:
-26519efd49d04b0f4b72779b921174567dd48ed0  <-- FROZEN
-Contains #596 #597 #599 #600 #601 #602 #603 #604 #605. Contains NO Grok
-corrective UI work. #604 (production revision-truth) is the release-critical
-repair inside it.
+a830eae24fdec92ebdf325235716aeb9d54482f4  <-- FROZEN, SHIPPED 2026-08-25
+25 commits past the previous production SHA 26519efd. This is the
+backend/security + release-engineering lane — nine authorization fixes among
+them, the tip being #633 (activation refuses the published starting PIN).
+Contains NO visual or design-system change: `git diff 26519efd..a830eae2` shows
+0 files under `design-system/` and 0 under `public/plates/`. Contains ZERO
+schema-bearing files, so no migration was required (see the run record below).
+
+PREVIOUS CANDIDATE, shipped 2026-08-24:
+26519efd49d04b0f4b72779b921174567dd48ed0
+Contained #596 #597 #599 #600 #601 #602 #603 #604 #605 and NO Grok corrective
+UI work. #604 (production revision-truth) is the release-critical repair inside
+it, and the traffic-wait step #604 added is what carried this release too.
 
 STAGING_SHA:
 26519efd49d04b0f4b72779b921174567dd48ed0
 
 STAGING_IMAGE_DIGEST:
 sha256:17773a8f55b07114e7585b1c86972e34cacef34af31a9015e2db1e0b53810b5e
+NOT RE-CHECKED 2026-08-25: no deploy-staging run was inspected in that pass, so
+both staging values above are carried from the 2026-08-24 record rather than
+re-observed. Whether staging has since moved to a830eae2 is not_verified here.
 
 PRODUCTION_SHA:
-26519efd49d04b0f4b72779b921174567dd48ed0  <-- LIVE
+a830eae24fdec92ebdf325235716aeb9d54482f4  <-- LIVE (2026-08-25T13:46:54Z)
+Previously 26519efd49d04b0f4b72779b921174567dd48ed0 (2026-08-24T22:56:48Z).
 
 PRODUCTION_IMAGE_DIGEST:
-sha256:17773a8f55b07114e7585b1c86972e34cacef34af31a9015e2db1e0b53810b5e
-IDENTICAL to STAGING_IMAGE_DIGEST above — the same tested image was
-promoted, not rebuilt.
+sha256:921a3f77a2040f28715bba55862808a68d201a6c3a4969558c69ac63e69dd9c1
+NOT identical to the STAGING_IMAGE_DIGEST recorded above — that digest belongs
+to the 2026-08-24 release. deploy-production still built nothing: it is
+promote-only, and its "Verify release digest exists in ACR and was built from
+this commit" step passed, so this image was built from a830eae2 by an earlier
+workflow. WHICH workflow built it was not observed in this pass.
 
 PRODUCTION_REVISION:
-app-ppbf-production--0000136
+app-ppbf-production--0000137  (previous: app-ppbf-production--0000136)
 
 PRODUCTION_URL:
 https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io
@@ -88,6 +105,11 @@ STAGING URL:
 https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io
 
 ## PRODUCTION — REQUIRED MIGRATION (the pipeline DOES catch it)
+
+HISTORICAL — this section is about the 2026-08-24 release (26519efd). The
+2026-08-25 release (a830eae2) required NO migration: zero schema-bearing files
+in the 25-commit delta, and the deploy's own schema check confirmed it against
+the live production database. See the run record immediately below.
 
 deploy-production is promote-only by construction (no build step; verified by
 audit and pinned by `deployPromotionContract.test.ts`, merged in #604).
@@ -129,7 +151,69 @@ The operational consequence is unchanged: `migrations_complete=CONFIRMED` is
 not truthfully attestable, and the deploy would refuse anyway, until
 apply-migrations has run against production.
 
-## PRODUCTION RUNTIME — VERIFIED LIVE (deploy-production run 32783211177)
+## PRODUCTION RUNTIME — VERIFIED LIVE (deploy-production run 32853286769)
+
+Dispatched confirm_sha=a830eae24fdec92ebdf325235716aeb9d54482f4,
+release_digest=sha256:921a3f77a2040f28715bba55862808a68d201a6c3a4969558c69ac63e69dd9c1,
+migrations_complete=CONFIRMED, allow_rollback=NO. Both jobs conclusion=success;
+build-and-deploy (job 97819120492) completed_at 2026-08-25T13:46:54Z. Every step
+read individually, not inferred from the run colour.
+
+The CONFIRMED attestation was checked BEFORE it was made: `git diff
+26519efd..a830eae2` is 25 commits carrying ZERO schema-bearing files (no `.sql`,
+no migration or schema path) and no new `pilot:apply-*` script in
+`apps/web/package.json`. The workflow's own schema step then confirmed that
+independently against the live production database. No apply-migrations run was
+needed or dispatched for this release.
+
+guard job — all success, in order: Verify running from main / Verify supplied SHA
+matches the checked-out commit / Verify migration confirmation / Verify supplied
+release digest format.
+
+build-and-deploy — all success, in order:
+
+- Resolve Production Resource Group: pass (the fail-closed refusal added in #604)
+- Authenticate via Azure OIDC: pass
+- Set up Node For The Schema Check / Install Locked Dependencies: pass
+- Verify Production Schema Matches This Commit: pass (read-only, LIVE production
+  database)
+- Verify release digest exists in ACR and was built from this commit: pass
+- Refuse a Rollback Nobody Asked For: pass
+- Validate Production AI Configuration: pass
+- Deploy Tested Digest to Azure Container App (Production): pass
+- **Wait For Promoted Revision To Take Traffic: pass** — and it earned its place
+  again. It asserted the digest ON the revision BEFORE waiting for traffic. Log:
+    Latest revision app-ppbf-production--0000137 runs image
+      ***.azurecr.io/ppbf-frontend@sha256:921a3f77a2040f28715bba55862808a68d201a6c3a4969558c69ac63e69dd9c1
+      1: Activating 100
+      2: Activating 100
+      3: Activating 100
+      4: Running 100   — 2026-08-25T13:46:48Z
+  containerApp systemData.lastModifiedAt: 2026-08-25T13:46:14.656606Z.
+- Resolve Production Base URL: pass
+- Pilot API Smoke Checks: pass, AFTER the wait — "Production smoke checks
+  passed." Run FROM THE GITHUB RUNNER against
+  https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io:
+  POST /api/pilot/auth/login {} expected 400, got 400; POST
+  /api/pilot/auth/session {} expected 200, got 200; POST
+  /api/pilot/shadow/events {} expected 401, got 401.
+
+HONEST LIMIT ON THIS RECORD. Production was NOT probed from the Claude session
+that wrote it. That session's egress policy denied CONNECT to the production
+host — the agent proxy logged `gateway answered 403 to CONNECT (policy denial)`
+— so every live-serving statement above is the GitHub runner's observation read
+out of the run log, not a direct observation of production from the session. No
+az read, no browser, no authenticated production journey on this release. The
+three smoke probes are unauthenticated and would pass against the previous image
+too; what ties a830eae2's image to the serving revision is the revision-digest
+assertion inside the wait step, not the smoke checks.
+
+WHAT SHIPPED: the backend/security + release-engineering lane, nine
+authorization fixes among the 25 commits. NO visual/design-system files are in
+it (`design-system/` 0 files, `public/plates/` 0 files), so nothing in this run
+is evidence about the UI.
+
+## PRODUCTION RUNTIME — PREVIOUS RELEASE 26519efd, SUPERSEDED 2026-08-25 (deploy-production run 32783211177)
 
 Dispatched confirm_sha=26519efd…, release_digest=sha256:17773a8f…,
 migrations_complete=CONFIRMED, allow_rollback=NO.
@@ -317,3 +401,5 @@ Still deferred:
 - 2026-08-25T01:04Z | claude | merged #612 (sparring claim honesty) and #613 (digest-to-SHA provenance) | 995e27f6, d1f39c52
 - 2026-08-25T01:20Z | claude | opened #614 (six resource-group workflows fail closed) #615 (dead duration input) #616 ("Get Code" labels); all subscribed, merge on green | PRs
 - 2026-08-25T01:25Z | claude | re-checked Grok #606: head 492f491d still -5739 lines, full workspace bodies still not in the PR; noted main moved under the packaged restore artifact | this file
+- 2026-08-25T13:46Z | claude | PRODUCTION DEPLOYED at a830eae2: revision app-ppbf-production--0000137, digest asserted ON the revision as sha256:921a3f77… before the traffic wait, Running 100 at 13:46:48Z, runner smoke checks passed | run 32853286769
+- 2026-08-25T14:35Z | claude | recorded that release in PRODUCTION_STATE.json (previous production record 26519efd carried to superseded_record_2026-08-25, not deleted) and in this file; production NOT probed from the recording session — egress policy denied CONNECT | this file
