@@ -49,7 +49,7 @@ function boardSeatLabel(role: string): string {
 const LIFECYCLE_TONE: Record<AnnouncementLifecycle, string> = {
   live: 'border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,transparent)]',
   scheduled: 'border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_14%,transparent)]',
-  expired: 'border-[color:rgba(107,78,18,.28)] mat-paper',
+  expired: 'border-[color:rgb(var(--brass-800-rgb)_/_.28)] mat-paper',
   retired: 'border-[color:var(--brass-600)] bg-[color-mix(in_srgb,var(--brass-600)_12%,transparent)]',
 };
 

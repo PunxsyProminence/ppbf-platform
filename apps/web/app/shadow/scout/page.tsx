@@ -251,7 +251,7 @@ function ScoutReportView() {
   return (
     <main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       {/* HEADER */}
-      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+      <header className="mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
             <p className="t-eyebrow">SHADOW Intelligence</p>
@@ -301,7 +301,7 @@ function ScoutReportView() {
 
         {/* METRICS DASHBOARD */}
         {scoreboard ? (
-          <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">SHADOW Observed — {scoreboard.period}</p>
 
             {/* Profile tiers */}
@@ -389,7 +389,7 @@ function ScoutReportView() {
 
         {/* THE SCORECARD */}
         {scoreboard ? (
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">The Scorecard — {scoreboard.period}</p>
             <div className="mt-[var(--s4)] flex flex-wrap items-end gap-[var(--s4)]">
               {[
@@ -427,7 +427,7 @@ function ScoutReportView() {
         ) : null}
 
         {/* SCOUT REPORTS */}
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <div className="flex items-center justify-between gap-[var(--s3)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               Scout Reports ({scoutJobs.length})
@@ -491,7 +491,7 @@ function ScoutReportView() {
                   className={`mat-leather--raised w-full cursor-pointer rounded-[var(--r-md)] p-[var(--s4)] text-left transition ${
                     selectedJob?.jobId === job.jobId
                       ? 'border-2 border-[color:var(--brass-400)]'
-                      : 'border border-[color:rgba(212,175,74,.18)] hover:border-[color:var(--brass-500)]'
+                      : 'border border-[color:rgb(var(--brass-400-rgb)_/_.18)] hover:border-[color:var(--brass-500)]'
                   }`}
                   onClick={() => setSelectedJob(selectedJob?.jobId === job.jobId ? null : job)}
                 >
@@ -584,7 +584,7 @@ function ScoutReportView() {
 
         {/* BOARD SUMMARIES */}
         {canViewOrgMetrics && boardJobs.length > 0 ? (
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               Board Summaries ({boardJobs.length})
             </h2>
@@ -611,7 +611,7 @@ function ScoutReportView() {
 
         {/* HEAVY BAG HISTORY */}
         {heavyBagJobs.length > 0 ? (
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               Heavy Bag Session History ({heavyBagJobs.length})
             </h2>

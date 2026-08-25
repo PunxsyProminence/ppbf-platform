@@ -331,7 +331,7 @@ export default function SchedulerPage() {
             </div>
           ) : (
             <>
-              <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Class Schedule</h2>
                 {classes.length === 0 ? (
                   <p className="t-muted mt-[var(--s3)]">No classes scheduled yet.</p>
@@ -388,7 +388,7 @@ export default function SchedulerPage() {
 
               <section className="grid gap-4 lg:grid-cols-2">
                 {roleCanManageClasses(role) ? (
-                  <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+                  <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
                     <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Schedule New Class</h3>
                     <input
                       value={newClassTitle}
@@ -461,7 +461,7 @@ export default function SchedulerPage() {
                   </article>
                 ) : null}
 
-                <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+                <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
                   <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Request Individual Coaching</h3>
 
                   {(role === 'parent' || roleCanManageClasses(role)) && athletes.length > 0 ? (
@@ -523,7 +523,7 @@ export default function SchedulerPage() {
               </section>
 
               <section className="grid gap-4 lg:grid-cols-2">
-                <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+                <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
                   <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Attendance Check-In</h3>
                   <select
                     value={selectedClassId}
@@ -601,7 +601,7 @@ export default function SchedulerPage() {
                   </button>
                 </article>
 
-                <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+                <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                   <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Parent Review and Records</h3>
                   <div className="mt-3 space-y-2 max-h-[340px] overflow-y-auto">
                     {registrations.length === 0 && attendance.length === 0 ? (
@@ -645,7 +645,7 @@ export default function SchedulerPage() {
                 </article>
               </section>
 
-              <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Coaching Requests</h3>
                 <div className="mt-3 space-y-2">
                   {coachingRequests.length === 0 ? <p className="t-muted">No coaching requests yet.</p> : null}

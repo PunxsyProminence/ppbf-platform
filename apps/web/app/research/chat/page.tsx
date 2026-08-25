@@ -152,7 +152,7 @@ export default function ResearchQAChatPage() {
       room="file"
       showShellHeader={false}
     >
-      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+      <header className="mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Research Lab</p>
@@ -180,7 +180,7 @@ export default function ResearchQAChatPage() {
             the cork rather than a riveted case. */}
         <section aria-label="Library conversation" className="relative self-start">
           <span className="pin pin--brass" aria-hidden="true" />
-          <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             {/* Messages */}
             <div
               role="log"
@@ -222,7 +222,7 @@ export default function ResearchQAChatPage() {
                     <div
                       className={`max-w-[52ch] rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] ${
                         msg.type === 'user'
-                          ? 'mat-leather--raised border border-[color:rgba(212,175,74,.28)]'
+                          ? 'mat-leather--raised border border-[color:rgb(var(--brass-400-rgb)_/_.28)]'
                           : 'border border-[color:var(--hide-600)] bg-[rgba(0,0,0,.28)]'
                       }`}
                     >
@@ -260,7 +260,7 @@ export default function ResearchQAChatPage() {
         {/* RIGHT PANEL: NOTES & LINKS */}
         <aside className="space-y-[var(--s4)]">
           {/* Research Notes */}
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Notes</h2>
             <p className="t-muted mt-[var(--s2)]">Session scratchpad. Nothing typed here is stored.</p>
             <form onSubmit={handleAddNote} className="mt-[var(--s3)] space-y-[var(--s3)]">
@@ -277,7 +277,7 @@ export default function ResearchQAChatPage() {
           </section>
 
           {/* Quick Links */}
-          <nav aria-label="Research navigation" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+          <nav aria-label="Research navigation" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
             <h2 className="t-label">Navigate</h2>
             <div className="mt-[var(--s3)] grid gap-[var(--s3)]">
               <Link href="/research" className="btn btn--ghost justify-start">
@@ -295,7 +295,7 @@ export default function ResearchQAChatPage() {
             </div>
           </nav>
 
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
             <h2 className="t-label">SHADOW Research Stream</h2>
             {signalError ? <p className="t-body mt-[var(--s3)]">{signalError}</p> : null}
             {!signalError && shadowSignals.length === 0 ? (

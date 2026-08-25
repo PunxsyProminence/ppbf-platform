@@ -189,7 +189,7 @@ export function CoachSummaryPanel({
      floor says it is empty in one line. */
   if (activeAthletes === 0) {
     return (
-      <div className="mb-[var(--s6)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] mat-leather p-[var(--s5)]">
+      <div className="mb-[var(--s6)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] mat-leather p-[var(--s5)]">
         <p className="t-label">Your floor</p>
         <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
           Nobody is assigned to you yet. Injuries, reviews and assignments start counting here the
