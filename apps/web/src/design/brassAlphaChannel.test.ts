@@ -141,12 +141,69 @@ describe('the brass ramp is reachable through tokens, never spelled as a literal
     }
   });
 
-  test.each(RUNGS)('--brass-%s-rgb carries exactly the channels of its own hex', (rung, hex) => {
-    const declared = new RegExp(`--brass-${rung}-rgb\\s*:\\s*([0-9]+)\\s+([0-9]+)\\s+([0-9]+)\\s*;`).exec(ALL_CSS);
-    expect(declared).not.toBeNull();
+  test('every triple matches the hex declared beside it, in EVERY block', () => {
+    /* Checked per block, against that block's OWN hex -- not against the legacy
+       ramp, and not by finding "the first triple in the sheet".
 
-    const actual = [Number(declared![1]), Number(declared![2]), Number(declared![3])];
-    expect(actual).toEqual([...channelsOf(hex)]);
+       An earlier version of this test did the latter, and it was wrong twice.
+       It only ever read the `:root` triple, and only because the legacy sheet is
+       @imported near the top of ppbf-golden-era.css and therefore inlines ahead
+       of every scope block; move that import down, or add a scope above it, and
+       the test would start comparing a BRONZE triple against the LEGACY hex and
+       fail for a reason that has nothing to do with the defect. Worse, it meant
+       the eight golden-era scopes' own triples were never checked at all -- a
+       scope could declare `--brass-400: #BE9440` beside `--brass-400-rgb: 1 2 3`
+       and sail through, which is exactly the silent mismatch this file exists to
+       prevent, just moved one level down.
+
+       Blocks are the right unit because the pairing rule below is per block too:
+       a rung and its triple are a single fact about one scope. */
+    const failures: string[] = [];
+
+    for (const block of ALL_CSS.split('}')) {
+      const brace = block.indexOf('{');
+      if (brace === -1) continue;
+      const selector = block.slice(0, brace).split('\n').pop()!.trim();
+      const body = block.slice(brace + 1);
+
+      for (const [rung] of RUNGS) {
+        const hexMatch = new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{6})`).exec(body);
+        const rgbMatch = new RegExp(`--brass-${rung}-rgb\\s*:\\s*([0-9]+)\\s+([0-9]+)\\s+([0-9]+)\\s*;`).exec(body);
+        if (!hexMatch || !rgbMatch) continue; // the pairing test owns the half-declared case
+
+        const declared = [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+        const expected = [...channelsOf(hexMatch[1])];
+        if (declared.join(' ') !== expected.join(' ')) {
+          failures.push(
+            `${selector} --brass-${rung}: ${hexMatch[1]} but --brass-${rung}-rgb: ` +
+              `${declared.join(' ')} (that hex is ${expected.join(' ')}). Solid and ` +
+              `partial-alpha uses of this rung would paint different colours.`,
+          );
+        }
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  test.each(RUNGS)(':root declares --brass-%s-rgb for the legacy ramp', (rung, hex) => {
+    // The block check above verifies whatever is declared; this one insists the
+    // legacy :root ramp declares its triple AT ALL, so the app-wide default can
+    // never quietly lose one and fall back to an inherited channel set.
+    // EVERY :root block, not the first. The resolved sheet opens with the
+    // foundation's :root, which owns the mechanics and deliberately holds no
+    // brass at all -- reading only that one would fail every rung here for the
+    // wrong reason.
+    const declarations: number[][] = [];
+    for (const [, body] of ALL_CSS.matchAll(/:root\s*\{([\s\S]*?)\}/g)) {
+      const found = new RegExp(`--brass-${rung}-rgb\\s*:\\s*([0-9]+)\\s+([0-9]+)\\s+([0-9]+)\\s*;`).exec(body);
+      if (found) declarations.push([Number(found[1]), Number(found[2]), Number(found[3])]);
+    }
+
+    expect(declarations.length).toBeGreaterThan(0);
+    for (const declared of declarations) {
+      expect(declared).toEqual([...channelsOf(hex)]);
+    }
   });
 
   test.each(RUNGS)('no rule spells brass-%s as a literal instead of using its token', (rung, hex) => {
