@@ -7,6 +7,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   createProtocol,
   listProtocols,
+  getProtocol,
   reviseProtocol,
   retireProtocol,
 } from '@/src/server/pilot/interventionProtocols';
@@ -34,6 +35,7 @@ jest.mock('@/src/server/pilot/interventionProtocols', () => {
     ...actual,
     createProtocol: jest.fn(),
     listProtocols: jest.fn(),
+    getProtocol: jest.fn(),
     reviseProtocol: jest.fn(),
     retireProtocol: jest.fn(),
   };
@@ -46,6 +48,7 @@ const mockListProtocols = listProtocols as jest.Mock;
 const mockCreate = createProtocol as jest.Mock;
 const mockRevise = reviseProtocol as jest.Mock;
 const mockRetire = retireProtocol as jest.Mock;
+const mockGetProtocol = getProtocol as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 
 // The athlete gate is permissive by default so each test states its own
@@ -55,6 +58,11 @@ beforeEach(() => {
   mockAccess.mockResolvedValue(undefined);
   mockAccessible.mockResolvedValue(new Set());
   mockListProtocols.mockResolvedValue([]);
+  // PATCH resolves the protocol before acting; default to an org-wide
+  // protocol (athlete_id null), which is staff-authorized and skips the
+  // athlete gate -- so the existing revise/retire tests are unchanged. The
+  // gate has its own test with an athlete-specific protocol.
+  mockGetProtocol.mockResolvedValue({ protocol_id: 'p-1', athlete_id: null });
 });
 
 afterEach(() => {
@@ -166,6 +174,36 @@ test('an unknown action is a 400; retire routes and audits', async () => {
   const response = await PATCH(bodyRequest('PATCH', { action: 'retire', protocol_id: 'p-1' }));
   expect(response.status).toBe(200);
   expect(mockRetire).toHaveBeenCalledWith('org-1', 'p-1');
+});
+
+test('a coach cannot retire or revise another coach\'s athlete-specific protocol', async () => {
+  // POST gates an athlete-specific protocol on its athlete; PATCH did not, so
+  // a coach could retire or revise any athlete-specific protocol in the org
+  // by naming its id. The gate resolves the protocol and, when it is
+  // athlete-specific, refuses before either action or its audit.
+  mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+  mockGetProtocol.mockResolvedValue({ protocol_id: 'p-victim', athlete_id: 'ath-victim' });
+  mockAccess.mockImplementation(async (_p: unknown, athleteId: string) => {
+    if (athleteId === 'ath-victim') throw new Error('Forbidden: not your athlete');
+  });
+
+  const retire = await PATCH(bodyRequest('PATCH', { action: 'retire', protocol_id: 'p-victim' }));
+  const revise = await PATCH(bodyRequest('PATCH', { action: 'revise', protocol_id: 'p-victim', ...CONTENT }));
+
+  expect(retire.status).toBeGreaterThanOrEqual(400);
+  expect(revise.status).toBeGreaterThanOrEqual(400);
+  expect(mockAccess).toHaveBeenCalledWith(expect.anything(), 'ath-victim');
+  expect(mockRetire).not.toHaveBeenCalled();
+  expect(mockRevise).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('a PATCH naming a protocol id absent from the org is a hidden 404', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockGetProtocol.mockResolvedValue(null);
+  const response = await PATCH(bodyRequest('PATCH', { action: 'retire', protocol_id: 'p-nope' }));
+  expect(response.status).toBe(404);
+  expect(mockRetire).not.toHaveBeenCalled();
 });
 
 test('a coach cannot file an athlete-specific protocol about an athlete who is not theirs', async () => {

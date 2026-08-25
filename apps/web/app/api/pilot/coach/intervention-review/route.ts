@@ -23,7 +23,7 @@ import {
   type LearningSignal,
   type PerformanceResult,
 } from '@/src/server/pilot/interventionEvidence';
-import { listExecutions } from '@/src/server/pilot/interventionExecutions';
+import { getExecution, listExecutions } from '@/src/server/pilot/interventionExecutions';
 
 export const runtime = 'nodejs';
 
@@ -81,6 +81,18 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as Record<string, unknown>;
     const executionId = optionalString(body.execution_id)?.trim();
     if (!executionId) throw new ValidationError('Missing execution_id.');
+
+    // The GET is per-athlete authorized (line 53); this POST was not, so any
+    // coach could link evidence to, or file an outcome review on, ANY
+    // execution in the org -- attaching a source or a recorded judgment to an
+    // intervention for a child they have no relationship to -- by naming its
+    // execution_id. linkEvidence/reviewOutcome key on (org, execution_id)
+    // only. Resolve the execution's athlete and run it through the same
+    // central gate the read uses, before either action. hidden-not-found for
+    // an id outside the org matches the read and avoids an existence oracle.
+    const target = await getExecution(principal.organizationId, executionId);
+    if (!target) return hiddenNotFound();
+    await assertActorCanAccessAthlete(principal, target.athlete_id);
 
     if (body.action === 'link_evidence') {
       const roleProblem = evidenceRoleError(body.evidence_role);

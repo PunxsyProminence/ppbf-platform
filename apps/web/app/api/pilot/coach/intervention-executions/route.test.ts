@@ -7,6 +7,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   closeExecution,
   correctExecution,
+  getExecution,
   listExecutions,
   recordExecutionFacts,
   startExecution,
@@ -35,6 +36,7 @@ jest.mock('@/src/server/pilot/interventionExecutions', () => {
     ...actual,
     startExecution: jest.fn(),
     listExecutions: jest.fn().mockResolvedValue([]),
+    getExecution: jest.fn(),
     recordExecutionFacts: jest.fn(),
     closeExecution: jest.fn(),
     correctExecution: jest.fn(),
@@ -49,6 +51,7 @@ const mockStart = startExecution as jest.Mock;
 const mockRecord = recordExecutionFacts as jest.Mock;
 const mockClose = closeExecution as jest.Mock;
 const mockCorrect = correctExecution as jest.Mock;
+const mockGetExecution = getExecution as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 
 // The athlete gate is permissive by default so each test states its own
@@ -57,6 +60,10 @@ const mockAudit = writePilotAuditEvent as jest.Mock;
 beforeEach(() => {
   mockAccess.mockResolvedValue(undefined);
   mockAccessible.mockResolvedValue(new Set());
+  // PATCH resolves the execution's athlete before acting; default to an
+  // existing, accessible one so the action tests below exercise the action,
+  // not the gate. The gate has its own test.
+  mockGetExecution.mockResolvedValue({ execution_id: 'ex-1', athlete_id: 'ath-1' });
 });
 
 afterEach(() => {
@@ -231,6 +238,38 @@ test('a correction without a reason is refused; with one it audits the supersess
   expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
     details: expect.objectContaining({ action: 'correct', supersedes: 'ex-1', correction_reason: 'miscounted rounds' }),
   }));
+});
+
+test('a coach with no relationship to the execution\'s athlete cannot record, close, or correct it', async () => {
+  // GET and POST gate on the athlete; PATCH did not, so a coach could mutate
+  // any execution in the org by naming its id. The gate resolves the stored
+  // execution's athlete and refuses before any action or audit.
+  mockRequirePrincipal.mockResolvedValue({ accountId: 'acct-coach', role: 'coach', organizationId: 'org-a', athleteId: null } as PilotPrincipal);
+  mockGetExecution.mockResolvedValue({ execution_id: 'ex-victim', athlete_id: 'ath-victim' });
+  mockAccess.mockImplementation(async (_p: unknown, athleteId: string) => {
+    if (athleteId === 'ath-victim') throw new Error('Forbidden: not your athlete');
+  });
+
+  for (const body of [
+    { action: 'record', execution_id: 'ex-victim' },
+    { action: 'close', execution_id: 'ex-victim', outcome: 'completed' },
+    { action: 'correct', execution_id: 'ex-victim', correction_reason: 'x' },
+  ]) {
+    const response = await PATCH(bodyRequest('PATCH', body));
+    expect(response.status).toBeGreaterThanOrEqual(400);
+  }
+  expect(mockAccess).toHaveBeenCalledWith(expect.anything(), 'ath-victim');
+  expect(mockRecord).not.toHaveBeenCalled();
+  expect(mockClose).not.toHaveBeenCalled();
+  expect(mockCorrect).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('a PATCH naming an execution id that does not exist in the org is a hidden 404', async () => {
+  mockGetExecution.mockResolvedValue(null);
+  const response = await PATCH(bodyRequest('PATCH', { action: 'record', execution_id: 'ex-nope' }));
+  expect(response.status).toBe(404);
+  expect(mockRecord).not.toHaveBeenCalled();
 });
 
 test('an unknown action is a 400', async () => {
