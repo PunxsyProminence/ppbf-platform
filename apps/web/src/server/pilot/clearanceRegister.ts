@@ -187,6 +187,49 @@ export async function recordPersonClearance(input: {
 }
 
 /**
+ * What a person_clearances row said immediately BEFORE recordPersonClearance
+ * overwrote it, shaped for the `details` of the audit event its callers
+ * already write.
+ *
+ * recordPersonClearance is an upsert on
+ * (organization_id, person_account_id, clearance_type_id): one row per person
+ * per clearance type, forever. Every write therefore overwrites the previous
+ * answer in place, and that IS the intended behaviour -- coach/credentials'
+ * own header states it ("Uploading always sets status='submitted' and clears
+ * any prior verification ... A new document invalidates whatever an admin
+ * previously confirmed about the old one"). What was never intended is that
+ * the overwritten answer went nowhere: status, issued_on, expires_on,
+ * verified_by_account_id and verified_at were replaced with nothing retaining
+ * them, and the audit events at each call site recorded only what the write
+ * put there.
+ *
+ * So "was this coach cleared on the day of the incident, and until when" had
+ * no answer after any subsequent upload -- the register showed the newest
+ * submission and the trail showed that a submission happened.
+ *
+ * One helper rather than three inline object literals so the three call sites
+ * (admin verify, admin reject, self-upload) cannot record the superseded state
+ * under three different key names -- the drift auditEventTypes.ts exists to
+ * prevent in the vocabulary, applied to the details payload.
+ *
+ * Returns null when there was no prior row: a first-ever submission supersedes
+ * nothing, and an object of nulls would read as "there was a record and it was
+ * blank", which is a different and untrue statement.
+ */
+export function supersededClearanceState(
+  previous: PersonClearanceRow | null | undefined,
+): Record<string, unknown> | null {
+  if (!previous) return null;
+  return {
+    status: previous.status,
+    issued_on: previous.issued_on,
+    expires_on: previous.expires_on,
+    verified_by_account_id: previous.verified_by_account_id,
+    verified_at: previous.verified_at,
+  };
+}
+
+/**
  * Every role that can plausibly hold a staff credential -- the set that may
  * self-upload a document (app/coach/credentials) and the set the broad
  * status page (app/staff-credentials) lists. Kept as one list so the two
