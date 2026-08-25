@@ -145,15 +145,36 @@
    a control nobody remembered to override still comes out bronze. A property
    override leaks wherever it is forgotten; a token override cannot. Outside
    .ge-drillcase the legacy ramp is untouched. */
+
+/* THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the
+   scope splits down the middle: everything solid turns bronze while every
+   alpha rule beside it keeps painting the inherited legacy gold -- a bronze
+   frame wearing a gold hairline, with no forgotten property to find. That is
+   the exact leak this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
+   of them, and checks each triple against its own hex. */
 .ge-drillcase {
   --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
   --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
   --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
   --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
   --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
   --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
   --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
   --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
 }
 
 /* The carcass. .room--floor paints brick, which is the wall the gym's floor
