@@ -5,6 +5,7 @@ import {
   captureDataCollectionRequest,
   createDataCollectionRequest,
   declineDataCollectionRequest,
+  getDataCollectionRequestAthleteId,
   listOpenDataCollectionRequests,
   type DataCollectionRequestKind,
 } from '@/src/server/pilot/assessmentProtocols';
@@ -127,6 +128,21 @@ export async function PATCH(request: NextRequest) {
       throw new Error('Missing request_id');
     }
 
+
+    // Authorize the request's athlete before mutating it. GET and POST already
+    // gate per athlete; PATCH (capture) and DELETE (decline) act on a
+    // client-supplied request_id and did not, so a coach could capture or
+    // decline a data-collection request for a minor outside their care. A
+    // request with a null athlete_id is a non-athlete person request and skips
+    // the athlete gate, exactly like the GET/POST person path.
+    const owner = await getDataCollectionRequestAthleteId(principal.organizationId, requestId);
+    if (!owner) {
+      throw new Error('Not found');
+    }
+    if (owner.athlete_id) {
+      await assertActorCanAccessAthlete(principal, owner.athlete_id);
+    }
+
     const captured = await captureDataCollectionRequest({
       organizationId: principal.organizationId,
       requestId,
@@ -163,6 +179,21 @@ export async function DELETE(request: NextRequest) {
     const requestId = body.request_id?.trim() || '';
     if (!requestId) {
       throw new Error('Missing request_id');
+    }
+
+
+    // Authorize the request's athlete before mutating it. GET and POST already
+    // gate per athlete; PATCH (capture) and DELETE (decline) act on a
+    // client-supplied request_id and did not, so a coach could capture or
+    // decline a data-collection request for a minor outside their care. A
+    // request with a null athlete_id is a non-athlete person request and skips
+    // the athlete gate, exactly like the GET/POST person path.
+    const owner = await getDataCollectionRequestAthleteId(principal.organizationId, requestId);
+    if (!owner) {
+      throw new Error('Not found');
+    }
+    if (owner.athlete_id) {
+      await assertActorCanAccessAthlete(principal, owner.athlete_id);
     }
 
     const declined = await declineDataCollectionRequest({

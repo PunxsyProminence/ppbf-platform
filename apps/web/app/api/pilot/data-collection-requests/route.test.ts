@@ -1,9 +1,12 @@
 import { NextRequest } from 'next/server';
 
-import { GET, POST } from './route';
+import { DELETE, GET, PATCH, POST } from './route';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import {
+  captureDataCollectionRequest,
   createDataCollectionRequest,
+  declineDataCollectionRequest,
+  getDataCollectionRequestAthleteId,
   listOpenDataCollectionRequests,
 } from '@/src/server/pilot/assessmentProtocols';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -30,6 +33,7 @@ jest.mock('@/src/server/pilot/assessmentProtocols', () => ({
   createDataCollectionRequest: jest.fn(),
   captureDataCollectionRequest: jest.fn(),
   declineDataCollectionRequest: jest.fn(),
+  getDataCollectionRequestAthleteId: jest.fn(),
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
@@ -37,6 +41,9 @@ const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockAccessible = accessibleAthleteIds as jest.Mock;
 const mockList = listOpenDataCollectionRequests as jest.Mock;
 const mockCreate = createDataCollectionRequest as jest.Mock;
+const mockCapture = captureDataCollectionRequest as jest.Mock;
+const mockDecline = declineDataCollectionRequest as jest.Mock;
+const mockGetOwner = getDataCollectionRequestAthleteId as jest.Mock;
 
 // The athlete gate is permissive by default so each test states its own
 // access decision rather than inheriting the previous test's --
@@ -45,6 +52,9 @@ beforeEach(() => {
   mockAccess.mockResolvedValue(undefined);
   mockAccessible.mockResolvedValue(new Set());
   mockList.mockResolvedValue([]);
+  mockGetOwner.mockResolvedValue({ athlete_id: 'ath-1' });
+  mockCapture.mockResolvedValue({ request_id: 'req-1', status: 'captured' });
+  mockDecline.mockResolvedValue({ request_id: 'req-1', status: 'declined' });
 });
 
 afterEach(() => {
@@ -171,4 +181,66 @@ test('a request about a non-athlete person needs no athlete gate', async () => {
   expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
     athleteId: undefined, personAccountId: 'acct-volunteer',
   }));
+});
+
+
+const patchRequest = (body: Record<string, unknown>) =>
+  new NextRequest('http://localhost/api/pilot/data-collection-requests', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+const deleteRequest = (body: Record<string, unknown>) =>
+  new NextRequest('http://localhost/api/pilot/data-collection-requests', {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+describe('capture (PATCH) and decline (DELETE) authorize the request athlete before mutating', () => {
+  // The bug: GET and POST gate per athlete, but PATCH and DELETE acted on a
+  // client-supplied request_id with no athlete gate, so a coach could capture or
+  // decline a data-collection request for a minor outside their care.
+  test('refuse with 403 when the caller cannot reach the request’s athlete, and nothing is mutated', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+    mockGetOwner.mockResolvedValue({ athlete_id: 'ath-out' });
+    mockAccess.mockImplementation(async (_p: unknown, id: string) => {
+      if (id === 'ath-out') throw new Error('Forbidden: not your athlete');
+    });
+
+    expect((await PATCH(patchRequest({ request_id: 'req-1', media_ref: 'blob://x' }))).status).toBe(403);
+    expect(mockCapture).not.toHaveBeenCalled();
+
+    expect((await DELETE(deleteRequest({ request_id: 'req-1', declined_reason: 'n/a' }))).status).toBe(403);
+    expect(mockDecline).not.toHaveBeenCalled();
+  });
+
+  test('404 a request_id that names no row in the organization, without mutating', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+    mockGetOwner.mockResolvedValue(null);
+
+    expect((await PATCH(patchRequest({ request_id: 'req-ghost' }))).status).toBe(404);
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+
+  test('a non-athlete person request needs no athlete gate', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+    mockGetOwner.mockResolvedValue({ athlete_id: null });
+
+    expect((await PATCH(patchRequest({ request_id: 'req-1', media_ref: 'blob://x' }))).status).toBe(200);
+    expect(mockAccess).not.toHaveBeenCalled();
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+  });
+
+  test('capture and decline proceed once the athlete gate passes', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+    mockGetOwner.mockResolvedValue({ athlete_id: 'ath-1' });
+
+    expect((await PATCH(patchRequest({ request_id: 'req-1', media_ref: 'blob://x' }))).status).toBe(200);
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+
+    expect((await DELETE(deleteRequest({ request_id: 'req-1', declined_reason: 'blurry' }))).status).toBe(200);
+    expect(mockDecline).toHaveBeenCalledTimes(1);
+  });
 });
