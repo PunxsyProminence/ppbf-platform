@@ -554,6 +554,22 @@ export async function createMentorship(params: {
  * Closes a pairing. There is no outcome and no reason: people move on, and the
  * schema has nowhere to record that a mentorship "did not work out".
  */
+/**
+ * Read-only lookup so a caller can authorize the mentorship's athlete BEFORE
+ * mutating it. endMentorship writes first and returns the row after, which is
+ * why the DELETE route must resolve the athlete through this, not through the
+ * write, before its access check.
+ */
+export async function getMentorshipById(
+  organizationId: string,
+  mentorshipId: string,
+): Promise<Mentorship | null> {
+  return queryOne<Mentorship>(
+    `${MENTORSHIP_SELECT} where m.organization_id = $1 and m.mentorship_id = $2`,
+    [organizationId, mentorshipId],
+  );
+}
+
 export async function endMentorship(
   organizationId: string,
   mentorshipId: string,
