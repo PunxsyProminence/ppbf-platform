@@ -9,6 +9,16 @@ import WorkAxis from './WorkAxis';
    (and -ge.tsx). 30s land: cp that file over this one, commit, push. Lint-clean &apos; preserved.
    18 fetch calls, #597 readiness honesty, pain, kiosk Law 5 intact. */
 
+export const SMART_GOAL_CATEGORIES = [
+  'Boxing',
+  'Fitness',
+  'Academics',
+  'Attendance',
+  'Recovery',
+  'Lifestyle',
+  'Leadership',
+] as const;
+
 export default function AthleteWorkspace() {
   return (
     <div className="room room--floor ge-athlete ge-athlete-workspace ge-room-floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
