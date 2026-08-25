@@ -305,3 +305,109 @@ describe('POST /api/pilot/escalations scan_patterns', () => {
     expect(mockScanPatterns).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A safety escalation is the record that somebody decided a red flag about a
+ * child was closed out. `resolution_note` is the column that says on what
+ * grounds -- and until this suite, the ONLY thing requiring it was
+ * app/admin/escalations/page.tsx, in the browser.
+ *
+ * compliance/violations/route.ts:PATCH enforces the identical rule on the
+ * server ("Closing a violation about a minor without a stated reason is
+ * unauditable"), and its comment credits "the escalation ladder" with already
+ * doing the same. It did not. Any caller that was not that one page -- curl, a
+ * second client, a script, a future surface -- could resolve a 'critical'
+ * incident report, a pain-report escalation, or an athlete_voice disclosure
+ * with no reason at all, and `resolved_by_account_id` would name who while
+ * nothing anywhere said why.
+ */
+describe('POST /api/pilot/escalations resolve -- the closing verdict must carry a reason', () => {
+  // Each entry is a shape a caller can actually send. They are listed rather
+  // than folded into one case because the failure they guard is a client-side
+  // check standing in for a server-side one: absent, empty and whitespace are
+  // three different requests, and only a browser form makes them the same.
+  const NOTELESS_BODIES: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+    ['resolution_note absent entirely', { action: 'resolve', escalation_id: 'esc-1' }],
+    ['resolution_note empty string', { action: 'resolve', escalation_id: 'esc-1', resolution_note: '' }],
+    ['resolution_note whitespace only', { action: 'resolve', escalation_id: 'esc-1', resolution_note: '   \n\t ' }],
+    ['resolution_note a non-string', { action: 'resolve', escalation_id: 'esc-1', resolution_note: 42 }],
+  ];
+
+  // A table-driven guard over an empty list passes without executing once.
+  // This pins the case count so that can never be how this suite goes green.
+  test('the noteless-request table is not empty', () => {
+    expect(NOTELESS_BODIES.length).toBe(4);
+  });
+
+  test.each(NOTELESS_BODIES)('an admin resolve with %s is refused, and nothing is resolved', async (_label, body) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(jsonRequest(body));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Missing note: a resolution needs a stated reason',
+    });
+    // The point of the refusal: the escalation is still open. If
+    // resolveEscalation ran, the row already carries status='resolved' and
+    // resolved_at, and the refusal in front of it is cosmetic.
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // The concrete case the rule exists for, spelled out so a regression names
+  // it: an admin closes a filed incident report -- "this actually happened",
+  // severity critical -- and the record must be able to answer what was
+  // decided, not only who clicked.
+  test('a critical incident report cannot be closed by a bare {action, escalation_id}', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(jsonRequest({ action: 'resolve', escalation_id: 'esc-incident-critical' }));
+
+    expect(response.status).toBe(400);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('a real reason still resolves, and reaches the ladder trimmed', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockResolve.mockResolvedValueOnce({ escalation_id: 'esc-1', status: 'resolved' } as never);
+
+    const response = await POST(jsonRequest({
+      action: 'resolve',
+      escalation_id: 'esc-1',
+      resolution_note: '  Guardian contacted; physician cleared return on 14 Aug.  ',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockResolve).toHaveBeenCalledWith(
+      'org-a',
+      'esc-1',
+      'acct-caller',
+      'Guardian contacted; physician cleared return on 14 Aug.',
+    );
+  });
+
+  // Acknowledgement is receipt, not closure -- the same split the compliance
+  // console draws. Requiring a note here would be a different (and unasked-for)
+  // product decision, so this pins that it was NOT made.
+  test('acknowledge still needs no note -- receipt is not closure', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockAcknowledge.mockResolvedValueOnce({ escalation_id: 'esc-1', status: 'acknowledged' } as never);
+
+    const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-1' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAcknowledge).toHaveBeenCalledWith('org-a', 'esc-1', 'acct-caller');
+  });
+
+  // Order matters: a coach must still be told they cannot resolve at all,
+  // rather than being handed a note-shaped 400 that implies they could if
+  // they typed one.
+  test('a coach is refused on role before the note is ever considered', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(jsonRequest({ action: 'resolve', escalation_id: 'esc-1' }));
+
+    expect(response.status).toBe(403);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+});
