@@ -550,8 +550,6 @@ export async function createAthleteAccount(
   organizationIdOrLegacyPin: string,
   maybeOrganizationId?: string,
 ): Promise<void> {
-  throw new Error('Obsolete athlete provisioning path: issue a one-time activation code');
-  /* istanbul ignore next -- retained temporarily for source compatibility */
   const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
 
   await withTransaction(async (client) => {
@@ -593,30 +591,33 @@ export async function createAthleteAccount(
       throw new Error('Account already exists');
     }
 
-    // The account is created live, on the shared bootstrap PIN, rather than
-    // inert and awaiting an activation code. The admin can now tell the
-    // athlete their sign-in ID and the starting PIN in the same breath.
+    // The shell is INERT: no PIN, account inactive, membership inactive. It
+    // links account_id to a roster row and grants no sign-in capability at
+    // all, which is what this function's one remaining caller
+    // (/api/pilot/platform/athlete-shell) already documents itself as doing.
     //
-    // Creating it active is only safe because must_change_pin is set:
-    // requirePrincipal refuses every route while that flag is true, so the
-    // one thing this account can do until the athlete picks their own PIN is
-    // pick their own PIN. See http.ts.
-    // Unreachable compatibility body below the fail-closed guard above. Never
-    // reconstruct the retired shared credential here.
-    const bootstrapPinHash = null;
-
+    // It no longer writes DEFAULT_FIRST_LOGIN_PIN. That is the point of
+    // retiring the shared bootstrap credential: an account created here can
+    // only become usable through a one-time activation code issued by the
+    // gym's own organization admin and redeemed by the athlete, who chooses
+    // their own PIN. loginWithAccountIdAndPin refuses a row with no pin_hash
+    // and refuses an inactive account, so the window in which a guessed
+    // credential could claim a child's account does not exist.
+    //
+    // must_change_pin stays false because there is no issued PIN to change;
+    // that flag exists to trap accounts still holding an admin-known one.
     await client.query(
       `insert into pilot.accounts
          (account_id, role, organization_id, athlete_id, pin_hash, must_change_pin, active_flag, is_platform_owner)
-       values ($1, 'athlete', $2, $3, $4, true, true, false)`,
-      [accountId, organizationId, athleteId, bootstrapPinHash],
+       values ($1, 'athlete', $2, $3, null, false, false, false)`,
+      [accountId, organizationId, athleteId],
     );
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-       values ($1, $2, 'athlete', true)
+       values ($1, $2, 'athlete', false)
        on conflict (account_id, organization_id) do update
          set role = 'athlete',
-             active_flag = true,
+             active_flag = false,
              updated_at = now()`,
       [accountId, organizationId],
     );
