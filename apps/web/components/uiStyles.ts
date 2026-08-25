@@ -34,16 +34,16 @@
  */
 
 export const ui = {
-  tabContainer: 'mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)]',
+  tabContainer: 'mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)]',
   tabRow: 'flex flex-wrap gap-1 p-2',
   tabButtonBase:
     'inline-flex min-h-[44px] items-center px-3 py-2 text-xs font-semibold uppercase transition border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
   tabButtonActive: 'bg-[var(--accent)] border-[color:var(--brass-600)] text-[color:var(--accent-ink)]',
-  tabButtonInactive: 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]',
+  tabButtonInactive: 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]',
   modeButtonBase:
     'inline-flex min-h-[44px] items-center px-4 py-2 font-mono font-bold text-xs border-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
   modeButtonActive: 'bg-[var(--accent)] border-[color:var(--brass-600)] text-[color:var(--accent-ink)]',
-  modeButtonInactive: 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]',
+  modeButtonInactive: 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]',
   panel: 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]',
   panelSpaced: 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)] space-y-[var(--s4)]',
 

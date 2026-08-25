@@ -348,7 +348,7 @@ export default function AthleteAchievements({
                   key={link.mentorship_id}
                   className={isFamily
                     ? 't-body rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)]'
-                    : 'rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]'}
+                    : 'rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]'}
                 >
                   {line}
                   {/* A closed pairing is history, never a failure — the copy
@@ -394,7 +394,7 @@ export default function AthleteAchievements({
       {/* Programme choice. Not a rank and not a level: the four do not order,
           and changing it changes which tracks are shown and nothing else. */}
       {allowProgramChange && !isFamily && (
-        <div className="mt-[var(--s5)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
+        <div className="mt-[var(--s5)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]">
           <h4 className="t-label">What you came here for</h4>
           <p className="tcard-sub mt-[var(--s2)]">
             This only changes which parts of the path you see. None of them is above another.
@@ -411,7 +411,7 @@ export default function AthleteAchievements({
                   'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)] '
                   + (program === option
                     ? 'border-[color:var(--brass-600)] bg-[var(--brass-500)] text-[color:var(--hide-950)]'
-                    : 'border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)]')
+                    : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)]')
                 }
               >
                 {PROGRAM_LABEL[option]}
@@ -497,7 +497,7 @@ function TrackPanel({
             key={milestone.key}
             className={isFamily
               ? 'rounded-[var(--r-md)] border border-dashed border-[color:rgba(0,0,0,.24)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)] t-muted'
-              : 'rounded-[var(--r-md)] border border-dashed border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.18)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-400)]'}
+              : 'rounded-[var(--r-md)] border border-dashed border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.18)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-400)]'}
           >
             {/* "Ahead", never "locked". No unearned milestone anywhere states a
                 reason it is unearned, so its absence cannot be read backwards

@@ -163,7 +163,7 @@ export default function PortraitReviewPage() {
     <RoleSessionGate allowedRoles={['admin']}>
       <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Portrait Review</h1>
             <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.account_profiles</p>
@@ -295,7 +295,7 @@ export default function PortraitReviewPage() {
                                   near-black box; on paper that box would have
                                   taken .mat-paper's dark inks for .t-label and
                                   .t-body and printed them on ink. */}
-                              <div className="rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s4)]">
+                              <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s4)]">
                                 <p className="t-label">
                                   Portrait under review — {item.full_name}
                                 </p>

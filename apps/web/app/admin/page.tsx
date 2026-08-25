@@ -1422,7 +1422,7 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'overview' && (
             <section className="grid gap-6">
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">Tutorial Access</h2>
@@ -1434,7 +1434,7 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>How the House Is Running</h2>
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3">
@@ -1474,7 +1474,7 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>What Still Needs Work</h2>
                 <div className="mt-4 grid gap-4 md:grid-cols-3">
                   <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
@@ -1492,7 +1492,7 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 {/*
                   This panel used to lead with
                   "PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED",
@@ -1528,7 +1528,7 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>The Switchboard</h2>
@@ -1635,7 +1635,7 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 {/*
                   "FRONT-END TRACK ASSIGNMENT PREVIEW" described the code, not
                   the work. The distinction the old label was reaching for is
@@ -1678,7 +1678,7 @@ export default function AdminCapabilitiesPage() {
                           onClick={() => toggleTrackAssignment(trackId)}
                           className={`grid gap-[var(--s3)] rounded-[var(--r-md)] border px-[var(--s4)] py-[var(--s4)] text-left ${
                             assigned
-                              ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)] text-[color:var(--bone-100)]'
+                              ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgb(var(--brass-400-rgb)_/_.07)] text-[color:var(--bone-100)]'
                               : 'mat-leather border-[color:var(--hide-700)] text-[color:var(--bone-300)]'
                           }`}
                         >
@@ -1699,7 +1699,7 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'library' && (
             <section className="space-y-5">
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capability Library</h2>
                 <div className="mt-4 grid gap-3 lg:grid-cols-3">
                   <input
@@ -1821,7 +1821,7 @@ export default function AdminCapabilitiesPage() {
                   consequential control on the screen. */}
               {undoOffer && (
                 <article
-                  className="mat-leather flex flex-wrap items-center justify-between gap-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]"
+                  className="mat-leather flex flex-wrap items-center justify-between gap-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]"
                   role="status"
                 >
                   <div>
@@ -2366,7 +2366,7 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'matrix' && (
             <section className="space-y-5">
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Assignment Board</h2>
                 <p className="t-body mt-[var(--s3)]">
                   Every capability against every role. Tap a square to hand it over or take it back.
@@ -2511,7 +2511,7 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'builder' && (
             <section className="space-y-5">
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capability Builder</h2>
                 <p className="t-body mt-[var(--s3)]">
                   Create and manage capability definitions without leaving the desk.

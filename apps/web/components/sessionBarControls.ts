@@ -44,7 +44,7 @@ const CONTROL =
 
 /** Navigation and preferences. The bar is chassis; chassis does not shout. */
 export const CONTROL_QUIET =
-  `${CONTROL} border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)] `
+  `${CONTROL} border-[color:rgb(var(--brass-400-rgb)_/_.32)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)] `
   + 'hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]';
 
 /**

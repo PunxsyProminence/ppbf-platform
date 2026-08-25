@@ -260,7 +260,7 @@ export default function AdminComplianceCenterPage() {
             blackletter reserved for the clinic masthead at display size only.
             The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
             .mat-wood's lit edge; the full note is on /coach/sports-medicine. */}
-        <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
           <p className="t-eyebrow text-[color:var(--brass-200)]">Compliance Management</p>
           <h1
@@ -311,7 +311,7 @@ export default function AdminComplianceCenterPage() {
           ))}
         </section>
 
-        <section className="mat-leather flex flex-wrap items-center gap-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+        <section className="mat-leather flex flex-wrap items-center gap-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
           <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Filter violations by status">
             {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
               <button
@@ -354,7 +354,7 @@ export default function AdminComplianceCenterPage() {
           </h2>
           <div className="space-y-[var(--s4)]">
             {filteredViolations.length === 0 ? (
-              <div className="empty mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.14)]">
+              <div className="empty mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
                 <p className="empty-msg mx-auto">
                   No violations match the current filters. Try setting Status to &quot;all&quot; and Severity to &quot;all&quot;.
                 </p>

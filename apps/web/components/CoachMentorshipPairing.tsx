@@ -207,7 +207,7 @@ export default function CoachMentorshipPairing({ roster }: CoachMentorshipPairin
               {pairings.map((row) => (
                 <li
                   key={row.mentorship_id}
-                  className="flex flex-wrap items-center justify-between gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]"
+                  className="flex flex-wrap items-center justify-between gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]"
                 >
                   <span>
                     {row.mentor_name || row.mentor_athlete_id} looks after {row.mentee_name || row.mentee_athlete_id}

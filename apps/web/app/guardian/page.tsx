@@ -78,7 +78,7 @@ function GuardianPortalContent() {
         {/* Governance banner — structure only; the type voices recolour for canvas. */}
         <div
           className="mb-[var(--s6)] rounded-r-[var(--r-lg)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)] pl-[var(--s5)]"
-          style={{ background: 'linear-gradient(90deg, rgba(212,175,74,.22) 0%, transparent 100%)' }}
+          style={{ background: 'linear-gradient(90deg, rgb(var(--brass-400-rgb) / .22) 0%, transparent 100%)' }}
         >
           <p className="t-label mb-[var(--s2)]">Layer 0 Governance</p>
           <p className="t-body m-0">

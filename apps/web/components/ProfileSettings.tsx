@@ -37,9 +37,9 @@ const CHOICE_BASE =
   'inline-flex min-h-[var(--tap)] items-center gap-[var(--s3)] rounded-[var(--r-sm)] border-2 px-[var(--s4)] '
   + 'font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] transition '
   + 'focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
-const CHOICE_ON = 'border-[color:var(--brass-500)] bg-[rgba(212,175,74,.14)] text-[color:var(--bone-100)]';
+const CHOICE_ON = 'border-[color:var(--brass-500)] bg-[rgb(var(--brass-400-rgb)_/_.14)] text-[color:var(--bone-100)]';
 const CHOICE_OFF =
-  'border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-500)]';
+  'border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-500)]';
 
 export default function ProfileSettings() {
   const [settings, setSettings] = useState<ProfileSettingsPayload | null>(null);

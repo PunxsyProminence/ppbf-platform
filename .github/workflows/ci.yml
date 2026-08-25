@@ -65,6 +65,7 @@ jobs:
             coachE2e: false,
             athleteE2e: false,
             guardianE2e: false,
+            goldenEraE2e: false,
             unknownCode: false,
           });
 
@@ -84,6 +85,7 @@ jobs:
             coachE2e: true,
             athleteE2e: true,
             guardianE2e: true,
+            goldenEraE2e: true,
             unknownCode: false,
           });
 
@@ -132,6 +134,53 @@ jobs:
             classifyPaths(['design-system/ppbf.css']).homepageE2e,
             true
           );
+
+          // THE GOLDEN-ERA RESOLVED-STYLE PROOFS. The rule this suite exists
+          // to enforce is that a change to the golden-era sheet runs EVERY
+          // scope proof, not only the `.ge-bell` one that happens to live in
+          // the homepage spec -- so this is the assertion that would have
+          // caught the gap it was written for.
+          assert.equal(
+            classifyPaths(['design-system/current/ppbf-golden-era.css']).goldenEraE2e,
+            true
+          );
+
+          // The alias file. app/globals.css declares --accent/--accent-strong
+          // as :root aliases of the brass ramp, which is where one of the two
+          // leaks the suite records comes from, so it is a surface of this
+          // suite and not only of the homepage's.
+          assert.equal(classifyPaths(['apps/web/app/globals.css']).goldenEraE2e, true);
+
+          // Every route carrying a scope class, and the two workspace
+          // components mounted inside two of them. A scope proof reads the
+          // real page, so the page is its surface.
+          for (const surface of [
+            'apps/web/app/login/page.tsx',
+            'apps/web/app/coach/environment/intake-router/page.tsx',
+            'apps/web/app/coach/drills/page.tsx',
+            'apps/web/app/coach/session-scripts/page.tsx',
+            'apps/web/app/schedule/page.tsx',
+            'apps/web/app/admin/people/page.tsx',
+            'apps/web/app/admin/shadow/page.tsx',
+            'apps/web/app/athlete/dashboard/page.tsx',
+            'apps/web/components/CoachWorkspace.tsx',
+            'apps/web/components/AthleteWorkspace.tsx',
+          ]) {
+            assert.equal(classifyPaths([surface]).goldenEraE2e, true, surface);
+          }
+
+          // ...and its own spec, which is the failure mode two of the older
+          // predicates shipped with: a suite whose own edit cannot run it.
+          assert.equal(
+            classifyPaths(['apps/web/e2e/golden-era-scope-proofs.spec.ts']).goldenEraE2e,
+            true
+          );
+
+          // Deliberately narrow at the other end. This suite never opens the
+          // board, the parent hub or the review queue, and firing it on every
+          // unrelated page would buy no coverage and cost a browser install.
+          assert.equal(classifyPaths(['apps/web/app/board/page.tsx']).goldenEraE2e, false);
+          assert.equal(classifyPaths(['apps/web/app/parent/page.tsx']).goldenEraE2e, false);
 
           assert.equal(
             classifyPaths(['apps/web/components/SomeNewSurface.tsx']).unknownCode,
@@ -201,7 +250,7 @@ jobs:
         run: npm run test:migrations
 
       - name: Install Playwright browsers
-        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true')
+        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true' || steps.changes.outputs.golden_era_e2e == 'true')
         run: npx --workspace web playwright install --with-deps chromium
 
       - name: Run board governance E2E
@@ -228,6 +277,23 @@ jobs:
       - name: Run guardian journey E2E
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.guardian_e2e == 'true'
         run: npm --workspace web run test:e2e:guardian
+
+      # The golden-era resolved-style proofs. Same shape as the five suites
+      # above and needing no database either -- but the reason it is its own
+      # flag rather than a widening of homepage_e2e is worth stating: a change
+      # to design-system/current/ppbf-golden-era.css must run EVERY scope
+      # proof. That file declares the bronze ramp for eight scope classes, and
+      # only one of them (`.ge-bell`) is proven by the homepage suite, so
+      # before this step a regression on the other seven shipped with its proof
+      # unexecuted.
+      #
+      # One of the eight, `.ge-locker` on /athlete/dashboard, is server-guarded
+      # (requirePageRole -> Postgres) and skips itself with a stated reason
+      # where no database is present, which includes this job. It is written to
+      # run unchanged wherever one is.
+      - name: Run golden-era scope proofs E2E
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.golden_era_e2e == 'true'
+        run: npm --workspace web run test:e2e:golden-era
 
       - name: Build production application
         if: steps.changes.outputs.docs_only != 'true'

@@ -64,15 +64,15 @@ const LINK =
    leather instead, so the shell and the page it wraps are one object, and the
    type moves from ink-on-paper to bone-and-brass-on-leather. */
 const BAND_INK =
-  "mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]";
+  "mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]";
 const EYEBROW_INK =
   "font-mono text-[length:var(--t-xs)] uppercase tracking-[0.28em] text-[color:var(--brass-400)]";
 const TITLE_INK =
   "font-display text-[length:var(--t-lg)] font-black uppercase tracking-[0.04em] text-[color:var(--bone-100)]";
 const CHIP_INK =
-  "inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] tracking-[0.08em] text-[color:var(--bone-300)]";
+  "inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] tracking-[0.08em] text-[color:var(--bone-300)]";
 const LINK_INK =
-  "inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--bone-200)] transition " +
+  "inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.32)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--bone-200)] transition " +
   "hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]";
 
 /* --- The trail ------------------------------------------------------------

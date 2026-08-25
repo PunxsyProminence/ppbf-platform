@@ -152,6 +152,32 @@ function walk(dir: string): string[] {
 const FILES = SCANNED.flatMap(walk);
 
 describe('the retired aesthetic does not grow back', () => {
+  it('finds files to count in, or every ceiling below is satisfied by nothing', () => {
+    /* EVERY ASSERTION IN THIS FILE IS A CEILING, and a ceiling is the one shape
+       that an empty walk satisfies perfectly: 0 <= 143, 0 <= 41, 0 <= 0, and the
+       retired typefaces are named in no file because there are no files. The
+       whole suite would go green while tolerating any amount of the vocabulary
+       it exists to cap.
+
+       It does not take a deletion to get there. `walk` only collects `.tsx`, and
+       only under app/ and components/ -- move either directory, adopt a
+       different extension, or nest the app tree one level deeper, and this walk
+       returns [] without erroring. readdirSync throws on a MISSING directory;
+       it says nothing at all about an empty or moved one.
+
+       330 .tsx files today, 195 of them outside test files. 200 is comfortably
+       below that and far above any accident: no reorganisation leaves the app
+       with two hundred components by mistake. */
+    expect(FILES.length).toBeGreaterThan(200);
+    expect(FILES.filter((file) => !/\.test\.tsx?$/.test(file)).length).toBeGreaterThan(100);
+    // Both halves of the walk, not just whichever one is larger. A ceiling is
+    // per-token, not per-directory, so app/ going quiet would hide app/ debt
+    // behind components/ still being counted.
+    for (const root of SCANNED) {
+      expect(FILES.some((file) => file.startsWith(root))).toBe(true);
+    }
+  });
+
   /* Counted per token rather than in one total, so a page that drops six
      --black and adds six --canvas-tan does not read as no change. The two are
      separate debts and they are paid down separately. */
@@ -303,6 +329,21 @@ describe('the retired aesthetic does not grow back', () => {
       }
       return out;
     };
+
+    /* THE SAME EMPTY-WALK HOLE AS THE CEILINGS ABOVE, in the shape that matters
+       most: `offenders` only ever grows, so a walk that returns nothing leaves
+       it [] and this reports that nothing imports the archive -- which is what
+       it reports when EVERYTHING imports the archive and the scanner is broken.
+
+       Named per root rather than in one total, because design-system/ is seven
+       files against app/'s six hundred and forty-nine: a total floor would be
+       satisfied by app/ alone while the directory that actually holds the
+       archive went unread. 1,378 files across the four roots today. */
+    const scanned = roots.map((root) => [path.relative(REPO, root), walkAny(root).length] as const);
+    for (const [root, count] of scanned) {
+      expect({ root, hasFilesToScan: count > 0 }).toEqual({ root, hasFilesToScan: true });
+    }
+    expect(scanned.reduce((sum, [, count]) => sum + count, 0)).toBeGreaterThan(400);
 
     for (const root of roots) {
       for (const file of walkAny(root)) {

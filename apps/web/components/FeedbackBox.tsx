@@ -125,7 +125,7 @@ export default function FeedbackBox() {
       {isOpen ? (
         <div
           id={panelId}
-          className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] border border-[color:rgba(212,175,74,.28)] mat-leather p-4 shadow-[var(--shadow-md)]"
+          className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] border border-[color:rgb(var(--brass-400-rgb)_/_.28)] mat-leather p-4 shadow-[var(--shadow-md)]"
         >
           <h2 className="font-display text-lg tracking-tight">Tell us anything</h2>
           <p className="mt-1 text-xs leading-5 opacity-80">
@@ -134,13 +134,13 @@ export default function FeedbackBox() {
 
           {acknowledgement ? (
             <div className="mt-4 space-y-3">
-              <p className="border border-[color:rgba(212,175,74,.28)] mat-leather p-3 text-sm leading-6">
+              <p className="border border-[color:rgb(var(--brass-400-rgb)_/_.28)] mat-leather p-3 text-sm leading-6">
                 {acknowledgement}
               </p>
               <button
                 type="button"
                 onClick={() => setAcknowledgement('')}
-                className="min-h-[44px] w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-3 text-xs font-bold uppercase tracking-[0.08em]"
+                className="min-h-[44px] w-full border border-[color:rgb(var(--brass-400-rgb)_/_.28)] mat-leather px-3 text-xs font-bold uppercase tracking-[0.08em]"
               >
                 Say something else
               </button>
@@ -152,7 +152,7 @@ export default function FeedbackBox() {
                 <select
                   value={kind}
                   onChange={(event) => setKind(event.target.value)}
-                  className="mt-1 h-11 w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-2 text-sm normal-case tracking-normal"
+                  className="mt-1 h-11 w-full border border-[color:rgb(var(--brass-400-rgb)_/_.28)] mat-leather px-2 text-sm normal-case tracking-normal"
                 >
                   {FEEDBACK_KINDS.map((item) => (
                     <option key={item.value} value={item.value}>
@@ -169,7 +169,7 @@ export default function FeedbackBox() {
                   maxLength={BODY_MAX_LENGTH}
                   onChange={(event) => setText(event.target.value)}
                   placeholder="Type it however it comes out."
-                  className="mt-1 h-32 w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-3 py-2 text-sm normal-case tracking-normal"
+                  className="mt-1 h-32 w-full border border-[color:rgb(var(--brass-400-rgb)_/_.28)] mat-leather px-3 py-2 text-sm normal-case tracking-normal"
                 />
               </label>
 
@@ -181,7 +181,7 @@ export default function FeedbackBox() {
                 type="button"
                 disabled={isSending || !text.trim()}
                 onClick={() => void send()}
-                className="min-h-[44px] w-full border border-[color:rgba(212,175,74,.28)] btn px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[44px] w-full border border-[color:rgb(var(--brass-400-rgb)_/_.28)] btn px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSending ? 'Sending...' : 'Send'}
               </button>
