@@ -96,6 +96,322 @@
    / bag DNA visible in the outer thirds; no stock grey brick. */
 
 /* ==========================================================================
+   GOLDEN ERA 004B — THE DRILL CASE (Coach Drill Library)
+
+   Packet 004, route /coach/drills. SEPARATE SURFACE from 004A (Session
+   Scripts) even though the two share a packet number; nothing here reaches
+   that route.
+
+   The locked reference is a WALL CABINET standing open on the gym floor: a
+   dark-walnut carcass, a hinged door with a leather pull and a brass
+   nameplate, an engraved near-black header plaque inside the lid, and rows of
+   AGED INDEX CARDS with brass corner rivets resting on the shelves. That card
+   cabinet is the whole identity, and it is deliberately none of the three
+   rooms already shipped -- not The Bell's parchment plaque on brick, not the
+   coach floor's slate board, not the athlete locker's hung clipboard. Same
+   Golden Era material grammar, a different physical object, per ROOM PURPOSE
+   DNA: consistency comes from the materials, not from every screen looking
+   the same.
+
+   THE ONE MARKUP CHANGE is the `ge-drillcase` class on the page's <main>.
+   Everything below is scoped to it, so no rule can reach another route.
+
+   WHAT THE REFERENCE DRAWS THAT DOES NOT EXIST HERE, AND IS THEREFORE NOT
+   BUILT. A search field. Four filter chips (Purpose / Stance / Equipment /
+   Level). A per-card "Add to Script" button. A "Selected Drill" detail panel
+   with Full Cue / Progressions / Programming Notes. A right-hand action column
+   reading New Drill / Program / Assign to Script / Assign to Athlete. A
+   "4 Rounds" line on each card. None of those are backed by this component,
+   this route's API, or the pilot.drills row (name, category, focus, cues,
+   difficulty, active) -- so a stylesheet drawing them would be inventing
+   controls with nothing behind them. They are reported to the owner on the PR
+   instead.
+
+   AND WHAT THE REFERENCE OMITS IS KEPT. The image shows no add-a-drill form,
+   no Back to Coach Workspace link, no difficulty plaque, no category line.
+   All four are real and all four stay; a visual pass is exactly when a real
+   control disappears quietly. goldenEraDrillcaseScope.test.ts pins both
+   halves. FUNCTIONAL_CHANGES: NONE.
+
+   Reserved medical red (--locked / --stamp-red / #A81E22) is not touched and
+   is not part of any ramp below.
+   ========================================================================== */
+
+/* The leak-proof seam, same as .ge-bell / .ge-floorboard / .ge-locker: the
+   shared components this route renders (.mat-leather, .mat-leather--raised,
+   .btn, .btn--ghost, .input/.select/.textarea, .plaque, the .t-* voices) all
+   resolve their metal from var(--brass-*). Redefining the ramp on the scope
+   itself re-skins every one of them at once, and custom properties inherit, so
+   a control nobody remembered to override still comes out bronze. A property
+   override leaks wherever it is forgotten; a token override cannot. Outside
+   .ge-drillcase the legacy ramp is untouched. */
+
+/* THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the
+   scope splits down the middle: everything solid turns bronze while every
+   alpha rule beside it keeps painting the inherited legacy gold -- a bronze
+   frame wearing a gold hairline, with no forgotten property to find. That is
+   the exact leak this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
+   of them, and checks each triple against its own hex. */
+.ge-drillcase {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* The carcass. .room--floor paints brick, which is the wall the gym's floor
+   room stands in -- but this surface is the INSIDE of a cabinet, so the ground
+   becomes its back boards: dark walnut running vertically, the way the
+   reference's panel does. (0,2,0) against .room--floor's (0,1,0), and later in
+   source order, so it wins both ways without !important. The --plate custom
+   property is deliberately NOT touched; that cascade is a shared room
+   inventory with its own guard. */
+.ge-drillcase.room--floor {
+  background-color: var(--wood-900);
+  background-image:
+    var(--grain),
+    /* board seams down the back panel */
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.42) 0 3px, rgba(156,107,58,.10) 3px 5px, transparent 5px 96px),
+    /* long vertical grain inside each board */
+    repeating-linear-gradient(90deg,
+      transparent 0 11px, rgba(0,0,0,.10) 11px 13px, transparent 13px 29px),
+    linear-gradient(174deg, #3A2412 0%, #2A1A0C 55%, #1A1108 100%);
+  background-size: 180px 180px, 100% 100%, 100% 100%, 100% 100%;
+  background-blend-mode: overlay, normal, normal, normal;
+}
+
+/* The light comes through the open door, not from ceiling fixtures. The room's
+   two-lamp wash is replaced by one warm pool from the hinge side and a deep
+   sill shadow at the base, which is how the reference is lit. Equal
+   specificity to .room::before would already win on source order; the extra
+   class makes the intent explicit rather than incidental. */
+.ge-drillcase.room::before {
+  background-image:
+    radial-gradient(72% 88% at 8% 2%, rgba(255,231,182,.30), transparent 68%),
+    radial-gradient(110% 58% at 46% 30%, rgba(255,227,176,.10), transparent 76%),
+    radial-gradient(120% 74% at 50% 108%, rgba(0,0,0,.70), transparent 66%);
+}
+
+/* The engraved header plaque inside the lid: near-black lacquer, a bronze
+   hairline, letters cut into it. The page states only a bottom keyline here,
+   which floats on brick; against the cabinet it needs to be an object. The
+   padding is stated on all four sides because a filled plaque cannot inherit
+   the bottom-only padding the keyline version wanted. */
+.ge-drillcase header {
+  background-color: #14100D;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(178deg, #251D15 0%, #17130E 58%, #100D0A 100%);
+  background-blend-mode: overlay, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-700) 62%, transparent);
+  border-radius: var(--r-md);
+  padding: var(--s5);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.18),
+    inset 0 -3px 9px rgba(0,0,0,.62),
+    0 6px 15px rgba(0,0,0,.55);
+}
+
+/* Cut lettering: the title is engraved brass on the plaque, so it takes the
+   metal rather than the bone the rest of the cabinet uses. */
+.ge-drillcase header .t-command {
+  color: var(--brass-200);
+  text-shadow: 0 1px 0 rgba(0,0,0,.78), 0 0 16px rgba(190,148,64,.20);
+}
+
+/* Headings elsewhere are carved into the wood: a dark cut below the letter and
+   a thin lit edge above it, instead of the base voice's lit-on-leather glow. */
+.ge-drillcase .t-command {
+  color: var(--bone-100);
+  letter-spacing: .05em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.72), 0 -1px 0 rgba(231,200,138,.12);
+}
+
+/* The small brass nameplate above a compartment. */
+.ge-drillcase .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 84%, var(--bone-200));
+  letter-spacing: .15em;
+}
+
+/* A shelf bay: the compartment the add-a-drill controls sit in. Recessed
+   walnut rather than the leather this class wears elsewhere, with the lit lip
+   of the shelf along the bottom edge (the ::after). Decorative only, never a
+   pointer target. */
+.ge-drillcase .mat-leather {
+  position: relative;
+  background-color: var(--wood-800);
+  background-image:
+    var(--grain),
+    linear-gradient(179deg, rgba(255,238,208,.055) 0%, transparent 34%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.13) 0 2px, transparent 2px 15px),
+    linear-gradient(176deg, #3B2614 0%, #2C1C0E 60%, #201409 100%);
+  background-blend-mode: overlay, normal, normal, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 58%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.14),
+    inset 0 -4px 10px rgba(0,0,0,.55);
+}
+.ge-drillcase .mat-leather::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -4px;
+  height: 4px;
+  pointer-events: none;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  background-image: linear-gradient(180deg, var(--wood-500) 0%, var(--wood-900) 100%);
+}
+
+/* The search rail's bezel, borrowed for every field: recessed into the wood
+   behind a bronze bead. The base rule's border is a hard-coded legacy gold
+   (rgba(212,175,74,...)) that the token ramp cannot reach, which is precisely
+   the leak the scope exists to close -- so it is restated in tokens here. */
+.ge-drillcase .input,
+.ge-drillcase .select,
+.ge-drillcase .textarea {
+  border: 1px solid color-mix(in srgb, var(--brass-600) 62%, transparent);
+  border-radius: var(--r-sm);
+  box-shadow:
+    inset 0 2px 7px rgba(0,0,0,.72),
+    0 1px 0 rgba(231,200,138,.10);
+}
+
+/* The engraved action bars down the reference's right-hand column. .btn stays
+   the raised brass plate it already is (the ramp bronzes it for free); the
+   ghost variant becomes the dark engraved bronze bar, which is what the
+   reference's secondary actions are. Its base rule also hard-codes legacy gold
+   in the border, so that is restated in tokens too. Brass-200 letters on the
+   brass-800/900 plate measure 6.4:1. */
+.ge-drillcase .btn--ghost {
+  background-color: transparent;
+  background-image: linear-gradient(180deg, var(--brass-800) 0%, var(--brass-900) 100%);
+  border: 1px solid color-mix(in srgb, var(--brass-900) 72%, #000);
+  color: var(--brass-200);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.24),
+    0 2px 5px rgba(0,0,0,.5);
+  text-shadow: 0 -1px 0 rgba(0,0,0,.6);
+}
+.ge-drillcase .btn--ghost:hover {
+  border-color: var(--brass-600);
+  color: var(--bone-100);
+}
+
+/* ---------------------------------------------------------------------------
+   THE INDEX CARD, and the ink pass that has to come with it.
+
+   This is the reference's defining element and the only LIGHT ground on the
+   surface: an aged card resting on a shelf, brass rivet at each corner. The
+   base .mat-leather--raised is dark hide with bone text, so flipping the
+   ground without flipping the ink would ship bone-on-parchment -- the exact
+   failure this repository has already had once, when a ground flip was called
+   safe by cascade reasoning and rendered unreadable. Every voice that lands
+   inside a card is therefore restated below, with the computed ratio against
+   the DARKEST point of the card (#CFB88F, the foot of the gradient):
+
+     .t-command  #241B12  8.8:1
+     .t-body     #3A2E1D  6.9:1   (beats the page's layered bone utility)
+     .t-label    #4A3B26  5.6:1
+     .plaque     brass-200 on brass-800/900   6.4:1
+     cue chips   #3A2E1D on the card itself   6.9:1
+
+   The cue chips matter most: their Tailwind utilities paint rgba(0,0,0,.28)
+   behind bone-300 text, which over parchment composites to roughly 1.3:1. This
+   sheet is unlayered and Tailwind's utilities sit in @layer utilities, so
+   these rules win without !important -- and they must, or the cues become the
+   least readable thing on the page.
+
+   STATED PLAINLY: no AI lane in this project can load a deployed page, so
+   these are computed contrast figures, not observed ones. The rendered result
+   is Jason's to approve.
+   --------------------------------------------------------------------------- */
+.ge-drillcase .mat-leather--raised {
+  position: relative;
+  color: #3A2E1D;
+  background-color: #E3CFAE;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(176deg, #EFDCBC 0%, #E1CCA8 52%, #CFB88F 100%);
+  background-blend-mode: overlay, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 46%, transparent);
+  box-shadow:
+    /* the shelf edge the card stands on, then its shadow on the back panel */
+    0 3px 0 var(--wood-900),
+    0 7px 12px rgba(0,0,0,.55);
+}
+
+/* Four brass rivets, one per corner. Held in a local custom property because
+   four background layers of the same head is the only way CSS gives each one
+   its own position, and repeating the gradient literal four times is where a
+   typo hides. Inert to the pointer. */
+.ge-drillcase .mat-leather--raised::after {
+  --rivet-head: radial-gradient(circle,
+    var(--brass-200) 0 1.3px, var(--brass-500) 1.3px 2.6px,
+    var(--brass-900) 2.6px 3.3px, transparent 3.5px);
+  content: "";
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  border-radius: calc(var(--r-lg) - 4px);
+  background-image: var(--rivet-head), var(--rivet-head), var(--rivet-head), var(--rivet-head);
+  background-repeat: no-repeat;
+  background-size: 9px 9px;
+  background-position: 0 0, 100% 0, 0 100%, 100% 100%;
+}
+
+.ge-drillcase .mat-leather--raised .t-command {
+  color: #241B12;
+  text-shadow: 0 1px 0 rgba(255,255,255,.42);
+}
+.ge-drillcase .mat-leather--raised .t-body {
+  color: #3A2E1D;
+}
+.ge-drillcase .mat-leather--raised .t-label {
+  color: #4A3B26;
+}
+
+/* Cue annotations, written on the card rather than pinned to it as dark
+   chips. The background and border here are overriding layered Tailwind
+   utilities, not the design system. */
+.ge-drillcase .mat-leather--raised ul li {
+  background-color: transparent;
+  border-color: color-mix(in srgb, var(--brass-800) 34%, transparent);
+  color: #3A2E1D;
+}
+
+/* The difficulty tab: a small engraved bronze plate on the card. The base
+   .plaque is a 40%-black wash carrying brass-200 letters, which over parchment
+   drops to about 2.5:1 -- so it becomes a solid plate here instead. */
+.ge-drillcase .plaque {
+  background-color: transparent;
+  background-image: linear-gradient(180deg, var(--brass-800) 0%, var(--brass-900) 100%);
+  border: 1px solid color-mix(in srgb, var(--brass-900) 72%, #000);
+  color: var(--brass-200);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.26),
+    0 1px 3px rgba(0,0,0,.45);
+}
+
+/* ==========================================================================
    GOLDEN ERA 003 — MY CORNER (Athlete Workspace)
 
    Packet 02_READY_FOR_CLAUDE/003_ATHLETE_WORKSPACE, route /athlete/dashboard.
