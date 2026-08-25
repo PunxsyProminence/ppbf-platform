@@ -560,17 +560,39 @@ export default function AdminCapabilitiesPage() {
     })();
   }, []);
 
+  // The panel's own copy promises "it saves as you click", so a save that
+  // fails has to say so: this was a fire-and-forget `void fetch(...)`, and a
+  // refused or dropped POST left the admin looking at an assignment that
+  // existed only in their browser tab. Same contract as the capability save
+  // effect below -- report the failure, clear it on the next success.
   useEffect(() => {
     if (!trackAssignmentsHydrated) {
       return;
     }
 
-    void fetch(`${apiBase()}/api/pilot/admin/track-assignments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ assignments: trackAssignments }),
-    });
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/admin/track-assignments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ assignments: trackAssignments }),
+        });
+
+        if (!response.ok) {
+          setTrackAssignmentsStoreError(
+            `${await readResponseError(response, 'Track assignments could not be saved')}. This change is not saved and will be lost on reload.`,
+          );
+          return;
+        }
+
+        setTrackAssignmentsStoreError('');
+      } catch (error) {
+        setTrackAssignmentsStoreError(
+          `${toErrorMessage(error, 'Track assignments could not be saved')}. This change is not saved and will be lost on reload.`,
+        );
+      }
+    })();
   }, [trackAssignments, trackAssignmentsHydrated]);
 
   // The hydrated flags are what release the save effects below, so they stay

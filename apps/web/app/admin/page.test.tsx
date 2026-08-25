@@ -91,6 +91,35 @@ it('reports a refused capability load and stops saving over the stored registry'
   expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(0);
 });
 
+// "It saves as you click," the tracks panel says -- and the save effect was a
+// fire-and-forget `void fetch(...)`, so a refused POST left the admin looking
+// at an assignment that existed only in their tab. The GET succeeds here (the
+// effect must hydrate, or no save fires at all); the POST is refused; the
+// panel must say the change is not saved.
+it('reports a refused track-assignments save instead of pretending it stuck', async () => {
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/pilot/admin/track-assignments')) {
+      if ((init?.method ?? 'GET') === 'POST') {
+        return jsonResponse({ error: 'Forbidden: role not allowed' }, false, 403);
+      }
+      return jsonResponse({ assignments: {} });
+    }
+    if (String(url).includes('/api/pilot/admin/capabilities')) {
+      return jsonResponse({ ok: true, capabilities: [] });
+    }
+    return jsonResponse({ ok: true });
+  });
+
+  await renderPage(fetchMock);
+
+  fireEvent.click(await screen.findByRole('button', { name: /USA Boxing Track/ }));
+
+  await screen.findByText(/Forbidden: role not allowed\. This change is not saved and will be lost on reload/);
+  // Two POSTs: hydration re-echoes the stored record once (pre-existing
+  // behaviour, not under test here), then the click saves the change.
+  await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/track-assignments', 'POST')).toHaveLength(2));
+});
+
 // The track-assignments hydrate effect used to mark itself hydrated even when
 // the GET failed, which released the save effect to POST the in-memory seed
 // over the stored record -- the exact overwrite the capabilities effect
