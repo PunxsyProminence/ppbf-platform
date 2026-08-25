@@ -212,6 +212,23 @@ export async function listOpenDataCollectionRequests(
   );
 }
 
+/**
+ * The athlete a data-collection request is about, for authorizing an action on
+ * it BEFORE mutating. Deliberately minimal: it selects only athlete_id (which is
+ * null for a non-athlete-person request), so no prompt text or other content is
+ * loaded before the caller is authorized. Returns null when no such request
+ * exists in the organization.
+ */
+export async function getDataCollectionRequestAthleteId(
+  organizationId: string,
+  requestId: string,
+): Promise<{ athlete_id: string | null } | null> {
+  return queryOne<{ athlete_id: string | null }>(
+    'select athlete_id from pilot.data_collection_requests where organization_id = $1 and request_id = $2',
+    [organizationId, requestId],
+  );
+}
+
 export interface CaptureDataCollectionRequestInput {
   organizationId: string;
   requestId: string;
