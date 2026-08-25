@@ -29,6 +29,17 @@ const REVIEW_STATE_BADGES: Record<ShadowKnowledgeNode['review_state'], { classNa
   unknown: { className: 'badge badge--filed', glyph: '◌', label: 'Unknown' },
 };
 
+/**
+ * The read window, named once so the request and what the plaque calls itself
+ * cannot drift apart.
+ *
+ * It caps EVENTS, not nodes: getShadowKnowledgeProjection reads this many
+ * shadow_events newest-first and then drops the ones that are not SHADOW,
+ * INTAKE or AUDIT events, so what comes back is the nodes among the newest
+ * events -- never a count of the nodes this organization holds.
+ */
+const PROJECTION_READ_LIMIT = 120;
+
 export default function KnowledgeGraphPage() {
   const [nodes, setNodes] = useState<ShadowKnowledgeNode[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
@@ -45,7 +56,7 @@ export default function KnowledgeGraphPage() {
         credentials: 'include',
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 120 }),
+          body: JSON.stringify({ limit: PROJECTION_READ_LIMIT }),
         });
 
         if (!response.ok) {
@@ -73,10 +84,21 @@ export default function KnowledgeGraphPage() {
     };
   }, [nodes]);
 
+  /* NOT 'Node Count'. This plaque row renders above the loading and error
+     sections below, so String(nodes.length) put a measured-looking NODE COUNT:
+     0 on screen while the request was still open AND after it failed -- and
+     even on a good read it is the number of nodes SHOWN, out of a capped,
+     event-filtered window (see PROJECTION_READ_LIMIT), not a count of what the
+     organization holds. Both halves of the fix are /audit's, on the same
+     plaque row of the same pipeline: it names the figure 'Events Shown' and
+     withholds it as '--' until the read has actually answered. */
   const stats = [
     { label: 'Current Stage', value: 'Knowledge Graph' },
     { label: 'Source', value: 'SHADOW Projection' },
-    { label: 'Node Count', value: String(nodes.length) },
+    {
+      label: 'Nodes Shown',
+      value: !projectionLoading && !errorMessage ? String(nodes.length) : '--',
+    },
     { label: 'Mode', value: 'Read Model' },
   ];
 
@@ -203,6 +225,13 @@ export default function KnowledgeGraphPage() {
             </section>
           ))}
         </div>
+
+        {!errorMessage && !projectionLoading && nodes.length > 0 ? (
+          <p className="t-muted">
+            These four streams are projected from the {PROJECTION_READ_LIMIT} most recent SHADOW events, so an older
+            history may sit behind them.
+          </p>
+        ) : null}
       </div>
     </main>
   );
