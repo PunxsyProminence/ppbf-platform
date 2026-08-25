@@ -263,7 +263,7 @@ export default function BoardComplianceMonitoringPage() {
                   className={`min-h-[44px] rounded-[var(--r-sm)] border px-[var(--s4)] text-[length:var(--t-sm)] font-bold uppercase transition ${
                     selectedStatus === status
                       ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
-                      : 'border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)] hover:border-[color:var(--brass-400)]'
+                      : 'border-[color:rgb(var(--brass-400-rgb)_/_.32)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)] hover:border-[color:var(--brass-400)]'
                   }`}
                 >
                   {status || 'All'} ({status === ''

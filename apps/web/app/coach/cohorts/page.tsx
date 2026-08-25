@@ -160,7 +160,7 @@ function CoachCohorts() {
                   {report.competence.map((row) => (
                     <li
                       key={row.competence_id}
-                      className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"
+                      className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"
                     >
                       {row.domain.replace(/_/g, ' ')}: {row.display_name}
                     </li>
@@ -174,7 +174,7 @@ function CoachCohorts() {
                   <li
                     key={fit.cohort_id}
                     className={`rounded-[var(--r-md)] border-2 bg-[rgba(0,0,0,.28)] p-[var(--s4)] ${
-                      fit.eligible ? 'border-[var(--cleared)]' : 'border-[color:rgba(212,175,74,.22)]'
+                      fit.eligible ? 'border-[var(--cleared)]' : 'border-[color:rgb(var(--brass-400-rgb)_/_.22)]'
                     }`}
                   >
                     <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
@@ -262,7 +262,7 @@ function CoachCohorts() {
               {levels.map((level) => (
                 <li
                   key={level.level_key}
-                  className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
+                  className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                 >
                   <div className="flex items-baseline gap-[var(--s3)]">
                     <span className="plaque">{level.ordinal}</span>

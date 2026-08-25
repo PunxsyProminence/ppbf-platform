@@ -168,7 +168,7 @@ export default function AttendanceDashboardPage() {
     <RoleSessionGate allowedRoles={['admin', 'coach']}>
       <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Attendance</h1>
             <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | ROLLS UP pilot.scheduler_attendance</p>
@@ -207,7 +207,7 @@ export default function AttendanceDashboardPage() {
           </section>
 
           {trend && trend.length > 0 ? (
-            <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+            <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
               <p className="t-eyebrow">Weekly trend (last {TREND_WEEKS} weeks)</p>
               <div className="mt-[var(--s3)] flex items-end gap-[var(--s2)]" style={{ height: '72px' }}>
                 {fillWeeklyTrendGaps(trend).map((week) => {

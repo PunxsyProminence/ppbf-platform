@@ -106,7 +106,7 @@ export default function KnowledgeGraphPage() {
     /* Room--file: the research wall -- cork, gooseneck light. Each knowledge
        stream is a column of paper records pinned to it. */
     <main className="room room--file min-h-screen bg-[var(--hide-950)]">
-      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+      <header className="mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Knowledge Graph</p>
@@ -182,7 +182,7 @@ export default function KnowledgeGraphPage() {
             { title: 'Finding', items: grouped.finding },
             { title: 'Validated Lesson', items: grouped.validated },
           ].map((group) => (
-            <section key={group.title} className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <section key={group.title} className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
               <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
                 {group.title}
               </h2>

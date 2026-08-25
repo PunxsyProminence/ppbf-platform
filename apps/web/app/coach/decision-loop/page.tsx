@@ -540,7 +540,7 @@ export default function DecisionLoopReviewPage() {
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No medical administrative status recorded yet.</p>
                 )}
 
-                <form onSubmit={handleSetMedicalStatus} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s3)]">
+                <form onSubmit={handleSetMedicalStatus} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
                   <label className="field block">
                     <span className="t-label">New status</span>
                     <select
@@ -633,7 +633,7 @@ export default function DecisionLoopReviewPage() {
                         Load Outcomes
                       </button>
                       {outcomesByDecision[decision.decision_id] && (
-                        <div className="mt-[var(--s3)] space-y-[var(--s2)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s3)]">
+                        <div className="mt-[var(--s3)] space-y-[var(--s2)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
                           {outcomesByDecision[decision.decision_id].length === 0 ? (
                             <p className="t-muted">No outcomes evaluated yet.</p>
                           ) : (
@@ -650,7 +650,7 @@ export default function DecisionLoopReviewPage() {
                   ))}
                 </div>
 
-                <form onSubmit={handleRecordDecision} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s3)]">
+                <form onSubmit={handleRecordDecision} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
                   <label className="field block">
                     <span className="t-label">Link to recommendation (optional)</span>
                     <select
@@ -717,7 +717,7 @@ export default function DecisionLoopReviewPage() {
                   ))}
                 </div>
 
-                <form onSubmit={handleFlagNearMiss} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s3)]">
+                <form onSubmit={handleFlagNearMiss} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
                   <label className="field block">
                     <span className="t-label">Description</span>
                     <textarea

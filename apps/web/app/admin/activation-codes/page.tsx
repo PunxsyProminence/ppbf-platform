@@ -121,7 +121,7 @@ function ActivationCodesConsoleContent() {
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s5)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Gym Admin Activation Control</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
             Issue Athlete Activation Codes
@@ -192,7 +192,7 @@ function ActivationCodesConsoleContent() {
             </div>
           </section>
 
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
             <h2 className="t-eyebrow">Issue New Code</h2>
             <form className="mt-[var(--s3)] space-y-[var(--s3)]" onSubmit={submitIssueCode}>
               <div className="field">

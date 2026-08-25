@@ -223,7 +223,7 @@ function capabilityBadgeTone(state: 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISS
   if (state === 'EXISTS') return 'border-[color:var(--brass-600)] bg-[var(--brass-300)] text-[color:var(--hide-950)]';
   if (state === 'PARTIAL') return 'border-[color:var(--brass-600)] text-[color:var(--brass-300)]';
   if (state === 'PLACEHOLDER') return 'border-[color:var(--brass-800)] text-[color:var(--bone-400)]';
-  return 'border-[color:rgba(212,175,74,.24)] text-[color:var(--bone-400)]';
+  return 'border-[color:rgb(var(--brass-400-rgb)_/_.24)] text-[color:var(--bone-400)]';
 }
 
 function statusTone(status: string): string {
@@ -237,7 +237,7 @@ function statusTone(status: string): string {
   if (normalized.includes('past due') || normalized.includes('declined') || normalized.includes('not connected')) {
     return 'border-[color:var(--brass-800)] text-[color:var(--bone-400)]';
   }
-  return 'border-[color:rgba(212,175,74,.24)] text-[color:var(--bone-400)]';
+  return 'border-[color:rgb(var(--brass-400-rgb)_/_.24)] text-[color:var(--bone-400)]';
 }
 
 function formatCurrency(value: number): string {
@@ -292,7 +292,7 @@ function FabricatedRowsNotice({
   linkLabel,
 }: Readonly<{ rows: string; realRecords: string; href: string; linkLabel: string }>) {
   return (
-    <div className="mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)]">
+    <div className="mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.24)] p-[var(--s4)]">
       <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
       <p className="t-body mt-[var(--s3)]">
         Every {rows} row below is fabricated sample data. This tab makes no request and reads no
@@ -432,7 +432,7 @@ export default function RevenueFundingCenter() {
 
   return (
     <section className="space-y-6">
-      <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+      <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
         <p className="t-eyebrow">Revenue Operations</p>
         <h2 className="t-command mt-[var(--s3)]">Revenue & Funding Center</h2>
         <p className="t-body mt-[var(--s3)]">
@@ -558,7 +558,7 @@ export default function RevenueFundingCenter() {
             className={`min-h-[44px] border px-4 text-[length:var(--t-sm)] font-bold ${
               activeTab === tab.id
                 ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
-                : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
+                : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
             }`}
           >
             {tab.label}
@@ -795,7 +795,7 @@ export default function RevenueFundingCenter() {
             </div>
 
             <p className="t-body">Donation types supported in this lane: General Donation, Youth Program Support, Equipment Support, Scholarship Support, Facility Support, Event Support.</p>
-            <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)] t-body">Operational tracking only. Payment processing and tax receipt issuance still require backend integration.</p>
+            <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.24)] p-[var(--s4)] t-body">Operational tracking only. Payment processing and tax receipt issuance still require backend integration.</p>
           </div>
         </SectionCard>
       )}
@@ -898,7 +898,7 @@ export default function RevenueFundingCenter() {
               </div>
             ))}
             <p className="t-body">Support types: Full Scholarship, Partial Scholarship, Participation Support Waiver, Equipment Assistance, Competition Participation Support, Travel Support, Program Support.</p>
-            <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)] t-body">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
+            <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.24)] p-[var(--s4)] t-body">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
           </div>
         </SectionCard>
       )}
@@ -931,7 +931,7 @@ export default function RevenueFundingCenter() {
               </article>
             ))}
           </div>
-          <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)] t-body mt-[var(--s4)]">No payment processor is connected. This application does not currently process real payments.</p>
+          <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.24)] p-[var(--s4)] t-body mt-[var(--s4)]">No payment processor is connected. This application does not currently process real payments.</p>
         </SectionCard>
       )}
 

@@ -164,7 +164,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           <div className="plaque">{seat.seatLabel}</div>
         </header>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] mt-[var(--s5)]">
           <p className="t-eyebrow">Seat Access</p>
           <p className="t-body mt-[var(--s3)]">{seatAccessNotice[access.mode]}</p>
           <p className="t-body mt-[var(--s3)]">
@@ -172,7 +172,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           </p>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] mt-[var(--s5)]">
           <h2 className="t-command">Aggregate boundary</h2>
           <p className="t-body mt-[var(--s3)] max-w-[80ch]">
             {BOARD_AGGREGATE_BOUNDARY_STATEMENT}
@@ -184,7 +184,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             'Mission-Focused Governance' and 'Community Impact Oversight' state
             nothing and are gone; what is left is the charity's standing, which
             belongs on a plaque rather than on furniture that reports. */}
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] mt-[var(--s5)]">
           <p className="t-eyebrow">Nonprofit Identity</p>
           <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
             {['Veteran-Founded', '501(c)(3) Public Charity'].map((fact) => (
@@ -207,7 +207,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             resolves that to --locked-ink for the leather ground this strip
             stands on, and the active tab is brass. An unlayered rule at (0,2,0)
             is not something a utility class can outrank. */}
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] mt-[var(--s5)]">
           <p className="t-eyebrow">Governance Modules</p>
           <div className="mt-[var(--s4)] grid gap-[var(--s2)] sm:grid-cols-2 md:grid-cols-5">
             {boardWorkspaceTabs.map((tab) => {
@@ -222,7 +222,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
                   className={`flex min-h-[44px] flex-col items-start justify-center gap-[var(--s1)] rounded-[var(--r-sm)] border px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] font-bold transition ${
                     isActive
                       ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
-                      : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
+                      : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
                   }`}
                 >
                   <span>{tab}</span>
@@ -242,7 +242,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
 
         <section className="mt-[var(--s5)] grid gap-[var(--s5)] lg:grid-cols-[1.35fr_0.65fr]">
           <div className="space-y-[var(--s5)]">
-            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
               <h2 className="t-command">{activeTab}</h2>
               <p className="t-body mt-[var(--s3)]">
                 Every card states its own condition. A card marked {BOARD_PLANNED_STAMP} describes intended work and has nothing behind it.
@@ -265,7 +265,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
               </div>
             </article>
 
-            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
               <h2 className="t-command">Role Description</h2>
               <p className="t-body mt-[var(--s3)]">{seat.roleDescription}</p>
               <h3 className="t-command--brass t-command mt-[var(--s4)]">Primary Responsibilities</h3>
@@ -276,7 +276,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
               </ul>
             </article>
 
-            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
               <h2 className="t-command">Seat Modules</h2>
               <p className="mt-[var(--s3)]"><span className="stamp stamp--flat">{BOARD_PLANNED_STAMP}</span></p>
               <p className="t-body mt-[var(--s3)]">
@@ -306,7 +306,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           </div>
 
           <aside className="grid gap-[var(--s5)]">
-            <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
               {/* The shared constant rather than a hand-copied second version
                   of the same sentence -- the seat catalogue's four dead count
                   fields were the only thing carrying it before. */}
@@ -324,7 +324,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
               </ul>
             </section>
 
-            <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
               <h2 className="t-command">Workspace Links</h2>
               <div className="mt-[var(--s4)] grid gap-[var(--s2)]">
                 {links.map((link) => (

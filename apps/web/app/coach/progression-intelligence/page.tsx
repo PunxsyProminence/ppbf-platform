@@ -845,7 +845,7 @@ export default function CoachProgressionIntelligencePage() {
                           </div>
                         </div>
                         {comps.length > 0 && (
-                          <div className="mt-[var(--s4)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s3)] space-y-[var(--s2)]">
+                          <div className="mt-[var(--s4)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)] space-y-[var(--s2)]">
                             <p className="t-label">Completions</p>
                             {comps.map((completion) => (
                               <div

@@ -132,7 +132,7 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
   // On a safeguarding surface the two look identical and mean opposite things.
   if (failed) {
     return (
-      <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+      <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
         <h2 className="t-command text-[length:var(--t-md)]">Records could not be read</h2>
         <p className="t-body mt-[var(--s2)]">
           This is a failure to load, not an empty register. Reload to try again.
@@ -149,7 +149,7 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
     );
 
     return (
-      <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+      <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
         <h2 className="t-command text-[length:var(--t-md)]">The standard this gym holds itself to</h2>
         <p className="t-body mt-[var(--s2)]">
           These rules are written policy. Nothing evaluates them automatically — a violation exists only
@@ -190,7 +190,7 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
     : 'Dates not recorded';
 
   return (
-    <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+    <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
       <h2 className="t-command text-[length:var(--t-md)]">Board communications register</h2>
       <p className="t-body mt-[var(--s2)]">
         How many notices have been published to this organization, and by which author role. This is the
