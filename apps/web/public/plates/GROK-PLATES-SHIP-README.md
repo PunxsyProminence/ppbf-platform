@@ -1,21 +1,22 @@
-# Grok plate binary ship — 2026-08-25 (READY)
+# Provenance — Grok plate binary ship, 2026-08-25
 
-Environment-only JPEG plates for `apps/web/public/plates/`.
-No UI, no text baked in. SOI+EOI verified.
+Historical record only. `README.md` in this directory is the authoritative
+document for what a plate must be and how one enters the repository; where the
+two ever disagree, `README.md` wins.
 
-## Download the 12 real JPEGs (1 click)
+This file previously carried a Google Drive link, a OneDrive path, and a "land
+command" that unzipped a package and copied the plates in. Those instructions
+are retired: the bytes are now committed here, and by the standard `README.md`
+states, a delivery is bytes on a branch — a link to a zip is not one, and no AI
+lane in this project can read a drive from its sandbox anyway.
 
-**Google Drive zip:**  
-https://drive.google.com/file/d/1RRIYsHYYSWB7til-Wy_fLJumvaNkBCAt/view?usp=drivesdk
+What is kept is the producer's own manifest, because it is the independent
+statement of what each file was supposed to be. Every row below was confirmed
+against the committed bytes by `apps/web/src/design/plateBinaries.test.ts`:
+dimensions and byte counts match exactly, all twelve carry both JPEG markers,
+and all twelve are 4:4:4.
 
-File: `REPO-PLATES-SHIP-FINAL-2026-08-25.zip` (~1.5 MB)  
-MD5: `955d39af48a10b787114242f329d58b5`
-
-Also on OneDrive: `Documents/PPBF-AI-Lanes/Visual-Handoffs/02_READY_FOR_CLAUDE/REPO-PLATES-SHIP/`
-
-## Exact files + sizes
-
-| File | Dim | Bytes |
+| File | Declared | Declared bytes |
 |------|-----|-------|
 | plate-08-bell-gym-landscape-01.jpg | 1280×720 | 189771 |
 | plate-08-bell-gym-portrait-01.jpg | 810×1440 | 99891 |
@@ -30,24 +31,12 @@ Also on OneDrive: `Documents/PPBF-AI-Lanes/Visual-Handoffs/02_READY_FOR_CLAUDE/R
 | plate-06-night-02.jpg | 1280×720 | 86167 |
 | plate-06-night-portrait-01.jpg | 810×1440 | 80048 |
 
-## Land command (Jason — 2 min)
+`plate-01-office-01.jpg` and `plate-04-board-01.jpg` replaced already-committed
+plates of the same name; the other ten are new files. The producer's note asked
+that `plate-02a-floor-landscape-01`, `plate-03-clinic-01`, `plate-05-file-01`
+and `plate-07-warm-ground-01` be left alone, and they were.
 
-```bash
-git fetch origin
-git checkout grok/plates-full-ship
-# unzip the Drive package, then:
-cp REPO-PLATES-SHIP-FINAL/plate-*.jpg apps/web/public/plates/
-rm -f apps/web/public/plates/_smoke_binary_test.jpg
-git add apps/web/public/plates/plate-*.jpg
-git add -u apps/web/public/plates/_smoke_binary_test.jpg
-git commit -m "feat(plates): land Grok env JPEGs (Bell + Type-B corrections)"
-git push
-```
-
-Or drag-drop the 12 JPGs via GitHub web UI onto this branch under `apps/web/public/plates/`.
-
-Then point `.ge-bell` CSS at plate-08 filenames. Run `plateBinaries.test.ts`.
-
-Do not replace plate-02a / plate-03-clinic-01 / plate-05-file-01 / plate-07-warm-ground-01.
-
-FUNCTIONAL_CHANGES: NONE. PR #606 DEAD.
+Of the twelve, only the two `plate-08` Bell files were wired to a room in the
+landing PR. The rest sit on disk undeclared, which is legal — the gate requires
+every CSS-declared URL to exist, not the reverse — and inert until an owner
+decides which variant each room takes.
