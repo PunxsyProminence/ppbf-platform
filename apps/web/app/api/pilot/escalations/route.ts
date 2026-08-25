@@ -115,11 +115,30 @@ export async function POST(request: NextRequest) {
       }
       const escalationId = body.escalation_id?.trim();
       if (!escalationId) throw new Error('Missing escalation_id');
-      // Empty maps to '' here and to NULL-equivalent in the module's
-      // coalesce(nullif(...)) -- so an absent note can never overwrite a
-      // stored one. The status guard in transitionEscalation is what stops
-      // re-resolve outright; this is the second layer.
       const resolutionNote = typeof body.resolution_note === 'string' ? body.resolution_note.trim() : '';
+
+      // Closing a safety escalation about a minor without a stated reason is
+      // unauditable. This is the identical rule
+      // compliance/violations/route.ts:PATCH applies to its own closing
+      // verdicts -- and the rule that route's own comment already credits
+      // "the escalation ladder" with enforcing. It did not. The only place
+      // it existed was app/admin/escalations/page.tsx, in the browser
+      // ("A resolution needs a stated reason -- the escalation was not
+      // resolved"), so any other caller could close a 'critical' incident
+      // report, a pain-report escalation, or an athlete_voice disclosure
+      // with resolution_note absent: resolved_by_account_id named who, and
+      // nothing anywhere said on what grounds.
+      //
+      // Acknowledgement is receipt, not closure, and deliberately carries no
+      // such requirement -- same split as the compliance console.
+      //
+      // The module's coalesce(nullif(...)) still stands behind this: it is
+      // what stops a '' from wiping a stored note, and the status guard in
+      // transitionEscalation is what stops a re-resolve. This refusal is the
+      // layer in front of both.
+      if (!resolutionNote) {
+        throw new Error('Missing note: a resolution needs a stated reason');
+      }
 
       const updated = await resolveEscalation(principal.organizationId, escalationId, principal.accountId, resolutionNote);
       if (!updated) throw new Error('Missing escalation record');
