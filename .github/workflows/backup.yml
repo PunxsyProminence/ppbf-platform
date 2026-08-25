@@ -81,7 +81,13 @@ jobs:
     timeout-minutes: 45
     env:
       TARGET: ${{ inputs.target || 'production' }}
-      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      # RESOURCE_GROUP is deliberately NOT set here. The staging literal used
+      # to sit at job level for BOTH targets, so a production run (the scheduled default) looked
+      # up app-ppbf-production inside the staging-named resource group -- which
+      # only worked by accident of where that app happens to live today. It is
+      # resolved per target by the step below: staging keeps its literal, and
+      # production requires secrets.AZURE_PRODUCTION_RESOURCE_GROUP with no
+      # staging fallback, mirroring deploy-production.yml.
       CONTAINER_APP_NAME: ${{ (inputs.target || 'production') == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
       BACKUP_CONTAINER: ppbf-pilot-backups
       RETENTION_DAYS: '90'
@@ -91,6 +97,28 @@ jobs:
       MIN_BACKUPS_KEPT: '14'
 
     steps:
+      # A wrong-resource-group lookup that happens to resolve is worse than one
+      # that refuses (deploy-production.yml records the same reasoning for its
+      # own RESOURCE_GROUP), so an unset secret stops the run here -- before
+      # the Azure login. TARGET is job-level env and defaults to production for
+      # scheduled runs. This job declares no `environment:` (the header comment
+      # says why), so the secret must be readable at repository scope; if it is
+      # scoped to the production environment only, the scheduled run refuses
+      # loudly here -- which is the intended failure direction.
+      - name: Resolve Target Resource Group
+        env:
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
+          fi
+
       - name: Checkout Source Code
         uses: actions/checkout@v7
 
