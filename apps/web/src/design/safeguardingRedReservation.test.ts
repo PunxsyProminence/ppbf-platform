@@ -954,7 +954,7 @@ const SEED_LITERAL_SPELLINGS: ReadonlyArray<{
 const LEGITIMATE_TOKEN_USE =
   'className="border-2 border-[color:var(--locked)] badge badge--locked"';
 
-interface LiteralSite {
+interface SourceLiteralSite {
   file: string;
   line: number;
   spelling: string;
@@ -965,8 +965,8 @@ interface LiteralSite {
  *  this one, sports-medicine, simulator, schedule -- are not reported. The
  *  stripper replaces comment characters with spaces, so the line numbers it
  *  reports are the real ones. */
-function scanSeedLiterals(): LiteralSite[] {
-  const sites: LiteralSite[] = [];
+function scanSeedLiterals(): SourceLiteralSite[] {
+  const sites: SourceLiteralSite[] = [];
   for (const file of LITERAL_FILES) {
     const { code } = stripTsComments(readFileSync(file, 'utf8'));
     const relative = path.relative(WEB, file).split(path.sep).join('/');
@@ -979,7 +979,12 @@ function scanSeedLiterals(): LiteralSite[] {
   return sites;
 }
 
-const LITERAL_SITES = scanSeedLiterals();
+/* Renamed from LITERAL_SITES: the CSS-sheet scanner above (which derives its
+   exemption from RED_TOKENS) and this TS/TSX source scanner are complementary
+   channels that arrived in separate changes and collided on one name, which
+   made the whole suite fail to parse -- so the safeguarding guard ran not at
+   all. Distinct names, both channels live. */
+const SOURCE_LITERAL_SITES = scanSeedLiterals();
 
 interface LiteralAllowListEntry {
   file: string;
@@ -1123,14 +1128,14 @@ describe('the safeguarding red reservation', () => {
       allowed.set([entry.file, entry.text].join(KEY_SEPARATOR), entry);
     }
 
-    const unallowed = LITERAL_SITES.filter(
+    const unallowed = SOURCE_LITERAL_SITES.filter(
       (site) => !allowed.has([site.file, site.text].join(KEY_SEPARATOR)),
     ).map((site) => `  ${site.file}:${site.line} — ${site.spelling} — ${site.text}`);
 
     // Liveness, the other half: an entry whose line no longer exists must
     // fail rather than sit here excusing nothing. Same contract the token
     // allow-list holds itself to, applied to a key that is the literal.
-    const live = new Set(LITERAL_SITES.map((site) => [site.file, site.text].join(KEY_SEPARATOR)));
+    const live = new Set(SOURCE_LITERAL_SITES.map((site) => [site.file, site.text].join(KEY_SEPARATOR)));
     const stale = [...allowed.values()]
       .filter((entry) => !live.has([entry.file, entry.text].join(KEY_SEPARATOR)))
       .map((entry) => `  ${entry.file} — ${entry.text}`);
