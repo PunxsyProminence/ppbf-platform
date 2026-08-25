@@ -811,7 +811,14 @@ function PeopleConsoleContent() {
   }
 
   return (
-    <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+    /* ge-frontoffice: Golden Era Visual 007 scope. This class is the ONLY
+       change on this route -- the plank wall, the nameplate tab plaques, the
+       screwed register frame and the ruled paper all live in scoped CSS under
+       .ge-frontoffice in design-system/current/ppbf-golden-era.css, so every
+       control, gate and role check on this console is untouched. It sits on
+       the authorised console only: WrongRoleNotice and the loading state stay
+       outside the scope on purpose. */
+    <main className="ge-frontoffice room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
         <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
           {/* The desk lamp over the roster. .lamp draws the shade and the pool

@@ -9,6 +9,7 @@ import {
   evidenceRoleError,
   getActiveReview,
   getDecisionTexts,
+  getEvidenceLinkOwner,
   hypothesisResultError,
   learningSignalError,
   linkEvidence,
@@ -38,6 +39,12 @@ export const runtime = 'nodejs';
 // supplied athlete_id goes through assertActorCanAccessAthlete, and an
 // unfiltered read returns only executions whose athlete the caller may
 // reach -- these rows carry the decision narrative and its linked evidence.
+//
+// Every WRITE here is authorized the same way, on the athlete the target row
+// is STORED against rather than on anything the caller supplied: the POST
+// resolves its execution's athlete, and the PATCH resolves the athlete behind
+// the evidence link it is asked to strike. A staff role reaches this surface;
+// it does not by itself reach a given child's record on it.
 
 const REVIEW_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
@@ -177,10 +184,33 @@ export async function PATCH(request: NextRequest) {
       throw new ValidationError('Removing evidence requires removed_reason -- links are stamped, never erased.');
     }
 
+    // The GET is per-athlete authorized and the POST above was given the same
+    // gate; this PATCH never had one. removeEvidence keyed on (org, link_id)
+    // alone, so any coach in the organization could strike a link off an
+    // intervention belonging to a child they have no standing on -- including
+    // a 'counterevidence' or 'adverse_response' link, the record that a child
+    // responded badly -- simply by naming its link_id. The id needs no
+    // guessing: the GET hands out link_ids for every athlete a coach may
+    // reach at the time, so a substitute whose coach_coverage grant has since
+    // expired (or been revoked early) kept the ability to remove what they
+    // saw while it was live. Expiry stopped bounding this write.
+    //
+    // Resolve the link's STORED owner -- the athlete of its stored execution,
+    // never a caller-supplied one -- and run it through the same central gate
+    // the read uses. hidden-not-found for a link outside the org matches the
+    // POST and avoids an existence oracle; the gate's own 403 propagates,
+    // exactly as it does on the POST.
+    const owner = await getEvidenceLinkOwner(principal.organizationId, linkId);
+    if (!owner) return hiddenNotFound();
+    await assertActorCanAccessAthlete(principal, owner.athlete_id);
+
     const item = await removeEvidence({
       organizationId: principal.organizationId,
       linkId,
       removedReason,
+      // Compare-and-set on the execution just authorized, so the check and
+      // the write are one statement rather than two with a gap between them.
+      expectedExecutionId: owner.execution_id,
     });
     if (!item) return hiddenNotFound();
     await audit(principal, 'update', 'intervention_evidence_link', item.link_id, {

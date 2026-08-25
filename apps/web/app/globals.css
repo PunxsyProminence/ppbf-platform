@@ -1220,7 +1220,7 @@ h6 {
 }
 
 .wall-names-head {
-  border-bottom: 3px solid rgba(212, 175, 74, .30);
+  border-bottom: 3px solid rgb(var(--brass-400-rgb) / .30);
   padding-bottom: var(--s5);
 }
 
@@ -1321,15 +1321,15 @@ h6 {
     var(--brass-400) 0%, var(--brass-600) 34%,
     var(--brass-500) 58%, var(--brass-700) 82%, var(--brass-800) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(242, 226, 168, .42),
-    inset 0 0 0 1px rgba(74, 52, 11, .55),
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .42),
+    inset 0 0 0 1px rgb(var(--brass-900-rgb) / .55),
     0 2px 6px rgba(0, 0, 0, .5);
   font-family: var(--font-display);
   font-size: var(--t-md);
   font-weight: 400;
   letter-spacing: .1em;
   color: var(--hide-950);
-  text-shadow: 0 1px 0 rgba(242, 226, 168, .34);
+  text-shadow: 0 1px 0 rgb(var(--brass-200-rgb) / .34);
 }
 
 .wall-names-list {
@@ -1531,7 +1531,7 @@ h6 {
 .chalkboard .btn--ghost {
   background-color: rgba(0, 0, 0, .28);
   color: var(--bone-200);
-  border: 1.5px solid rgba(212, 175, 74, .42);
+  border: 1.5px solid rgb(var(--brass-400-rgb) / .42);
   box-shadow: inset 0 1px 0 rgba(255, 244, 214, .10);
 }
 
@@ -2058,7 +2058,7 @@ h6 {
   /* Landscape, and only landscape. This is a 16:9 panel bolted to a wall. */
   --wall-ink: var(--bone-100);
   --wall-ink-quiet: var(--bone-300);
-  --wall-rule: rgba(212, 175, 74, .30);
+  --wall-rule: rgb(var(--brass-400-rgb) / .30);
 }
 
 [data-surface="wall"] .wall-board {
@@ -2276,7 +2276,7 @@ h6 {
   border-bottom: 3px solid var(--wall-rule);
   background-image:
     linear-gradient(180deg, rgba(0, 0, 0, .42), rgba(0, 0, 0, .16)),
-    radial-gradient(120% 180% at 50% -60%, rgba(212, 175, 74, .18), transparent 70%);
+    radial-gradient(120% 180% at 50% -60%, rgb(var(--brass-400-rgb) / .18), transparent 70%);
 }
 
 /* The bulbs on the sign board. Drawn, not imaged, like every other material in

@@ -1,4 +1,4 @@
-import { query, withTransaction } from './db';
+import { query, queryOne, withTransaction } from './db';
 import {
   EXPIRED_CLEARANCE_STATUS,
   effectiveMedicalStatus,
@@ -169,11 +169,41 @@ export async function listRecommendations(input: {
   );
 }
 
+/**
+ * Resolves which athlete a recommendation is about, so a route keyed by
+ * recommendationId can enforce per-athlete access against the STORED owner
+ * rather than against an athlete id the caller supplied. Mirrors
+ * getDecisionAthleteId in shadowDecisions.ts, which exists for exactly the
+ * same reason on the decision-outcomes route.
+ */
+export async function getRecommendationAthleteId(
+  organizationId: string,
+  recommendationId: string,
+): Promise<string | null> {
+  const row = await queryOne<{ athlete_id: string }>(
+    `select athlete_id from pilot.shadow_recommendations
+     where organization_id = $1 and recommendation_id = $2`,
+    [organizationId, recommendationId],
+  );
+  return row?.athlete_id ?? null;
+}
+
 // The only path that can move a recommendation off 'provisional' -- always
 // requires an explicit human decidedByAccountId; there is no code path that
 // transitions status without one.
+//
+// athleteId is REQUIRED and is bound into the WHERE, so the row this statement
+// can touch is the row whose owner the caller authorized. Before this, the
+// UPDATE matched on (organization_id, recommendation_id) alone while the route
+// above it authorized an athlete id taken from the request body -- so the
+// authorized athlete and the written athlete were free to be different people,
+// and a coach could decide a recommendation about a child they have no
+// relationship with by naming one of their own athletes in the payload. The
+// caller passes the owner it resolved and authorized; this predicate is what
+// makes that authorization load-bearing rather than advisory.
 export async function decideOnRecommendation(input: {
   organizationId: string;
+  athleteId: string;
   recommendationId: string;
   decision: 'accepted' | 'rejected';
   decidedByAccountId: string;
@@ -183,9 +213,9 @@ export async function decideOnRecommendation(input: {
     const result = await client.query<ShadowRecommendationRow>(
       `update pilot.shadow_recommendations
        set status = $3, decided_by_account_id = $4, decided_at = now()
-       where organization_id = $1 and recommendation_id = $2 and status = 'provisional'
+       where organization_id = $1 and recommendation_id = $2 and athlete_id = $5 and status = 'provisional'
        returning recommendation_id, organization_id, athlete_id, source_formula_result_id, recommendation_text, expected_outcome, status, created_by_account_id, created_at, expires_at, decided_by_account_id, decided_at`,
-      [input.organizationId, input.recommendationId, input.decision, input.decidedByAccountId],
+      [input.organizationId, input.recommendationId, input.decision, input.decidedByAccountId, input.athleteId],
     );
 
     const row = result.rows[0];
