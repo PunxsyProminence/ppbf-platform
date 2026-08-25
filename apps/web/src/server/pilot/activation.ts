@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import type { PilotRole } from './contracts';
 import { DEFAULT_ACTIVATION_TTL_HOURS, MAX_ACTIVATION_TTL_HOURS } from './activationPolicy';
 import { query, withTransaction } from './db';
-import { validatePinPolicy } from './pinPolicy';
+import { assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 import { hashPin, hashToken } from './security';
 
 // Crockford-style base32: no I, L, O, or U. Codes get read off a printed slip
@@ -191,6 +191,16 @@ export async function issueActivationCode(params: {
 export async function redeemActivationCode(rawCode: string, pin: string): Promise<RedeemedActivation> {
   // Validate the PIN first: a rejected PIN must not consume the code.
   validatePinPolicy(pin);
+  // Activation is a path where the athlete CHOOSES their own PIN, so the
+  // starting PIN is refused here -- the rule pinPolicy states but only the
+  // change-PIN path enforced. validatePinPolicy deliberately PERMITS
+  // DEFAULT_FIRST_LOGIN_PIN (the admin reset flow legitimately issues it, and
+  // the trivially-guessable check carves it out), and this UPDATE never sets
+  // must_change_pin -- which defaults to false. So without this line an athlete
+  // could activate on the published bootstrap PIN and end up active, with
+  // must_change_pin false: a live account on a credential printed in the admin
+  // UI and in this repository.
+  assertChosenPinAllowed(pin);
 
   const canonicalCode = normalizeActivationCode(rawCode);
   const tokenHash = hashActivationCode(canonicalCode);
