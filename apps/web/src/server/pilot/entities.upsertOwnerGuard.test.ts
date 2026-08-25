@@ -1,7 +1,7 @@
 import { query } from './db';
-import { upsertGoal, upsertSession } from './entities';
+import { upsertCoachReview, upsertGoal, upsertSession } from './entities';
 import { ConflictError } from './errors';
-import type { PilotGoal, PilotSession } from './contracts';
+import type { PilotCoachReview, PilotGoal, PilotSession } from './contracts';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -127,6 +127,66 @@ describe('upsertGoal — write owner guard', () => {
 
     await expect(
       upsertGoal('org-1', goal(), { mode: 'update', expectedAthleteId: 'ath-owner' }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+
+describe('upsertCoachReview — write owner guard (coach_reviews own via session)', () => {
+  function review(overrides: Partial<PilotCoachReview> = {}): PilotCoachReview {
+    return {
+      review_id: 'rev-1',
+      session_id: 'sess-1',
+      coach_id: 'coach-1',
+      decision: 'approve',
+      notes: 'cleared to spar',
+      approved_flag: true,
+      created_at: '2026-08-25T00:00:00Z',
+      updated_at: '2026-08-25T00:00:00Z',
+      ...overrides,
+    };
+  }
+
+  test('create mode is INSERT ... ON CONFLICT DO NOTHING, never an UPDATE', async () => {
+    mockQuery.mockResolvedValueOnce([{ review_id: 'rev-1' }]);
+
+    await upsertCoachReview('org-1', review(), { mode: 'create' });
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain('insert into pilot.coach_reviews');
+    expect(sql).toContain('on conflict (organization_id, review_id) do nothing');
+    expect(sql).not.toContain('update pilot.coach_reviews');
+  });
+
+  // The defect: a coach reusing an existing review_id (another athlete's row) must
+  // NOT overwrite it. Create-mode inserts 0 rows and fails closed instead of
+  // falling through to an UPDATE.
+  test('create mode fails closed when the review id already exists (0 rows inserted)', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await expect(upsertCoachReview('org-1', review(), { mode: 'create' })).rejects.toBeInstanceOf(ConflictError);
+    expect(mockQuery).toHaveBeenCalledTimes(1); // no second statement
+  });
+
+  test('update mode carries the expected owning session in the WHERE clause', async () => {
+    mockQuery.mockResolvedValueOnce([{ review_id: 'rev-1' }]);
+
+    await upsertCoachReview('org-1', review({ session_id: 'sess-new' }), { mode: 'update', expectedSessionId: 'sess-owner' });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('update pilot.coach_reviews');
+    expect(sql).toMatch(/where organization_id = \$1 and review_id = \$2 and session_id = \$9/);
+    // the reassignment target ($3) and the authorized current session ($9) are distinct
+    expect(params[2]).toBe('sess-new');
+    expect(params[8]).toBe('sess-owner');
+  });
+
+  test('update mode fails closed when the row session changed concurrently (0 rows updated)', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await expect(
+      upsertCoachReview('org-1', review(), { mode: 'update', expectedSessionId: 'sess-owner' }),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });
