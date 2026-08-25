@@ -895,6 +895,21 @@
   border-color: var(--brass-700);
   color: #241A0B;
 }
+/* THE RING THAT RULE KNOCKED OUT. The label-plate rule above holds its bevel
+   in box-shadow, and `.btn:focus-visible` -- which carries the whole focus
+   indicator for every button in this app in ITS box-shadow -- is only (0,2,0).
+   The scope rule is (0,3,0) and imported later, so it wins outright and the
+   plate takes focus with `outline: 0` still in force. Measured: the control
+   focused with the screen BYTE-IDENTICAL, nothing moved. Restated here with
+   the plate's own bevel intact; the resting button does not change. WCAG
+   2.4.7. */
+.ge-scripts > div > header .btn--ghost:focus-visible,
+.ge-scripts article .btn--ghost:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(255,250,232,.7),
+    inset 0 -2px 4px rgba(122,88,42,.22);
+}
 
 /* Phone. The board becomes the viewport, so the strap has nowhere to hang and
    the clip narrows with it -- both references show the same object, not a
@@ -1159,6 +1174,19 @@
     inset 0 1px 0 rgba(231,200,138,.20),
     0 2px 5px rgba(0,0,0,.55);
 }
+/* THE RING THAT RULE KNOCKED OUT, for the same reason and with the same
+   measurement: the plaque rule above is (0,2,0) and imported after
+   `.btn:focus-visible`, which is also (0,2,0), so the later rule takes the tie
+   and the indicator with it. The lever focused with the screen BYTE-IDENTICAL.
+   Only the ring is added -- :hover, :active and :disabled stay unrestated for
+   the safety reason given above, and a refused lever still reads as refused
+   when it is focused. WCAG 2.4.7. */
+.ge-afterhours .btn--lever:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(231,200,138,.20),
+    0 2px 5px rgba(0,0,0,.55);
+}
 
 /* THE VOICES. Two changes only, both taken from the reference's lettering.
 
@@ -1402,6 +1430,17 @@
     inset 0 -2px 4px rgba(0,0,0,.34),
     0 2px 5px rgba(0,0,0,.5);
 }
+/* The rail plaque's focus ring, removed by the rule above for the same reason
+   the other four scope rules removed theirs: `.btn:focus-visible` (0,2,0)
+   holds the indicator in box-shadow and loses the tie to a later scope rule.
+   Measured: "Attendance Dashboard" focused with no pixel changing. */
+.ge-scheduler > div > header .btn--ghost:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.5);
+}
 .ge-scheduler > div > header .btn--ghost:hover {
   color: #241B12;
   border-color: var(--brass-900);
@@ -1543,6 +1582,11 @@
   border: 1.5px solid var(--brass-800);
   text-shadow: none;
   box-shadow: inset 0 1px 0 rgba(255,248,224,.4);
+}
+/* Same again for the secondary action on the parchment card: measured on
+   /schedule, "Cover Class" focused with the screen unchanged. */
+.ge-scheduler .mat-leather--raised .btn--ghost:focus-visible {
+  box-shadow: var(--focus), inset 0 1px 0 rgba(255,248,224,.4);
 }
 .ge-scheduler .mat-leather--raised .btn--ghost:hover {
   color: #241B12;
@@ -2031,6 +2075,22 @@
     inset 0 2px 7px rgba(0,0,0,.72),
     0 1px 0 rgba(231,200,138,.10);
 }
+/* The field's focus ring, which the bezel above removed. `.input:focus,
+   .select:focus, .textarea:focus` puts the whole indicator in
+   `box-shadow: inset …, var(--focus)` at (0,2,0) alongside `outline: 0`, and
+   the bezel is the same weight and later. Measured on /coach/drills: the name
+   field, both textareas and the difficulty select all took focus with the
+   screen unchanged -- a keyboard user had no idea where they were. The
+   brass-400 border the base rule raises on focus is kept too, since that is
+   the other half of the state. */
+.ge-drillcase .input:focus,
+.ge-drillcase .select:focus,
+.ge-drillcase .textarea:focus {
+  border-color: var(--brass-400);
+  box-shadow:
+    inset 0 2px 7px rgba(0,0,0,.72),
+    var(--focus);
+}
 
 /* The engraved action bars down the reference's right-hand column. .btn stays
    the raised brass plate it already is (the ramp bronzes it for free); the
@@ -2051,6 +2111,16 @@
 .ge-drillcase .btn--ghost:hover {
   border-color: var(--brass-600);
   color: var(--bone-100);
+}
+/* The knocked-out ring again: `.btn--ghost` is a `.btn`, `.btn:focus-visible`
+   carries the indicator in box-shadow at (0,2,0), and the rule above is the
+   same weight and later in the cascade. Measured: "Back to Coach Workspace"
+   focused with no pixel changing. */
+.ge-drillcase .btn--ghost:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(231,200,138,.24),
+    0 2px 5px rgba(0,0,0,.5);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2330,6 +2400,18 @@
   color: color-mix(in srgb, var(--bone-200) 82%, var(--brass-300));
   box-shadow: inset 0 1px 0 rgba(226,196,146,0.22);
 }
+/* Same knocked-out ring as `.ge-bell .btn--kiosk` below, from the same cause:
+   the rule above is (0,2,1) and catches every `.btn` that happens to sit in a
+   .mat-leather panel -- which on this route is "Refresh athlete pain reports",
+   "Acknowledge" (the escalation inbox) and "Open Live Floor". `.btn:focus-
+   visible` is (0,2,0), so its `box-shadow: var(--focus)` lost while its
+   `outline: 0` stood, and all three focused with nothing drawn (measured
+   byte-identical). Restated at (0,3,0) on `.btn` only, so the tab plaques --
+   which are not `.btn` and keep the sheet's own outline ring -- are untouched
+   and do not end up wearing two rings. */
+.ge-floorboard .mat-leather .btn:focus-visible {
+  box-shadow: var(--focus), inset 0 1px 0 rgba(226,196,146,0.22);
+}
 .ge-floorboard .mat-leather button[aria-current="page"] {
   background-image: linear-gradient(180deg,
     var(--brass-300) 0%, var(--brass-500) 46%, var(--brass-700) 100%);
@@ -2348,8 +2430,100 @@
   text-shadow: 0 1px 0 rgba(0,0,0,0.55), 0 0 10px rgba(226,214,190,0.10);
 }
 .ge-floorboard .t-eyebrow {
-  color: color-mix(in srgb, var(--brass-300) 80%, var(--bone-200));
+  color: color-mix(in srgb, var(--brass-200) 80%, var(--bone-100));
   letter-spacing: 0.16em;
+}
+
+/* ---- The measured contrast pass (2026-08-25) ----------------------------
+   WHAT WAS MEASURED, AND WHY THE DECLARED COLOUR WAS NOT ENOUGH. Every rule
+   below moves one rung, and every rung was chosen against a number read off a
+   real Chromium: the audit painted each surface, set every measured text run
+   to `color: transparent`, screenshotted, and sampled the pixels the glyph
+   band actually sits on, at both playwright.config.ts viewports.
+
+   That distinction is the whole point. `.mat-leather--raised` DECLARES
+   `background-color: var(--hide-700)` (#3B2C21), so a contrast check that
+   reads the cascade concludes the tile is nearly black and every voice on it
+   clears AA by a mile -- `.t-eyebrow` "reads" 7.27:1 that way. It does not:
+   the material's own `background-image` screens a warm radial over its base,
+   and the top-left of a tile -- exactly where an eyebrow sits -- PAINTS around
+   #7F6346. Measured on the page, the "Readiness Alerts" / "Injury Flags" /
+   "Open Reviews" eyebrows were 3.02:1 to 3.21:1, the roster ring name 2.98:1,
+   and the pain report's own field labels 3.49:1 on the phone. Those are lines
+   a coach reads to make a safety call, and every one of them was failing while
+   the stylesheet said otherwise.
+
+   THREE MOVES, ALL WITHIN THE EXISTING RAMPS. Nothing here invents a colour,
+   flattens the sheen or touches the aged-bronze ramp above (that ramp IS the
+   approved look, and goldenEraFloorboardScope.test.ts pins it):
+
+     1. The tile ground drops TWO RUNGS down the hide ramp. The three literals
+        in the legacy gradient (#4B382A / #34271D / #241B14) sit close to
+        --hide-600 / --hide-700 / --hide-800, and are restated as
+        --hide-800 / --hide-900 / --hide-950. Same geometry, same blend modes,
+        same warm radial on top -- the sheen is untouched, it is simply seated
+        deeper. ONE rung was tried first and measured: it left the eyebrows at
+        4.49:1 and the ring name at 4.47:1, both a hair under the line. The
+        second rung is there because the first was not enough, not by taste.
+     2. The tertiary ink rung takes the secondary rung's value inside this
+        scope. `--bone-400` is ink and only ink in the whole sheet (every one
+        of its uses is a `color:` or a placeholder colour), so this cannot move
+        a border or a fill; it lifts `.t-label`, `.t-muted` and the call sites
+        that pin --bone-400 directly, together, through the same token seam the
+        brass ramp already uses.
+     3. Brass used AS INK on a raised tile takes --brass-200 rather than
+        --brass-300. The metal is unchanged -- this reaches text only.
+
+   MEASURED (mean painted ground under the glyph band; desktop-chromium /
+   mobile-chromium, before -> after; AA normal text is 4.5:1):
+
+     .t-eyebrow  "Readiness Alerts"      3.21 / 3.48  ->   5.83 / 6.32
+     .t-eyebrow  "Today's Session"       3.02 / 3.02  ->   5.54 / 5.54
+     .t-muted    session-card caveat     3.40 / 3.69  ->   7.71 / 8.24
+     dd          "Not stated"            4.40 / 3.30  ->  10.04 / 7.60
+     dt          "Body location"         4.99 / 3.49  ->   9.57 / 6.50
+     .t-label    "Session Name"          3.76 / 4.16  ->   8.48 / 9.11
+     .t-muted    "Unknown" (attendance)  3.83 / 3.79  ->   8.38 / 8.18
+     ring name   "La Roca"               2.98 / 3.34  ->   5.35 / 5.92
+     .t-label    masthead                3.38 / 2.37  ->   5.24 / 3.68  (phone still fails)
+     .t-eyebrow  masthead                3.89 / 3.13  ->   4.78 / 3.84  (phone still fails)
+
+   THE TWO MASTHEAD LINES ARE NOT FIXED HERE and are on the PR with their
+   numbers. They sit directly on `.room--floor`'s photographic plate, whose
+   luminance varies across the strip, and NO ink rung clears them: --bone-100,
+   the brightest ink the platform owns, measures 5.04:1 at the mean and 4.27:1
+   at the plate's lighter patches. The honest fix is a ground, not an ink, and
+   `--plate` / `.room::after` is a locked room inventory with its own guard.
+
+   WHAT THIS DELIBERATELY DOES NOT FIX is recorded on the PR with its own
+   numbers: the brass `.stamp--flat`, the `.mat-brass--patina` role plaque on
+   /schedule and the active tab plaque are dark-on-brass or brass-on-brass by
+   design, and no rung of any ramp in this system clears 4.5:1 on them. Those
+   are a look-versus-threshold conflict for the visual owner to decide, not a
+   number to win by quietly repainting an approved plaque.
+
+   RESERVED RED IS NOT INVOLVED. Nothing below names --locked, --stamp-red or
+   #A81E22; the safety ladder is not this pass's to touch.
+   ------------------------------------------------------------------------ */
+.ge-floorboard {
+  --bone-400: var(--bone-300);
+}
+
+.ge-floorboard .mat-leather--raised {
+  background-image:
+    var(--grain),
+    radial-gradient(120% 100% at 30% 4%, rgba(186,143,86,.30), transparent 56%),
+    linear-gradient(168deg, var(--hide-800) 0%, var(--hide-900) 55%, var(--hide-950) 100%);
+}
+
+/* Brass spelled at the CALL SITE as ink. Two live examples on this route --
+   the pain-report field labels (`Body location`, `Pain type`) and the roster
+   ring name -- pin `--brass-300` through a Tailwind arbitrary colour, so no
+   voice rule reaches them and the scope's own ramp is the wrong lever (it
+   would move the metal with them). Matched on the utility itself, which is
+   the only handle these call sites offer, and lifted one rung. */
+.ge-floorboard .mat-leather--raised [class~="text-[color:var(--brass-300)]"] {
+  color: var(--brass-200);
 }
 
 /* ==========================================================================
@@ -2643,6 +2817,25 @@
       var(--brass-200) 0%,
       var(--brass-400) 46%,
       var(--brass-700) 100%);
+}
+/* THE RING THE RULE ABOVE KNOCKED OUT. `.btn:focus-visible` carries the whole
+   focus indicator for every button in this app in its BOX-SHADOW (`outline: 0;
+   box-shadow: var(--focus), …`) -- and it is specificity (0,2,0), exactly the
+   same as `.ge-bell .btn--kiosk`, which is imported later and therefore wins
+   the tie. So the scope rule above silently took the indicator off The Bell's
+   two primary doors while leaving `outline: 0` in force: Tab landed on
+   "Continue With Microsoft" with `document.activeElement` set and
+   `:focus-visible` matching, and the screenshots before and after focus came
+   back BYTE-IDENTICAL. Nothing on screen moved. Isolated by removing the
+   `ge-bell` class in the live page, which brought the ring straight back.
+   Restated here at (0,2,1) with the rule's own bevel intact; nothing about the
+   resting button changes. WCAG 2.4.7. */
+.ge-bell .btn--kiosk:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(224,192,140,0.70),
+    inset 0 -3px 5px rgba(0,0,0,0.50),
+    0 3px 5px rgba(0,0,0,0.42);
 }
 
 /* Parchment fields: clear inset writing surface with a warm brass keyline, dark
