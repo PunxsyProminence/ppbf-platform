@@ -141,6 +141,21 @@ describe('coach disciplines page -- what the gym runs', () => {
 });
 
 describe('coach disciplines page -- grappling exposure history', () => {
+  it('offers coach-visible athlete names instead of requiring a memorized id', async () => {
+    mockFetch((url) => {
+      if (url.includes('/athletes/list')) {
+        return jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Alex Rivera' }] });
+      }
+      return jsonResponse({ disciplines: [GRAPPLING] });
+    });
+
+    render(<CoachDisciplinesPage />);
+
+    const option = await screen.findByRole('option', { name: 'Alex Rivera' });
+    expect(option).toHaveValue('ath-1');
+    expect(screen.getByLabelText(/athlete id/i)).toHaveAttribute('list', 'discipline-athletes');
+  });
+
   function withExposure(rows: Record<string, unknown>[]) {
     return mockFetch((url) => (url.includes('athlete_id')
       ? jsonResponse({ exposure: rows, participation: [] })
@@ -221,6 +236,17 @@ describe('coach disciplines page -- grappling exposure history', () => {
     await lookUp('ath-2');
 
     expect(await screen.findByText(/No grappling exposure recorded/i)).toBeInTheDocument();
+    expect(screen.queryByText('First athlete note.')).not.toBeInTheDocument();
+  });
+
+  it('clears displayed history as soon as the athlete id is edited', async () => {
+    withExposure([exposureRow({ coach_note: 'First athlete note.' })]);
+    render(<CoachDisciplinesPage />);
+    await lookUp('ath-1');
+    expect(await screen.findByText('First athlete note.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/athlete id/i), { target: { value: 'ath-2' } });
+
     expect(screen.queryByText('First athlete note.')).not.toBeInTheDocument();
   });
 
