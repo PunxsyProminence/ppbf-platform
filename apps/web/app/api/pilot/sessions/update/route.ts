@@ -22,7 +22,10 @@ export async function POST(request: NextRequest) {
     await assertActorCanAccessAthlete(principal, current.athlete_id);
     await assertActorCanAccessAthlete(principal, payload.athlete_id);
 
-    await upsertSession(principal.organizationId, payload);
+    // Compare-and-set: the write carries the owner just authorized, so a
+    // concurrent owner change between the lookup above and this write fails
+    // closed instead of overwriting a row that moved.
+    await upsertSession(principal.organizationId, payload, { mode: 'update', expectedAthleteId: current.athlete_id });
 
     await writePilotAuditEvent({
       event_type: 'update',

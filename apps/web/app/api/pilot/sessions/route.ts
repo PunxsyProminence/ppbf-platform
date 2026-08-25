@@ -26,9 +26,16 @@ export async function POST(request: NextRequest) {
     const existing = await getSessionById(principal.organizationId, payload.session_id);
     if (existing) {
       await assertActorCanAccessAthlete(principal, existing.athlete_id);
+      // Compare-and-set on the authorized owner: the UPDATE carries
+      // existing.athlete_id in its WHERE, so a concurrent owner change between
+      // this lookup and the write fails closed rather than letting the
+      // UPDATE-first upsert rewrite a row that moved (TOCTOU).
+      await upsertSession(principal.organizationId, payload, { mode: 'update', expectedAthleteId: existing.athlete_id });
+    } else {
+      // No row existed at authorization time; INSERT ... ON CONFLICT DO
+      // NOTHING refuses rather than updating an id that appeared concurrently.
+      await upsertSession(principal.organizationId, payload, { mode: 'create' });
     }
-
-    await upsertSession(principal.organizationId, payload);
 
     await writePilotAuditEvent({
       event_type: 'create',

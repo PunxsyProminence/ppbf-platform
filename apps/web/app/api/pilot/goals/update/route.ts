@@ -22,7 +22,8 @@ export async function POST(request: NextRequest) {
     await assertActorCanAccessAthlete(principal, current.athlete_id);
     await assertActorCanAccessAthlete(principal, payload.athlete_id);
 
-    await upsertGoal(principal.organizationId, payload);
+    // Compare-and-set on the authorized owner (see sessions/update/route.ts).
+    await upsertGoal(principal.organizationId, payload, { mode: 'update', expectedAthleteId: current.athlete_id });
 
     await writePilotAuditEvent({
       event_type: 'update',

@@ -5,6 +5,7 @@ import { getSessionById, upsertSession } from '@/src/server/pilot/entities';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { ConflictError } from '@/src/server/pilot/errors';
 
 jest.mock('@/src/server/pilot/entities', () => ({
   getSessionById: jest.fn(),
@@ -92,12 +93,34 @@ describe('POST /api/pilot/sessions', () => {
     expect(mockUpsertSession).toHaveBeenCalledTimes(1);
   });
 
-  test('updating your own existing session still works', async () => {
+  test('a new id is written in create mode; an existing own id in update mode carrying the authorized owner', async () => {
+    // The guard mode the route passes is what makes the store's write atomic:
+    // create -> INSERT ON CONFLICT DO NOTHING; update -> UPDATE ... WHERE
+    // athlete_id = the owner just authorized.
+    mockGetSessionById.mockResolvedValueOnce(null);
+    await POST(request(payload()));
+    expect(mockUpsertSession).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), { mode: 'create' });
+
     mockGetSessionById.mockResolvedValueOnce({ session_id: 'sess-1', athlete_id: 'ath-attacker' });
+    const response = await POST(request(payload()));
+    expect(response.status).toBe(200);
+    expect(mockUpsertSession).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { mode: 'update', expectedAthleteId: 'ath-attacker' },
+    );
+  });
+
+  test('a concurrent-write conflict from the store is a 409 with no audit', async () => {
+    // The atomic write throws when the id appeared, or the owner changed,
+    // between the lookup and the write. The route must surface that and never
+    // record an audit for a write that did not happen.
+    mockGetSessionById.mockResolvedValueOnce(null);
+    mockUpsertSession.mockRejectedValueOnce(new ConflictError('A session with that id already exists.'));
 
     const response = await POST(request(payload()));
 
-    expect(response.status).toBe(200);
-    expect(mockUpsertSession).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(409);
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
   });
 });

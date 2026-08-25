@@ -25,9 +25,12 @@ export async function POST(request: NextRequest) {
     const existing = await getGoalById(principal.organizationId, payload.goal_id);
     if (existing) {
       await assertActorCanAccessAthlete(principal, existing.athlete_id);
+      // Compare-and-set on the authorized owner (see sessions/route.ts): a
+      // concurrent owner change fails closed rather than being overwritten.
+      await upsertGoal(principal.organizationId, payload, { mode: 'update', expectedAthleteId: existing.athlete_id });
+    } else {
+      await upsertGoal(principal.organizationId, payload, { mode: 'create' });
     }
-
-    await upsertGoal(principal.organizationId, payload);
 
     await writePilotAuditEvent({
       event_type: 'create',

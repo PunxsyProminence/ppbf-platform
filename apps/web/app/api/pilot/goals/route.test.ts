@@ -5,6 +5,7 @@ import { getGoalById, upsertGoal } from '@/src/server/pilot/entities';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { ConflictError } from '@/src/server/pilot/errors';
 
 jest.mock('@/src/server/pilot/entities', () => ({
   getGoalById: jest.fn(),
@@ -93,12 +94,28 @@ describe('POST /api/pilot/goals', () => {
     expect(mockUpsertGoal).toHaveBeenCalledTimes(1);
   });
 
-  test('updating your own existing goal still works', async () => {
+  test('a new id is written in create mode; an existing own id in update mode carrying the authorized owner', async () => {
+    mockGetGoalById.mockResolvedValueOnce(null);
+    await POST(request(payload()));
+    expect(mockUpsertGoal).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), { mode: 'create' });
+
     mockGetGoalById.mockResolvedValueOnce({ goal_id: 'goal-1', athlete_id: 'ath-attacker' });
+    const response = await POST(request(payload()));
+    expect(response.status).toBe(200);
+    expect(mockUpsertGoal).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { mode: 'update', expectedAthleteId: 'ath-attacker' },
+    );
+  });
+
+  test('a concurrent-write conflict from the store is a 409 with no audit', async () => {
+    mockGetGoalById.mockResolvedValueOnce(null);
+    mockUpsertGoal.mockRejectedValueOnce(new ConflictError('A goal with that id already exists.'));
 
     const response = await POST(request(payload()));
 
-    expect(response.status).toBe(200);
-    expect(mockUpsertGoal).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(409);
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
   });
 });
