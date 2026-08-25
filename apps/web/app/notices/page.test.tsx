@@ -93,11 +93,44 @@ test('the author sees which items are live and which are not', async () => {
     ]),
   );
 
-  const posted = screen.getByRole('heading', { name: 'Everything Posted' }).parentElement as HTMLElement;
+  const posted = screen.getByRole('heading', { name: 'Recently Posted' }).parentElement as HTMLElement;
   expect(within(posted).getByText('LIVE')).toBeTruthy();
   expect(within(posted).getByText('SCHEDULED')).toBeTruthy();
   expect(within(posted).getByText('EXPIRED')).toBeTruthy();
   expect(within(posted).getByText('RETIRED')).toBeTruthy();
+});
+
+// The register is a CAPPED read presented in full: the request asks for 25 and
+// announcements.ts clamps the authoring read to 25 (clampLimit) ordered
+// `created_at desc`, and this page has no pager. So the 26th-newest notice a
+// gym ever posted is not reachable here, and the heading and caption may not
+// call these rows everything the gym has posted -- an admin looking for an old
+// notice would read its absence as "it was never posted".
+//
+// WATCHED TO FAIL: restore either "Everything Posted" or "Everything posted
+// for this gym" and the first assertion below goes red naming the word;
+// delete the read-window line and the second does.
+test('the register never calls a capped read the whole record', async () => {
+  await renderPage(listFetch([item({ announcement_id: 'a-live' })]));
+
+  // Located by the window line rather than by the heading, so restoring the
+  // old heading fails on the WORD rather than on a missing element.
+  const register = screen
+    .getByText(/reads the 25 most recent notices/i)
+    .closest('section') as HTMLElement;
+  // Not vacuous: this really is the register, rows and all.
+  expect(within(register).getByRole('table')).toBeTruthy();
+  expect(within(register).queryByText(/everything/i)).toBeNull();
+});
+
+// The window line is a statement about rows, so it belongs to rows. An empty
+// board has none, and a "25 most recent" caveat over the "nothing on the
+// board" invite would be furniture explaining an absence.
+test('an empty board states the absence without the read-window line', async () => {
+  await renderPage(listFetch([]));
+
+  expect(screen.getByText('Nothing has been posted for this gym yet.')).toBeTruthy();
+  expect(screen.queryByText(/reads the 25 most recent notices/i)).toBeNull();
 });
 
 test('the live-right-now summary carries only what a member can read today', async () => {

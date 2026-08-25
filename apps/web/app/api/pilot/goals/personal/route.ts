@@ -122,8 +122,15 @@ export async function PATCH(request: NextRequest) {
 
     await assertActorCanAccessAthlete(principal, athleteId);
 
-    const goal = await markPersonalGoalReached(principal.organizationId, goalId);
-    if (!goal || goal.athlete_id !== athleteId) {
+    // The authorized athlete travels INTO the write, so the statement can only
+    // reach a goal this actor was cleared for. Previously the mark was keyed on
+    // goal_id alone and the owner was compared to `athleteId` afterwards -- by
+    // which point another athlete's goal had already been stamped reached, and
+    // the 404 below described a mutation that had happened rather than one that
+    // was refused. `athleteId` is the only athlete assertActorCanAccessAthlete
+    // has cleared above, which is exactly why it is what the write is keyed on.
+    const goal = await markPersonalGoalReached(principal.organizationId, goalId, athleteId);
+    if (!goal) {
       // Same response for "no such goal" and "somebody else's goal", so the
       // identifier cannot be probed.
       throw new Error('Not found');
