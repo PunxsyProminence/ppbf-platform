@@ -6,6 +6,7 @@ import {
   MentorshipAlreadyOpenError,
   createMentorship,
   endMentorship,
+  getMentorshipMentorAthleteId,
   listMentorshipsForAthlete,
 } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -112,14 +113,22 @@ export async function DELETE(request: NextRequest) {
       throw new Error('Missing mentorship_id');
     }
 
+    // Resolve and authorize the mentorship's athlete BEFORE mutating it.
+    // endMentorship writes the end date first and returns the row after, so
+    // authorizing on its result was too late -- a writer with no relationship
+    // to the athlete could end the pairing and only then be refused, with the
+    // row already changed. The mentor_athlete_id binding is set at creation
+    // and never reassigned, so a read-then-write here is safe.
+    const mentorAthleteId = await getMentorshipMentorAthleteId(principal.organizationId, mentorshipId);
+    if (!mentorAthleteId) {
+      throw new Error('Not found');
+    }
+    await assertActorCanAccessAthlete(principal, mentorAthleteId);
+
     const mentorship = await endMentorship(principal.organizationId, mentorshipId);
     if (!mentorship) {
       throw new Error('Not found');
     }
-
-    // Authorized after the read, because the identifier alone says nothing
-    // about who it concerns until the row is in hand.
-    await assertActorCanAccessAthlete(principal, mentorship.mentor_athlete_id);
 
     await writePilotAuditEvent({
       event_type: 'update',

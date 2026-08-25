@@ -551,6 +551,24 @@ export async function createMentorship(params: {
 }
 
 /**
+ * The mentor athlete a mentorship is bound to, for authorizing an action on it
+ * BEFORE mutating the row. Deliberately minimal: it reads only the id the
+ * access check needs, straight from pilot.mentorships with no join, so no
+ * mentor/mentee name or other PII is loaded before the caller is authorized.
+ * mentor_athlete_id is set at creation and never reassigned.
+ */
+export async function getMentorshipMentorAthleteId(
+  organizationId: string,
+  mentorshipId: string,
+): Promise<string | null> {
+  const row = await queryOne<{ mentor_athlete_id: string }>(
+    'select mentor_athlete_id from pilot.mentorships where organization_id = $1 and mentorship_id = $2',
+    [organizationId, mentorshipId],
+  );
+  return row?.mentor_athlete_id ?? null;
+}
+
+/**
  * Closes a pairing. There is no outcome and no reason: people move on, and the
  * schema has nowhere to record that a mentorship "did not work out".
  */
