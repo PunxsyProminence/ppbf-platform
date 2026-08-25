@@ -245,6 +245,21 @@ function openTab(label: string) {
 }
 
 describe('athlete workspace honesty', () => {
+  test('the summary row claims no message count while no feed measures one', async () => {
+    // "Messages 0" was a hardcoded zero: the athlete's Messages tab is
+    // write-only Ask-SHADOW, so no unread count exists to render, and a tile
+    // saying 0 told a child nobody had written to them as if that had been
+    // measured. The nav group is still allowed to say Messages -- a door is
+    // not a measurement -- so the assertion targets stat tiles specifically.
+    await renderWorkspace();
+
+    expect(screen.getByText('Tasks Due')).toBeTruthy();
+    const messageTiles = screen
+      .queryAllByText('Messages')
+      .filter((element) => element.classList.contains('stat-label'));
+    expect(messageTiles).toHaveLength(0);
+  });
+
   test('the Next Session tile does not name a class the backend never returned', async () => {
     await renderWorkspace();
 
