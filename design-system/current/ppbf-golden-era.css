@@ -96,6 +96,76 @@
    / bag DNA visible in the outer thirds; no stock grey brick. */
 
 /* ==========================================================================
+   GOLDEN ERA 003 — MY CORNER (Athlete Workspace)
+
+   Packet 02_READY_FOR_CLAUDE/003_ATHLETE_WORKSPACE, route /athlete/dashboard.
+   The locked reference is an OPEN WOOD LOCKER -- brass nameplate and hinges,
+   a parchment clipboard hung inside -- which is a third distinct room identity
+   alongside The Bell's parchment plaque and the coach's slate board. Same
+   Golden Era materials, different physical object, per ROOM PURPOSE DNA.
+
+   Unlike 002, this packet's stated tabs (Today / Development / Learn /
+   Schedule / Messages / SHADOW Intel) match TAB_GROUPS on current main exactly,
+   so there is no information-architecture conflict to escalate here.
+
+   Scoped to `.ge-locker` on the page wrapper; the bronze ramp is redefined on
+   that scope for the same leak-proof reason as .ge-bell and .ge-floorboard.
+   AthleteWorkspace and every control in it are untouched.
+   FUNCTIONAL_CHANGES: NONE. */
+
+/* THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the
+   scope splits down the middle: everything solid turns bronze while every
+   alpha rule beside it keeps painting the inherited legacy gold -- a bronze
+   frame wearing a gold hairline, with no forgotten property to find. That is
+   the exact leak this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
+   of them, and checks each triple against its own hex. */
+.ge-locker {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* The locker carcass: dark wood with a warm interior wash, so panels read as
+   the inside of an open locker rather than floating cards. */
+.ge-locker .mat-leather {
+  background-color: var(--wood-800);
+  background-image:
+    linear-gradient(178deg, rgba(255,238,208,0.06) 0%, transparent 38%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.14) 0 3px, transparent 3px 11px);
+  border-color: color-mix(in srgb, var(--brass-700) 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.14),
+    inset 0 -3px 7px rgba(0,0,0,0.5);
+}
+
+/* Brass nameplate voice for the section eyebrows -- the engraved plate above
+   each compartment. */
+.ge-locker .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 82%, var(--bone-200));
+  letter-spacing: 0.15em;
+}
+
+/* ==========================================================================
    GOLDEN ERA 002 — THE FLOOR BOARD (Coach Workspace)
 
    Packet: 02_READY_FOR_CLAUDE/002_COACH_WORKSPACE. Route
