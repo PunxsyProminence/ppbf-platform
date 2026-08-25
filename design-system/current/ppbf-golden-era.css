@@ -365,3 +365,1485 @@
   letter-spacing: .15em;
   text-shadow: 0 1px 0 rgba(0,0,0,.55);
 }
+
+/* ==========================================================================
+   GOLDEN ERA 005 — THE SCHEDULE BOARD (Unified Scheduler)
+
+   Route /schedule (apps/web/app/schedule/page.tsx), room .room--floor.
+   Visual authority: the approved 005 packet, REFERENCE_APPROVED.jpg (desktop)
+   and REFERENCE_MOBILE_APPROVED.jpg (phone). The packet carried no HANDOFF.md;
+   the two images are the whole authority, and both draw the SAME OBJECT.
+
+   THE OBJECT. A framed schedule board standing on the gym's wooden counter:
+   a stained-wood surround with riveted brass corner brackets, a quiet
+   near-black field inside it, a rail of engraved brass plaques across the top,
+   and the day's sessions pinned to the field as TORN PARCHMENT CARDS -- each
+   with a heading, a hairline rule under it, two lines of figures, and a brass
+   rivet at every corner -- plus a small riveted brass nameplate carrying the
+   coach's name.
+
+   WHY THAT IS NOT THE BELL AND NOT THE FLOOR BOARD. Room Purpose DNA asks each
+   surface to be its own physical object made of the same materials, and this
+   one is the only surface in the set whose primary read is PAPER (hierarchy
+   item 1 in the header of this sheet). The Bell is a riveted brass door; the
+   coach's floor board is slate in wood. This is paper pinned to a dark field
+   in a wooden frame -- the sessions are the working surface, and everything
+   else is the furniture they hang on.
+
+   THE SEAM. Everything below is under `.ge-scheduler`, a single class on the
+   page's <main>. The bronze ramp is redefined on that bare scope, exactly as
+   .ge-bell / .ge-floorboard / .ge-locker do it, because every shared component
+   this route renders (.mat-leather panels, .mat-leather--raised rows, .btn,
+   .btn--ghost, .input/.select/.textarea, keylines, and the .t-command /
+   .t-eyebrow / .t-label voices) resolves its metal from var(--brass-*). One
+   token override re-skins all of them together; a per-property override leaks
+   wherever somebody forgets it. Outside the scope nothing moves.
+
+   WHAT THE REFERENCE SHOWS THAT DOES NOT EXIST, AND WAS NOT BUILT. The top
+   rail in both images reads DAY / WEEK / MONTH. /schedule has no day/week/
+   month view switch -- no state, no query parameter, no server field behind
+   one -- so drawing those three plaques would be inventing three controls with
+   nothing behind them. The RAIL MATERIAL is applied to the controls that are
+   really there (the role plate, the Attendance Dashboard link, the Back to
+   Operations link); the three view plaques are not created. Reported on the PR
+   for the owner to decide as an information-architecture question with its own
+   change, not resolved by a stylesheet.
+
+   Equally, nothing here removes a control. Every button, select, input,
+   textarea, link and record row on the route survives untouched; the reference
+   simply does not draw most of them, and a reference that omits a control is
+   not an instruction to delete it. FUNCTIONAL_CHANGES: NONE.
+
+   RESERVED RED. Nothing below names --locked, --stamp-red or #A81E22, and the
+   status ladder (.badge--cleared / .badge--restricted on this page's result
+   banners) is deliberately left alone: safety colour is not this pass's to
+   restyle.
+   ========================================================================== */
+.ge-scheduler {
+  /* The ramp, and the channel triples that have to travel with it. A rule
+     that needs brass at partial alpha reads `rgb(var(--brass-N-rgb) / a)` --
+     the focus ring, every input keyline, the inset top-light on every tile
+     and button -- so it follows the triple and nothing else. Restating the
+     hex here without the triple would leave every one of those rules
+     painting the INHERITED gold over bronze fills, on the most shared
+     furniture in the scope: the exact leak this override exists to close.
+     They move together, and src/design/brassAlphaChannel.test.ts fails any
+     scope that separates them. */
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* ---- The counter light ---------------------------------------------------
+   The board stands on a counter under two hung bulbs, and the room falls away
+   below it. `.room::before` already throws two pools from the top corners, so
+   this only warms them toward the reference's tungsten and adds the counter's
+   own dark mass along the bottom. The plate layer (`.room::after`, z-index -1)
+   and the `--plate` inventory are untouched -- that cascade is a locked room
+   inventory with its own guard. */
+.ge-scheduler.room::before {
+  background-image:
+    radial-gradient(58% 46% at 22% -14%, rgba(255,214,150,.34), transparent 70%),
+    radial-gradient(58% 46% at 78% -14%, rgba(255,214,150,.34), transparent 70%),
+    radial-gradient(120% 56% at 50% 30%, rgba(226,178,116,.10), transparent 76%),
+    linear-gradient(180deg, transparent 62%, rgba(12,8,5,.70) 100%);
+}
+
+/* ---- The board ----------------------------------------------------------
+   The page's one column IS the board, so the frame goes on it rather than on
+   each panel: the reference frames the whole schedule once, not every card.
+   `> div` because /schedule's <main> has exactly one child, the max-w-7xl
+   column every section already sits inside -- there is no class on it to hook,
+   and adding one would be a second markup change.
+
+   Wood by border, field by padding-box: two background layers clipped
+   differently give a real stained surround without a wrapper element. */
+.ge-scheduler > div {
+  position: relative;
+  border: 15px solid transparent;
+  border-radius: 12px;
+  padding: var(--s5);
+  background-image:
+    /* the field: quiet, matte, almost black, so the paper is the only thing on
+       the board carrying a value */
+    linear-gradient(178deg, #1B1714 0%, #15120F 55%, #100D0B 100%),
+    /* the surround: stained board, grain running the long way */
+    repeating-linear-gradient(91deg,
+      rgba(0,0,0,.22) 0 3px, transparent 3px 9px,
+      rgba(156,107,58,.12) 9px 11px, transparent 11px 26px),
+    linear-gradient(160deg, var(--wood-600) 0%, var(--wood-800) 48%, var(--wood-900) 100%);
+  background-clip: padding-box, border-box, border-box;
+  background-origin: padding-box, border-box, border-box;
+  box-shadow:
+    /* the field sunk behind the frame */
+    inset 0 2px 14px rgba(0,0,0,.72),
+    /* the lit top lip of the wood, and the board's weight on the counter */
+    0 1px 0 rgba(226,196,146,.16),
+    0 18px 34px rgba(0,0,0,.62);
+}
+
+/* ---- Riveted brass corner brackets --------------------------------------
+   The signature of the object in both references: an L-plate over each corner
+   of the wood, studded. Drawn as gradient layers so they resolve the scoped
+   bronze ramp above -- an SVG data URI could not, and would fall out of the
+   token seam the moment the ramp is retuned.
+
+   ::before carries the top pair, ::after the bottom pair: four arm layers plus
+   two rivets each. Decorative and inert -- pointer-events: none, so a bracket
+   can never eat a tap meant for a control underneath it. */
+.ge-scheduler > div::before,
+.ge-scheduler > div::after {
+  content: "";
+  position: absolute;
+  left: -15px;
+  right: -15px;
+  height: 46px;
+  z-index: 2;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    linear-gradient(178deg, var(--brass-300) 0%, var(--brass-600) 52%, var(--brass-800) 100%),
+    linear-gradient(92deg,  var(--brass-300) 0%, var(--brass-600) 52%, var(--brass-800) 100%),
+    linear-gradient(178deg, var(--brass-300) 0%, var(--brass-600) 52%, var(--brass-800) 100%),
+    linear-gradient(92deg,  var(--brass-300) 0%, var(--brass-600) 52%, var(--brass-800) 100%),
+    radial-gradient(circle at 50% 50%,
+      var(--brass-200) 0 1.6px, var(--brass-500) 1.6px 3px,
+      var(--brass-900) 3px 3.6px, transparent 3.8px),
+    radial-gradient(circle at 50% 50%,
+      var(--brass-200) 0 1.6px, var(--brass-500) 1.6px 3px,
+      var(--brass-900) 3px 3.6px, transparent 3.8px);
+  background-size: 46px 8px, 8px 46px, 46px 8px, 8px 46px, 14px 14px, 14px 14px;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.6));
+}
+.ge-scheduler > div::before {
+  top: -15px;
+  background-position: left top, left top, right top, right top, 16px 16px, calc(100% - 16px) 16px;
+}
+.ge-scheduler > div::after {
+  bottom: -15px;
+  background-position:
+    left bottom, left bottom, right bottom, right bottom,
+    16px calc(100% - 16px), calc(100% - 16px) calc(100% - 16px);
+}
+
+/* ---- The plaque rail ----------------------------------------------------
+   The reference hangs its plaques on a strip of the frame's own wood across
+   the top of the field. The page's <header> is that strip: it already holds
+   the surface's name and its two navigation controls, and it already draws a
+   keyline along its bottom edge (border-b-2 border-[--brass-700], which the
+   scoped ramp above turns bronze on its own). */
+.ge-scheduler > div > header {
+  padding: var(--s5);
+  border-radius: var(--r-md);
+  background-color: var(--wood-700);
+  background-image:
+    linear-gradient(177deg, rgba(255,238,208,.07) 0%, transparent 40%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.15) 0 4px, transparent 4px 13px,
+      rgba(156,107,58,.09) 13px 15px, transparent 15px 34px);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,.18),
+    inset 0 -2px 6px rgba(0,0,0,.5),
+    0 3px 9px rgba(0,0,0,.45);
+}
+
+/* Engraved plaques on the rail. The reference's plaques are polished brass
+   with a dark engraved letter, riveted through the face, and they are the only
+   controls in the top strip -- there is no primary/secondary pair up here to
+   confuse, which is why plaquing the ghosts is safe. Below the rail the ghost
+   button keeps its ordinary secondary voice.
+
+   INK CONTRAST IS WHY THE FACE STOPS AT --brass-400. `.btn` is 15px at weight
+   700, which WCAG counts as normal text, so it owes 4.5:1. Engraved ink
+   #241B12 measures 4.27:1 on --brass-500 (#9F7A30) and 6.04:1 on --brass-400
+   (#BE9440); ending the face on the 400 rung and putting the darker metal in
+   the bevel shadow keeps the worst point at 6.04:1. */
+.ge-scheduler > div > header .btn--ghost {
+  color: #241B12;
+  border: 1px solid var(--brass-800);
+  border-radius: 3px;
+  background-color: var(--brass-300);
+  background-image: linear-gradient(180deg,
+    var(--brass-200) 0%, var(--brass-300) 46%, var(--brass-400) 100%);
+  text-shadow: 0 1px 0 rgba(255,244,214,.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.5);
+}
+.ge-scheduler > div > header .btn--ghost:hover {
+  color: #241B12;
+  border-color: var(--brass-900);
+  background-color: var(--brass-200);
+  background-image: linear-gradient(180deg,
+    var(--brass-200) 0%, var(--brass-300) 58%, var(--brass-400) 100%);
+}
+
+/* The role plate keeps its PATINA metal on purpose. Patina is the workaday
+   hardware of this system and role is identity, not a safety claim (Laws 1 and
+   2); the reference's nameplate look is added as rivets through the ends
+   rather than by promoting the plate to polished brass, which would put an
+   identity chip on the same metal as the primary action. */
+.ge-scheduler .mat-brass--patina {
+  border-radius: 3px;
+  background-image:
+    radial-gradient(circle at 9px 50%,
+      var(--patina-100) 0 1.4px, var(--patina-700) 1.4px 2.7px, transparent 3px),
+    radial-gradient(circle at calc(100% - 9px) 50%,
+      var(--patina-100) 0 1.4px, var(--patina-700) 1.4px 2.7px, transparent 3px),
+    linear-gradient(158deg,
+      var(--patina-900) 0%,  var(--patina-500) 16%, var(--patina-100) 32%,
+      var(--patina-300) 48%, var(--patina-700) 66%, var(--patina-500) 82%,
+      var(--patina-900) 100%);
+}
+
+/* ---- The field panels ---------------------------------------------------
+   The reference's field is deliberately quiet: one uniform dark plane. The
+   panels therefore sit a hair above the board rather than becoming a second
+   material, and the leather grain that made them a competing texture is
+   dropped.
+
+   THIS IS ALSO WHERE THE LEGACY GOLD LEAK CLOSES. The page states its panel
+   keylines as `border-[color:rgba(212,175,74,.22)]` -- a literal, not a token,
+   so the bronze ramp above cannot reach it and every panel would have kept a
+   legacy-gold edge inside a golden-era board. The border colour is restated
+   here in the scope's own metal. This sheet is unlayered and Tailwind's
+   utilities sit in @layer utilities, so it wins without !important. */
+.ge-scheduler .mat-leather {
+  background-color: #17130F;
+  background-image:
+    linear-gradient(177deg, rgba(226,196,146,.05) 0%, transparent 34%),
+    linear-gradient(180deg, #1D1814 0%, #16120F 100%);
+  background-blend-mode: normal, normal;
+  border-color: color-mix(in srgb, var(--brass-600) 46%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,.10),
+    inset 0 -2px 8px rgba(0,0,0,.55);
+}
+
+/* ---- The session cards --------------------------------------------------
+   The heart of the reference. Each scheduled class is a torn parchment card
+   pinned to the field with a rivet at every corner. `.mat-leather--raised` is
+   the row the route already renders one of per class, so the paper goes there.
+
+   TURNING A DARK PANEL INTO A LIGHT GROUND IS A CONTRAST EVENT, NOT A COLOUR
+   CHOICE (Law 6). Every voice inside this row -- .t-command, .t-muted, .t-data
+   -- pins a bone rung tuned for dark leather and would land between 1.05:1 and
+   2.01:1 on paper. Rather than invent a second set of paper inks, this reuses
+   the exact rungs the sheet already measured for `.mat-paper`, against the same
+   gradient (#F8F0DC -> #E7DBBD): #241B12 at 12.29:1, #3A2E1D at 9.72:1,
+   #6E5B3E at 4.73:1, each taken at the gradient's DARKEST end. They are
+   restated per voice below, because one inherited colour cannot reach a voice
+   that pins its own. */
+.ge-scheduler .mat-leather--raised {
+  color: #3A2E1D;
+  background-color: var(--paper);
+  background-image:
+    /* four corner rivets, brass through the paper */
+    radial-gradient(circle at 11px 11px,
+      var(--brass-200) 0 1.7px, var(--brass-500) 1.7px 3.1px,
+      var(--brass-900) 3.1px 3.7px, transparent 3.9px),
+    radial-gradient(circle at calc(100% - 11px) 11px,
+      var(--brass-200) 0 1.7px, var(--brass-500) 1.7px 3.1px,
+      var(--brass-900) 3.1px 3.7px, transparent 3.9px),
+    radial-gradient(circle at 11px calc(100% - 11px),
+      var(--brass-200) 0 1.7px, var(--brass-500) 1.7px 3.1px,
+      var(--brass-900) 3.1px 3.7px, transparent 3.9px),
+    radial-gradient(circle at calc(100% - 11px) calc(100% - 11px),
+      var(--brass-200) 0 1.7px, var(--brass-500) 1.7px 3.1px,
+      var(--brass-900) 3.1px 3.7px, transparent 3.9px),
+    /* the fibre: the paper's own tooth, and a foxed edge where it was torn */
+    var(--grain-fine),
+    radial-gradient(140% 100% at 50% 100%, rgba(150,104,47,.16), transparent 62%),
+    linear-gradient(178deg, #F8F0DC 0%, #E7DBBD 100%);
+  background-blend-mode: normal, normal, normal, normal, overlay, multiply, normal;
+  border-radius: 2px;
+  box-shadow:
+    inset 0 0 0 1px rgba(120,92,52,.34),
+    0 2px 3px rgba(0,0,0,.42),
+    0 8px 18px rgba(0,0,0,.5);
+}
+
+/* The card's heading, with the ruled hairline the reference draws under every
+   time. Ink, not stencil glow: a lit text-shadow on paper is a smudge. */
+.ge-scheduler .mat-leather--raised .t-command {
+  color: #241B12;
+  text-shadow: none;
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid rgba(120,92,52,.42);
+}
+.ge-scheduler .mat-leather--raised .t-muted {
+  color: #6E5B3E;
+}
+
+/* The coach nameplate. In the reference every card carries a small riveted
+   brass plate engraved with the coach's name; on the real row that is the
+   `.t-data` line -- seats and coach of record -- so the plate is applied to the
+   line that actually says it rather than to an invented strip. Same 6.04:1
+   worst point as the rail plaques, and for the same reason. */
+.ge-scheduler .mat-leather--raised .t-data {
+  display: inline-block;
+  margin-top: var(--s3);
+  padding: var(--s2) var(--s4);
+  border: 1px solid var(--brass-800);
+  border-radius: 3px;
+  color: #241B12;
+  background-image:
+    radial-gradient(circle at 7px 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 7px) 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    linear-gradient(180deg, var(--brass-200) 0%, var(--brass-300) 48%, var(--brass-400) 100%);
+  text-shadow: 0 1px 0 rgba(255,244,214,.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255,248,224,.6),
+    inset 0 -2px 3px rgba(0,0,0,.3),
+    0 2px 4px rgba(0,0,0,.42);
+}
+
+/* The secondary action ON THE PAPER. `.btn--ghost` pins --bone-200 over a 28%
+   black wash, which is a dark-ground answer: on this card it would print pale
+   bone on light paper. Restated as an ink-outlined plate -- #241B12 over the
+   card's own paper measures 11.46:1 at the wash's darkest -- so the row keeps a
+   real primary/secondary pair instead of two brass buttons. */
+.ge-scheduler .mat-leather--raised .btn--ghost {
+  color: #241B12;
+  background-color: rgba(120,92,52,.10);
+  border: 1.5px solid var(--brass-800);
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255,248,224,.4);
+}
+.ge-scheduler .mat-leather--raised .btn--ghost:hover {
+  color: #241B12;
+  border-color: var(--brass-900);
+  background-color: rgba(120,92,52,.20);
+}
+
+/* ---- Voices on the field ------------------------------------------------
+   Panel headings are engraved into the board, not chalked onto it: the letter
+   is bone with a cut shadow and only the faintest bronze bloom, which is what
+   keeps the field quiet enough for the paper to carry the page. */
+.ge-scheduler .t-command {
+  letter-spacing: .05em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.7), 0 0 12px rgba(214,176,99,.10);
+}
+.ge-scheduler .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 78%, var(--bone-200));
+  letter-spacing: .17em;
+}
+.ge-scheduler .t-label {
+  color: color-mix(in srgb, var(--bone-300) 82%, var(--brass-300));
+}
+
+/* ---- Recessed controls --------------------------------------------------
+   The second literal-gold leak: `.input`, `.select` and `.textarea` state their
+   keyline as rgba(212,175,74,.28), which no token override can reach. The
+   reference draws no form field at all -- there is nothing to copy -- so these
+   keep their existing recessed geometry and only change metal, which is the
+   smallest change that stops legacy gold showing through a golden-era board.
+   Geometry, tap height and the focus ring belong to the foundation and are
+   untouched. */
+.ge-scheduler .input,
+.ge-scheduler .select,
+.ge-scheduler .textarea {
+  border-color: color-mix(in srgb, var(--brass-600) 40%, transparent);
+  background-color: #16110D;
+}
+.ge-scheduler .input:focus,
+.ge-scheduler .select:focus,
+.ge-scheduler .textarea:focus {
+  border-color: var(--brass-400);
+}
+
+/* ---- Phone --------------------------------------------------------------
+   REFERENCE_MOBILE_APPROVED.jpg is the same board in portrait: the frame is
+   proportionally thinner, the brackets smaller, the cards stacked one per row.
+   The stacking is already the page's own responsive behaviour, so only the
+   furniture is scaled -- a 15px surround on a 390px viewport eats the field. */
+@media (max-width: 640px) {
+  .ge-scheduler > div {
+    border-width: 9px;
+    border-radius: 8px;
+    padding: var(--s4);
+  }
+  .ge-scheduler > div::before,
+  .ge-scheduler > div::after {
+    left: -9px;
+    right: -9px;
+    height: 30px;
+    background-size: 30px 6px, 6px 30px, 30px 6px, 6px 30px, 11px 11px, 11px 11px;
+  }
+  .ge-scheduler > div::before {
+    top: -9px;
+    background-position: left top, left top, right top, right top, 11px 11px, calc(100% - 11px) 11px;
+  }
+  .ge-scheduler > div::after {
+    bottom: -9px;
+    background-position:
+      left bottom, left bottom, right bottom, right bottom,
+      11px calc(100% - 11px), calc(100% - 11px) calc(100% - 11px);
+  }
+  .ge-scheduler > div > header {
+    padding: var(--s4);
+  }
+}
+
+/* ==========================================================================
+   GOLDEN ERA 007 — THE FRONT DESK (People Console)
+
+   Packet 007_FRONT_OFFICE_ADMIN, route /admin/people, room .room--office.
+   The locked reference is a DESK BOARD on a plank wall: brass nameplate
+   plaques across the top rail, a parchment register hung in a screwed bronze
+   frame, hanging lamps overhead. That is a fourth distinct object alongside
+   The Bell's parchment plaque, the coach's slate board and the athlete's wood
+   locker, which is what ROOM-PURPOSE-DNA asks for -- the front office's own
+   line is "plank wall, desk lamp, paper forms, riveted cards", and every one
+   of those four things is already in this page's markup (.lamp over the
+   header, .frame + .rivet around the roster, .mat-paper under the .ledger).
+   Nothing here invents a surface; it dresses the ones that exist.
+
+   SCOPE. Everything is under `.ge-frontoffice`, one class added to the page's
+   existing <main>. The bronze ramp is redefined on that scope for the same
+   leak-proof reason as .ge-bell, .ge-floorboard and .ge-locker: .btn,
+   .btn--ghost, .frame, .rivet, .badge and the tab rail all resolve
+   var(--brass-*), and app/globals.css aliases --accent-strong to
+   var(--brass-500), so one token override re-skins the whole desk -- including
+   the ACTIVE tab's fill -- and legacy gold cannot leak through a property
+   nobody remembered to restate. Outside the scope nothing moves.
+
+   WHAT IS DELIBERATELY NOT DONE HERE. The reference draws a tab rail reading
+   PEOPLE / NOTICES / VOLUNTEERS and four panels: Roster, Notices, PIN
+   Management, Attendance KPIs. Only the roster is this route. Notices is
+   /notices, Volunteers is /admin/volunteer-management, PIN Management is
+   /admin/pin and Attendance is /admin/attendance -- four separate doors in the
+   same room, drawn together because the packet is a picture of the ROOM. This
+   page's real tabs are Everyone / Add Coach, Staff Or Guardian / Add Athlete.
+   Styling the image literally would rename three working controls and invent
+   three panels with nothing behind them, so the materials are applied to the
+   REAL control set and the difference is reported to the owner instead of
+   being resolved by a stylesheet.
+
+   The refusal surfaces on this route (WrongRoleNotice, the loading state) are
+   deliberately left OUTSIDE the scope: they are what an unauthorised or
+   not-yet-resolved caller sees, and a visual pass has no business anywhere
+   near them. FUNCTIONAL_CHANGES: NONE. */
+.ge-frontoffice {
+  /* The ramp, and the channel triples that have to travel with it. A rule
+     that needs brass at partial alpha reads `rgb(var(--brass-N-rgb) / a)` --
+     the focus ring, every input keyline, the inset top-light on every tile
+     and button -- so it follows the triple and nothing else. Restating the
+     hex here without the triple would leave every one of those rules
+     painting the INHERITED gold over bronze fills, on the most shared
+     furniture in the scope: the exact leak this override exists to close.
+     They move together, and src/design/brassAlphaChannel.test.ts fails any
+     scope that separates them. */
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* The plank wall the desk stands against. Wide vertical boards with a lit
+   bevel down each seam -- the office's own grain direction, distinct from the
+   locker's narrow verticals and the floor board's horizontal slate. The warm
+   wash is dropped from the TOP CENTRE because that is where .lamp hangs on
+   this page; the panel is lit by the fixture the markup already draws rather
+   than by a gradient that agrees with nothing. Unlayered sheet vs Tailwind's
+   @layer utilities, so these win without !important. */
+.ge-frontoffice .mat-leather {
+  background-color: var(--wood-700);
+  background-image:
+    radial-gradient(120% 78% at 50% 0%, rgba(255,232,186,0.13) 0%, transparent 64%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.34) 0 2px,
+      rgba(255,236,196,0.07) 2px 4px,
+      transparent 4px 52px),
+    linear-gradient(180deg, var(--wood-600) 0%, var(--wood-800) 72%, var(--wood-900) 100%);
+  border-color: color-mix(in srgb, var(--brass-700) 54%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.15),
+    inset 0 -3px 8px rgba(0,0,0,0.52);
+}
+
+/* The desk lamp. The stock pool is a general room light; a desk lamp throws a
+   tighter, warmer circle onto the paperwork directly under it, which is the
+   whole reason the front office reads as a DESK and not a hall. */
+.ge-frontoffice .lamp::after {
+  width: 208px;
+  height: 150px;
+  background-image: radial-gradient(50% 44% at 50% 0%,
+    var(--lamp-hot) 0%, rgba(255,226,168,0.5) 22%, transparent 66%);
+}
+
+/* Tab plaques. Engraved nameplates screwed to the top rail: a screw head at
+   each end, a bronze edge, an engraved-letter shadow.
+
+   THE SHEEN IS TRANSLUCENT ON PURPOSE. The active tab is signalled by
+   background-COLOR (Tailwind's bg-[var(--accent-strong)]) and the inactive
+   ones by bg-transparent; an opaque background-image here would paint over
+   both and leave the two states looking identical -- a real affordance
+   destroyed by a decorative rule. A translucent sheen sits on top of whichever
+   colour the component chose, so the state distinction survives intact and
+   only gets brighter, because --accent-strong now resolves to bronze. */
+.ge-frontoffice nav.mat-leather button {
+  position: relative;
+  background-image: linear-gradient(180deg,
+    rgba(255,244,214,0.16) 0%, rgba(255,244,214,0.04) 44%, rgba(0,0,0,0.26) 100%);
+  border-color: color-mix(in srgb, var(--brass-700) 78%, #000);
+  box-shadow:
+    inset 0 1px 0 rgba(255,244,214,0.24),
+    inset 0 -2px 4px rgba(0,0,0,0.34),
+    0 2px 4px rgba(0,0,0,0.40);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.45);
+}
+.ge-frontoffice nav.mat-leather button::before,
+.ge-frontoffice nav.mat-leather button::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  translate: 0 -50%;
+  border-radius: 50%;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 34% 30%,
+    var(--brass-200) 0%, var(--brass-400) 40%, var(--brass-700) 72%, var(--brass-900) 100%);
+  box-shadow: inset 0 -1px 1px rgba(0,0,0,0.6);
+}
+.ge-frontoffice nav.mat-leather button::before { left: 7px; }
+.ge-frontoffice nav.mat-leather button::after  { right: 7px; }
+
+/* The register frame. The stock .frame is polished specular brass; the office
+   keeps its records in a screwed oak surround with a bronze bead, which is
+   what the reference hangs the roster in. Same object, aged to this room. */
+.ge-frontoffice .frame {
+  background-image: linear-gradient(158deg,
+    var(--wood-900) 0%,  var(--wood-600) 16%, var(--brass-400) 31%,
+    var(--wood-700) 47%, var(--wood-900) 63%, var(--brass-600) 81%,
+    var(--wood-900) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.34),
+    inset 0 -2px 3px rgba(0,0,0,0.55),
+    0 10px 26px rgba(0,0,0,0.58);
+}
+
+/* Slotted screws, not domed rivets. A rivet is hammered in once; a register
+   frame is unscrewed when the sheet is changed, and the front office is the
+   room where paper gets changed. Decorative only -- .rivet is already
+   aria-hidden at every call site on this page. */
+.ge-frontoffice .rivet {
+  background-image:
+    linear-gradient(92deg, transparent 0 3px, rgba(0,0,0,0.62) 3px 8px, transparent 8px),
+    radial-gradient(circle at 34% 28%,
+      var(--brass-200) 0%, var(--brass-400) 38%, var(--brass-700) 68%, var(--brass-900) 100%);
+}
+
+/* The register sheet. Sepia margin rule down the left and faint horizontal
+   ruling, so the roster reads as a bound register rather than a white card.
+   The ruling is BRONZE INK, never the reserved red: .pap--ruled draws its
+   margin in rgba(168,30,34,…) and that colour is #A81E22 -- the safeguarding
+   red, reserved for MEDICALLY_NOT_ALLOWED, which may not be spent on a
+   decorative line. No `color` is set here at all: .mat-paper's own light-
+   ground ink restatement is already correct and is not this pass's business. */
+.ge-frontoffice .mat-paper {
+  background-image:
+    linear-gradient(90deg, transparent 0 29px,
+      rgba(110,82,32,0.42) 29px 30px, transparent 30px),
+    repeating-linear-gradient(180deg,
+      transparent 0 25px, rgba(110,82,32,0.11) 25px 26px),
+    var(--grain-fine),
+    linear-gradient(178deg, #F6EEDA, #E4D7B6);
+  background-blend-mode: normal, normal, overlay, normal;
+}
+
+/* The register head. A clerk rules the column headings off in ink and writes
+   the book's title across the top; both are dark bronze on cream, the paper
+   ink this ground already uses, so nothing here reintroduces a rung tuned for
+   leather. */
+.ge-frontoffice .ledger caption {
+  color: #2A2116;
+  letter-spacing: 0.09em;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+}
+.ge-frontoffice .ledger th {
+  color: var(--brass-900);
+  border-bottom-color: rgba(57,41,16,0.78);
+}
+
+/* Front-desk voice, on the dark boards only. Scoped under .mat-leather rather
+   than the bare class because the roster panel is .mat-paper -- a light ground
+   with its own ink restatement -- and a bare `.ge-frontoffice .t-eyebrow`
+   would out-order `.mat-paper .t-eyebrow` and print brass on cream.
+   The eyebrow is the stamped nameplate above each section; the command line is
+   painted onto the board and lit by the lamp. */
+.ge-frontoffice .mat-leather .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 74%, var(--bone-100));
+  letter-spacing: 0.2em;
+}
+.ge-frontoffice .mat-leather .t-command {
+  color: var(--bone-100);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.6), 0 0 14px rgba(255,232,186,0.12);
+}
+.ge-frontoffice .mat-leather .t-label {
+  color: var(--bone-300);
+  letter-spacing: 0.11em;
+}
+
+/* ==========================================================================
+   GOLDEN ERA 004B — THE DRILL CASE (Coach Drill Library)
+
+   Packet 004, route /coach/drills. SEPARATE SURFACE from 004A (Session
+   Scripts) even though the two share a packet number; nothing here reaches
+   that route.
+
+   The locked reference is a WALL CABINET standing open on the gym floor: a
+   dark-walnut carcass, a hinged door with a leather pull and a brass
+   nameplate, an engraved near-black header plaque inside the lid, and rows of
+   AGED INDEX CARDS with brass corner rivets resting on the shelves. That card
+   cabinet is the whole identity, and it is deliberately none of the three
+   rooms already shipped -- not The Bell's parchment plaque on brick, not the
+   coach floor's slate board, not the athlete locker's hung clipboard. Same
+   Golden Era material grammar, a different physical object, per ROOM PURPOSE
+   DNA: consistency comes from the materials, not from every screen looking
+   the same.
+
+   THE ONE MARKUP CHANGE is the `ge-drillcase` class on the page's <main>.
+   Everything below is scoped to it, so no rule can reach another route.
+
+   WHAT THE REFERENCE DRAWS THAT DOES NOT EXIST HERE, AND IS THEREFORE NOT
+   BUILT. A search field. Four filter chips (Purpose / Stance / Equipment /
+   Level). A per-card "Add to Script" button. A "Selected Drill" detail panel
+   with Full Cue / Progressions / Programming Notes. A right-hand action column
+   reading New Drill / Program / Assign to Script / Assign to Athlete. A
+   "4 Rounds" line on each card. None of those are backed by this component,
+   this route's API, or the pilot.drills row (name, category, focus, cues,
+   difficulty, active) -- so a stylesheet drawing them would be inventing
+   controls with nothing behind them. They are reported to the owner on the PR
+   instead.
+
+   AND WHAT THE REFERENCE OMITS IS KEPT. The image shows no add-a-drill form,
+   no Back to Coach Workspace link, no difficulty plaque, no category line.
+   All four are real and all four stay; a visual pass is exactly when a real
+   control disappears quietly. goldenEraDrillcaseScope.test.ts pins both
+   halves. FUNCTIONAL_CHANGES: NONE.
+
+   Reserved medical red (--locked / --stamp-red / #A81E22) is not touched and
+   is not part of any ramp below.
+   ========================================================================== */
+
+/* The leak-proof seam, same as .ge-bell / .ge-floorboard / .ge-locker: the
+   shared components this route renders (.mat-leather, .mat-leather--raised,
+   .btn, .btn--ghost, .input/.select/.textarea, .plaque, the .t-* voices) all
+   resolve their metal from var(--brass-*). Redefining the ramp on the scope
+   itself re-skins every one of them at once, and custom properties inherit, so
+   a control nobody remembered to override still comes out bronze. A property
+   override leaks wherever it is forgotten; a token override cannot. Outside
+   .ge-drillcase the legacy ramp is untouched. */
+
+/* THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the
+   scope splits down the middle: everything solid turns bronze while every
+   alpha rule beside it keeps painting the inherited legacy gold -- a bronze
+   frame wearing a gold hairline, with no forgotten property to find. That is
+   the exact leak this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
+   of them, and checks each triple against its own hex. */
+.ge-drillcase {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* The carcass. .room--floor paints brick, which is the wall the gym's floor
+   room stands in -- but this surface is the INSIDE of a cabinet, so the ground
+   becomes its back boards: dark walnut running vertically, the way the
+   reference's panel does. (0,2,0) against .room--floor's (0,1,0), and later in
+   source order, so it wins both ways without !important. The --plate custom
+   property is deliberately NOT touched; that cascade is a shared room
+   inventory with its own guard. */
+.ge-drillcase.room--floor {
+  background-color: var(--wood-900);
+  background-image:
+    var(--grain),
+    /* board seams down the back panel */
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.42) 0 3px, rgba(156,107,58,.10) 3px 5px, transparent 5px 96px),
+    /* long vertical grain inside each board */
+    repeating-linear-gradient(90deg,
+      transparent 0 11px, rgba(0,0,0,.10) 11px 13px, transparent 13px 29px),
+    linear-gradient(174deg, #3A2412 0%, #2A1A0C 55%, #1A1108 100%);
+  background-size: 180px 180px, 100% 100%, 100% 100%, 100% 100%;
+  background-blend-mode: overlay, normal, normal, normal;
+}
+
+/* The light comes through the open door, not from ceiling fixtures. The room's
+   two-lamp wash is replaced by one warm pool from the hinge side and a deep
+   sill shadow at the base, which is how the reference is lit. Equal
+   specificity to .room::before would already win on source order; the extra
+   class makes the intent explicit rather than incidental. */
+.ge-drillcase.room::before {
+  background-image:
+    radial-gradient(72% 88% at 8% 2%, rgba(255,231,182,.30), transparent 68%),
+    radial-gradient(110% 58% at 46% 30%, rgba(255,227,176,.10), transparent 76%),
+    radial-gradient(120% 74% at 50% 108%, rgba(0,0,0,.70), transparent 66%);
+}
+
+/* The engraved header plaque inside the lid: near-black lacquer, a bronze
+   hairline, letters cut into it. The page states only a bottom keyline here,
+   which floats on brick; against the cabinet it needs to be an object. The
+   padding is stated on all four sides because a filled plaque cannot inherit
+   the bottom-only padding the keyline version wanted. */
+.ge-drillcase header {
+  background-color: #14100D;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(178deg, #251D15 0%, #17130E 58%, #100D0A 100%);
+  background-blend-mode: overlay, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-700) 62%, transparent);
+  border-radius: var(--r-md);
+  padding: var(--s5);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.18),
+    inset 0 -3px 9px rgba(0,0,0,.62),
+    0 6px 15px rgba(0,0,0,.55);
+}
+
+/* Cut lettering: the title is engraved brass on the plaque, so it takes the
+   metal rather than the bone the rest of the cabinet uses. */
+.ge-drillcase header .t-command {
+  color: var(--brass-200);
+  text-shadow: 0 1px 0 rgba(0,0,0,.78), 0 0 16px rgba(190,148,64,.20);
+}
+
+/* Headings elsewhere are carved into the wood: a dark cut below the letter and
+   a thin lit edge above it, instead of the base voice's lit-on-leather glow. */
+.ge-drillcase .t-command {
+  color: var(--bone-100);
+  letter-spacing: .05em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.72), 0 -1px 0 rgba(231,200,138,.12);
+}
+
+/* The small brass nameplate above a compartment. */
+.ge-drillcase .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 84%, var(--bone-200));
+  letter-spacing: .15em;
+}
+
+/* A shelf bay: the compartment the add-a-drill controls sit in. Recessed
+   walnut rather than the leather this class wears elsewhere, with the lit lip
+   of the shelf along the bottom edge (the ::after). Decorative only, never a
+   pointer target. */
+.ge-drillcase .mat-leather {
+  position: relative;
+  background-color: var(--wood-800);
+  background-image:
+    var(--grain),
+    linear-gradient(179deg, rgba(255,238,208,.055) 0%, transparent 34%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.13) 0 2px, transparent 2px 15px),
+    linear-gradient(176deg, #3B2614 0%, #2C1C0E 60%, #201409 100%);
+  background-blend-mode: overlay, normal, normal, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 58%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.14),
+    inset 0 -4px 10px rgba(0,0,0,.55);
+}
+.ge-drillcase .mat-leather::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -4px;
+  height: 4px;
+  pointer-events: none;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  background-image: linear-gradient(180deg, var(--wood-500) 0%, var(--wood-900) 100%);
+}
+
+/* The search rail's bezel, borrowed for every field: recessed into the wood
+   behind a bronze bead. The base rule's border is a hard-coded legacy gold
+   (rgba(212,175,74,...)) that the token ramp cannot reach, which is precisely
+   the leak the scope exists to close -- so it is restated in tokens here. */
+.ge-drillcase .input,
+.ge-drillcase .select,
+.ge-drillcase .textarea {
+  border: 1px solid color-mix(in srgb, var(--brass-600) 62%, transparent);
+  border-radius: var(--r-sm);
+  box-shadow:
+    inset 0 2px 7px rgba(0,0,0,.72),
+    0 1px 0 rgba(231,200,138,.10);
+}
+
+/* The engraved action bars down the reference's right-hand column. .btn stays
+   the raised brass plate it already is (the ramp bronzes it for free); the
+   ghost variant becomes the dark engraved bronze bar, which is what the
+   reference's secondary actions are. Its base rule also hard-codes legacy gold
+   in the border, so that is restated in tokens too. Brass-200 letters on the
+   brass-800/900 plate measure 6.4:1. */
+.ge-drillcase .btn--ghost {
+  background-color: transparent;
+  background-image: linear-gradient(180deg, var(--brass-800) 0%, var(--brass-900) 100%);
+  border: 1px solid color-mix(in srgb, var(--brass-900) 72%, #000);
+  color: var(--brass-200);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.24),
+    0 2px 5px rgba(0,0,0,.5);
+  text-shadow: 0 -1px 0 rgba(0,0,0,.6);
+}
+.ge-drillcase .btn--ghost:hover {
+  border-color: var(--brass-600);
+  color: var(--bone-100);
+}
+
+/* ---------------------------------------------------------------------------
+   THE INDEX CARD, and the ink pass that has to come with it.
+
+   This is the reference's defining element and the only LIGHT ground on the
+   surface: an aged card resting on a shelf, brass rivet at each corner. The
+   base .mat-leather--raised is dark hide with bone text, so flipping the
+   ground without flipping the ink would ship bone-on-parchment -- the exact
+   failure this repository has already had once, when a ground flip was called
+   safe by cascade reasoning and rendered unreadable. Every voice that lands
+   inside a card is therefore restated below, with the computed ratio against
+   the DARKEST point of the card (#CFB88F, the foot of the gradient):
+
+     .t-command  #241B12  8.8:1
+     .t-body     #3A2E1D  6.9:1   (beats the page's layered bone utility)
+     .t-label    #4A3B26  5.6:1
+     .plaque     brass-200 on brass-800/900   6.4:1
+     cue chips   #3A2E1D on the card itself   6.9:1
+
+   The cue chips matter most: their Tailwind utilities paint rgba(0,0,0,.28)
+   behind bone-300 text, which over parchment composites to roughly 1.3:1. This
+   sheet is unlayered and Tailwind's utilities sit in @layer utilities, so
+   these rules win without !important -- and they must, or the cues become the
+   least readable thing on the page.
+
+   STATED PLAINLY: no AI lane in this project can load a deployed page, so
+   these are computed contrast figures, not observed ones. The rendered result
+   is Jason's to approve.
+   --------------------------------------------------------------------------- */
+.ge-drillcase .mat-leather--raised {
+  position: relative;
+  color: #3A2E1D;
+  background-color: #E3CFAE;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(176deg, #EFDCBC 0%, #E1CCA8 52%, #CFB88F 100%);
+  background-blend-mode: overlay, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 46%, transparent);
+  box-shadow:
+    /* the shelf edge the card stands on, then its shadow on the back panel */
+    0 3px 0 var(--wood-900),
+    0 7px 12px rgba(0,0,0,.55);
+}
+
+/* Four brass rivets, one per corner. Held in a local custom property because
+   four background layers of the same head is the only way CSS gives each one
+   its own position, and repeating the gradient literal four times is where a
+   typo hides. Inert to the pointer. */
+.ge-drillcase .mat-leather--raised::after {
+  --rivet-head: radial-gradient(circle,
+    var(--brass-200) 0 1.3px, var(--brass-500) 1.3px 2.6px,
+    var(--brass-900) 2.6px 3.3px, transparent 3.5px);
+  content: "";
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  border-radius: calc(var(--r-lg) - 4px);
+  background-image: var(--rivet-head), var(--rivet-head), var(--rivet-head), var(--rivet-head);
+  background-repeat: no-repeat;
+  background-size: 9px 9px;
+  background-position: 0 0, 100% 0, 0 100%, 100% 100%;
+}
+
+.ge-drillcase .mat-leather--raised .t-command {
+  color: #241B12;
+  text-shadow: 0 1px 0 rgba(255,255,255,.42);
+}
+.ge-drillcase .mat-leather--raised .t-body {
+  color: #3A2E1D;
+}
+.ge-drillcase .mat-leather--raised .t-label {
+  color: #4A3B26;
+}
+
+/* Cue annotations, written on the card rather than pinned to it as dark
+   chips. The background and border here are overriding layered Tailwind
+   utilities, not the design system. */
+.ge-drillcase .mat-leather--raised ul li {
+  background-color: transparent;
+  border-color: color-mix(in srgb, var(--brass-800) 34%, transparent);
+  color: #3A2E1D;
+}
+
+/* The difficulty tab: a small engraved bronze plate on the card. The base
+   .plaque is a 40%-black wash carrying brass-200 letters, which over parchment
+   drops to about 2.5:1 -- so it becomes a solid plate here instead. */
+.ge-drillcase .plaque {
+  background-color: transparent;
+  background-image: linear-gradient(180deg, var(--brass-800) 0%, var(--brass-900) 100%);
+  border: 1px solid color-mix(in srgb, var(--brass-900) 72%, #000);
+  color: var(--brass-200);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.26),
+    0 1px 3px rgba(0,0,0,.45);
+}
+
+/* ==========================================================================
+   GOLDEN ERA 003 — MY CORNER (Athlete Workspace)
+
+   Packet 02_READY_FOR_CLAUDE/003_ATHLETE_WORKSPACE, route /athlete/dashboard.
+   The locked reference is an OPEN WOOD LOCKER -- brass nameplate and hinges,
+   a parchment clipboard hung inside -- which is a third distinct room identity
+   alongside The Bell's parchment plaque and the coach's slate board. Same
+   Golden Era materials, different physical object, per ROOM PURPOSE DNA.
+
+   Unlike 002, this packet's stated tabs (Today / Development / Learn /
+   Schedule / Messages / SHADOW Intel) match TAB_GROUPS on current main exactly,
+   so there is no information-architecture conflict to escalate here.
+
+   Scoped to `.ge-locker` on the page wrapper; the bronze ramp is redefined on
+   that scope for the same leak-proof reason as .ge-bell and .ge-floorboard.
+   AthleteWorkspace and every control in it are untouched.
+   FUNCTIONAL_CHANGES: NONE. */
+
+/* THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the
+   scope splits down the middle: everything solid turns bronze while every
+   alpha rule beside it keeps painting the inherited legacy gold -- a bronze
+   frame wearing a gold hairline, with no forgotten property to find. That is
+   the exact leak this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
+   of them, and checks each triple against its own hex. */
+.ge-locker {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* The locker carcass: dark wood with a warm interior wash, so panels read as
+   the inside of an open locker rather than floating cards. */
+.ge-locker .mat-leather {
+  background-color: var(--wood-800);
+  background-image:
+    linear-gradient(178deg, rgba(255,238,208,0.06) 0%, transparent 38%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.14) 0 3px, transparent 3px 11px);
+  border-color: color-mix(in srgb, var(--brass-700) 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.14),
+    inset 0 -3px 7px rgba(0,0,0,0.5);
+}
+
+/* Brass nameplate voice for the section eyebrows -- the engraved plate above
+   each compartment. */
+.ge-locker .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 82%, var(--bone-200));
+  letter-spacing: 0.15em;
+}
+
+/* ==========================================================================
+   GOLDEN ERA 002 — THE FLOOR BOARD (Coach Workspace)
+
+   Packet: 02_READY_FOR_CLAUDE/002_COACH_WORKSPACE. Route
+   /coach/environment/intake-router, room .room--floor. The locked reference is
+   a CHALKBOARD hung in a wood frame with brass corner brackets and brass tab
+   plaques -- deliberately NOT The Bell's parchment plaque. Same Golden Era
+   materials, different room identity, which is the whole point of the room
+   system: consistency comes from the material grammar, not from every screen
+   looking like the front door.
+
+   SCOPE. Everything is under `.ge-floorboard`, a single class on the page's
+   wrapper. The bronze ramp is redefined on that scope for the same reason
+   `.ge-bell` does it: the shared components here (.mat-leather tab rail, the
+   tab buttons, .t-command/.t-eyebrow voices) all resolve var(--brass-*), so one
+   token override re-skins them together and legacy gold cannot leak through a
+   property nobody remembered to override. Outside the scope nothing moves.
+
+   WHAT IS DELIBERATELY NOT DONE HERE. The reference draws a tab bar reading
+   MORNING READ / DECISION LOOP / SCRIPTS / DRILLS / RECOGNITION. Those are not
+   this component's tabs -- four of them are separate routes and one does not
+   exist -- so styling them into this rail would delete six real tabs and invent
+   controls with nothing behind them. The materials are applied to the REAL tab
+   set; the information-architecture difference is reported to the owner rather
+   than resolved by a stylesheet. FUNCTIONAL_CHANGES: NONE. */
+
+/* THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the
+   scope splits down the middle: everything solid turns bronze while every
+   alpha rule beside it keeps painting the inherited legacy gold -- a bronze
+   frame wearing a gold hairline, with no forgotten property to find. That is
+   the exact leak this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
+   of them, and checks each triple against its own hex. */
+.ge-floorboard {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* The board: slate in an aged-wood surround. The tab rail is the top edge of
+   that frame, so it takes the wood rather than the leather it wears elsewhere.
+   Unlayered sheet vs Tailwind's @layer utilities means these win without
+   !important. */
+.ge-floorboard .mat-leather {
+  background-color: var(--wood-800);
+  background-image:
+    linear-gradient(176deg, rgba(255,238,208,0.05) 0%, transparent 42%),
+    repeating-linear-gradient(93deg,
+      rgba(0,0,0,0.16) 0 2px, transparent 2px 7px, rgba(0,0,0,0.10) 7px 9px);
+  border-color: color-mix(in srgb, var(--brass-700) 52%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.16),
+    inset 0 -2px 5px rgba(0,0,0,0.5);
+}
+
+/* Brass corner brackets on the tab rail -- the reference's riveted L-plates.
+   Decorative only, never a pointer target. */
+.ge-floorboard .mat-leather { position: relative; }
+.ge-floorboard .mat-leather::before,
+.ge-floorboard .mat-leather::after {
+  content: "";
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 62% 62%,
+    var(--brass-300) 0 1.6px, var(--brass-600) 1.6px 2.8px, transparent 3.1px);
+  background-repeat: no-repeat;
+  background-position: center;
+  border: 3px solid var(--brass-700);
+  border-radius: 3px;
+}
+.ge-floorboard .mat-leather::before {
+  top: -3px; left: -3px; border-right: 0; border-bottom: 0;
+}
+.ge-floorboard .mat-leather::after {
+  bottom: -3px; right: -3px; border-left: 0; border-top: 0;
+}
+
+/* Tab plaques. The active tab is a raised brass plate; the rest sit flush and
+   darker, exactly as the reference stacks them. aria-current already carries
+   the state for assistive tech and is what this hangs on, so the styling and
+   the announced state cannot drift apart. */
+.ge-floorboard [role="tablist"] button,
+.ge-floorboard .mat-leather button {
+  border-radius: 4px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--brass-900) 66%, #000);
+  background-image: linear-gradient(180deg,
+    var(--brass-700) 0%, var(--brass-800) 58%, var(--brass-900) 100%);
+  color: color-mix(in srgb, var(--bone-200) 82%, var(--brass-300));
+  box-shadow: inset 0 1px 0 rgba(226,196,146,0.22);
+}
+.ge-floorboard .mat-leather button[aria-current="page"] {
+  background-image: linear-gradient(180deg,
+    var(--brass-300) 0%, var(--brass-500) 46%, var(--brass-700) 100%);
+  color: #241B12;
+  box-shadow:
+    inset 0 1px 0 rgba(255,244,214,0.6),
+    inset 0 -2px 4px rgba(0,0,0,0.42),
+    0 2px 4px rgba(0,0,0,0.45);
+}
+
+/* Chalk voice on the slate. The headings in the reference are chalked, not
+   painted: bone, letter-spaced, with the ruled underline the board carries. */
+.ge-floorboard .t-command {
+  color: var(--bone-100);
+  letter-spacing: 0.045em;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.55), 0 0 10px rgba(226,214,190,0.10);
+}
+.ge-floorboard .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 80%, var(--bone-200));
+  letter-spacing: 0.16em;
+}
+
+/* ==========================================================================
+   GOLDEN ERA VISUAL 001 — THE BELL (sign-in)
+   ==========================================================================
+   Visual authority: Documents/PPBF-AI-Lanes/Visual-Handoffs/01_READY_FOR_GROK/
+   001_SIGN_IN/ (REFERENCE_APPROVED.jpg desktop, REFERENCE_MOBILE_APPROVED.jpg
+   phone), STATUS APPROVED_BY_JASON 2026-08-24.
+
+   Everything here is scoped to `.ge-bell` (the /login <main>), so it restyles
+   THE BELL alone -- the shared .frame / .rivet / .t-painted / .btn / .input
+   rules are untouched, and the /public sign-in popover (no .ge-bell) is
+   unchanged. No selector below leaves the scope. Functional markup is not
+   touched; this sheet is the whole implementation besides one class name.
+
+   Reserved-red rule holds: nothing here uses --locked / --stamp-red / #A81E22.
+   ========================================================================== */
+
+/* ==========================================================================
+   GOLDEN-ERA TOKEN SCOPE  —  the leak-proof seam, on the ONE Bell scope.
+
+   The shared components The Bell renders (.frame, .rivet, .btn, .input,
+   keylines, eyebrows, dividers) resolve their metal from var(--brass-*).
+   Redefining that ramp on `.ge-bell` itself -- and custom properties inherit --
+   re-skins every one of them at once, from a single scope. Legacy cannot leak,
+   because inside .ge-bell the tokens ARE golden-era; elements outside it never
+   carry the class, so the rest of the app keeps its legacy values untouched.
+   A property override leaks wherever it is forgotten; a token override cannot.
+
+   The one divergence between the retired "Leather & Brass" ramp and the golden
+   era is the metal: legacy brass is a bright, pale gold (top rung #F2E2A8); the
+   golden era is an AGED BRONZE -- warmer, less bright, satin not chrome. This
+   is the whole contract that keeps the frame, rivets, buttons and keylines off
+   legacy gold.
+
+   TWO GUARDS HOLD THIS. src/design/goldenEraTokenScope.test.ts is the STATIC
+   contract check (the scope declares every rung, each differs from legacy, the
+   page carries the class). The RESOLVED-STYLE proof -- that a component inside
+   .ge-bell actually computes to bronze on the real /login page, and that
+   removing a rung makes it fall back to legacy -- lives in
+   e2e/public-homepage.spec.ts, read from a browser's own getComputedStyle,
+   because a text scan cannot prove computed inheritance. Reserved medical red
+   is not part of this ramp and is never touched here. */
+
+/* THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the
+   scope splits down the middle: everything solid turns bronze while every
+   alpha rule beside it keeps painting the inherited legacy gold -- a bronze
+   frame wearing a gold hairline, with no forgotten property to find. That is
+   the exact leak this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
+   of them, and checks each triple against its own hex. */
+.ge-bell {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* The wall: the committed FLOOR plate behind the card. The login <main> is
+   .on-canvas, whose ::after already paints var(--plate) as a full-bleed layer;
+   this overrides only that layer's IMAGE for the sign-in scope. It deliberately
+   does NOT touch the --plate custom property (that cascade is a locked room
+   inventory with its own guard); `.ge-bell.on-canvas::after` is (0,2,1) and
+   outranks the base `.on-canvas::after` (0,1,1).
+   NOTE ON THE BACKGROUND: the approved reference shows a lit boxing gym (heavy
+   bag + ring ropes). That is a PHOTOGRAPHIC PLATE BINARY, shipped by the visual
+   lane; no committed plate carries a bag or a ring, and CSS cannot draw one.
+   Until that plate lands this scope shows the committed floor plate, warmed by
+   the scrim below. */
+.ge-bell.on-canvas::after {
+  background-image: url("/plates/plate-02a-floor-landscape-01.jpg");
+}
+@media (orientation: portrait) {
+  .ge-bell.on-canvas::after {
+    background-image: url("/plates/plate-02b-floor-portrait-01.jpg");
+  }
+}
+
+/* Warm the wall, keep a quiet reading centre. A soft amber top-glow evokes the
+   reference's hung bulbs; a gentle vignette seats the card WITHOUT crushing the
+   brick to black the way the first pass did (it went to 0.82 at the edges).
+   Warm ambers/browns only -- no reserved red. Sits above the plate (z 0),
+   below the card column (z 1). */
+.ge-bell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(92% 60% at 50% 0%,
+      rgba(158,102,48,0.26) 0%, rgba(120,74,34,0.10) 42%, transparent 74%),
+    radial-gradient(125% 92% at 50% 46%,
+      rgba(30,20,11,0.10) 0%, rgba(22,14,8,0.40) 60%, rgba(12,8,4,0.72) 100%);
+}
+.ge-bell .ge-bell__column {
+  position: relative;
+  z-index: 1;
+  /* 100vh fallback, then 100dvh so a mobile address bar does not clip the
+     centred card. */
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* ---- The riveted door -------------------------------------------------- */
+/* The reference wears a THICK polished-brass frame studded with rivets, set on
+   a torn dark-hide edge. The base `.frame` already IS a brass gradient with
+   four ball rivets; the first pass painted OVER that brass with a flat hide
+   fill (background-color: var(--hide-900)), collapsing the band to a thin
+   keyline. This restores the brass as a wide band (the padding), moves the dark
+   hide to the OUTSIDE as a bound leather edge (the border), deepens the seating
+   shadow, and studs the whole perimeter with rivets. Fixed-px band widths keep
+   the rivet-ring geometry exact. */
+.ge-bell .frame {
+  padding: 26px;                       /* the brass band width */
+  border: 12px solid var(--hide-700);  /* torn BROWN-leather outer edge (aged hide, not near-black) */
+  border-radius: 26px 22px 25px 23px;
+  background-image: linear-gradient(157deg,
+    var(--brass-900) 0%,  var(--brass-500) 12%, var(--brass-200) 27%,
+    var(--brass-400) 44%, var(--brass-700) 62%, var(--brass-300) 80%,
+    var(--brass-800) 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(216,180,122,0.50),
+    inset 0 -3px 7px rgba(0,0,0,0.55),
+    0 3px 0 rgba(0,0,0,0.45),
+    0 30px 66px rgba(0,0,0,0.66);
+}
+/* A full perimeter of rivets on the brass band. inset:0 aligns this ring to the
+   padding box (= the inner edge of the hide border = the brass band's outer
+   edge); four dot-rows run just inside each edge. Decorative, never a pointer
+   target; the parchment (frame-in, z 2 below) paints over its transparent
+   centre. */
+.ge-bell .frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  pointer-events: none;
+  --rivet-dot: radial-gradient(circle at 46% 40%,
+    var(--brass-200) 0 1.8px, var(--brass-400) 1.8px 3px,
+    var(--brass-700) 3px 4.2px, var(--brass-900) 4.2px 5px, transparent 5.4px);
+  background-image: var(--rivet-dot), var(--rivet-dot), var(--rivet-dot), var(--rivet-dot);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 33px 14px, 33px 14px, 14px 33px, 14px 33px;
+  background-position: center 6px, center calc(100% - 6px), 6px center, calc(100% - 6px) center;
+}
+/* The four base corner rivets: enlarge, brighten, seat on the brass band. */
+.ge-bell .rivet {
+  width: 15px;
+  height: 15px;
+  background-image: radial-gradient(circle at 34% 28%,
+    var(--brass-200) 0%, var(--brass-300) 34%, var(--brass-600) 64%, var(--brass-900) 100%);
+  box-shadow: inset 0 -1px 2px rgba(0,0,0,0.7), 0 1px 2px rgba(0,0,0,0.75);
+  z-index: 1;
+}
+.ge-bell .rivet--tl { top: 6px;    left: 6px; }
+.ge-bell .rivet--tr { top: 6px;    right: 6px; }
+.ge-bell .rivet--bl { bottom: 6px; left: 6px; }
+.ge-bell .rivet--br { bottom: 6px; right: 6px; }
+
+.ge-bell .frame > .frame-in {
+  position: relative;
+  z-index: 2;
+  border-radius: 13px;
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--brass-500) 66%, transparent),
+    inset 0 0 0 4px rgba(0,0,0,0.38),
+    inset 0 2px 14px rgba(0,0,0,0.55);
+}
+
+/* Larger, warmer parchment padding on the working surface. !important is
+   required here (and in the mobile override below) because SignInPanel sets the
+   padding as an INLINE style on this element (style={{ padding: 'var(--s6)' }});
+   an inline style outranks any selector, so only !important widens it from the
+   sheet without editing the component's markup, which the handoff forbids. */
+.ge-bell .frame-in.mat-paper {
+  padding: clamp(var(--s6), 4.5vw, var(--s8)) !important;
+}
+
+/* "The Bell": the reference sets it huge, upright, mixed-case, near-black --
+   the poster over the door. Alfa Slab One (the DS --font-stencil) is that heavy
+   slab, so this only drops the stencil stamp's uppercase + rotation and lifts
+   the scale and ink weight to the reference's presence. The decorative bell
+   glyph above shrinks so the WORDS lead, as they do in the reference. */
+.ge-bell header svg {
+  height: 30px;
+  width: 30px;
+  opacity: 0.85;
+}
+.ge-bell .t-painted {
+  text-transform: none;
+  transform: none;
+  letter-spacing: 0.004em;
+  color: var(--hide-950);
+  text-shadow:
+    0 1px 0 rgba(255,250,232,0.45),
+    0 3px 4px rgba(48,28,14,0.30);
+}
+.ge-bell header .t-painted {
+  /* !important overrides the inline style={{ fontSize: 'var(--t-2xl)' }} on the
+     <h1>; same inline-style reason as the paper padding above. */
+  font-size: clamp(3.3rem, 8.5vw, 5.4rem) !important;
+  line-height: 0.92;
+  margin-top: var(--s3);
+}
+.ge-bell header .t-body {
+  font-size: var(--t-md);
+}
+
+/* Primary metal: the Microsoft and Sign In doors read as struck brass plates --
+   a brighter bevel and letter-spaced face over the shared .btn brass, big
+   gym-tablet targets. Scoped to the kiosk primaries so .btn--ghost stays the
+   quiet outline it is elsewhere. */
+.ge-bell .btn--kiosk {
+  letter-spacing: 0.03em;
+  border: 2px solid color-mix(in srgb, var(--brass-900) 72%, #000);
+  border-radius: 12px;
+  background-image:
+    linear-gradient(180deg,
+      var(--brass-300) 0%,
+      var(--brass-500) 46%,
+      var(--brass-800) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(224,192,140,0.70),
+    inset 0 -3px 5px rgba(0,0,0,0.50),
+    0 3px 5px rgba(0,0,0,0.42);
+}
+.ge-bell .btn--kiosk:hover {
+  background-image:
+    linear-gradient(180deg,
+      var(--brass-200) 0%,
+      var(--brass-400) 46%,
+      var(--brass-700) 100%);
+}
+
+/* Parchment fields: clear inset writing surface with a warm brass keyline, dark
+   ink -- large enough for sweaty-hands entry (Law 5 --tap sets the height via
+   input--kiosk). */
+.ge-bell .input--kiosk {
+  background-color: color-mix(in srgb, var(--bone-100) 88%, var(--paper));
+  border: 1.5px solid color-mix(in srgb, var(--brass-800) 42%, transparent);
+  box-shadow: inset 0 2px 4px rgba(60,40,20,0.16);
+}
+.ge-bell .input--kiosk:focus {
+  border-color: var(--brass-700);
+  box-shadow:
+    inset 0 2px 4px rgba(60,40,20,0.16),
+    0 0 0 3px color-mix(in srgb, var(--brass-500) 34%, transparent);
+}
+
+/* The page foot (Help / Gym Notice, then the work-axis strip) sits OUTSIDE the
+   frame, on the dark wall. On the cream page these inherited dark ink; on the
+   plate that ink went invisible -- the "stray boxes" under the card. Give the
+   out-of-frame content a warm bone voice so it reads on the hide, and centre
+   the axis. Scoped to siblings that FOLLOW the frame, so nothing on the
+   parchment inside the frame is touched. */
+.ge-bell .frame ~ section :is(.t-command, .t-body, .t-label, .t-muted),
+.ge-bell .frame ~ footer {
+  color: var(--bone-100);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.55);
+}
+.ge-bell .frame ~ section .btn--ghost {
+  color: var(--bone-100);
+  border-color: color-mix(in srgb, var(--brass-400) 72%, transparent);
+}
+.ge-bell .frame ~ footer {
+  text-align: center;
+}
+
+/* Phone (REFERENCE_MOBILE_APPROVED.jpg): card near full-width with safe side
+   margins, a tighter frame band, title still dominant, methods already stack in
+   a single column. Not a shrunk desktop -- the column claims the width. */
+@media (max-width: 640px) {
+  .ge-bell .ge-bell__column {
+    padding-left: var(--s3);
+    padding-right: var(--s3);
+    padding-top: var(--s4);
+    padding-bottom: var(--s4);
+  }
+  .ge-bell .frame {
+    padding: 16px;
+    border-width: 8px;
+    border-radius: 18px 16px 18px 17px;
+  }
+  .ge-bell .frame::after {
+    background-size: 27px 12px, 27px 12px, 12px 27px, 12px 27px;
+    background-position: center 5px, center calc(100% - 5px), 5px center, calc(100% - 5px) center;
+  }
+  .ge-bell header .t-painted {
+    font-size: clamp(2.6rem, 12.5vw, 3.7rem) !important;
+  }
+  .ge-bell .frame-in.mat-paper {
+    padding: var(--s5) var(--s4) !important;
+  }
+}
