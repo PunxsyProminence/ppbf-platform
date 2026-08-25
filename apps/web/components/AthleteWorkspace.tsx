@@ -3037,7 +3037,6 @@ export default function AthleteWorkspace() {
           tasksDue={tasksDue}
           goalsActive={goalsActive}
           upcomingSession="Nothing posted yet."
-          unreadMessages={0}
         />
 
         {/* The training card. One stamp per session row from the ledger -- a

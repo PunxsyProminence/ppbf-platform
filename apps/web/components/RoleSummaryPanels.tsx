@@ -13,7 +13,14 @@ interface AthleteSummaryPanelProps {
   tasksDue: number;
   goalsActive: number;
   upcomingSession?: string;
-  unreadMessages: number;
+  // No unreadMessages here, deliberately. The athlete has no inbound message
+  // feed: the Messages tab is write-only Ask-SHADOW (replies are read in
+  // SHADOW Chat), and nothing counts unread anything for this surface. The
+  // tile that stood here rendered a hardcoded 0 -- "Messages 0" tells a child
+  // nobody has written to them, as a measurement, when no feed exists to
+  // measure. Same rule as sessionStatus on the coach panel below: a tile is a
+  // claim that something was measured. The tile returns when a real unread
+  // count backs it (the parent panel's number|null contract is the model).
 }
 
 interface CoachSummaryPanelProps {
@@ -107,8 +114,7 @@ export function AthleteSummaryPanel({
   readinessValue,
   tasksDue,
   goalsActive,
-  upcomingSession,
-  unreadMessages
+  upcomingSession
 }: Readonly<AthleteSummaryPanelProps>) {
   const readinessColor = {
     GREEN: 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[color:var(--cleared)]',
@@ -122,7 +128,7 @@ export function AthleteSummaryPanel({
   }[readiness];
 
   return (
-    <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
+    <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-4">
       {/* Self-report, not a clearance. Until 2026-08-24 this tile translated
           the band into an instruction -- GREEN said "READY FOR TRAINING",
           YELLOW "MODIFY TRAINING", RED "COACH REVIEW REQUIRED". #597 removed
@@ -161,11 +167,6 @@ export function AthleteSummaryPanel({
         <p className="t-body mt-[var(--s3)]">{upcomingSession || 'No session'}</p>
       </div>
 
-      {/* Messages */}
-      <div className={STAT_TILE}>
-        <p className="stat-label">Messages</p>
-        <p className="stat-val">{unreadMessages}</p>
-      </div>
     </div>
   );
 }
