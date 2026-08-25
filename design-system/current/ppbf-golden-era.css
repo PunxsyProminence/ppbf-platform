@@ -165,14 +165,31 @@
    Guard: apps/web/src/design/goldenEraAfterhoursScope.test.ts
    ========================================================================== */
 .ge-afterhours {
+  /* The ramp, and the channel triples that have to travel with it. A rule
+     that needs brass at partial alpha reads `rgb(var(--brass-N-rgb) / a)` --
+     the focus ring, every input keyline, the inset top-light on every tile
+     and button -- so it follows the triple and nothing else. Restating the
+     hex here without the triple would leave every one of those rules
+     painting the INHERITED gold over bronze fills, on the most shared
+     furniture in the scope: the exact leak this override exists to close.
+     They move together, and src/design/brassAlphaChannel.test.ts fails any
+     scope that separates them. */
   --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
   --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
   --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
   --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
   --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
   --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
   --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
   --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
 }
 
 /* ONE LAMP. The room's own ::before throws two wide pools plus a broad wash --
