@@ -197,6 +197,24 @@ function CoachSessionScripts() {
     }
   }, [fetchLiveRun, startBusyScriptId]);
 
+  const loadDeliveries = useCallback(async (scriptId: string) => {
+    setDeliveries([]);
+    setDeliveriesState('loading');
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/session-scripts/runs?script_id=${encodeURIComponent(scriptId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('history');
+      const payload = (await response.json()) as { runs?: SessionScriptRunRow[] };
+      setDeliveries(payload.runs ?? []);
+      setDeliveriesState('loaded');
+    } catch {
+      setDeliveries([]);
+      setDeliveriesState('unavailable');
+    }
+  }, []);
+
   const openScript = useCallback(async (scriptId: string) => {
     // Clearing the previous script's detail and error together: leaving either
     // in place shows one script's blocks -- or one script's failure -- under
@@ -226,24 +244,10 @@ function CoachSessionScripts() {
       }
     })();
 
-    const historyRead = (async () => {
-      try {
-        const response = await fetch(
-          `${apiBase()}/api/pilot/session-scripts/runs?script_id=${encodeURIComponent(scriptId)}`,
-          { method: 'GET', credentials: 'include' },
-        );
-        if (!response.ok) throw new Error('history');
-        const payload = (await response.json()) as { runs?: SessionScriptRunRow[] };
-        setDeliveries(payload.runs ?? []);
-        setDeliveriesState('loaded');
-      } catch {
-        setDeliveries([]);
-        setDeliveriesState('unavailable');
-      }
-    })();
+    const historyRead = loadDeliveries(scriptId);
 
     await Promise.all([detailRead, historyRead]);
-  }, []);
+  }, [loadDeliveries]);
 
   return (
     <main className="ge-scripts room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
@@ -289,6 +293,9 @@ function CoachSessionScripts() {
               initialRun={liveRun}
               onSettled={(settled) => {
                 setLiveRun(null);
+                if (openScriptId === settled.script_id) {
+                  void loadDeliveries(settled.script_id);
+                }
                 setLiveNotice(
                   `This session was recorded as ${settled.run_state === 'abandoned' ? 'abandoned' : 'completed'}. `
                   + 'It is settled and can no longer be changed from this screen.',
