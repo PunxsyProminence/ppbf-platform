@@ -92,6 +92,56 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * site switched to `alert--warning` with its entry kept — failed as a stale
  * entry; (d) `--stamp-restricted` pointed back at `var(--locked)` — the pin
  * below failed. A guard that has not been seen red is a hypothesis.
+ *
+ * ---------------------------------------------------------------------------
+ * A FIFTH CHANNEL, ADDED 2026-08-25: THE COLOUR SPELLED OUT.
+ *
+ * Everything above derives its channels from TOKENS and CLASSES, and that is
+ * the whole of its reach. A rule that writes the colour out --
+ * `rgba(168,30,34,.34)` -- names no token and no class: no scope can override
+ * it, and nothing above can see it. `.pap--ruled` painted a decorative
+ * legal-pad margin line in exactly that literal, which is the reservation
+ * spent on chrome, on every ruled sheet of paper in the app, invisible to the
+ * one guard whose entire subject is that reservation. It is the same defect
+ * class the brass ramp hit (#641, brassAlphaChannel.test.ts): a leak-proof
+ * argument that only ever reaches rules going THROUGH a token.
+ *
+ * So the sheets are now read for the seed itself, in both spellings, and an
+ * occurrence is legitimate ONLY where it DEFINES the reservation -- a
+ * document-wide `:root` token that the derivation above already counts as a
+ * red channel. Three declarations qualify today (`--locked`, `--locked-deep`,
+ * `--stamp-red`) and the test names them, so a fourth place to write #A81E22
+ * down has to be argued for rather than added. A rule-scoped custom property
+ * (`.foo { --badge: #A81E22 }`) does NOT qualify: `rootDeclarations` treats
+ * those as parameters rather than tokens on purpose, so the token channel
+ * never sees them, so they must fail here.
+ *
+ * THE TWO FIXES FOR A HIT ARE NOT INTERCHANGEABLE. Chrome must STOP USING THE
+ * RED -- `.pap--ruled` took the ink this sheet already uses for its
+ * non-semantic rules (`rgba(70,110,150,...)`, the ink of its own horizontal
+ * ruling), because converting decoration to `var(--locked)` would keep the
+ * colour and only hide it from this file. A rule that is genuinely about the
+ * reservation goes through the token instead, unchanged in colour:
+ * `.btn--danger` and `.gauge-arc` were converted that way on 2026-08-25, the
+ * second through `color-mix(in srgb, var(--stamp-red) 85%, transparent)`
+ * because CSS cannot put an alpha on a hex token. Whether an ordinary
+ * destructive button may wear the reservation at all is still the owner
+ * question honesty item 4 above declines to answer; putting it on the token
+ * changes nothing about the colour and makes the answer one line.
+ *
+ * THIS CLOSES THE CSS HALF OF HONESTY ITEM 1 AND NONE OF THE TSX HALF. A raw
+ * literal in a `.tsx` file is still uncovered, and app/auth/link/page.tsx
+ * carries one today (`bg-[rgba(168,30,34,0.06)]` on a sign-in refusal) --
+ * reported, not swept, because it belongs to the owner-approved sweep this
+ * file's allow-list freezes.
+ *
+ * WATCHED TO FAIL, 2026-08-25: (a) `rgba(168,30,34,.34)` put back into
+ * `.pap--ruled` -- failed, naming the sheet, the selector and the
+ * declaration; (b) the same literal written into a rule-scoped custom
+ * property -- failed, because a scoped property is not a token; (c)
+ * `.btn--danger` left on `var(--stamp-red)` -- PASSED, so the check does not
+ * fire on the right answer. A guard that has not been seen red is a
+ * hypothesis.
  */
 
 const WEB = path.resolve(__dirname, '../..');
@@ -304,6 +354,87 @@ function deriveStampRecolorers(): Set<string> {
 }
 
 const STAMP_RECOLORERS = deriveStampRecolorers();
+
+/* ------------------------------------------------------ LITERAL CHANNEL -- */
+
+/** Every occurrence of the seed, in either spelling, anywhere in a sheet.
+ *  Assembled from the two SEED patterns above rather than written out again,
+ *  so the colour is still stated exactly ONCE in this file: a literal guard
+ *  that hardcodes its own second copy of the literal is the joke that writes
+ *  itself. */
+const SEED_LITERAL = new RegExp(`${SEED_HEX.source}|${SEED_RGB.source}`, 'gi');
+
+interface LiteralSite {
+  /** Which sheet, spelled the way a reader would go and open it. */
+  sheet: string;
+  /** The rule that spends it, for the failure message. */
+  selector: string;
+  /** The declaration up to and including the literal, whitespace collapsed. */
+  declaration: string;
+  /** The custom property being declared, when the literal IS a declaration. */
+  property: string | null;
+}
+
+/** The declaration an offset sits inside: back to the nearest `;`, `{` or
+ *  `}`. CSS values carry no semicolons, so the boundary is exact. */
+function declarationAt(css: string, index: number): string {
+  const start = Math.max(
+    css.lastIndexOf(';', index),
+    css.lastIndexOf('{', index),
+    css.lastIndexOf('}', index),
+  );
+  return css.slice(start + 1, index);
+}
+
+/** The selector of the rule an offset sits inside.
+ *
+ *  A LINE NUMBER IS DELIBERATELY NOT REPORTED. The design sheet this guard
+ *  reads is ppbf.css resolved through its @imports, so its line numbers
+ *  belong to a concatenation that exists in no file on disk and would send a
+ *  reader to the wrong place in the wrong sheet. The selector and the
+ *  declaration text are both greppable; a fabricated line number is not. */
+function selectorAt(css: string, index: number): string {
+  const brace = css.lastIndexOf('{', index);
+  if (brace <= 0) return '(outside any rule)';
+  const start = Math.max(
+    css.lastIndexOf('}', brace),
+    css.lastIndexOf('{', brace - 1),
+    css.lastIndexOf(';', brace),
+  );
+  return css.slice(start + 1, brace).trim().replace(/\s+/g, ' ') || '(unnamed rule)';
+}
+
+function seedLiterals(css: string, sheet: string): LiteralSite[] {
+  const sites: LiteralSite[] = [];
+  for (const match of css.matchAll(SEED_LITERAL)) {
+    const index = match.index ?? 0;
+    const declaration = declarationAt(css, index);
+    const property = declaration.match(/^\s*(--[A-Za-z0-9-]+)\s*:/);
+    sites.push({
+      sheet,
+      selector: selectorAt(css, index),
+      declaration: `${declaration}${match[0]}`.replace(/\s+/g, ' ').trim(),
+      property: property ? property[1] : null,
+    });
+  }
+  return sites;
+}
+
+const LITERAL_SITES = [
+  ...seedLiterals(designCss, 'design-system/ppbf.css (resolved through its @imports)'),
+  ...seedLiterals(globalsCss, 'apps/web/app/globals.css'),
+];
+
+/** A literal is legitimate ONLY where it DEFINES the reservation: a
+ *  document-wide token this file already derives as a red channel. Deriving
+ *  the exemption from RED_TOKENS rather than from a list of names means the
+ *  exemption can never be wider than the channel the rest of the guard
+ *  already polices — and a rule-scoped custom property (`.foo { --badge:
+ *  #A81E22 }`) is excluded for free, because `rootDeclarations` treats those
+ *  as parameters rather than tokens and they never enter RED_TOKENS. */
+function definesTheReservation(site: LiteralSite): boolean {
+  return site.property !== null && RED_TOKENS.has(site.property);
+}
 
 /* ------------------------------------------------------- SOURCE SCANNING -- */
 
@@ -822,5 +953,61 @@ describe('the reservation is real in the sheets themselves', () => {
     );
     const redAliases = [...RED_TOKENS].filter((token) => aliasNames.has(token)).sort();
     expect(redAliases).toEqual(['--safety-locked', '--status-critical', '--status-danger']);
+  });
+});
+
+describe('the safeguarding red is never spelled out as a literal', () => {
+  const LITERAL_GUIDANCE = [
+    'A rule that spells the colour out has no token in it. No scope can override',
+    'it, and every channel this file derives — tokens, aliases, classes — walks',
+    'straight past it. That is how .pap--ruled painted a decorative legal-pad',
+    'margin rule in the reserved red until 2026-08-25.',
+    '',
+    'Decide what the rule is FOR, because the two answers are not the same:',
+    '  • chrome / decoration → it must STOP USING THIS COLOUR. Take an ink the',
+    '    sheet already uses for non-semantic work (.pap--ruled took its own',
+    '    horizontal ruling ink). Converting decoration to var(--locked) keeps the',
+    '    colour and only hides it from this guard, which is worse than the leak.',
+    '  • a genuine top-of-safety-ladder use → go through the token, colour',
+    '    unchanged: var(--locked) / var(--stamp-red), or',
+    '    color-mix(in srgb, var(--stamp-red) N%, transparent) where an alpha is',
+    '    needed, as .gauge-arc does.',
+  ].join('\n');
+
+  it('reads sheets that still write the reservation down, so this cannot pass vacuously', () => {
+    // Three ways this check could pass while checking nothing: the resolver
+    // returns '' (no sheet), the app sheet is missed, or the seed moved and
+    // the scan matches nothing anywhere. Each is failed here, on the same
+    // evidence the check itself runs on.
+    expect(designCss.length).toBeGreaterThan(50_000);
+    expect(globalsCss.length).toBeGreaterThan(10_000);
+    expect(LITERAL_SITES.length).toBeGreaterThan(0);
+
+    const defining = LITERAL_SITES.filter(definesTheReservation);
+    expect(defining.length).toBeGreaterThan(0);
+
+    // The places the reservation is legitimately written down, frozen by
+    // name. A fourth one is not forbidden — it is a decision, and it should
+    // be argued for in a diff to this line rather than added quietly.
+    expect([...new Set(defining.map((site) => site.property))].sort()).toEqual([
+      '--locked',
+      '--locked-deep',
+      '--stamp-red',
+    ]);
+  });
+
+  it('lets no rule spend the reservation as a literal instead of reaching it through a token', () => {
+    const offenders = LITERAL_SITES.filter((site) => !definesTheReservation(site));
+
+    const report = offenders
+      .map((site) => `  ${site.sheet}\n    ${site.selector} — ${site.declaration}`)
+      .sort()
+      .join('\n');
+
+    expect(
+      offenders.length === 0
+        ? true
+        : `The safeguarding red is spelled out as a literal in ${offenders.length} place(s):\n${report}\n\n${LITERAL_GUIDANCE}`,
+    ).toBe(true);
   });
 });
