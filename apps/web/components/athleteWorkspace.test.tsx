@@ -125,7 +125,7 @@ beforeEach(() => {
   goalUpdateFails = false;
   storedFloorPlans = [];
   floorPlanPatchFails = false;
-  floorPlanPostFails = false;floorPlanPatchFails = false;
+  floorPlanPostFails = false;
   storedAssignments = [];
   assignmentsFail = false;
 
