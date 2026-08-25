@@ -14,7 +14,7 @@ OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-24T23:05Z
+2026-08-24T23:30Z
 
 CURRENT_MAIN:
 26519efd49d04b0f4b72779b921174567dd48ed0
@@ -165,22 +165,36 @@ owner approved the production environment. Every step read individually:
   (CAPITAL A), platform_owner, active, org ppbf-default-org. The
   lowercase twin is active=NO; the check prints an explicit
   CASE-DIFFERING DUPLICATES warning.
-- Reference-data seed: dry-run dispatched (run 32783198601,
-  seed_account_id=Admin@punxsyprominence.org, organization_id blank so it
-  resolves from the app's own default-org secret) and still WAITING at the
-  production approval as of 23:05Z. Read-only; it writes nothing and does
-  not gate the deploy. OPEN QUESTION, honestly unresolved: whether
-  production's drill / discipline / competence-cohort / session-script
-  catalogs are already populated. The dry-run answers it without writing.
+- Reference-data seed: **DONE, and the open question is answered.** The
+  dry-run (run 32787708007) found production's operational catalogs
+  COMPLETELY EMPTY -- every loader reported "0 already present" -- then
+  rolled back without writing. The apply (run 32788628209, mode=apply,
+  confirm_seed='SEED REFERENCE DATA',
+  seed_account_id=Admin@punxsyprominence.org, organization_id blank)
+  completed success 23:25:48Z against ppbf-pg-195892, all four loaders PASS,
+  inserting exactly what the dry-run rehearsed:
+
+    drill_library 119, drill_scale_levels 357, drill_stop_rules 674,
+    drill_cues 258 rows processed, disciplines 5, competence_levels 6,
+    cohort_definitions 6, session_scripts 3, session_script_blocks 65,
+    session_script_renderings 4
+
+  Run summary: "Written. The loaders are idempotent -- re-running adds no
+  duplicates." This is what moved production from deployed to USABLE: before
+  it, a coach signing in would have found an empty drill library and no
+  session scripts. NOT OBSERVED: an authenticated end-user read of these
+  catalogs through the deployed app -- the evidence is loader output, not a
+  browser.
 
 ## OWNER_GATES (historical — the release-blocking ones are cleared)
 
 1. apply-migrations run 32774493452 — APPROVED and GREEN.
 2. check-database seed-identity run 32770083477 — APPROVED and GREEN.
 3. deploy-production run 32783211177 — APPROVED and GREEN. PRODUCTION LIVE.
-4. seed-reference-data dry-run run 32783198601 — STILL WAITING. Read-only,
-   non-blocking. Approve it to learn whether production's operational
-   catalogs need filling.
+4. seed-reference-data dry-run — approved and green (re-dispatched as run
+   32787708007 after the original was cancelled as stale).
+5. seed-reference-data APPLY run 32788628209 — APPROVED and GREEN.
+   PRODUCTION REFERENCE DATA SEEDED. The release is complete.
 
 Note for whoever runs the next release: GitHub requires a SEPARATE approval
 per run. Approving two runs does not carry to later dispatches.
