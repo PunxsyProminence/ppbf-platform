@@ -6,17 +6,48 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-// Entity types this general-purpose audit reader must never hand a coach,
-// because a dedicated route already made a narrower, deliberate decision
-// about what coaches may see of that entity: training-holds/route.ts scopes
-// coach reads to their own assigned athletes ("no org-wide hold roster"),
-// but this route's `select *` has no per-athlete scoping at all. Without
-// this list, any coach could recover the excluded roster -- including a
-// hold's reason_category ('medical'/'behavioral', a health/conduct signal)
-// -- simply by posting {entity_type: 'training_hold'} here instead. Extend
-// this list, don't weaken the dedicated route's gate, if another safety
-// entity type ever writes audit events a coach should not enumerate freely.
-const COACH_EXCLUDED_ENTITY_TYPES = new Set(['training_hold']);
+// A coach's view of the org-wide audit trace is an ALLOW-list, not a
+// deny-list. This route shipped excluding exactly one type (training_hold),
+// and the 2026-08-25 audit found the rot that shape guarantees: by then
+// parent_barrier_report, guardian_media_consent, guardian_link,
+// athlete_check_in, intake_case and intake_document had all joined the
+// vocabulary, and any coach could enumerate them org-wide for children they
+// never coach. A deny-list must be re-curated every time a writer adds a
+// type; this list fails CLOSED instead -- a new entity type is invisible to
+// coaches until someone deliberately adds it here, under review.
+//
+// What belongs here: training-floor operational records. What never does:
+// guardian/consent, intake, medical, account/credential, payment, platform,
+// board, or safety-scoped types -- each of those has a dedicated route whose
+// own gate decides what a coach may see of it (training-holds/route.ts is
+// the model), and this general-purpose reader must not become the back door
+// around any of them.
+const COACH_ALLOWED_ENTITY_TYPES = new Set([
+  'announcement',
+  'athlete_milestone',
+  'athlete_program',
+  'behavior_standard',
+  'coach_coverage',
+  'coach_note',
+  'coach_review',
+  'drill',
+  'external_competition_entry',
+  'floor_plan',
+  'goal',
+  'intervention_evidence_link',
+  'intervention_execution',
+  'intervention_outcome_review',
+  'intervention_protocol',
+  'mentorship',
+  'one_percent_nomination',
+  'program_phase',
+  'rabbit_hole',
+  'recognition',
+  'scheduler_coaching_request',
+  'session',
+  'video_session',
+  'wrestling_league_roster_entry',
+]);
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +61,7 @@ export async function POST(request: NextRequest) {
     };
 
     const entityType = body.entity_type?.trim() || null;
-    if (principal.role === 'coach' && entityType && COACH_EXCLUDED_ENTITY_TYPES.has(entityType)) {
+    if (principal.role === 'coach' && entityType && !COACH_ALLOWED_ENTITY_TYPES.has(entityType)) {
       throw new Error('Forbidden: role not allowed to read this entity type');
     }
 
@@ -42,14 +73,14 @@ export async function POST(request: NextRequest) {
        where organization_id = $1
          and ($2::text is null or entity_type = $2)
          and ($3::text is null or entity_id = $3)
-         and ($5::boolean is not true or entity_type <> all($4::text[]))
+         and ($5::boolean is not true or entity_type = any($4::text[]))
        order by created_at desc
        limit $6`,
       [
         principal.organizationId,
         entityType,
         body.entity_id?.trim() || null,
-        [...COACH_EXCLUDED_ENTITY_TYPES],
+        [...COACH_ALLOWED_ENTITY_TYPES],
         principal.role === 'coach',
         limit,
       ],
