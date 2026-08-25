@@ -349,7 +349,7 @@ const KIOSK_TAB_BASE =
   'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.08em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 const KIOSK_TAB_ACTIVE = 'border-[color:var(--brass-600)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
 const KIOSK_TAB_INACTIVE =
-  'border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]';
+  'border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]';
 
 /* Kiosk panel shells — the sheet's materials instead of bordered rectangles. */
 const PANEL = 'mat-leather rounded-[var(--r-lg)] p-[var(--s5)]';
@@ -2214,7 +2214,7 @@ export default function AthleteWorkspace() {
                 {/* Read back from the server, so "my notes were saved" is
                     something the athlete can see rather than be told. */}
                 {storedSessionLoad === 'loaded' && recentSessions.length > 0 ? (
-                  <div className="space-y-[var(--s3)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
+                  <div className="space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]">
                     <p className="t-label">
                       Your Last Sessions
                     </p>
@@ -2766,7 +2766,7 @@ export default function AthleteWorkspace() {
                       <p className="t-label">Coaching Cues:</p>
                       <div className="flex flex-wrap gap-[var(--s2)]">
                         {drill.cues.map((cue) => (
-                          <span key={`${drill.id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">⚡ {cue}</span>
+                          <span key={`${drill.id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">⚡ {cue}</span>
                         ))}
                       </div>
                     </div>
@@ -2948,7 +2948,7 @@ export default function AthleteWorkspace() {
 
                 <ShadowChatButton context="Athlete Workspace" />
 
-                <div className="space-y-[var(--s3)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
+                <div className="space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]">
                   <p className="t-label">Things you can ask SHADOW:</p>
                   <ul className="list-disc space-y-[var(--s2)] pl-[var(--s5)]">
                     {suggestedQuestions.map((q) => (

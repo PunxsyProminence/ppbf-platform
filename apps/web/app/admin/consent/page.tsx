@@ -265,7 +265,7 @@ function ConsentConsole() {
        rhythm and deliberately no ground. */
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-3xl space-y-[var(--s5)]">
-        <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           {/* The desk lamp. .lamp draws the shade and the pool of light under
               it -- the office's own fixture, hung the way /admin and
               /admin/people hang theirs. */}

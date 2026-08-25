@@ -529,8 +529,8 @@ export default function SessionScriptLiveDelivery({
                   aria-current={isCurrent ? 'step' : undefined}
                   className={`flex flex-wrap items-center justify-between gap-[var(--s3)] rounded-[var(--r-md)] border p-[var(--s3)] ${
                     isCurrent
-                      ? 'border-[color:var(--brass-700)] bg-[rgba(212,175,74,.10)]'
-                      : 'border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)]'
+                      ? 'border-[color:var(--brass-700)] bg-[rgb(var(--brass-400-rgb)_/_.10)]'
+                      : 'border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)]'
                   }`}
                 >
                   <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
@@ -565,7 +565,7 @@ export default function SessionScriptLiveDelivery({
           startExecution has always accepted, just never had a caller for
           during a live session. Closing out adherence and actual exposure
           still happens on the execution ledger; this only starts the link. */}
-      <div className="mt-[var(--s6)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
+      <div className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]">
         {!logOpen ? (
           <button type="button" onClick={() => setLogOpen(true)} className="btn btn--ghost">
             Log an intervention...
@@ -630,7 +630,7 @@ export default function SessionScriptLiveDelivery({
             {loggedInterventions.length > 0 && (
               <ul className="space-y-[var(--s2)]">
                 {loggedInterventions.map((item) => (
-                  <li key={item.execution_id} className="flex flex-wrap items-center gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)]">
+                  <li key={item.execution_id} className="flex flex-wrap items-center gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)]">
                     <span className="badge badge--cleared"><i aria-hidden="true">✓</i>logged</span>
                     <span className="t-body text-[color:var(--bone-200)]">{item.protocol_title}</span>
                     <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{item.athlete_name}</span>
@@ -662,7 +662,7 @@ export default function SessionScriptLiveDelivery({
       </div>
 
       {/* Ending the session. */}
-      <div className="mt-[var(--s6)] border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
+      <div className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]">
         {!settleOpen ? (
           <button type="button" onClick={() => setSettleOpen(true)} className="btn btn--ghost">
             End session...

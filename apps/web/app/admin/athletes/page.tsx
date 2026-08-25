@@ -470,7 +470,7 @@ function AthleteRecordsConsoleContent() {
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
               <p className="t-eyebrow">Athlete Records</p>
@@ -614,7 +614,7 @@ function AthleteRecordsConsoleContent() {
                 a full CRUD surface for pilot.emergency_contacts is a larger
                 change than relabeling this page, and is not built by this
                 fix. */}
-            <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+            <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
               <div>
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Emergency Contacts on File</h2>
                 <p className="t-body mt-[var(--s3)]">
@@ -684,7 +684,7 @@ function AthleteRecordsConsoleContent() {
               )}
             </section>
 
-            <form onSubmit={saveCorrection} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+            <form onSubmit={saveCorrection} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
               <div>
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>{selected.full_name}</h2>
                 <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">Record ID {selected.athlete_id}</p>
@@ -816,7 +816,7 @@ function AthleteRecordsConsoleContent() {
               </button>
             </form>
 
-            <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+            <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
               <div>
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
                   {selected.active_flag ? 'This athlete has left the gym' : 'This athlete is back'}

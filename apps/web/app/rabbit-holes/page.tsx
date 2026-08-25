@@ -276,7 +276,7 @@ function RabbitHoleAuthoringPage() {
           ) : null}
         </header>
 
-        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>What Is It About?</h2>
           <p className="t-body">
             A lesson attaches to a term the platform already uses, never to a card. The card&apos;s wording can
@@ -334,7 +334,7 @@ function RabbitHoleAuthoringPage() {
           </div>
         </section>
 
-        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Write</h2>
           <label className="field">
             <span className="t-label">Title of the lesson</span>
@@ -403,7 +403,7 @@ function RabbitHoleAuthoringPage() {
           {message ? <p role="status" className="t-body font-semibold text-[color:var(--brass-300)]">{message}</p> : null}
         </section>
 
-        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           {/* NOT "Everything This Gym Has Written", which is what this
               heading used to say. The read is capped -- see LESSON_READ_LIMIT
               above -- so past that many lessons this is the most recently

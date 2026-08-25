@@ -119,7 +119,7 @@ export default function PublicationWorkflowPage() {
           ))}
         </section>
 
-        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Workflow Surface Registry</h2>
           <div className="grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
             {workflowPanels.map((stage) => (
@@ -131,7 +131,7 @@ export default function PublicationWorkflowPage() {
           </div>
         </section>
 
-        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Quick links</h2>
           <div className="flex flex-wrap gap-[var(--s4)]">
             {quickLinks.map((item) => (

@@ -44,7 +44,7 @@ const stats = [
 export default function ScenarioSimulatorPage() {
   return (
     <main className="room room--file min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
-      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+      <header className="mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Scenario Simulator</p>
@@ -93,7 +93,7 @@ export default function ScenarioSimulatorPage() {
           </p>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               Intended Scope
@@ -123,7 +123,7 @@ export default function ScenarioSimulatorPage() {
           </ul>
         </section>
 
-        <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Flow Direction</p>
           <p className="t-body mt-[var(--s3)]">
             In the pipeline order, Audit Trace follows this stage. Nothing is validated here and nothing is handed on:

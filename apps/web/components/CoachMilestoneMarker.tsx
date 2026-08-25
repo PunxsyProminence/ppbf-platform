@@ -175,7 +175,7 @@ export default function CoachMilestoneMarker({ roster }: CoachMilestoneMarkerPro
                     type="button"
                     disabled={busyKey === milestone.key}
                     onClick={() => void mark(milestone.key)}
-                    className="inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)] text-left text-[length:var(--t-sm)] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-400)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] disabled:opacity-60"
+                    className="inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)] text-left text-[length:var(--t-sm)] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-400)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] disabled:opacity-60"
                   >
                     {milestone.label}
                   </button>

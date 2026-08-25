@@ -518,7 +518,7 @@ export default function PlatformConsole() {
   if (!hasPlatformAccess) {
     return (
       <main className="room room--office room--lit-center grid min-h-screen place-items-center px-[var(--s5)]">
-        <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s6)] text-center">
+        <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s6)] text-center">
           <p className="t-eyebrow">Access Denied</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Platform Owner Access Required</h1>
           <p className="t-body">
@@ -540,7 +540,7 @@ export default function PlatformConsole() {
   return (
     <main className="room room--office min-h-screen">
       <div className="mx-auto w-full max-w-3xl space-y-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-        <header className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Platform Desk</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Omega</h1>
           <p className="t-body">
@@ -575,7 +575,7 @@ export default function PlatformConsole() {
           </div>
         )}
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <label className="field">
             <span className="t-label">Choose A Gym</span>
             <select
@@ -622,7 +622,7 @@ export default function PlatformConsole() {
           )}
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Invite Staff Or A Gym Admin</h2>
           <p className="t-body mt-[var(--s3)]">
             Sends a Microsoft-authenticated invite into the selected gym.
@@ -661,7 +661,7 @@ export default function PlatformConsole() {
           </div>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Prepare An Athlete Account</h2>
           <p className="t-body mt-[var(--s3)]">
             This makes the account only. It has no PIN and cannot sign in yet: the gym&apos;s own admin
@@ -703,7 +703,7 @@ export default function PlatformConsole() {
           </div>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Organization Admin</h2>
           <p className="t-body mt-[var(--s3)]">
             Promote an existing member of the selected gym to organization admin, or hand the seat from
@@ -788,7 +788,7 @@ export default function PlatformConsole() {
             the job, the consequences are stated before the click rather than
             after it, and the fact that it is NOT a deletion is on the form
             itself, where the question gets asked. */}
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Close A Gym</h2>
 
           <p className="t-eyebrow mt-[var(--s4)]">Standing right now</p>
@@ -950,7 +950,7 @@ export default function PlatformConsole() {
           )}
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Account Status</h2>
           <p className="t-body mt-[var(--s3)]">
             Disable or restore any coach, staff, volunteer, board, or admin account in the selected gym.
@@ -989,7 +989,7 @@ export default function PlatformConsole() {
           </div>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Master SHADOW Access</h2>
           <p className="t-body mt-[var(--s3)]">
             Grants or revokes a standing, platform-wide privilege flag — not scoped to the gym selected

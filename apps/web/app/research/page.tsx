@@ -470,7 +470,7 @@ export default function ResearchIntakePage() {
 
           FUNCTIONAL_CHANGES: NONE. */}
       <div className="ge-file">
-      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+      <header className="mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Research Intake</p>
@@ -535,7 +535,7 @@ export default function ResearchIntakePage() {
           </section>
         ) : null}
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             Review State Summary
           </h2>
@@ -601,7 +601,7 @@ export default function ResearchIntakePage() {
           </div>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             Operational Research Requirements
           </h2>
@@ -775,7 +775,7 @@ export default function ResearchIntakePage() {
         </section>
 
         {curatorSources !== null ? (
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               General Research Intake
             </h2>

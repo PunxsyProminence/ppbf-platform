@@ -508,7 +508,7 @@ export default function AthleteProgressionIntelligencePage() {
                         )}
 
                         {assignmentCompletions.length > 0 && (
-                          <div className="border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
+                          <div className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]">
                             <p className="t-label mb-[var(--s4)]">Completion History</p>
                             <div className="space-y-[var(--s3)]">
                               {assignmentCompletions
