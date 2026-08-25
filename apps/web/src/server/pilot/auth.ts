@@ -535,6 +535,61 @@ export async function activateAccountPin(accountId: string, pin: string, organiz
   });
 }
 
+/**
+ * The three preconditions every athlete-account constructor on this path
+ * shares, checked inside the caller's transaction before any write.
+ *
+ * Extracted so the live constructor and the inert shell constructor below
+ * cannot drift apart on them: the roster row must exist IN THE NAMED
+ * ORGANIZATION (so no caller can bind an account to an athlete id that gym
+ * does not have), one athlete may hold at most one account, and an account id
+ * already in use is refused rather than repointed.
+ */
+async function assertAthleteAccountAssignableTx(
+  client: PoolClient,
+  accountId: string,
+  athleteId: string,
+  organizationId: string,
+): Promise<void> {
+  const athlete = await client.query<{ athlete_id: string }>(
+    `select athlete_id
+     from pilot.athletes
+     where athlete_id = $1 and organization_id = $2`,
+    [athleteId, organizationId],
+  );
+
+  if (athlete.rows.length === 0) {
+    throw new Error('Athlete not found in organization');
+  }
+
+  const existingAthleteBinding = await client.query<{ account_id: string }>(
+    `select account_id
+     from pilot.accounts
+     where athlete_id = $1 and organization_id = $2
+     limit 1`,
+    [athleteId, organizationId],
+  );
+
+  if (existingAthleteBinding.rows.length > 0 && existingAthleteBinding.rows[0].account_id !== accountId) {
+    throw new Error('Athlete is already linked to another account');
+  }
+
+  const existingAccount = await client.query<{ organization_id: string }>(
+    `select organization_id
+     from pilot.accounts
+     where account_id = $1
+     limit 1`,
+    [accountId],
+  );
+
+  if (existingAccount.rows.length > 0) {
+    if (existingAccount.rows[0].organization_id !== organizationId) {
+      throw new Error('Account already exists in another organization');
+    }
+    throw new Error('Account already exists');
+  }
+}
+
 export async function createAthleteAccount(
   accountId: string,
   athleteId: string,
@@ -544,43 +599,7 @@ export async function createAthleteAccount(
   const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
 
   await withTransaction(async (client) => {
-    const athlete = await client.query<{ athlete_id: string }>(
-      `select athlete_id
-       from pilot.athletes
-       where athlete_id = $1 and organization_id = $2`,
-      [athleteId, organizationId],
-    );
-
-    if (athlete.rows.length === 0) {
-      throw new Error('Athlete not found in organization');
-    }
-
-    const existingAthleteBinding = await client.query<{ account_id: string }>(
-      `select account_id
-       from pilot.accounts
-       where athlete_id = $1 and organization_id = $2
-       limit 1`,
-      [athleteId, organizationId],
-    );
-
-    if (existingAthleteBinding.rows.length > 0 && existingAthleteBinding.rows[0].account_id !== accountId) {
-      throw new Error('Athlete is already linked to another account');
-    }
-
-    const existingAccount = await client.query<{ organization_id: string }>(
-      `select organization_id
-       from pilot.accounts
-       where account_id = $1
-       limit 1`,
-      [accountId],
-    );
-
-    if (existingAccount.rows.length > 0) {
-      if (existingAccount.rows[0].organization_id !== organizationId) {
-        throw new Error('Account already exists in another organization');
-      }
-      throw new Error('Account already exists');
-    }
+    await assertAthleteAccountAssignableTx(client, accountId, athleteId, organizationId);
 
     // The account is created live, on the shared bootstrap PIN, rather than
     // inert and awaiting an activation code. The admin can now tell the
@@ -590,6 +609,15 @@ export async function createAthleteAccount(
     // requirePrincipal refuses every route while that flag is true, so the
     // one thing this account can do until the athlete picks their own PIN is
     // pick their own PIN. See http.ts.
+    //
+    // It is also only safe because the caller is standing in the same gym as
+    // the athlete. The starting PIN is a published constant, so whoever can
+    // reach this function and choose the account_id can sign in as the child
+    // and then set a PIN of their own -- which is why the ONE caller is
+    // /api/pilot/admin/athlete-accounts (organization admin, own organization,
+    // an actor assertActorCanAccessAthlete already admits to that child's
+    // record). A caller that the athlete boundary does not admit must use
+    // createAthleteShellAccount below instead.
     const bootstrapPinHash = await hashPin(DEFAULT_FIRST_LOGIN_PIN);
 
     await client.query(
@@ -604,6 +632,55 @@ export async function createAthleteAccount(
        on conflict (account_id, organization_id) do update
          set role = 'athlete',
              active_flag = true,
+             updated_at = now()`,
+      [accountId, organizationId],
+    );
+  });
+}
+
+/**
+ * The INERT half of createAthleteAccount: same roster and binding guards, no
+ * credential.
+ *
+ * `pin_hash` is null and `active_flag` is false, so the row cannot
+ * authenticate at all -- loginWithAccountIdAndPin refuses an inactive account
+ * and refuses one with no PIN hash, and the organization membership is written
+ * inactive to match. Bringing the account to life is a separate, deliberate
+ * act by that gym's own administrator: activateAccountPin (issued through
+ * /api/pilot/admin/activation-codes, which excludes platform_owner by name).
+ *
+ * This exists because "prepare an account for an athlete" and "hand somebody
+ * that athlete's credentials" are different powers, and only the first one
+ * belongs to a caller outside the gym. createAthleteAccount creates the row
+ * live on DEFAULT_FIRST_LOGIN_PIN -- a constant published in pinPolicy.ts --
+ * so for a caller who chooses the account_id, that constructor IS a
+ * credential: sign in on the starting PIN, change it (the one route a
+ * must_change_pin session may call), and the child's sign-in identity now
+ * belongs to whoever created it. Every athlete-credential route in this
+ * codebase states that this is outside the platform-owner tier, and
+ * assertActorCanAccessAthlete refuses that role an athlete record
+ * unconditionally, first.
+ */
+export async function createAthleteShellAccount(
+  accountId: string,
+  athleteId: string,
+  organizationId: string,
+): Promise<void> {
+  await withTransaction(async (client) => {
+    await assertAthleteAccountAssignableTx(client, accountId, athleteId, organizationId);
+
+    await client.query(
+      `insert into pilot.accounts
+         (account_id, role, organization_id, athlete_id, pin_hash, must_change_pin, active_flag, is_platform_owner)
+       values ($1, 'athlete', $2, $3, null, false, false, false)`,
+      [accountId, organizationId, athleteId],
+    );
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', false)
+       on conflict (account_id, organization_id) do update
+         set role = 'athlete',
+             active_flag = false,
              updated_at = now()`,
       [accountId, organizationId],
     );

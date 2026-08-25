@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { createAthleteAccount } from '@/src/server/pilot/auth';
+import { createAthleteShellAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
@@ -19,6 +19,21 @@ export const runtime = 'nodejs';
  * minted code lets whoever holds it set the athlete's PIN and sign in as them.
  * Completing activation stays the job of that gym's own admin, via the
  * existing /admin/people flow -- this route's response says so explicitly.
+ *
+ * WHY createAthleteShellAccount AND NOT createAthleteAccount. The paragraph
+ * above describes what this route was built to do, and for a while it was not
+ * what the code did. createAthleteAccount was changed to create the row LIVE on
+ * DEFAULT_FIRST_LOGIN_PIN -- correct for its own caller,
+ * /api/pilot/admin/athlete-accounts, where the organization admin is standing
+ * in the same gym as the athlete and already reaches that child's record. Here
+ * it silently turned a shell into a credential: the starting PIN is a published
+ * constant and this caller chooses the account_id, so the account could be
+ * signed into, its PIN changed on the one route a must_change_pin session may
+ * call, and the child's sign-in identity taken over -- in any organization
+ * named in the body, by the one role assertActorCanAccessAthlete refuses an
+ * athlete record to unconditionally and first. The shell constructor restores
+ * exactly what this header promises: pin_hash null, active_flag false,
+ * membership inactive, and the same roster and binding guards as before.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -39,7 +54,7 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing organization_id, account_id, or athlete_id');
     }
 
-    await createAthleteAccount(accountId, athleteId, organizationId);
+    await createAthleteShellAccount(accountId, athleteId, organizationId);
 
     await writePilotAuditEvent({
       event_type: 'create',
