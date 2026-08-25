@@ -6,6 +6,7 @@ import {
   assertActiveCoachAccount,
   assertActorCanAccessAthlete,
   assertCoachAssignedToAthlete,
+  athleteIdsForCoach,
   isOrganizationAdminRole,
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -151,6 +152,19 @@ async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
   return guardianAthleteIds(actor.organizationId, actor.accountId);
 }
 
+// The coach-reachable "my athletes" set (coach of record plus active coverage
+// grants), fed into filterStateForActor the way getParentAthleteIds feeds the
+// parent branch. Coaching requests are athlete-linked with no class_id, so
+// class ownership cannot scope them -- athlete-reachability is the dimension
+// that can.
+async function getCoachAthleteIds(actor: SchedulerActor): Promise<string[]> {
+  if (actor.role !== 'coach') {
+    return [];
+  }
+
+  return athleteIdsForCoach(actor.organizationId, actor.accountId);
+}
+
 async function assertCanActOnAthlete(actor: SchedulerActor, athleteId: string): Promise<void> {
   if (actor.role === 'athlete') {
     if (!actor.athleteId || actor.athleteId !== athleteId) {
@@ -191,6 +205,7 @@ function filterStateForActor(
   actor: SchedulerActor,
   store: SchedulerStore,
   parentAthleteIds: string[],
+  coachAthleteIds: string[],
 ): SchedulerStore {
   const classes = store.classes;
 
@@ -210,10 +225,17 @@ function filterStateForActor(
         .map((item) => item.class_id),
     );
 
+    const coachReachableAthleteIds = new Set(coachAthleteIds);
+
     return {
       classes,
       registrations: store.registrations.filter((row) => coachOwnedClassIds.has(row.class_id)),
-      coaching_requests: store.coaching_requests,
+      // Coaching requests carry an athlete_id and no class_id, so they are
+      // scoped by athlete-reachability -- the same dimension the parent and
+      // athlete branches use -- not by class ownership. Returning
+      // store.coaching_requests unfiltered leaked every athlete's 1:1 request
+      // (athlete_id, free-text goals, preferred_at) org-wide to any coach.
+      coaching_requests: store.coaching_requests.filter((row) => coachReachableAthleteIds.has(row.athlete_id)),
       attendance: store.attendance.filter((row) => coachOwnedClassIds.has(row.class_id)),
     };
   }
@@ -260,8 +282,11 @@ export async function GET(request: NextRequest) {
     normalizeRole(actor.role);
 
     const store = await listSchedulerStore(actor.organizationId);
-    const parentAthleteIds = await getParentAthleteIds(actor);
-    const filtered = filterStateForActor(actor, store, parentAthleteIds);
+    const [parentAthleteIds, coachAthleteIds] = await Promise.all([
+      getParentAthleteIds(actor),
+      getCoachAthleteIds(actor),
+    ]);
+    const filtered = filterStateForActor(actor, store, parentAthleteIds, coachAthleteIds);
 
     return NextResponse.json({
       ok: true,

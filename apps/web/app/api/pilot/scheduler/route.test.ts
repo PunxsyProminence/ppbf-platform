@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
 
-import { POST } from './route';
+import { GET, POST } from './route';
 import {
   assertActiveCoachAccount,
   assertActorCanAccessAthlete,
   assertCoachAssignedToAthlete,
+  athleteIdsForCoach,
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -13,6 +14,7 @@ import {
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
   listRegisteredAthleteIdsForClass,
+  listSchedulerStore,
   registerForClassTransactionally,
   resolveSchedulerCoachingRequest,
   upsertSchedulerAttendance,
@@ -28,6 +30,7 @@ jest.mock('@/src/server/pilot/access', () => ({
   assertActiveCoachAccount: jest.fn(),
   assertActorCanAccessAthlete: jest.fn(),
   assertCoachAssignedToAthlete: jest.fn(),
+  athleteIdsForCoach: jest.fn(),
   isOrganizationAdminRole: jest.fn((role: string) => role === 'organization_admin' || role === 'admin'),
 }));
 
@@ -43,6 +46,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
   upsertSchedulerAttendance: jest.fn(),
   bulkUpsertSchedulerAttendance: jest.fn(),
   listRegisteredAthleteIdsForClass: jest.fn(),
+  listSchedulerStore: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/db', () => ({
@@ -664,5 +668,46 @@ describe('review_coaching_request', () => {
 
     expect(response.status).toBe(400);
     expect(mockResolveRequest).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('GET /api/pilot/scheduler scopes coaching requests to a coach’s reachable athletes', () => {
+  const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
+  const mockListStore = listSchedulerStore as jest.Mock;
+
+  // The bug: the coach branch of filterStateForActor returned
+  // store.coaching_requests unfiltered, while the parent and athlete branches
+  // scope by athlete-reachability. A coaching request is athlete-linked and
+  // carries free-text goals, so this disclosed every athlete's 1:1 coaching
+  // request org-wide to any coach.
+  test('a coach receives coaching requests only for athletes they can reach, not the whole org', async () => {
+    mockRequirePrincipal.mockResolvedValue({
+      accountId: 'acct-coach',
+      role: 'coach',
+      organizationId: 'org-1',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft',
+    });
+    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockListStore.mockResolvedValue({
+      classes: [],
+      registrations: [],
+      attendance: [],
+      coaching_requests: [
+        { coaching_request_id: 'cr-mine', athlete_id: 'ath-mine', goals: 'private mine', preferred_at: null, status: 'open', requested_by_account_id: 'p-1' },
+        { coaching_request_id: 'cr-other', athlete_id: 'ath-other', goals: 'private other', preferred_at: null, status: 'open', requested_by_account_id: 'p-2' },
+      ],
+    });
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/scheduler'));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const athleteIds = body.coaching_requests.map((row: { athlete_id: string }) => row.athlete_id);
+    expect(athleteIds).toEqual(['ath-mine']);
+    expect(athleteIds).not.toContain('ath-other');
+    expect(mockAthleteIdsForCoach).toHaveBeenCalledWith('org-1', 'acct-coach');
   });
 });
