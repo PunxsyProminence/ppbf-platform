@@ -84,15 +84,10 @@ export async function createShadowResearchRequirement(input: ShadowResearchRequi
   return row.research_requirement_id;
 }
 
-export async function listShadowResearchRequirements(
-  organizationId: string,
-  filter: ShadowResearchRequirementFilter = {},
-): Promise<ShadowResearchRequirementRow[]> {
-  const athleteIds = filter.athleteIds ?? [];
-  const hasAthleteScope = athleteIds.length > 0;
-  return query<ShadowResearchRequirementRow>(
-    `select
-       research_requirement_id,
+// Every column of a requirement row, in the order ShadowResearchRequirementRow
+// declares them. Shared by the list read and the single-row read below so the
+// two cannot drift into returning different shapes of the same record.
+const REQUIREMENT_COLUMNS = `research_requirement_id,
        organization_id,
        source_event_name,
        source_entity_type,
@@ -109,7 +104,43 @@ export async function listShadowResearchRequirements(
        metadata,
        created_at,
        resolved_at,
-       subject_id
+       subject_id`;
+
+/**
+ * One stored requirement, by id, within one organization.
+ *
+ * This exists so an authorization decision about a requirement is made against
+ * the row that is actually STORED rather than against whatever the caller
+ * asserted in the request body. research_requirement_id is a bigserial: it is
+ * guessed by counting, not leaked, so "the caller named an id" carries no
+ * evidence at all about whether they may touch what the id points at.
+ *
+ * Organization-scoped like every other read here, so a cross-organization id
+ * reads as absent rather than as a row.
+ */
+export async function getShadowResearchRequirementById(
+  organizationId: string,
+  researchRequirementId: number,
+): Promise<ShadowResearchRequirementRow | null> {
+  return queryOne<ShadowResearchRequirementRow>(
+    `select
+       ${REQUIREMENT_COLUMNS}
+     from pilot.shadow_research_requirements
+     where organization_id = $1
+       and research_requirement_id = $2`,
+    [organizationId, researchRequirementId],
+  );
+}
+
+export async function listShadowResearchRequirements(
+  organizationId: string,
+  filter: ShadowResearchRequirementFilter = {},
+): Promise<ShadowResearchRequirementRow[]> {
+  const athleteIds = filter.athleteIds ?? [];
+  const hasAthleteScope = athleteIds.length > 0;
+  return query<ShadowResearchRequirementRow>(
+    `select
+       ${REQUIREMENT_COLUMNS}
      from pilot.shadow_research_requirements
      where organization_id = $1
        and ($2::text is null or status = $2)
@@ -133,6 +164,36 @@ export async function resolveShadowResearchRequirement(input: {
   // other family's requirement in the org by guessing/enumerating an id, even
   // though the list view is already correctly scoped.
   athleteIds?: string[];
+  /**
+   * The athlete the caller ALREADY AUTHORIZED for this exact row, or null when
+   * the row they authorized names no athlete at all.
+   *
+   * REQUIRED, not optional, and that is the point. The caller resolves the
+   * stored row's subject, runs it through assertActorCanAccessAthlete, and
+   * then hands that same value here so the authorization and the write are ONE
+   * statement: if the row's subject is not still exactly what was authorized
+   * when the UPDATE runs, zero rows match and nothing is written. A caller
+   * that could omit this would be back to a check-then-write with a gap
+   * between them -- the TOCTOU shape #624/#630/#648 fixed elsewhere -- so the
+   * type system refuses to let a new call site forget it.
+   *
+   * The predicate resolves the subject in SQL exactly as the route resolves it
+   * in TypeScript: the subject_id column first, then metadata.subject_id, then
+   * metadata.athlete_id. The metadata arms are load-bearing, not belt-and-
+   * braces: the subject_id migration's backfill never reads metadata.athlete_id,
+   * so every intake-review row written before its application companion names
+   * its child ONLY there, with the column NULL. `is not distinct from` rather
+   * than `=` so that "this row names nobody" is itself a value that must match,
+   * instead of a NULL that silently drops the predicate.
+   *
+   * Where the two resolutions could disagree they disagree CLOSED: SQL's
+   * `->>` renders a non-string metadata value as text where the TypeScript
+   * helper reads it as "names no athlete", and btrim strips ASCII spaces where
+   * String.trim strips all whitespace. Either way the comparison fails and the
+   * write is refused; neither direction admits a write the caller did not
+   * authorize.
+   */
+  expectedSubjectAthleteId: string | null;
 }): Promise<boolean> {
   const hasAthleteScope = (input.athleteIds?.length ?? 0) > 0;
   const rows = await query<{
@@ -149,17 +210,30 @@ export async function resolveShadowResearchRequirement(input: {
          $4::boolean = false
          or subject_id = any($5::text[])
        )
+       and coalesce(
+             nullif(btrim(subject_id), ''),
+             nullif(btrim(metadata->>'subject_id'), ''),
+             nullif(btrim(metadata->>'athlete_id'), '')
+           ) is not distinct from $6::text
      returning research_requirement_id`,
     [
       input.organizationId,
       input.researchRequirementId,
+      // The actor fields go LAST so they win the spread. They used to go
+      // first, which let a caller's own `metadata` overwrite them: any
+      // admitted role could resolve a requirement while passing
+      // {resolved_by_account_id, resolved_by_role} of their choosing, and the
+      // stored row would then name somebody else as having handled a
+      // safeguarding-adjacent follow-up. Attribution on this row is the
+      // server's to state, not the caller's.
       JSON.stringify({
+        ...(input.metadata ?? {}),
         resolved_by_account_id: input.resolvedByAccountId,
         resolved_by_role: input.resolvedByRole,
-        ...(input.metadata ?? {}),
       }),
       hasAthleteScope,
       input.athleteIds ?? [],
+      input.expectedSubjectAthleteId,
     ],
   );
 

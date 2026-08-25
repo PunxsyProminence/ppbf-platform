@@ -1,5 +1,16 @@
 # Grok Status — Golden Era V1 usable-app (HANDS-OFF FINAL — LIVE)
 
+> **Superseded in one respect, 2026-08-25 — kept as the 2026-08-24 status
+> record.** Two lines below (§Type B plates, and step 4 of the hands-off path)
+> describe the Type B JPEGs as sitting in OneDrive ready to be landed. That is
+> still where the files are, but no AI lane can get them out: Claude cannot
+> retrieve file contents from SharePoint/OneDrive — the connector renders an
+> image rather than returning bytes, `downloadUrl` is null, and a zip is
+> inaccessible. The only route that lands them is **Jason drag-dropping the
+> JPEGs onto the branch** (step 4 already says so, and it is the correct step).
+> Read `apps/web/public/plates/README.md` for the current delivery contract
+> before acting on anything in this file.
+
 **Date:** 2026-08-24 late · **Lane:** Grok visual  
 **Primary objective:** REAL PPBF FUNCTIONS + REAL PUNXSY PROMINENCE GYM + GOLDEN ERA V1 + USABLE CORE JOURNEYS on staging **TODAY**. **Hands-off. Complete.**
 
@@ -51,7 +62,7 @@ Page DNA + Room Purpose DNA from contract apply. Building map already assigns al
 
 ### Type B plates (#586) — capacity only (not required TODAY)
 
-Exact producer set (sizes + SHA-256 from contract §9) re-validated from OneDrive `Grok-Plates-Inbox`. Current plates on main are usable under the new furniture. Type B upgrades walls later via drag-drop or capacity window. Leave office-01 + board-01 untouched.
+Exact producer set (sizes + SHA-256 from contract §9) re-validated from OneDrive `Grok-Plates-Inbox` — a claim about the drive copies, not about anything in this repository, and not a delivery: the bytes are delivered only once they are committed to a branch. Current plates on main are usable under the new furniture. Type B upgrades walls later via drag-drop or capacity window. Leave office-01 + board-01 untouched.
 
 ## Drift check (double-checked this session)
 

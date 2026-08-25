@@ -82,6 +82,13 @@ function scopedRules(): Array<[string, string]> {
 describe('golden-era front office scope', () => {
   test('the bronze ramp is on the .ge-frontoffice class scope, not :root', () => {
     expect(scopeBody(css)).not.toBeNull();
+    /* `?? []` turns "the regex found no :root block" into "there is nothing to
+       check", and a for-loop over nothing asserts nothing -- so this half of the
+       test reports that no :root carries the bronze in exactly the same voice
+       whether that is true or whether the scan simply broke. Seven :root blocks
+       resolve today; the floor is the honest claim, which is that at least one
+       was read and the loop below therefore ran. */
+    expect((css.match(/:root\s*\{[^}]*\}/g) ?? []).length).toBeGreaterThan(0);
     for (const block of css.match(/:root\s*\{[^}]*\}/g) ?? []) {
       expect(block).not.toContain('#E7C88A');
     }
@@ -92,6 +99,13 @@ describe('golden-era front office scope', () => {
     expect(body).not.toBeNull();
     const scoped = (body as string).match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
     expect(scoped).not.toBeNull();
+    /* `legacyRung` returns null when it finds no definition outside the scope,
+       and `not.toEqual(null)` is satisfied by every string there is. So the
+       moment the ramp this scope exists to differ FROM stops being in the
+       resolved sheet, "differs from legacy" starts passing for the one reason
+       that means nothing was compared. Asserted the way its sibling
+       goldenEraTokenScope.test.ts already asserts it. */
+    expect(legacyRung(css, rung)).not.toBeNull();
     expect((scoped as RegExpMatchArray)[1].toLowerCase()).not.toEqual(legacyRung(css, rung));
   });
 

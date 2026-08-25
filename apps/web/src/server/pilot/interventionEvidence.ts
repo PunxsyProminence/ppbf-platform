@@ -245,19 +245,61 @@ export async function linkEvidence(input: {
   );
 }
 
+export interface EvidenceLinkOwner {
+  link_id: string;
+  execution_id: string;
+  athlete_id: string;
+}
+
+/**
+ * The athlete an evidence link actually belongs to -- resolved through the
+ * link's STORED execution, not through anything the caller supplied.
+ *
+ * A link_id is the only handle the removal path takes, and by itself it says
+ * nothing about whose record it is. This is the lookup that turns it into a
+ * subject the central athlete gate can be asked about, so removal can be
+ * authorized on the same footing as every read of the same row. Scoped to the
+ * organization, so a link_id from another tenant resolves to nothing at all.
+ */
+export async function getEvidenceLinkOwner(
+  organizationId: string,
+  linkId: string,
+): Promise<EvidenceLinkOwner | null> {
+  return queryOne<EvidenceLinkOwner>(
+    `select l.link_id, l.execution_id, e.athlete_id
+     from pilot.intervention_evidence_links l
+     join pilot.intervention_executions e
+       on e.organization_id = l.organization_id
+      and e.execution_id = l.execution_id
+     where l.organization_id = $1 and l.link_id = $2`,
+    [organizationId, linkId],
+  );
+}
+
 /** Removal stamps, never deletes: the link stays on record with why it no
- * longer counts. */
+ * longer counts.
+ *
+ * expectedExecutionId is REQUIRED, and it is the execution whose athlete the
+ * caller authorized. It rides into the UPDATE's own WHERE clause so that
+ * authorizing and writing are one statement: the row can only be stamped if
+ * it still hangs off the execution that was checked. Required rather than
+ * optional on purpose -- an optional guard is one a future caller can omit
+ * without anything going red, and this is the guard that decides whether a
+ * stranger may strike evidence from a child's intervention record.
+ */
 export async function removeEvidence(input: {
   organizationId: string;
   linkId: string;
   removedReason: string;
+  expectedExecutionId: string;
 }): Promise<EvidenceLinkRow | null> {
   const row = await queryOne<{ link_id: string }>(
     `update pilot.intervention_evidence_links
      set status = 'removed', removed_reason = $3, updated_at = now()
      where organization_id = $1 and link_id = $2 and status = 'active'
+       and execution_id = $4
      returning link_id`,
-    [input.organizationId, input.linkId, input.removedReason],
+    [input.organizationId, input.linkId, input.removedReason, input.expectedExecutionId],
   );
   if (!row) return null;
   return queryOne<EvidenceLinkRow>(
