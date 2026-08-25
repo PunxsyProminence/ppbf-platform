@@ -17,7 +17,14 @@ export default async function AthleteDashboardPage() {
 
   return (
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/dashboard" allowedRoles={['athlete']} showShellHeader={false}>
-      <AthleteWorkspace />
+      {/* ge-locker: Golden Era Visual 003 scope. The only change on this route
+          is this wrapper class -- the locker carcass, parchment clipboard and
+          brass nameplate voice live in scoped CSS under .ge-locker in
+          design-system/current/ppbf-golden-era.css, so AthleteWorkspace and
+          every control inside it are untouched. */}
+      <div className="ge-locker">
+        <AthleteWorkspace />
+      </div>
     </RoleStandaloneView>
   );
 }
