@@ -205,15 +205,22 @@ export default function SparringTelemetryPage() {
 
       const timestamp = formatGymTimeOfDay(new Date()) ?? '';
       setLastSubmitted(timestamp);
+      // The ordinary-path copy may not claim a coach sees this. Nothing reads
+      // ordinary sparring observations back out: /shadow/formulas/results has
+      // no client caller, and no coach surface or SHADOW context queries
+      // shadow_formula_observations. What IS true is that the safety
+      // exceptions reach a coach -- missing medical clearance, or contact
+      // during a hold, file a flagged near miss -- so that branch keeps
+      // saying so, because that one is backed.
       const savedMessage = safetyReviewRaised
         ? 'Saved. There is no current medical clearance on file for this athlete, so '
           + 'your coach has been asked to look at it. What you wrote is kept -- do not put it in again.'
           + (safetyReviewLesson ? ` ${safetyReviewLesson}` : '')
-        : 'Saved. Your coach sees it.';
+        : 'Saved to your training record.';
 
       setStatusMessage(ok
         ? savedMessage
-        : 'Some of it saved, some did not. Your coach may not see every number -- tell them.');
+        : 'Some of it saved, some did not -- check your connection. What went through is on your record.');
     } finally {
       setIsSubmitting(false);
     }
@@ -265,7 +272,7 @@ export default function SparringTelemetryPage() {
           <p className="t-eyebrow">Your Corner</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Sparring Log</h1>
         </div>
-        <span className="plaque">Your coach reads this</span>
+        <span className="plaque">Your training record</span>
       </header>
 
       <form onSubmit={onSubmit} className="px-[var(--s5)] py-[var(--s6)]">
@@ -275,7 +282,7 @@ export default function SparringTelemetryPage() {
               <h2 className="t-command m-0" style={{ fontSize: 'var(--t-lg)' }}>What happened today</h2>
               <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                 Rounds, contact, what you threw, what landed, what you took, and how you felt after. It takes a
-                couple of minutes and it is the most useful thing you can hand your coach.
+                couple of minutes and it is the most complete record of your own work you can keep.
               </p>
             </div>
 
@@ -404,7 +411,7 @@ export default function SparringTelemetryPage() {
             </label>
 
             <div className="field">
-              <label htmlFor="recoveryNotes" className="t-label">Anything your coach should know</label>
+              <label htmlFor="recoveryNotes" className="t-label">Notes on how it went</label>
               <textarea
                 id="recoveryNotes"
                 value={recoveryNotes}
@@ -450,8 +457,8 @@ export default function SparringTelemetryPage() {
             </div>
 
             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-200)]">
-              Nothing here is graded and nothing here is shared with the other kids. Your coach reads it, and
-              over time it is how the two of you can see what is actually changing instead of guessing.
+              Nothing here is graded and nothing here is shared with the other kids. It stays on your
+              record, and over time it is how you can see what is actually changing instead of guessing.
             </div>
           </aside>
         </div>
