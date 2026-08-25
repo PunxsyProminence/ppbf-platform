@@ -96,6 +96,384 @@
    / bag DNA visible in the outer thirds; no stock grey brick. */
 
 /* ==========================================================================
+   GOLDEN ERA 004A — SESSION SCRIPTS (the coach's clipboard)
+   ==========================================================================
+   Route: /coach/session-scripts (apps/web/app/coach/session-scripts/page.tsx),
+   room .room--floor. Visual authority: the locked 004A desktop and mobile
+   references, which draw ONE object -- a dark stained clipboard hung in the
+   gym: a brass clip at the top edge, riveted brass corner plates, a leather
+   carry strap down the left side, an engraved brass nameplate, and a stack of
+   aged-paper strips clipped to the board, one of them lit.
+
+   WHY THIS ROOM IS NOT THE OTHER TWO. The Bell is parchment hung on brick;
+   The Floor Board is slate in a wood surround. This is PAPER ON A BOARD --
+   the contract's material hierarchy item 1 ("paper is the primary working
+   surface") taken literally, because a session script IS a sheet a coach
+   carries onto the floor. The board is the dark object; the paper is where
+   the work is read. Same Golden Era grammar, different room.
+
+   HOW THE PAPER IS MADE SAFE. Flipping a region from dark leather to light
+   paper flips which ink is readable, so each flipped region restates every
+   voice it renders in ink -- the way the sheet already answers its other two
+   light grounds. It deliberately does NOT move the --bone-* ramp to do that;
+   the long note at the paper seam below records why, and which guard caught
+   the shortcut.
+
+   WHICH REGIONS ARE FLIPPED, AND WHICH ARE DELIBERATELY NOT. Paper is applied
+   to the header strip, the script cards and the plan's block strips. Every ink
+   inside those three is either a voice this scope restates or a component that
+   carries its own contrast (.plaque, .btn--ghost). The plan section, the
+   live-delivery console and the past-deliveries list stay dark, because they
+   carry the medical and safeguarding panels whose ink is the reserved
+   --locked-ink literal: restyling a locked panel so it survives a ground flip
+   is a safety-semantics change, not a visual one. A ground flip that cannot be
+   seen rendered from here is exactly how this repository once shipped an
+   unreadable page; the boundary above is drawn so that it cannot happen again,
+   and every ratio quoted below is measured rather than assumed.
+
+   RESERVED RED: nothing below names --locked, --stamp-red or #A81E22.
+   FUNCTIONAL_CHANGES: NONE. One class on the page wrapper is the only markup
+   touched; no control is added, removed, renamed or re-labelled. The controls
+   the reference draws that this route does not have were NOT built; they are
+   listed in the PR. See src/design/goldenEraScriptsScope.test.ts.
+   ========================================================================== */
+
+/* THE TOKEN SCOPE. Everything the page renders that resolves metal -- .btn,
+   .btn--ghost, .plaque, the brass keylines, .t-eyebrow -- reads var(--brass-*).
+   Redefining the ramp on the scope re-skins all of them to aged bronze at once
+   and legacy gold cannot leak in through a property nobody overrode. Outside
+   .ge-scripts the app keeps its legacy values untouched. */
+.ge-scripts {
+  /* The ramp, and the channel triples that have to travel with it. A rule
+     that needs brass at partial alpha reads `rgb(var(--brass-N-rgb) / a)` --
+     the focus ring, every input keyline, the inset top-light on every tile
+     and button -- so it follows the triple and nothing else. Restating the
+     hex here without the triple would leave every one of those rules
+     painting the INHERITED gold over bronze fills, on the most shared
+     furniture in the scope: the exact leak this override exists to close.
+     They move together, and src/design/brassAlphaChannel.test.ts fails any
+     scope that separates them. */
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* THE BOARD. The page's single content column becomes the clipboard: a dark
+   stained face, a bronze rim, and riveted brass plates at all four corners.
+   The direct child div is chosen because that column IS the object -- the
+   <main> is the room the board hangs in, and the room's own wall, lamps and
+   plate layer (.room::before / .room::after) are left completely alone. The
+   --plate inventory is shared and is not this PR's to move. */
+.ge-scripts > div {
+  position: relative;
+  padding: var(--s5);
+  border-radius: var(--r-lg);
+  background-color: var(--wood-900);
+  background-image:
+    /* four rivets, one per corner plate */
+    radial-gradient(circle at 13px 13px, var(--brass-200) 0 1.7px, var(--brass-700) 1.7px 3px, transparent 3.2px),
+    radial-gradient(circle at calc(100% - 13px) 13px, var(--brass-200) 0 1.7px, var(--brass-700) 1.7px 3px, transparent 3.2px),
+    radial-gradient(circle at 13px calc(100% - 13px), var(--brass-200) 0 1.7px, var(--brass-700) 1.7px 3px, transparent 3.2px),
+    radial-gradient(circle at calc(100% - 13px) calc(100% - 13px), var(--brass-200) 0 1.7px, var(--brass-700) 1.7px 3px, transparent 3.2px),
+    /* The corner plates themselves, mitred toward the middle of the board.
+       Each angle is the direction the gradient RUNS, so the metal sits at the
+       corner the gradient starts from: 135deg runs to the bottom-right and so
+       fills the top-left, and the positions below are ordered to match. */
+    linear-gradient(135deg, var(--brass-600) 0 34px, transparent 34px),
+    linear-gradient(225deg, var(--brass-600) 0 34px, transparent 34px),
+    linear-gradient(45deg,  var(--brass-600) 0 34px, transparent 34px),
+    linear-gradient(315deg, var(--brass-600) 0 34px, transparent 34px),
+    /* the lamp landing on the top of the board, then the stained face */
+    radial-gradient(78% 34% at 50% -4%, rgba(255,226,168,.16), transparent 72%),
+    repeating-linear-gradient(92deg,
+      rgba(0,0,0,.20) 0 2px, transparent 2px 8px, rgba(0,0,0,.11) 8px 10px),
+    linear-gradient(172deg, #3A2415 0%, #2A1A0E 54%, #1B1108 100%);
+  background-repeat: no-repeat;
+  background-size:
+    34px 34px, 34px 34px, 34px 34px, 34px 34px,
+    46px 46px, 46px 46px, 46px 46px, 46px 46px,
+    auto, auto, auto;
+  background-position:
+    top left, top right, bottom left, bottom right,
+    top left, top right, bottom left, bottom right,
+    center, center, center;
+  box-shadow:
+    inset 0 0 0 2px var(--brass-800),
+    inset 0 1px 0 rgba(231,200,138,.20),
+    inset 0 -3px 10px rgba(0,0,0,.62),
+    0 14px 34px rgba(0,0,0,.62);
+}
+
+/* The clip, straddling the top edge. It is the one element that makes this
+   object a clipboard rather than a framed board, so it is drawn rather than
+   implied. Decorative and inert: a pseudo-element is never in the
+   accessibility tree and never a pointer target. */
+.ge-scripts > div::before {
+  content: "";
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  translate: -50% 0;
+  width: 190px;
+  height: 30px;
+  pointer-events: none;
+  border-radius: 7px 7px 4px 4px;
+  border: 1px solid var(--brass-900);
+  background-image:
+    radial-gradient(circle at 50% 6px, transparent 0 5px, var(--brass-700) 5px 7.5px, transparent 7.6px),
+    linear-gradient(180deg,
+      var(--brass-200) 0%, var(--brass-400) 40%, var(--brass-600) 74%, var(--brass-800) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,248,224,.62),
+    0 3px 7px rgba(0,0,0,.58);
+}
+
+/* The carry strap down the left edge, with its two rivets. Wide layout only:
+   at phone width the board fills the viewport, so a strap hanging outside it
+   would be clipped by the room instead of by the board. */
+.ge-scripts > div::after {
+  content: "";
+  position: absolute;
+  top: 22%;
+  left: -13px;
+  width: 13px;
+  height: 26%;
+  pointer-events: none;
+  border-radius: 7px 0 0 7px;
+  background-image:
+    radial-gradient(circle at 6px 12%, var(--brass-300) 0 1.6px, var(--brass-700) 1.6px 2.8px, transparent 3px),
+    radial-gradient(circle at 6px 88%, var(--brass-300) 0 1.6px, var(--brass-700) 1.6px 2.8px, transparent 3px),
+    linear-gradient(90deg, #1A100A 0%, #3B2A1C 55%, #241810 100%);
+  box-shadow: inset 0 1px 0 rgba(226,196,146,.14), -2px 3px 7px rgba(0,0,0,.55);
+}
+
+/* THE PAPER SEAM. Three regions become aged paper.
+   ---------------------------------------------------------------------------
+   THE INK IS RESTATED, NOT RE-TOKENISED, AND THAT IS THE INTERESTING PART.
+   The first pass here flipped these regions by redefining --bone-100..400 on
+   the region itself -- the same trick the brass ramp uses one rule above, and
+   it works in a browser, because custom properties inherit and every voice on
+   this page resolves its ink from that ramp.
+
+   src/design/cornerColor.test.ts went red on it, and it was right. That guard
+   reads the whole resolved sheet and takes the last declaration of a token as
+   ITS value, because on this platform a bone rung is a promise about contrast
+   on ink leather -- the ramp is a global vocabulary, not a local variable.
+   Declaring `--bone-100: #241A0B` anywhere in the sheet says "the display ink
+   is now near-black", and the guard measured that claim against the ink ground
+   and failed it. The brass ramp is a different case: it moves a metal's hue
+   within the same ground, and nothing downstream pins a contrast promise to a
+   specific brass value.
+
+   So the ramp is left alone and the voices are restated below, which is what
+   the sheet already does for its other two light grounds (`.on-canvas .t-body`,
+   `.mat-paper .t-body`). One rule per voice instead of one token override is
+   more to write and cannot be forgotten in the same way -- every voice these
+   regions actually render is enumerated, and `color` on the region itself
+   catches anything that would otherwise inherit bone from the page. */
+.ge-scripts > div > header,
+.ge-scripts article,
+.ge-scripts ol[aria-label="Session blocks, in the order they run"] > li {
+  color: #33260F;
+  background-color: #E4CFA2;
+  background-image:
+    /* the fibre and the foxing of a sheet that has lived in a gym bag */
+    repeating-linear-gradient(97deg, rgba(120,88,40,.05) 0 2px, transparent 2px 6px),
+    radial-gradient(72% 60% at 18% 8%, rgba(255,247,224,.55), transparent 66%),
+    radial-gradient(60% 70% at 92% 96%, rgba(126,92,44,.20), transparent 70%),
+    linear-gradient(168deg, #EBDAB4 0%, #E2CDA0 58%, #D8C094 100%);
+  border: 1px solid var(--brass-700);
+  border-radius: var(--r-md);
+  box-shadow:
+    inset 0 1px 0 rgba(255,250,232,.7),
+    inset 0 -2px 6px rgba(122,88,42,.18),
+    0 3px 8px rgba(0,0,0,.46);
+}
+
+/* THE VOICES ON PAPER. Every voice these three regions render, given its ink
+   at the rung it already occupies on leather -- display, body, label -- so the
+   hierarchy survives the ground change instead of flattening to one brown.
+   Measured against the darkest stop of the paper above (#D8C094): 9.7 / 8.4 /
+   7.4 / 5.6 to 1. .t-muted and .t-data are included although this page does not
+   yet put them on paper: they are part of the same ladder, and the next block
+   that lands here should not have to rediscover that it was missed. */
+.ge-scripts > div > header .t-command,
+.ge-scripts article .t-command,
+.ge-scripts ol[aria-label="Session blocks, in the order they run"] .t-command {
+  color: #241A0B;
+  /* Ink on paper is pressed in, not lit from behind. The dark drop shadow and
+     gold bloom this voice carries were tuned for bone on leather; both read as
+     smudge under dark ink, so they become the single hairline highlight below
+     the glyph that type sitting in fibre actually casts. */
+  text-shadow: 0 1px 0 rgba(255,250,232,.6);
+}
+.ge-scripts > div > header .t-body,
+.ge-scripts article .t-body,
+.ge-scripts ol[aria-label="Session blocks, in the order they run"] .t-body,
+.ge-scripts > div > header .t-data,
+.ge-scripts article .t-data,
+.ge-scripts ol[aria-label="Session blocks, in the order they run"] .t-data {
+  color: #33260F;
+}
+.ge-scripts > div > header .t-label,
+.ge-scripts article .t-label,
+.ge-scripts ol[aria-label="Session blocks, in the order they run"] .t-label,
+.ge-scripts > div > header .t-muted,
+.ge-scripts article .t-muted,
+.ge-scripts ol[aria-label="Session blocks, in the order they run"] .t-muted {
+  color: #52401F;
+}
+
+/* .t-eyebrow is the metal voice rather than an ink one -- it pins
+   var(--brass-400) -- so on paper it would be bronze on bronze. Restated at the
+   dark end of the same metal, so it still reads as the metal voice rather than
+   collapsing into body copy. 5.7:1 on the darkest stop of the paper. */
+.ge-scripts > div > header .t-eyebrow {
+  color: #4A3410;
+  text-shadow: 0 1px 0 rgba(255,250,232,.5);
+}
+
+/* THE NAMEPLATE. The reference engraves the page's name into a brass plate
+   across the top of the sheet. The <h1> already IS that line, so it becomes
+   the plate rather than a plate being invented around it -- no wrapper, no new
+   element, nothing for a screen reader to meet that was not already there. It
+   carries .t-command, so its ink and its pressed-in highlight come from the
+   voice rule above; only the plate is stated here. 7.7:1 on the brass. */
+.ge-scripts > div > header h1 {
+  display: block;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--brass-800);
+  border-radius: var(--r-sm);
+  background-image: linear-gradient(180deg,
+    var(--brass-200) 0%, var(--brass-300) 52%, var(--brass-400) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,250,232,.72),
+    inset 0 -2px 5px rgba(78,56,20,.34),
+    0 2px 5px rgba(0,0,0,.42);
+}
+
+/* The header is a sheet now, not a band ruled off from the page below it, so
+   it takes a sheet's even inset instead of the bottom-heavy padding that
+   paired with the rule. */
+.ge-scripts > div > header {
+  padding: var(--s4);
+}
+
+/* BRASS PLAQUES. .plaque is the sheet's small engraved plate, and this page
+   wears it on both grounds -- a block's minute window on paper, a delivery
+   date on dark leather. Given a solid brass face and its own dark ink it
+   carries its contrast with it, so one restatement is correct in both places,
+   and it matches the reference, where every small plate is metal. The gradient
+   stops at --brass-400 deliberately: the lower rungs drop the engraved ink
+   under 4.5:1 at the bottom edge of the plate. */
+.ge-scripts .plaque {
+  background-color: var(--brass-400);
+  background-image: linear-gradient(180deg,
+    var(--brass-200) 0%, var(--brass-300) 55%, var(--brass-400) 100%);
+  border: 1px solid var(--brass-800);
+  color: #241A0B;
+  text-shadow: 0 1px 0 rgba(255,250,232,.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,250,232,.6),
+    0 1px 2px rgba(0,0,0,.4);
+}
+
+/* THE STRIPS. A block in the plan is a slip clipped to the board: paper from
+   the seam above, a bronze rule down the leading edge where the reference
+   shows the strip's metal binding, and enough lift to read as a separate piece
+   of paper rather than as a table row. */
+.ge-scripts ol[aria-label="Session blocks, in the order they run"] > li {
+  border-left: 4px solid var(--brass-600);
+}
+
+/* THE LIT ROW. The reference lights exactly one strip. The honest hook for it
+   is aria-current="step", which the live delivery already sets on the block
+   being delivered, so the glow tracks the real running block and cannot drift
+   from what assistive technology announces. The plan list has no lit row
+   because a plan has no current block; only a run does. */
+.ge-scripts [aria-current="step"] {
+  border-color: var(--brass-300);
+  background-color: rgba(158,116,48,.20);
+  box-shadow:
+    inset 0 1px 0 rgba(255,240,204,.30),
+    0 0 0 1px var(--brass-600),
+    0 0 22px rgba(214,176,99,.30);
+}
+
+/* BUTTONS. The reference's controls are bronze discs on a rail, so every
+   control on this board takes the disc edge; the metal itself is already
+   bronze through the token ramp. Shape only -- no control is added, removed or
+   relabelled, and the page's own sizing utilities still decide how big each
+   one is. */
+.ge-scripts .btn {
+  border-radius: 999px;
+}
+
+/* A ghost control on the dark board keeps its recessive reading, but its
+   keyline was a hard-coded legacy gold literal (rgba(212,175,74,.42)) that the
+   token ramp cannot reach -- the one place bright gold could still leak onto
+   this board. Restated in bronze. */
+.ge-scripts .btn--ghost {
+  border-color: color-mix(in srgb, var(--brass-500) 62%, transparent);
+}
+.ge-scripts .btn--ghost:hover {
+  border-color: var(--brass-300);
+}
+
+/* A ghost control standing ON paper is a different problem. It stays legible
+   as it is -- bone on its own dark wash -- but it reads as a hole punched in
+   the sheet, because the wash was drawn to recede against leather and paper is
+   the opposite ground. It becomes what the reference puts on paper instead: a
+   pale brass label plate pressed into the sheet, still visibly quieter than the
+   raised .btn beside it. 9:1 for the engraved label. */
+.ge-scripts > div > header .btn--ghost,
+.ge-scripts article .btn--ghost {
+  background-color: color-mix(in srgb, var(--brass-300) 30%, #EFE0BC);
+  border-color: var(--brass-600);
+  color: #241A0B;
+  box-shadow:
+    inset 0 1px 0 rgba(255,250,232,.7),
+    inset 0 -2px 4px rgba(122,88,42,.22);
+  text-shadow: none;
+}
+.ge-scripts > div > header .btn--ghost:hover,
+.ge-scripts article .btn--ghost:hover {
+  background-color: color-mix(in srgb, var(--brass-300) 52%, #EFE0BC);
+  border-color: var(--brass-700);
+  color: #241A0B;
+}
+
+/* Phone. The board becomes the viewport, so the strap has nowhere to hang and
+   the clip narrows with it -- both references show the same object, not a
+   different layout. */
+@media (max-width: 640px) {
+  .ge-scripts > div {
+    padding: var(--s4);
+  }
+  .ge-scripts > div::before {
+    width: 132px;
+    height: 24px;
+    top: -12px;
+  }
+  .ge-scripts > div::after {
+    display: none;
+  }
+}
+
+/* ==========================================================================
    GOLDEN ERA 006 — SHADOW (After Hours)
 
    Packet 006_SHADOW (REFERENCE_APPROVED / REFERENCE_MOBILE_APPROVED). Route
