@@ -38,7 +38,7 @@ describe('new sessions store expires_at', () => {
     mockQuery.mockResolvedValueOnce([]);
 
     const before = Date.now();
-    const result = await loginWithAccountIdAndPin('acct-1', '123456');
+    const result = await loginWithAccountIdAndPin('acct-1', '482913');
     const after = Date.now();
 
     expect(result).not.toBeNull();
@@ -49,6 +49,19 @@ describe('new sessions store expires_at', () => {
     expect(expiresAt).toBeInstanceOf(Date);
     expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + SESSION_ABSOLUTE_LIFETIME_MS);
     expect(expiresAt.getTime()).toBeLessThanOrEqual(after + SESSION_ABSOLUTE_LIFETIME_MS);
+  });
+
+  test('a legacy athlete row can never authenticate with the retired shared bootstrap PIN', async () => {
+    mockQueryOne.mockResolvedValueOnce({
+      account_id: 'legacy-athlete', role: 'athlete', organization_id: 'org-1', is_platform_owner: false,
+      athlete_id: 'ath-legacy', auth_provider: 'ppbf_local', pin_hash: 'hash', must_change_pin: true,
+      active_flag: true, has_master_shadow_access: false, organization_status: 'active',
+    });
+
+    const result = await loginWithAccountIdAndPin('legacy-athlete', '123456');
+
+    expect(result).toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test('loginWithAccountIdAndPin rejects non-athlete local accounts before writing a session', async () => {

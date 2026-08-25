@@ -52,14 +52,9 @@ describe('PIN policy', () => {
     });
   });
 
-  // The distinction this file already draws, now load-bearing for the weak-PIN
-  // rule: the platform ISSUES the bootstrap PIN (admin reset), and a person
-  // CHOOSES their own. validatePinPolicy sits on the issuing path.
-  describe('the issued bootstrap PIN', () => {
-    test('validatePinPolicy accepts it, so the admin reset flow keeps working', () => {
-      // It is a sequential run, so without the explicit carve-out the new
-      // weak-PIN rule would have broken every PIN reset.
-      expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+  describe('the retired bootstrap PIN', () => {
+    test('validatePinPolicy rejects it everywhere', () => {
+      expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).toThrow('starting PIN');
     });
 
     test('assertChosenPinAllowed still refuses it when somebody picks it', () => {

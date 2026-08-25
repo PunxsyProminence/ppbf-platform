@@ -140,6 +140,15 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     return null;
   }
 
+  // The former bootstrap credential is published in source and was shared by
+  // every athlete. Legacy rows may still hold its hash; it must never mint a
+  // session, even when must_change_pin is true. Recovery is the admin's
+  // one-time activation-code flow.
+  if (pin.trim() === DEFAULT_FIRST_LOGIN_PIN) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'retired_shared_bootstrap_pin' });
+    return null;
+  }
+
   const pinIsValid = await verifyPin(pin, data.pin_hash);
   if (!pinIsValid) {
     console.warn('pilot-auth login rejected', { accountId, reason: 'wrong_pin' });
@@ -541,6 +550,8 @@ export async function createAthleteAccount(
   organizationIdOrLegacyPin: string,
   maybeOrganizationId?: string,
 ): Promise<void> {
+  throw new Error('Obsolete athlete provisioning path: issue a one-time activation code');
+  /* istanbul ignore next -- retained temporarily for source compatibility */
   const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
 
   await withTransaction(async (client) => {
@@ -590,7 +601,9 @@ export async function createAthleteAccount(
     // requirePrincipal refuses every route while that flag is true, so the
     // one thing this account can do until the athlete picks their own PIN is
     // pick their own PIN. See http.ts.
-    const bootstrapPinHash = await hashPin(DEFAULT_FIRST_LOGIN_PIN);
+    // Unreachable compatibility body below the fail-closed guard above. Never
+    // reconstruct the retired shared credential here.
+    const bootstrapPinHash = null;
 
     await client.query(
       `insert into pilot.accounts

@@ -6,9 +6,9 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTime } from '@/src/lib/gymTime';
 // A plain constant with no server dependencies, so a client component can
 // import it and the admin copy can never drift from what the server sets.
-import { DEFAULT_FIRST_LOGIN_PIN } from '@/src/server/pilot/pinPolicy';
 // Same reasoning: credentialPolicy is the single source of truth for which
 // door each role signs in through, is dependency-free, and exists precisely
 // because sign-in copy drifted from the server's rule. This page carried that
@@ -136,6 +136,9 @@ function signInStatus(
   member: Member,
   guardianLinkCount: number | null,
 ): { label: string; tone: 'ok' | 'pending' | 'blocked' } {
+  if (member.role === 'athlete' && member.auth_provider === 'ppbf_local' && !member.has_pin) {
+    return { label: 'Awaiting activation', tone: 'pending' };
+  }
   if (!member.active_flag || !member.membership_active) {
     return { label: 'Deactivated', tone: 'blocked' };
   }
@@ -270,10 +273,9 @@ function PeopleConsoleContent() {
   // re-posting it and tripping the duplicate check.
   const [rosterCreatedFor, setRosterCreatedFor] = useState('');
 
-  // The just-created account, so the confirmation panel can tell the admin
-  // exactly what to say to the athlete. Nothing secret lives here -- the
-  // starting PIN is the same for everyone and is safe to re-display.
-  const [createdAthlete, setCreatedAthlete] = useState<{ accountId: string } | null>(null);
+  // The plaintext activation code exists only in this response and is shown
+  // once; only its hash is persisted server-side.
+  const [createdAthlete, setCreatedAthlete] = useState<{ accountId: string; activationCode: string; expiresAt: string } | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -427,7 +429,7 @@ function PeopleConsoleContent() {
    * moment someone clears the box to retype it, which reads as the form
    * fighting them.
    */
-  const effectiveAthleteId = athleteIdTouched ? athleteId : suggestedAthleteId;
+  const effectiveAthleteId = athleteMode === 'existing' ? athleteId : athleteIdTouched ? athleteId : suggestedAthleteId;
 
   const trimmedAthleteId = effectiveAthleteId.trim();
 
@@ -727,7 +729,7 @@ function PeopleConsoleContent() {
         body: JSON.stringify({ account_id: accountId, athlete_id: recordId }),
       });
 
-      const createPayload = (await createResponse.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const createPayload = (await createResponse.json().catch(() => ({}))) as { ok?: boolean; error?: string; activation_code?: string; expires_at?: string };
       if (!createResponse.ok || !createPayload.ok) {
         // The original bug's error message, reached now only when linking to a
         // record that is supposed to already exist. Say which id was missing
@@ -746,10 +748,9 @@ function PeopleConsoleContent() {
       const createdAccountId = accountId;
       resetAthleteForm();
 
-      // No code to mint and nothing further to go wrong: the account is live
-      // on the shared starting PIN, and the athlete is forced to replace it
-      // the first time they sign in.
-      setCreatedAthlete({ accountId: createdAccountId });
+      // The account remains inactive until this one-time code is redeemed.
+      if (!createPayload.activation_code || !createPayload.expires_at) throw new Error('Account was created but no activation code was returned');
+      setCreatedAthlete({ accountId: createdAccountId, activationCode: createPayload.activation_code, expiresAt: createPayload.expires_at });
 
       await load();
       setTab('people');
@@ -779,10 +780,7 @@ function PeopleConsoleContent() {
   }
 
   /**
-   * Put an existing athlete back on the starting PIN. This is the recovery
-   * path for "I forgot my PIN" -- it replaces issuing a fresh activation
-   * code, and lands the account in exactly the state a new one starts in, so
-   * the athlete is forced to choose a new PIN on their next sign-in.
+   * Revoke the old credential and sessions, then issue a fresh one-time code.
    */
   async function handleResetToStartingPin(accountId: string) {
     setBusy(true);
@@ -793,15 +791,15 @@ function PeopleConsoleContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ account_id: accountId, mode: 'reset', pin: DEFAULT_FIRST_LOGIN_PIN }),
+        body: JSON.stringify({ account_id: accountId }),
       });
-      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; activation_code?: string; expires_at?: string };
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || 'Could not reset that PIN');
       }
-      setNotice(
-        `${accountId} is back on the starting PIN ${DEFAULT_FIRST_LOGIN_PIN}. They will have to choose a new one when they sign in.`,
-      );
+      if (!payload.activation_code || !payload.expires_at) throw new Error('Reset succeeded but no activation code was returned');
+      setCreatedAthlete({ accountId, activationCode: payload.activation_code, expiresAt: payload.expires_at });
+      setNotice(`${accountId} is inactive until the new one-time activation code is redeemed.`);
       await load();
     } catch (resetError) {
       setError(resetError instanceof Error ? resetError.message : 'Could not reset that PIN');
@@ -852,10 +850,7 @@ function PeopleConsoleContent() {
           </div>
         </header>
 
-        {/* What to tell the athlete. Unlike the activation code this replaced,
-            nothing here is secret or one-shot -- the starting PIN is the same
-            for everyone and can be re-read at any time, so this panel is a
-            convenience rather than a last chance. */}
+        {/* The plaintext code is intentionally shown once. */}
         {createdAthlete && (
           <section className="frame">
             <span className="rivet rivet--tl" />
@@ -865,7 +860,7 @@ function PeopleConsoleContent() {
             <div className="frame-in mat-leather p-[var(--s5)]">
               <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
                 <div>
-                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>{createdAthlete.accountId} can sign in now</h2>
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Activation code for {createdAthlete.accountId}</h2>
                   <p className="t-body mt-[var(--s2)]">
                     Tell them these two things. They will have to choose their own PIN the first time they sign in, and
                     you will never see what they pick.
@@ -882,14 +877,13 @@ function PeopleConsoleContent() {
                   <dd className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] text-[color:var(--bone-100)]">{createdAthlete.accountId}</dd>
                 </div>
                 <div className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
-                  <dt className="t-label">Starting PIN</dt>
-                  <dd className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] tracking-[0.2em] text-[color:var(--bone-100)]">{DEFAULT_FIRST_LOGIN_PIN}</dd>
+                  <dt className="t-label">One-time activation code</dt>
+                  <dd className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] tracking-[0.2em] text-[color:var(--bone-100)]">{createdAthlete.activationCode}</dd>
                 </div>
               </dl>
 
               <p className="t-muted mt-[var(--s3)]">
-                The starting PIN is the same for every new athlete, so it is not a secret. It cannot be used to see
-                anything — the only screen it opens is the one that asks them to replace it.
+                This code is shown only once and expires {formatGymDateTime(createdAthlete.expiresAt) ?? 'at the stated expiry time'}. The athlete stays inactive until they redeem it and choose their own PIN.
               </p>
             </div>
           </section>
@@ -977,8 +971,8 @@ function PeopleConsoleContent() {
                   </span>
                 </p>
                 <p className="t-body mt-[var(--s2)]">
-                  Give them their sign-in ID and the starting PIN {DEFAULT_FIRST_LOGIN_PIN}. If they have forgotten
-                  where they are, “Reset to starting PIN” on their row puts them back to it.
+                  Give them their sign-in ID and one-time activation code. If they have forgotten
+                  where they are, “Issue New Activation Code” revokes the old credential and sessions.
                 </p>
               </div>
             )}
@@ -1158,7 +1152,7 @@ function PeopleConsoleContent() {
                               onClick={() => void handleResetToStartingPin(member.account_id)}
                               className="btn--lever whitespace-nowrap disabled:opacity-50"
                             >
-                              Reset To Starting PIN
+                              Issue New Activation Code
                             </button>
                           ) : (
                             <span aria-hidden="true">—</span>
@@ -1341,7 +1335,7 @@ function PeopleConsoleContent() {
             <div>
               <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add an athlete</h2>
               <p className="t-body mt-[var(--s3)]">
-                This puts the athlete in your gym and gives you a sign-in ID to hand them, along with the starting PIN
+                This puts the athlete in your gym and gives you a sign-in ID plus a one-time activation code
                 every new athlete gets. They have to choose their own PIN the first time they sign in — you never see it.
               </p>
             </div>
@@ -1677,17 +1671,11 @@ function PeopleConsoleContent() {
               disabled={busy || !canSubmitAthlete}
               className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {/* "& Get Code" outlived the codes. Activation codes were
-                  replaced by the shared starting PIN (see the success panel:
-                  "Unlike the activation code this replaced, nothing here is
-                  secret or one-shot"), so a button promising a Code promised
-                  a minted secret this form no longer produces. What the admin
-                  gets is the sign-in ID and the starting PIN. Say that. */}
               {busy
                 ? 'Creating...'
                 : athleteMode === 'new'
-                  ? 'Add Athlete & Get Starting PIN'
-                  : 'Create Sign-In & Get Starting PIN'}
+                  ? 'Add Athlete & Get Code'
+                  : 'Create Sign-In & Get Code'}
             </button>
           </form>
         )}

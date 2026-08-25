@@ -40,6 +40,7 @@ import {
   generateActivationCode,
   issueActivationCode,
   normalizeActivationCode,
+  provisionAthleteActivation,
   redeemActivationCode,
 } from './activation';
 import { query, withTransaction } from './db';
@@ -203,6 +204,36 @@ describe('issueActivationCode', () => {
         ttlHours: 99999,
       }),
     ).rejects.toThrow('Missing ttl_hours');
+  });
+});
+
+describe('provisionAthleteActivation', () => {
+  test('creates an inactive account with no shared bootstrap PIN and issues one hashed code atomically', async () => {
+    respond(/select athlete_id from pilot\.athletes/, [{ athlete_id: 'ath-1' }]);
+    respond(/insert into pilot\.account_activation_tokens/, [{ expires_at: '2026-08-26T00:00:00Z' }]);
+
+    const result = await provisionAthleteActivation({ accountId: 'acct-1', athleteId: 'ath-1', organizationId: 'org-1', issuedByAccountId: 'admin-1', issuedByRole: 'organization_admin', mode: 'create' });
+
+    const [accountSql, accountParams] = callsMatching(/insert into pilot\.accounts/)[0];
+    expect(accountSql).toContain('pin_hash, must_change_pin, active_flag');
+    expect(accountSql).toContain('null, false, false');
+    expect(accountParams).not.toContain(DEFAULT_FIRST_LOGIN_PIN);
+    const [, tokenParams] = callsMatching(/insert into pilot\.account_activation_tokens/)[0];
+    expect(tokenParams).not.toContain(result.code);
+    expect(String(tokenParams[0])).toContain('sha256(activation:');
+  });
+
+  test('reset removes the old PIN, deactivates membership, revokes sessions, and supersedes old codes', async () => {
+    respond(/update pilot\.accounts set pin_hash = null/, [{ athlete_id: 'ath-1' }]);
+    respond(/insert into pilot\.account_activation_tokens/, [{ expires_at: '2026-08-26T00:00:00Z' }]);
+
+    await provisionAthleteActivation({ accountId: 'acct-1', organizationId: 'org-1', issuedByAccountId: 'admin-1', issuedByRole: 'organization_admin', mode: 'reset' });
+
+    expect(callsMatching(/update pilot\.accounts set pin_hash = null/)).toHaveLength(1);
+    expect(callsMatching(/update pilot\.session_tokens set revoked_at = now\(\)/)).toHaveLength(1);
+    expect(callsMatching(/set superseded_at = now\(\)/)).toHaveLength(1);
+    const [membershipSql] = callsMatching(/insert into pilot\.organization_memberships/)[0];
+    expect(membershipSql).toContain("active_flag = false");
   });
 });
 

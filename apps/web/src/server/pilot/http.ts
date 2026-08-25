@@ -11,11 +11,9 @@ import { GuardianConsentMissingError } from './guardianConsent';
 /**
  * The default gate for every authenticated route.
  *
- * It deliberately refuses an account that is still on its bootstrap PIN. New
- * athlete accounts are created live on a PIN that is public knowledge
- * (DEFAULT_FIRST_LOGIN_PIN), so the starting PIN must not be able to read
- * anything -- enforcing that here rather than in each route means a new route
- * is covered by default, and cannot forget to check.
+ * It refuses legacy accounts marked for a PIN change. New athlete accounts
+ * remain inactive and have no PIN until one-time activation-code redemption;
+ * login also refuses the retired shared bootstrap PIN outright.
  *
  * The two routes that must still work mid-bootstrap -- reading the session and
  * changing the PIN -- call resolvePrincipal or
