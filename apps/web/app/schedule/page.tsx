@@ -269,7 +269,12 @@ export default function SchedulerPage() {
           It deliberately does not reach `a` or `textarea`, so those state
           min-h-[var(--tap)] at the call site, the way
           CoachRecognitionPad.tsx already does. */}
-      <main data-surface="kiosk" className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)]">
+      {/* ge-scheduler -- GOLDEN ERA 005, THE SCHEDULE BOARD. One class, on the
+          element the whole page already passes through, and the only markup
+          change in that pass: the material identity itself lives in
+          design-system/current/ppbf-golden-era.css, scoped to this class.
+          Nothing about the control set, the roles, or the actions moves. */}
+      <main data-surface="kiosk" className="ge-scheduler room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-7xl space-y-[var(--s5)]">
           <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow">Unified Scheduler</p>
