@@ -100,12 +100,50 @@ completed by breaking the rule it serves is not a step.
 **No plate law changes.** Real `.jpg` binary only; never base64, data URI, or
 chat-byte relay; JPEG SOI and EOI present; larger than 8 KB; at most 400 KB;
 4:4:4 with every component 1x1; only the declared landscape and portrait
-geometries; filename orientation matching the image; every CSS-declared plate
-existing on disk; the exact ordered filename; no silent re-encode inside the
-repository; bad input refused rather than quietly corrected.
+geometries (1280x720 / 2560x1440 landscape, 405x720 / 810x1440 portrait);
+filename orientation matching the image; every CSS-declared plate existing on
+disk; the exact ordered filename; no silent re-encode inside the repository;
+bad input refused rather than quietly corrected.
 `apps/web/src/design/plateBinaries.test.ts` enforces these on the bytes and is
 not to be weakened. Moving who carries the file changes nothing about what the
 file must be.
+
+**Amendment (owner ruling, 2026-08-25).** Jason, verbatim: *"the document that
+gets it live, accept the binary, is correct."* **The blanket courier
+prohibition above is lifted.** Where the owner directs it, Claude may accept a
+binary and land it on a branch like any other file, and no round should be
+spent arguing about whose job that is.
+
+The ruling settles a policy question that was never the actual obstacle, so the
+obstacle is now written down here rather than rediscovered every few days.
+**Claude cannot retrieve bytes out of SharePoint or OneDrive in this
+environment.** The Microsoft 365 connector *renders* an image for viewing; it
+does not return file contents. There is no download action, no unzip
+capability, and `downloadUrl` comes back null. A zip is completely
+inaccessible. This is a capability fact, checked rather than preferred: it is
+not a rule anyone can waive, and an instruction of the form "Claude downloads
+the package from OneDrive and commits it" does not run. Four delivery rounds
+were spent on handoffs written that way.
+
+Two clauses from 2026-08-24 survive the ruling, on different grounds.
+**Re-encode** stands because the tools are absent -- no `cjpeg`, no `jpegtran`,
+no ImageMagick, no Pillow -- and because silently correcting a bad input hides
+that the producer's pipeline is wrong. **Reconstruct** stands because an image
+rebuilt from a rendering is a new picture, not the approved file, and would
+pass the byte gate while being the wrong plate.
+
+**And a definition, since four rounds turned on it: a binary is delivered when
+a real `git add` of the actual file lands on a branch.** A README, a manifest,
+a folder path, a link, a zip in a drive, a base64 payload, or a `.jpg`-named
+placeholder is not a delivery however complete its covering note reads. The
+record: three chat-relay rounds arrived as 11-, 24- and 41-byte stubs; a fourth
+arrived at 2.3 KB with a valid JPEG start-of-image marker, no end-of-image
+trailer and the wrong dimensions; and PR #643 (2026-08-25) contained no
+binaries at all -- a manifest naming twelve JPEGs held in OneDrive, plus a
+ten-byte `_smoke_binary_test.jpg` reading `REPLACE_ME`. The working routes are
+Grok pushing to its own branch, Jason drag-dropping onto the branch, or Claude
+landing bytes it can actually read. `apps/web/public/plates/README.md` and
+`docs/GROK-VISUAL-LANE.md` carry the detail.
 
 The reason for the change is drift, and it is worth stating plainly because
 the original rule was not wrong when it was written. Routing every visual
@@ -124,14 +162,16 @@ So the lanes are:
   PRs, CI, staging, and explicitly authorized production deployment. Reports
   exact evidence.
 
-  **On visual PRs Claude is an independent reviewer, not a redesigner, and not
-  a courier.** It checks that no function, role gate, organization boundary or
-  safety rule changed, that nothing unsupported was invented, that no existing
-  action disappeared, and that tests stayed meaningful. It may independently
-  verify a committed plate against the byte gate. It does not fetch, relay,
-  re-encode or rename a binary on another lane's behalf (2026-08-24). A visual
-  preference that is not a defect is not grounds to rewrite another lane's
-  approved work.
+  **On visual PRs Claude is an independent reviewer, not a redesigner.** It
+  checks that no function, role gate, organization boundary or safety rule
+  changed, that nothing unsupported was invented, that no existing action
+  disappeared, and that tests stayed meaningful. It may independently verify a
+  committed plate against the byte gate. Since 2026-08-25 it may also accept
+  and land a binary where the owner directs it; it still does not re-encode or
+  reconstruct one, and it **cannot** fetch bytes out of SharePoint/OneDrive at
+  all -- that last one is a capability limit rather than a rule, so no
+  instruction can grant it. A visual preference that is not a defect is not
+  grounds to rewrite another lane's approved work.
 - **ChatGPT** -- independent audit, research, full-spectrum review, storage
   inventory and reconciliation, documentation, control ledger, exact-head SHA
   and CI verification, scope auditing, and deployed-versus-specification
@@ -139,7 +179,9 @@ So the lanes are:
   merges, deploys, or migrations.
 - **Grok** -- visual design **and** visual implementation, including
   committing approved plate binaries to its own feature branch (2026-08-24),
-  per `docs/GROK-VISUAL-LANE.md`. Reads current source before designing; explores
+  per `docs/GROK-VISUAL-LANE.md`. When Grok's own tooling cannot push a binary,
+  the fallback is Jason drag-dropping the real files onto the branch, never a
+  handoff asking Claude to fetch them from a drive. Reads current source before designing; explores
   and proposes freely; implements only what the owner approved. May change
   presentation: JSX visual structure, design-system classes, CSS, responsive
   layout, typography, visual assets, presentation-related accessibility
