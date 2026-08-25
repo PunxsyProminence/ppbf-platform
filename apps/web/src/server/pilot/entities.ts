@@ -251,36 +251,56 @@ export async function getSessionAthleteId(organizationId: string, sessionId: str
   return row?.athlete_id ?? null;
 }
 
-export async function upsertCoachReview(organizationId: string, payload: PilotCoachReview): Promise<void> {
-  const updated = await query<{ review_id: string }>(
-    `update pilot.coach_reviews
-     set session_id = $3,
-         coach_id = $4,
-         decision = $5,
-         notes = $6,
-         approved_flag = $7,
-         updated_at = $8
-     where organization_id = $1 and review_id = $2
-     returning review_id`,
-    [
-      organizationId,
-      payload.review_id,
-      payload.session_id,
-      payload.coach_id,
-      payload.decision,
-      payload.notes,
-      payload.approved_flag,
-      payload.updated_at,
-    ],
-  );
+/**
+ * A coach_review is owned by the athlete of its session. The write guard mirrors
+ * the session/goal owner guard (#624): 'create' inserts and refuses to touch an
+ * existing id; 'update' compare-and-sets on the STORED session_id the caller
+ * already authorized, so a review repointed to a different athlete between the
+ * caller's read and this write fails closed instead of being silently rewritten.
+ */
+export type CoachReviewWriteGuard =
+  | { readonly mode: 'create' }
+  | { readonly mode: 'update'; readonly expectedSessionId: string };
 
-  if (updated.length > 0) {
+export async function upsertCoachReview(
+  organizationId: string,
+  payload: PilotCoachReview,
+  guard: CoachReviewWriteGuard,
+): Promise<void> {
+  if (guard.mode === 'update') {
+    const updated = await query<{ review_id: string }>(
+      `update pilot.coach_reviews
+       set session_id = $3,
+           coach_id = $4,
+           decision = $5,
+           notes = $6,
+           approved_flag = $7,
+           updated_at = $8
+       where organization_id = $1 and review_id = $2 and session_id = $9
+       returning review_id`,
+      [
+        organizationId,
+        payload.review_id,
+        payload.session_id,
+        payload.coach_id,
+        payload.decision,
+        payload.notes,
+        payload.approved_flag,
+        payload.updated_at,
+        guard.expectedSessionId,
+      ],
+    );
+    if (updated.length === 0) {
+      throw new ConflictError('This coach review changed before the update was applied. Reload it and try again.');
+    }
     return;
   }
 
-  await query(
+  const inserted = await query<{ review_id: string }>(
     `insert into pilot.coach_reviews (organization_id, review_id, session_id, coach_id, decision, notes, approved_flag, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     on conflict (organization_id, review_id) do nothing
+     returning review_id`,
     [
       organizationId,
       payload.review_id,
@@ -293,6 +313,9 @@ export async function upsertCoachReview(organizationId: string, payload: PilotCo
       payload.updated_at,
     ],
   );
+  if (inserted.length === 0) {
+    throw new ConflictError('A coach review with that id already exists. Reload before creating it again.');
+  }
 }
 
 // List functions for frontend data fetching

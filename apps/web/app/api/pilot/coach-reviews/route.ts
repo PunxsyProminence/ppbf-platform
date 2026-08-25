@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { getSessionAthleteId, upsertCoachReview } from '@/src/server/pilot/entities';
+import { getCoachReviewById, getSessionAthleteId, upsertCoachReview } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { validateCoachReviewPayload } from '@/src/server/pilot/validation';
 
@@ -25,7 +25,28 @@ export async function POST(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, athleteId);
-    await upsertCoachReview(principal.organizationId, payload);
+
+    // The create path formerly called an UPDATE-first upsert, so a coach could
+    // supply an EXISTING review_id together with their own athlete's session and
+    // overwrite another athlete's review-clearance record -- only the payload's
+    // athlete was ever authorized, never the stored row's. Mirror the #624 create
+    // pattern: if the review already exists, resolve and authorize its STORED
+    // owner (the athlete of its stored session) and compare-and-set on it;
+    // otherwise create-only. Atomic, so a concurrent owner change fails closed.
+    const existing = await getCoachReviewById(principal.organizationId, payload.review_id);
+    if (existing) {
+      const existingAthleteId = await getSessionAthleteId(principal.organizationId, existing.session_id);
+      if (!existingAthleteId) {
+        throw new Error('Missing session for existing coach review');
+      }
+      await assertActorCanAccessAthlete(principal, existingAthleteId);
+      await upsertCoachReview(principal.organizationId, payload, {
+        mode: 'update',
+        expectedSessionId: existing.session_id,
+      });
+    } else {
+      await upsertCoachReview(principal.organizationId, payload, { mode: 'create' });
+    }
 
     await writePilotAuditEvent({
       event_type: 'create',
