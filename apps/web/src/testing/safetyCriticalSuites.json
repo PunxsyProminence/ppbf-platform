@@ -1,0 +1,118 @@
+{
+  "why": [
+    "The register of suites that may not vanish from a run without the run going red.",
+    "A suite that fails to LOAD reports as one failing file while every assertion it owns",
+    "disappears from the totals, so the passing test count goes UP. On 2026-08-25 that",
+    "happened to safeguardingRedReservation.test.ts and the reserved medical red had no",
+    "guard on main at all. Enforced by scripts/suiteAttendanceReporter.js on every",
+    "unnarrowed run; the register itself is kept honest by src/testing/suiteAttendance.test.ts.",
+    "",
+    "minimumTests is a MEASURED FLOOR, taken from the green run of 2026-08-25 at d04dde68",
+    "(588 suites, 8124 tests). It is not a target and it is not a ceiling: adding tests is",
+    "always fine, and a floor left behind by growth is stale rather than wrong -- re-measure",
+    "it upward whenever you notice. Lowering one, or removing an entry, is a deliberate act",
+    "that has to be argued for in the same change -- never a way to make a red run green."
+  ],
+  "suites": [
+    {
+      "path": "src/design/safeguardingRedReservation.test.ts",
+      "minimumTests": 8,
+      "guards": "The reserved safeguarding red. #A81E22 / --locked belongs to MEDICALLY_NOT_ALLOWED alone (owner decision 2026-08-19); this is the guard that stops load errors, empty states and 'not on file' placeholders wearing it through any of the four derived channels. This is the suite that went dark on 2026-08-25."
+    },
+    {
+      "path": "src/design/readinessRungPolicy.test.ts",
+      "minimumTests": 4,
+      "guards": "Readiness triage may not be painted as a medical refusal. It names every known mapping site explicitly because RoleSummaryPanels has no test file at all -- so when this goes dark, nothing else in the repository covers its subject."
+    },
+    {
+      "path": "src/design/safetySemanticsSurviveTheThemeSwap.test.ts",
+      "minimumTests": 15,
+      "guards": "locked / restricted / monitor / cleared must survive the visual reset, each keeping a non-colour channel. It is a contract on an INCOMING theme, so it is at its most load-bearing exactly while the design system is being replaced -- the window in which files move and suites stop loading."
+    },
+    {
+      "path": "src/design/cornerColor.test.ts",
+      "minimumTests": 49,
+      "guards": "A member's red or blue corner may never be mistakable for a safety state. Chroma below every rung, delta-E 20 from every rung and ink tint. The same harm as the reserved red, approached from the other side."
+    },
+    {
+      "path": "src/design/plateBinaries.test.ts",
+      "minimumTests": 138,
+      "guards": "The plate laws, enforced on the bytes -- SOI and EOI present, size window, 4:4:4 with 1x1 components, declared geometries, filename orientation. AGENT_KERNEL.md names this file as the gate and says it is not to be weakened. Three of the first attempts to get plates into this repository failed in ways no human reviewer could see."
+    },
+    {
+      "path": "src/design/lightGroundVoices.test.ts",
+      "minimumTests": 21,
+      "guards": "Every type voice restated for .on-canvas must also be answered for .mat-paper. The regression it was written for printed an .alert--critical warning near-white on cream in eight /admin routes. A warning nobody can read is a safety failure, not a styling one."
+    },
+    {
+      "path": "src/design/darkPanelMaterials.test.ts",
+      "minimumTests": 5,
+      "guards": "The sheet's several hand-written lists of 'which materials are dark' must agree. Its own record: a sign-in board rendered dark-on-dark across heading, body, labels and plaque while 536 component suites passed. Five tests -- among the cheapest in the repository to zero by accident."
+    },
+    {
+      "path": "src/design/kioskTapFloor.test.tsx",
+      "minimumTests": 6,
+      "guards": "The gym-floor touch-target floor, asserted at BOTH ends: the rule scoped to [data-surface=\"kiosk\"] and the marker that actually puts that attribute on the athlete subtree. Written because the first attempt shipped a rule for a class that existed nowhere and protected nothing."
+    },
+    {
+      "path": "src/design/typeLadder.test.ts",
+      "minimumTests": 3,
+      "guards": "The type ladder may not invert -- globals.css aliases Tailwind's theme names onto the phi ladder from an unlayered :root, and got it backwards, so every text-4xl md:text-5xl heading shrank as the viewport grew. --t-md is the kiosk minimum. Three tests: the smallest safety-bearing suite in src/design, and the easiest to lose."
+    },
+    {
+      "path": "src/design/foundationMatchesLegacy.test.ts",
+      "minimumTests": 43,
+      "guards": "The foundation's copy of the neutral mechanics may not drift from the archive it was copied out of. Its own docblock names the stake: --t-md (kiosk minimum) and --tap (touch floor) drifting quietly is an accessibility regression waiting for a release, and the damage is deferred rather than absent -- it all lands on the day the theme stops importing legacy."
+    },
+    {
+      "path": "src/design/readDesignSystemCssResolvesImports.test.ts",
+      "minimumTests": 18,
+      "guards": "The guard on the thing twenty guards stand on. Twenty-one test files read the design system through readDesignSystemCss; if it ever returned an empty string every one of them would go green while checking nothing -- which is exactly what happened on 2026-08-23 to thirteen guards when ppbf.css became two @import lines."
+    },
+    {
+      "path": "src/design/brassAlphaChannel.test.ts",
+      "minimumTests": 28,
+      "guards": "A brass rung may not be spelled as a literal. The whole leak-proof argument for scope-based re-skinning only reaches rules that go through a token; a spelled-out rgba() has no token in it, so no scope can override it and there is no property anyone forgot. Mechanism integrity, not decoration."
+    },
+    {
+      "path": "src/design/legacyVisualVocabulary.test.ts",
+      "minimumTests": 27,
+      "guards": "The ratchet on the retired aesthetic. Each family carries a ceiling MEASURED AT THE RESET; existing debt passes, one more use fails. If this suite goes dark the debt regrows silently and the ceilings cannot be recovered afterwards -- they are a historical measurement, not a value anyone can re-derive."
+    },
+    {
+      "path": "components/refusalStamp.test.tsx",
+      "minimumTests": 29,
+      "guards": "The refusal vocabulary, and specifically that MEDICALLY_NOT_ALLOWED is the one red mark -- the render-side companion to safeguardingRedReservation. Covers training_hold and the five non-medical refusals as the states that must NOT read as a medical bar."
+    },
+    {
+      "path": "components/designSystemClasses.test.ts",
+      "minimumTests": 8,
+      "guards": "Every design-system class the app references must have a real rule behind it. Written because a merge deleted 1,562 lines of ppbf.css and nothing noticed: a browser silently ignores a class with no rule, so the app kept rendering against an empty stylesheet with every check green. Eight tests holding the whole sheet."
+    },
+    {
+      "path": "components/SignInPanel.test.tsx",
+      "minimumTests": 21,
+      "guards": "The front door. One component behind both /login and the /public sign-in popover -- every person who uses this platform passes through it -- and nothing rendered it until this file existed. Its own docblock records that losing these tests puts the front door back to having no test at all, which is precisely the disappearance this manifest exists to make loud."
+    },
+    {
+      "path": "components/roleSession.test.ts",
+      "minimumTests": 61,
+      "guards": "The client role session: TTL and expiry, self-clearing, and isRoleSessionAllowed -- which, in its own words, is what every page guard runs. A guardian routed into a coach surface is a role-boundary failure whether or not the server refuses it second."
+    },
+    {
+      "path": "components/BoardRoleGate.test.tsx",
+      "minimumTests": 8,
+      "guards": "The /board subtree resolves its session once, in this gate. Two boundaries: the platform owner reads the board surface rather than being bounced to a login form it has already satisfied, and a valid session that is not board-shaped goes to its own dashboard instead of /login."
+    },
+    {
+      "path": "components/revenueFundingCenterHonesty.test.tsx",
+      "minimumTests": 6,
+      "guards": "The fabricated-data declaration on the Revenue & Funding Center. Three of its tabs describe records the organisation genuinely has, one click from a live register, so an admin has no way to tell the invented grant from the real one -- and for a 501(c)(3) a fabricated figure copied into a board packet or a funder's report is a false statement made by the organisation. Six tests."
+    },
+    {
+      "path": "src/testing/suiteAttendance.test.ts",
+      "minimumTests": 35,
+      "guards": "The register and the attendance reporter themselves. Listed here on purpose: a guard on guards that could vanish silently would leave the register unvalidated and every entry below unproven, which is the exact failure this file exists to make loud."
+    }
+  ]
+}
