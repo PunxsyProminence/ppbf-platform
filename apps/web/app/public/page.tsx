@@ -458,7 +458,7 @@ export default function PublicPortalPage() {
   return (
     <main className="on-canvas min-h-screen">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b-[3px] border-[color:rgba(107,78,18,.28)] pb-6 md:flex-row md:items-end md:justify-between">
+        <header className="flex flex-col gap-4 border-b-[3px] border-[color:rgb(var(--brass-800-rgb)_/_.28)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
             <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">PUNXSY PROMINENCE BOXING &amp; FITNESS</p>
             <h1 className="font-display text-4xl tracking-tight text-[color:var(--hide-950)] md:text-5xl">A boxing gym for kids, for adults, and for anyone who just wants to get in shape.</h1>
@@ -499,7 +499,7 @@ export default function PublicPortalPage() {
             {/* Law 4, mono records: an address is a fact a visitor copies down,
                 not prose. It also replaces a "Status: ready" chip that told a
                 nervous parent nothing and told them it in machine language. */}
-            <div className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper px-4 py-3 text-xs font-mono text-[color:var(--hide-950)] shadow-[var(--shadow-sm)]">
+            <div className="border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] mat-paper px-4 py-3 text-xs font-mono text-[color:var(--hide-950)] shadow-[var(--shadow-sm)]">
               220 N Jefferson St, Punxsutawney, PA 15767
             </div>
           </div>
@@ -511,7 +511,7 @@ export default function PublicPortalPage() {
             { label: 'What it costs kids', value: 'Nothing' },
             { label: 'Do you have to fight?', value: 'No' },
           ].map((item) => (
-            <div key={item.label} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-4 shadow-[var(--shadow-sm)]">
+            <div key={item.label} className="border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] mat-paper p-4 shadow-[var(--shadow-sm)]">
               <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.2em] text-[color:var(--hide-600)]">{item.label}</p>
               <p className="mt-2 text-xl font-black text-[color:var(--hide-950)]">{item.value}</p>
             </div>
@@ -542,11 +542,11 @@ export default function PublicPortalPage() {
           </section>
         )}
 
-        <section className="mt-6 border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-md)]">
+        <section className="mt-6 border-[3px] border-[color:rgb(var(--brass-800-rgb)_/_.28)] mat-paper p-5 shadow-[var(--shadow-md)]">
           <p className="text-xs font-mono uppercase tracking-[0.25em] text-[color:var(--brass-800)]">Who runs this place</p>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {['VETERAN-OWNED', '501(c)(3) NONPROFIT', 'KIDS TRAIN FREE'].map((item) => (
-              <div key={item} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-4 text-center">
+              <div key={item} className="border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] mat-paper p-4 text-center">
                 <p className="text-lg font-black tracking-[0.18em] text-[color:var(--hide-950)]">{item}</p>
               </div>
             ))}
@@ -560,7 +560,7 @@ export default function PublicPortalPage() {
             picture rather than a stock image of somebody else's gym or a grey
             rectangle that reads as a broken CDN. See src/shared/gymPhotos.ts
             for how a photograph actually gets in here. */}
-        <section id="the-room" className="mt-6 border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
+        <section id="the-room" className="mt-6 border-[3px] border-[color:rgb(var(--brass-800-rgb)_/_.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT IT LOOKS LIKE IN HERE</h2>
           <p className="mt-3 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             {(() => {
@@ -594,7 +594,7 @@ export default function PublicPortalPage() {
             rewrite and nobody has typed in another. Inventing plausible
             coaches to fill a grid would be a lie on the page a parent reads
             before deciding whether to trust this place with their kid. */}
-        <section id="who-coaches" className="mt-6 border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
+        <section id="who-coaches" className="mt-6 border-[3px] border-[color:rgb(var(--brass-800-rgb)_/_.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHO WOULD BE COACHING YOUR KID</h2>
           <p className="mt-3 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             You should know the face of whoever is going to be working with your kid before you leave them here. Ask
@@ -602,7 +602,7 @@ export default function PublicPortalPage() {
           </p>
           <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {GYM_STAFF_CARDS.map((person) => (
-              <article key={person.key} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-4">
+              <article key={person.key} className="border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] mat-paper p-4">
                 <PhotoSlot
                   slot={{
                     key: person.key,
@@ -630,7 +630,7 @@ export default function PublicPortalPage() {
           </p>
         </section>
 
-        <section className="mt-6 border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
+        <section className="mt-6 border-[3px] border-[color:rgb(var(--brass-800-rgb)_/_.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT THIS PAGE IS</h2>
           <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             This is the front door: what we run, who it is for, and a way to reach a person. It does not log you into
@@ -640,7 +640,7 @@ export default function PublicPortalPage() {
         </section>
 
         <div className="mt-6 space-y-6">
-        <section id="volunteer-recruitment" className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
+        <section id="volunteer-recruitment" className="mat-paper rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHICH ONE SOUNDS LIKE YOU?</h2>
           <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             Pick the closest one. All it does is fill in the form further down, you can change it, and picking the wrong
@@ -661,7 +661,7 @@ export default function PublicPortalPage() {
               return (
                 <article
                   key={path.title}
-                  className={`border-2 p-4 ${selected ? 'lift-1 border-[color:var(--brass-600)] mat-paper' : 'border-[color:rgba(107,78,18,.28)] mat-paper'}`}
+                  className={`border-2 p-4 ${selected ? 'lift-1 border-[color:var(--brass-600)] mat-paper' : 'border-[color:rgb(var(--brass-800-rgb)_/_.28)] mat-paper'}`}
                 >
                   <p className="text-[length:var(--t-md)] font-bold text-[color:var(--hide-950)]">{path.title}</p>
                   <p className="mt-2 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]">{path.description}</p>
@@ -675,7 +675,7 @@ export default function PublicPortalPage() {
                        had been borrowing the wrong law. --brass-600 is a real hover
                        state -- a face two shades lighter than the button's rest state --
                        not a status color at all. */
-                    className="mt-3 min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-3 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--brass-600)]"
+                    className="mt-3 min-h-[44px] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-3 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--brass-600)]"
                   >
                     That is me
                   </button>
@@ -685,7 +685,7 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
-        <section id="interest-intake" className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
+        <section id="interest-intake" className="mat-paper rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">TELL US YOU ARE INTERESTED</h2>
           <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             This is not an application and it does not sign you or your kid up for anything. It is how you tell us you
@@ -791,7 +791,7 @@ export default function PublicPortalPage() {
                 setMessage(e.target.value);
               }}
               placeholder="Anything you want us to know -- your kid's age, what you are looking for, or what you are worried about."
-              className="min-h-[110px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper px-3 py-2 text-[length:var(--t-sm)] text-[color:var(--hide-950)]"
+              className="min-h-[110px] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] mat-paper px-3 py-2 text-[length:var(--t-sm)] text-[color:var(--hide-950)]"
             />
 
             <label className="flex items-center gap-2 text-[length:var(--t-sm)] text-[color:var(--hide-800)]">
@@ -812,7 +812,7 @@ export default function PublicPortalPage() {
               // Same fix as the pathway buttons above: --red-highlight is the
               // safety-gate refusal color, not a hover state for sending an
               // ordinary, welcome form.
-              className="min-h-[44px] border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--brass-600)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-[44px] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] bg-[var(--brass-800)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--brass-600)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? 'Sending...' : 'Send this to a coach'}
             </button>
@@ -821,7 +821,7 @@ export default function PublicPortalPage() {
           </form>
         </section>
 
-        <section id="partner-engagement" className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
+        <section id="partner-engagement" className="mat-paper rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT WE ACTUALLY RUN</h2>
           <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             Not everybody in this building is training to fight. Most are not. There are four different reasons people
@@ -829,7 +829,7 @@ export default function PublicPortalPage() {
           </p>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {programCards.map((program) => (
-              <article key={program.title} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-4">
+              <article key={program.title} className="border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] mat-paper p-4">
                 <p className="text-[length:var(--t-md)] font-bold text-[color:var(--hide-950)]">{program.title}</p>
                 <p className="mt-2 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]">What it is: {program.whatItIs}</p>
                 <p className="mt-1 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]">Who it is for: {program.whoFor}</p>
@@ -839,13 +839,13 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
-        <section id="public-faq" className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
+        <section id="public-faq" className="mat-paper rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">QUESTIONS PEOPLE ACTUALLY ASK</h2>
           <div className="mt-4 space-y-2">
             {faqItems.map((item) => {
               const expanded = openFaq === item.question;
               return (
-                <article key={item.question} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper">
+                <article key={item.question} className="border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] mat-paper">
                   <button
                     type="button"
                     onClick={() => toggleFaq(item.question)}
@@ -859,7 +859,7 @@ export default function PublicPortalPage() {
                   {expanded && (
                     <p
                       id={`faq-panel-${item.question.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`}
-                      className="border-t-2 border-[color:rgba(107,78,18,.28)] px-4 py-3 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]"
+                      className="border-t-2 border-[color:rgb(var(--brass-800-rgb)_/_.28)] px-4 py-3 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]"
                     >
                       {item.answer}
                     </p>
@@ -870,7 +870,7 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
-        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
+        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT IS NOT ON THIS PAGE</h2>
           <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
             No athlete records, no coach notes, no parent files, no board materials, no admin tools. Those sit behind a
@@ -878,7 +878,7 @@ export default function PublicPortalPage() {
           </p>
         </section>
 
-        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
+        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT HAPPENS AFTER YOU HIT SEND</h2>
           <div className="mt-3 grid gap-2 text-[length:var(--t-sm)] font-mono text-[color:var(--brass-800)]">
             <p>You send the form</p>
@@ -895,7 +895,7 @@ export default function PublicPortalPage() {
           </p>
         </section>
 
-        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
+        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">JUMP TO</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {/* Members only -- see note on the portal header button above. */}

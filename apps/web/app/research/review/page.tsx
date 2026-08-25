@@ -220,7 +220,7 @@ export default function ResearchSubmissionReviewPage() {
       breadcrumbs={[{ label: 'Research', href: '/research' }, { label: 'Submission Review' }]}
     >
       <div className="space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">SHADOW Research</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
             Submission Review
@@ -259,7 +259,7 @@ export default function ResearchSubmissionReviewPage() {
           return (
             <section
               key={requirement.research_requirement_id}
-              className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]"
+              className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]"
             >
               <div>
                 {/* PAPER_LABEL sets --hide-600, which is a paper ink. This

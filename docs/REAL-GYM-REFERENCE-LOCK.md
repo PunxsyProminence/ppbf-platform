@@ -49,8 +49,9 @@ This is a lived-in, rustic, nonprofit training space — **not** a polished comm
 ### Mode B (shipped plates)
 1. Plates are layer-0 only (the wall the room stands in).
 2. One building, one day — variants share a root reference derived from these photos.
-3. Real JPEG binaries only; 4:4:4; SOI/EOI; quiet centre; orientation matches filename.
-4. Grok places binaries on its own feature branch. No base64, no Claude/Copilot courier.
+3. Real JPEG binaries only; 4:4:4; complete SOI **and** EOI; >8 KB and ≤400 KB; 1280×720 / 2560×1440 landscape or 405×720 / 810×1440 portrait; quiet centre; orientation matches filename. `apps/web/src/design/plateBinaries.test.ts` enforces all of it on the bytes.
+4. Grok places the binaries on its own feature branch. **A delivery is a real `git add` of the actual file** — never base64, never a link or manifest, never a zip in a drive.
+5. **If Grok's tooling cannot push a binary, Jason drag-drops the JPEGs onto the branch.** Owner ruling 2026-08-25 lifted the ban on Claude carrying a binary — it may accept and land one where directed — but Claude **cannot retrieve bytes from SharePoint or OneDrive** at all: the connector renders an image rather than returning file contents, `downloadUrl` is null, and a zip is inaccessible. That is a capability limit, not a rule, so a handoff that depends on it fails by construction. Superseded wording, kept for provenance: the 2026-08-24 line read *“No base64, no Claude/Copilot courier.”*
 
 ### Code / theme
 1. `design-system/current/ppbf-theme.css` is the seam; Golden Era materials (paper/brass/leather) sit **on** the real-gym plate.
@@ -83,8 +84,8 @@ Photos live with the owner and in Grok conversation assets (UUIDs below are the 
 
 When Jason re-uploads or adds photos, append to this table; do not delete the lock set.
 
-**Optional archive (not shipping dependency):**  
-OneDrive `Documents/PPBF-AI-Lanes/Grok-Plates-Inbox/` and/or a Drive folder owned by Jason for full-resolution masters.
+**Optional archive (never a shipping dependency):**  
+OneDrive `Documents/PPBF-AI-Lanes/Grok-Plates-Inbox/` and/or a Drive folder owned by Jason for full-resolution masters. A master parked in a drive is an archive copy of a delivery; the delivery is the commit on the branch, and no AI lane here can pull those bytes back out of the drive.
 
 ---
 

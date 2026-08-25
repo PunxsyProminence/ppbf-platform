@@ -39,6 +39,17 @@ const STATUS_BADGES: Record<AuthoredLesson['status'], { className: string; glyph
   retired: { className: 'badge badge--filed', glyph: '◌', label: 'Retired' },
 };
 
+/**
+ * The read window for the whole-gym list, named once so the request and what
+ * the list calls itself cannot drift apart (BoardSeatEvidence.tsx names its
+ * own copy of the same number for the same reason).
+ *
+ * A real ceiling, not a page size: rabbitHoles.ts orders the authoring read
+ * `updated_at desc` and clamps it at MAX_AUTHORING_LIMIT, and this surface has
+ * no pager, so a gym past this many lessons cannot reach the older ones here.
+ */
+const LESSON_READ_LIMIT = 100;
+
 const EMPTY_DRAFT = {
   title: '',
   concept: '',
@@ -131,7 +142,7 @@ function RabbitHoleAuthoringPage() {
 
     void (async () => {
       try {
-        const lessons = await readLessons({ limit: 100 }, controller.signal);
+        const lessons = await readLessons({ limit: LESSON_READ_LIMIT }, controller.signal);
         setAllLessons(lessons);
         setLoadError('');
       } catch (error) {
@@ -265,7 +276,7 @@ function RabbitHoleAuthoringPage() {
           ) : null}
         </header>
 
-        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>What Is It About?</h2>
           <p className="t-body">
             A lesson attaches to a term the platform already uses, never to a card. The card&apos;s wording can
@@ -323,7 +334,7 @@ function RabbitHoleAuthoringPage() {
           </div>
         </section>
 
-        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Write</h2>
           <label className="field">
             <span className="t-label">Title of the lesson</span>
@@ -392,8 +403,12 @@ function RabbitHoleAuthoringPage() {
           {message ? <p role="status" className="t-body font-semibold text-[color:var(--brass-300)]">{message}</p> : null}
         </section>
 
-        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
-          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Everything This Gym Has Written</h2>
+        <section className="mat-leather mt-[var(--s5)] space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+          {/* NOT "Everything This Gym Has Written", which is what this
+              heading used to say. The read is capped -- see LESSON_READ_LIMIT
+              above -- so past that many lessons this is the most recently
+              worked-on slice and the rest is not reachable from this page. */}
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>What This Gym Has Written Lately</h2>
           {allLessons.length === 0 && !loadError ? (
             <p className="t-muted">
               No rabbit holes have been written for this gym yet.
@@ -447,6 +462,12 @@ function RabbitHoleAuthoringPage() {
               );
             })}
           </div>
+          {allLessons.length > 0 ? (
+            <p className="t-muted">
+              This list reads the {LESSON_READ_LIMIT} most recently updated rabbit holes, so a longer history may
+              sit behind it.
+            </p>
+          ) : null}
         </section>
 
         <div className="mt-[var(--s6)]">

@@ -339,7 +339,7 @@ function BoardSeatsConsole() {
   return (
     <main className="room room--board min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
               <p className="t-eyebrow">Governance</p>
@@ -462,7 +462,7 @@ function BoardSeatsConsole() {
         </section>
 
         {canManage && (
-          <form onSubmit={assign} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <form onSubmit={assign} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <div>
               <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Assign a seat</h2>
               <p className="t-body mt-[var(--s3)]">
@@ -541,7 +541,7 @@ function BoardSeatsConsole() {
                     key={option.value}
                     className={`flex cursor-pointer items-start gap-[var(--s3)] rounded-[var(--r-md)] border p-[var(--s3)] transition ${
                       draftKind === option.value
-                        ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)]'
+                        ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgb(var(--brass-400-rgb)_/_.07)]'
                         : 'mat-leather border-[color:var(--hide-700)] hover:border-[color:var(--brass-700)]'
                     }`}
                   >

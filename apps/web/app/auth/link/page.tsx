@@ -96,13 +96,29 @@ function LinkPageContent() {
   return (
     <main className="mx-auto max-w-[42rem] p-[var(--s6)]">
       <h1 className="t-h1 mb-[var(--s4)]">The Bell</h1>
+      {/* A sign-in link that did not work is an authentication fact, not a
+          medical one. This panel wore --locked on its border and the seed red
+          itself -- #A81E22, in its rgba spelling -- as its ground: the same
+          red the clinic uses for MEDICALLY_NOT_ALLOWED, a child who may not
+          participate (owner decision 2026-08-19). An expired link, a link
+          already used, a rate limit: not one of those is a claim about a
+          person.
+
+          It takes the restricted rung instead, the precedented substitution
+          (#576, and PR #609 on /schedule for this exact panel shape): border
+          and badge move to --restricted, the ground moves to that rung's own
+          colour, the glyph goes ✕ -> ▲. The copy does not move -- the panel
+          said "Sign-in refused" before and says it now -- because what
+          changed is which severity the colour claims, not what happened.
+
+          Red is left to mean a child is in danger. */}
       {displayedError ? (
         <div
-          className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.06)] p-[var(--s4)]"
+          className="rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[rgba(192,90,30,0.10)] p-[var(--s4)]"
           role="alert"
         >
-          <span className="badge badge--locked">
-            <i>✕</i>Sign-in refused
+          <span className="badge badge--restricted">
+            <i>▲</i>Sign-in refused
           </span>
           <p className="t-body mt-[var(--s3)]">{displayedError}</p>
           <Link href="/login" className="btn btn--kiosk mt-[var(--s4)] inline-block">

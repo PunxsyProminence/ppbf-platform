@@ -65,7 +65,7 @@ export default function DevelopmentPipelineBanner({ currentStage }: DevelopmentP
                 className={`inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] py-[var(--s3)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.09em] transition ${
                   isCurrent
                     ? 'mat-leather--raised border-[color:var(--brass-300)] text-[color:var(--bone-100)]'
-                    : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
+                    : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
                 }`}
               >
                 {stage.label}

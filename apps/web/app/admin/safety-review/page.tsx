@@ -111,7 +111,7 @@ export default function SafetyReviewPage() {
               The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
               .mat-wood's lit edge; full note on /coach/sports-medicine. */}
           <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
-          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
             <h1
               className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
@@ -159,7 +159,7 @@ export default function SafetyReviewPage() {
           ) : (
             <div className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               {review!.openHolds.length > 0 && (
-                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
                   <h2 className="t-command text-[length:var(--t-lg)]">Active Training Holds ({review!.openHolds.length})</h2>
                   <ul className="mt-[var(--s3)] divide-y divide-[color:var(--hide-800)]">
                     {review!.openHolds.map((hold) => (
@@ -173,7 +173,7 @@ export default function SafetyReviewPage() {
               )}
 
               {review!.failingGates.length > 0 && (
-                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
                   <h2 className="t-command text-[length:var(--t-lg)]">Failing Safety Gates ({review!.failingGates.length})</h2>
                   <ul className="mt-[var(--s3)] divide-y divide-[color:var(--hide-800)]">
                     {review!.failingGates.map((gate) => (
@@ -187,7 +187,7 @@ export default function SafetyReviewPage() {
               )}
 
               {review!.openEscalations.length > 0 && (
-                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
                   <h2 className="t-command text-[length:var(--t-lg)]">Open Escalations ({review!.openEscalations.length})</h2>
                   <ul className="mt-[var(--s3)] divide-y divide-[color:var(--hide-800)]">
                     {review!.openEscalations.map((escalation) => (
@@ -207,7 +207,7 @@ export default function SafetyReviewPage() {
               )}
 
               {review!.openViolations.length > 0 && (
-                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
                   <h2 className="t-command text-[length:var(--t-lg)]">Open Compliance Violations ({review!.openViolations.length})</h2>
                   <ul className="mt-[var(--s3)] divide-y divide-[color:var(--hide-800)]">
                     {review!.openViolations.map((violation) => (
