@@ -66,6 +66,13 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *
  *   1. Red applied without a channel: an inline style or a raw `#A81E22` /
  *      `rgba(168,30,34,…)` literal in TSX never says a token or class name.
+ *      STILL TRUE OF THE PROXIMITY SCAN, no longer true of this file: the
+ *      SEED LITERAL CHANNEL added 2026-08-25 (below the allow-list) catches
+ *      the literal on its own, at zero tolerance, across app/, components/
+ *      AND src/. It is a SEPARATE channel on purpose — a literal that shares
+ *      a line with an allow-listed token would otherwise survive the sweep
+ *      that deletes the entry, which is exactly what nearly happened to
+ *      app/auth/link/page.tsx. The long note down there tells that story.
  *   2. Computed class names: `'badge--' + tone` never spells `badge--locked`
  *      in the source text.
  *   3. Proximity misses: an identifier six lines away, or in the parent that
@@ -596,7 +603,14 @@ const ALLOW_LIST: readonly AllowListEntry[] = [
   { file: 'app/athlete/sign-in/page.tsx', channel: '--locked', identifier: 'error', sites: 2, reason: DEFECT },
   { file: 'app/athlete/video-analysis/page.tsx', channel: '.alert--critical', identifier: 'error', sites: 2, reason: DEFECT },
   { file: 'app/audit/page.tsx', channel: '--locked', identifier: 'fail', sites: 2, reason: DEFECT },
-  { file: 'app/auth/link/page.tsx', channel: '--locked', identifier: 'error', sites: 2, reason: DEFECT },
+  // 2026-08-25: the magic-link "Sign-in refused" panel moved to the restricted
+  // rung -- a link that did not work is an authentication fact, not a medical
+  // one -- taking both --locked sites (the border token and badge--locked)
+  // with it. Swept, so the entry is deleted rather than shrunk, as this
+  // guard's staleness half requires. The raw rgba(168,30,34,...) ground that
+  // sat on the SAME line as the border token went with it; that literal was
+  // never covered by this entry, which is what the seed-literal channel below
+  // now exists to say out loud.
   { file: 'app/change-pin/page.tsx', channel: '.alert--critical', identifier: 'error', sites: 1, reason: DEFECT },
   { file: 'app/coach/attempt-log/page.tsx', channel: '--locked', identifier: 'missing', sites: 1, reason: DEFECT },
   { file: 'app/coach/attempt-log/page.tsx', channel: '.alert--critical', identifier: 'error', sites: 1, reason: DEFECT },
@@ -682,6 +696,186 @@ const ALLOW_LIST: readonly AllowListEntry[] = [
   { file: 'components/uiStyles.ts', channel: '--status-danger', identifier: 'error', sites: 3, reason: DEFECT },
   { file: 'components/uiStyles.ts', channel: '--status-danger', identifier: 'inactive', sites: 1, reason: DEFECT },
 ];
+
+/* ------------------------------------------------ SEED LITERAL CHANNEL -- */
+
+/**
+ * A CHANNEL THE ALLOW-LIST COULD NEVER HAVE ACCOUNTED FOR.
+ *
+ * Honesty item 1 at the top of this file says it plainly: a raw `#A81E22` or
+ * `rgba(168,30,34,…)` in TSX names no token and no class, so the derived
+ * channels never see it. That was written as a known limit. What it also
+ * created was a trap, and the trap is worse than the limit:
+ *
+ *   app/auth/link/page.tsx line 101 carried BOTH spellings on ONE line --
+ *   `border-[color:var(--locked)]` (a derived channel, allow-listed) and
+ *   `bg-[rgba(168,30,34,0.06)]` (invisible here). The allow-list entry named
+ *   the file, so the file read as accounted for. It was not: the entry froze
+ *   the token sites and said nothing at all about the literal.
+ *
+ *   Sweeping the tokens then removes the entry -- correctly, by the staleness
+ *   half of the test above, which is doing its job. The literal stays behind,
+ *   still painting the reservation's exact colour, and the last thing in the
+ *   repository that pointed at that file is now gone. THE CLEANUP MEANT TO FIX
+ *   THE SITE IS WHAT WOULD HIDE WHAT REMAINED OF IT.
+ *
+ * The entry was never cover, and that distinction matters for anyone reading
+ * this later: it was incidental, non-load-bearing visibility. Deleting it hid
+ * nothing that deletion caused. The literal was unseen from the day it landed.
+ *
+ * WHY AN INDEPENDENT SCAN, AND NOT A LIVENESS RULE ON THE ENTRY. The obvious
+ * fix -- assert every allow-list entry still matches -- is already here: the
+ * `stale` half of the test above IS that assertion, and it is exactly what
+ * fires when the tokens are swept. Strengthening it could not have helped,
+ * because the failure was never an entry that stopped matching. It was a
+ * colour that was never a channel. So the fix has to be a channel, derived
+ * from the one fact this file already hardcodes -- the seed -- and reached
+ * without passing through a token or a class at all.
+ *
+ * THE RULE IS ZERO, NOT PROXIMITY. Every other channel here is proximity-
+ * matched, because `var(--locked)` beside a load error is wrong while
+ * `var(--locked)` beside a medical hold is right, and only the neighbourhood
+ * tells them apart. The literal needs no such reading. It is wrong at the top
+ * of the safety ladder too: it hardcodes the reservation's colour, so it does
+ * not move when the ladder is re-themed (safetySemanticsSurviveTheThemeSwap),
+ * it is not reachable by any sweep that greps tokens, and it defeats every
+ * derived channel above by construction. A genuine MEDICALLY_NOT_ALLOWED
+ * surface writes `var(--locked)`. Nothing writes the hex. Dropping proximity
+ * also closes honesty item 3 for this channel specifically -- moving the word
+ * "error" six lines away does not launder a literal.
+ *
+ * THE WALK IS WIDER THAN `SCANNED`. `apps/web/src/` holds real .tsx surfaces
+ * (BoardViewportSwitcher, MediaAndCommsHub, FloorOperationsDesk, …) that the
+ * proximity scan above has never covered. The literal channel takes app/,
+ * components/ AND src/. Widening `SCANNED` itself would change the population
+ * the frozen allow-list is measured against, which is a different change with
+ * a different review; this addition is strictly on top of it.
+ *
+ * WHAT IT STILL DOES NOT COVER, so nobody reads it as more:
+ *   - non-.tsx/.ts assets. app/icon.svg strokes the seal in #A81E22 and is
+ *     left alone deliberately: that is the platform's brand mark at favicon
+ *     scale, not a rung of the status ladder, and it is not this guard's
+ *     ruling to make.
+ *   - a computed literal (`'#' + 'A81E22'`), or one arriving from data.
+ *   - the design system's own sheets, where the seed is DEFINED and must be.
+ *
+ * WATCHED TO FAIL, 2026-08-25, before landing. Each run is this one test
+ * file, `npx jest --runInBand src/design/safeguardingRedReservation.test.ts`,
+ * from apps/web:
+ *
+ *   (a) THE TRAP, WALKED INTO ON PURPOSE. app/auth/link/page.tsx with its
+ *       tokens swept to --restricted, the raw rgba(168,30,34,0.06) ground
+ *       left behind, and the --locked allow-list entry deleted as stale --
+ *       which is precisely the state the sweep-and-cleanup sequence produces.
+ *       Against the guard as it stood on origin/main (4fdfcd1d): 5/5 GREEN,
+ *       with nothing anywhere naming the file. Against this section: RED,
+ *       "app/auth/link/page.tsx:117 — rgb — …", proximity half still green,
+ *       which is the demonstration that the two channels are independent.
+ *   (b) A LEGITIMATE TOP-OF-LADDER PANEL -- var(--locked) border,
+ *       badge--locked, var(--locked-ink) copy, colour reached only through
+ *       tokens: GREEN. The channel does not fire on the right answer.
+ *   (c) THE SPELLINGS. `#A81E22cc` (8-digit alpha, past SEED_HEX's word
+ *       boundary) in an inline style, in src/, with no failure word and no
+ *       token anywhere near it -- caught, which is four misses of the
+ *       existing channels at once. `bg-[rgb(168_30_34)]` and
+ *       `rgb(168 30 34)` -- caught.
+ *   (d) PROSE. The same hex and rgba() in a comment and nothing else --
+ *       GREEN, so the several files that document the reservation (this one
+ *       included) are not reported as painting it.
+ *   (e) THE LITERAL ALLOW-LIST, BOTH WAYS. An entry keyed on the probe's
+ *       exact line: GREEN, the escape hatch works. Then the line reformatted
+ *       (`#A81E22cc` -> `#a81e22CC`, same colour): RED twice over -- the line
+ *       is no longer excused AND the entry is reported STALE. An entry here
+ *       cannot quietly stop matching, which is the failure this whole section
+ *       exists to make impossible.
+ */
+
+/** app/ and components/ (what `SCANNED` covers) plus src/, which no proximity
+ *  channel has ever walked. */
+const LITERAL_SCANNED = [...SCANNED, path.join(WEB, 'src')];
+const LITERAL_FILES = LITERAL_SCANNED.flatMap(walk);
+
+/** Every way the seed can be spelled in TS/TSX source. Deliberately its own
+ *  set rather than a widening of SEED_HEX/SEED_RGB above, so this addition
+ *  cannot move what the existing CSS derivation matches:
+ *
+ *    - hex with no word boundary, so the 8-digit alpha form `#A81E22cc` --
+ *      the same red, and past `SEED_HEX`'s `\b` -- is caught;
+ *    - rgb()/rgba() in the legacy comma form, the modern space form, and with
+ *      the underscore Tailwind substitutes for a space inside an arbitrary
+ *      value (`bg-[rgb(168_30_34)]`).
+ */
+const SEED_LITERAL_SPELLINGS: ReadonlyArray<{
+  label: string;
+  probe: RegExp;
+  sample: string;
+}> = [
+  { label: 'hex', probe: /#a81e22/i, sample: 'style={{ color: "#A81E22cc" }}' },
+  {
+    label: 'rgb',
+    probe: /rgba?\(\s*168\s*(?:[,_]|\s)\s*30\s*(?:[,_]|\s)\s*34\b/i,
+    sample: 'className="bg-[rgba(168,30,34,0.06)]"',
+  },
+];
+
+/** A token use of the reservation -- the RIGHT answer for a genuine
+ *  top-of-ladder surface. No spelling above may fire on it. */
+const LEGITIMATE_TOKEN_USE =
+  'className="border-2 border-[color:var(--locked)] badge badge--locked"';
+
+interface LiteralSite {
+  file: string;
+  line: number;
+  spelling: string;
+  text: string;
+}
+
+/** Comment-stripped, so the several files that DISCUSS #A81E22 in prose --
+ *  this one, sports-medicine, simulator, schedule -- are not reported. The
+ *  stripper replaces comment characters with spaces, so the line numbers it
+ *  reports are the real ones. */
+function scanSeedLiterals(): LiteralSite[] {
+  const sites: LiteralSite[] = [];
+  for (const file of LITERAL_FILES) {
+    const { code } = stripTsComments(readFileSync(file, 'utf8'));
+    const relative = path.relative(WEB, file).split(path.sep).join('/');
+    code.split('\n').forEach((line, index) => {
+      const hit = SEED_LITERAL_SPELLINGS.find(({ probe }) => probe.test(line));
+      if (!hit) return;
+      sites.push({ file: relative, line: index + 1, spelling: hit.label, text: line.trim() });
+    });
+  }
+  return sites;
+}
+
+const LITERAL_SITES = scanSeedLiterals();
+
+interface LiteralAllowListEntry {
+  file: string;
+  /** The matched source line, trimmed, EXACTLY as it stands. Keying on the
+   *  literal's own text rather than on a token channel is the point: an entry
+   *  here cannot quietly stop describing the thing it excuses. Reformat the
+   *  line and the entry goes stale and fails loudly, which is the behaviour
+   *  the token channel could not offer a colour it never derived. */
+  text: string;
+  reason: string;
+}
+
+/** Empty, and that is the finding, not an oversight: after the magic-link
+ *  panel was swept there is no live seed literal left in app/, components/ or
+ *  src/. A future entry needs an owner reason, not a convenience. */
+const LITERAL_ALLOW_LIST: readonly LiteralAllowListEntry[] = [];
+
+const LITERAL_GUIDANCE = [
+  'The safeguarding red (#A81E22) is never written as a literal in TS/TSX.',
+  'A raw hex or rgba() hardcodes the reservation: it survives a theme swap,',
+  'no token sweep can find it, and every derived channel in this file misses',
+  'it by construction. If the surface genuinely reports MEDICALLY_NOT_ALLOWED,',
+  'write var(--locked) / badge--locked and let the ladder carry the colour.',
+  'If it reports a failure, an empty state, or anything else, it is the',
+  'restricted rung: var(--restricted) / badge--restricted, glyph ▲',
+  '(the precedented substitution, PR #576; PR #609 on /schedule).',
+].join('\n');
 
 /* ---------------------------------------------------------------- TESTS -- */
 
@@ -771,6 +965,56 @@ describe('the safeguarding red reservation', () => {
     if (stale.length) {
       problems.push(
         `STALE allow-list entries — the tree no longer matches them. A swept site must\nshrink or delete its entry in the same change, so this list can never rot:\n${stale
+          .sort()
+          .join('\n')}`,
+      );
+    }
+
+    expect(problems.length === 0 ? true : problems.join('\n\n')).toBe(true);
+  });
+
+  it('lets no seed literal reach TS/TSX at all, on a channel no token sweep can delete', () => {
+    // Non-vacuity first. A walk that found nothing, or probes that matched
+    // nothing, would pass in the direction that looks like success -- the
+    // exact failure mode the derivation test above exists to prevent.
+    expect(LITERAL_FILES.length).toBeGreaterThan(FILES.length);
+    expect(LITERAL_FILES.some((file) => file.includes(`${path.sep}src${path.sep}`))).toBe(true);
+    expect(SEED_LITERAL_SPELLINGS.length).toBeGreaterThan(1);
+    for (const { label, probe, sample } of SEED_LITERAL_SPELLINGS) {
+      expect(`${label}: ${probe.test(sample)}`).toBe(`${label}: true`);
+      // And it must not fire on the right answer: a genuine top-of-ladder
+      // surface reaches the red through the token, and that is legal.
+      expect(`${label}: ${probe.test(LEGITIMATE_TOKEN_USE)}`).toBe(`${label}: false`);
+    }
+
+    const allowed = new Map<string, LiteralAllowListEntry>();
+    for (const entry of LITERAL_ALLOW_LIST) {
+      allowed.set([entry.file, entry.text].join(KEY_SEPARATOR), entry);
+    }
+
+    const unallowed = LITERAL_SITES.filter(
+      (site) => !allowed.has([site.file, site.text].join(KEY_SEPARATOR)),
+    ).map((site) => `  ${site.file}:${site.line} — ${site.spelling} — ${site.text}`);
+
+    // Liveness, the other half: an entry whose line no longer exists must
+    // fail rather than sit here excusing nothing. Same contract the token
+    // allow-list holds itself to, applied to a key that is the literal.
+    const live = new Set(LITERAL_SITES.map((site) => [site.file, site.text].join(KEY_SEPARATOR)));
+    const stale = [...allowed.values()]
+      .filter((entry) => !live.has([entry.file, entry.text].join(KEY_SEPARATOR)))
+      .map((entry) => `  ${entry.file} — ${entry.text}`);
+
+    const problems: string[] = [];
+    if (unallowed.length) {
+      problems.push(
+        `The safeguarding red written as a LITERAL in TS/TSX:\n${unallowed
+          .sort()
+          .join('\n')}\n\n${LITERAL_GUIDANCE}`,
+      );
+    }
+    if (stale.length) {
+      problems.push(
+        `STALE seed-literal allow-list entries — the line they name is gone.\nDelete the entry in the same change that swept the literal:\n${stale
           .sort()
           .join('\n')}`,
       );
