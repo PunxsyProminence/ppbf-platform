@@ -37,4 +37,14 @@ module.exports = {
     }],
   },
   testPathIgnorePatterns: ['/node_modules/', '/.next/'],
+  // 'default' is Jest's own output and is kept exactly as it was; the second
+  // entry is added beside it. A suite that fails to LOAD reports as one failing
+  // file while the assertions it owns vanish from the totals -- so the passing
+  // count goes UP and no summary says a guard left. This reporter compares
+  // src/testing/safetyCriticalSuites.json against what the run actually did and
+  // fails the run by name when a named suite is missing, did not load, or
+  // contributed fewer tests than its measured floor. It enforces nothing on a
+  // narrowed run (a single file, -t, --onlyChanged) and says so. See the
+  // docblock in the reporter for why this is not a test or a --listTests step.
+  reporters: ['default', '<rootDir>/scripts/suiteAttendanceReporter.js'],
 };

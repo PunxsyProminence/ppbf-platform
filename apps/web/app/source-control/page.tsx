@@ -120,7 +120,7 @@ export default function SourceControlPage() {
           ))}
         </section>
 
-        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Promotion State Lanes</h2>
           <p className="t-label">{capabilityStatus}</p>
           <div className="grid gap-[var(--s4)] xl:grid-cols-5">
@@ -144,7 +144,7 @@ export default function SourceControlPage() {
         </section>
 
         <section className="grid gap-[var(--s4)] lg:grid-cols-2">
-          <article className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <article className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Version History</h2>
             <p className="t-label">{capabilityStatus}</p>
             {/* A version history is a record, and the office writes records on
@@ -173,7 +173,7 @@ export default function SourceControlPage() {
             </div>
           </article>
 
-          <article className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <article className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Current Approved Version</h2>
             <p className="t-label">{capabilityStatus}</p>
             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
@@ -183,7 +183,7 @@ export default function SourceControlPage() {
           </article>
         </section>
 
-        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s4)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>The Automatic Version — Planned</h2>
             <Link href="/source-control/publication-workflow" className="btn">
@@ -200,7 +200,7 @@ export default function SourceControlPage() {
           </div>
         </section>
 
-        <section id="publish" className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section id="publish" className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Publish to Ecosystem</h2>
           <p className="t-body max-w-[80ch]">
             The list of places a published card would go. Nothing on this page sends anything anywhere yet.
@@ -237,7 +237,7 @@ export default function SourceControlPage() {
           </div>
         </section>
 
-        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Quick links</h2>
           <div className="flex flex-wrap gap-[var(--s4)]">
             {quickLinks.map((item) => (

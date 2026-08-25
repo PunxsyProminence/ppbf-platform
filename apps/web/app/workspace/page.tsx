@@ -159,7 +159,7 @@ function WorkspaceContent() {
           </div>
         </header>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Your Account</h2>
           {/* Law 4: account identity is an auditable record -- mono voice. */}
           <dl className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-3">
@@ -184,7 +184,7 @@ function WorkspaceContent() {
           </dl>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Gym Notices</h2>
           <p className="t-muted mt-[var(--s2)]">
             Posted by coaches, admins, and the board for your organization.
@@ -193,7 +193,7 @@ function WorkspaceContent() {
           {noticesLoading ? (
             <p className="t-label mt-[var(--s4)]">Loading notices...</p>
           ) : noticesError ? (
-            <p role="status" className="t-body mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)]">
+            <p role="status" className="t-body mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)]">
               {noticesError}
             </p>
           ) : notices.length === 0 ? (
@@ -230,7 +230,7 @@ function WorkspaceContent() {
           </div>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           {/* The body underneath was already kind and procedural; only the
               heading was filing-cabinet language for "here is what your sign-in
               does not open". */}

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
   getPersonClearanceForOrganization,
   listClearanceTypes,
@@ -33,6 +34,7 @@ const mockList = listPersonClearancesForVerification as jest.Mock;
 const mockGetExisting = getPersonClearanceForOrganization as jest.Mock;
 const mockListClearanceTypes = listClearanceTypes as jest.Mock;
 const mockRecord = recordPersonClearance as jest.Mock;
+const mockAudit = writePilotAuditEvent as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -229,5 +231,107 @@ describe('POST /api/pilot/admin/credentials', () => {
     mockGetExisting.mockResolvedValueOnce(EXISTING_ROW);
     const res = await POST(post({ action: 'delete', person_account_id: 'acct-9', clearance_type_id: 'ct-safesport' }));
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * recordPersonClearance is an upsert keyed
+ * (organization_id, person_account_id, clearance_type_id): one row per person
+ * per clearance type, forever. Every verify and every reject therefore
+ * OVERWRITES the answer that was there -- status, issued_on, expires_on,
+ * verified_by_account_id, verified_at -- and the audit events written here
+ * recorded only what the write put in, never what it replaced.
+ *
+ * A reject is the sharp case, because nothing on this route requires the row
+ * to still be 'submitted'. A `current` PA Child Abuse History Certification,
+ * issued 2026-01-10 and valid to 2031-01-10, verified by another admin, can be
+ * rejected to 'not_started' with both dates nulled. Afterwards the register
+ * says "not started" and the trail said "credential_rejected" -- so "was this
+ * coach cleared on 14 August, and until when" had no answer anywhere.
+ */
+const CURRENT_ROW = {
+  ...EXISTING_ROW,
+  status: 'current',
+  issued_on: '2026-01-10',
+  expires_on: '2031-01-10',
+  verified_by_account_id: 'admin-other',
+  verified_at: '2026-01-12T09:00:00Z',
+};
+
+describe('the audit event carries the clearance state each write destroys', () => {
+  test('reject on a CURRENT clearance records the dates it is erasing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetExisting.mockResolvedValueOnce(CURRENT_ROW);
+    mockRecord.mockResolvedValueOnce({ clearance_id: 'clr-1', status: 'not_started' });
+
+    const res = await POST(post({
+      action: 'reject',
+      person_account_id: 'acct-9',
+      clearance_type_id: 'ct-safesport',
+      note: 'the certificate names a different person',
+    }));
+
+    expect(res.status).toBe(200);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      actor_account_id: 'admin-1',
+      entity_type: 'person_clearance',
+      details: {
+        action: 'credential_rejected',
+        superseded: {
+          status: 'current',
+          issued_on: '2026-01-10',
+          expires_on: '2031-01-10',
+          verified_by_account_id: 'admin-other',
+          verified_at: '2026-01-12T09:00:00Z',
+        },
+      },
+    });
+  });
+
+  test('verify records the state it replaced, so a re-verification is not mistaken for a first one', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetExisting.mockResolvedValueOnce(CURRENT_ROW);
+    mockListClearanceTypes.mockResolvedValueOnce([CLEARANCE_TYPE]);
+    mockRecord.mockResolvedValueOnce({ clearance_id: 'clr-1', status: 'current', expires_on: '2032-02-01' });
+
+    await POST(post({
+      action: 'verify',
+      person_account_id: 'acct-9',
+      clearance_type_id: 'ct-safesport',
+      issued_on: '2031-02-01',
+      expires_on: '2032-02-01',
+    }));
+
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      details: {
+        action: 'credential_verified',
+        issued_on: '2031-02-01',
+        superseded: { status: 'current', expires_on: '2031-01-10' },
+      },
+    });
+  });
+
+  // Both routes on this table go through the same helper, so the ordinary
+  // "an admin verifies a fresh submission" case must record the unverified
+  // row it replaced -- not nothing, and not a shape of its own.
+  test('verifying a plain submission records that submission, all five fields', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetExisting.mockResolvedValueOnce(EXISTING_ROW); // status 'submitted', never verified
+    mockListClearanceTypes.mockResolvedValueOnce([CLEARANCE_TYPE]);
+    mockRecord.mockResolvedValueOnce({ clearance_id: 'clr-1', status: 'current', expires_on: '2027-01-01' });
+
+    await POST(post({
+      action: 'verify', person_account_id: 'acct-9', clearance_type_id: 'ct-safesport', issued_on: '2026-01-01',
+    }));
+
+    const details = mockAudit.mock.calls[0][0].details as { superseded?: unknown };
+    expect(details.superseded).toEqual({
+      status: 'submitted',
+      issued_on: null,
+      expires_on: null,
+      verified_by_account_id: null,
+      verified_at: null,
+    });
   });
 });

@@ -1,8 +1,14 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { uploadPilotCredentialFile } from '@/src/server/pilot/blob';
-import { listClearanceTypes, listPersonClearances, recordPersonClearance } from '@/src/server/pilot/clearanceRegister';
+import {
+  getPersonClearanceForOrganization,
+  listClearanceTypes,
+  listPersonClearances,
+  recordPersonClearance,
+} from '@/src/server/pilot/clearanceRegister';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -24,6 +30,11 @@ jest.mock('@/src/server/pilot/clearanceRegister', () => {
     listClearanceTypes: jest.fn(),
     listPersonClearances: jest.fn(),
     recordPersonClearance: jest.fn(),
+    // The read the upload now takes before it overwrites the row. Left as the
+    // real implementation it would reach queryOne() and the database.
+    // supersededClearanceState is deliberately NOT mocked: it is pure, and
+    // these tests are about what it puts in the audit event.
+    getPersonClearanceForOrganization: jest.fn(),
   };
 });
 
@@ -31,6 +42,8 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockListClearanceTypes = listClearanceTypes as jest.Mock;
 const mockListPersonClearances = listPersonClearances as jest.Mock;
 const mockRecordPersonClearance = recordPersonClearance as jest.Mock;
+const mockGetExisting = getPersonClearanceForOrganization as jest.Mock;
+const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockUpload = uploadPilotCredentialFile as jest.Mock;
 
 afterEach(() => {
@@ -216,5 +229,111 @@ describe('POST /api/pilot/coach/credentials', () => {
       expiresOn: null,
       verifiedByAccountId: null,
     }));
+  });
+});
+
+/**
+ * This route's own header states the destruction as intended: "Uploading
+ * always sets status='submitted' and clears any prior verification
+ * (verified_by, verified_at, issued_on, expires_on) ... A new document
+ * invalidates whatever an admin previously confirmed about the old one."
+ *
+ * What was never intended is that the invalidated answer went nowhere.
+ * recordPersonClearance upserts on (organization, person, clearance type), so
+ * there is exactly one row per person per clearance type and the previous one
+ * is gone the instant this write lands -- while the audit event recorded only
+ * the new document's sha256 and size.
+ *
+ * The scenario: a coach holds a PA Child Abuse History Certification recorded
+ * `current`, issued 2026-01-10, valid to 2031-01-10, verified by an admin on
+ * 2026-01-12. On 14 August they upload a fresh scan. A safeguarding review the
+ * following week asks "was this coach cleared on the 14th, and until when" --
+ * and before this guard, the register said 'submitted' with two null dates and
+ * the trail said a document was submitted.
+ */
+describe('the audit event carries the clearance the upload destroys', () => {
+  const CURRENT_CLEARANCE = {
+    organization_id: 'org-1',
+    clearance_id: 'clr-1',
+    person_account_id: 'acct-1',
+    clearance_type_id: 'ct-safesport',
+    status: 'current',
+    issued_on: '2026-01-10',
+    expires_on: '2031-01-10',
+    document_ref: 'org-1/acct-1/ct-safesport/old.pdf',
+    verified_by_account_id: 'admin-7',
+    verified_at: '2026-01-12T09:00:00Z',
+    verification_note: 'card checked in person',
+    created_at: '2026-01-10T00:00:00Z',
+    updated_at: '2026-01-12T09:00:00Z',
+  };
+
+  function upload() {
+    const file = new File([pdfBytes()], 'cert.pdf', { type: 'application/pdf' });
+    return POST(uploadRequest({ clearance_type_id: 'ct-safesport', document: file }));
+  }
+
+  test('the superseded clearance is read BEFORE the overwrite, and recorded', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockListClearanceTypes.mockResolvedValueOnce([CLEARANCE_TYPE]);
+    mockGetExisting.mockResolvedValueOnce(CURRENT_CLEARANCE);
+    mockRecordPersonClearance.mockResolvedValueOnce({ clearance_id: 'clr-1' });
+
+    expect((await upload()).status).toBe(202);
+
+    // Read before written: if the order inverts, the read returns the row the
+    // upload just overwrote and the audit records the new state twice.
+    expect(mockGetExisting).toHaveBeenCalledWith('org-1', 'acct-1', 'ct-safesport');
+    expect(mockGetExisting.mock.invocationCallOrder[0])
+      .toBeLessThan(mockRecordPersonClearance.mock.invocationCallOrder[0]);
+
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      actor_account_id: 'acct-1',
+      entity_type: 'person_clearance',
+      details: {
+        action: 'credential_submitted',
+        superseded: {
+          status: 'current',
+          issued_on: '2026-01-10',
+          expires_on: '2031-01-10',
+          verified_by_account_id: 'admin-7',
+          verified_at: '2026-01-12T09:00:00Z',
+        },
+      },
+    });
+  });
+
+  // Null, not an object of nulls: a first-ever submission supersedes nothing,
+  // and a block of nulls would read as "there was a record and it was blank".
+  test('a first-ever submission records superseded: null, not a blank record', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockListClearanceTypes.mockResolvedValueOnce([CLEARANCE_TYPE]);
+    mockGetExisting.mockResolvedValueOnce(null);
+    mockRecordPersonClearance.mockResolvedValueOnce({ clearance_id: 'clr-new' });
+
+    expect((await upload()).status).toBe(202);
+
+    const details = mockAudit.mock.calls[0][0].details as { superseded?: unknown };
+    expect(details.superseded).toBeNull();
+  });
+
+  // The document identity already recorded must survive alongside the new
+  // field -- the superseded block is additive, not a replacement.
+  test('the new document\'s own identity is still recorded', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockListClearanceTypes.mockResolvedValueOnce([CLEARANCE_TYPE]);
+    mockGetExisting.mockResolvedValueOnce(CURRENT_CLEARANCE);
+    mockRecordPersonClearance.mockResolvedValueOnce({ clearance_id: 'clr-1' });
+
+    await upload();
+
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      details: {
+        clearance_type_id: 'ct-safesport',
+        content_type: 'application/pdf',
+        content_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    });
   });
 });
