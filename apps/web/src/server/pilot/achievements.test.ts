@@ -222,7 +222,7 @@ describe('personal goals', () => {
       reached_at: '2026-06-01T00:00:00.000Z',
     });
 
-    const goal = await markPersonalGoalReached('org-1', 'goal_1');
+    const goal = await markPersonalGoalReached('org-1', 'goal_1', 'ath-1');
 
     // The update predicate carries `reached_at is null`, so a second tap
     // matches nothing and the read-back returns the original date.
@@ -232,8 +232,38 @@ describe('personal goals', () => {
 
   it('reads only own-words goals, leaving the SMART path untouched', async () => {
     mockQuery.mockResolvedValueOnce([]);
-    await markPersonalGoalReached('org-1', 'goal_1');
+    await markPersonalGoalReached('org-1', 'goal_1', 'ath-1');
     expect(lastSql()).toContain("goal_kind = 'own_words'");
+  });
+
+  /*
+   * The write is keyed on the AUTHORIZED OWNER, not on goal_id alone.
+   *
+   * Before this, the UPDATE matched `organization_id and goal_id` only, and the
+   * route compared the returned row's athlete_id to the caller's payload
+   * afterwards. That comparison could only ever report a mutation that had
+   * already committed: a caller authorized for their own athlete could name any
+   * other athlete's goal_id and permanently stamp that child's goal
+   * reached_at/status='completed'. Putting the owner in the WHERE clause makes
+   * the authorization and the write one statement, so an unauthorized row is
+   * not reached at all rather than reached and then reported as absent.
+   */
+  it('scopes both the write and the idempotent read-back to the named athlete', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await markPersonalGoalReached('org-1', 'goal_1', 'ath-1');
+
+    const updateSql = String(mockQuery.mock.calls[0]?.[0] ?? '').replace(/\s+/g, ' ');
+    expect(updateSql).toContain('update pilot.goals');
+    expect(updateSql).toContain('athlete_id = $4');
+    expect(mockQuery.mock.calls[0]?.[1]).toContain('ath-1');
+
+    // The fallback read-back is the same statement's twin: without the same
+    // predicate it would hand another athlete's goal text back to the caller.
+    const readBackSql = String(mockQueryOne.mock.calls[0]?.[0] ?? '').replace(/\s+/g, ' ');
+    expect(readBackSql).toContain('athlete_id = $3');
+    expect(mockQueryOne.mock.calls[0]?.[1]).toContain('ath-1');
   });
 });
 
