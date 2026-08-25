@@ -63,12 +63,231 @@ describe('GET /api/pilot/publications/create (list)', () => {
 
   test('a valid limit still lists publications', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
-    mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
+    // FIXTURE REPAIR, not a weakened assertion: a coach's list is now scoped
+    // to the athletes they can currently reach, so the route makes ONE
+    // reachability round trip (athleteIdsForCoach) before the publications
+    // read. The first queued result answers that lookup; the second is the
+    // publications read this test has always been about, and the assertion on
+    // it below is unchanged.
+    mockQuery
+      .mockResolvedValueOnce([{ athlete_id: 'ath-1' }])
+      .mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
 
     const res = await GET(getRequest('limit=10'));
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ items: [{ publication_id: 'pub-1' }] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE DEFECT THIS BLOCK PINS
+//
+// GET called getOrganizationPublications(principal.organizationId, ...), whose
+// SQL is `where organization_id = $1` and nothing else, for EVERY allowed role
+// -- coaches included. Its sibling GET /api/pilot/video/list scopes the SAME
+// footage for a coach in SQL to
+//
+//   athlete_id in (select athlete_id from pilot.athletes where coach_id = $2)
+//
+// so a coach deliberately refused a minor's video row could still read that
+// video's publication: publication_id, video_session_id, athlete_id, title,
+// description, and -- the part that matters most for a child -- status and
+// compliance_check_status, i.e. where that footage stands in the consent and
+// compliance workflow. Disclosure rather than takeover (submit and publish
+// both gate on submitted_by_account_id or org admin), but what is disclosed is
+// a minor's footage and its consent state.
+//
+// The fix scopes a coach's read to the athletes they can reach AT THIS MOMENT
+// -- athleteIdsForCoach: coach of record, plus coverage grants that have
+// started and have not expired -- as a predicate on the read itself, rather
+// than by filtering rows the database has already handed over.
+//
+// Org admins are deliberately NOT scoped: for that role
+// assertActorCanAccessAthlete IS assertAthleteBelongsToOrganization, so the
+// organization filter already is the per-athlete gate, and the admin
+// compliance console depends on that reach (owner decision, 2026-08-14).
+// ---------------------------------------------------------------------------
+
+const OWN_PUBLICATION = {
+  publication_id: 'pub-mine',
+  video_session_id: 'vid-mine',
+  athlete_id: 'ath-mine',
+  submitted_by_account_id: 'acct-1',
+  title: 'Jab mechanics',
+  status: 'draft',
+  compliance_check_status: 'pending',
+};
+
+// A child on another coach's roster. Everything on this row is what the attack
+// reads: the id of their footage, and the fact that its compliance check has
+// passed.
+const VICTIM_PUBLICATION = {
+  publication_id: 'pub-victim',
+  video_session_id: 'vid-victim',
+  athlete_id: 'ath-victim',
+  submitted_by_account_id: 'acct-other-coach',
+  title: 'Sparring - rib guard',
+  status: 'approved',
+  compliance_check_status: 'passed',
+};
+
+const ALL_PUBLICATIONS = [OWN_PUBLICATION, VICTIM_PUBLICATION];
+
+const ATHLETE_SCOPE_PREDICATE = /athlete_id = any\(\$(\d+)/;
+
+// Stands in for Postgres on pilot.video_publications, honouring exactly the
+// one predicate this defect is about: when the statement carries
+// `athlete_id = any($n)` only the bound ids come back; when it does not, the
+// whole organization comes back -- which is precisely what the unfixed route
+// received. A "fix" that filtered in the route instead of in SQL, or that
+// dropped the predicate for an empty scope, fails here rather than passing.
+function publicationRowsFor(sql: string, params: unknown[]) {
+  const match = sql.match(ATHLETE_SCOPE_PREDICATE);
+  if (!match) {
+    return ALL_PUBLICATIONS;
+  }
+  const scoped = params[Number(match[1]) - 1] as string[];
+  return ALL_PUBLICATIONS.filter((row) => scoped.includes(row.athlete_id));
+}
+
+// access.ts is NOT mocked here, so the reachability lookup runs for real
+// against this same fake database -- including its live `starts_at <= now()`
+// / `expires_at > now()` predicates, which is how a lapsed or revoked coverage
+// grant stops working with no cleanup job.
+function databaseWithReachableAthletes(reachable: string[]) {
+  return (sql: string, params: unknown[] = []) => {
+    if (sql.includes('pilot.coach_coverage')) {
+      return Promise.resolve(reachable.map((athlete_id) => ({ athlete_id })));
+    }
+    if (sql.includes('pilot.video_publications')) {
+      return Promise.resolve(publicationRowsFor(sql, params));
+    }
+    throw new Error(`unexpected statement in this test: ${sql}`);
+  };
+}
+
+function publicationsCall() {
+  const call = mockQuery.mock.calls.find(([text]) => String(text).includes('pilot.video_publications'));
+  if (!call) {
+    throw new Error('the route never read pilot.video_publications');
+  }
+  return { sql: String(call[0]), params: call[1] as unknown[] };
+}
+
+function idsFrom(payload: unknown) {
+  return (payload as { items: Array<{ publication_id: string }> }).items.map((item) => item.publication_id);
+}
+
+describe('GET /api/pilot/publications/create -- a coach reads only their own athletes', () => {
+  // mockImplementation and any un-consumed mockResolvedValueOnce survive
+  // jest.clearAllMocks(), which clears call records only. Reset on both sides
+  // so each test here starts from a database that answers exactly what it was
+  // given, and so no fake database leaks into the POST suite below.
+  beforeEach(() => {
+    mockQuery.mockReset();
+  });
+
+  afterEach(() => {
+    mockQuery.mockReset();
+  });
+
+  // THE ATTACK: coach acct-1, holding nothing but a coach session in org-1 and
+  // no relationship of any kind to ath-victim, calls
+  // GET /api/pilot/publications/create with no parameters and reads
+  // ath-victim's publication row -- the same child whose video row
+  // GET /api/pilot/video/list withholds from them.
+  test('a coach cannot read the publication of a child they cannot reach', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'acct-1' }));
+    mockQuery.mockImplementation(databaseWithReachableAthletes(['ath-mine']));
+
+    const res = await GET(getRequest());
+    const payload = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(idsFrom(payload)).toEqual(['pub-mine']);
+    // Nothing of the other child's record survives anywhere in the response:
+    // not the athlete id, not the id of their footage, not its consent state.
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain('ath-victim');
+    expect(serialized).not.toContain('vid-victim');
+    expect(serialized).not.toContain('pub-victim');
+
+    // And it was refused IN SQL: the read itself carried the athlete
+    // predicate, bound to exactly the reachable set.
+    const { sql, params } = publicationsCall();
+    expect(sql).toMatch(ATHLETE_SCOPE_PREDICATE);
+    expect(params).toContainEqual(['ath-mine']);
+  });
+
+  // The legitimate path, and the reason reachability is re-read per request: a
+  // covering coach must see what they are entitled to for exactly as long as
+  // the grant is live.
+  test('an active coverage grant reaches that athlete, and the grant is re-read live on every request', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'acct-1' }));
+    mockQuery.mockImplementation(databaseWithReachableAthletes(['ath-mine', 'ath-victim']));
+
+    const res = await GET(getRequest());
+
+    expect(res.status).toBe(200);
+    expect(idsFrom(await res.json())).toEqual(['pub-mine', 'pub-victim']);
+
+    const reachabilitySql = String(mockQuery.mock.calls[0][0]);
+    expect(reachabilitySql).toContain('pilot.coach_coverage');
+    expect(reachabilitySql).toContain('starts_at <= now()');
+    expect(reachabilitySql).toContain('expires_at > now()');
+  });
+
+  // The fail-closed half of the same rule: when every grant has lapsed or been
+  // revoked the reachable set is empty, and an empty scope must still BE a
+  // scope. An implementation that treated `[]` as "no filter" would hand back
+  // the whole organization at the exact moment access ended.
+  test('a coach with no reachable athletes reads nothing, and the empty scope still reaches the SQL', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'acct-1' }));
+    mockQuery.mockImplementation(databaseWithReachableAthletes([]));
+
+    const res = await GET(getRequest());
+
+    expect(res.status).toBe(200);
+    expect(idsFrom(await res.json())).toEqual([]);
+
+    const { sql, params } = publicationsCall();
+    expect(sql).toMatch(ATHLETE_SCOPE_PREDICATE);
+    expect(params).toContainEqual([]);
+  });
+
+  // Org-scoping IS the gate for this role, so the reach is unchanged and no
+  // relationship table is consulted. Both spellings of the role, since legacy
+  // 'admin' rows are still migrating.
+  test.each(['organization_admin', 'admin'] as const)(
+    'an %s still reads the whole organization and consults no relationship table',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role }));
+      mockQuery.mockImplementation(databaseWithReachableAthletes([]));
+
+      const res = await GET(getRequest());
+
+      expect(res.status).toBe(200);
+      expect(idsFrom(await res.json())).toEqual(['pub-mine', 'pub-victim']);
+      expect(publicationsCall().sql).not.toMatch(ATHLETE_SCOPE_PREDICATE);
+      expect(mockQuery.mock.calls.some(([text]) => String(text).includes('pilot.coach_coverage'))).toBe(false);
+    },
+  );
+
+  // The scope is appended to a statement that builds its own placeholders, so
+  // this pins that every $n still resolves to the parameter the caller meant:
+  // a shifted binding would silently filter on the wrong value rather than
+  // fail loudly.
+  test('the athlete scope composes with the status and type filters without shifting a bound parameter', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'acct-1' }));
+    mockQuery.mockImplementation(databaseWithReachableAthletes(['ath-mine']));
+
+    await GET(getRequest('status=draft&publication_type=research_library&limit=10'));
+
+    const { sql, params } = publicationsCall();
+    expect(params).toEqual(['org-1', 'draft', 'research_library', ['ath-mine'], 10]);
+    const placeholders = [...sql.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
+    expect(Math.max(...placeholders)).toBe(params.length);
   });
 });
 

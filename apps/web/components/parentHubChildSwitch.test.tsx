@@ -494,6 +494,9 @@ describe('Messages tab (#90)', () => {
     installFetch();
     await openMessages();
 
+    // The default mock ANSWERS with zero messages, so this empty state is a
+    // real observation. Its counterpart -- the read that never answered -- is
+    // the test three below, and the two must not print the same sentence.
     expect(screen.getByText('No messages yet.')).toBeDefined();
   });
 
@@ -526,8 +529,40 @@ describe('Messages tab (#90)', () => {
     });
     await openMessages();
 
-    expect(screen.getByText('No messages yet.')).toBeDefined();
+    expect(screen.getByText(/your messages have not loaded/i)).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+  });
+
+  // A FAILED READ IS NOT AN EMPTY INBOX, AND THE TAB USED TO SAY IT WAS.
+  //
+  // `messagesLoaded` stays false when GET /api/pilot/parent/messages does not
+  // answer -- the effect swallows the failure so the rest of the hub keeps
+  // working -- and this tab rendered that as "No messages yet.", which tells a
+  // guardian the gym has written nothing to them, as a fact, when nobody
+  // knows. The summary tile above already drew this distinction; the tab did
+  // not, and it is the surface a guardian actually reads for messages.
+  //
+  // WATCHED TO FAIL, 2026-08-25: drop the `!messagesLoaded` branch and this
+  // goes red on the sentence, both halves of it.
+  test('a failed read never renders as "No messages yet."', async () => {
+    installFetch(undefined, undefined, undefined, async () => {
+      throw new Error('messages offline');
+    });
+    await openMessages();
+
+    expect(screen.queryByText('No messages yet.')).toBeNull();
+    expect(screen.getByText(/This is not an empty inbox\./i)).toBeDefined();
+  });
+
+  // A refusal is a failed read too: the effect returns early on !response.ok
+  // without setting messagesLoaded, so the tab must not call that empty
+  // either.
+  test('a refused messages read is not an empty inbox either', async () => {
+    installFetch(undefined, undefined, undefined, async () => jsonResponse({ error: 'nope' }, false));
+    await openMessages();
+
+    expect(screen.queryByText('No messages yet.')).toBeNull();
+    expect(screen.getByText(/your messages have not loaded/i)).toBeDefined();
   });
 
   test('replying stays disabled -- one-directional only', async () => {

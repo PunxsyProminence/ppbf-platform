@@ -26,7 +26,13 @@ import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 import { closePool } from './db';
-import { EVIDENCE_SOURCES, linkEvidence, listEvidence } from './interventionEvidence';
+import {
+  EVIDENCE_SOURCES,
+  getEvidenceLinkOwner,
+  linkEvidence,
+  listEvidence,
+  removeEvidence,
+} from './interventionEvidence';
 
 jest.setTimeout(180_000);
 
@@ -478,6 +484,64 @@ describe('intervention evidence migration', () => {
         expect(film?.source_admissible).toBe(false);
         expect(film?.status).toBe('active');
         expect(after.find((row) => row.source_kind === 'training_attempt')?.source_admissible).toBe(true);
+      } finally {
+        await closePool();
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The removal path's authorization depends on two statements that reading
+  // SQL cannot prove: the join that says whose record a link_id belongs to,
+  // and the compare-and-set that refuses to stamp a row hanging off any other
+  // execution. Both run here against the real schema.
+  test('a link resolves to its stored athlete, and removal refuses an execution it was not authorized against', async () => {
+    const client = await freshDatabase('evidence_owner');
+    try {
+      await client.query(migrationSql);
+      await insertLink(client, 'link-owned');
+
+      process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor('evidence_owner');
+      process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+      try {
+        // The link names only itself; the athlete comes from the execution it
+        // hangs off, which is the value the route authorizes against.
+        const owner = await getEvidenceLinkOwner(ORG_ID, 'link-owned');
+        expect(owner).toEqual({
+          link_id: 'link-owned',
+          execution_id: 'exec-1',
+          athlete_id: ATHLETE_ID,
+        });
+
+        // A link_id from outside the organization resolves to nothing at all,
+        // so the route refuses it before it can reach the gate.
+        expect(await getEvidenceLinkOwner('org-somebody-else', 'link-owned')).toBeNull();
+
+        // The compare-and-set: an execution other than the authorized one
+        // stamps nothing and reports the refusal.
+        expect(await removeEvidence({
+          organizationId: ORG_ID,
+          linkId: 'link-owned',
+          removedReason: 'attempted against the wrong execution',
+          expectedExecutionId: 'exec-not-this-one',
+        })).toBeNull();
+        const untouched = await client.query(
+          `select status, removed_reason from pilot.intervention_evidence_links
+           where organization_id = $1 and link_id = $2`,
+          [ORG_ID, 'link-owned'],
+        );
+        expect(untouched.rows[0]).toEqual({ status: 'active', removed_reason: '' });
+
+        // The authorized execution stamps the row, reason and all.
+        const removed = await removeEvidence({
+          organizationId: ORG_ID,
+          linkId: 'link-owned',
+          removedReason: 'linked the wrong attempt',
+          expectedExecutionId: 'exec-1',
+        });
+        expect(removed?.status).toBe('removed');
+        expect(removed?.removed_reason).toBe('linked the wrong attempt');
       } finally {
         await closePool();
       }

@@ -246,7 +246,7 @@ function CoachSessionScripts() {
   }, []);
 
   return (
-    <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
+    <main className="ge-scripts room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach Workspace</p>
