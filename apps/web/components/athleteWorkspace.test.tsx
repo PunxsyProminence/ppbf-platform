@@ -1481,6 +1481,18 @@ describe('no session observation is fabricated for SHADOW', () => {
     expect(kinds).not.toContain('session_rpe');
     expect(kinds).not.toContain('duration');
   });
+
+  test('the check-in card no longer asks for a duration nothing records', async () => {
+    // The "Session Duration (minutes)" box outlived the feed it fed: when the
+    // Session Load observation moved to check-out and was then withheld for
+    // want of real inputs, the input stayed on the card, collecting a number
+    // no code read. The slider assertion keeps this from passing vacuously on
+    // the wrong screen: same card, one control present, the dead one gone.
+    await renderWorkspace();
+
+    expect(screen.getByLabelText('How ready do you feel today? (1-10)')).toBeTruthy();
+    expect(screen.queryByLabelText('Session Duration (minutes)')).toBeNull();
+  });
 });
 
 // The training card is fed by its own mapper over the same /api/pilot/sessions/list

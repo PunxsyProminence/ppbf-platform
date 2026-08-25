@@ -597,10 +597,6 @@ export default function AthleteWorkspace() {
   const [injuryFlag, setInjuryFlag] = useState(false);
   const [hydrationStatus, setHydrationStatus] = useState(8);
   const [readinessToTrain, setReadinessToTrain] = useState(8);
-  // Fast-Track: the minimum-friction data path so athletes who won't fill out
-  // a rich Deep-Track sparring log still contribute something SHADOW's
-  // formula engine can use (Session Load needs RPE * duration).
-  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(60);
   const [expandedCheckIn, setExpandedCheckIn] = useState(false);
   const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
   const [showPainModal, setShowPainModal] = useState(false);
@@ -2035,18 +2031,21 @@ export default function AthleteWorkspace() {
                   <div className="space-y-[var(--s4)]">
                     {/* Sleep and Energy Level stood here until 2026-08-23 and
                         recorded nothing: neither reached any request body, on
-                        check-in or anywhere else. They sat in the same card as
-                        the self-report slider (then labelled "Readiness to
-                        Train"), Session Duration and the medical
-                        acknowledgement, which all do write, in identical
-                        styling -- so the card asked a child for five things and
-                        kept three, with nothing on screen saying which. Removed
-                        rather than stamped, the way the guardian consent
-                        prototype was: a control that silently discards what it
-                        asks for is worse than no control. Wiring them is a real
-                        option and a separate decision -- it needs an owner call
-                        on what a sleep or energy reading would mean and who, if
-                        anyone, it should reach. */}
+                        check-in or anywhere else. Removed rather than stamped,
+                        the way the guardian consent prototype was: a control
+                        that silently discards what it asks for is worse than
+                        no control.
+
+                        Session Duration followed on 2026-08-25. When Sleep and
+                        Energy went it still wrote -- check-in posted it to
+                        SHADOW as an observed `duration`, which is how a
+                        PLANNED 60 minutes became an observed one -- but the
+                        same rework that ended that (see the check-out handler)
+                        left the box standing, asking a child for a number no
+                        code read. Wiring any of these is a real option and a
+                        separate decision -- it needs an owner call on what the
+                        reading would mean and who, if anyone, it should
+                        reach. */}
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">How ready do you feel today? (1-10)</label>
                       <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
@@ -2059,18 +2058,6 @@ export default function AthleteWorkspace() {
                         This records how you say you feel before training.
                         It does not medically clear you and does not determine your workout.
                       </p>
-                    </div>
-                    <div className="field">
-                      <label className="t-label" htmlFor="session-duration">Session Duration (minutes)</label>
-                      <input
-                        id="session-duration"
-                        type="number"
-                        min={1}
-                        max={480}
-                        value={sessionDurationMinutes}
-                        onChange={(e) => setSessionDurationMinutes(Math.max(1, Number.parseInt(e.target.value, 10) || 0))}
-                        className="input input--kiosk"
-                      />
                     </div>
                   </div>
                 </div>
