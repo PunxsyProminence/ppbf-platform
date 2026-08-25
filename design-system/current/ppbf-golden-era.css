@@ -94,3 +94,296 @@
    room--* --plate URLs and plate-07 warm ground remain the layer-0 walls.
    Drift test before any Mode B plate ship: Iron City / blue-foam / rough-wood
    / bag DNA visible in the outer thirds; no stock grey brick. */
+
+/* ==========================================================================
+   GOLDEN ERA VISUAL 001 — THE BELL (sign-in)
+   ==========================================================================
+   Visual authority: Documents/PPBF-AI-Lanes/Visual-Handoffs/01_READY_FOR_GROK/
+   001_SIGN_IN/ (REFERENCE_APPROVED.jpg desktop, REFERENCE_MOBILE_APPROVED.jpg
+   phone), STATUS APPROVED_BY_JASON 2026-08-24.
+
+   Everything here is scoped to `.ge-bell` (the /login <main>), so it restyles
+   THE BELL alone -- the shared .frame / .rivet / .t-painted / .btn / .input
+   rules are untouched, and the /public sign-in popover (no .ge-bell) is
+   unchanged. No selector below leaves the scope. Functional markup is not
+   touched; this sheet is the whole implementation besides one class name.
+
+   Reserved-red rule holds: nothing here uses --locked / --stamp-red / #A81E22.
+   ========================================================================== */
+
+/* ==========================================================================
+   GOLDEN-ERA TOKEN SCOPE  —  the leak-proof seam, on the ONE Bell scope.
+
+   The shared components The Bell renders (.frame, .rivet, .btn, .input,
+   keylines, eyebrows, dividers) resolve their metal from var(--brass-*).
+   Redefining that ramp on `.ge-bell` itself -- and custom properties inherit --
+   re-skins every one of them at once, from a single scope. Legacy cannot leak,
+   because inside .ge-bell the tokens ARE golden-era; elements outside it never
+   carry the class, so the rest of the app keeps its legacy values untouched.
+   A property override leaks wherever it is forgotten; a token override cannot.
+
+   The one divergence between the retired "Leather & Brass" ramp and the golden
+   era is the metal: legacy brass is a bright, pale gold (top rung #F2E2A8); the
+   golden era is an AGED BRONZE -- warmer, less bright, satin not chrome. This
+   is the whole contract that keeps the frame, rivets, buttons and keylines off
+   legacy gold.
+
+   TWO GUARDS HOLD THIS. src/design/goldenEraTokenScope.test.ts is the STATIC
+   contract check (the scope declares every rung, each differs from legacy, the
+   page carries the class). The RESOLVED-STYLE proof -- that a component inside
+   .ge-bell actually computes to bronze on the real /login page, and that
+   removing a rung makes it fall back to legacy -- lives in
+   e2e/public-homepage.spec.ts, read from a browser's own getComputedStyle,
+   because a text scan cannot prove computed inheritance. Reserved medical red
+   is not part of this ramp and is never touched here. */
+.ge-bell {
+  --brass-200: #E7C88A;
+  --brass-300: #D6B063;
+  --brass-400: #BE9440;
+  --brass-500: #9F7A30;
+  --brass-600: #896628;
+  --brass-700: #6E5220;
+  --brass-800: #533D18;
+  --brass-900: #392910;
+}
+
+/* The wall: the committed FLOOR plate behind the card. The login <main> is
+   .on-canvas, whose ::after already paints var(--plate) as a full-bleed layer;
+   this overrides only that layer's IMAGE for the sign-in scope. It deliberately
+   does NOT touch the --plate custom property (that cascade is a locked room
+   inventory with its own guard); `.ge-bell.on-canvas::after` is (0,2,1) and
+   outranks the base `.on-canvas::after` (0,1,1).
+   NOTE ON THE BACKGROUND: the approved reference shows a lit boxing gym (heavy
+   bag + ring ropes). That is a PHOTOGRAPHIC PLATE BINARY, shipped by the visual
+   lane; no committed plate carries a bag or a ring, and CSS cannot draw one.
+   Until that plate lands this scope shows the committed floor plate, warmed by
+   the scrim below. */
+.ge-bell.on-canvas::after {
+  background-image: url("/plates/plate-02a-floor-landscape-01.jpg");
+}
+@media (orientation: portrait) {
+  .ge-bell.on-canvas::after {
+    background-image: url("/plates/plate-02b-floor-portrait-01.jpg");
+  }
+}
+
+/* Warm the wall, keep a quiet reading centre. A soft amber top-glow evokes the
+   reference's hung bulbs; a gentle vignette seats the card WITHOUT crushing the
+   brick to black the way the first pass did (it went to 0.82 at the edges).
+   Warm ambers/browns only -- no reserved red. Sits above the plate (z 0),
+   below the card column (z 1). */
+.ge-bell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(92% 60% at 50% 0%,
+      rgba(158,102,48,0.26) 0%, rgba(120,74,34,0.10) 42%, transparent 74%),
+    radial-gradient(125% 92% at 50% 46%,
+      rgba(30,20,11,0.10) 0%, rgba(22,14,8,0.40) 60%, rgba(12,8,4,0.72) 100%);
+}
+.ge-bell .ge-bell__column {
+  position: relative;
+  z-index: 1;
+  /* 100vh fallback, then 100dvh so a mobile address bar does not clip the
+     centred card. */
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* ---- The riveted door -------------------------------------------------- */
+/* The reference wears a THICK polished-brass frame studded with rivets, set on
+   a torn dark-hide edge. The base `.frame` already IS a brass gradient with
+   four ball rivets; the first pass painted OVER that brass with a flat hide
+   fill (background-color: var(--hide-900)), collapsing the band to a thin
+   keyline. This restores the brass as a wide band (the padding), moves the dark
+   hide to the OUTSIDE as a bound leather edge (the border), deepens the seating
+   shadow, and studs the whole perimeter with rivets. Fixed-px band widths keep
+   the rivet-ring geometry exact. */
+.ge-bell .frame {
+  padding: 26px;                       /* the brass band width */
+  border: 12px solid var(--hide-700);  /* torn BROWN-leather outer edge (aged hide, not near-black) */
+  border-radius: 26px 22px 25px 23px;
+  background-image: linear-gradient(157deg,
+    var(--brass-900) 0%,  var(--brass-500) 12%, var(--brass-200) 27%,
+    var(--brass-400) 44%, var(--brass-700) 62%, var(--brass-300) 80%,
+    var(--brass-800) 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(216,180,122,0.50),
+    inset 0 -3px 7px rgba(0,0,0,0.55),
+    0 3px 0 rgba(0,0,0,0.45),
+    0 30px 66px rgba(0,0,0,0.66);
+}
+/* A full perimeter of rivets on the brass band. inset:0 aligns this ring to the
+   padding box (= the inner edge of the hide border = the brass band's outer
+   edge); four dot-rows run just inside each edge. Decorative, never a pointer
+   target; the parchment (frame-in, z 2 below) paints over its transparent
+   centre. */
+.ge-bell .frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  pointer-events: none;
+  --rivet-dot: radial-gradient(circle at 46% 40%,
+    var(--brass-200) 0 1.8px, var(--brass-400) 1.8px 3px,
+    var(--brass-700) 3px 4.2px, var(--brass-900) 4.2px 5px, transparent 5.4px);
+  background-image: var(--rivet-dot), var(--rivet-dot), var(--rivet-dot), var(--rivet-dot);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 33px 14px, 33px 14px, 14px 33px, 14px 33px;
+  background-position: center 6px, center calc(100% - 6px), 6px center, calc(100% - 6px) center;
+}
+/* The four base corner rivets: enlarge, brighten, seat on the brass band. */
+.ge-bell .rivet {
+  width: 15px;
+  height: 15px;
+  background-image: radial-gradient(circle at 34% 28%,
+    var(--brass-200) 0%, var(--brass-300) 34%, var(--brass-600) 64%, var(--brass-900) 100%);
+  box-shadow: inset 0 -1px 2px rgba(0,0,0,0.7), 0 1px 2px rgba(0,0,0,0.75);
+  z-index: 1;
+}
+.ge-bell .rivet--tl { top: 6px;    left: 6px; }
+.ge-bell .rivet--tr { top: 6px;    right: 6px; }
+.ge-bell .rivet--bl { bottom: 6px; left: 6px; }
+.ge-bell .rivet--br { bottom: 6px; right: 6px; }
+
+.ge-bell .frame > .frame-in {
+  position: relative;
+  z-index: 2;
+  border-radius: 13px;
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--brass-500) 66%, transparent),
+    inset 0 0 0 4px rgba(0,0,0,0.38),
+    inset 0 2px 14px rgba(0,0,0,0.55);
+}
+
+/* Larger, warmer parchment padding on the working surface. !important is
+   required here (and in the mobile override below) because SignInPanel sets the
+   padding as an INLINE style on this element (style={{ padding: 'var(--s6)' }});
+   an inline style outranks any selector, so only !important widens it from the
+   sheet without editing the component's markup, which the handoff forbids. */
+.ge-bell .frame-in.mat-paper {
+  padding: clamp(var(--s6), 4.5vw, var(--s8)) !important;
+}
+
+/* "The Bell": the reference sets it huge, upright, mixed-case, near-black --
+   the poster over the door. Alfa Slab One (the DS --font-stencil) is that heavy
+   slab, so this only drops the stencil stamp's uppercase + rotation and lifts
+   the scale and ink weight to the reference's presence. The decorative bell
+   glyph above shrinks so the WORDS lead, as they do in the reference. */
+.ge-bell header svg {
+  height: 30px;
+  width: 30px;
+  opacity: 0.85;
+}
+.ge-bell .t-painted {
+  text-transform: none;
+  transform: none;
+  letter-spacing: 0.004em;
+  color: var(--hide-950);
+  text-shadow:
+    0 1px 0 rgba(255,250,232,0.45),
+    0 3px 4px rgba(48,28,14,0.30);
+}
+.ge-bell header .t-painted {
+  /* !important overrides the inline style={{ fontSize: 'var(--t-2xl)' }} on the
+     <h1>; same inline-style reason as the paper padding above. */
+  font-size: clamp(3.3rem, 8.5vw, 5.4rem) !important;
+  line-height: 0.92;
+  margin-top: var(--s3);
+}
+.ge-bell header .t-body {
+  font-size: var(--t-md);
+}
+
+/* Primary metal: the Microsoft and Sign In doors read as struck brass plates --
+   a brighter bevel and letter-spaced face over the shared .btn brass, big
+   gym-tablet targets. Scoped to the kiosk primaries so .btn--ghost stays the
+   quiet outline it is elsewhere. */
+.ge-bell .btn--kiosk {
+  letter-spacing: 0.03em;
+  border: 2px solid color-mix(in srgb, var(--brass-900) 72%, #000);
+  border-radius: 12px;
+  background-image:
+    linear-gradient(180deg,
+      var(--brass-300) 0%,
+      var(--brass-500) 46%,
+      var(--brass-800) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(224,192,140,0.70),
+    inset 0 -3px 5px rgba(0,0,0,0.50),
+    0 3px 5px rgba(0,0,0,0.42);
+}
+.ge-bell .btn--kiosk:hover {
+  background-image:
+    linear-gradient(180deg,
+      var(--brass-200) 0%,
+      var(--brass-400) 46%,
+      var(--brass-700) 100%);
+}
+
+/* Parchment fields: clear inset writing surface with a warm brass keyline, dark
+   ink -- large enough for sweaty-hands entry (Law 5 --tap sets the height via
+   input--kiosk). */
+.ge-bell .input--kiosk {
+  background-color: color-mix(in srgb, var(--bone-100) 88%, var(--paper));
+  border: 1.5px solid color-mix(in srgb, var(--brass-800) 42%, transparent);
+  box-shadow: inset 0 2px 4px rgba(60,40,20,0.16);
+}
+.ge-bell .input--kiosk:focus {
+  border-color: var(--brass-700);
+  box-shadow:
+    inset 0 2px 4px rgba(60,40,20,0.16),
+    0 0 0 3px color-mix(in srgb, var(--brass-500) 34%, transparent);
+}
+
+/* The page foot (Help / Gym Notice, then the work-axis strip) sits OUTSIDE the
+   frame, on the dark wall. On the cream page these inherited dark ink; on the
+   plate that ink went invisible -- the "stray boxes" under the card. Give the
+   out-of-frame content a warm bone voice so it reads on the hide, and centre
+   the axis. Scoped to siblings that FOLLOW the frame, so nothing on the
+   parchment inside the frame is touched. */
+.ge-bell .frame ~ section :is(.t-command, .t-body, .t-label, .t-muted),
+.ge-bell .frame ~ footer {
+  color: var(--bone-100);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.55);
+}
+.ge-bell .frame ~ section .btn--ghost {
+  color: var(--bone-100);
+  border-color: color-mix(in srgb, var(--brass-400) 72%, transparent);
+}
+.ge-bell .frame ~ footer {
+  text-align: center;
+}
+
+/* Phone (REFERENCE_MOBILE_APPROVED.jpg): card near full-width with safe side
+   margins, a tighter frame band, title still dominant, methods already stack in
+   a single column. Not a shrunk desktop -- the column claims the width. */
+@media (max-width: 640px) {
+  .ge-bell .ge-bell__column {
+    padding-left: var(--s3);
+    padding-right: var(--s3);
+    padding-top: var(--s4);
+    padding-bottom: var(--s4);
+  }
+  .ge-bell .frame {
+    padding: 16px;
+    border-width: 8px;
+    border-radius: 18px 16px 18px 17px;
+  }
+  .ge-bell .frame::after {
+    background-size: 27px 12px, 27px 12px, 12px 27px, 12px 27px;
+    background-position: center 5px, center calc(100% - 5px), 5px center, calc(100% - 5px) center;
+  }
+  .ge-bell header .t-painted {
+    font-size: clamp(2.6rem, 12.5vw, 3.7rem) !important;
+  }
+  .ge-bell .frame-in.mat-paper {
+    padding: var(--s5) var(--s4) !important;
+  }
+}
