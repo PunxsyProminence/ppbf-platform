@@ -111,6 +111,37 @@
    Reserved-red rule holds: nothing here uses --locked / --stamp-red / #A81E22.
    ========================================================================== */
 
+/* ==========================================================================
+   GOLDEN-ERA THEME SCOPE  —  the leak-proof seam.
+
+   A surface migrates to the golden era by adding ONE class, `theme-golden`, to
+   its root. Everything below redefines the design TOKENS the shared components
+   already read (`.frame`, `.rivet`, `.btn`, `.input`, keylines and eyebrows all
+   resolve `var(--brass-*)`). Custom properties inherit, so redefining them on
+   this scope re-skins every component INSIDE the scope at once — and legacy
+   cannot leak, because within the scope the tokens ARE golden-era. Outside the
+   scope the tokens keep their legacy values, so un-migrated pages do not move.
+   A property override leaks wherever it is forgotten; a token override cannot.
+
+   The one divergence between the retired "Leather & Brass" ramp and the golden
+   era is the metal: legacy brass is a bright, pale gold (top rung #F2E2A8); the
+   golden era is an AGED BRONZE — warmer, less bright, satin not chrome. This
+   turns the frame, rivets, buttons and keylines to bronze in one move.
+   src/design/goldenEraTokenScope.test.ts fails the build if any brass rung is
+   left at its legacy value (a golden-era surface would then render legacy gold)
+   or if The Bell drops the scope class. Reserved medical red is not part of
+   this ramp and is never touched here. */
+.theme-golden {
+  --brass-200: #E7C88A;
+  --brass-300: #D6B063;
+  --brass-400: #BE9440;
+  --brass-500: #9F7A30;
+  --brass-600: #896628;
+  --brass-700: #6E5220;
+  --brass-800: #533D18;
+  --brass-900: #392910;
+}
+
 /* The wall: the committed FLOOR plate behind the card. The login <main> is
    .on-canvas, whose ::after already paints var(--plate) as a full-bleed layer;
    this overrides only that layer's IMAGE for the sign-in scope. It deliberately
@@ -171,14 +202,14 @@
    the rivet-ring geometry exact. */
 .ge-bell .frame {
   padding: 26px;                       /* the brass band width */
-  border: 12px solid var(--hide-950);  /* torn dark-hide outer edge */
+  border: 12px solid var(--hide-700);  /* torn BROWN-leather outer edge (aged hide, not near-black) */
   border-radius: 26px 22px 25px 23px;
   background-image: linear-gradient(157deg,
     var(--brass-900) 0%,  var(--brass-500) 12%, var(--brass-200) 27%,
     var(--brass-400) 44%, var(--brass-700) 62%, var(--brass-300) 80%,
     var(--brass-800) 100%);
   box-shadow:
-    inset 0 2px 0 rgba(255,246,214,0.60),
+    inset 0 2px 0 rgba(216,180,122,0.50),
     inset 0 -3px 7px rgba(0,0,0,0.55),
     0 3px 0 rgba(0,0,0,0.45),
     0 30px 66px rgba(0,0,0,0.66);
@@ -275,18 +306,18 @@
   border-radius: 12px;
   background-image:
     linear-gradient(180deg,
-      color-mix(in srgb, var(--brass-200) 84%, #fff) 0%,
+      var(--brass-300) 0%,
       var(--brass-500) 46%,
       var(--brass-800) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255,248,220,0.80),
+    inset 0 1px 0 rgba(224,192,140,0.70),
     inset 0 -3px 5px rgba(0,0,0,0.50),
     0 3px 5px rgba(0,0,0,0.42);
 }
 .ge-bell .btn--kiosk:hover {
   background-image:
     linear-gradient(180deg,
-      color-mix(in srgb, var(--brass-200) 90%, #fff) 0%,
+      var(--brass-200) 0%,
       var(--brass-400) 46%,
       var(--brass-700) 100%);
 }
