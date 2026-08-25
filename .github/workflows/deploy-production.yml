@@ -205,14 +205,53 @@ jobs:
             exit 1
           fi
 
-      - name: Verify release digest exists in ACR
+      # ─────────────────────────────────────────────────────────────────────
+      # The digest must exist AND have been built from this commit.
+      #
+      # confirm_sha and release_digest arrive as two independent strings, and
+      # until now nothing tied them together: the SHA gate proved confirm_sha
+      # matched the checked-out commit, and this step proved the digest existed
+      # somewhere in the repository. A transposed pair -- today's SHA with
+      # yesterday's digest, or the reverse -- satisfied both and deployed the
+      # wrong image under the right name. Worse, PPBF_RELEASE_SHA is stamped
+      # onto the app from confirm_sha below, so the mismatch would be recorded
+      # as fact and the rollback guard would trust it forever after.
+      #
+      # Nothing new has to be built to close this. deploy-staging already tags
+      # every image it pushes `ppbf-frontend:<github.sha>`, so the mapping from
+      # commit to digest is already in the registry. This asserts it: the
+      # manifest at release_digest must carry a tag equal to confirm_sha.
+      #
+      # One operational note, so a future failure is not a mystery: this depends
+      # on that tag still existing. If ACR retention is ever configured to purge
+      # old tags, an otherwise-legitimate rollback to a purged commit will stop
+      # here. That is the safe direction to fail, and the error says what to
+      # check -- but the fix then is the retention policy, not this gate.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Verify release digest exists in ACR and was built from this commit
         run: |
+          set -euo pipefail
           RELEASE_DIGEST='${{ inputs.release_digest }}'
-          MANIFEST_DIGEST="$(az acr repository show-manifests --name "$ACR_NAME" --repository ppbf-frontend --query "[?digest=='${{ inputs.release_digest }}'] | [0].digest" -o tsv)"
+          CONFIRM_SHA='${{ inputs.confirm_sha }}'
+
+          MANIFEST="$(az acr repository show-manifests \
+            --name "$ACR_NAME" --repository ppbf-frontend \
+            --query "[?digest=='${RELEASE_DIGEST}'] | [0]" -o json)"
+
+          MANIFEST_DIGEST="$(printf '%s' "$MANIFEST" | jq -r '.digest // empty')"
           if [ "$MANIFEST_DIGEST" != "$RELEASE_DIGEST" ]; then
             echo "::error::release digest '$RELEASE_DIGEST' was not found in ACR for ppbf-frontend."
             exit 1
           fi
+
+          if ! printf '%s' "$MANIFEST" | jq -e --arg sha "$CONFIRM_SHA" '(.tags // []) | index($sha)' >/dev/null; then
+            echo "::error::PROVENANCE MISMATCH. The image at ${RELEASE_DIGEST} does not carry the tag ${CONFIRM_SHA}, so it was not built from the commit this run is deploying."
+            echo "::error::Tags actually on that manifest: $(printf '%s' "$MANIFEST" | jq -rc '.tags // []')"
+            echo "::error::Most likely the SHA and the digest came from different staging runs. Take both from the SAME deploy-staging run: confirm_sha is that run's head, release_digest is the value its 'Report Release Digest Last' step printed."
+            exit 1
+          fi
+
+          echo "Digest ${RELEASE_DIGEST} carries tag ${CONFIRM_SHA} -- built from this commit."
 
       # ─────────────────────────────────────────────────────────────────────
       # Refuse a rollback nobody asked for.
