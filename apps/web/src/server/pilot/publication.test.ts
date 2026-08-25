@@ -433,6 +433,56 @@ describe('the claim will not publish a publication that is not cleared', () => {
   });
 });
 
+// The read behind GET /api/pilot/publications/create. It was organization-wide
+// for every caller, which handed a coach the publication rows -- video ids,
+// athlete ids, and compliance/consent state -- of children on other coaches'
+// rosters, footage their own GET /api/pilot/video/list withholds from them.
+// The scope is a predicate on the statement, so no unreachable athlete's row
+// is ever fetched into the process to be filtered afterwards.
+describe('getOrganizationPublications athlete scope', () => {
+  test('a supplied scope becomes a bound SQL predicate, not a post-query filter', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const { getOrganizationPublications } = await import('./publication');
+    await getOrganizationPublications('org-1', { athleteIds: ['ath-mine', 'ath-also-mine'] });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/athlete_id = any\(\$2::text\[\]\)/);
+    expect(params[1]).toEqual(['ath-mine', 'ath-also-mine']);
+  });
+
+  // The fail-closed case, and the one a truthiness check would get wrong: a
+  // coach whose only coverage grant just lapsed reaches nobody, and "nobody"
+  // must stay a scope. Dropping the predicate here would widen the read to the
+  // entire organization at precisely the moment access ended.
+  test('an EMPTY scope still emits the predicate -- it matches nothing, it does not disappear', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const { getOrganizationPublications } = await import('./publication');
+    await getOrganizationPublications('org-1', { athleteIds: [] });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/athlete_id = any\(\$2::text\[\]\)/);
+    expect(params[1]).toEqual([]);
+  });
+
+  // The admin compliance console reads this same function organization-wide on
+  // purpose (owner decision, 2026-08-14: an org admin must reach a departed
+  // coach's drafts). Omitting the scope has to keep meaning exactly that.
+  test('an omitted scope stays organization-wide, which is the admin console contract', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const { getOrganizationPublications } = await import('./publication');
+    await getOrganizationPublications('org-1', { status: 'pending_review' });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    // athlete_id is a selected COLUMN either way; what must be absent is the
+    // scoping predicate.
+    expect(sql).not.toMatch(/athlete_id = any/);
+    expect(params).toEqual(['org-1', 'pending_review', 50]);
+  });
+});
+
 describe('getPublicationForPublish', () => {
   test('reads the row scoped to the acting organization', async () => {
     mockQuery.mockResolvedValueOnce([]);

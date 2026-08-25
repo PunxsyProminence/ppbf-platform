@@ -273,7 +273,7 @@ export default function VideoCompliancePage() {
               The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
               .mat-wood's lit edge; full note on /coach/sports-medicine. */}
           <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
-          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
             <h1
               className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
@@ -325,7 +325,7 @@ export default function VideoCompliancePage() {
               {items.map((item) => (
                 <article
                   key={item.publication_id}
-                  className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]"
+                  className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]"
                 >
                   <div className="grid gap-[var(--s5)] md:grid-cols-2">
                     <div>
@@ -395,7 +395,7 @@ export default function VideoCompliancePage() {
 
           {!isLoading && drafts.length > 0 ? (
             <section className="mt-[var(--s6)]">
-              <header className="border-b-[2px] border-[color:rgba(212,175,74,.22)] pb-[var(--s3)]">
+              <header className="border-b-[2px] border-[color:rgb(var(--brass-400-rgb)_/_.22)] pb-[var(--s3)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Drafts not yet submitted</h2>
                 <p className="t-body mt-[var(--s2)] max-w-4xl">
                   A draft is normally its coach&rsquo;s to submit. Submitting one from here puts it into the
@@ -408,7 +408,7 @@ export default function VideoCompliancePage() {
                 {drafts.map((draft) => (
                   <article
                     key={draft.publication_id}
-                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]"
+                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
                       <div>
@@ -440,7 +440,7 @@ export default function VideoCompliancePage() {
 
           {!isLoading && published.length > 0 ? (
             <section className="mt-[var(--s6)]">
-              <header className="border-b-[2px] border-[color:rgba(212,175,74,.22)] pb-[var(--s3)]">
+              <header className="border-b-[2px] border-[color:rgb(var(--brass-400-rgb)_/_.22)] pb-[var(--s3)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Published</h2>
                 <p className="t-body mt-[var(--s2)] max-w-4xl">
                   Live on the research library shelf. Retracting removes a publication from distribution
@@ -452,7 +452,7 @@ export default function VideoCompliancePage() {
                 {published.map((row) => (
                   <article
                     key={row.publication_id}
-                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]"
+                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
                       <div>
@@ -482,7 +482,7 @@ export default function VideoCompliancePage() {
 
           {!isLoading && retracted.length > 0 ? (
             <section className="mt-[var(--s6)]">
-              <header className="border-b-[2px] border-[color:rgba(212,175,74,.22)] pb-[var(--s3)]">
+              <header className="border-b-[2px] border-[color:rgb(var(--brass-400-rgb)_/_.22)] pb-[var(--s3)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Retracted</h2>
                 <p className="t-body mt-[var(--s2)] max-w-4xl">
                   Suppressed from distribution -- by a guardian&rsquo;s consent withdrawal, or by an admin&rsquo;s
@@ -495,7 +495,7 @@ export default function VideoCompliancePage() {
                 {retracted.map((row) => (
                   <article
                     key={row.publication_id}
-                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]"
+                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
                       <div>

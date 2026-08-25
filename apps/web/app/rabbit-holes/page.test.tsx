@@ -258,7 +258,7 @@ test('a coach may retire what they wrote and is offered nothing on what they did
     ]),
   );
 
-  const posted = screen.getByRole('heading', { name: 'Everything This Gym Has Written' })
+  const posted = screen.getByRole('heading', { name: 'What This Gym Has Written Lately' })
     .parentElement as HTMLElement;
   const cards = within(posted).getAllByRole('article');
   const mine = cards.find((card) => within(card).queryByText('Mine')) as HTMLElement;
@@ -319,4 +319,55 @@ test('the surface tells the author what authority their writing carries', async 
   for (const tier of ['PROVEN', 'EMERGING', 'EXPERIMENTAL', 'RESEARCH_NEEDED']) {
     expect(screen.queryByText(tier)).toBeNull();
   }
+});
+
+// THE WHOLE-GYM LIST IS A CAPPED READ, AND IT USED TO CALL ITSELF COMPLETE.
+//
+// The heading over these cards read "Everything This Gym Has Written". The
+// request asks for LESSON_READ_LIMIT lessons; rabbitHoles.ts orders the
+// authoring read `updated_at desc` and clamps it at MAX_AUTHORING_LIMIT; and
+// this surface has no pager. So past that many lessons the older ones are not
+// reachable from here at all -- and the whole point of the panel above it is a
+// coach checking whether a lesson has already been written, who would read an
+// absence as "nobody has written it".
+//
+// WATCHED TO FAIL, 2026-08-25: restore the old heading and the first test goes
+// red naming the word "everything"; delete the read-window line and it goes red
+// on the missing sentence.
+test('the whole-gym list never calls a capped read everything the gym has written', async () => {
+  await renderPage(listFetch([lesson()]));
+
+  // Located by the window line rather than by the heading, so restoring the
+  // old heading fails on the WORD rather than on a missing element.
+  const list = screen
+    .getByText(/reads the 100 most recently updated rabbit holes/i)
+    .closest('section') as HTMLElement;
+  // Not vacuous: this really is the whole-gym list, with a lesson in it.
+  expect(within(list).getByText('Biomechanics of Kinetic Force Transfer')).toBeTruthy();
+  expect(within(list).queryByText(/everything/i)).toBeNull();
+});
+
+// The window line is a statement about rows, so it belongs to rows. A gym that
+// has written nothing has none, and a "100 most recent" caveat over "no rabbit
+// holes have been written" would be furniture explaining an absence.
+test('a gym with nothing written states the absence without the read-window line', async () => {
+  await renderPage(listFetch([]));
+
+  expect(screen.getByText('No rabbit holes have been written for this gym yet.')).toBeTruthy();
+  expect(screen.queryByText(/most recently updated rabbit holes/i)).toBeNull();
+});
+
+// LESSON_READ_LIMIT exists so the request and the sentence cannot drift apart.
+// If one is edited without the other, this is the test that notices.
+test('the read the page actually sends is the number the page states', async () => {
+  const fetchMock = await renderPage(listFetch([lesson()]));
+
+  // The whole-gym read is the one with no anchor on it; the other carries the
+  // anchor being drafted.
+  const wholeGymRead = fetchMock.mock.calls
+    .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>)
+    .find((body) => body.anchor_type === undefined);
+
+  expect(wholeGymRead?.limit).toBe(100);
+  expect(screen.getByText(/reads the 100 most recently updated rabbit holes/i)).toBeTruthy();
 });

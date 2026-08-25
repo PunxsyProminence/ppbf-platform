@@ -6,7 +6,9 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import {
   createShadowResearchRequirement,
+  getShadowResearchRequirementById,
   listShadowResearchRequirements,
+  resolveShadowResearchRequirement,
   type ShadowResearchRequirementRow,
 } from '@/src/server/pilot/shadowResearch';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
@@ -20,6 +22,7 @@ jest.mock('@/src/server/pilot/shadowReadiness', () => ({ assertShadowRuntimeRead
 jest.mock('@/src/server/pilot/guardianAccess', () => ({ guardianAthleteIds: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowResearch', () => ({
   createShadowResearchRequirement: jest.fn(),
+  getShadowResearchRequirementById: jest.fn(),
   listShadowResearchRequirements: jest.fn(),
   resolveShadowResearchRequirement: jest.fn(),
 }));
@@ -38,6 +41,8 @@ const mockAssertAthlete = assertActorCanAccessAthlete as jest.MockedFunction<typ
 const mockAccessibleAthleteIds = accessibleAthleteIds as jest.MockedFunction<typeof accessibleAthleteIds>;
 const mockList = listShadowResearchRequirements as jest.MockedFunction<typeof listShadowResearchRequirements>;
 const mockGuardianAthleteIds = guardianAthleteIds as jest.MockedFunction<typeof guardianAthleteIds>;
+const mockGetById = getShadowResearchRequirementById as jest.MockedFunction<typeof getShadowResearchRequirementById>;
+const mockResolve = resolveShadowResearchRequirement as jest.MockedFunction<typeof resolveShadowResearchRequirement>;
 
 function principal(role: PilotPrincipal['role'] = 'organization_admin'): PilotPrincipal {
   return {
@@ -339,5 +344,453 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
 
     expect(await idsFrom(response)).toEqual([]);
     expect(mockList).not.toHaveBeenCalled();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// POST { action: 'resolve' } -- the athlete scope on the WRITE
+// ---------------------------------------------------------------------------
+//
+// THE BUG. The resolve branch set an athlete scope for exactly ONE of the
+// roles it admits:
+//
+//     let athleteScope: string[] | undefined;
+//     if (principal.role === 'parent') { athleteScope = ...; }
+//     await resolveShadowResearchRequirement({ ..., athleteIds: athleteScope });
+//
+// For every other admitted role -- coach, athlete, volunteer, staff,
+// organization_admin -- athleteScope stayed undefined, resolveShadowResearch-
+// Requirement computed hasAthleteScope = false, and its UPDATE's athlete
+// predicate (`$4::boolean = false or subject_id = any($5)`) short-circuited to
+// true. What was left bounding the write was organization + id + status.
+//
+// research_requirement_id is `bigserial primary key`. It is not a token that
+// has to leak before it can be used -- it is reached by counting. So a coach
+// with no assignment at all, an athlete, a volunteer or a staff account could
+// POST a guessed number and mark ANY child's requirement resolved.
+//
+// The rows this reaches are intake-derived. The three writers in
+// app/api/pilot/intake/review-action/route.ts file one per approve/reject/
+// promote decision, carrying the child's id and the reviewer's free-text
+// notes, and shadowLibrary's claim-gap path files one per unsupported claim
+// about a named athlete. Resolving one says a safeguarding-adjacent follow-up
+// about a child was handled. That is an INTEGRITY defect, not a disclosure
+// one: the attacker does not need to read anything, and the read fix (#652)
+// does not touch it, because this path never reads.
+//
+// The fix is the house shape (#624, #630, #648): resolve the STORED record's
+// owner, authorize THAT owner, and carry the authorized owner into the
+// write's WHERE so authorize-and-write is one statement.
+describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope', () => {
+  function stored(overrides: Partial<ShadowResearchRequirementRow> = {}): ShadowResearchRequirementRow {
+    return {
+      research_requirement_id: 4171,
+      organization_id: 'org-real',
+      source_event_name: 'SHADOW_INTAKE_CASE_REJECTED',
+      source_entity_type: 'intake_case',
+      source_entity_id: 'case-other',
+      research_requirement: 'Confirm the guardian disclosure against policy.',
+      knowledge_gap: 'Reviewer note not yet corroborated.',
+      evidence_label: null,
+      source_status: 'observed',
+      source_confidence_tier: 'LIMITED',
+      source_verification_state: 'unknown',
+      status: 'open',
+      created_by_account_id: 'acct-admin',
+      created_by_role: 'organization_admin',
+      metadata: { action: 'reject', notes: 'REJECTED: prior head injury disclosed', athlete_id: 'ath-other' },
+      created_at: '2026-08-25T00:00:00Z',
+      resolved_at: null,
+      subject_id: 'ath-other',
+      ...overrides,
+    };
+  }
+
+  // The legacy writer shape, and the reason the owner resolution cannot key on
+  // the subject_id column alone. The subject_id migration's backfill reads
+  // metadata.subject_id, evidence_label and source_entity_id -- never
+  // metadata.athlete_id -- so every intake-review row written before its
+  // application companion still names its child ONLY in metadata, with the
+  // column NULL. Those are exactly the rows carrying a reviewer's free-text
+  // note on a child's intake case.
+  function storedLegacy(): ShadowResearchRequirementRow {
+    return stored({
+      research_requirement_id: 4172,
+      source_event_name: 'SHADOW_INTAKE_CASE_PROMOTED',
+      source_entity_id: 'case-legacy',
+      subject_id: null,
+      metadata: { action: 'promote', notes: 'PROMOTED: safeguarding note on file', athlete_id: 'ath-other' },
+    });
+  }
+
+  // A capability-coverage gap is about the gym's doctrine, not about a child.
+  function storedOrgWide(): ShadowResearchRequirementRow {
+    return stored({
+      research_requirement_id: 10,
+      source_event_name: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
+      source_entity_type: 'shadow_library_capability_map',
+      source_entity_id: 'capability.readiness',
+      subject_id: null,
+      metadata: {},
+    });
+  }
+
+  const REFUSED = new Error('Forbidden: coach not assigned to athlete');
+
+  beforeEach(() => {
+    mockGetById.mockResolvedValue(stored());
+    mockResolve.mockResolvedValue(true);
+  });
+
+  // THE ATTACK. Each of these roles is admitted by ORGANIZATION_MEMBER_ROLES
+  // and holds nothing whatsoever about ath-other: no assignment, no coverage
+  // grant, no guardian link, not that athlete's own account. Each POSTs a
+  // requirement id it enumerated. Each must be refused, and nothing may be
+  // written.
+  test.each(['coach', 'athlete', 'volunteer', 'staff'] as const)(
+    'a %s with no relationship to the child cannot resolve that child requirement',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue({ ...principal(role), athleteId: role === 'athlete' ? 'ath-mine' : null });
+      mockAssertAthlete.mockRejectedValue(REFUSED);
+
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+      expect(response.status).toBe(404);
+      expect(mockResolve).not.toHaveBeenCalled();
+      // The gate was consulted about the STORED row's child, not about
+      // anything the request body said.
+      expect(mockAssertAthlete).toHaveBeenCalledWith(
+        expect.objectContaining({ accountId: 'acct-1', organizationId: 'org-real', role }),
+        'ath-other',
+      );
+    },
+  );
+
+  // Same attack against the pre-migration row shape. If the owner resolution
+  // read only the subject_id column this row would resolve to "names no
+  // athlete" and sail straight through -- leaving precisely the safeguarding
+  // rows unprotected.
+  test('the legacy metadata-only row is protected too', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockGetById.mockResolvedValue(storedLegacy());
+    mockAssertAthlete.mockRejectedValue(REFUSED);
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4172 }));
+
+    expect(response.status).toBe(404);
+    expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-other');
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // A refused id and an absent id must be indistinguishable. With sequential
+  // ids a distinct 403 would hand an enumerating caller a map of which ids
+  // exist and which name a child.
+  test('a refusal is indistinguishable from an id that does not exist', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockAssertAthlete.mockRejectedValue(REFUSED);
+    const refused = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    jest.clearAllMocks();
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockGetById.mockResolvedValue(null);
+    const absent = await POST(postRequest({ action: 'resolve', research_requirement_id: 999999 }));
+
+    expect(absent.status).toBe(refused.status);
+    expect(await absent.json()).toEqual(await refused.json());
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // Coverage is the reason this is decided on every write rather than once.
+  // assertActorCanAccessAthlete admits a covering coach only while
+  // `starts_at <= now() and expires_at > now()`, so a grant that has lapsed --
+  // or been cut short by revokeCoachCoverage, which forces expires_at to
+  // now() -- stops admitting the substitute here at the same moment it stops
+  // admitting them everywhere else.
+  test('a substitute coach whose coverage grant has lapsed can no longer resolve', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockAssertAthlete.mockRejectedValue(REFUSED);
+
+    const lapsed = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(lapsed.status).toBe(404);
+    expect(mockResolve).not.toHaveBeenCalled();
+
+    // While the grant is live the same coach is admitted, through the same
+    // single gate.
+    mockAssertAthlete.mockReset();
+    mockAssertAthlete.mockResolvedValue(undefined);
+
+    const covered = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(covered.status).toBe(200);
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+  });
+
+  // AUTHORIZE-AND-WRITE IS ONE STATEMENT. The subject just authorized is
+  // handed to the UPDATE and bound in its WHERE, so a row whose subject
+  // changed between the read and the write matches nothing.
+  test('the authorized owner is carried into the write', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-real',
+        researchRequirementId: 4171,
+        expectedSubjectAthleteId: 'ath-other',
+      }),
+    );
+  });
+
+  test('the authorized owner of a legacy row is the one metadata names', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockGetById.mockResolvedValue(storedLegacy());
+
+    await POST(postRequest({ action: 'resolve', research_requirement_id: 4172 }));
+
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedSubjectAthleteId: 'ath-other' }),
+    );
+  });
+
+  // RESOLVING IS CLOSING, NOT RE-FILING. `metadata` is merged into the stored
+  // row, and two of its keys are read by the subject resolution. Unguarded, a
+  // caller entitled to the row could push it into another family's view --
+  // notes and all -- or unbind it into org-wide data every volunteer and staff
+  // account may read.
+  test('resolve metadata cannot repoint the requirement at another child', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const response = await POST(postRequest({
+      action: 'resolve',
+      research_requirement_id: 4171,
+      metadata: { athlete_id: 'ath-mine' },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('resolve metadata cannot unbind a legacy row into organization-wide data', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockGetById.mockResolvedValue(storedLegacy());
+
+    const response = await POST(postRequest({
+      action: 'resolve',
+      research_requirement_id: 4172,
+      metadata: { athlete_id: null },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // The gate runs first, so a caller with no entitlement gets the same 404
+  // whatever they sent -- the metadata 400 must not become an oracle telling
+  // them the row exists and what its subject is not.
+  test('an unauthorized caller sending repointing metadata still gets the same 404', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockAssertAthlete.mockRejectedValue(REFUSED);
+
+    const response = await POST(postRequest({
+      action: 'resolve',
+      research_requirement_id: 4171,
+      metadata: { athlete_id: 'ath-mine' },
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ ok: false, error: 'Requirement not found' });
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('restating the subject the row already has is allowed', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const response = await POST(postRequest({
+      action: 'resolve',
+      research_requirement_id: 4171,
+      metadata: { subject_id: 'ath-other', resolved_from: 'research_page' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+  });
+
+  // THE LEGITIMATE PATH, PART 1. A parent closing their own child's
+  // requirement. Both bounds are present: the guardian's linked-athlete list
+  // the route always sent, AND the stored row's authorized owner.
+  test('a parent still resolves their own child requirement', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockGetById.mockResolvedValue(stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } }));
+
+    const response = await POST(postRequest({
+      action: 'resolve',
+      research_requirement_id: 4171,
+      metadata: { resolved_from: 'research_page' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, resolved: true });
+    expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-mine');
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        athleteIds: ['ath-mine'],
+        expectedSubjectAthleteId: 'ath-mine',
+        resolvedByAccountId: 'acct-1',
+        resolvedByRole: 'parent',
+        metadata: { resolved_from: 'research_page' },
+      }),
+    );
+  });
+
+  // THE LEGITIMATE PATH, PART 2. An organization admin administers the whole
+  // gym's records; assertActorCanAccessAthlete admits them for any athlete of
+  // their own organization, so acting within their remit still works.
+  test('an organization admin still resolves a requirement in their organization', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(response.status).toBe(200);
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedSubjectAthleteId: 'ath-other', resolvedByRole: 'organization_admin' }),
+    );
+  });
+
+  // A row that names no athlete is the gym's own operational backlog and
+  // stays closable by the in-organization roles this route admits.
+  test('an organization-wide requirement is still resolvable, with no athlete gate', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockGetById.mockResolvedValue(storedOrgWide());
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10 }));
+
+    expect(response.status).toBe(200);
+    expect(mockAssertAthlete).not.toHaveBeenCalled();
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedSubjectAthleteId: null }),
+    );
+  });
+
+  // Preserved exactly as it was: a guardian's athleteIds scope has only ever
+  // matched on subject_id, which never matches a subject-less row, and the
+  // list they read is scoped the same way. Widening a guardian to the gym's
+  // doctrine backlog is not this fix's business.
+  test('a parent is still refused an organization-wide requirement', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockGetById.mockResolvedValue(storedOrgWide());
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10 }));
+
+    expect(response.status).toBe(404);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('a parent with no linked athletes is refused without reading anything', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGuardianAthleteIds.mockResolvedValue([]);
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(response.status).toBe(404);
+    expect(mockGetById).not.toHaveBeenCalled();
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('a missing research_requirement_id is still a 400', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const response = await POST(postRequest({ action: 'resolve' }));
+
+    expect(response.status).toBe(400);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // platform_owner is excluded from this route's write role set outright:
+  // Omega observes knowledge gaps, it does not author or close them.
+  test('platform_owner cannot resolve at all', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('platform_owner'));
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(response.status).toBe(403);
+    expect(mockGetById).not.toHaveBeenCalled();
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST (create) -- metadata names a child too
+// ---------------------------------------------------------------------------
+//
+// The create gate ran assertActorCanAccessAthlete only for the top-level
+// subject_id. But the subject resolution ALSO reads metadata.subject_id and
+// metadata.athlete_id -- it has to, because the writers that predate the
+// subject_id column name their athlete only there -- and `metadata` is
+// caller-supplied on this route. So a caller could file a requirement against
+// a child they have no relationship with simply by putting the id in metadata
+// and omitting subject_id: free-text research_requirement and knowledge_gap,
+// attributed to that child, and (after #652) hidden from the author while
+// visible to that child's own circle.
+describe('POST /api/pilot/shadow/research-requirements (create) metadata subject', () => {
+  test('an athlete named only in metadata is authorized too', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockAssertAthlete.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+
+    const response = await POST(postRequest({ ...validBody, metadata: { athlete_id: 'ath-not-theirs' } }));
+
+    expect(response.status).toBe(403);
+    expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-not-theirs');
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('metadata.subject_id is authorized too', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockAssertAthlete.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+
+    const response = await POST(postRequest({ ...validBody, metadata: { subject_id: 'ath-not-theirs' } }));
+
+    expect(response.status).toBe(403);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  // Every athlete the row will name, not just the first: subject_id naming a
+  // child the caller may reach must not smuggle a second one in past the gate.
+  test('a second athlete named in metadata is authorized as well as the column', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    await POST(postRequest({ ...validBody, subject_id: 'ath-mine', metadata: { athlete_id: 'ath-other' } }));
+
+    expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-mine');
+    expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-other');
+  });
+
+  // The legitimate shape written by shadowLibrary and the intake reviewers:
+  // the metadata key restates the athlete the column already names.
+  test('metadata restating the authorized subject still creates', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const response = await POST(postRequest({
+      ...validBody,
+      subject_id: 'ath-mine',
+      metadata: { athlete_id: 'ath-mine', created_from: 'research_page' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockAssertAthlete).toHaveBeenCalledTimes(1);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ subjectId: 'ath-mine' }));
+  });
+
+  test('metadata that names no athlete still needs no per-athlete check', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const response = await POST(postRequest({ ...validBody, metadata: { created_from: 'research_page' } }));
+
+    expect(response.status).toBe(200);
+    expect(mockAssertAthlete).not.toHaveBeenCalled();
   });
 });

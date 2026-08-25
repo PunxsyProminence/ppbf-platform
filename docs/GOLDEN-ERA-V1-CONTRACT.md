@@ -154,9 +154,11 @@ Unknown / missing values must look **unknown**, never zero or “normal complete
 ## 9. Photographic / plate rules
 
 - Layer 0 only (the wall the room stands in). Real UI composites on top in code.
-- Quiet centre, outer-thirds interest, zero lettering, 4:4:4, complete SOI/EOI, declared geometry, orientation matches filename.
+- Quiet centre, outer-thirds interest, zero lettering, 4:4:4 (no chroma subsampling), complete SOI **and** EOI, larger than 8 KB, at most 400 KB, geometry one of 1280×720 / 2560×1440 landscape or 405×720 / 810×1440 portrait, orientation matches filename.
 - Variants from a shared root reference (one building, one day) derived from the Real Gym Reference Lock.
-- Grok owns placing the real JPEG binaries directly on its feature branch. No base64, materializer, Claude/Copilot relay.
+- Grok owns placing the real JPEG binaries directly on its feature branch. No base64, no materializer, no bytes through a chat channel.
+- **A delivery is bytes on a branch.** A real `git add` of the actual file, nothing else. A manifest, a link, a drive folder, a zip, or a `.jpg`-named placeholder is not a delivery however complete its covering note reads — PR #643 (2026-08-25) is the worked example, and it cost a round.
+- **Fallback when Grok's tooling cannot push a binary: Jason drag-drops the JPEGs onto the branch.** Per the owner's 2026-08-25 ruling Claude may accept and land a binary when directed, but **it cannot retrieve bytes from SharePoint/OneDrive at all** — the connector renders an image rather than returning file contents, `downloadUrl` is null, and a zip is inaccessible. That is a capability fact, not a preference, so a handoff written around it does not run. See `apps/web/public/plates/README.md`.
 - `plateBinaries.test.ts` is the hard gate. Do not weaken it.
 
 Exact producer set for the current Type B ship (leave office-01 and board-01 untouched unless separately ordered):
@@ -257,7 +259,7 @@ If YES → ship the staging candidate for Jason’s live review.
 - **Real-gym environmental lock:** `docs/REAL-GYM-REFERENCE-LOCK.md` (asset UUIDs + DNA table). Owner photos stay with Jason / conversation assets — full-res personal photos are not committed to the public repo.
 - Shipped plates: `apps/web/public/plates/` (see §9 for exact producer set).
 - Do not place binary images inside this Markdown or any JSON.
-- Optional archive: OneDrive `Documents/PPBF-AI-Lanes/Grok-Plates-Inbox/` (provenance only, not a shipping dependency).
+- Optional archive: OneDrive `Documents/PPBF-AI-Lanes/Grok-Plates-Inbox/` (provenance only, never a shipping dependency — nothing on the far side of a drive folder can be fetched into this repository by Claude, so a copy there is an archive of a delivery, not the delivery).
 
 ---
 

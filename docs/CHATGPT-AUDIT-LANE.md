@@ -68,6 +68,24 @@ retained for provenance and archive under the storage rules below, and it
 stays inside the carve-out -- a lane folder that nothing currently polls is
 exactly the kind of thing a tidy-up removes.
 
+**Recorded 2026-08-25, because the 2026-08-24 wording made this sound like a
+choice.** Claude does not poll that folder for binaries and could not use it if
+it did: **there is no way to get file contents out of SharePoint or OneDrive
+from Claude's environment.** The Microsoft 365 connector renders an image for
+viewing rather than returning bytes, there is no download or unzip action, and
+`downloadUrl` comes back null. A zip is completely inaccessible. So a drive
+folder can hold an archive copy of a plate; it cannot be the route by which a
+plate reaches the repository, and a handoff instructing Claude to fetch from
+one is not a slow route but an inert one. Four delivery rounds were spent
+before this was written down. The owner's 2026-08-25 ruling lifts the *policy*
+ban on Claude carrying a binary -- it may accept and land one where Jason
+directs -- and changes nothing about this capability.
+
+An audit consequence, since this lane is the one that checks claims: a handoff
+or PR whose completion step reads "Claude downloads from OneDrive and commits"
+should be flagged on sight as unexecutable, the same way a contract clause
+depending on a tool nobody has is flagged below.
+
 Moving, renaming, reorganising or tidying anything under `PPBF-AI-Lanes/`
 breaks a lane silently, and nothing reports it until something goes missing.
 It is a coordinated lane change approved by Jason, never a tidy-up, and it is
@@ -100,6 +118,23 @@ until the first order failed.
 | Load a deployed page | **No.** ChatGPT's browser tool could not load the staging URL. |
 | SharePoint / OneDrive / Google Drive in one conversation | **Yes**, as separate connector calls, not one unified query. |
 | Write to OneDrive | **Owner reports this is now yes; not verified here.** The row read "No -- the Microsoft connector exposes no upload, create, overwrite, move, rename or delete action to ChatGPT". Owner decision 2026-08-24: the current tooling exposes controlled storage mutation actions, and any documentation saying ChatGPT categorically cannot write, move or rename in OneDrive is stale. **Claude has not observed a ChatGPT storage mutation and does not certify it** -- this table's whole premise is "proved, not claimed", and the proof for this row belongs to ChatGPT's own round trip. The storage mutation limits below are unchanged and bind whatever the capability turns out to be. |
+
+**Claude's side of the same question, checked 2026-08-25 and recorded here
+because this is the file that keeps capability truth.** This table is
+ChatGPT's; the row that kept costing rounds is Claude's.
+
+| Capability | Status |
+|---|---|
+| Claude reads a SharePoint/OneDrive item's *contents* | **No.** The connector renders an image for viewing and does not return file contents. No download action, no unzip, `downloadUrl` null. A zip is completely inaccessible. |
+| Claude lands a binary already reachable from its sandbox | **Yes**, and since the owner's 2026-08-25 ruling it may do so when directed. |
+| Claude re-encodes a JPEG | **No.** No `cjpeg`, `jpegtran`, ImageMagick or Pillow. Bad plates are refused and named, not corrected. |
+
+The second row is a policy change; the first and third are facts about the
+environment that no ruling can move. Keeping them in one table is the point --
+"Claude may carry the binary" and "Claude can obtain the binary" are different
+sentences, and conflating them is what produced four failed plate-delivery
+rounds. See `apps/web/public/plates/README.md` and `docs/GROK-VISUAL-LANE.md`
+for the working routes.
 
 ### Two consequences, stated rather than implied
 

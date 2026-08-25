@@ -676,7 +676,7 @@ export default function CoachVideoAnalysisPage() {
               {observationError ? <p className="text-[length:var(--t-xs)] text-[var(--locked-ink)]">{observationError}</p> : null}
               {!observationError && observations.length === 0 ? <p className="t-muted text-[color:var(--bone-300)]">No observations available.</p> : null}
               {observations.slice(0, 8).map((item) => (
-                <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                   <p className="text-[length:var(--t-xs)] font-semibold text-[color:var(--bone-200)]">{item.label}</p>
                   <p className="text-[length:var(--t-xs)] text-[color:var(--bone-300)]">Source: {item.source} · {item.review_state}</p>
                 </div>
@@ -980,7 +980,7 @@ export default function CoachVideoAnalysisPage() {
           <p className="mt-[var(--s3)]"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
           <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2 lg:grid-cols-3">
             {mlPanels.map((p) => (
-              <div key={p.title} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+              <div key={p.title} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                 <p className="text-[length:var(--t-xs)] font-semibold text-[color:var(--bone-300)]">{p.title}</p>
                 <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{p.detail}</p>
               </div>

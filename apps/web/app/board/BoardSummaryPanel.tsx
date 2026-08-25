@@ -52,11 +52,11 @@ interface BoardSummaryPalette {
 // seam where a future ground split would land.
 const palettes: Record<BoardSummaryVariant, BoardSummaryPalette> = {
   hub: {
-    frame: 'mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)]',
+    frame: 'mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)]',
     tile: 'stat',
   },
   workspace: {
-    frame: 'mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)]',
+    frame: 'mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)]',
     tile: 'stat',
   },
 };

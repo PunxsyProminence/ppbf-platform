@@ -311,6 +311,39 @@ describe('the sheet fits the page', () => {
   const css = readFileSync(GLOBALS, 'utf8');
   const printBlock = css.slice(css.lastIndexOf('@media print'));
 
+  it('cut both windows out of the sheet at the rules they name', () => {
+    /* `slice(indexOf(x))` and `slice(indexOf(x), indexOf(y))` are quiet when
+       they miss. indexOf returns -1, slice reads it as "one from the end", and
+       the result is a one-character string or an empty one -- no throw, no
+       message, just a window onto nothing.
+
+       Every assertion below happens to be POSITIVE, so an empty window turns
+       them red rather than green. That is luck, not design: add one
+       `not.toMatch` to this block -- the natural way to write "and never
+       break-after: page" -- and it would pass hardest exactly when the rule it
+       polices had been renamed away.
+
+       THE UNBOUNDED END IS THE LIVE HAZARD, and it does not read as empty. Lose
+       only the `.print-sheet + .print-sheet` marker and the second slice runs
+       from .print-sheet to the end of the file: 20,837 characters instead of
+       542. `width:`, `min-height:` and `break-inside: avoid` are then answered
+       by whatever rule happens to declare them further down globals.css, and
+       `never splits one sheet across a fold` passes while .print-sheet itself
+       has lost it. Measured, not supposed.
+
+       So both ends of both windows are pinned, and each window is held to the
+       size of the rule it claims to be rather than merely to being non-empty. */
+    expect(css.lastIndexOf('@media print')).toBeGreaterThan(-1);
+    expect(css.indexOf('.print-sheet {')).toBeGreaterThan(-1);
+    expect(css.indexOf('.print-sheet + .print-sheet')).toBeGreaterThan(css.indexOf('.print-sheet {'));
+
+    // 15,441 and 542 characters today.
+    expect(printBlock.length).toBeGreaterThan(2_000);
+    const sheet = css.slice(css.indexOf('.print-sheet {'), css.indexOf('.print-sheet + .print-sheet'));
+    expect(sheet.length).toBeGreaterThan(100);
+    expect(sheet.length).toBeLessThan(4_000);
+  });
+
   it('sets US Letter portrait with a stated margin', () => {
     expect(printBlock).toMatch(/@page\s*\{[^}]*size:\s*letter portrait/);
     expect(printBlock).toMatch(/@page\s*\{[^}]*margin:\s*1in/);

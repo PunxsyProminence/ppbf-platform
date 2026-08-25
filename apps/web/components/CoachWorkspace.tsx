@@ -1534,7 +1534,7 @@ export default function CoachWorkspace() {
             was sent to their child's coach; this panel is where that promise
             is kept. Lower urgency than pain, so brass trim rather than the
             locked band. */}
-        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.35)] p-[var(--s4)] space-y-[var(--s3)]">
+        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
               Family Barrier Reports
@@ -1554,7 +1554,7 @@ export default function CoachWorkspace() {
           )}
 
           {!barrierReportsLoading && barrierReportsError && (
-            <div className="border-2 border-[color:rgba(212,175,74,.5)] p-3">
+            <div className="border-2 border-[color:rgb(var(--brass-400-rgb)_/_.5)] p-3">
               <p className="text-sm font-semibold text-[color:var(--brass-300)]">{barrierReportsError}</p>
               <p className="mt-1 text-xs text-[color:var(--bone-300)]">
                 Reports may exist that are not shown here. Do not read this as &quot;no family asked for
@@ -1638,7 +1638,7 @@ export default function CoachWorkspace() {
         />
 
         {/* MODE TOGGLE */}
-        <div className="mat-leather flex w-fit gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] p-[var(--s3)]">
+        <div className="mat-leather flex w-fit gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s3)]">
           {(['Group', 'One-on-One'] as const).map(mode => (
             <button
               key={mode}
@@ -1871,7 +1871,7 @@ export default function CoachWorkspace() {
                   <h3 className="t-eyebrow">Athlete Roster</h3>
 
                   {athletesLoading && (
-                    <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)] text-center">
+                    <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)] text-center">
                       <p className="t-muted">Loading athletes...</p>
                       <div className="mt-[var(--s3)] flex justify-center">
                         <div className="animate-spin h-5 w-5 border-2 border-[color:var(--brass-300)] border-t-transparent rounded-full"></div>
@@ -1896,7 +1896,7 @@ export default function CoachWorkspace() {
                   )}
 
                   {!athletesLoading && athletes.length === 0 && !athletesError && (
-                    <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)] text-center">
+                    <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)] text-center">
                       <p className="t-muted">No athletes found</p>
                     </div>
                   )}
@@ -1926,8 +1926,8 @@ export default function CoachWorkspace() {
                         onClick={() => setSelectedAthleteId(athlete.id)}
                         className={`w-full p-[var(--s3)] border rounded-[var(--r-md)] cursor-pointer transition text-left ${
                           selectedAthleteId === athlete.id
-                            ? 'bg-[rgba(212,175,74,.10)] border-[color:var(--brass-500)]'
-                            : 'bg-[rgba(0,0,0,.28)] border-[color:rgba(212,175,74,.22)] hover:border-[color:var(--brass-500)]'
+                            ? 'bg-[rgb(var(--brass-400-rgb)_/_.10)] border-[color:var(--brass-500)]'
+                            : 'bg-[rgba(0,0,0,.28)] border-[color:rgb(var(--brass-400-rgb)_/_.22)] hover:border-[color:var(--brass-500)]'
                         }`}
                       >
                         {/* A face, then the name. A coach who works with twenty
@@ -1996,7 +1996,7 @@ export default function CoachWorkspace() {
                       porthole. */}
                   <div className="space-y-2">
                     {coachTasks.filter(t => t.status !== 'Completed').map(task => (
-                      <div key={task.id} className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                      <div key={task.id} className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                         <div className="flex justify-between items-start mb-[var(--s3)] gap-[var(--s3)]">
                           <h4 className="font-semibold">{task.title}</h4>
                           <StatusBadge tone={priorityTone(task.priority)} label={task.priority} />
@@ -2067,7 +2067,7 @@ export default function CoachWorkspace() {
                         </div>
                       </div>
                       <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
-                        <div className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                        <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                           <p className="t-label">Planned Training</p>
                           <ul className="mt-[var(--s2)] space-y-1 text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                             {block.trainingItems.map((item) => (
@@ -2075,7 +2075,7 @@ export default function CoachWorkspace() {
                             ))}
                           </ul>
                         </div>
-                        <div className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                        <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                           <p className="t-label">Coach Cues</p>
                           <ul className="mt-[var(--s2)] space-y-1 text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                             {block.coachingCues.map((cue) => (
@@ -2137,7 +2137,7 @@ export default function CoachWorkspace() {
                       'Class Management Skills',
                       'Adaptive Coaching'
                     ].map((topic) => (
-                      <li key={topic} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-sm)]">
+                      <li key={topic} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-sm)]">
                         {topic}
                       </li>
                     ))}
@@ -2237,7 +2237,7 @@ export default function CoachWorkspace() {
                 )}
                 {coachTasks.map(task => (
                   <div key={task.id} className={`mat-leather rounded-[var(--r-lg)] p-[var(--s4)] ${
-                    task.status === 'Completed' ? 'border-2 border-[var(--cleared)]' : 'border border-[color:rgba(212,175,74,.22)]'
+                    task.status === 'Completed' ? 'border-2 border-[var(--cleared)]' : 'border border-[color:rgb(var(--brass-400-rgb)_/_.22)]'
                   }`}>
                     <div className="flex justify-between items-start mb-[var(--s3)] gap-[var(--s3)]">
                       <div>
@@ -2295,7 +2295,7 @@ export default function CoachWorkspace() {
                         </p>
                       )}
                       {shadowQueue.map((item) => (
-                        <div key={item.intake_case_id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <div key={item.intake_case_id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
                           <p>Status: {item.status}</p>
                           <p>Documents: {item.document_count}</p>
@@ -2344,7 +2344,7 @@ export default function CoachWorkspace() {
                         </p>
                       )}
                       {shadowObservations.slice(0, 6).map((item) => (
-                        <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.label}</p>
                           <p>Source: {item.source}</p>
                           <p>State: {item.review_state}</p>
@@ -2389,7 +2389,7 @@ export default function CoachWorkspace() {
               <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
               <p className="t-body text-[color:var(--bone-400)]">Record observations from training videos and self-evaluations.</p>
               <div className="t-body text-[color:var(--bone-400)]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
-              <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+              <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                 <p className="t-label">AI Video Analysis - Planned</p>
                 <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
                 <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
@@ -2497,10 +2497,10 @@ export default function CoachWorkspace() {
                   </p>
                 )}
                 {sessionReviewsState === 'loaded' && sessionReviews.length > 0 && (
-                  <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s3)]">
+                  <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s3)]">
                     <p className="t-label">Reviews already on this session</p>
                     {sessionReviews.map((review) => (
-                      <div key={review.reviewId} className="border-t border-[color:rgba(212,175,74,.12)] pt-[var(--s2)] first:border-t-0 first:pt-0">
+                      <div key={review.reviewId} className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.12)] pt-[var(--s2)] first:border-t-0 first:pt-0">
                         <p className="t-data text-[color:var(--bone-300)]">
                           <span className="font-bold">{review.decision}</span>
                           {' -- '}
@@ -2548,7 +2548,7 @@ export default function CoachWorkspace() {
                 </button>
                 {reviewSyncMessage ? <p className="t-data text-[color:var(--brass-300)]">{reviewSyncMessage}</p> : null}
               </div>
-              <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+              <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                 <p className="t-label">Closed-Loop Progression Intelligence - Planned</p>
                 <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>
                 <Link href="/coach/progression-intelligence" className="btn btn--ghost mt-[var(--s3)]">

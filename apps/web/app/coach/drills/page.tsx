@@ -327,7 +327,7 @@ function CoachDrillLibrary() {
                 {drill.cues.length > 0 && (
                   <ul className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
                     {drill.cues.map((cue) => (
-                      <li key={`${drill.drill_id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                      <li key={`${drill.drill_id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                         {cue}
                       </li>
                     ))}

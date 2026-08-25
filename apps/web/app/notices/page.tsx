@@ -49,7 +49,7 @@ function boardSeatLabel(role: string): string {
 const LIFECYCLE_TONE: Record<AnnouncementLifecycle, string> = {
   live: 'border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,transparent)]',
   scheduled: 'border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_14%,transparent)]',
-  expired: 'border-[color:rgba(107,78,18,.28)] mat-paper',
+  expired: 'border-[color:rgb(var(--brass-800-rgb)_/_.28)] mat-paper',
   retired: 'border-[color:var(--brass-600)] bg-[color-mix(in_srgb,var(--brass-600)_12%,transparent)]',
 };
 
@@ -86,6 +86,18 @@ function describeWindow(startsAt: string | null, endsAt: string | null): string 
   return `${formatAnnouncementTime(startsAt as string)} to ${formatAnnouncementTime(endsAt as string)}`;
 }
 
+/**
+ * The read window, named once so the request and what the register calls
+ * itself cannot drift apart -- the same reason BoardSeatEvidence.tsx names its
+ * own copy of this number.
+ *
+ * It is a real ceiling, not a page size: announcements.ts clamps the authoring
+ * read to 25 rows (clampLimit) and orders them `created_at desc`, and this
+ * surface has no pager, so the 26th-newest notice this gym ever posted cannot
+ * be reached from here at all.
+ */
+const NOTICE_READ_LIMIT = 25;
+
 function NoticesAuthoringPage() {
   const session = usePilotSession();
   const [items, setItems] = useState<AnnouncementItem[]>([]);
@@ -110,7 +122,7 @@ function NoticesAuthoringPage() {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ view: 'authoring', limit: 25 }),
+          body: JSON.stringify({ view: 'authoring', limit: NOTICE_READ_LIMIT }),
           signal: controller.signal,
         });
 
@@ -447,7 +459,14 @@ function NoticesAuthoringPage() {
         </section>
 
         <section className="mat-paper pap mt-[var(--s5)] space-y-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s5)]">
-          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Everything Posted</h2>
+          {/* NOT "Everything Posted", which is what this heading and the
+              caption below used to say. The read is capped -- see
+              NOTICE_READ_LIMIT above -- so on a board with a longer history
+              this register is the newest slice of it and the rest is not
+              reachable from this page. A heading is a claim about the rows
+              under it, and "everything" is the one claim these rows cannot
+              support. */}
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Recently Posted</h2>
           {items.length === 0 && !loadError ? (
             /* The room's own named empty state, with the invite the DNA names
                beside it. .pap on the panel so .empty takes its paper inks --
@@ -474,7 +493,7 @@ function NoticesAuthoringPage() {
                column rather than being dropped. */
             <div className="overflow-x-auto">
               <table className="ledger">
-                <caption className="text-left">Everything posted for this gym</caption>
+                <caption className="text-left">The most recent notices posted for this gym</caption>
                 <thead>
                   <tr>
                     <th scope="col">Standing</th>
@@ -529,6 +548,15 @@ function NoticesAuthoringPage() {
                 </tbody>
               </table>
             </div>
+          ) : null}
+          {items.length > 0 ? (
+            /* Said in the same words BoardSeatEvidence.tsx already uses for the
+               same capped read of the same table, so a reader who meets both
+               meets one sentence. */
+            <p className="t-muted">
+              This register reads the {NOTICE_READ_LIMIT} most recent notices, so a longer publication history may
+              sit behind it.
+            </p>
           ) : null}
         </section>
 

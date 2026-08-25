@@ -70,7 +70,7 @@ export default function ChangePinPage() {
       /* Ink ground (Law 6): change-pin is part of the sign-in chassis, same
          ground as /login's map row. Paper carries the message inside it. */
       <main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
-        <div className="mat-leather w-full max-w-md rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s6)] text-center">
+        <div className="mat-leather w-full max-w-md rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s6)] text-center">
           {/* Law 3: the confirmation carries its glyph and uppercase label. */}
           <span className="badge badge--cleared">
             <i>✓</i>PIN updated
