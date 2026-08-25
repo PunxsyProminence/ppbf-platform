@@ -374,6 +374,20 @@ describe('the add-athlete form', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
   }
 
+  test('the submit button promises the starting PIN, not a code nothing mints', async () => {
+    // "& Get Code" outlived the codes: activation codes were replaced by the
+    // shared starting PIN, so the button promised a minted secret this form
+    // no longer produces. Both modes now name what the admin actually gets.
+    await openAddAthlete();
+
+    expect(screen.getByRole('button', { name: 'Add Athlete & Get Starting PIN' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Get Code/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('radio', { name: /Already on the roster/i }));
+    expect(screen.getByRole('button', { name: 'Create Sign-In & Get Starting PIN' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Get Code/i })).toBeNull();
+  });
+
   test('names every field still holding the submit button down', async () => {
     await openAddAthlete();
 
