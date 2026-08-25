@@ -176,10 +176,13 @@ export default function ParentHub() {
   // Safety & Consent card above: a failed read leaves the rest of the hub
   // working, it just shows no messages.
   const [messages, setMessages] = useState<ParentMessage[]>([]);
-  // Whether the messages read actually answered. The tab's own empty state is
-  // fine either way, but the SUMMARY TILE must not render a failed read as
-  // "0 messages" -- that zero reads as "the gym has said nothing", which
-  // nobody verified.
+  // Whether the messages read actually answered. Neither surface that reads
+  // it may render an unanswered read as an absence of messages: the SUMMARY
+  // TILE must not show "0" and the MESSAGES TAB must not say "No messages
+  // yet." Both of those tell a guardian the gym has said nothing to them,
+  // which nobody verified. (The tab was exempted here until 2026-08-25 on the
+  // grounds that its empty state was "fine either way"; it is the same claim
+  // as the tile's zero, in words.)
   const [messagesLoaded, setMessagesLoaded] = useState(false);
 
   useEffect(() => {
@@ -1043,7 +1046,25 @@ export default function ParentHub() {
                 ]}
               />
 
-              {messages.length === 0 ? (
+              {/* A read that did not answer is not an empty inbox.
+                  `messagesLoaded` stays false when /api/pilot/parent/messages
+                  did not answer, and this tab used to render that as "No
+                  messages yet." -- which tells a guardian the gym has written
+                  nothing to them, as a fact, when nobody knows. The summary
+                  tile above already made this distinction (it renders
+                  Unavailable); the tab did not, and the tab is what a guardian
+                  opens to read their messages.
+
+                  Worded to be true in BOTH unanswered states. This flag does
+                  not separate "still in flight" from "refused", and the fetch
+                  starts when the hub mounts rather than when this tab opens,
+                  so a guardian who taps Messages quickly is looking at a read
+                  that has not come back yet -- "could not be loaded" would
+                  claim a failure nobody has observed either. "Unavailable" is
+                  the tile's own word for exactly this, and it covers both. */}
+              {!messagesLoaded ? (
+                <p className="t-muted">Unavailable - your messages have not loaded. This is not an empty inbox.</p>
+              ) : messages.length === 0 ? (
                 <p className="t-muted">No messages yet.</p>
               ) : (
                 <div className="space-y-[var(--s4)] max-h-96 overflow-y-auto">

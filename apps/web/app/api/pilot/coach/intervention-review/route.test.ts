@@ -39,6 +39,7 @@ jest.mock('@/src/server/pilot/interventionEvidence', () => {
     listEvidence: jest.fn().mockResolvedValue([]),
     getActiveReview: jest.fn().mockResolvedValue(null),
     getDecisionTexts: jest.fn().mockResolvedValue([]),
+    getEvidenceLinkOwner: jest.fn(),
   };
 });
 
@@ -57,6 +58,13 @@ const mockGetExecution = getExecution as jest.Mock;
 const mockRemove = removeEvidence as jest.Mock;
 const mockReview = reviewOutcome as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+// Reached through the mocked module rather than a static import so this file
+// still COMPILES against a tree where the removal path has no owner lookup at
+// all -- which is what makes the refusal test below reproducible as a genuine
+// behavioural failure on the unfixed code rather than a type error.
+const mockLinkOwner = (jest.requireMock('@/src/server/pilot/interventionEvidence') as {
+  getEvidenceLinkOwner: jest.Mock;
+}).getEvidenceLinkOwner;
 
 // The athlete gate is permissive by default so each test states its own
 // access decision rather than inheriting the previous test's --
@@ -68,6 +76,12 @@ beforeEach(() => {
   // existing, accessible one so the action tests exercise the action, not
   // the gate. The gate has its own test.
   mockGetExecution.mockResolvedValue({ execution_id: 'ex-1', athlete_id: 'ath-1' });
+  // PATCH now resolves the evidence link's own athlete the same way, for the
+  // same reason. Fixture repair, not a relaxation: the pre-existing PATCH
+  // test below asserts the shape of a LEGITIMATE removal, so its link has to
+  // resolve to an athlete this coach may reach for that assertion to still be
+  // testing what it was written to test.
+  mockLinkOwner.mockResolvedValue({ link_id: 'l-1', execution_id: 'ex-1', athlete_id: 'ath-1' });
 });
 
 afterEach(() => {
@@ -223,6 +237,113 @@ test('removing evidence requires a stated reason; an unknown action is a 400', a
 
   expect((await PATCH(bodyRequest('PATCH', { action: 'delete_evidence', link_id: 'l-1' }))).status).toBe(400);
   expect((await POST(bodyRequest('POST', { action: 'auto_review', execution_id: 'ex-1' }))).status).toBe(400);
+});
+
+describe('removing evidence authorizes the athlete the link is STORED against', () => {
+  // The bug: PATCH remove_evidence was gated on role alone. The GET on this
+  // same route is per-athlete authorized, and the POST was given the same gate
+  // for exactly this reason -- but removeEvidence keyed on (organization_id,
+  // link_id) only, so ANY coach in the organization could strike a link off an
+  // intervention belonging to a child they have no relationship to by naming
+  // its link_id: no coach-of-record assignment, no coverage grant, nothing.
+  //
+  // The link_id needs no guessing. The GET hands out full evidence rows,
+  // link_id included, for every athlete a coach may reach AT THE TIME. So a
+  // substitute holding a 24-hour pilot.coach_coverage grant reads the board
+  // legitimately, and once the grant lapses -- or an admin cuts it short with
+  // revokeCoachCoverage, which exists precisely to end access early -- every
+  // other surface refuses them while this one kept accepting the ids they
+  // already had. The same holds for a coach reassigned off a roster.
+  //
+  // What that removes matters: 'counterevidence' and 'adverse_response' are
+  // the roles recording that a child responded badly to an intervention, and a
+  // stamped link no longer counts toward the outcome review.
+  //
+  // The removal must resolve the link's stored owner -- the athlete of its
+  // stored execution, never a caller-supplied one -- authorize that athlete
+  // through the same central gate the read uses, and compare-and-set on the
+  // execution it just authorized.
+  test('a coach with no standing on the link’s athlete is refused; nothing is stamped, nothing is audited', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach', role: 'coach' }));
+    mockLinkOwner.mockResolvedValue({
+      link_id: 'l-victim',
+      execution_id: 'ex-victim',
+      athlete_id: 'ath-victim',
+    });
+    mockAccess.mockImplementation(async (_p: unknown, athleteId: string) => {
+      if (athleteId === 'ath-victim') throw new Error('Forbidden: coach not assigned to athlete');
+    });
+
+    const response = await PATCH(bodyRequest('PATCH', {
+      action: 'remove_evidence',
+      link_id: 'l-victim',
+      removed_reason: 'does not belong here',
+    }));
+
+    expect(response.status).toBe(403);
+    expect(mockAccess).toHaveBeenCalledWith(expect.anything(), 'ath-victim');
+    expect(mockRemove).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a link_id outside the organization is a hidden 404 before any write', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockLinkOwner.mockResolvedValue(null);
+
+    const response = await PATCH(bodyRequest('PATCH', {
+      action: 'remove_evidence',
+      link_id: 'l-other-org',
+      removed_reason: 'linked the wrong attempt',
+    }));
+
+    expect(response.status).toBe(404);
+    expect(mockAccess).not.toHaveBeenCalled();
+    expect(mockRemove).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a coach removing a link on their OWN athlete still works, as a compare-and-set on the stored execution', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach', role: 'coach' }));
+    mockLinkOwner.mockResolvedValue({ link_id: 'l-mine', execution_id: 'ex-mine', athlete_id: 'ath-mine' });
+    mockRemove.mockResolvedValue({ link_id: 'l-mine', status: 'removed' });
+
+    const response = await PATCH(bodyRequest('PATCH', {
+      action: 'remove_evidence',
+      link_id: 'l-mine',
+      removed_reason: 'linked the wrong attempt',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockAccess).toHaveBeenCalledWith(expect.anything(), 'ath-mine');
+    expect(mockRemove).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      linkId: 'l-mine',
+      removedReason: 'linked the wrong attempt',
+      expectedExecutionId: 'ex-mine',
+    });
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      entity_type: 'intervention_evidence_link',
+      details: expect.objectContaining({ action: 'remove_evidence' }),
+    }));
+  });
+
+  test('an organization admin may still remove a link for any athlete in their own organization', async () => {
+    // The gate is assertActorCanAccessAthlete, which admits an organization
+    // admin for any athlete in their org -- so widening nothing for a coach
+    // must not narrow anything for an admin.
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-admin', role: 'organization_admin' }));
+    mockLinkOwner.mockResolvedValue({ link_id: 'l-any', execution_id: 'ex-any', athlete_id: 'ath-any' });
+    mockRemove.mockResolvedValue({ link_id: 'l-any', status: 'removed' });
+
+    const response = await PATCH(bodyRequest('PATCH', {
+      action: 'remove_evidence',
+      link_id: 'l-any',
+      removed_reason: 'superseded by a corrected attempt',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockRemove).toHaveBeenCalledWith(expect.objectContaining({ expectedExecutionId: 'ex-any' }));
+  });
 });
 
 test('GET hands the evidence rows through with their read-time admissibility annotation intact', async () => {

@@ -167,19 +167,40 @@ export async function listPersonalGoals(
  *
  * There is no un-reach. A goal somebody set for themselves and got to is not
  * something the platform takes back.
+ *
+ * `athleteId` IS THE AUTHORIZATION, NOT A FILTER. The caller has already
+ * decided this athlete is one the actor may act for; naming it in the WHERE
+ * clause is what makes the check and the write a single statement. Keyed on
+ * goal_id alone -- as this was -- the row was mutated first and its owner
+ * compared afterwards, which can only ever report a write that has already
+ * committed: an actor authorized for their own athlete could name any other
+ * athlete's goal_id and permanently stamp that child's goal reached. Because
+ * there is no un-reach and no route that writes reached_at back to null, the
+ * falsified record is not recoverable through the API, and the guardian-facing
+ * read shows a linked guardian their child reaching something they did not.
+ *
+ * The read-back carries the same predicate for the same reason -- it returns
+ * own_words and why_it_matters, a child's goal in their own language, and an
+ * unscoped read hands it to whoever guessed the id.
+ *
+ * Same shape the SMART-goal create path on this table already uses (see
+ * app/api/pilot/goals/route.ts, which resolves and authorizes the STORED
+ * owner before its upsert): authorize the row you are about to write, not the
+ * one the payload names.
  */
 export async function markPersonalGoalReached(
   organizationId: string,
   goalId: string,
+  athleteId: string,
 ): Promise<PersonalGoal | null> {
   const now = new Date().toISOString();
   const updated = await query<PersonalGoal>(
     `update pilot.goals
      set reached_at = $3, status = 'completed', updated_at = $3
-     where organization_id = $1 and goal_id = $2
+     where organization_id = $1 and goal_id = $2 and athlete_id = $4
        and goal_kind = 'own_words' and reached_at is null
      returning ${PERSONAL_GOAL_FIELDS}`,
-    [organizationId, goalId, now],
+    [organizationId, goalId, now, athleteId],
   );
 
   if (updated.length > 0) {
@@ -189,8 +210,9 @@ export async function markPersonalGoalReached(
   return queryOne<PersonalGoal>(
     `select ${PERSONAL_GOAL_FIELDS}
      from pilot.goals
-     where organization_id = $1 and goal_id = $2 and goal_kind = 'own_words'`,
-    [organizationId, goalId],
+     where organization_id = $1 and goal_id = $2 and athlete_id = $3
+       and goal_kind = 'own_words'`,
+    [organizationId, goalId, athleteId],
   );
 }
 
