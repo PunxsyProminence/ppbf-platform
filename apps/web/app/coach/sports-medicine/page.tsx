@@ -320,7 +320,16 @@ export default function SportsMedicinePage() {
           second answer to "what colour is this page". .room already supplies
           min-height, the ground and --bone-200; the shell's <section> already
           supplies the page padding. */}
-      <div>
+      {/* ge-clinic: Golden Era Visual 009 scope. This class is the ONLY change
+          on this route -- the instrument board and its dark surround, the
+          slate masthead with its riveted brass nameplate, the brushed-steel
+          trays the roster stands on, the pinned parchment notes and the
+          brass/steel control hierarchy all live in scoped CSS under .ge-clinic
+          in design-system/current/ppbf-golden-era.css. Every control,
+          clearance badge, hold stamp and refusal on this page is untouched,
+          the room's own wall and lamp are left to the committed plate, and no
+          reserved safeguarding red is restated. */}
+      <div className="ge-clinic">
         {/* The fixture the room's light has always implied. .room--clinic::before
             throws a green pool from the top of the wall and nothing in the app
             ever hung the lamp casting it. Right-hung deliberately: every
