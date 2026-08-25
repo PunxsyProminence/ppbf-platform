@@ -7,18 +7,42 @@ passbook content. A plate is a `background-image` layer on `.room::after` /
 this directory empty, the gradient wall in `design-system/ppbf.css` renders
 every room with no network.
 
-## Installed set (Plate Set v1-g)
+## Installed set — declared, and therefore live
 
-| File | Applied to | Dimensions | Size |
+Every row below is a plate the sheet actually points at. `plateBinaries.test.ts`
+requires each of these to exist on disk; it does **not** require the reverse, so
+the second table is legal and simply unpainted.
+
+| File | Applied to | Dimensions | Bytes |
 |---|---|---|---|
-| `plate-01-office-01.jpg` | `.room--office` | 1280×720 | 104 KB |
-| `plate-02a-floor-landscape-01.jpg` | `.room--floor` | 1280×720 | 127 KB |
-| `plate-02b-floor-portrait-01.jpg` | `.room--floor`, `@media (orientation: portrait)` | 405×720 | 43 KB |
-| `plate-03-clinic-01.jpg` | `.room--clinic` | 1280×720 | 51 KB |
-| `plate-04-board-01.jpg` | `.room--board` | 1280×720 | 33 KB |
-| `plate-05-file-01.jpg` | `.room--file` | 1280×720 | 77 KB |
-| `plate-06-night-01.jpg` | `.room--night` | 1280×720 | 46 KB |
-| `plate-07-warm-ground-01.jpg` | `.on-canvas` (family surfaces only — T7) | 1280×720 | 38 KB |
+| `plate-01-office-01.jpg` | `.room--office` | 1280×720 | 148,739 |
+| `plate-02a-floor-landscape-01.jpg` | `.room--floor` | 1280×720 | 129,817 |
+| `plate-02b-floor-portrait-01.jpg` | `.room--floor`, `@media (orientation: portrait)` | 405×720 | 43,945 |
+| `plate-03-clinic-01.jpg` | `.room--clinic` | 1280×720 | 52,209 |
+| `plate-04-board-01.jpg` | `.room--board` | 1280×720 | 72,943 |
+| `plate-05-file-01.jpg` | `.room--file` | 1280×720 | 78,933 |
+| `plate-06-night-01.jpg` | `.room--night` | 1280×720 | 46,687 |
+| `plate-07-warm-ground-01.jpg` | `.on-canvas` (family surfaces only — T7) | 1280×720 | 39,150 |
+| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) | 1280×720 | 189,771 |
+| `plate-08-bell-gym-portrait-01.jpg` | `.ge-bell.on-canvas::after`, `@media (orientation: portrait)` | 810×1440 | 99,891 |
+
+## Landed but not declared — inert until an owner picks one
+
+These passed the byte gate and sit on disk. No CSS points at any of them, so no
+route paints them and nothing 404s. Wiring one is a variant/room decision, and
+it is one declaration in the PLATES block of `design-system/ppbf.css` — a
+portrait variant goes inside the orientation block, per "Adding a variant" below.
+
+| File | Dimensions | Bytes | What it would replace or add |
+|---|---|---|---|
+| `plate-01-office-portrait-01.jpg` | 810×1440 | 186,248 | a portrait crop the office room does not have today |
+| `plate-02b-floor-portrait-02.jpg` | 810×1440 | 189,337 | a second portrait floor plate |
+| `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | a ring-side portrait floor alternative |
+| `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today |
+| `plate-04-board-portrait-01.jpg` | 810×1440 | 104,274 | a portrait crop the board room does not have today |
+| `plate-05-file-portrait-01.jpg` | 810×1440 | 222,851 | a portrait crop the file room does not have today |
+| `plate-06-night-02.jpg` | 1280×720 | 86,167 | a **second landscape** night plate — wiring it changes a merged, reviewed room |
+| `plate-06-night-portrait-01.jpg` | 810×1440 | 80,048 | a portrait crop the night room does not have today |
 
 ## Requirements — enforced by `apps/web/src/design/plateBinaries.test.ts`
 
