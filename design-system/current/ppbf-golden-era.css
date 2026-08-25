@@ -387,3 +387,116 @@
     padding: var(--s5) var(--s4) !important;
   }
 }
+
+/* ==========================================================================
+   GOLDEN ERA 002 — THE FLOOR BOARD (Coach Workspace)
+
+   Packet: 02_READY_FOR_CLAUDE/002_COACH_WORKSPACE. Route
+   /coach/environment/intake-router, room .room--floor. The locked reference is
+   a CHALKBOARD hung in a wood frame with brass corner brackets and brass tab
+   plaques -- deliberately NOT The Bell's parchment plaque. Same Golden Era
+   materials, different room identity, which is the whole point of the room
+   system: consistency comes from the material grammar, not from every screen
+   looking like the front door.
+
+   SCOPE. Everything is under `.ge-floorboard`, a single class on the page's
+   wrapper. The bronze ramp is redefined on that scope for the same reason
+   `.ge-bell` does it: the shared components here (.mat-leather tab rail, the
+   tab buttons, .t-command/.t-eyebrow voices) all resolve var(--brass-*), so one
+   token override re-skins them together and legacy gold cannot leak through a
+   property nobody remembered to override. Outside the scope nothing moves.
+
+   WHAT IS DELIBERATELY NOT DONE HERE. The reference draws a tab bar reading
+   MORNING READ / DECISION LOOP / SCRIPTS / DRILLS / RECOGNITION. Those are not
+   this component's tabs -- four of them are separate routes and one does not
+   exist -- so styling them into this rail would delete six real tabs and invent
+   controls with nothing behind them. The materials are applied to the REAL tab
+   set; the information-architecture difference is reported to the owner rather
+   than resolved by a stylesheet. FUNCTIONAL_CHANGES: NONE. */
+.ge-floorboard {
+  --brass-200: #E7C88A;
+  --brass-300: #D6B063;
+  --brass-400: #BE9440;
+  --brass-500: #9F7A30;
+  --brass-600: #896628;
+  --brass-700: #6E5220;
+  --brass-800: #533D18;
+  --brass-900: #392910;
+}
+
+/* The board: slate in an aged-wood surround. The tab rail is the top edge of
+   that frame, so it takes the wood rather than the leather it wears elsewhere.
+   Unlayered sheet vs Tailwind's @layer utilities means these win without
+   !important. */
+.ge-floorboard .mat-leather {
+  background-color: var(--wood-800);
+  background-image:
+    linear-gradient(176deg, rgba(255,238,208,0.05) 0%, transparent 42%),
+    repeating-linear-gradient(93deg,
+      rgba(0,0,0,0.16) 0 2px, transparent 2px 7px, rgba(0,0,0,0.10) 7px 9px);
+  border-color: color-mix(in srgb, var(--brass-700) 52%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(226,196,146,0.16),
+    inset 0 -2px 5px rgba(0,0,0,0.5);
+}
+
+/* Brass corner brackets on the tab rail -- the reference's riveted L-plates.
+   Decorative only, never a pointer target. */
+.ge-floorboard .mat-leather { position: relative; }
+.ge-floorboard .mat-leather::before,
+.ge-floorboard .mat-leather::after {
+  content: "";
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 62% 62%,
+    var(--brass-300) 0 1.6px, var(--brass-600) 1.6px 2.8px, transparent 3.1px);
+  background-repeat: no-repeat;
+  background-position: center;
+  border: 3px solid var(--brass-700);
+  border-radius: 3px;
+}
+.ge-floorboard .mat-leather::before {
+  top: -3px; left: -3px; border-right: 0; border-bottom: 0;
+}
+.ge-floorboard .mat-leather::after {
+  bottom: -3px; right: -3px; border-left: 0; border-top: 0;
+}
+
+/* Tab plaques. The active tab is a raised brass plate; the rest sit flush and
+   darker, exactly as the reference stacks them. aria-current already carries
+   the state for assistive tech and is what this hangs on, so the styling and
+   the announced state cannot drift apart. */
+.ge-floorboard [role="tablist"] button,
+.ge-floorboard .mat-leather button {
+  border-radius: 4px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--brass-900) 66%, #000);
+  background-image: linear-gradient(180deg,
+    var(--brass-700) 0%, var(--brass-800) 58%, var(--brass-900) 100%);
+  color: color-mix(in srgb, var(--bone-200) 82%, var(--brass-300));
+  box-shadow: inset 0 1px 0 rgba(226,196,146,0.22);
+}
+.ge-floorboard .mat-leather button[aria-current="page"] {
+  background-image: linear-gradient(180deg,
+    var(--brass-300) 0%, var(--brass-500) 46%, var(--brass-700) 100%);
+  color: #241B12;
+  box-shadow:
+    inset 0 1px 0 rgba(255,244,214,0.6),
+    inset 0 -2px 4px rgba(0,0,0,0.42),
+    0 2px 4px rgba(0,0,0,0.45);
+}
+
+/* Chalk voice on the slate. The headings in the reference are chalked, not
+   painted: bone, letter-spaced, with the ruled underline the board carries. */
+.ge-floorboard .t-command {
+  color: var(--bone-100);
+  letter-spacing: 0.045em;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.55), 0 0 10px rgba(226,214,190,0.10);
+}
+.ge-floorboard .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 80%, var(--bone-200));
+  letter-spacing: 0.16em;
+}
