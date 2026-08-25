@@ -34,7 +34,7 @@ export default function BoardHubPage() {
           </div>
         </header>
 
-        <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command text-[length:var(--t-md)]">Aggregate boundary</h2>
           <p className="t-body mt-[var(--s3)] max-w-[80ch]">
             {BOARD_AGGREGATE_BOUNDARY_STATEMENT}

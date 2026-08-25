@@ -185,7 +185,7 @@ function VideoReviewConsoleContent() {
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s5)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Gym Admin Safeguarding Control</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
             Quarantined Video Review Escalation
@@ -255,7 +255,7 @@ function VideoReviewConsoleContent() {
 
                       {/* Video Inspection Panel */}
                       {isLinkActive && activeReviewLink ? (
-                        <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.3)] bg-[var(--hide-950)] p-[var(--s4)] space-y-[var(--s3)]">
+                        <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.3)] bg-[var(--hide-950)] p-[var(--s4)] space-y-[var(--s3)]">
                           <p className="t-label text-[color:var(--brass-500)]">Temporary Inspection Link Active (15m TTL)</p>
                           {activeReviewLink.scanDetail && (
                             <p className="t-data text-[color:var(--bone-300)]">

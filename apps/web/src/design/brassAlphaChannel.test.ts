@@ -1,6 +1,12 @@
 import path from 'node:path';
 
 import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss';
+import {
+  readComponentSource,
+  stripSourceComments,
+  COMPONENT_SOURCE_ROOTS,
+  type ComponentSourceFile,
+} from './readComponentSource';
 
 /**
  * A BRASS RUNG MAY NOT BE SPELLED AS A LITERAL.
@@ -43,9 +49,31 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *      re-opens the leak for that surface only, which is precisely the kind
  *      of per-surface drift that is invisible until someone looks at the
  *      deployed page.
+ *   4. No COMPONENT spells one either. Added 2026-08-25, and the reason is
+ *      the whole point of the entry below.
  *
- * COMMENTS ARE STRIPPED FIRST. A comment is not a rule, and this file's own
- * explanation quotes the literal it bans.
+ * WHY THE FOURTH CHECK EXISTS: THE OTHER HALF OF THE SAME LEAK. Checks 1-3
+ * read stylesheets, and only stylesheets -- the resolved design system plus
+ * `app/globals.css`. That is not where most of this app's colour is written.
+ * Pages style themselves with Tailwind arbitrary values inside `className`
+ * strings, so `border-[color:rgba(212,175,74,.22)]` is a border rule that
+ * happens to live in a `.tsx` file, and it is unreachable by a scope for
+ * exactly the same reason a sheet literal is.
+ *
+ * When the sheets were swept, 299 of those were still sitting in 80
+ * component files under `app/`, `components/` and `src/` -- and this suite
+ * was green the whole time, because it had never opened one. A browser probe
+ * found one live: on `/coach/environment/intake-router`, inside the
+ * `.ge-floorboard` scope, a tile keyline resolved `rgba(212, 175, 74, 0.22)`
+ * -- legacy gold -- while everything around it had gone bronze.
+ *
+ * So the component layer is read here rather than in a second file. A guard
+ * split across two files gets half-remembered; the rung list, the channel
+ * arithmetic and the ban are one fact about one colour ramp.
+ *
+ * COMMENTS ARE STRIPPED FIRST, from CSS and from component source alike. A
+ * comment is not a rule, and this file's own explanation quotes the literal
+ * it bans.
  */
 
 const APP_GLOBALS = path.resolve(__dirname, '../../app/globals.css');
@@ -79,6 +107,29 @@ function isAllowed(line: string): boolean {
   return ALLOW_LIST.some((entry) => line.includes(entry.line));
 }
 
+/**
+ * The same escape hatch for component source, and the same price.
+ *
+ * `file` is a path relative to `apps/web`; `line` is a substring of the
+ * comment-stripped line. Both must match, so an exemption written for one
+ * file cannot silently cover an identical line somewhere else.
+ *
+ * It is EMPTY, and that is a claim rather than an oversight: after the
+ * 2026-08-25 sweep every brass colour in the rendered product goes through a
+ * token, so there is no construction left that a token cannot express. The
+ * staleness test below keeps that true -- an entry whose site is gone fails
+ * as loudly as a violation.
+ */
+const COMPONENT_ALLOW_LIST: ReadonlyArray<{
+  readonly file: string;
+  readonly line: string;
+  readonly why: string;
+}> = [];
+
+function isComponentAllowed(file: string, line: string): boolean {
+  return COMPONENT_ALLOW_LIST.some((entry) => entry.file === file && line.includes(entry.line));
+}
+
 function stripComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
@@ -94,6 +145,26 @@ function channelsOf(hex: string): readonly [number, number, number] {
 const DESIGN_CSS = stripComments(readDesignSystemCss(DESIGN_SYSTEM_ENTRY));
 const GLOBALS_CSS = stripComments(readDesignSystemCss(APP_GLOBALS));
 const ALL_CSS = `${DESIGN_CSS}\n${GLOBALS_CSS}`;
+
+/** Every rendered-product `.ts`/`.tsx` under app/, components/, src/ and
+ *  lib/, comments already blanked to spaces so line numbers survive. */
+const COMPONENTS: readonly ComponentSourceFile[] = readComponentSource();
+
+/** A `file:line  text` list of every component line matching `probe`, minus
+ *  whatever the component allow-list names. */
+function componentOffenders(probe: RegExp): string[] {
+  const offenders: string[] = [];
+  for (const file of COMPONENTS) {
+    const lines = file.code.split('\n');
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!probe.test(line)) continue;
+      if (isComponentAllowed(file.relativePath, line)) continue;
+      offenders.push(`${file.relativePath}:${index + 1}  ${line.trim()}`);
+    }
+  }
+  return offenders;
+}
 
 describe('the brass ramp is reachable through tokens, never spelled as a literal', () => {
   test('the sheet actually still declares the ramp (this guard is not reading an empty string)', () => {
@@ -262,5 +333,116 @@ describe('the brass ramp is reachable through tokens, never spelled as a literal
     }
 
     expect(failures).toEqual([]);
+  });
+});
+
+describe('no component spells the brass ramp as a literal either', () => {
+  test('the walk actually opened component source (this half is not reading an empty set)', () => {
+    // Every check below is a "find nothing" check, so a walk that found no
+    // files -- a moved directory, a filter that got too clever -- would pass
+    // all of them while guarding nothing. Prove there is source here first,
+    // and prove each root contributed, so losing one root fails rather than
+    // going quiet. `src/` is in that list because a guard written against
+    // app/ and components/ alone has already missed it once.
+    expect(COMPONENTS.length).toBeGreaterThan(200);
+    // The list itself, pinned. The loop below only proves that each root NAMED
+    // still yields files, which says nothing about a root quietly dropped from
+    // the list -- the cheapest possible way to narrow this guard while leaving
+    // it green.
+    expect([...COMPONENT_SOURCE_ROOTS]).toEqual(['app', 'components', 'src', 'lib']);
+    for (const root of COMPONENT_SOURCE_ROOTS) {
+      const fromRoot = COMPONENTS.filter((file) => file.relativePath.startsWith(`${root}/`));
+      expect({ root, files: fromRoot.length > 0 }).toEqual({ root, files: true });
+    }
+  });
+
+  test('components do reach the ramp through the token form, so the ban has an alternative', () => {
+    // The counterpart to the ban. If no component used `rgb(var(--brass-N-rgb)
+    // / a)` at all, the rule below would be one nobody can satisfy, and the
+    // next person to hit it would reach for the allow-list instead of the
+    // token. This is the evidence that the token form is what components
+    // actually wear now -- in a className that is
+    // `border-[color:rgb(var(--brass-400-rgb)_/_.22)]`, because a Tailwind
+    // arbitrary value cannot hold a raw space.
+    const users = COMPONENTS.filter((file) => /rgb\(var\(--brass-\d{3}-rgb\)/.test(file.code));
+    expect(users.length).toBeGreaterThan(50);
+  });
+
+  test('the comment stripper blanks comments and nothing else', () => {
+    // The ban runs over STRIPPED source, so an over-eager stripper hides
+    // violations rather than reporting them -- a guard that fails open, which
+    // is the worst kind. Its known trap is the `//` inside a URL in a string
+    // literal: a naive line-comment regex eats it and the rest of the line
+    // with it. Checked on a crafted sample so the case is pinned even if no
+    // component happens to contain one today.
+    const stripped = stripSourceComments(
+      [
+        'const a = "https://example.test/x"; // rgba(212,175,74,.22)',
+        '/* rgba(212,175,74,.22) */',
+        'const b = `rgba(212,175,74,.22)`;',
+      ].join('\n'),
+    );
+    const lines = stripped.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain('"https://example.test/x";');
+    expect(lines[0]).not.toContain('rgba');
+    expect(lines[1].trim()).toBe('');
+    expect(lines[2]).toContain('rgba(212,175,74,.22)');
+
+    // And on real source: live code survives, prose does not. Pinned on
+    // declarations rather than on any one class string, so an ordinary restyle
+    // of this file does not fail a test about comment handling.
+    const sample = COMPONENTS.find((file) => file.relativePath === 'components/uiStyles.ts');
+    expect(sample).toBeDefined();
+    expect(sample!.code).toContain('export const ui = {');
+    expect(sample!.code).not.toContain('UI Styles Registry');
+  });
+
+  test.each(RUNGS)(
+    'no component spells brass-%s as a literal instead of using its token',
+    (rung, hex) => {
+      const [r, g, b] = channelsOf(hex);
+
+      // The hex. Unlike the CSS half there is no "unless it is this rung's own
+      // declaration" exemption to carve out: a component has no business
+      // declaring the ramp, so every occurrence is a use.
+      const offenders = componentOffenders(new RegExp(hex, 'i'));
+
+      // The rgb()/rgba() spellings, comma- or space-separated. The token form
+      // carries no bare channels at all, so any bare-channel match here is a
+      // literal by construction.
+      //
+      // UNDERSCORE COUNTS AS A SPACE. This is the one way the component half
+      // has to differ from the CSS half, and missing it makes the whole check
+      // a formality: a Tailwind arbitrary value cannot contain a raw space, so
+      // the space-separated spelling arrives as `bg-[rgb(232_206_122_/_.16)]`
+      // and Tailwind emits `rgb(232 206 122 / .16)` from it. A `\s`-only probe
+      // reads that as ordinary text and waves it through -- watched to happen
+      // while this guard was being written.
+      const gap = '[\\s_]';
+      offenders.push(
+        ...componentOffenders(
+          new RegExp(`rgba?\\(${gap}*${r}${gap}*,${gap}*${g}${gap}*,${gap}*${b}${gap}*[,)]`, 'i'),
+        ),
+        ...componentOffenders(
+          new RegExp(`rgba?\\(${gap}*${r}${gap}+${g}${gap}+${b}${gap}*[/)]`, 'i'),
+        ),
+      );
+
+      expect(offenders).toEqual([]);
+    },
+  );
+
+  test('every component allow-list entry still matches a real line', () => {
+    // Same reasoning as the CSS allow-list's staleness test: an exemption
+    // whose site is gone is a substring waiting to wave through the next
+    // violation that happens to contain it.
+    for (const entry of COMPONENT_ALLOW_LIST) {
+      const file = COMPONENTS.find((candidate) => candidate.relativePath === entry.file);
+      expect({ file: entry.file, found: Boolean(file?.code.includes(entry.line)) }).toEqual({
+        file: entry.file,
+        found: true,
+      });
+    }
   });
 });

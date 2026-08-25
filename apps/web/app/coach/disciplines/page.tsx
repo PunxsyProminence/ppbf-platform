@@ -205,7 +205,7 @@ function CoachDisciplines() {
               {participation.map((row) => (
                 <li
                   key={row.participation_id}
-                  className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"
+                  className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"
                 >
                   {row.discipline}: {row.participation_level.replace(/_/g, ' ')}
                 </li>
@@ -225,7 +225,7 @@ function CoachDisciplines() {
                 <li
                   key={row.exposure_id}
                   className={`rounded-[var(--r-md)] border-2 bg-[rgba(0,0,0,.28)] p-[var(--s4)] ${
-                    needsAttention(row) ? 'border-[var(--locked)]' : 'border-[color:rgba(212,175,74,.22)]'
+                    needsAttention(row) ? 'border-[var(--locked)]' : 'border-[color:rgb(var(--brass-400-rgb)_/_.22)]'
                   }`}
                 >
                   <div className="flex flex-wrap items-baseline gap-[var(--s3)]">

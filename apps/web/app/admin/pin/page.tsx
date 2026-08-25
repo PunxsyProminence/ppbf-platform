@@ -194,7 +194,7 @@ function PinManagementPageContent() {
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s5)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Gym Admin PIN Control</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Activate or Reset Athlete PIN</h1>
           <p className="t-body mt-[var(--s3)]">
@@ -230,7 +230,7 @@ function PinManagementPageContent() {
                         onClick={() => setSelectedAthleteId(item.athlete_id)}
                         className={`w-full rounded-[var(--r-md)] border px-[var(--s3)] py-[var(--s3)] text-left transition ${
                           selected
-                            ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)]'
+                            ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgb(var(--brass-400-rgb)_/_.07)]'
                             : 'mat-leather border-[color:var(--hide-700)] hover:border-[color:var(--brass-700)]'
                         }`}
                       >
@@ -264,7 +264,7 @@ function PinManagementPageContent() {
             </div>
           </section>
 
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
             <h2 className="t-eyebrow">PIN Action</h2>
             <form className="mt-[var(--s3)] space-y-[var(--s3)] border-b border-[color:var(--hide-600)] pb-[var(--s4)]" onSubmit={submitCreateAccount}>
               <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Create Athlete Account</h3>

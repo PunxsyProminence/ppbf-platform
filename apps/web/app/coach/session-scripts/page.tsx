@@ -277,7 +277,7 @@ function CoachSessionScripts() {
         )}
 
         {liveNotice && (
-          <p className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.35)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[color:var(--brass-300)]">
+          <p className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[color:var(--brass-300)]">
             {liveNotice}
           </p>
         )}
@@ -372,7 +372,7 @@ function CoachSessionScripts() {
             {!detailLoading && !detailError && detail && (
               <>
                 {detail.reset_protocol.trim() !== '' && (
-                  <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+                  <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
                     <p className="t-label">Reset protocol</p>
                     <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{detail.reset_protocol}</p>
                   </div>
@@ -428,7 +428,7 @@ function CoachSessionScripts() {
                   {detail.blocks.map((block) => (
                     <li
                       key={block.block_id}
-                      className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
+                      className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                     >
                       <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                         <span className="plaque">{blockWindow(block)}</span>
@@ -491,7 +491,7 @@ function CoachSessionScripts() {
                 {deliveries.map((run) => (
                   <li
                     key={run.run_id}
-                    className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
+                    className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                   >
                     <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                       <span className="plaque">{typeof run.delivered_on === 'string' ? run.delivered_on.slice(0, 10) : run.delivered_on}</span>

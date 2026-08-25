@@ -232,7 +232,7 @@ export default function CoachRecognitionPad() {
                   'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] text-[length:var(--t-md)] font-semibold transition focus-visible:outline-none focus-visible:shadow-[var(--focus)] '
                   + (chosen
                     ? 'border-[color:var(--brass-600)] bg-[var(--brass-500)] text-[color:var(--hide-950)]'
-                    : 'border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)]')
+                    : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)]')
                 }
               >
                 {athlete.full_name || athlete.athlete_id}

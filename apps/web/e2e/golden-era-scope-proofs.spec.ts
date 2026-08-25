@@ -341,40 +341,17 @@ const KNOWN_LEAKS: Readonly<Record<string, readonly KnownLeak[]>> = {
         + 'workspace\'s current tab and mode buttons (`bg-[var(--accent)]`)',
       why: FROZEN_ALIAS,
     },
-    {
-      key: 'button | background-color | rgba(212, 175, 74, 0.1)',
-      source: 'apps/web/components/CoachWorkspace.tsx -- athlete row, selected state',
-      why:
-        'A legacy brass literal spelled straight into a Tailwind arbitrary '
-        + 'value (`bg-[rgba(212,175,74,.10)]`). There is no token in it, so no '
-        + 'scope can override it -- the same hole brassAlphaChannel.test.ts '
-        + 'closed in the stylesheets, reopened from the JSX side, which that '
-        + 'guard does not scan. Application code; not this branch to change.',
-    },
-    {
-      key: 'button | border-color | rgba(212, 175, 74, 0.22)',
-      source: 'apps/web/components/CoachWorkspace.tsx -- athlete row, unselected state',
-      why:
-        'The same literal on the unselected row\'s border '
-        + '(`border-[color:rgba(212,175,74,.22)]`). See the entry above.',
-    },
   ],
-  '.ge-afterhours': [
-    {
-      key: 'div | border-color | rgba(212, 175, 74, 0.2)',
-      source:
-        'apps/web/app/admin/shadow/page.tsx -- the console masthead rule and the evidence '
-        + 'divider (`border-[color:rgba(212,175,74,.2)]`)',
-      why: JSX_LITERAL,
-    },
-    {
-      key: 'div | border-color | rgba(212, 175, 74, 0.42)',
-      source:
-        'apps/web/app/admin/shadow/page.tsx -- the dashed upload drop zone '
-        + '(`border-[color:rgba(212,175,74,.42)]`)',
-      why: JSX_LITERAL,
-    },
-  ],
+  /* `.ge-afterhours` HAD TWO ENTRIES AND NOW HAS NONE. Both were
+     `border-[color:rgba(212,175,74,…)]` in apps/web/app/admin/shadow/page.tsx
+     -- the console masthead rule, the evidence divider and the dashed upload
+     drop zone. This PR spells them `rgb(var(--brass-400-rgb) / …)`, so the
+     scope reaches them and /admin/shadow now sweeps clean: the measured set is
+     `[]`, which is why the scope is absent from this ledger rather than
+     present with an empty list. The ledger is checked in BOTH directions, so
+     leaving the entries here after fixing them would fail exactly as loudly as
+     a new leak -- that is the check working, and it is how these four came to
+     be deleted. */
 };
 
 /* ---- The surfaces ------------------------------------------------------- */
