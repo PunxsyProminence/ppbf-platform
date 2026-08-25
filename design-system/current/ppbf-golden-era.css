@@ -96,6 +96,277 @@
    / bag DNA visible in the outer thirds; no stock grey brick. */
 
 /* ==========================================================================
+   GOLDEN ERA 006 — SHADOW (After Hours)
+
+   Packet 006_SHADOW (REFERENCE_APPROVED / REFERENCE_MOBILE_APPROVED). Route
+   /admin/shadow; the shell already states room .room--night, and this scope
+   sits on the console standing in it.
+
+   The locked reference is an INSTRUMENT BOARD hung in a dark locker corridor
+   under ONE overhead lamp: a heavy surround with brass corner brackets,
+   engraved brass plaques, dial gauges with thick brass bezels, and everything
+   past the lamp's pool falling away to black. It is deliberately not The
+   Bell's parchment plaque, not the coach's slate board, and not the athlete's
+   open locker. ROOM-PURPOSE-DNA gives After Hours "dark ink ground, low lamp,
+   telemetry", and that is the entire identity here: one light, and the room
+   ends where it stops.
+
+   SCOPE. Everything is under `.ge-afterhours`, a single class added to the
+   console's existing <main>. No element was added, moved, renamed or removed.
+   The bronze ramp is redefined on the bare scope for the same reason .ge-bell,
+   .ge-floorboard and .ge-locker do it: every shared component this console
+   renders -- the .mat-leather panels, the .mat-slate console body, .btn--lever,
+   the gauge bezel/ticks/needle/hub, the .t-eyebrow voice -- resolves
+   var(--brass-*), so one token override re-skins them together and legacy gold
+   cannot leak through a property nobody remembered to override. Outside the
+   scope nothing moves.
+
+   WHY THE LAMP IS DRAWN HERE AND NOT WITH .room--lit-center. The sheet already
+   owns the exact fixture this reference draws: `.room--lit-center`, "one lamp
+   overhead instead of two in the corners". It is not reached for, because it is
+   a `room--` class and legacyVisualVocabulary.test.ts freezes `room--` at 143
+   occurrences across app/ and components/ -- spending the retired vocabulary's
+   frozen ceiling to buy a light is the exact debt that guard exists to stop.
+   The single-lamp read is drawn on the scope instead. It costs no ceiling, and
+   it hangs off the board rather than the wall, which is what a fixture over a
+   board actually does.
+
+   WHAT IS DELIBERATELY NOT DONE HERE.
+
+   1. THE MODE PLAQUES ARE NOT INVENTED. The reference draws three plaques --
+      SCOUT / ARCHITECT / OMEGA MODE -- across the top of the board. No such
+      control exists on /admin/shadow: "Scout" appears only inside the eyebrow
+      "AI/ML Telemetry Scout", and Omega is a ROLE in roleRoutes.ts, not a mode
+      this console can switch. ROOM-PURPOSE-DNA itself calls them "mode LABELS
+      only". Styling them in would mean shipping a mode switch with nothing
+      behind it on a SHADOW surface, which is the worst place in the building
+      for an invented control. Raised to the owner instead of resolved by a
+      stylesheet.
+
+   2. .mat-paper, .frame AND .rivet ARE LEFT ALONE. None of the three renders on
+      this route: the staff shell hands this console the ink band rather than
+      the paper one, and the riveted brass frame was deliberately removed from
+      here (page.tsx records why -- it was the Front Office's Feel line, and the
+      one-ceremonial-rivet rule). Styling a material the route never paints is
+      dead CSS that reads like coverage.
+
+   3. BODY COPY IS NOT DIMMED. Turning the type down is the obvious after-hours
+      move and it is a contrast regression on a console that carries refusal and
+      review text. The low light is spent on the surfaces; .t-body keeps the
+      rung the sheet gives it.
+
+   4. NO RESERVED RED. #A81E22 / --locked / --stamp-red is MEDICALLY_NOT_ALLOWED
+      and nothing else. This console carries real refusals, review gates and
+      safety states, so the whole after-hours identity is built out of bronze,
+      hide, wood and bone -- there is not one red value below. The gauge's Law 2
+      danger arc keeps the sheet's own red and is not touched here.
+
+   FUNCTIONAL_CHANGES: NONE.
+   Guard: apps/web/src/design/goldenEraAfterhoursScope.test.ts
+   ========================================================================== */
+.ge-afterhours {
+  /* The ramp, and the channel triples that have to travel with it. A rule
+     that needs brass at partial alpha reads `rgb(var(--brass-N-rgb) / a)` --
+     the focus ring, every input keyline, the inset top-light on every tile
+     and button -- so it follows the triple and nothing else. Restating the
+     hex here without the triple would leave every one of those rules
+     painting the INHERITED gold over bronze fills, on the most shared
+     furniture in the scope: the exact leak this override exists to close.
+     They move together, and src/design/brassAlphaChannel.test.ts fails any
+     scope that separates them. */
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* ONE LAMP. The room's own ::before throws two wide pools plus a broad wash --
+   an ambient-lit room, which is right for a room somebody is working in during
+   the day. After hours there is a single fixture directly over the board and
+   nothing else, so the scope lays a tight warm pool across the top of the
+   console and pulls both outer thirds down into the corridor's black. The
+   bracket pseudo-elements below are absolutely positioned, which keeps them out
+   of this grid's flow -- a static pseudo-element on a grid container becomes a
+   grid item and would silently add two cells. */
+.ge-afterhours {
+  position: relative;
+  isolation: isolate;
+  background-repeat: no-repeat;
+  background-image:
+    radial-gradient(44% 30% at 50% -6%, rgba(255,238,201,.17), transparent 72%),
+    radial-gradient(86% 66% at -10% 46%, rgba(0,0,0,.44), transparent 64%),
+    radial-gradient(86% 66% at 110% 46%, rgba(0,0,0,.44), transparent 64%),
+    radial-gradient(120% 88% at 50% 112%, rgba(0,0,0,.5), transparent 68%);
+}
+
+/* The board's brass corner brackets -- the reference bolts an L-plate with a
+   single rivet over each corner of the surround. Two are drawn, top-left and
+   bottom-right: a pseudo-element pair is the whole budget an element has
+   without new markup, and the diagonal pair is what reads as "framed" at a
+   glance. Decorative only -- pointer-events off, nothing focusable, no content
+   to announce. */
+.ge-afterhours::before,
+.ge-afterhours::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+  border: 3px solid var(--brass-700);
+  border-radius: 3px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-image: radial-gradient(circle at 60% 60%,
+    var(--brass-300) 0 1.8px, var(--brass-700) 1.8px 3px, transparent 3.3px);
+}
+.ge-afterhours::before {
+  top: -10px; left: -10px; border-right: 0; border-bottom: 0;
+}
+.ge-afterhours::after {
+  bottom: -10px; right: -10px; border-left: 0; border-top: 0;
+}
+
+/* THE BOARD FACE. Legacy .mat-leather carries its own highlight at 28% 8% --
+   an upper-LEFT light -- so a page of them under one overhead fixture reads as
+   a dozen panels each with a private lamp. Under this fixture there is one
+   direction: down, from top centre, falling off with distance. Still hide, not
+   wood: these are the boards the console is bolted to, not furniture. */
+.ge-afterhours .mat-leather {
+  background-color: var(--hide-900);
+  background-image:
+    linear-gradient(180deg, rgba(231,200,138,.06) 0%, transparent 34%),
+    radial-gradient(126% 92% at 50% -20%, rgba(190,148,64,.14), transparent 64%),
+    linear-gradient(178deg, #241B15 0%, #1A1410 58%, #120E0B 100%);
+  background-blend-mode: screen, screen, normal;
+  border-color: color-mix(in srgb, var(--brass-700) 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.13),
+    inset 0 -3px 8px rgba(0,0,0,.58),
+    0 6px 18px rgba(0,0,0,.5);
+}
+
+/* The raised sub-boards -- command bar, pending import queue, intake sources --
+   stand proud of the face, so they take more of the pool and throw a harder
+   shadow onto the board behind them. Same light, one step nearer it. */
+.ge-afterhours .mat-leather--raised {
+  background-color: var(--hide-800);
+  background-image:
+    linear-gradient(180deg, rgba(231,200,138,.10) 0%, transparent 30%),
+    radial-gradient(120% 88% at 50% -14%, rgba(190,148,64,.18), transparent 60%),
+    linear-gradient(176deg, #2F241B 0%, #221A14 56%, #17110D 100%);
+  background-blend-mode: screen, screen, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.18),
+    inset 0 -2px 6px rgba(0,0,0,.55),
+    0 4px 12px rgba(0,0,0,.55);
+}
+
+/* THE CONSOLE BODY. .mat-slate is the coach's chalkboard -- a cool green-grey
+   that belongs to the FLOOR BOARD room -- and on the night wall it reads as
+   somebody's slate carried in after hours, which is precisely the "could this
+   screen be mistaken for another room" failure the DNA checklist names. The
+   reference's console is the same dark hide as the rest of the board, a shade
+   deeper because it is recessed into the surround and the lamp reaches its top
+   edge only. Retinted, not replaced: the inset depth, the stamp rules and every
+   voice standing on it are untouched. */
+.ge-afterhours .mat-slate {
+  background-color: var(--hide-950);
+  background-image:
+    linear-gradient(180deg, rgba(231,200,138,.05) 0%, transparent 26%),
+    linear-gradient(180deg, #1D1712 0%, #14100C 60%, #0E0B08 100%);
+  background-blend-mode: screen, normal;
+  box-shadow:
+    inset 0 0 70px rgba(0,0,0,.62),
+    inset 0 0 0 1px rgba(0,0,0,.6),
+    inset 0 1px 0 rgba(231,200,138,.09);
+}
+
+/* THE INSTRUMENTS. The dials are the loudest brass on the reference board, and
+   the bezel already resolves the bronze ramp above, so what is left is the
+   face: at #100D0A it is a hole cut in the board once the room around it is
+   this dark. It warms toward the lamp instead, and the bezel takes the hard
+   specular the reference draws along its top edge.
+
+   THE FACE IS NOT MADE CREAM, AND THAT IS A DIFFERENCE FROM THE IMAGE. The
+   reference's dials are cream-faced with dark ticks; here the ticks and the
+   needle are BRASS by construction (.gauge-ticks, .gauge-needle), so a cream
+   face would erase the reading rather than restyle it. An instrument you cannot
+   read is not a visual improvement. Recorded for the owner. */
+.ge-afterhours .gauge-bezel {
+  box-shadow:
+    inset 0 1px 0 rgba(255,244,214,.62),
+    inset 0 -2px 3px rgba(0,0,0,.55),
+    0 4px 10px rgba(0,0,0,.62);
+}
+.ge-afterhours .gauge-face {
+  background-color: #16110C;
+  background-image: radial-gradient(120% 160% at 50% 100%, #34291F 0%, #120E0A 72%);
+}
+/* The engraved caption under the dial. Bronze rather than bone: on the
+   reference every legend on the board is cut into metal, and --brass-300 on
+   this face clears 8:1, well above the 4.5:1 floor a caption owes. */
+.ge-afterhours .gauge-cap {
+  color: var(--brass-300);
+  text-shadow: 0 1px 0 rgba(0,0,0,.6);
+}
+
+/* THE LEVERS. Every control on this console is .btn--lever, and the reference
+   makes each one a small bolted plaque catching the lamp along its top edge.
+   The face drops to the board's night value so the bronze edge is the first
+   thing seen; the ramp above has already taken the border and the lever grip to
+   bronze.
+
+   :hover, :active and :disabled are deliberately NOT restated. Half the levers
+   on this page are disabled by a real SHADOW refusal -- a platform-owner
+   session cannot write intake -- and the sheet's disabled treatment is what
+   makes that legible. A restyle that quietly brightened a refused control would
+   be a safety change wearing a visual change's clothes. */
+.ge-afterhours .btn--lever {
+  background-color: var(--hide-900);
+  background-image: linear-gradient(180deg, rgba(96,72,48,.92), rgba(23,17,13,.96));
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.20),
+    0 2px 5px rgba(0,0,0,.55);
+}
+
+/* THE VOICES. Two changes only, both taken from the reference's lettering.
+
+   .t-command is the board's cut-in title -- the reference's plaques are struck
+   letters catching the lamp, so the heading keeps the bone the sheet already
+   gives it and adds the faint warm halo a lit letter throws, and nothing else.
+
+   .t-eyebrow and .t-label are ENGRAVED: every small legend on that board is cut
+   into metal, spaced wide and shadowed DOWN rather than up. .t-eyebrow's colour
+   comes from the ramp (--brass-400, 6.3:1 on this ground) rather than being
+   restated here, so it moves with the scope instead of drifting from it. */
+.ge-afterhours .t-command {
+  color: var(--bone-100);
+  text-shadow: 0 1px 0 rgba(0,0,0,.6), 0 0 12px rgba(231,200,138,.12);
+}
+.ge-afterhours .t-eyebrow {
+  letter-spacing: .18em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.62);
+}
+.ge-afterhours .t-label {
+  color: var(--brass-300);
+  letter-spacing: .15em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.55);
+}
+
+/* ==========================================================================
    GOLDEN ERA 005 — THE SCHEDULE BOARD (Unified Scheduler)
 
    Route /schedule (apps/web/app/schedule/page.tsx), room .room--floor.
