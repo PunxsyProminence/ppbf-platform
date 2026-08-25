@@ -1913,6 +1913,481 @@
 }
 
 /* ==========================================================================
+   GOLDEN ERA 010 — THE FILE (Research Inbox)
+   ==========================================================================
+   Packet 02_READY_FOR_CLAUDE/010_FILE, HANDOFF.md STATUS
+   "VISUAL_APPROVED (desktop) — Jason 2026-08-25", plus REFERENCE_APPROVED.jpg.
+   Route /research (apps/web/app/research/page.tsx), room .room--file.
+
+   THE OBJECT THE REFERENCE DRAWS. Screwed to the file room's cork board: an
+   engraved bronze nameplate in a dark riveted head, an inset well below it, and
+   two dark panels standing off the board on either side of the pinned paper --
+   each panel a solid opaque face with a bronze plate bolted over every corner
+   and bronze label plates down its front. That is a CARD INDEX CABINET, and it
+   is a seventh distinct object beside The Bell's riveted door, the coach's
+   slate board, the athlete's open locker, the drill cabinet's index cards, the
+   scheduler's pinned session cards, After Hours' instrument board and the board
+   room's framed parchment. ROOM PURPOSE DNA asks for a different physical
+   object made of the same materials, not a different palette.
+
+   THE PLATE CARRIES THE ROOM, AND THIS SCOPE DOES NOT TOUCH IT. The cork, the
+   pins, the aged paper already on the board and the gooseneck lamp are the
+   WALL, and the wall is a photograph: plate-05-file-01.jpg, already committed,
+   already wired to .room--file in the legacy PLATES block. So nothing below
+   draws a room. `--plate` is not named, `.room--file`'s own wall is not
+   restated, and -- deliberately -- `.room::before` is left exactly as it is.
+   Re-aiming the room's hung pool at the reference's gooseneck was the obvious
+   move and it is the one thing the corrected architecture forbids: lighting the
+   room is the photograph's job. What this scope styles is the cabinet standing
+   in front of that wall.
+
+   WHY NOTHING HERE IS TRANSLUCENT, AND WHY NOTHING NEW STANDS ON THE WALL.
+   This plate is not a flat surface. It is a cork noticeboard: coarse, warm,
+   already carrying pinned paper, and lit by one gooseneck that throws a hard
+   hot pool across part of it and lets the far corners fall away dark. Two
+   consequences drove every choice below.
+
+     1. A CONTRAST RATIO MEASURED AGAINST AN AVERAGE OF THAT WALL IS A FICTION.
+        Anything whose legibility depends on the board showing through passes a
+        naive check and fails in the lamp pool. So every surface this scope
+        touches is OPAQUE, and the two that were not are the two it changes for
+        that reason alone: `.plaque` carried `rgba(0,0,0,.4)` and `.btn--ghost`
+        carried `rgba(0,0,0,.28)`, both of which let cork and pin shadows read
+        through a label. They are solid here, which is what makes the figures
+        below mean anything at all.
+     2. NOTHING NEW IS PUT ON THE BOARD. Exactly one voice on this route stands
+        directly on the wall -- the `Research Intake Cards` heading, which the
+        page already writes in `--hide-900` because `.room--file` is a LIGHT
+        ground and states that ink itself. This pass does not move it, does not
+        re-ink it, and above all does not put an opaque carcass behind it: a
+        dark ground under ink chosen for a light one is the exact flip that has
+        shipped an unreadable page in this repository before. The wall stays the
+        wall; the cabinet is what becomes solid.
+
+   AND THE ROOM IS ALREADY MADE OF PAPER, SO THE INTERFACE IS NOT. The board is
+   covered in pinned documents. A parchment-fielded frame here -- the answer 008
+   gave the board room -- would read as paper on paper on paper. The cabinet is
+   therefore japanned steel over dark oak with bronze fittings: it CONTRASTS
+   with the wall's material rather than echoing it, and the only paper in the
+   scope is the paper the page already renders, which is the point of the room.
+
+   `.mat-paper` IS DELIBERATELY NOT TOUCHED. The intake cards, the answer-a-gap
+   panel and the torn empty-state notes are this route's real paper, and the
+   sheet's own `.mat-paper` light-ground ink restatement is already correct for
+   them. Re-tinting that ground is the change a previous golden-era scope had
+   REMOVED rather than relax src/design/lightGroundVoices.test.ts, and the same
+   answer holds here: a paper ground may never be answered with an ink-ground
+   rung, and the way to honour that is to leave the paper alone. The brass pins
+   through those cards follow the scoped ramp on their own -- `.pin--brass`
+   resolves var(--brass-200/400/800) -- which is the whole point of a token
+   scope.
+
+   THE REFUSAL SURFACE IS OUTSIDE THE SCOPE BY CONSTRUCTION. Both projection
+   failures on this route render `role="alert"` panels whose border IS the
+   reserved safeguarding red (`border-[color:var(--locked)]`), carrying a
+   `.badge--locked`. Every `.mat-leather` rule below therefore excludes
+   `[role="alert"]`, because this sheet is unlayered and a bare
+   `.ge-file .mat-leather { border-color: … }` would out-rank that utility and
+   quietly repaint #A81E22 as bronze. Restyling it -- or re-grounding the panel
+   under it -- is a safety-semantics change wearing a visual change's clothes,
+   so the alert panels keep the stock material, the stock border and the stock
+   badge, and this is recorded rather than resolved quietly.
+
+   WHAT THE REFERENCE DRAWS THAT THIS ROUTE DOES NOT HAVE, AND WHICH WAS
+   THEREFORE NOT BUILT.
+
+     1. A SEARCH FIELD ("SEARCH DOSSIER…") UNDER THE MASTHEAD. /research has no
+        search, no filter and no query parameter. Its reads are two fixed
+        projection GETs; there is no endpoint to search and nothing to bind a
+        box to. A search field with nothing behind it is a control that lies
+        about what the archive can do.
+     2. AN "ATHLETE FILE DRAWERS" COLUMN LISTING ALEX / JORDAN / SAM. This
+        surface is not filed by athlete and holds no athlete names. The research
+        projection is organization-scoped, the requirement records carry a
+        free-text source entity rather than a roster link, and inventing a
+        per-athlete drawer bank on a youth safeguarding platform would put three
+        children's names on a page that never read them.
+     3. THE TITLE "RESEARCH ARCHIVE". The page's <h1> says Research Inbox, which
+        is what it is. A stylesheet does not rename a surface.
+     4. THE PINNED HANDWRITTEN NOTES ACROSS THE CENTRE. Those are the WALL --
+        the plate already carries pinned paper -- not a control set. The route's
+        own paper is the intake cards, and they stay exactly where they are.
+
+   All four are reported to the owner on the PR as information-architecture
+   questions with their own change, their own API and their own tests. The
+   MATERIALS are applied to the controls that are really there.
+
+   AND WHAT THE REFERENCE OMITS IS KEPT. The image draws no review-state
+   summary, no operational-requirements form, no answer-a-gap submission flow,
+   no general-research intake with its classification correction, no answer-state
+   ladder and no projection-unavailable refusal. Every one of those is real and
+   every one of them stays. A reference that omits a control is not an
+   instruction to delete it, and a visual pass is exactly when one goes quietly
+   missing; src/design/goldenEraFileScope.test.ts pins both halves.
+
+   DESKTOP ONLY. The packet carries one reference and it is the desktop file
+   surface; there is no mobile approval, and the absence of one is not licence
+   to invent a phone layout. The narrow-width block at the foot of this scope
+   therefore does one thing -- it shrinks the bronze fittings so a corner plate
+   does not eat a card on a small viewport. No layout, no stacking rule and no
+   control placement is invented for phones here.
+
+   MEASURED. Against each face's own darkest stop:
+     cabinet head #201811 -- .t-command --bone-100 15.52:1, its engraved eyebrow
+       #DAB974 9.31:1, .t-body --bone-200 14.08:1;
+     drawer bank  #171109 -- .t-body 15.08:1, .t-label --bone-400 7.83:1,
+       .t-data --bone-300 12.15:1, .stat-note --brass-300 9.15:1, and the
+       reserved --locked-ink a .stamp would resolve 12.48:1;
+     drawer front #241B14 -- .t-command 15.00:1, .t-body 13.61:1,
+       .t-label 7.07:1, --locked-ink 11.26:1;
+     index tab    #1F1811 -- .plaque's own --brass-200 10.88:1;
+     pull plate   --brass-400 #BE9440 -- engraved ink #241B12 6.05:1, which is
+       why the plate's face stops at the 400 rung (see the .btn note below).
+
+   RESERVED RED. Nothing below names --locked, --stamp-red or #A81E22, and no
+   `.stamp` on this route is restyled at all: safeguarding ink is not a visual
+   pass's to touch, and the status it carries is not decorative.
+
+   FUNCTIONAL_CHANGES: NONE. One wrapper class inside the page's existing shell
+   is the only markup touched; no control is added, removed, renamed or
+   re-labelled, and no gate, role list or API call moves. The file room's other
+   doors -- /research/chat, /research/review, /evidence, /knowledge-graph,
+   /simulator, /audit -- are deliberately untouched by this pass and keep
+   exactly what they have.
+   ========================================================================== */
+
+/* THE TOKEN SCOPE. Everything this route renders that resolves metal -- the
+   panel keylines, .btn, .btn--ghost, .plaque, .input/.select/.textarea, the
+   .t-eyebrow voice, the brass pins through the intake cards, the focus ring --
+   reads var(--brass-*). Redefining the ramp on the bare scope re-skins all of
+   them at once, custom properties inherit, and legacy gold cannot leak in
+   through a property nobody overrode. Outside .ge-file the app keeps its legacy
+   values untouched.
+
+   THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
+   unpacked channels because CSS cannot derive one from the other, and a good
+   deal of the brass in the app is painted at PARTIAL ALPHA -- keylines,
+   hairlines, the inset top-light on every tile, the focus ring. Those rules
+   read `rgb(var(--brass-N-rgb) / a)`, so the triple is the only handle this
+   scope has on them. Redefine a rung and leave its triple behind and the scope
+   splits down the middle: everything solid turns bronze while every alpha rule
+   beside it keeps painting the inherited legacy gold -- a bronze cabinet
+   wearing a gold hairline, with no forgotten property to find. That is the
+   exact leak this seam exists to prevent, so the pair moves together;
+   src/design/brassAlphaChannel.test.ts fails any scope that moves only one of
+   them, and checks each triple against its own hex. */
+.ge-file {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+}
+
+/* ---- The cabinet head ---------------------------------------------------
+   The reference's masthead: a dark riveted slab across the top with an
+   engraved bronze nameplate struck into it, ruled off underneath. The page's
+   <header> already IS that band and already draws the rule (border-b, whose
+   colour is restated here in the scope's own metal -- the markup states it as
+   the literal rgba(212,175,74,.22), which no token override can reach, so
+   every panel on this route would otherwise have kept a legacy-gold edge
+   inside a golden-era room).
+
+   `> header.mat-leather--raised` rather than `> header`: the head IS raised
+   leather, and the drawer-front rule below is (0,2,0) while a bare
+   `.ge-file > header` is only (0,1,1) -- it would lose to it and the head
+   would silently take a drawer's face.
+
+   THE FACE IS OPAQUE OAK-OVER-STEEL, not the stock raised hide. The stock
+   material is right against a plank or plaster wall; against a lit cork board
+   it needs to be darker and flatter than the board so it reads as a fitting
+   screwed to it rather than another sheet pinned to it. */
+.ge-file > header.mat-leather--raised {
+  background-color: #2A2018;
+  background-image:
+    /* the lamp catching the top lip of the slab, the steel's tooth, the face */
+    linear-gradient(180deg, rgb(var(--brass-200-rgb) / .09) 0%, transparent 34%),
+    var(--grain),
+    linear-gradient(178deg, #35281D 0%, #2A2018 55%, #201811 100%);
+  background-blend-mode: normal, overlay, normal;
+  border-bottom-color: color-mix(in srgb, var(--brass-600) 74%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .20),
+    inset 0 -3px 10px rgba(0,0,0,.55),
+    0 10px 24px rgba(0,0,0,.52);
+}
+
+/* The nameplate voice, and it is anchored at `> header` rather than at a
+   material FOR A REASON THIS ROOM MAKES SHARP. `.ge-file .t-eyebrow` and
+   `.mat-paper .t-eyebrow` are (0,2,0) and (0,2,0); this sheet is imported
+   after the legacy one, so a bare voice rule here would win on source order
+   and print bronze on the cream of every intake card. Naming a material is the
+   usual answer, but on THIS route the paper is nested INSIDE the leather -- the
+   answer-a-gap panel is a .mat-paper inside a .mat-leather--raised inside a
+   .mat-leather -- so `.ge-file .mat-leather .t-eyebrow` would reach straight
+   through it at (0,3,0). The masthead is the one region of this surface that
+   carries no paper at all, so the voice is restated there and nowhere else,
+   and every bone voice on the dark faces below is left exactly as the sheet
+   wrote it: correct already, and not worth the risk.
+
+   The letters on a cabinet's nameplate are CUT IN, not lit from behind: a dark
+   cut below the glyph and a thin bronze edge above it. */
+.ge-file > header .t-command {
+  color: var(--bone-100);
+  letter-spacing: .05em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.72), 0 -1px 0 rgb(var(--brass-200-rgb) / .12);
+}
+.ge-file > header .t-eyebrow {
+  color: color-mix(in srgb, var(--brass-300) 84%, var(--bone-200));
+  letter-spacing: .2em;
+}
+
+/* ---- The drawer bank ----------------------------------------------------
+   Every panel on this route becomes a japanned steel drawer bank standing off
+   the board: a dark opaque face so the bone voices on it keep their contrast
+   whatever the lamp is doing behind it, a bronze bead round the edge, and a
+   warm shadow onto the cork rather than the black one a panel throws on
+   leather.
+
+   `[role="alert"]` IS EXCLUDED FROM EVERY ONE OF THESE RULES. On this route
+   that attribute marks the two projection-failure panels, whose border is the
+   reserved safeguarding red stated as `border-[color:var(--locked)]`. This
+   sheet is unlayered and Tailwind's utilities sit in @layer utilities, so a
+   border-color here would beat it and repaint #A81E22 in bronze. Refusal ink
+   is not a visual pass's to move, so those panels keep the stock material
+   entirely. */
+.ge-file .mat-leather:not([role="alert"]) {
+  position: relative;
+  background-color: #211913;
+  background-image:
+    linear-gradient(178deg, rgb(var(--brass-200-rgb) / .07) 0%, transparent 28%),
+    var(--grain),
+    linear-gradient(174deg, #2C2219 0%, #211913 56%, #171109 100%);
+  background-blend-mode: normal, overlay, normal;
+  border-color: color-mix(in srgb, var(--brass-600) 62%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .18),
+    inset 0 -3px 9px rgba(0,0,0,.58),
+    0 3px 0 rgba(74,54,24,.20),
+    0 12px 26px rgba(46,30,12,.46);
+}
+
+/* The corner plates. The signature of the object: a small bronze plate bolted
+   over each corner of every bank, one stud through each. Drawn as gradient
+   layers rather than an SVG data URI so they resolve the scoped ramp above --
+   a data URI could not, and would drift the moment the ramp was retuned.
+
+   Absolutely positioned and pointer-events: none, so a plate can never eat a
+   tap meant for a control underneath it; a pseudo-element is never in the
+   accessibility tree either. `inset: 6px` keeps them inside the panel's own
+   rounded corner instead of poking past it. */
+.ge-file .mat-leather:not([role="alert"])::before {
+  --ge-corner: linear-gradient(142deg,
+    var(--brass-200) 0%,  var(--brass-400) 32%,
+    var(--brass-600) 64%, var(--brass-900) 100%);
+  --ge-bolt: radial-gradient(circle,
+    var(--brass-200) 0 1.3px, var(--brass-500) 1.3px 2.5px,
+    var(--brass-900) 2.5px 3.2px, transparent 3.4px);
+  content: "";
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    var(--ge-bolt), var(--ge-bolt), var(--ge-bolt), var(--ge-bolt),
+    var(--ge-corner), var(--ge-corner), var(--ge-corner), var(--ge-corner);
+  background-size:
+    8px 8px, 8px 8px, 8px 8px, 8px 8px,
+    17px 17px, 17px 17px, 17px 17px, 17px 17px;
+  background-position:
+    4px 4px, calc(100% - 4px) 4px, 4px calc(100% - 4px), calc(100% - 4px) calc(100% - 4px),
+    left top, right top, left bottom, right bottom;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
+}
+
+/* ---- The drawer fronts --------------------------------------------------
+   The cards inside a bank are the drawers: the four review-state tiles, each
+   requirement record, each registered general source. Slightly lighter than
+   the bank they sit in, screwed at the top corners, with the bronze
+   label-holder rail a card index carries along its bottom edge.
+
+   Both are flex or block containers holding real content, which is why the
+   hardware is an absolutely positioned pseudo-element: a static one on a flex
+   container becomes a flex ITEM and would silently add a cell to every card on
+   the page. Inert to the pointer. */
+.ge-file .mat-leather--raised {
+  background-color: #2E2318;
+  background-image:
+    linear-gradient(178deg, rgb(var(--brass-200-rgb) / .10) 0%, transparent 26%),
+    var(--grain),
+    linear-gradient(172deg, #3B2D20 0%, #2C2118 56%, #241B14 100%);
+  background-blend-mode: normal, overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .22),
+    inset 0 -3px 8px rgba(0,0,0,.55),
+    0 3px 0 rgba(74,54,24,.22),
+    0 9px 20px rgba(46,30,12,.42);
+}
+
+/* The head is a drawer front's material but not a drawer, so the hardware is
+   hung on the cards inside the content column only. */
+.ge-file > div .mat-leather--raised {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--brass-700) 58%, transparent);
+}
+.ge-file > div .mat-leather--raised::after {
+  --ge-screw: radial-gradient(circle,
+    var(--brass-200) 0 1.2px, var(--brass-500) 1.2px 2.3px,
+    var(--brass-900) 2.3px 2.9px, transparent 3.1px);
+  content: "";
+  position: absolute;
+  inset: 5px;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    var(--ge-screw), var(--ge-screw),
+    /* the label-holder rail along the bottom edge of the drawer front */
+    linear-gradient(180deg,
+      var(--brass-300) 0%, var(--brass-600) 52%, var(--brass-900) 100%);
+  background-size: 7px 7px, 7px 7px, 34px 3px;
+  background-position: 0 0, 100% 0, left bottom;
+}
+
+/* ---- The index tabs -----------------------------------------------------
+   `.plaque` is the small engraved plate the reference screws above each
+   compartment, and on this route it is the four status tabs across the top of
+   the column. The stock plaque is `rgba(0,0,0,.4)` -- a wash, which on a lit
+   cork board lets pin shadows and paper edges read straight through the label.
+   Solid here, which is the whole reason its 10.88:1 above is a number rather
+   than an average. */
+.ge-file .plaque {
+  background-color: #1F1811;
+  background-image: linear-gradient(180deg,
+    rgb(var(--brass-200-rgb) / .12) 0%, transparent 40%, rgba(0,0,0,.34) 100%);
+  border-color: color-mix(in srgb, var(--brass-600) 80%, transparent);
+  letter-spacing: .12em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.7);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .22),
+    0 2px 5px rgba(0,0,0,.5);
+}
+
+/* ---- The dossier well ---------------------------------------------------
+   The reference sinks its field into the head behind a bronze bezel. Every
+   text control on this route -- the requirement form, the answer-a-gap
+   submission, the general-intake register -- becomes that well: the stock dark
+   inset field, sunk deeper, behind a bronze bead.
+
+   NEITHER THE FILL NOR THE INK MOVES. `.input`/`.select`/`.textarea` pin
+   --bone-100 on #17110D (16.59:1), and whether a dark field belongs on a paper
+   panel is an OPEN DESIGN QUESTION the sheet records in
+   src/design/lightGroundVoices.test.ts -- not a question a surface scope gets
+   to settle. So this changes the bezel and the recess and leaves the decision
+   where the design system parked it. */
+.ge-file :is(.input, .select, .textarea) {
+  border-color: color-mix(in srgb, var(--brass-600) 66%, transparent);
+  box-shadow:
+    inset 0 2px 7px rgba(0,0,0,.78),
+    inset 0 -1px 0 rgb(var(--brass-200-rgb) / .10);
+}
+.ge-file :is(.input, .select, .textarea):focus {
+  border-color: var(--brass-300);
+  box-shadow:
+    inset 0 2px 7px rgba(0,0,0,.78),
+    inset 0 -1px 0 rgb(var(--brass-200-rgb) / .10),
+    var(--focus);
+}
+
+/* ---- The pull plates ----------------------------------------------------
+   The reference's controls are riveted bronze plates with the label cut into
+   the face. `.btn` is this route's primary -- Move to Evidence, Save
+   Requirement, Submit source, Register general research -- and it becomes that
+   plate, with a bolt through each end.
+
+   INK CONTRAST IS WHY THE FACE STOPS AT --brass-400. `.btn` is 15px at weight
+   700, which WCAG counts as normal text, so it owes 4.5:1. Engraved ink
+   #241B12 measures 4.27:1 on --brass-500 and 6.05:1 on --brass-400, so the
+   face ends on the 400 rung and the darker metal goes into the bevel; the
+   worst point on the plate is 6.05:1. The stock gradient runs all the way to
+   --brass-800, which under this ramp is #533D18 -- 1.55:1 against that ink --
+   so restating the face here is a legibility fix as much as a material one.
+
+   `.btn--ghost` IS DELIBERATELY LEFT A GHOST. 008 could plaque its ghosts
+   because the board room has no primary control for a plaque to blur; this
+   route has both, side by side inside one card (Answer this gap beside Submit
+   source, Cancel beside it), so making them the same object would erase a real
+   distinction. It gets the same steel and the same bronze bead as the cabinet
+   and nothing more -- except its wash, which becomes opaque for the reason
+   every other surface here is opaque. */
+.ge-file .btn {
+  color: #241B12;
+  border-radius: 3px;
+  background-image:
+    radial-gradient(circle at 9px 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 9px) 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    linear-gradient(180deg,
+      var(--brass-200) 0%, var(--brass-300) 46%, var(--brass-400) 100%);
+  text-shadow: 0 1px 0 rgba(255,244,214,.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.5);
+}
+.ge-file .btn:hover {
+  background-image:
+    radial-gradient(circle at 9px 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 9px) 50%,
+      var(--brass-200) 0 1.3px, var(--brass-700) 1.3px 2.5px, transparent 2.8px),
+    linear-gradient(180deg,
+      var(--brass-200) 0%, var(--brass-300) 58%, var(--brass-400) 100%);
+}
+.ge-file .btn--ghost {
+  background-color: #1D1610;
+  background-image: linear-gradient(180deg,
+    rgb(var(--brass-200-rgb) / .08) 0%, transparent 38%, rgba(0,0,0,.30) 100%);
+  border-color: color-mix(in srgb, var(--brass-500) 72%, transparent);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .16);
+}
+.ge-file .btn--ghost:hover {
+  background-color: #262019;
+  border-color: var(--brass-400);
+}
+
+/* ---- Narrow viewports ---------------------------------------------------
+   010 is a DESKTOP packet. There is no approved mobile reference, and the
+   absence of one is not permission to design a phone. This block therefore
+   changes nothing about layout, order or which controls appear -- the page's
+   own responsive grid still decides that. It shrinks the bronze fittings,
+   because a 17px corner plate and a 34px label rail on a 390px card stop being
+   hardware and start being the card. */
+@media (max-width: 900px) {
+  .ge-file .mat-leather:not([role="alert"])::before {
+    inset: 4px;
+    background-size:
+      6px 6px, 6px 6px, 6px 6px, 6px 6px,
+      12px 12px, 12px 12px, 12px 12px, 12px 12px;
+  }
+  .ge-file > div .mat-leather--raised::after {
+    inset: 4px;
+    background-size: 6px 6px, 6px 6px, 24px 2px;
+  }
+}
+
+/* ==========================================================================
    GOLDEN ERA VISUAL 001 — THE BELL (sign-in)
    ==========================================================================
    Visual authority: Documents/PPBF-AI-Lanes/Visual-Handoffs/01_READY_FOR_GROK/
