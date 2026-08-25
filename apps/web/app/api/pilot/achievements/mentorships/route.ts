@@ -6,7 +6,7 @@ import {
   MentorshipAlreadyOpenError,
   createMentorship,
   endMentorship,
-  getMentorshipById,
+  getMentorshipMentorAthleteId,
   listMentorshipsForAthlete,
 } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -119,11 +119,11 @@ export async function DELETE(request: NextRequest) {
     // to the athlete could end the pairing and only then be refused, with the
     // row already changed. The mentor_athlete_id binding is set at creation
     // and never reassigned, so a read-then-write here is safe.
-    const existing = await getMentorshipById(principal.organizationId, mentorshipId);
-    if (!existing) {
+    const mentorAthleteId = await getMentorshipMentorAthleteId(principal.organizationId, mentorshipId);
+    if (!mentorAthleteId) {
       throw new Error('Not found');
     }
-    await assertActorCanAccessAthlete(principal, existing.mentor_athlete_id);
+    await assertActorCanAccessAthlete(principal, mentorAthleteId);
 
     const mentorship = await endMentorship(principal.organizationId, mentorshipId);
     if (!mentorship) {
