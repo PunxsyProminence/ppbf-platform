@@ -47,6 +47,41 @@
   --brass-300: #E8CE7A;  /* specular highlight */
   --brass-200: #F2E2A8;
 
+  /* The same eight colours, as unpacked channel triples.
+     ----------------------------------------------------------------------
+     THE LEAK THIS CLOSES. Forty-six rules in this sheet need brass at
+     partial alpha -- keylines, the focus ring, inset top-lights on every
+     tile and button, the jump palette's hairlines. They used to spell it as
+     a LITERAL: `rgba(212,175,74,.42)`, `rgba(232,206,122,.14)`. A literal
+     has no token in it, so no token override can reach it. That is the exact
+     channel legacy leaked through into a golden-era scope: the scope
+     redefines --brass-400 to bronze, every rule that says var(--brass-400)
+     follows, and every hardcoded rgba() carries on painting legacy gold. It
+     was found on .ge-frontoffice, whose buttons resolved a
+     rgba(212, 175, 74, 0.42) border while the same element correctly
+     resolved --brass-500 as bronze.
+
+     Those rules now read `rgb(var(--brass-N-rgb) / a)`, so they follow
+     whichever scope they are rendered inside. Outside a scope the triple is
+     the same colour it always was, so nothing about the unmigrated app
+     moves: proven by a before/after computed-style diff over every paint
+     property on /login and the coach workspace, byte-identical.
+
+     CSS cannot unpack a hex into channels, so these are stated rather than
+     derived, and each MUST track the hex above it. Any scope redefining a
+     --brass-N must redefine --brass-N-rgb alongside it.
+     src/design/brassAlphaChannel.test.ts checks each triple against its own
+     hex, requires the pair to move together in every scope, and fails any
+     re-appearance of a brass literal. */
+  --brass-900-rgb:  74  52  11;
+  --brass-800-rgb: 107  78  18;
+  --brass-700-rgb: 140 107  31;
+  --brass-600-rgb: 169 129  38;
+  --brass-500-rgb: 184 145  47;
+  --brass-400-rgb: 212 175  74;
+  --brass-300-rgb: 232 206 122;
+  --brass-200-rgb: 242 226 168;
+
   /* --- Bone — type and paper -------------------------------------------- */
   --bone-100: #F7F1E1;  /* stencil display */
   --bone-200: #EFE6D0;  /* body on leather */
@@ -231,7 +266,7 @@
 
   /* --- Ergonomics ------------------------------------------------------- */
   --tap: 55px;        /* Fibonacci, and comfortably above the 44px WCAG floor */
-  --focus: 0 0 0 3px rgba(212, 175, 74, .55);
+  --focus: 0 0 0 3px rgb(var(--brass-400-rgb, 212 175 74) / .55);
 
   /* --- Motion — Law 8 applied to time ------------------------------------
      Durations were the one axis still picked by eye (.12s, .28s, .34s, .42s,
@@ -327,7 +362,7 @@ body.ppbf {
     linear-gradient(168deg, #4B382A 0%, #34271D 55%, #241B14 100%);
   background-blend-mode: overlay, screen, normal;
   box-shadow:
-    inset 0 1px 0 rgba(232,206,122,.16),
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .16),
     inset 0 -2px 6px rgba(0,0,0,.55),
     0 3px 8px rgba(0,0,0,.5);
 }
@@ -630,11 +665,11 @@ body.ppbf {
   letter-spacing: .045em;
   color: var(--bone-100);
   font-weight: 700;
-  text-shadow: 0 2px 0 rgba(0,0,0,.55), 0 0 18px rgba(232,206,122,.14);
+  text-shadow: 0 2px 0 rgba(0,0,0,.55), 0 0 18px rgb(var(--brass-300-rgb) / .14);
 }
 .t-command--brass {
   color: var(--brass-300);
-  text-shadow: 0 1px 0 rgba(0,0,0,.7), 0 0 14px rgba(212,175,74,.28);
+  text-shadow: 0 1px 0 rgba(0,0,0,.7), 0 0 14px rgb(var(--brass-400-rgb) / .28);
 }
 .t-eyebrow {
   font: 650 11px/1 var(--font-data);
@@ -813,7 +848,7 @@ body.ppbf {
 .btn--ghost {
   background-image: none; background-color: rgba(0,0,0,.28);
   color: var(--bone-200);
-  border: 1.5px solid rgba(212,175,74,.42);
+  border: 1.5px solid rgb(var(--brass-400-rgb) / .42);
   box-shadow: inset 0 1px 0 rgba(255,244,214,.10);
   text-shadow: none;
 }
@@ -857,7 +892,7 @@ body.ppbf {
   font-family: var(--font-ui); font-size: 15px; color: var(--bone-100);
   background-color: #17110D;
   background-image: var(--grain-fine); background-blend-mode: overlay;
-  border: 1px solid rgba(212,175,74,.28); border-radius: var(--r-md);
+  border: 1px solid rgb(var(--brass-400-rgb) / .28); border-radius: var(--r-md);
   box-shadow: inset 0 2px 6px rgba(0,0,0,.7);
 }
 .input::placeholder { color: #6E6152; }
@@ -1021,7 +1056,7 @@ body.ppbf.on-canvas {
 .on-canvas .btn--ghost {
   background-color: rgba(0,0,0,.045);
   color: #3A2E1D;
-  border: 1.5px solid rgba(107,78,18,.45);
+  border: 1.5px solid rgb(var(--brass-800-rgb) / .45);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
 }
 .on-canvas .btn--ghost:hover {
@@ -1078,7 +1113,7 @@ body.ppbf.on-canvas {
 .gauge-ticks {
   position: absolute; inset: 8px 8px -65px; border-radius: 50%;
   background-image: repeating-conic-gradient(from -90deg,
-    rgba(232,206,122,.75) 0deg 1deg, transparent 1deg 15deg);
+    rgb(var(--brass-300-rgb) / .75) 0deg 1deg, transparent 1deg 15deg);
   -webkit-mask-image: radial-gradient(circle at 50% 100%, transparent 62%, #000 64%, #000 76%, transparent 78%);
   mask-image: radial-gradient(circle at 50% 100%, transparent 62%, #000 64%, #000 76%, transparent 78%);
 }
@@ -1087,7 +1122,7 @@ body.ppbf.on-canvas {
   transform-origin: 50% 100%; rotate: var(--deg, 0deg);
   background-image: linear-gradient(180deg, var(--brass-200), var(--brass-600));
   border-radius: 2px;
-  box-shadow: 0 0 5px rgba(232,206,122,.55), 1px 0 2px rgba(0,0,0,.7);
+  box-shadow: 0 0 5px rgb(var(--brass-300-rgb) / .55), 1px 0 2px rgba(0,0,0,.7);
 }
 .gauge-hub {
   position: absolute; bottom: 1px; left: 50%; translate: -50% 0;
@@ -1118,7 +1153,7 @@ body.ppbf.on-canvas {
     linear-gradient(168deg, #4B382A, #34271D 55%, #241B14);
   background-blend-mode: overlay, screen, normal;
   box-shadow:
-    inset 0 1px 0 rgba(232,206,122,.18),
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .18),
     inset 0 -2px 6px rgba(0,0,0,.55),
     0 4px 10px rgba(0,0,0,.5);
   transition: translate var(--m-quick) var(--e-stamp), box-shadow var(--m-quick) var(--e-stamp);
@@ -1127,7 +1162,7 @@ body.ppbf.on-canvas {
   content: ""; position: absolute; inset: 6px; pointer-events: none;
   border: 1.5px dashed rgba(226,205,156,.26); border-radius: 9px;
 }
-.tile:hover { translate: 0 -2px; box-shadow: inset 0 1px 0 rgba(232,206,122,.28), 0 8px 18px rgba(0,0,0,.6); }
+.tile:hover { translate: 0 -2px; box-shadow: inset 0 1px 0 rgb(var(--brass-300-rgb) / .28), 0 8px 18px rgba(0,0,0,.6); }
 .tile-glyph { font-size: 30px; line-height: 1; color: var(--brass-300); text-shadow: 0 2px 3px rgba(0,0,0,.7); }
 .tile-name  { font-family: var(--font-stencil); text-transform: uppercase; font-size: 14px; letter-spacing: .07em; color: var(--bone-100); }
 .tile-meta  { font: 650 12px/1 var(--font-data); color: var(--brass-300); }
@@ -1148,7 +1183,7 @@ body.ppbf.on-canvas {
     linear-gradient(168deg, #4B382A 0%, #34271D 55%, #241B14 100%);
   background-blend-mode: overlay, screen, normal;
   box-shadow:
-    inset 0 1px 0 rgba(232,206,122,.16),
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .16),
     inset 0 -2px 6px rgba(0,0,0,.55),
     0 3px 8px rgba(0,0,0,.5);
   border-radius: var(--r-lg);
@@ -1173,7 +1208,7 @@ body.ppbf.on-canvas {
   background-color: var(--hide-700);
   background-image: var(--grain), linear-gradient(168deg, #43301F, #2A1F18);
   background-blend-mode: overlay, normal;
-  box-shadow: inset 0 1px 0 rgba(232,206,122,.14), 0 3px 7px rgba(0,0,0,.5);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-300-rgb) / .14), 0 3px 7px rgba(0,0,0,.5);
 }
 .tag::before {                      /* brass grommet + ring */
   content: ""; position: absolute; left: -13px; top: 50%; translate: 0 -50%;
@@ -1189,7 +1224,7 @@ body.ppbf.on-canvas {
 .tag[aria-current="page"], .tag:hover {
   color: var(--brass-200);
   background-image: var(--grain), linear-gradient(168deg, #5C4127, #3A2A1D);
-  box-shadow: inset 0 1px 0 rgba(232,206,122,.3), 0 0 0 1px var(--brass-700), 0 4px 10px rgba(0,0,0,.6);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-300-rgb) / .3), 0 0 0 1px var(--brass-700), 0 4px 10px rgba(0,0,0,.6);
 }
 
 /* ============================================================= LAYOUT ==== */
@@ -1197,13 +1232,13 @@ body.ppbf.on-canvas {
   font-family: var(--font-stencil); text-transform: uppercase;
   font-size: clamp(var(--t-lg), 4vw, var(--t-2xl)); letter-spacing: .06em;
   color: var(--bone-100); text-align: center;
-  text-shadow: 0 3px 0 rgba(0,0,0,.6), 0 0 26px rgba(232,206,122,.16);
+  text-shadow: 0 3px 0 rgba(0,0,0,.6), 0 0 26px rgb(var(--brass-300-rgb) / .16);
 }
 .plaque {
   display: inline-block; padding: 7px 16px; border-radius: var(--r-sm);
   background-color: rgba(0,0,0,.4);
   border: 1px solid var(--brass-700);
-  box-shadow: inset 0 1px 0 rgba(232,206,122,.16);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-300-rgb) / .16);
   font: 650 13px/1 var(--font-data); letter-spacing: .09em; color: var(--brass-200);
 }
 .sr-only {
@@ -1548,13 +1583,13 @@ body.ppbf.on-canvas {
       var(--brass-500) 58%, var(--brass-700) 82%, var(--brass-800) 100%);
   background-blend-mode: overlay, normal;
   box-shadow:
-    inset 0 1px 0 rgba(242,226,168,.42),
-    inset 0 0 0 1px rgba(74,52,11,.55),
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .42),
+    inset 0 0 0 1px rgb(var(--brass-900-rgb) / .55),
     inset 0 -2px 3px rgba(0,0,0,.34),
     0 2px 6px rgba(0,0,0,.5);
   font-family: var(--font-stencil); text-transform: uppercase;
   letter-spacing: .08em; color: #2A1E06;
-  text-shadow: 0 1px 0 rgba(242,226,168,.34);   /* engraved, not printed */
+  text-shadow: 0 1px 0 rgb(var(--brass-200-rgb) / .34);   /* engraved, not printed */
 }
 /* The two screws holding it on. */
 .nameplate::before, .nameplate::after {
@@ -2237,7 +2272,7 @@ body.ppbf.on-canvas {
               border: 1px solid var(--brass-700); border-radius: var(--r-sm);
               background-color: var(--hide-800);
               background-image: linear-gradient(180deg, rgba(92,70,50,.9), rgba(30,23,18,.95));
-              box-shadow: inset 0 1px 0 rgba(232,206,122,.14), 0 2px 5px rgba(0,0,0,.45);
+              box-shadow: inset 0 1px 0 rgb(var(--brass-300-rgb) / .14), 0 2px 5px rgba(0,0,0,.45);
               transition: background-image var(--m-base) var(--e-lever),
                           color var(--m-base) var(--e-lever),
                           box-shadow var(--m-base) var(--e-lever); }
@@ -2281,7 +2316,7 @@ body.ppbf.on-canvas {
 /* ====================================================== COMMAND REFERENCE === */
 /* Keyboard shortcuts and command reference card. Styled as a laminated card
    posted on the wall. Lives in a corner or pops on ? press. */
-.commands { border: 1px solid rgba(212,175,74,.24); border-radius: var(--r-lg);
+.commands { border: 1px solid rgb(var(--brass-400-rgb) / .24); border-radius: var(--r-lg);
             padding: var(--s4) var(--s5); background: linear-gradient(135deg, rgba(42,31,24,.8), rgba(30,23,18,.9));
             font-size: 11px; max-width: 220px; }
 .commands-title { font: 650 10px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
@@ -2290,7 +2325,7 @@ body.ppbf.on-canvas {
                           border-radius: 2px; }
 .commands-list { list-style: none; padding: 0; margin: 0; }
 .commands-item { display: flex; justify-content: space-between; gap: var(--s4); padding: var(--s2) 0;
-                 border-bottom: 1px dashed rgba(212,175,74,.12); }
+                 border-bottom: 1px dashed rgb(var(--brass-400-rgb) / .12); }
 .commands-item:last-child { border-bottom: 0; }
 .commands-key { font-family: var(--font-data); font-weight: 650; color: var(--brass-300); letter-spacing: .02em; }
 .commands-desc { color: var(--bone-400); text-align: left; }
@@ -2334,7 +2369,7 @@ body.ppbf.on-canvas {
 .corridor-trigger-here {
   font: 400 10.5px/1 var(--font-data); letter-spacing: .04em;
   text-transform: none; color: var(--bone-400);
-  padding-left: var(--s3); border-left: 1px solid rgba(212,175,74,.24);
+  padding-left: var(--s3); border-left: 1px solid rgb(var(--brass-400-rgb) / .24);
 }
 
 /* A column, not one scrolling block: the head and the ⌘K hint stay put while
@@ -2349,21 +2384,21 @@ body.ppbf.on-canvas {
   background-color: var(--hide-950);
   background-image: var(--grain), linear-gradient(168deg, #241B14, #14100D);
   background-blend-mode: overlay, normal;
-  box-shadow: 0 21px 55px rgba(0,0,0,.72), inset 0 1px 0 rgba(232,206,122,.12);
+  box-shadow: 0 21px 55px rgba(0,0,0,.72), inset 0 1px 0 rgb(var(--brass-300-rgb) / .12);
   animation: corridor-in var(--m-settle) var(--e-settle);
 }
 @keyframes corridor-in { from { opacity: 0; translate: 0 -6px; } }
 
 .corridor-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: var(--s4);
-  padding: var(--s4) var(--s5); border-bottom: 1px solid rgba(212,175,74,.2);
+  padding: var(--s4) var(--s5); border-bottom: 1px solid rgb(var(--brass-400-rgb) / .2);
   flex: 0 0 auto;
 }
 .corridor-head b { font-family: var(--font-display); text-transform: uppercase;
                    letter-spacing: .05em; font-size: 13px; color: var(--bone-100); }
 .corridor-head span { font: 400 10.5px/1 var(--font-data); color: var(--bone-400); }
 
-.corridor-rooms { display: grid; gap: 1px; background: rgba(212,175,74,.14);
+.corridor-rooms { display: grid; gap: 1px; background: rgb(var(--brass-400-rgb) / .14);
                   flex: 1 1 auto; overflow-y: auto; min-height: 0; }
 /* The corridor does NOT wear the rooms' walls.
    Tempting, and wrong: a wall is an opaque background-image, and two of the six
@@ -2408,7 +2443,7 @@ body.ppbf.on-canvas {
                   display: flex; flex-wrap: wrap; gap: var(--s3); }
 .corridor-door {
   display: inline-block; padding: var(--s2) var(--s4); text-decoration: none;
-  border: 1px solid rgba(212,175,74,.26); border-radius: var(--r-sm);
+  border: 1px solid rgb(var(--brass-400-rgb) / .26); border-radius: var(--r-sm);
   background: rgba(12,9,6,.55); color: var(--bone-200);
   font: 500 12px/1.5 var(--font-ui);
   transition: border-color var(--m-quick) var(--e-stamp),
@@ -2422,11 +2457,11 @@ body.ppbf.on-canvas {
                             font-weight: 650; }
 
 .corridor-foot { padding: var(--s3) var(--s5) var(--s4); font-size: 10.5px; color: var(--bone-400);
-                 border-top: 1px solid rgba(212,175,74,.14);
+                 border-top: 1px solid rgb(var(--brass-400-rgb) / .14);
                  flex: 0 0 auto; background: var(--hide-950); }
 .corridor-foot kbd, .catalog-foot kbd, .catalog-kbd {
   font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
-  background: rgba(0,0,0,.5); border: 1px solid rgba(212,175,74,.3);
+  background: rgba(0,0,0,.5); border: 1px solid rgb(var(--brass-400-rgb) / .3);
   color: var(--brass-200);
 }
 
@@ -2438,14 +2473,14 @@ body.ppbf.on-canvas {
   background-color: var(--hide-950);
   background-image: var(--grain), linear-gradient(168deg, #2A2018, #14100D);
   background-blend-mode: overlay, normal;
-  box-shadow: 0 34px 89px rgba(0,0,0,.8), inset 0 1px 0 rgba(232,206,122,.14);
+  box-shadow: 0 34px 89px rgba(0,0,0,.8), inset 0 1px 0 rgb(var(--brass-300-rgb) / .14);
   overflow: hidden;
   animation: catalog-in var(--m-settle) var(--e-settle);
 }
 @keyframes catalog-in { from { opacity: 0; translate: 0 -13px; scale: .985; } }
 
 .catalog-field { display: flex; align-items: center; gap: var(--s4);
-                 padding: var(--s4) var(--s5); border-bottom: 1px solid rgba(212,175,74,.24); }
+                 padding: var(--s4) var(--s5); border-bottom: 1px solid rgb(var(--brass-400-rgb) / .24); }
 .catalog-glyph { font-size: 19px; color: var(--brass-400); }
 .catalog-field input {
   flex: 1; min-width: 0; background: transparent; border: 0; outline: 0;
@@ -2464,7 +2499,7 @@ body.ppbf.on-canvas {
   border-left: 3px solid transparent;
 }
 .catalog-row.is-active {
-  background: linear-gradient(90deg, rgba(212,175,74,.16), transparent 78%);
+  background: linear-gradient(90deg, rgb(var(--brass-400-rgb) / .16), transparent 78%);
   border-left-color: var(--brass-400);
 }
 .catalog-row-main { min-width: 0; }
@@ -2474,8 +2509,8 @@ body.ppbf.on-canvas {
 .catalog-row-meta code { font: 400 10.5px/1 var(--font-data); color: var(--bone-400); }
 .catalog-room-tag {
   font: 650 9px/1.7 var(--font-data); letter-spacing: .1em; text-transform: uppercase;
-  color: var(--brass-200); background: rgba(212,175,74,.14);
-  border: 1px solid rgba(212,175,74,.26); padding: 0 6px; border-radius: 2px; white-space: nowrap;
+  color: var(--brass-200); background: rgb(var(--brass-400-rgb) / .14);
+  border: 1px solid rgb(var(--brass-400-rgb) / .26); padding: 0 6px; border-radius: 2px; white-space: nowrap;
 }
 
 .catalog-empty { padding: var(--s7) var(--s5); text-align: center; }
@@ -2485,7 +2520,7 @@ body.ppbf.on-canvas {
 .catalog-empty span { font-size: 11.5px; color: var(--bone-400); line-height: 1.55; }
 
 .catalog-foot { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
-                padding: var(--s3) var(--s5); border-top: 1px solid rgba(212,175,74,.18);
+                padding: var(--s3) var(--s5); border-top: 1px solid rgb(var(--brass-400-rgb) / .18);
                 font-size: 10.5px; color: var(--bone-400); }
 .catalog-count { margin-left: auto; font-family: var(--font-data); }
 
@@ -2497,14 +2532,14 @@ body.ppbf.on-canvas {
   /* Was 30px -- the smallest target in the application. ⌘K is the keyboard
      path; this button is the only path for anyone who does not have one. */
   min-height: var(--tap); padding: 0 var(--s3); cursor: pointer;
-  border: 1px solid rgba(212,175,74,.3); border-radius: var(--r-sm);
+  border: 1px solid rgb(var(--brass-400-rgb) / .3); border-radius: var(--r-sm);
   background: rgba(12,9,6,.5); color: var(--bone-300);
   font: 650 10px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase;
   transition: border-color var(--m-quick) var(--e-stamp), color var(--m-quick) var(--e-stamp);
 }
 .catalog-hint:hover { border-color: var(--brass-400); color: var(--bone-100); }
 .catalog-hint kbd { font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
-                    background: rgba(0,0,0,.5); border: 1px solid rgba(212,175,74,.3);
+                    background: rgba(0,0,0,.5); border: 1px solid rgb(var(--brass-400-rgb) / .3);
                     color: var(--brass-200); }
 @media (max-width: 620px) { .catalog-hint-lbl { display: none; } }
 
@@ -3089,8 +3124,8 @@ body.ppbf.on-canvas {
       var(--brass-500) 58%, var(--brass-700) 82%, var(--brass-800) 100%);
   background-blend-mode: overlay, normal;
   box-shadow:
-    inset 0 1px 0 rgba(242,226,168,.42),
-    inset 0 0 0 1px rgba(74,52,11,.55),
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .42),
+    inset 0 0 0 1px rgb(var(--brass-900-rgb) / .55),
     inset 0 -2px 3px rgba(0,0,0,.34),
     0 2px 6px rgba(0,0,0,.5);
 }
@@ -3100,7 +3135,7 @@ body.ppbf.on-canvas {
   font-size: var(--t-xl); line-height: 1;
   letter-spacing: .04em;
   color: #2A1E06;
-  text-shadow: 0 1px 0 rgba(242,226,168,.34);
+  text-shadow: 0 1px 0 rgb(var(--brass-200-rgb) / .34);
   user-select: none;
 }
 /* The two screws, borrowed wholesale from .nameplate -- it is the same
@@ -3127,8 +3162,8 @@ body.ppbf.on-canvas {
 /* The member's corner, as the plate's bevel. Reads as the plate being seated
    in a dyed leather surround. */
 .plate--cornered { box-shadow:
-    inset 0 1px 0 rgba(242,226,168,.42),
-    inset 0 0 0 1px rgba(74,52,11,.55),
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .42),
+    inset 0 0 0 1px rgb(var(--brass-900-rgb) / .55),
     0 0 0 3px var(--corner-edge),
     0 2px 6px rgba(0,0,0,.5); }
 
@@ -3170,7 +3205,7 @@ body.ppbf.on-canvas {
     linear-gradient(170deg, #3E2E22 0%, #2A1F18 46%, #1D1611 100%);
   background-blend-mode: overlay, screen, normal;
   box-shadow:
-    inset 0 1px 0 rgba(232,206,122,.14),
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .14),
     inset 0 -2px 6px rgba(0,0,0,.55),
     0 6px 16px rgba(0,0,0,.5);
   /* The corner, as the card's binding. Left edge only -- a card bound down one
@@ -3341,7 +3376,7 @@ body.ppbf.on-canvas {
 
 .pickrow { transition: background-color var(--m-base) var(--e-lever); }
 .pickrow--picked {
-  background-color: rgba(212,175,74,.06);
+  background-color: rgb(var(--brass-400-rgb) / .06);
   box-shadow: inset 3px 0 0 var(--brass-500);
 }
 
@@ -3356,7 +3391,7 @@ body.ppbf.on-canvas {
   border-radius: var(--r-md);
   background-color: var(--hide-800);
   background-image: linear-gradient(180deg, rgba(92,70,50,.55), rgba(20,16,13,.92));
-  box-shadow: inset 0 1px 0 rgba(232,206,122,.14), 0 4px 12px rgba(0,0,0,.5);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-300-rgb) / .14), 0 4px 12px rgba(0,0,0,.5);
 }
 
 /* The count. Record voice, because it is a number that has to be exact and
@@ -3405,7 +3440,7 @@ body.ppbf.on-canvas {
   width: 26px; height: 26px; flex: none;
   border: 1px solid var(--brass-700); border-radius: var(--r-sm);
   background-color: rgba(0,0,0,.35);
-  box-shadow: inset 0 1px 0 rgba(232,206,122,.14);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-300-rgb) / .14);
   color: var(--brass-300); font-size: var(--t-sm); line-height: 1;
 }
 .catalog-act-tag {
