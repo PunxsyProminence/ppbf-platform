@@ -14,10 +14,18 @@ OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-24T23:30Z
+2026-08-25T01:30Z
 
 CURRENT_MAIN:
-26519efd49d04b0f4b72779b921174567dd48ed0
+d1f39c52dd02ed43a62b973ae990523fd0f7e60d
+NOTE FOR GROK / #606: main has moved past the 26519efd base your restore
+artifacts were packaged against. Since then #607 #609 #610 #612 (and #615
+once merged) changed athlete-side and test files -- #612 rewrote copy in
+`app/athlete/dashboard/sparring/page.tsx`, and #615 removes the dead
+"Session Duration (minutes)" input from `components/AthleteWorkspace.tsx`
+itself. A body restore packaged at 26519efd is now STALE for
+AthleteWorkspace: re-cut it from the CURRENT main tip + ge- hooks only, or
+the restore will conflict (or worse, silently resurrect removed copy).
 
 RELEASE_CANDIDATE_SHA:
 26519efd49d04b0f4b72779b921174567dd48ed0  <-- FROZEN
@@ -219,7 +227,16 @@ per run. Approving two runs does not carry to later dispatches.
 
 ## CLAUDE_ACTIVE
 
-- Merged today: #601 #602 #603 #604 #605.
+- CONTINUE_BUILD merged since production: #607 #608 #609 #610 #611 #612
+  #613 (see EVENT LOG for SHAs).
+- Open, CI pending, merge on green: #614 (six remaining resource-group
+  workflows fail closed), #615 (dead Session Duration input removed),
+  #616 (admin "Get Code" labels -> "Get Starting PIN").
+- HELD until #606 resolves: coach roster row click (selectedAthleteId is
+  set on click and consumed only by the row's own highlight class --
+  CoachWorkspace.tsx is mid-restore in Grok's lane; a main-side edit now
+  would churn the file under them).
+- Merged today (release phase): #601 #602 #603 #604 #605.
 - Open, EXCLUDED from this release by owner override: #607 (guard fix that
   unblocks #606 only).
 - Branch `claude/sparring-claim-honesty`: partially pushed (047b97be) when
@@ -262,18 +279,20 @@ approval on the two waiting runs above.
 
 ## DEFERRED (non-blocking, for CONTINUE_BUILD)
 
-- Athlete sparring "your coach sees it" claim (branch above).
-- Scheduler load-failure panel wearing the reserved medical red.
-- Runtime ledger hard gate.
+Done since the release: sparring claim (#612 merged), scheduler red (#609
+merged), runtime ledger hard gate (#610 merged), provenance binding (#613
+merged); resource-group workflows (#614), Session Duration input (#615) and
+"Get Code" copy (#616) are open PRs merging on green.
+
+Still deferred:
+- Coach roster row click (held for #606 -- see CLAUDE_ACTIVE).
 - #602 `path.relative` Windows separators (guard fails loud, not open; all
   CI is ubuntu-latest).
-- Digest-to-SHA provenance binding in deploy-production.
-- Lane A/C non-blocking findings: dead "Session Duration" input, coach roster
-  row click, admin "Get Code" copy, UNKNOWN-method historical RPE rendering,
-  track-assignments silent autosave, athlete "Messages 0" tile, holds not
-  checked at check-in/drill-assignment, SHADOW near-miss text reaching
-  athlete/parent chats the direct API denies them.
-- Six KNOWN_UNFIXED resource-group workflows.
+- UNKNOWN-method historical RPE rendering (measure production data first),
+  track-assignments silent autosave, athlete "Messages 0" tile.
+- FOR THE OWNER, not to be decided by an AI alone: training holds are not
+  enforced at check-in/drill-assignment; SHADOW injects near-miss text into
+  athlete/parent chats that `GET /near-misses` denies those roles.
 
 ## EVENT LOG
 
@@ -291,3 +310,10 @@ approval on the two waiting runs above.
 - 2026-08-24T20:38Z | claude | STAGING VERIFIED at 26519efd: SHADOW gate PASS, ledger PASS=72 with 0 failures, digest sha256:17773a8f… | run 32774306474
 - 2026-08-24T21:25Z | claude | found production needs the session-rpe-semantics migration | this file
 - 2026-08-24T22:10Z | claude | CORRECTED that entry: verify-schema DOES derive and expect sessions.rpe_method plus both constraints (ran expectedObjectsFrom over all 99 migration files); deploy-production would have refused, not silently shipped | this file
+- 2026-08-24T23:26Z | claude | production reference data seeded (drills 119, scale levels 357, stop rules 674, cues 258; disciplines 5, competence 6, cohorts 6; scripts 3, blocks 65, renderings 4) | run 32788628209
+- 2026-08-24T22:59Z-23:22Z | claude | merged #607 #608 #609 | 0f803768 50536d57 2cf5117c (commit timestamps)
+- 2026-08-25T00:15Z | claude | merged #611 (docs) | ad1d5f3e
+- 2026-08-25T00:45Z | claude | merged #610 (runtime ledger gates) | 1df6d7c8
+- 2026-08-25T01:04Z | claude | merged #612 (sparring claim honesty) and #613 (digest-to-SHA provenance) | 995e27f6, d1f39c52
+- 2026-08-25T01:20Z | claude | opened #614 (six resource-group workflows fail closed) #615 (dead duration input) #616 ("Get Code" labels); all subscribed, merge on green | PRs
+- 2026-08-25T01:25Z | claude | re-checked Grok #606: head 492f491d still -5739 lines, full workspace bodies still not in the PR; noted main moved under the packaged restore artifact | this file
