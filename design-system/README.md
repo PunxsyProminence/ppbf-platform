@@ -111,9 +111,16 @@ help card cannot list an unbound key → `components/commandsOverlay.test.tsx`. 
 ## Asset rules (these prevented real failures)
 
 - **Plates are gated on the bytes.** `src/design/plateBinaries.test.ts` opens each JPEG
-  in `apps/web/public/plates/`: real EOI trailer, dimensions per spec, ≤400KB. Never
-  relay image binaries through chat/base64 sidecars — truncated files pass every check
-  short of reading the last two bytes.
+  in `apps/web/public/plates/`: SOI and a real EOI trailer, >8KB, ≤400KB, 4:4:4, one of
+  the declared geometries, orientation matching the filename. Never relay image binaries
+  through chat/base64 sidecars — truncated files pass every check short of reading the
+  last two bytes.
+- **A binary is delivered when a real `git add` of the file lands on a branch** — not by
+  a manifest, a link, a drive folder, or a zip. Producers push the bytes (Grok on its own
+  branch, or Jason drag-dropping onto it); Claude may land a binary when the owner directs
+  it, but **cannot fetch bytes out of SharePoint/OneDrive** at all, so a handoff written
+  that way cannot run. `apps/web/public/plates/README.md` has the contract and the record
+  of the four rounds that produced it.
 - **Fonts are self-hosted woff2 only** (offline kiosk); swapping the display voice is one
   token in `ppbf.css`. No CDN links.
 - **No audio files.** Sound is synthesized in `ppbf-sound.js`, a classic script (ES

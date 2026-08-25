@@ -30,6 +30,14 @@
 //     source_entity_type, source_entity_id) constraint) is untouched -- this
 //     migration adds a column, it does not loosen or drop one
 //
+// It then covers the half the migration alone cannot settle: what the
+// application WRITE path does with the column. The last describe drives the
+// real resolveShadowResearchRequirement against the real table to prove the
+// authorized subject is bound in the UPDATE itself -- including the legacy
+// metadata-only shape the backfill cannot reach -- because that is a question
+// about SQL semantics (`is not distinct from` against NULL, `->>` on an
+// absent jsonb key) rather than about TypeScript.
+//
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
 
@@ -43,6 +51,9 @@ import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
+
+import { closePool } from './db';
+import { resolveShadowResearchRequirement } from './shadowResearch';
 
 jest.setTimeout(180_000);
 
@@ -644,5 +655,262 @@ describe('research requirement subject runner readiness assertion', () => {
     } finally {
       await client.end();
     }
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// The resolve WRITE, against real Postgres
+// ---------------------------------------------------------------------------
+//
+// The migration above gave the table a column naming which child a row is
+// about. This block proves what the application then does with it on the
+// WRITE path, because that is the half no mocked test can settle: the owner
+// bound lives in the UPDATE's own WHERE, and whether it selects the right
+// rows is a question about SQL semantics -- `is not distinct from` against a
+// NULL, `->>` on a jsonb key that is absent, btrim on a padded value -- not
+// about TypeScript.
+//
+// The defect it closes: resolveShadowResearchRequirement's only athlete
+// predicate was the parent-caller athleteIds list, and the route set that
+// list for `role === 'parent'` and nobody else. For every other admitted role
+// the surviving WHERE was organization + id + status, and
+// research_requirement_id is a bigserial -- an enumerable write against any
+// child's intake-derived follow-up.
+//
+// These tests call the REAL exported function against the REAL table, so a
+// weakened predicate fails here even if every mock still agrees with itself.
+describe('resolveShadowResearchRequirement binds the authorized subject, against real Postgres', () => {
+  const RESOLVE_DB = 'ppbf_test_rrs_resolve';
+  const MINE = 'ath-rrs-mine';
+  const OTHER = 'ath-rrs-other';
+
+  let client: Client;
+  let previousConnectionString: string | undefined;
+  let previousDisableSsl: string | undefined;
+
+  async function seedRequirement(overrides: {
+    sourceEntityId: string;
+    subjectId: string | null;
+    metadata?: Record<string, unknown>;
+  }): Promise<number> {
+    const row = await client.query<{ research_requirement_id: number }>(
+      `insert into pilot.shadow_research_requirements
+         (organization_id, source_event_name, source_entity_type, source_entity_id, research_requirement, knowledge_gap, evidence_label, source_status, source_confidence_tier, source_verification_state, created_by_account_id, created_by_role, metadata, subject_id)
+       values ($1, 'SHADOW_INTAKE_CASE_REJECTED', 'intake_case', $2, 'Confirm the guardian disclosure', 'Reviewer note not corroborated', null, 'observed', 'LIMITED', 'unknown', $3, 'organization_admin', $4::jsonb, $5)
+       returning research_requirement_id`,
+      [ORG_ID, overrides.sourceEntityId, COACH_ID, JSON.stringify(overrides.metadata ?? {}), overrides.subjectId],
+    );
+    return row.rows[0].research_requirement_id;
+  }
+
+  async function statusOf(id: number): Promise<string> {
+    const row = await client.query<{ status: string }>(
+      'select status from pilot.shadow_research_requirements where research_requirement_id = $1',
+      [id],
+    );
+    return row.rows[0].status;
+  }
+
+  beforeAll(async () => {
+    client = await baseSchemaOnlyDatabase(RESOLVE_DB);
+    await client.query(migrationSql);
+    await insertAthlete(client, ORG_ID, MINE);
+    await insertAthlete(client, ORG_ID, OTHER);
+
+    // Point the application pool at this disposable local database. Both are
+    // restored in afterAll; the pool is lazy, so nothing connected before now.
+    previousConnectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING;
+    previousDisableSsl = process.env.PPBF_POSTGRES_DISABLE_SSL;
+    process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(RESOLVE_DB);
+    process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+  });
+
+  afterAll(async () => {
+    await closePool();
+    if (previousConnectionString === undefined) {
+      delete process.env.AZURE_POSTGRES_CONNECTION_STRING;
+    } else {
+      process.env.AZURE_POSTGRES_CONNECTION_STRING = previousConnectionString;
+    }
+    if (previousDisableSsl === undefined) {
+      delete process.env.PPBF_POSTGRES_DISABLE_SSL;
+    } else {
+      process.env.PPBF_POSTGRES_DISABLE_SSL = previousDisableSsl;
+    }
+    await client.end();
+  });
+
+  // THE ATTACK, in SQL. A coach holding nothing about OTHER enumerates the
+  // id. The route authorizes nothing, so the only owner it can honestly bind
+  // is... the one it authorized, which is not this row's. Zero rows.
+  test('a write bound to one child does not touch a row about another child', async () => {
+    const id = await seedRequirement({ sourceEntityId: 'case-attack', subjectId: OTHER });
+
+    const resolved = await resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: MINE,
+    });
+
+    expect(resolved).toBe(false);
+    expect(await statusOf(id)).toBe('open');
+  });
+
+  // The pre-fix behaviour, stated as the thing that must no longer be
+  // possible: with no owner bound at all, the row about OTHER was reachable.
+  // `is not distinct from` is what makes "names nobody" a value that has to
+  // match rather than a NULL that drops the predicate -- so binding null
+  // against a subject-bearing row must also miss.
+  test('binding "names no athlete" does not match a row that names one', async () => {
+    const id = await seedRequirement({ sourceEntityId: 'case-null-bind', subjectId: OTHER });
+
+    const resolved = await resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: null,
+    });
+
+    expect(resolved).toBe(false);
+    expect(await statusOf(id)).toBe('open');
+  });
+
+  // THE LEGACY ROW. subject_id NULL because the backfill above never reads
+  // metadata.athlete_id -- the child is named only in metadata. If the SQL
+  // resolution keyed on the column alone this row would answer "names
+  // nobody", and the safeguarding rows would be exactly the unprotected ones.
+  test('a legacy metadata-only row is bound by the athlete metadata names', async () => {
+    const id = await seedRequirement({
+      sourceEntityId: 'case-legacy',
+      subjectId: null,
+      metadata: { action: 'promote', notes: 'PROMOTED: safeguarding note on file', athlete_id: OTHER },
+    });
+
+    await expect(resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: null,
+    })).resolves.toBe(false);
+    expect(await statusOf(id)).toBe('open');
+
+    await expect(resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: OTHER,
+    })).resolves.toBe(true);
+    expect(await statusOf(id)).toBe('resolved');
+  });
+
+  // metadata.subject_id is the SHADOW Library claim-gap writer's shape, and
+  // it outranks metadata.athlete_id in the same order the route uses.
+  test('metadata.subject_id outranks metadata.athlete_id, as in the route', async () => {
+    const id = await seedRequirement({
+      sourceEntityId: 'case-claim-gap',
+      subjectId: null,
+      metadata: { subject_id: MINE, athlete_id: OTHER },
+    });
+
+    await expect(resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: OTHER,
+    })).resolves.toBe(false);
+
+    await expect(resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: MINE,
+    })).resolves.toBe(true);
+  });
+
+  // THE LEGITIMATE PATHS. A guardian closing their own child's requirement,
+  // and an in-organization role closing a row that is about no child at all.
+  test('the owner that was authorized resolves the row', async () => {
+    const id = await seedRequirement({ sourceEntityId: 'case-mine', subjectId: MINE });
+
+    const resolved = await resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: 'acct-rrs-parent',
+      resolvedByRole: 'parent',
+      athleteIds: [MINE],
+      expectedSubjectAthleteId: MINE,
+      metadata: { resolved_from: 'research_page' },
+    });
+
+    expect(resolved).toBe(true);
+    expect(await statusOf(id)).toBe('resolved');
+  });
+
+  test('an organization-wide row is resolvable when bound as naming no athlete', async () => {
+    const id = await seedRequirement({ sourceEntityId: 'case-org-wide', subjectId: null, metadata: {} });
+
+    const resolved = await resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: null,
+    });
+
+    expect(resolved).toBe(true);
+    expect(await statusOf(id)).toBe('resolved');
+  });
+
+  // Attribution: the actor fields are the server's, and caller metadata is
+  // merged UNDER them. Before, they were spread first and the caller's own
+  // metadata over the top, so any admitted role could name somebody else as
+  // having handled a child's follow-up.
+  test('caller metadata cannot forge the resolver on the stored row', async () => {
+    const id = await seedRequirement({ sourceEntityId: 'case-attribution', subjectId: MINE });
+
+    await resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: MINE,
+      metadata: {
+        resolved_by_account_id: 'acct-head-coach',
+        resolved_by_role: 'organization_admin',
+        resolved_from: 'research_page',
+      },
+    });
+
+    const row = await client.query<{ metadata: Record<string, unknown> }>(
+      'select metadata from pilot.shadow_research_requirements where research_requirement_id = $1',
+      [id],
+    );
+    expect(row.rows[0].metadata.resolved_by_account_id).toBe(COACH_ID);
+    expect(row.rows[0].metadata.resolved_by_role).toBe('coach');
+    expect(row.rows[0].metadata.resolved_from).toBe('research_page');
+  });
+
+  // Organization isolation is unchanged and still first.
+  test('an id from another organization is untouchable', async () => {
+    const id = await seedRequirement({ sourceEntityId: 'case-cross-org', subjectId: MINE });
+
+    const resolved = await resolveShadowResearchRequirement({
+      organizationId: OTHER_ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: COACH_ID,
+      resolvedByRole: 'coach',
+      expectedSubjectAthleteId: MINE,
+    });
+
+    expect(resolved).toBe(false);
+    expect(await statusOf(id)).toBe('open');
   });
 });
