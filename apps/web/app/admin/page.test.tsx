@@ -120,6 +120,88 @@ it('reports a refused track-assignments save instead of pretending it stuck', as
   await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/track-assignments', 'POST')).toHaveLength(2));
 });
 
+// Found by review on #618: every state change used to start its own
+// overlapping full-map POST, so an older request finishing last could write
+// its snapshot over a newer one AND clear the banner a newer failed save had
+// just earned. The lane serializes sends and lets only the newest one speak.
+it('a stale save cannot outrun a newer one or speak over its banner', async () => {
+  let releaseFirstPost: (response: Response) => void = () => undefined;
+  let postCount = 0;
+  const postBodies: string[] = [];
+
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/pilot/admin/track-assignments')) {
+      if ((init?.method ?? 'GET') === 'POST') {
+        postCount += 1;
+        postBodies.push(String(init?.body));
+        if (postCount === 1) {
+          // The hydration echo, held open so the clicks below land while a
+          // request is genuinely in flight.
+          return new Promise<Response>((resolve) => {
+            releaseFirstPost = resolve;
+          });
+        }
+        return jsonResponse({ error: 'Forbidden: role not allowed' }, false, 403);
+      }
+      return jsonResponse({ assignments: {} });
+    }
+    if (String(url).includes('/api/pilot/admin/capabilities')) {
+      return jsonResponse({ ok: true, capabilities: [] });
+    }
+    return jsonResponse({ ok: true });
+  });
+
+  await renderPage(fetchMock);
+  await waitFor(() => expect(postCount).toBe(1));
+
+  // Two clicks while the first POST is still out: both must wait, and only
+  // the NEWEST combined snapshot may be sent when the lane frees up.
+  fireEvent.click(await screen.findByRole('button', { name: /USA Boxing Track/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Collegiate Track/ }));
+  expect(postCount).toBe(1);
+
+  // The stale echo now succeeds -- its outcome is superseded, so it must not
+  // clear or set anything; the queued newest snapshot goes out and is refused.
+  releaseFirstPost(jsonResponse({ ok: true }));
+
+  await screen.findByText(/Forbidden: role not allowed\. This change is not saved and will be lost on reload/);
+  expect(postCount).toBe(2);
+  const finalBody = JSON.parse(postBodies[1]) as { assignments: Record<string, string[]> };
+  const finalTracks = Object.values(finalBody.assignments).flat();
+  expect(finalTracks).toContain('usa_boxing');
+  expect(finalTracks).toContain('collegiate');
+});
+
+it('a network error reports an unconfirmed save, never a definite loss', async () => {
+  // A thrown fetch has no response: the server may have committed the write
+  // before the connection died. The banner may only claim what is known.
+  let posted = 0;
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/pilot/admin/track-assignments')) {
+      if ((init?.method ?? 'GET') === 'POST') {
+        posted += 1;
+        if (posted > 1) {
+          throw new Error('Network request failed');
+        }
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ assignments: {} });
+    }
+    if (String(url).includes('/api/pilot/admin/capabilities')) {
+      return jsonResponse({ ok: true, capabilities: [] });
+    }
+    return jsonResponse({ ok: true });
+  });
+
+  await renderPage(fetchMock);
+  await waitFor(() => expect(posted).toBe(1));
+
+  fireEvent.click(await screen.findByRole('button', { name: /USA Boxing Track/ }));
+
+  await screen.findByText(/The save was not confirmed -- it may or may not have been stored/);
+  expect(screen.queryByText(/will be lost on reload/)).toBeNull();
+});
+
 // The track-assignments hydrate effect used to mark itself hydrated even when
 // the GET failed, which released the save effect to POST the in-memory seed
 // over the stored record -- the exact overwrite the capabilities effect

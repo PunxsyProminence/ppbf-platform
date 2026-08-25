@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RevenueFundingCenter from '@/components/RevenueFundingCenter';
@@ -412,6 +412,85 @@ function hydrateCapability(source: Partial<Capability>, index: number): Capabili
   };
 }
 
+/**
+ * One save lane per autosaved record.
+ *
+ * The three autosave effects below each POST the WHOLE record on every state
+ * change, and used to do so concurrently: two quick clicks started two
+ * overlapping requests, and whichever finished last wrote its snapshot last --
+ * so the older click could overwrite the newer one on the server, and a stale
+ * success could wipe the failure banner a newer save had just earned (found by
+ * review on #618; the same race sat in all three effects).
+ *
+ * The lane serializes: at most one POST in flight, and while one is out the
+ * NEWEST snapshot waits its turn. Intermediates are dropped, not queued behind
+ * each other -- the body is the whole record, so only the latest matters. A
+ * completion that is not the latest send says nothing to the banner; the
+ * banner only ever reports the outcome of the newest write.
+ *
+ * Two failure wordings on purpose. An HTTP refusal is definite: the server
+ * answered and said no, so "not saved, lost on reload" is the truth. A thrown
+ * fetch is NOT definite -- the connection died with no response, and the
+ * server may have committed the write before it did -- so that branch claims
+ * only what is known: the save was not confirmed.
+ */
+function useAutosaveLane<T>(
+  hydrated: boolean,
+  value: T,
+  send: (snapshot: T) => Promise<Response>,
+  refusalNoun: string,
+  setError: (message: string) => void,
+) {
+  const lane = useRef<{ inFlight: boolean; queued: { snapshot: T } | null }>({
+    inFlight: false,
+    queued: null,
+  });
+  // Read through refs inside the effect so the dependency list is honestly
+  // [hydrated, value]: the send closure is rebuilt every render, and naming it
+  // as a dependency would refire the effect on renders where nothing changed.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const setErrorRef = useRef(setError);
+  setErrorRef.current = setError;
+  const refusalNounRef = useRef(refusalNoun);
+  refusalNounRef.current = refusalNoun;
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+    const state = lane.current;
+    if (state.inFlight) {
+      state.queued = { snapshot: value };
+      return;
+    }
+
+    const run = async (snapshot: T): Promise<void> => {
+      state.inFlight = true;
+      let message: string | null = null;
+      try {
+        const response = await sendRef.current(snapshot);
+        if (!response.ok) {
+          message = `${await readResponseError(response, refusalNounRef.current)}. This change is not saved and will be lost on reload.`;
+        }
+      } catch (error) {
+        message = `${toErrorMessage(error, refusalNounRef.current)}. The save was not confirmed -- it may or may not have been stored. Reload to see what the server kept.`;
+      }
+      state.inFlight = false;
+      if (state.queued !== null) {
+        // A newer snapshot superseded this one while it was out. Its outcome
+        // is stale -- say nothing, send the newest.
+        const next = state.queued.snapshot;
+        state.queued = null;
+        return run(next);
+      }
+      setErrorRef.current(message ?? '');
+    };
+
+    void run(value);
+  }, [hydrated, value]);
+}
+
 async function readResponseError(response: Response, fallback: string): Promise<string> {
   const payload = (await response.json().catch(() => null)) as { error?: string } | null;
   return payload?.error || fallback;
@@ -561,39 +640,21 @@ export default function AdminCapabilitiesPage() {
   }, []);
 
   // The panel's own copy promises "it saves as you click", so a save that
-  // fails has to say so: this was a fire-and-forget `void fetch(...)`, and a
-  // refused or dropped POST left the admin looking at an assignment that
-  // existed only in their browser tab. Same contract as the capability save
-  // effect below -- report the failure, clear it on the next success.
-  useEffect(() => {
-    if (!trackAssignmentsHydrated) {
-      return;
-    }
-
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/admin/track-assignments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ assignments: trackAssignments }),
-        });
-
-        if (!response.ok) {
-          setTrackAssignmentsStoreError(
-            `${await readResponseError(response, 'Track assignments could not be saved')}. This change is not saved and will be lost on reload.`,
-          );
-          return;
-        }
-
-        setTrackAssignmentsStoreError('');
-      } catch (error) {
-        setTrackAssignmentsStoreError(
-          `${toErrorMessage(error, 'Track assignments could not be saved')}. This change is not saved and will be lost on reload.`,
-        );
-      }
-    })();
-  }, [trackAssignments, trackAssignmentsHydrated]);
+  // fails has to say so, and a save that lands out of order must not overwrite
+  // a newer one or speak over its banner -- see useAutosaveLane.
+  useAutosaveLane(
+    trackAssignmentsHydrated,
+    trackAssignments,
+    (snapshot) =>
+      fetch(`${apiBase()}/api/pilot/admin/track-assignments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ assignments: snapshot }),
+      }),
+    'Track assignments could not be saved',
+    setTrackAssignmentsStoreError,
+  );
 
   // The hydrated flags are what release the save effects below, so they stay
   // false whenever a load fails: saving the on-screen seed over a record that
@@ -633,35 +694,19 @@ export default function AdminCapabilitiesPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (!capabilitiesHydrated) {
-      return;
-    }
-
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/admin/capabilities`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ capabilities }),
-        });
-
-        if (!response.ok) {
-          setCapabilityStoreError(
-            `${await readResponseError(response, 'Capability registry could not be saved')}. This change is not saved and will be lost on reload.`,
-          );
-          return;
-        }
-
-        setCapabilityStoreError('');
-      } catch (error) {
-        setCapabilityStoreError(
-          `${toErrorMessage(error, 'Capability registry could not be saved')}. This change is not saved and will be lost on reload.`,
-        );
-      }
-    })();
-  }, [capabilities, capabilitiesHydrated]);
+  useAutosaveLane(
+    capabilitiesHydrated,
+    capabilities,
+    (snapshot) =>
+      fetch(`${apiBase()}/api/pilot/admin/capabilities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ capabilities: snapshot }),
+      }),
+    'Capability registry could not be saved',
+    setCapabilityStoreError,
+  );
 
   useEffect(() => {
     void (async () => {
@@ -689,35 +734,19 @@ export default function AdminCapabilitiesPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (!gymCapabilityHydrated) {
-      return;
-    }
-
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/admin/gym-capabilities`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ capabilityAccess: gymCapabilityAccess }),
-        });
-
-        if (!response.ok) {
-          setGymCapabilityStoreError(
-            `${await readResponseError(response, 'Gym capability access could not be saved')}. This change is not saved and will be lost on reload.`,
-          );
-          return;
-        }
-
-        setGymCapabilityStoreError('');
-      } catch (error) {
-        setGymCapabilityStoreError(
-          `${toErrorMessage(error, 'Gym capability access could not be saved')}. This change is not saved and will be lost on reload.`,
-        );
-      }
-    })();
-  }, [gymCapabilityAccess, gymCapabilityHydrated]);
+  useAutosaveLane(
+    gymCapabilityHydrated,
+    gymCapabilityAccess,
+    (snapshot) =>
+      fetch(`${apiBase()}/api/pilot/admin/gym-capabilities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ capabilityAccess: snapshot }),
+      }),
+    'Gym capability access could not be saved',
+    setGymCapabilityStoreError,
+  );
 
   const categoryOptions = useMemo(
     () => ['ALL', ...new Set([...CATEGORY_OPTIONS, ...capabilities.map((item) => item.group)])],
