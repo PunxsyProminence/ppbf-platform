@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -22,6 +23,17 @@ export const runtime = 'nodejs';
 // own gate decides what a coach may see of it (training-holds/route.ts is
 // the model), and this general-purpose reader must not become the back door
 // around any of them.
+//
+// The type allow-list is necessary but NOT sufficient: several allow-listed
+// operational types (goal, session, intervention_*, recognition, ...) still
+// carry an athlete identity in details.athlete_id, so a bare type gate would
+// let a coach enumerate WHICH unrelated children had that activity -- the
+// platform's coach boundary is relationship-scoped, and this general reader
+// must honour it. So for a coach, rows that name an athlete are additionally
+// constrained to the athletes that coach can actually reach
+// (accessibleAthleteIds, the same central relationship gate the intervention
+// reads use); org-wide rows that name no athlete are kept. Org admins keep
+// organization-wide reach.
 const COACH_ALLOWED_ENTITY_TYPES = new Set([
   'announcement',
   'athlete_milestone',
@@ -49,25 +61,46 @@ const COACH_ALLOWED_ENTITY_TYPES = new Set([
   'wrestling_league_roster_entry',
 ]);
 
+/**
+ * A present-but-non-string filter is a bad request, not a server fault:
+ * body.x?.trim() throws a TypeError on a number/object and jsonError would
+ * report that as an opaque 500. Validate to a 400 (ValidationError) instead,
+ * and treat empty/whitespace as "no filter".
+ */
+function optionalFilter(value: unknown, field: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') {
+    throw new ValidationError(`Unsupported ${field}: must be a string.`);
+  }
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'coach']);
 
-    const body = (await request.json()) as {
-      entity_type?: string;
-      entity_id?: string;
-      limit?: number;
-    };
+    const body = (await request.json()) as Record<string, unknown>;
+    const entityType = optionalFilter(body.entity_type, 'entity_type');
+    const entityId = optionalFilter(body.entity_id, 'entity_id');
+    const isCoach = principal.role === 'coach';
 
-    const entityType = body.entity_type?.trim() || null;
-    if (principal.role === 'coach' && entityType && !COACH_ALLOWED_ENTITY_TYPES.has(entityType)) {
+    if (isCoach && entityType && !COACH_ALLOWED_ENTITY_TYPES.has(entityType)) {
       throw new Error('Forbidden: role not allowed to read this entity type');
     }
 
     const limit = Math.max(1, Math.min(100, Number(body.limit ?? 20)));
 
-    const rows = await query(
+    // A coach's rows are athlete-scoped below the type gate, and that filter
+    // runs in application code, so fetch a wider window than the requested
+    // page and slice back down -- otherwise a coach with a handful of athletes
+    // could see almost nothing even when their own athletes have plenty of
+    // recent activity. An org admin needs no post-filter and takes exactly the
+    // page they asked for.
+    const fetchLimit = isCoach ? Math.min(500, Math.max(limit * 5, 100)) : limit;
+
+    const rows = await query<{ entity_type: string; details: Record<string, unknown> | null }>(
       `select *
        from pilot.audit_events
        where organization_id = $1
@@ -79,14 +112,33 @@ export async function POST(request: NextRequest) {
       [
         principal.organizationId,
         entityType,
-        body.entity_id?.trim() || null,
+        entityId,
         [...COACH_ALLOWED_ENTITY_TYPES],
-        principal.role === 'coach',
-        limit,
+        isCoach,
+        fetchLimit,
       ],
     );
 
-    return NextResponse.json({ ok: true, events: rows });
+    if (!isCoach) {
+      return NextResponse.json({ ok: true, events: rows });
+    }
+
+    // Athlete-scope: a row that names an athlete in details.athlete_id is
+    // visible only if the coach can reach that athlete; a row that names no
+    // athlete is org-wide operational data and is kept. accessibleAthleteIds
+    // is the same central relationship gate assertActorCanAccessAthlete uses.
+    const namedAthleteIds = rows
+      .map((row) => row.details?.athlete_id)
+      .filter((id): id is string => typeof id === 'string');
+    const reachable = await accessibleAthleteIds(principal, namedAthleteIds);
+    const scoped = rows
+      .filter((row) => {
+        const athleteId = row.details?.athlete_id;
+        return typeof athleteId !== 'string' || reachable.has(athleteId);
+      })
+      .slice(0, limit);
+
+    return NextResponse.json({ ok: true, events: scoped });
   } catch (error) {
     return jsonError(error);
   }
