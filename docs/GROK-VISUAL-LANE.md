@@ -1,7 +1,8 @@
 # Grok visual lane
 
 **Agreed 20 Aug 2026. Substantially amended 22 Aug 2026 by owner decision.
-Amended again 24 Aug 2026 by owner decision on plate binary delivery.**
+Amended 24 Aug 2026 by owner decision on plate binary delivery, and again
+25 Aug 2026 by owner ruling on the same subject.**
 Originally authored by Grok, amended once by Claude on a point Grok could not
 check from outside the sandbox. Live contract — if the repo and this document
 disagree, the repo wins and this document is wrong.
@@ -24,10 +25,33 @@ binaries** directly onto its own feature branch under
 functional/security reviewer of that PR. ChatGPT remains the independent
 auditor and storage lane. Jason decides.
 
+**What changed on 25 Aug, and why.** The 24 Aug amendment banned Claude from
+couriering a binary. Owner ruling, verbatim: *“the document that gets it live,
+accept the binary, is correct.”* **The blanket courier prohibition is lifted.**
+Where Jason directs it, Claude may accept a plate binary and land it on a
+branch like any other file.
+
+That ruling settles a policy question that was never the real obstacle, so this
+amendment also writes down the obstacle. **Claude cannot retrieve bytes out of
+SharePoint or OneDrive in this environment.** The Microsoft 365 connector
+*renders* an image for viewing; it does not return file contents. There is no
+download action, no unzip capability, and `downloadUrl` comes back null. A zip
+is completely inaccessible. So the sentence “Claude downloads the package from
+OneDrive and commits it” is not a rule to relax or tighten — it is an
+instruction that cannot execute, and every handoff written around it has cost a
+round. That is a capability fact, checked rather than preferred, and it is now
+recorded in the contract instead of being rediscovered each time.
+
+**What a delivery is, since four rounds have turned on it.** A binary enters
+this repository when a real `git add` of the actual file lands on a feature
+branch. A README, a manifest, a folder path, a link, a zip in a drive, a base64
+payload, or a `.jpg`-named placeholder is **not** a delivery, however complete
+the covering note reads.
+
 Everything below concerning **plate binaries** — 4:4:4, the byte gate, the
-composition laws — is unchanged and still binds. What changed is who places
-the real JPEG bytes into the repository and who is no longer asked to ferry
-them.
+composition laws — is unchanged and still binds. What changed across 24 and 25
+Aug is who is expected to place the real JPEG bytes into the repository, and
+which of the imagined routes actually exists.
 
 ## The lanes
 
@@ -35,7 +59,7 @@ them.
 |---|---|---|
 | **ChatGPT** | SharePoint, OneDrive, Google Drive taxonomy; independent audit of diffs, CI, scope | the repository (read-only), image generation |
 | **Grok** | visual design **and** visual implementation: image files, JSX presentation structure, design-system usage, CSS, responsive layout, typography, visual tests; **real JPEG plate binaries on Grok feature branches** | functional/security code (see the two lists below), drive reorganisation |
-| **Claude** | functional and security engineering, migrations, release engineering; **independent review of Grok's visual PRs** (function/security boundaries only) | drive taxonomy, image generation, redesigning approved visual work, **retrieving/relaying/re-encoding/committing plate binaries on Grok's behalf** |
+| **Claude** | functional and security engineering, migrations, release engineering; **independent review of Grok's visual PRs** (function/security boundaries only); landing a binary the owner directs it to land, from bytes it can actually read | drive taxonomy, image generation, redesigning approved visual work, **re-encoding or reconstructing a plate**; and it *cannot* pull bytes out of SharePoint/OneDrive at all — a capability limit, not a rule |
 
 Nobody pushes to `main`. Everything lands by PR with green CI, including
 Claude's own work and Grok's. This is not a hierarchy — it is the rule in
@@ -80,8 +104,17 @@ model.
 stands in. Real UI composites on top in code. Plates are binaries. Under the
 2026-08-24 owner decision, **Grok uploads the real JPEG directly into its own
 feature branch** at `apps/web/public/plates/`, makes only the required approved
-visual/CSS/test changes, and opens the PR. Claude does not retrieve, relay,
-reconstruct, re-encode, or commit those binaries.
+visual/CSS/test changes, and opens the PR. That is still the intended path and
+the one this lane owns.
+
+If Grok's own tooling cannot push a binary on a given day — it has reported
+`HADES_NO_CAPACITY` for binaries before — the fallback is **Jason drag-drops
+the JPEGs onto the branch**, not a handoff asking Claude to fetch them. Claude
+may land bytes it can read, and since 2026-08-25 the owner may direct it to;
+what it cannot do, at all, is pull those bytes out of SharePoint or OneDrive.
+It also does not re-encode a plate (no tooling — see §*The amendment: 4:4:4*)
+and does not reconstruct one from a rendering, which would produce a new
+picture rather than the approved file.
 
 Grok re-reads these two files before every plate order, and reads the current
 page, components and tests before every visual design, rather than working
@@ -243,8 +276,12 @@ owner approval and independent review**.
   file or one named set, and a Mode B code PR is one screen or one coherent
   small set. Mode A is deliberately unconstrained
 - weaken a test to make a redesign fit
-- ask Claude to retrieve, relay, reconstruct, re-encode, or commit plate
-  binaries on Grok's behalf
+- ask Claude to **retrieve** plate binaries from SharePoint or OneDrive — that
+  is not a rule Jason can waive, it is a capability this environment does not
+  have, and a handoff written that way fails by construction (2026-08-25)
+- ask Claude to reconstruct or re-encode a plate. Landing a binary is now
+  allowed where Jason directs it; inventing one from a rendering, or silently
+  fixing a subsampled file on the way in, is not and never was
 
 **On review timing.** The old contract said "Jason reviews on the live URL
 only" and forbade mid-loop mock reviews. That was right when Grok could not
@@ -305,7 +342,7 @@ Grok reads current source: page, components, tests
   → Jason reviews on the live URL → separate release decision
 ```
 
-**Plate binaries — 2026-08-24 owner decision (replaces the retired courier route):**
+**Plate binaries — 2026-08-24 owner decision, still the intended path:**
 
 ```
 Jason approves plate/design (exact ordered filename + room + size/variant)
@@ -322,16 +359,32 @@ Jason approves plate/design (exact ordered filename + room + size/variant)
   → separate release decision
 ```
 
-**Retired route (do not use):**
+**The route that does not work (2026-08-25) — not retired by preference, absent by capability:**
 
 ```
-Grok → OneDrive Grok-Plates-Inbox → Claude picks up binary → Claude commits/PRs it
+Grok → OneDrive → Claude retrieves the bytes → Claude commits/PRs them
 ```
 
-Claude is **not** the binary courier. Do not ask Claude to retrieve the JPEG
-from OneDrive, relay the bytes, reconstruct it, re-encode it, or commit it on
-Grok's behalf. If Grok can create the visual binary, Grok owns putting that
-exact binary in its branch.
+The 24 Aug text called this "retired" and forbade it. The 25 Aug ruling lifts
+the prohibition — Claude may accept and land a binary when Jason says so — and
+that changes nothing about this arrow, because the middle step was never a
+matter of permission. **There is no way to get file contents out of
+SharePoint/OneDrive from here.** The connector renders an image; it does not
+return bytes. `downloadUrl` is null. A zip cannot be opened at all. An
+instruction to "download from OneDrive and commit" is therefore not a slow or
+discouraged route — it is a scheduled failed round, and it has produced four of
+them.
+
+If Grok can create the visual binary, Grok owns putting that exact binary in
+its branch. When Grok's tooling cannot, the working fallback is:
+
+```
+Jason drag-drops the real JPEGs onto the feature branch (GitHub web UI or local git add)
+  → Claude and ChatGPT review and audit as usual
+  → byte gate green on the exact head → merge
+```
+
+That route has never failed. It costs about two minutes.
 
 ### Optional archive (not a shipping dependency)
 
@@ -342,8 +395,11 @@ OneDrive (admin@punxsyprominence.org)
 
 The folder may remain available for provenance, archive, or drop purposes.
 It is **no longer a mandatory shipping dependency** and no Claude polling step
-is required before a Grok visual PR. Drive taxonomy/reconciliation remains
-ChatGPT's lane. Do not reorganise the drive from this lane.
+is required before a Grok visual PR — nor would one work: Claude can see that a
+file is there and still cannot read its bytes. Anything dropped in a drive is
+an archive copy of a delivery, never the delivery itself. Drive
+taxonomy/reconciliation remains ChatGPT's lane. Do not reorganise the drive
+from this lane.
 
 ### Claude's gate refuses (still)
 
@@ -364,9 +420,31 @@ what an image model returns when an aspect instruction gets dropped.
 
 **Never base64. Never a data URI. Never bytes pasted into a chat channel.**
 If Grok cannot hand over a real file onto its own branch, Grok stops and says
-so, and a different route is used. Two attempts have already failed this way:
-11–41 byte stubs from a relayed sidecar, and one file with a valid header, no
-end-of-image marker, and the wrong dimensions.
+so, and a route that exists is used — Jason drag-dropping the JPEGs onto the
+branch, in practice.
+
+The record, because these requirements read as fussy until you know what each
+one caught:
+
+- **Three chat-channel relays of a base64 sidecar** arrived as **11-, 24- and
+  41-byte** files under the correct plate names. A stub carries a filename
+  perfectly; only the size floor sees it.
+- **One relay looked plausible at 2.3 KB**: a valid JPEG start-of-image marker,
+  **no end-of-image trailer**, and the wrong dimensions. Every check short of
+  reading the last two bytes said it was fine, which is why the gate opens the
+  bytes.
+- **PR #643** (`grok/plates-full-ship`, 2026-08-25) contained **no binaries at
+  all** — one Markdown manifest naming twelve JPEGs held in OneDrive, plus
+  `_smoke_binary_test.jpg`, ten bytes reading `REPLACE_ME`. Its manifest is
+  accurate and its filenames are right; it is simply not a delivery, and its
+  "land command" asks Claude to download a package this sandbox cannot reach.
+  Of the two OneDrive locations it names, the folder
+  `02_READY_FOR_CLAUDE/REPO-PLATES-SHIP` is empty (0 bytes) and the package
+  beside it is a zip — so even a person following the instructions by hand
+  finds nothing at the named path.
+
+The through-line is one thing: **a delivery is bytes on a branch.** Every
+failure above was something that resembled a delivery and was not.
 
 Variant selection must be **deterministic** — derived from the route — never
 random. A screen that changes appearance between loads breaks screenshot

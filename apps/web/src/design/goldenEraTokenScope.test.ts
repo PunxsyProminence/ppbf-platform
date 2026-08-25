@@ -62,6 +62,13 @@ function scopeRung(body: string, rung: string): string | null {
 describe('golden-era Bell token scope — static contract', () => {
   test('the bronze ramp is declared on the .ge-bell class scope, not on :root', () => {
     expect(bellScopeBody(css)).not.toBeNull();
+    /* `?? []` turns "the regex found no :root block" into "there is nothing to
+       check", and a for-loop over nothing asserts nothing -- so this half of the
+       test reports that no :root carries the bronze in exactly the same voice
+       whether that is true or whether the scan simply broke. Seven :root blocks
+       resolve today; the floor is the honest claim, which is that at least one
+       was read and the loop below therefore ran. */
+    expect((css.match(/:root\s*\{[^}]*\}/g) ?? []).length).toBeGreaterThan(0);
     const rootBlocks = css.match(/:root\s*\{[^}]*\}/g) ?? [];
     for (const block of rootBlocks) {
       // A :root block may DEFINE the legacy ramp; it may not carry the golden

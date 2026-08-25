@@ -854,9 +854,24 @@ body.ppbf {
 }
 .btn--ghost:hover { border-color: var(--brass-400); color: var(--bone-100); background-color: rgba(0,0,0,.14); }
 
+/* THE MIDDLE STOP WAS THE RESERVATION, SPELLED OUT. It read #A81E22, so no
+   scope could override it and no guard that follows tokens could see it. It
+   goes through --stamp-red now, which every :root in these sheets defines as
+   #A81E22, so NOTHING MOVES ON SCREEN -- the literal became reachable, it did
+   not become a different colour.
+
+   WHAT THIS DOES NOT DECIDE. Whether an ordinary destructive button may wear
+   the reservation AT ALL is an owner question, and it is open in two places
+   at once: current/ppbf-golden-era.css lists "ordinary destructive buttons"
+   among the uses the red is never for, while
+   apps/web/src/design/safeguardingRedReservation.test.ts records the same
+   question as unadjudicated -- "a future one needs an allow-list entry with a
+   reason, not a ruling from a test". This change takes no position on it. It
+   makes the answer, whichever way the owner goes, one token line instead of a
+   literal hunt. */
 .btn--danger {
   color: var(--paper);
-  background-image: linear-gradient(180deg, #D2453F 0%, #A81E22 55%, #6E1214 100%);
+  background-image: linear-gradient(180deg, #D2453F 0%, var(--stamp-red) 55%, #6E1214 100%);
   text-shadow: 0 1px 0 rgba(0,0,0,.45);
 }
 
@@ -1101,11 +1116,18 @@ body.ppbf.on-canvas {
    percentage with no defined "too high" is a neutral gauge: ticks + needle,
    no arc div at all. Adding the red band decoratively is exactly the
    violation Law 2 exists to prevent. */
+/* The band's colour was spelled out as rgba(168,30,34,.85) -- the reserved
+   red's own channels, which no token and no scope can reach. CSS cannot put
+   an alpha on a hex token, so it goes through color-mix against --stamp-red,
+   the mechanism .badge already uses in this sheet: the same 85% of the same
+   colour, now on the token channel. Law 2 above is untouched and still
+   governs WHEN this band may appear at all. */
 .gauge-arc {
   position: absolute; inset: 5px 5px -68px; border-radius: 50%;
   background-image: conic-gradient(from -90deg,
     transparent 0deg, transparent var(--danger-from, 60deg),
-    rgba(168,30,34,.85) var(--danger-from, 60deg), rgba(168,30,34,.85) 90deg,
+    color-mix(in srgb, var(--stamp-red) 85%, transparent) var(--danger-from, 60deg),
+    color-mix(in srgb, var(--stamp-red) 85%, transparent) 90deg,
     transparent 90deg);
   -webkit-mask-image: radial-gradient(circle at 50% 100%, transparent 58%, #000 60%, #000 78%, transparent 80%);
   mask-image: radial-gradient(circle at 50% 100%, transparent 58%, #000 60%, #000 78%, transparent 80%);
@@ -1892,9 +1914,28 @@ body.ppbf.on-canvas {
     var(--grain-fine), linear-gradient(178deg, #F8F5E6, #E9E3CD);
   background-blend-mode: normal, normal, overlay, normal;
 }
-.pap--ruled {                      /* legal pad ruling + red margin */
+/* THE MARGIN RULE IS NOT ALLOWED TO BE THE SAFEGUARDING RED.
+   It was rgba(168,30,34,.34) -- the channels of #A81E22, which the owner
+   reserved on 2026-08-19 for MEDICALLY_NOT_ALLOWED: the top of the safety
+   ladder, a child who may not participate. A decorative margin line on a
+   notepad is the exact opposite of that. It is chrome, it is on every ruled
+   sheet in the app, and it teaches a coach's eye that the gate's red is
+   furniture -- which is the training effect the reservation exists to stop.
+
+   Converting it to var(--locked) would have kept the colour and only hidden
+   it from the guards, so the LINE CHANGED COLOUR instead. It now takes the
+   rule ink this sheet already uses for its non-semantic rules -- the same
+   rgba(70,110,150,...) that draws this pad's own horizontal ruling and
+   .pap--graph's grid -- at the .34 it already carried, so the rule's weight
+   and position are unchanged and only its hue moves off the reservation. The
+   precedent is coach/sports-medicine/page.tsx: reuse an ink the sheet
+   already has, do not invent one.
+
+   NOT VERIFIED RENDERED. No lane in this project can load a deployed page;
+   this is a reading of the cascade, not a look at the pad. */
+.pap--ruled {                      /* legal pad ruling + margin rule */
   background-image:
-    linear-gradient(90deg, transparent 0 33px, rgba(168,30,34,.34) 33px 34px, transparent 34px),
+    linear-gradient(90deg, transparent 0 33px, rgba(70,110,150,.34) 33px 34px, transparent 34px),
     repeating-linear-gradient(180deg, transparent 0 20px, rgba(70,110,150,.26) 20px 21px),
     var(--grain-fine), linear-gradient(178deg, #F8F0DC, #E7DBBD);
   background-blend-mode: normal, normal, overlay, normal;

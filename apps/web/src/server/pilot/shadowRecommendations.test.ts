@@ -288,6 +288,11 @@ describe('decideOnRecommendation', () => {
 
     await decideOnRecommendation({
       organizationId: 'org-1',
+      // Fixture repair, not a change of intent: decideOnRecommendation now
+      // requires the owner its caller authorized, and binds it into the
+      // UPDATE. 'athlete-1' is recommendationRow's own athlete_id, so this
+      // call still describes the same legitimate decision it always did.
+      athleteId: 'athlete-1',
       recommendationId: 'rec-1',
       decision: 'accepted',
       decidedByAccountId: 'coach-1',
@@ -298,12 +303,36 @@ describe('decideOnRecommendation', () => {
     expect(String(sql)).toContain("status = 'provisional'");
   });
 
+  test('binds the caller-authorized athlete into the WHERE, so the row written is the row authorized', async () => {
+    // The route above this resolves the recommendation's stored owner and
+    // authorizes it. That is only load-bearing if the owner then reaches the
+    // statement: without `athlete_id` in the predicate, the UPDATE matches on
+    // (organization_id, recommendation_id) alone and the athlete that was
+    // checked and the row that was written are free to be different children.
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow({ status: 'accepted' })] });
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+    await decideOnRecommendation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      recommendationId: 'rec-1',
+      decision: 'accepted',
+      decidedByAccountId: 'coach-1',
+      decidedByRole: 'coach',
+    });
+
+    const [sql, params] = clientQuery.mock.calls[0];
+    expect(String(sql)).toMatch(/where[\s\S]*athlete_id = \$5/);
+    expect(params).toContain('athlete-1');
+  });
+
   test('returns null instead of throwing when the recommendation is no longer provisional', async () => {
     const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
     const result = await decideOnRecommendation({
       organizationId: 'org-1',
+      athleteId: 'athlete-1',
       recommendationId: 'rec-1',
       decision: 'accepted',
       decidedByAccountId: 'coach-1',

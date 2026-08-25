@@ -476,12 +476,40 @@ export async function getResearchLibrary(
   return query(sql, params);
 }
 
+/**
+ * Publications for an organization, optionally narrowed to a set of athletes.
+ *
+ * `athleteIds` is the relationship scope, and it belongs HERE rather than in a
+ * caller's post-query filter: a row for a child the caller cannot reach must
+ * never be fetched into the process at all. A publication carries a named
+ * minor's video_session_id together with its status and
+ * compliance_check_status -- where that footage stands in the consent and
+ * compliance workflow -- so the caller-side alternative would have the
+ * database hand over exactly the material the gate exists to withhold and then
+ * trust every future caller to drop it.
+ *
+ *   undefined  organization-wide. The admin compliance console reads it this
+ *              way on purpose: for an org admin
+ *              assertActorCanAccessAthlete IS
+ *              assertAthleteBelongsToOrganization, so the organization filter
+ *              already is that role's per-athlete gate, and the console must
+ *              reach a departed coach's drafts (owner decision, 2026-08-14).
+ *
+ *   []         a real scope that matches nothing. A coach whose last coverage
+ *              grant lapsed reaches nobody, and that has to read as "nothing",
+ *              never as "unfiltered".
+ *
+ * Callers derive the set from the codebase's own reachability contract
+ * (athleteIdsForCoach / accessibleAthleteIds in access.ts) so coverage expiry
+ * and revocation are honoured live, per request, from one definition.
+ */
 export async function getOrganizationPublications(
   organizationId: string,
   filters?: {
     status?: string;
     publicationType?: string;
     limit?: number;
+    athleteIds?: readonly string[];
   },
 ): Promise<VideoPublication[]> {
   let sql = `
@@ -501,6 +529,16 @@ export async function getOrganizationPublications(
   if (filters?.publicationType) {
     sql += ` and publication_type = $${params.length + 1}`;
     params.push(filters.publicationType);
+  }
+
+  // Tested for `undefined`, never for truthiness or length -- unlike the two
+  // filters above, where an absent value legitimately means "no filter". An
+  // empty reachable set is a scope, and `[]` is falsy: a truthiness check here
+  // would widen the read to the whole organization at the exact moment a
+  // coach's access ended.
+  if (filters?.athleteIds !== undefined) {
+    sql += ` and athlete_id = any($${params.length + 1}::text[])`;
+    params.push([...filters.athleteIds]);
   }
 
   sql += ` order by created_at desc limit $${params.length + 1}`;

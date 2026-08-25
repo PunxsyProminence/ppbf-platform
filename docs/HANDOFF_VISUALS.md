@@ -205,6 +205,15 @@ Two rules follow, and both have already bitten this codebase:
    the drive folder is still blocked. Move it, or say it is blocked — do not
    approximate it in code.
 
+   The drive → repo move is done **by a person**, and that word is load-bearing
+   rather than ceremonial: no AI lane here can read file contents out of
+   SharePoint or OneDrive. The Microsoft 365 connector renders an image for
+   viewing, `downloadUrl` comes back null, and a zip cannot be opened at all.
+   So "the assets are in the folder, an agent will land them" is not a plan —
+   it is how four rounds of plate delivery failed. Committing the file is still
+   the release decision, and someone with the bytes on their machine still has
+   to make it. `apps/web/public/plates/README.md` carries the full contract.
+
 If the drive folder and `ppbf.css` disagree about a colour, a radius, or a type
 scale, **`ppbf.css` is right by definition** and the drive copy is stale. Fix
 the drive copy; do not "reconcile" them by editing the repo to match a study.
