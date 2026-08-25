@@ -1670,11 +1670,17 @@ function PeopleConsoleContent() {
               disabled={busy || !canSubmitAthlete}
               className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
+              {/* "& Get Code" outlived the codes. Activation codes were
+                  replaced by the shared starting PIN (see the success panel:
+                  "Unlike the activation code this replaced, nothing here is
+                  secret or one-shot"), so a button promising a Code promised
+                  a minted secret this form no longer produces. What the admin
+                  gets is the sign-in ID and the starting PIN. Say that. */}
               {busy
                 ? 'Creating...'
                 : athleteMode === 'new'
-                  ? 'Add Athlete & Get Code'
-                  : 'Create Sign-In & Get Code'}
+                  ? 'Add Athlete & Get Starting PIN'
+                  : 'Create Sign-In & Get Starting PIN'}
             </button>
           </form>
         )}
