@@ -539,19 +539,30 @@ jobs:
       # runs the declared probe set against the environment that was just
       # deployed and writes a ledger a gatekeeper can read.
       #
-      # continue-on-error, DELIBERATELY, and this is the part to revisit:
-      # two probes are expected to FAIL until reference data is seeded (the
-      # drill library and disciplines are empty on both environments today), and
-      # a brand-new check must not turn a successful deploy red for a condition
-      # already known and already tracked. So it reports rather than gates.
-      # Once the ledger is clean, deleting this one line makes it a gate -- that
-      # is the whole change, and it should be made rather than left forever.
+      # This GATES. It did not until run 32770638337 (2026-08-24, c7dee86d,
+      # enable_shadow_gate=true), the first run against the migrated and seeded
+      # staging database: tally PASS=72, sessions minted 3 / revoked 3, and zero
+      # failed probes -- including the three that were the entire reason it did
+      # not gate, PR-238x/drill-library-seeded, PR-238ac/disciplines-seeded and
+      # PR-238aa/library-sources, all ok.
+      #
+      # The exemption this step used to carry was narrow and is now spent: two
+      # probes were expected to FAIL until reference data was seeded, and a
+      # brand-new check must not turn a successful deploy red for a condition
+      # already known and already tracked. The reference data is seeded, so the
+      # continue-on-error line that exemption bought was deleted. That was the
+      # whole change the old note asked for, and this is it being made.
+      #
+      # The ledger also prints items that still need a human-authored
+      # acceptance probe (16 on that run). Those are PROSE -- declared future
+      # work the ledger reports about itself -- NOT probe failures. They do not
+      # move the exit status and they must not be read as a red gate; only a
+      # probe that FAILED or errored turns this step red.
       #
       # It never mints a session against production: the engine refuses that
       # without an explicit flag, which is not passed here and should not be.
       - name: Runtime Verification Ledger
         if: inputs.enable_shadow_gate
-        continue-on-error: true
         env:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
@@ -583,8 +594,10 @@ jobs:
             echo '```'
             echo ''
             echo "Probe exit status: \`$status\` (non-zero means at least one probe FAILED or errored)."
-            echo 'This step does not gate the deploy. A green ledger does not clear'
-            echo 'RUNTIME_VERIFIED either -- see the outstanding-probe list the ledger prints.'
+            echo 'A non-zero status fails this step and the deploy: since run 32770638337'
+            echo 'this ledger gates. A green ledger still does not clear RUNTIME_VERIFIED --'
+            echo 'see the outstanding-probe list the ledger prints, which is declared future'
+            echo 'work rather than probe failures, and is not what turns this step red.'
           } >> "$GITHUB_STEP_SUMMARY"
 
           exit "$status"
@@ -594,8 +607,10 @@ jobs:
       # staging login. Deactivating clears the PIN hash and sets active_flag
       # false, so the ephemeral PIN cannot authenticate after the run whatever
       # the outcome. Cleanup failure is reported, never fatal -- it must not
-      # mask the gate's own result.
+      # mask the gate's own result. The step below is what makes "reported"
+      # true; the id exists for it to read.
       - name: Deactivate Gate Athlete Fixture
+        id: deactivate-gate-athlete
         if: always() && inputs.enable_shadow_gate
         continue-on-error: true
         env:
@@ -609,6 +624,47 @@ jobs:
           PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
         run: |
           npm --prefix apps/web run gate:pilot:fixtures -- --deactivate-athlete
+
+      # "Reported, never fatal" was doing no reporting: continue-on-error turns
+      # a failed cleanup into a grey step inside a green run, and the one thing
+      # that failure means is that a working 6-digit PIN for gate_shadow_athlete
+      # is still live on a login anyone on the internet can reach. This says so
+      # where a gatekeeper is already looking.
+      #
+      # Still non-fatal, deliberately: it exits 0. Making cleanup fatal would
+      # let a cleanup failure overwrite the gate's own verdict, which is the
+      # reason the step above carries continue-on-error at all. An annotation is
+      # loud without being able to change the result.
+      #
+      # Keyed on that step's own `outcome`, NOT failure(). failure() is wrong in
+      # both directions here: the ledger above is a hard gate now, so failure()
+      # is true whenever a probe failed and would cry credential-leak on a run
+      # whose cleanup was fine; and a continue-on-error step's failure never
+      # sets failure() anyway, so it would miss the case this exists for.
+      # `outcome` is the only expression that reports this step and only this
+      # step (it is 'failure' even when continue-on-error rewrote `conclusion`
+      # to success, and 'skipped' when the gate never ran).
+      #
+      # The PIN is never printed. It is ::add-mask::ed at mint, and the account
+      # id is what a responder actually needs to go clear it.
+      - name: Report Gate Athlete Fixture Still Live
+        if: always() && steps.deactivate-gate-athlete.outcome == 'failure'
+        run: |
+          echo "::error title=Gate athlete fixture may still be live::Deactivating gate_shadow_athlete (athlete GATE-SHADOW-ATH-1) FAILED. Its ephemeral PIN may still authenticate against the staging login. Clear it by hand before leaving this run."
+
+          {
+            echo ''
+            echo '### Gate athlete fixture cleanup FAILED'
+            echo ''
+            echo 'Account `gate_shadow_athlete` (athlete `GATE-SHADOW-ATH-1`) may still carry a'
+            echo 'working PIN on staging, which is publicly reachable. Clear it by hand:'
+            echo 'dispatch this workflow again, or run'
+            echo '`npm --prefix apps/web run gate:pilot:fixtures -- --deactivate-athlete`'
+            echo 'against staging, or deactivate the account directly.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Non-fatal by construction -- see the note above this step.
+          exit 0
 
       # The digest, again, as the last thing this job says.
       #
