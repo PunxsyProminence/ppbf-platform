@@ -89,8 +89,27 @@ describe('sparring log submission status', () => {
   test('a fully accepted submission is reported as saved and stamped', async () => {
     await renderAndSubmit(() => true);
 
-    await screen.findByText('Saved. Your coach sees it.');
+    await screen.findByText('Saved to your training record.');
     expect(screen.queryByText('Nothing logged yet')).toBeNull();
+  });
+
+  // Nothing reads ordinary sparring observations back out: the results
+  // endpoint has no client caller, and no coach surface or SHADOW context
+  // queries shadow_formula_observations. Until one exists, no athlete-facing
+  // text on this page may tell a child a coach sees or reads what they
+  // logged. The one legitimate exception is the safety-review branch ("your
+  // coach has been asked to look at it"), which a flagged near miss really
+  // does back -- and it renders only when the safety gate raised it, not on
+  // an ordinary save.
+  test('an ordinary save claims no coach visibility anywhere on the page', async () => {
+    await renderAndSubmit(() => true);
+
+    await screen.findByText('Saved to your training record.');
+    expect(screen.queryByText(/coach sees/i)).toBeNull();
+    expect(screen.queryByText(/coach reads/i)).toBeNull();
+    expect(screen.queryByText(/hand your coach/i)).toBeNull();
+    expect(screen.queryByText(/coach should know/i)).toBeNull();
+    expect(screen.queryByText(/coach may not see/i)).toBeNull();
   });
 
   // The rounds field is TOTAL session rounds. Sending it as 'contact_rounds'
@@ -139,7 +158,7 @@ describe('sparring log submission status', () => {
     await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
 
     fireEvent.change(screen.getByLabelText('Your weight (kg, if you want)'), { target: { value: '61.5' } });
-    fireEvent.change(screen.getByLabelText('Anything your coach should know'), { target: { value: 'Right wrist sore.' } });
+    fireEvent.change(screen.getByLabelText('Notes on how it went'), { target: { value: 'Right wrist sore.' } });
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 
     await waitFor(() => expect(submittedObservations.length).toBeGreaterThan(0));
