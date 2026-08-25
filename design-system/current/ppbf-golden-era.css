@@ -2983,6 +2983,20 @@
     linear-gradient(180deg,
       var(--brass-200) 0%, var(--brass-300) 58%, var(--brass-400) 100%);
 }
+/* THE RING THAT RULE KNOCKED OUT. `.btn:focus-visible` carries the whole focus
+   indicator for every button in this app inside its BOX-SHADOW, alongside
+   `outline: 0` -- so a later rule setting box-shadow on the same control at
+   equal or higher specificity takes the indicator away and leaves the outline
+   suppressed. Measured: the control focused with the screen BYTE-IDENTICAL.
+   Restated here with the rule's own hardware intact; the resting pull plate
+   does not change. WCAG 2.4.7. */
+.ge-file .btn:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgba(255,248,224,.7),
+    inset 0 -2px 4px rgba(0,0,0,.34),
+    0 2px 5px rgba(0,0,0,.5);
+}
 .ge-file .btn--ghost {
   background-color: #1D1610;
   background-image: linear-gradient(180deg,
@@ -2993,6 +3007,13 @@
 .ge-file .btn--ghost:hover {
   background-color: #262019;
   border-color: var(--brass-400);
+}
+/* The same hole on the ghost, whose single inset bead is what displaced the
+   ring. Kept, with the ring in front of it. */
+.ge-file .btn--ghost:focus-visible {
+  box-shadow:
+    var(--focus),
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .16);
 }
 
 /* ---- Narrow viewports ---------------------------------------------------
