@@ -108,7 +108,7 @@ export default function GuardianMediaConsentPage() {
           dropped rather than swapped to .on-canvas. */}
       <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Photo &amp; Video Consent</h1>
             <p className="t-body mt-[var(--s3)] max-w-3xl">
@@ -152,7 +152,7 @@ export default function GuardianMediaConsentPage() {
                 return (
                   <article
                     key={item.athlete_id}
-                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]"
+                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]"
                   >
                     <div className="flex items-center justify-between gap-[var(--s3)]">
                       <p className="t-eyebrow">{childLabel(item)}</p>

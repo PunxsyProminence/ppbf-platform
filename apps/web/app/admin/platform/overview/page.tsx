@@ -87,7 +87,7 @@ export default function PlatformOverview() {
   if (!hasPlatformAccess) {
     return (
       <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
-        <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s6)] text-center">
+        <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s6)] text-center">
           <p className="t-eyebrow">Access Denied</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Platform Owner Access Required</h1>
           <Link href="/admin" className="btn btn--ghost">
@@ -101,7 +101,7 @@ export default function PlatformOverview() {
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-5xl space-y-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-        <header className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Platform Desk</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>All Gyms Overview</h1>
           <p className="t-body">
@@ -121,10 +121,10 @@ export default function PlatformOverview() {
         )}
 
         {!loading && !loadError && (
-          <div className="mat-leather overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)]">
+          <div className="mat-leather overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)]">
             <table className="w-full min-w-[720px] text-left text-[length:var(--t-sm)]">
               <thead>
-                <tr className="border-b border-[color:rgba(212,175,74,.28)]">
+                <tr className="border-b border-[color:rgb(var(--brass-400-rgb)_/_.28)]">
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">Gym</th>
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">Status</th>
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">Active Athletes</th>

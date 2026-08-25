@@ -157,7 +157,7 @@ export default function DoorRegisterPage() {
         <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
           {/* The desk lamp — the office's own fixture, over the desk you are
               standing at (Room DNA: plank wall, desk lamp, paper forms). */}
-          <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Door Register</h1>
@@ -180,7 +180,7 @@ export default function DoorRegisterPage() {
               set is small and the whole point of the page is to move between
               roles quickly; aria-pressed carries which one is pulled, the same
               way the tab rail on /admin/people states its current tab. */}
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <h2 className="t-eyebrow" id="register-subject-label">Read the register for</h2>
             <div
               role="group"
@@ -231,7 +231,7 @@ export default function DoorRegisterPage() {
             <>
               {/* Stated before the register rather than after it, because it is
                   the one thing a reader can get wrong here. */}
-              <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+              <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-eyebrow">About the links below</h2>
                 <p className="t-body mt-[var(--s3)] max-w-3xl">
                   A link opens the real page <strong>with your own permissions</strong>, never with{' '}

@@ -128,7 +128,7 @@ export default function EvidenceReviewPage() {
       room="file"
     >
       <div className="space-y-[var(--s5)]">
-        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">SHADOW Evidence</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
             Evidence Review Queue
@@ -185,7 +185,7 @@ export default function EvidenceReviewPage() {
           {queue.sources.map((source) => {
             const badge = APPROVAL_BADGES[source.approval_state];
             return (
-              <article key={source.source_id} className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <article key={source.source_id} className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
                   <div>
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">
@@ -231,7 +231,7 @@ export default function EvidenceReviewPage() {
           {queue.documents.map((document) => {
             const badge = APPROVAL_BADGES[document.approval_state];
             return (
-              <article key={document.document_id} className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <article key={document.document_id} className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
                   <div>
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">

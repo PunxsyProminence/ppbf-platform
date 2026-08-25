@@ -193,7 +193,7 @@ function CoachWorkoutTemplates() {
             {!detailLoading && !detailError && detail && (
               <>
                 {(detail.template.coach_notes ?? '').trim() !== '' && (
-                  <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+                  <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
                     <p className="t-label">Coach notes</p>
                     <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{detail.template.coach_notes}</p>
                   </div>
@@ -211,7 +211,7 @@ function CoachWorkoutTemplates() {
                   {detail.items.map((item) => (
                     <li
                       key={item.item_id}
-                      className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
+                      className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                     >
                       <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                         <span className="plaque">{item.block.replace(/_/g, ' ')}</span>

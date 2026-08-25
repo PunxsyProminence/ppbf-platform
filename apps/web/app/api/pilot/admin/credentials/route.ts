@@ -10,6 +10,7 @@ import {
   listClearanceTypes,
   listPersonClearancesForVerification,
   recordPersonClearance,
+  supersededClearanceState,
 } from '@/src/server/pilot/clearanceRegister';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -138,6 +139,9 @@ export async function POST(request: NextRequest) {
         person_account_id: personAccountId,
         issued_on: issuedOn,
         expires_on: expiresOn ?? null,
+        // recordPersonClearance overwrote the row in place, so this event is
+        // the only place the answer it replaced survives.
+        superseded: supersededClearanceState(existing),
       });
 
       return NextResponse.json({ ok: true, item: { status: updated.status, expires_on: updated.expires_on } });
@@ -165,6 +169,11 @@ export async function POST(request: NextRequest) {
         action: 'credential_rejected',
         clearance_type_id: clearanceTypeId,
         person_account_id: personAccountId,
+        // A reject writes status='not_started' with issued_on and expires_on
+        // nulled. Nothing here checks that the row was still 'submitted', so
+        // this can land on a 'current' clearance and erase the dates it was
+        // current until -- captured here rather than lost.
+        superseded: supersededClearanceState(existing),
       });
 
       return NextResponse.json({ ok: true, item: { status: updated.status } });

@@ -451,7 +451,26 @@ export default function ResearchIntakePage() {
       room="file"
       showShellHeader={false}
     >
-      <header className="mat-leather--raised border-b border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+      {/* ge-file: Golden Era Visual 010 scope. This wrapper class is the ONLY
+          change on this route -- the cabinet head, the japanned drawer banks,
+          the bronze corner plates and label rails, the engraved index tabs, the
+          sunk dossier wells and the riveted pull plates all live in scoped CSS
+          under .ge-file in design-system/current/ppbf-golden-era.css. Every
+          control, heading, badge, form field, projection state and refusal on
+          this page is untouched, and the room's own cork wall is left to its
+          committed plate.
+
+          It rides a wrapper rather than the page's own <main> because this
+          route has no <main> of its own: RoleStandaloneView owns it and
+          declares the file room on it (room="file" above), and the shell wraps
+          68 pages, so reaching into it would leave the scope on every one of
+          them. Same seam .ge-floorboard and .ge-locker use. The children below
+          are deliberately NOT re-indented: a 400-line whitespace diff would
+          bury the fact that nothing else here moved.
+
+          FUNCTIONAL_CHANGES: NONE. */}
+      <div className="ge-file">
+      <header className="mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Research Intake</p>
@@ -516,7 +535,7 @@ export default function ResearchIntakePage() {
           </section>
         ) : null}
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             Review State Summary
           </h2>
@@ -582,7 +601,7 @@ export default function ResearchIntakePage() {
           </div>
         </section>
 
-        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             Operational Research Requirements
           </h2>
@@ -756,7 +775,7 @@ export default function ResearchIntakePage() {
         </section>
 
         {curatorSources !== null ? (
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] space-y-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               General Research Intake
             </h2>
@@ -852,6 +871,7 @@ export default function ResearchIntakePage() {
             ) : null}
           </section>
         ) : null}
+      </div>
       </div>
     </RoleStandaloneView>
   );

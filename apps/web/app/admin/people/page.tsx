@@ -818,7 +818,7 @@ function PeopleConsoleContent() {
        outside the scope on purpose. */
     <main className="ge-frontoffice room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
-        <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <header className="relative mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           {/* The desk lamp over the roster. .lamp draws the shade and the pool
               of light under it, and had no app usage at all. */}
           <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
@@ -906,7 +906,7 @@ function PeopleConsoleContent() {
           </div>
         )}
 
-        <nav className="mat-leather flex flex-wrap gap-[var(--s2)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s2)]">
+        <nav className="mat-leather flex flex-wrap gap-[var(--s2)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s2)]">
           {([
             ['people', `Everyone${members.length ? ` (${members.length})` : ''}`],
             ['invite-staff', 'Add Coach, Staff Or Guardian'],
@@ -1171,7 +1171,7 @@ function PeopleConsoleContent() {
         )}
 
         {tab === 'invite-staff' && (
-          <form onSubmit={inviteStaff} className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <form onSubmit={inviteStaff} className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <div>
               <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add a coach, staff member, or guardian</h2>
               <p className="t-body mt-[var(--s3)]">
@@ -1217,7 +1217,7 @@ function PeopleConsoleContent() {
                         blockedReason
                           ? 'mat-leather cursor-not-allowed border-[color:var(--hide-700)] opacity-70'
                           : inviteRole === option.value
-                            ? 'mat-leather--raised cursor-pointer border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)]'
+                            ? 'mat-leather--raised cursor-pointer border-[color:var(--brass-400)] bg-[rgb(var(--brass-400-rgb)_/_.07)]'
                             : 'mat-leather cursor-pointer border-[color:var(--hide-700)] hover:border-[color:var(--brass-700)]'
                       }`}
                     >
@@ -1331,7 +1331,7 @@ function PeopleConsoleContent() {
         )}
 
         {tab === 'add-athlete' && (
-          <form onSubmit={addAthlete} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <form onSubmit={addAthlete} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <div>
               <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add an athlete</h2>
               <p className="t-body mt-[var(--s3)]">
@@ -1348,7 +1348,7 @@ function PeopleConsoleContent() {
                     key={option.value}
                     className={`flex cursor-pointer items-start gap-[var(--s3)] rounded-[var(--r-md)] border p-[var(--s3)] transition ${
                       athleteMode === option.value
-                        ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)]'
+                        ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgb(var(--brass-400-rgb)_/_.07)]'
                         : 'mat-leather border-[color:var(--hide-700)] hover:border-[color:var(--brass-700)]'
                     }`}
                   >

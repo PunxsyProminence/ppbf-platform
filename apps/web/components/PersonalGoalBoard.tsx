@@ -264,7 +264,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
             {working.map((goal) => (
               <li
                 key={goal.goal_id}
-                className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.26)] p-[var(--s4)]"
+                className="rounded-[var(--r-md)] border-2 border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] p-[var(--s4)]"
               >
                 <p className="text-[length:var(--t-md)] text-[color:var(--bone-100)]">{goal.title}</p>
                 {goal.why_it_matters && (

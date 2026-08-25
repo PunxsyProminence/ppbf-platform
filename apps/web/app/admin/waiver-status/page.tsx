@@ -75,7 +75,7 @@ export default function WaiverComplianceAuditPage() {
               The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
               .mat-wood's lit edge; full note on /coach/sports-medicine. */}
           <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
-          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
             <h1
               className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
@@ -140,7 +140,7 @@ export default function WaiverComplianceAuditPage() {
               <div className="empty-msg">No athletes match this filter right now.</div>
             </div>
           ) : (
-            <section className="mat-leather mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)]">
+            <section className="mat-leather mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
               <table className="w-full text-left">
                 <thead>
                   <tr className="t-eyebrow border-b border-[color:var(--hide-700)]">

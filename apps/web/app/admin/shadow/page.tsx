@@ -330,7 +330,7 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
   }
 
   return (
-    <div className="mt-[var(--s4)] border-t border-[color:rgba(212,175,74,.28)] pt-[var(--s4)]">
+    <div className="mt-[var(--s4)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.28)] pt-[var(--s4)]">
       <button
         type="button"
         onClick={() => void handleToggle()}
@@ -501,7 +501,7 @@ function renderMetricsPanel(
   metricsError: string,
 ) {
   return (
-    <section className="mat-leather col-span-full rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
+    <section className="mat-leather col-span-full rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
       <div className="mb-3 flex items-center justify-between">
         <p className="t-eyebrow">SHADOW Intelligence — Last 30 Days</p>
         {metricsLoading && <span className="t-muted">Loading…</span>}
@@ -651,7 +651,7 @@ function LibraryReviewFlagsPanel() {
   }
 
   return (
-    <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
+    <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="t-eyebrow">Library Quality</p>
@@ -805,7 +805,7 @@ function FeatureUnlockPanel() {
   }
 
   return (
-    <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
+    <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="t-eyebrow">Capability Governance</p>
@@ -978,7 +978,7 @@ function renderFeedbackReviewPanel(props: {
   };
 
   return (
-    <section className="mat-leather col-span-full rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
+    <section className="mat-leather col-span-full rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="t-eyebrow">
@@ -1767,7 +1767,15 @@ export default function AdminShadowConsolePage() {
 
   return (
     <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin', 'platform_owner']} showShellHeader={false} room="night">
-      <main className="grid gap-[var(--s5)] xl:grid-cols-[1.25fr_0.95fr]">
+      {/* ge-afterhours: Golden Era Visual 006 scope. The ONLY change on this
+          route is this one class -- the single overhead lamp, the brass corner
+          brackets, the night board face and the engraved legends all live in
+          scoped CSS under .ge-afterhours in
+          design-system/current/ppbf-golden-era.css. No control on this console
+          was added, removed, renamed or re-gated; SHADOW decision authority,
+          the intake-write refusal and every review gate are untouched.
+          FUNCTIONAL_CHANGES: NONE. */}
+      <main className="ge-afterhours grid gap-[var(--s5)] xl:grid-cols-[1.25fr_0.95fr]">
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
         {renderMetricsPanel(growthMetrics, metricsLoading, metricsError)}
         {/* ── SHADOW Learning Review (human approval gate) ──────────── */}
@@ -1802,7 +1810,7 @@ export default function AdminShadowConsolePage() {
             the right material for the room, so it is extended to hold the
             whole console. */}
         <section className="mat-slate space-y-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
-          <div className="mb-[var(--s5)] border-b border-[color:rgba(212,175,74,.2)] pb-[var(--s4)]">
+          <div className="mb-[var(--s5)] border-b border-[color:rgb(var(--brass-400-rgb)_/_.2)] pb-[var(--s4)]">
             <p className="t-eyebrow">AI/ML Telemetry Scout</p>
             <h2 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>SHADOW Data Intake + Command Console</h2>
             <p className="t-body mt-[var(--s3)]">
@@ -1958,18 +1966,18 @@ export default function AdminShadowConsolePage() {
         </section>
 
         <aside className="space-y-[var(--s4)]">
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
             <p className="t-eyebrow">Data Intake Sources</p>
             <h3 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-lg)' }}>External Sources</h3>
 
             {intakeWriteRefusal ? (
-              <p className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-dashed border-[color:rgba(212,175,74,.42)] bg-[var(--hide-900)] p-[var(--s4)] text-[length:var(--t-xs)] leading-6 text-[color:var(--brass-300)]">
+              <p className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-dashed border-[color:rgb(var(--brass-400-rgb)_/_.42)] bg-[var(--hide-900)] p-[var(--s4)] text-[length:var(--t-xs)] leading-6 text-[color:var(--brass-300)]">
                 {intakeWriteRefusal}
               </p>
             ) : (
               <div
                 className={`mt-[var(--s4)] space-y-[var(--s3)] rounded-[var(--r-md)] border-2 border-dashed p-[var(--s4)] transition ${
-                  isDragOver ? 'border-[color:var(--brass-300)] bg-[var(--hide-700)]' : 'border-[color:rgba(212,175,74,.42)] bg-[var(--hide-900)]'
+                  isDragOver ? 'border-[color:var(--brass-300)] bg-[var(--hide-700)]' : 'border-[color:rgb(var(--brass-400-rgb)_/_.42)] bg-[var(--hide-900)]'
                 }`}
                 onDragOver={(event) => {
                   event.preventDefault();
@@ -2010,7 +2018,7 @@ export default function AdminShadowConsolePage() {
               </div>
             )}
 
-            <div className="mt-[var(--s4)] border-t border-[color:rgba(212,175,74,.2)] pt-[var(--s4)]">
+            <div className="mt-[var(--s4)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.2)] pt-[var(--s4)]">
               <p className="t-label">Quick Add:</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {QUICK_ADD_OPTIONS.map((option) => (
@@ -2027,7 +2035,7 @@ export default function AdminShadowConsolePage() {
             </div>
           </section>
 
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
             <h3 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Classification Panel</h3>
             {!selectedItem ? (
               <p className="t-body mt-[var(--s4)]">Select an intake item via VIEW to classify and route it.</p>
@@ -2119,7 +2127,7 @@ export default function AdminShadowConsolePage() {
             )}
           </section>
 
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
             <button
               type="button"
               onClick={() => setShowTelemetry((current) => !current)}
@@ -2136,7 +2144,7 @@ export default function AdminShadowConsolePage() {
                   </pre>
                 ))}
 
-                <div className="border-t border-[color:rgba(212,175,74,.28)] pt-[var(--s3)]">
+                <div className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.28)] pt-[var(--s3)]">
                   <p className="t-eyebrow mb-[var(--s3)]">SHADOW telemetry read model</p>
                   {shadowTelemetry.length === 0 && <p className="t-muted p-[var(--s3)]">No SHADOW telemetry events returned.</p>}
                   {shadowTelemetry.map((event) => (
@@ -2146,7 +2154,7 @@ export default function AdminShadowConsolePage() {
                   ))}
                 </div>
 
-                <div className="border-t border-[color:rgba(212,175,74,.28)] pt-[var(--s3)]">
+                <div className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.28)] pt-[var(--s3)]">
                   <p className="t-eyebrow mb-[var(--s3)]">SHADOW authority read model</p>
                   {shadowAuthorityChecks.length === 0 && <p className="t-muted p-[var(--s3)]">No SHADOW authority checks returned.</p>}
                   {shadowAuthorityChecks.map((check) => (

@@ -96,7 +96,7 @@ export default function BoardViewportSwitcher() {
   }, [trainingMinutes]);
 
   return (
-    <section className="mat-leather mx-auto w-full max-w-7xl rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+    <section className="mat-leather mx-auto w-full max-w-7xl rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
       <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
         <p className="t-eyebrow tracking-[0.28em]">Board Workspace</p>
         <h1 className="t-command mt-[var(--s2)] text-[length:var(--t-xl)]">Seat View Prototype</h1>
@@ -118,7 +118,7 @@ export default function BoardViewportSwitcher() {
             className={`min-h-[44px] rounded-[var(--r-sm)] border px-[var(--s4)] text-[length:var(--t-sm)] font-bold uppercase tracking-[0.09em] transition ${
               activeView === view
                 ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
-                : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
+                : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
             }`}
           >
             {view}
@@ -135,7 +135,7 @@ export default function BoardViewportSwitcher() {
               {macroRiskPoints.map((value, index) => (
                 <div key={`${value}-${index}`} className="flex flex-col items-center gap-[var(--s2)]">
                   <div
-                    className="w-full rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.34)]"
+                    className="w-full rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.34)]"
                     style={{ height: `${Math.max(24, value)}px` }}
                   />
                   <span className="t-data text-[length:var(--t-xs)]">W{index + 1}</span>

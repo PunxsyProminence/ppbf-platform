@@ -219,10 +219,10 @@ export default function OperationsHubPage() {
           <AnnouncementBanner
             placement="everywhere"
             heading="Gym-wide notice"
-            className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]"
+            className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]"
           />
 
-          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="t-body max-w-[80ch]">
                 Need orientation? Open the full tutorial center from one button instead of rendering all tutorial content inline.
@@ -268,7 +268,7 @@ export default function OperationsHubPage() {
 
               page.test.tsx pins the absence. */}
 
-          <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+          <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Role Selector</h2>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {roleSelector.map((item) => (
@@ -286,7 +286,7 @@ export default function OperationsHubPage() {
 
           <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-6">
-              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>MY PRIORITIES TODAY</h2>
                 <div className="grid gap-3 md:grid-cols-3">
                   {priorityLanes.map((lane) => (
@@ -298,7 +298,7 @@ export default function OperationsHubPage() {
                 </div>
               </section>
 
-              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>WORKSPACES</h2>
                 <div className="grid gap-3">
                   {workspaces.map((workspace) => (
@@ -319,7 +319,7 @@ export default function OperationsHubPage() {
               </section>
 
               {showsLabDesks && (
-                <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
                   <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>OTHER DESKS</h2>
                   <p className="t-body">
                     The research, evidence, and publication desks, and the rooms that keep their records.
@@ -430,7 +430,7 @@ export default function OperationsHubPage() {
                   "Platform Shortcuts" list carried a second one labelled "The
                   Office", which pointed at the After Hours room -- a door with
                   the wrong room painted on it. It is gone. */}
-              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>After Hours</h2>
                 <p className="t-body">
                   The night record — every SHADOW event and reading, newest first — is kept in the
@@ -441,7 +441,7 @@ export default function OperationsHubPage() {
                 </Link>
               </section>
 
-              <section className="space-y-[var(--s3)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+              <section className="space-y-[var(--s3)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Around The Building</h2>
                 <div className="grid gap-2">
                   {utilityLinks.map((item) => (
