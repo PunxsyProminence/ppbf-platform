@@ -49,9 +49,12 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * before and after focus were BYTE-IDENTICAL. Isolated by removing the scope
  * class in the live page, which brought the ring straight back.
  *
- * The focus check below is DERIVED, not listed: it finds every golden-era rule
- * that overrides box-shadow on something focusable and requires that scope to
- * restate the ring. A pinned list would be a second place to forget.
+ * The focus check below is DERIVED, not listed: it finds every golden-era
+ * SELECTOR that overrides box-shadow on something focusable and requires that
+ * selector's own focus companion. A pinned list would be a second place to
+ * forget -- and per SCOPE was not enough, which the mutation run proved: the
+ * first version stayed green when one companion was deleted, because another
+ * rule in the same scope still answered.
  *
  * MUTATION CHECK: put `#4B382A` back in the tile gradient, or `--bone-400`
  * back to the leather rung, or `--brass-300` back on a tile's ink, or delete
