@@ -40,6 +40,7 @@ let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
 let storedFloorPlans: Array<Record<string, unknown>> = [];
 let floorPlanPatchFails = false;
+let floorPlanPostFails = false;
 let storedAssignments: Array<Record<string, unknown>> = [];
 let assignmentsFail = false;
 
@@ -124,6 +125,7 @@ beforeEach(() => {
   goalUpdateFails = false;
   storedFloorPlans = [];
   floorPlanPatchFails = false;
+  floorPlanPostFails = false;
   storedAssignments = [];
   assignmentsFail = false;
 
@@ -176,7 +178,7 @@ beforeEach(() => {
         return jsonResponse(floorPlanPatchFails ? { error: 'Internal server error' } : { ok: true }, !floorPlanPatchFails);
       }
       if (init?.method === 'POST') {
-        return jsonResponse({ ok: true });
+        return jsonResponse(floorPlanPostFails ? { error: 'Internal server error' } : { ok: true }, !floorPlanPostFails);
       }
       return jsonResponse({ items: storedFloorPlans });
     }
@@ -1435,6 +1437,71 @@ describe('the readiness slider cannot change the prescribed work', () => {
     // does not quietly remove the athlete's voice too.
     expect(low.session.notes).toBe('Auto check-in readiness RED');
     expect(high.session.notes).toBe('Auto check-in readiness GREEN');
+  });
+
+  // The two tests above compared RED against GREEN and stripped due times for
+  // clock skew -- and a mutation audit (2026-08-25) walked through both gaps:
+  // a branch scoped to YELLOW (slider 5-6) changed the prescribed work with
+  // the suite green, and doubling every due-time offset for non-GREEN
+  // athletes -- the slider deciding session pacing -- was equally invisible.
+  // This sweep closes both: every band, and the comparison keeps dueDate,
+  // with the clock frozen so identical pacing yields identical strings.
+  test('every band -- RED, YELLOW, GREEN -- gets identical work AND identical pacing', async () => {
+    jest.useFakeTimers({ now: new Date('2026-08-25T12:00:00Z') });
+    try {
+      const plans: Array<Record<string, unknown>> = [];
+      for (const value of [3, 5, 9]) {
+        const { plan } = await checkInWithSlider(value);
+        plans.push(plan);
+        cleanup();
+        fetchCalls.length = 0;
+      }
+      const workWithPacing = (planBody: Record<string, unknown>) => {
+        const plan = planBody.plan as { tasks: Array<Record<string, unknown>> };
+        return plan.tasks.map(({ id: _id, ...prescriptive }) => prescriptive);
+      };
+      expect(workWithPacing(plans[1])).toEqual(workWithPacing(plans[0]));
+      expect(workWithPacing(plans[2])).toEqual(workWithPacing(plans[0]));
+      // Non-vacuity: the frozen clock really produced due times to compare.
+      expect(JSON.stringify(workWithPacing(plans[0]))).toContain('dueDate');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // The POST comparison alone missed a third shape in the same audit: a task
+  // appended only to the DISPLAYED list (shown, never sent) escalated the
+  // floor a child actually reads while every payload assertion stayed green.
+  // Check-in lands the athlete on the Floor tab, so what renders right after
+  // is exactly what the slider must not change.
+  test('the floor the athlete sees is identical whatever the slider says', async () => {
+    // On a successful save the floor re-reads the stored plan, so the display
+    // mirrors the POSTed payload the tests above already pin. The path where
+    // the CLIENT-built list is what the athlete keeps looking at -- and where
+    // the audit's shown-but-never-sent escalation survived -- is persistence
+    // failure: the POST errors, no re-read happens, the generated floor
+    // stands. Drive that path and pin the display itself.
+    floorPlanPostFails = true;
+    const renderedTitles = async (value: number) => {
+      await checkInWithSlider(value);
+      const titles = screen.getAllByRole('heading', { level: 4 }).map((heading) => heading.textContent);
+      cleanup();
+      fetchCalls.length = 0;
+      return titles;
+    };
+
+    const low = await renderedTitles(3);
+    const mid = await renderedTitles(5);
+    const high = await renderedTitles(10);
+
+    expect(mid).toEqual(low);
+    expect(high).toEqual(low);
+    // Anchored to the real floor, so the equality cannot pass on an empty page.
+    expect(low).toEqual(expect.arrayContaining([
+      'Dynamic Warmup + Mobility',
+      'Technical Boxing Block',
+      'Cooldown + Session Journal',
+    ]));
   });
 
   test('no intensity escalation is reachable from the slider', async () => {
