@@ -7,9 +7,11 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { uploadPilotCredentialFile } from '@/src/server/pilot/blob';
 import {
   deriveCredentialBand,
+  getPersonClearanceForOrganization,
   listClearanceTypes,
   listPersonClearances,
   recordPersonClearance,
+  supersededClearanceState,
   STAFF_CREDENTIAL_ROLES,
 } from '@/src/server/pilot/clearanceRegister';
 import {
@@ -120,6 +122,19 @@ export async function POST(request: NextRequest) {
     await uploadPilotCredentialFile(blobPath, bytes, descriptor.contentType);
     const contentSha256 = createHash('sha256').update(bytes).digest('hex');
 
+    // Read BEFORE the write, because the write destroys it. This is the only
+    // moment the clearance this upload is about to supersede still exists:
+    // recordPersonClearance's upsert replaces status, issued_on, expires_on,
+    // verified_by_account_id and verified_at on the same row, so a coach who
+    // held a verified, in-date certification a second ago holds a bare
+    // 'submitted' row afterward, and the register can no longer answer
+    // whether they were cleared yesterday or until when.
+    const previous = await getPersonClearanceForOrganization(
+      principal.organizationId,
+      principal.accountId,
+      clearanceTypeId,
+    );
+
     // Uploading resets verification on purpose: a new document is a new
     // submission, and the old one's issued_on/expires_on may no longer be
     // true of it. clearanceRegister's own header says a status transition to
@@ -150,6 +165,10 @@ export async function POST(request: NextRequest) {
         content_type: descriptor.contentType,
         stored_bytes: bytes.byteLength,
         content_sha256: contentSha256,
+        // The clearance this upload replaced. Null on a first submission --
+        // nothing was superseded, and a block of nulls would claim there was
+        // a record and it was blank.
+        superseded: supersededClearanceState(previous),
       },
       shadow_mirror: false,
     });
