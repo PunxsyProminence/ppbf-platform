@@ -1767,7 +1767,15 @@ export default function AdminShadowConsolePage() {
 
   return (
     <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin', 'platform_owner']} showShellHeader={false} room="night">
-      <main className="grid gap-[var(--s5)] xl:grid-cols-[1.25fr_0.95fr]">
+      {/* ge-afterhours: Golden Era Visual 006 scope. The ONLY change on this
+          route is this one class -- the single overhead lamp, the brass corner
+          brackets, the night board face and the engraved legends all live in
+          scoped CSS under .ge-afterhours in
+          design-system/current/ppbf-golden-era.css. No control on this console
+          was added, removed, renamed or re-gated; SHADOW decision authority,
+          the intake-write refusal and every review gate are untouched.
+          FUNCTIONAL_CHANGES: NONE. */}
+      <main className="ge-afterhours grid gap-[var(--s5)] xl:grid-cols-[1.25fr_0.95fr]">
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
         {renderMetricsPanel(growthMetrics, metricsLoading, metricsError)}
         {/* ── SHADOW Learning Review (human approval gate) ──────────── */}

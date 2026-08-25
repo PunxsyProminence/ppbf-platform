@@ -58,11 +58,27 @@ function bandLinesOf(file: string, name: string): string {
     .replace(/^\s*\/\/.*$/gm, '');
   const at = source.indexOf(name);
   expect(at).toBeGreaterThan(-1);
-  return source
+  const lines = source
     .slice(at, at + 600)
     .split('\n')
-    .filter((line) => /\b(GREEN|YELLOW|RED)\b/.test(line))
-    .join('\n');
+    .filter((line) => /\b(GREEN|YELLOW|RED)\b/.test(line));
+
+  /* THE WINDOW CAN GO EMPTY WITHOUT THE MAPPING GOING AWAY, and an empty window
+     is the one input that satisfies `not.toMatch(/--locked/)` perfectly. The
+     name is found -- the assertion above holds -- but the bands drift past the
+     600-character window, or a refactor renames GREEN/YELLOW/RED to the band
+     values the API already uses, and the filter keeps nothing. The guard then
+     reports that readiness never wears the locked medical rung by reading no
+     readiness mapping at all.
+
+     Three bands, so three lines; the floor is that the window found any of them.
+     Its sibling assertion (`still distinguishes the three bands`) would go red
+     too, but only because it happens to be positive -- the reservation this file
+     exists for should not depend on that. */
+  expect({ site: `${file} / ${name}`, bandLines: lines.length > 0 })
+    .toEqual({ site: `${file} / ${name}`, bandLines: true });
+
+  return lines.join('\n');
 }
 
 describe('readiness never wears the locked medical rung', () => {

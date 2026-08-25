@@ -67,6 +67,22 @@ describe('the wall surface', () => {
   const globals = readFileSync(GLOBALS, 'utf8');
   const designSystem = readDesignSystemCss(DESIGN_SYSTEM);
 
+  it('reads two real stylesheets, or the negatives below prove nothing', () => {
+    /* `.marquee was never in the design system` is a LOAD-BEARING NEGATIVE, and
+       a negative is exactly what an empty string satisfies. design-system/
+       ppbf.css is two @import lines; if the resolver ever returns '' -- a moved
+       sheet, a regex that stops matching -- that assertion goes green while
+       reading nothing, and this file would then be actively certifying a claim
+       it never checked. The same holds for every `not.toContain` on globals.
+
+       268,980 characters resolved and 80,089 in globals today. The floors are
+       roughly a quarter of each: far below the real figures, and far above the
+       two-line entry file (1,553) that the incident of 2026-08-23 left every
+       readFileSync-ing guard reading. */
+    expect(designSystem.length).toBeGreaterThan(60_000);
+    expect(globals.length).toBeGreaterThan(20_000);
+  });
+
   it('marks the wall subtree with the attribute the stylesheet targets', () => {
     const { container } = render(
       <WallLayout>
@@ -131,6 +147,23 @@ describe('the wall surface', () => {
 describe('the wall reads at distance', () => {
   const globals = readFileSync(GLOBALS, 'utf8');
   const wallBlock = globals.slice(globals.indexOf('THE WALL ==='));
+
+  it('found the wall block it is about to make claims about', () => {
+    /* `slice(indexOf(x))` is a quiet idiom: when the marker is gone indexOf
+       returns -1, slice(-1) returns THE LAST CHARACTER OF THE FILE, and the
+       variable is still a string so nothing throws.
+
+       Two of the three tests below survive that -- they assert things are
+       present and a one-character block has nothing in it. `writes no raw hex
+       anywhere in the block` does not: a newline contains no hex, so it passes,
+       and it passes hardest exactly when the block it is policing has been
+       renamed out from under it. Verified by simulating the missing marker.
+
+       14,582 characters today. 2,000 is comfortably below that and three orders
+       of magnitude above the one character a missing marker yields. */
+    expect(globals.indexOf('THE WALL ===')).toBeGreaterThan(-1);
+    expect(wallBlock.length).toBeGreaterThan(2_000);
+  });
 
   it('continues the ladder past the named rungs for the biggest elements', () => {
     for (const generated of [

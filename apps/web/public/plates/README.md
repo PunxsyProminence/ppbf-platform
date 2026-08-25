@@ -32,11 +32,30 @@ every room with no network.
   the name means taller than wide; never square).
 - Every `/plates/` URL declared in `design-system/ppbf.css` exists here.
 
-Binary assets enter this repository **by real file upload on the producer's
-feature branch, never re-encoded through a chat channel** (`AGENT_KERNEL.md`,
+Binary assets enter this repository **by a real `git add` of the actual file on
+a feature branch, never re-encoded through a chat channel** (`AGENT_KERNEL.md`,
 "Working channel"; `docs/GROK-VISUAL-LANE.md`).
 
-## Who ships the real JPEG (owner decision 2026-08-24)
+## What counts as a delivery
+
+One thing, and it is worth stating flatly because several rounds have now been
+spent on things that resemble it: **a plate is delivered when its bytes are in
+a commit on a branch.** `git show <sha>:apps/web/public/plates/<name>.jpg | wc
+-c` prints a photograph's worth of bytes, or nothing was delivered.
+
+None of these is a delivery, whatever the covering note says:
+
+- a README, a manifest, or a table naming files that live somewhere else;
+- a link, a folder path, or a zip in a drive;
+- a base64 block, a data URI, or bytes pasted into a chat channel;
+- a `.jpg`-named placeholder standing in for the real file.
+
+The distinction is not pedantry and it is not a filing preference. Each of
+those arrives looking like progress, closes a round, and leaves this directory
+exactly as it was. The reason the byte gate above reads as fussy is that every
+line of it was written after one of them got past a weaker check.
+
+## Who ships the real JPEG (owner decision 2026-08-24, amended 2026-08-25)
 
 **Grok owns the complete approved visual implementation path, including the
 real JPEG wall-plate binaries.**
@@ -57,12 +76,80 @@ Jason approves plate/design
   → separate release decision
 ```
 
-**Retired:** Grok → OneDrive Grok-Plates-Inbox → Claude picks up / relays /
-commits the binary. Claude is **not** the binary courier. Do not ask Claude to
-retrieve, reconstruct, re-encode, or commit plate binaries on Grok's behalf.
+### Amendment, 2026-08-25 — the courier ban is lifted; the capability limit is not
+
+Owner ruling, verbatim: *“the document that gets it live, accept the binary, is
+correct.”* The blanket prohibition recorded below is therefore **superseded as
+policy**. Where Jason directs it, Claude may accept a plate binary and land it
+on a branch like any other file, and nobody has to argue about whose job it is.
+
+**Policy was never what failed, though, and this is the part no document
+recorded until now: Claude cannot retrieve bytes out of SharePoint or OneDrive
+in this environment.** The Microsoft 365 connector *renders* an image for
+viewing; it does not return file contents. There is no download action, no
+unzip capability, and `downloadUrl` comes back null. A zip is not slow or
+awkward from here — it is completely inaccessible.
+
+That is a capability fact, checked rather than preferred, and it is written
+down because leaving it unwritten is what allowed round after round of handoffs
+to be authored against it. “Claude downloads the package from OneDrive and
+commits it” is not a permission to grant or withhold. It cannot be executed, so
+a handoff resting on it is not a slow route — it is a scheduled failure. Anyone
+can still write that instruction; it will not run.
+
+The routes that do exist:
+
+- **Grok pushes the bytes** onto its own feature branch — the path above.
+- **Jason pushes the bytes** — drag-and-drop onto the branch in the GitHub web
+  UI, or a local `git add`. Two minutes, and it is the only route that has
+  never failed.
+- **Claude lands bytes it can actually read** — a file already in the working
+  tree, in a commit, on a branch, or otherwise reachable from this sandbox.
+  Directed by the owner, that is ordinary work and needs no ceremony.
+
+**Superseded 2026-08-24 text, kept for provenance:** *“Retired: Grok → OneDrive
+Grok-Plates-Inbox → Claude picks up / relays / commits the binary. Claude is
+not the binary courier. Do not ask Claude to retrieve, reconstruct, re-encode,
+or commit plate binaries on Grok's behalf.”*
+
+Two clauses in that sentence outlived the ruling, for reasons that have nothing
+to do with who carries a file. **Re-encode:** this sandbox has no `cjpeg`, no
+`jpegtran`, no ImageMagick and no Pillow, so a subsampled or malformed plate is
+refused and named for the law it broke rather than quietly corrected on the way
+in — silently fixing a bad input hides that the producer's pipeline is wrong,
+and the next file has the same fault. **Reconstruct:** an image rebuilt from a
+rendering is a new picture, not the producer's approved file, and it would sail
+through the byte gate while being the wrong plate.
 
 The OneDrive folder `Documents / PPBF-AI-Lanes / Grok-Plates-Inbox /` may remain
-for provenance/archive. It is no longer a mandatory shipping step.
+for provenance/archive. It is not a shipping step, and it could never have been
+one from this side.
+
+## Why the byte gate reads the way it does — the delivery record
+
+Recorded factually, because each requirement above is the fossil of a specific
+failure and none of them makes sense without the thing it caught.
+
+| What arrived | Under what name | What caught it |
+|---|---|---|
+| Three chat-channel relays of a base64 sidecar | correct plate filenames | sizes of **11, 24 and 41 bytes**. A stub carries a filename perfectly; only the size floor sees it. |
+| One relay that looked plausible | correct plate filename | **2.3 KB**, a valid JPEG start-of-image marker, **no end-of-image trailer**, and the wrong dimensions. Every check short of reading the last two bytes said it was fine. |
+| PR #643, `grok/plates-full-ship`, 2026-08-25 | — | **no binaries at all.** One Markdown manifest naming twelve JPEGs held in OneDrive, plus `_smoke_binary_test.jpg`: ten bytes reading `REPLACE_ME`. |
+
+PR #643 is the one worth dwelling on, because it is not sloppy in the way the
+earlier rounds were. Its manifest is accurate, its filenames are right, its
+covering note is clear, and its `FUNCTIONAL_CHANGES: NONE` is true. It simply
+contains no plates, and its “land command” asks Claude to download a package
+this sandbox cannot reach. Both locations it names are dead ends:
+`02_READY_FOR_CLAUDE/REPO-PLATES-SHIP/` is an empty folder (0 bytes), and the
+only real package beside it, `REPO-PLATES-SHIP.zip` (1,569,483 bytes), is a zip
+— unreadable from here whatever the policy says. A person following those
+instructions by hand finds the empty folder too.
+
+Its `_smoke_binary_test.jpg` also demonstrates why the gate globs *every*
+`*.jpg` in this directory rather than a curated list: a ten-byte file named
+like a plate is refused at the start-of-image check, which is exactly what
+should happen to it.
 
 ## Adding a variant
 
