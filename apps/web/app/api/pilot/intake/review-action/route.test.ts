@@ -550,3 +550,69 @@ describe('legacy admin is organization_admin for promotion', () => {
     expect(outcomes).toEqual(['admitted', 'admitted']);
   });
 });
+
+/**
+ * Approving a promoted case must not walk it back.
+ *
+ * approve had no status precondition -- it wrote 'approved' unconditionally,
+ * over any prior status including 'promoted'. Promote's own precondition
+ * (status must be 'approved') was therefore defeatable by another action
+ * silently restoring the state it checks for: promote, approve, promote again.
+ *
+ * The second promote is the damage, and it is not cosmetic.
+ * createOrUpdateAthleteAccount's update branch sets pin_hash = null,
+ * active_flag = false and revokes every session, because re-running a review is
+ * meant to re-provision. Correct for an athlete who has not activated yet;
+ * catastrophic for one who already redeemed their code and chose a PIN nobody
+ * else knows. They are locked out with no way to request a new activation code
+ * themselves, and the admin sees ok: true.
+ */
+describe('approve cannot un-promote a case', () => {
+  test('refuses to approve a case that is already promoted', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'promoted' } as never);
+
+    const response = await POST(new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ intake_case_id: 'case-1', action: 'approve' }),
+    }));
+
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toContain('already promoted');
+    // The status write must not have happened -- a refusal that still mutates
+    // is not a refusal.
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+
+  test('an approved case can still be approved, so ordinary review is unaffected', async () => {
+    // Guards against "fixing" this by refusing approve outright. Re-approving a
+    // case that has not been promoted is a normal thing an admin may do.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
+
+    const response = await POST(new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ intake_case_id: 'case-1', action: 'approve' }),
+    }));
+
+    const body = (await response.json()) as { error?: string };
+    expect(body.error ?? '').not.toContain('already promoted');
+    expect(mockUpdateStatus).toHaveBeenCalled();
+  });
+
+  test('a submitted case can still be approved', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'submitted' } as never);
+
+    const response = await POST(new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ intake_case_id: 'case-1', action: 'approve' }),
+    }));
+
+    const body = (await response.json()) as { error?: string };
+    expect(body.error ?? '').not.toContain('already promoted');
+  });
+});

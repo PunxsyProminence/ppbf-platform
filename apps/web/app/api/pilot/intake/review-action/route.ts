@@ -253,6 +253,35 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
 
     if (action === 'approve') {
+      /* A promoted case cannot be walked back to 'approved'.
+
+         approve had no status precondition at all -- it wrote 'approved'
+         unconditionally, over any prior status including 'promoted'. That made
+         a destructive sequence reachable in two clicks: promote, approve,
+         promote again.
+
+         The second promote is the damage. createOrUpdateAthleteAccount's
+         update branch sets pin_hash = null, active_flag = false and revokes
+         every session, because re-running a review is meant to RE-PROVISION.
+         That is correct for an athlete who has not activated yet. Run it on one
+         who has already redeemed their code and chosen a PIN nobody else knows,
+         and they are locked out of their own account, with no way to ask for a
+         new activation code themselves -- while the admin who did it sees
+         ok: true and no signal that anything was undone.
+
+         The guard is on approve rather than on promote deliberately. Promote's
+         own precondition (status must be 'approved') is doing its job; what
+         defeated it was another action silently restoring the state it checks
+         for. Promotion remains re-runnable for a case that genuinely needs
+         re-provisioning -- an admin has to move it out of 'promoted'
+         deliberately, not by clicking approve. */
+      if (intakeCase.status === 'promoted') {
+        throw new Error(
+          'Forbidden: this intake case is already promoted. Approving it again would allow a second promotion, '
+          + 'which resets the athlete PIN and revokes their sessions.',
+        );
+      }
+
       const researchFields = buildReviewResearchFields({ action: 'approve', intakeCaseId });
 
       await updateIntakeCaseStatus({
