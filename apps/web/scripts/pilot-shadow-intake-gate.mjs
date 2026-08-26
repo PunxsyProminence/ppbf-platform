@@ -40,8 +40,15 @@ const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
  * shared-PIN retirement, and it is why this is the ONLY PIN the account ever
  * holds. `athletePin` above is now just the fixture credential the provisioner
  * writes before the run; intake promotion nulls it (createOrUpdateAthleteAccount
- * clears pin_hash and active_flag on its update branch), and step 9c asserts
- * that it no longer signs in.
+ * clears pin_hash and active_flag on its update branch).
+ *
+ * That old PIN is refused TWICE, and the pair is deliberate. Step 9c tries it
+ * while the account is still inactive, which proves promotion leaves no usable
+ * credential -- but login bails on `unknown_or_inactive_account` there and
+ * compares nothing, so on its own it says nothing about the PIN. After step 10
+ * it is tried again against the now-active account holding a real hash, where
+ * the refusal has to come from the credential check itself. One assertion
+ * without the other is the weaker half of the claim.
  *
  * Deliberately NOT a new environment variable. A required env var the deploy
  * workflow does not set yet fails the gate on its next run for a
@@ -123,13 +130,21 @@ async function assertRefusal(call, message, expectedStatus) {
     await call();
   } catch (error) {
     const status = Number(String(error).match(/failed \((\d{3})\)/)?.[1] ?? 0);
-    if (expectedStatus && status !== expectedStatus) {
-      throw new Error(`Expected a ${expectedStatus} refusal, got: ${String(error)}`);
-    }
+    /* 429 is checked FIRST, before the expectedStatus comparison. It used to
+       be second, which made this branch unreachable for exactly the two calls
+       that pin a status: a throttled call fell into the mismatch arm and
+       reported "Expected a 401 refusal, got ... (429)". True, but it buries
+       the lede -- the useful fact is not that the status differed, it is that
+       the guard was never reached, and the doc above names that message as
+       the property keeping clearAuthThrottle honest. A safety message that
+       cannot fire on the calls it was written for is not a safety message. */
     if (status === 429) {
       throw new Error(
         `Throttled before the guard was reached, so nothing was proven: ${String(error)}`,
       );
+    }
+    if (expectedStatus && status !== expectedStatus) {
+      throw new Error(`Expected a ${expectedStatus} refusal, got: ${String(error)}`);
     }
     if (status >= 400 && status < 500) {
       refused = true;
@@ -145,19 +160,31 @@ async function assertRefusal(call, message, expectedStatus) {
  * reaches the credential check instead of the rate limiter.
  *
  * This is fixture hygiene, not a weakened guard, and the difference matters
- * enough to spell out. The refusals in step 9c are about WHO may sign in --
- * an activation code must not work as a PIN, a not-yet-activated account must
- * not sign in at all. The rate limiter is a different guard with its own
- * tests, and it is not under test here. Left alone it makes those two
- * assertions untestable: recordDurableFailedAttempt sets
- * `blocked_until = now() + 1000ms` on the VERY FIRST failure -- the
- * MAX_ATTEMPTS_THRESHOLD of 5 only controls how fast the backoff grows, it is
- * not a grace period -- so one deliberate failure throttles the next one, and
- * the bucket survives in Postgres for fifteen minutes, across runs.
+ * enough to spell out. The refusals in this gate are about WHO may sign in --
+ * a not-yet-activated account must not sign in at all, and an
+ * administrator-known activation code must not work as a PIN. The rate
+ * limiter is a different guard with its own tests, and it is not under test
+ * here. Left alone it makes those assertions untestable:
+ * recordDurableFailedAttempt sets `blocked_until = now() + 1000ms` on the
+ * VERY FIRST failure -- the MAX_ATTEMPTS_THRESHOLD of 5 only controls how
+ * fast the backoff grows, it is not a grace period -- so one deliberate
+ * failure throttles the next one.
  *
- * That is exactly what happened on run 33000410968: step 9c's FIRST refusal
- * came back 429 rather than 401, inherited from an earlier run's failed login
- * against the same account.
+ * That is what happened on run 33000410968, and the mechanism is worth
+ * stating precisely because the first version of this comment got it wrong.
+ * The 429 was NOT inherited from an earlier run: `delayMs` is
+ * `min(1000 * 2^max(0, attempts - 5), 60000)`, so a bucket blocks for at most
+ * SIXTY SECONDS and a run seven minutes earlier cannot have caused it. The
+ * fifteen minutes in `rateLimit.ts` is how long the ROW is retained before
+ * the sweep deletes it, not how long it blocks. What actually happened is
+ * this gate throttling itself: the first deliberate refusal blocked the
+ * second, one second later.
+ *
+ * The row retention still matters, just not for the blocking. It is why
+ * `attempt_count` accumulates across runs inside that window, and the
+ * accumulation is what would eventually push the count past five and start
+ * the backoff doubling. Deleting the rows is what keeps the count low enough
+ * that the 1500ms wait below stays sufficient.
  *
  * The safety property that keeps this honest: assertRefusal REJECTS a 429
  * outright. So if this clear ever stops working, the gate goes red saying
@@ -854,29 +881,23 @@ async function run() {
     );
   }
 
-  console.log('9c) The activation code is not a credential, and the athlete has none yet');
-  // TWO REFUSALS, both asserted BEFORE the redemption that makes them stop
-  // being interesting -- the same discipline the approval-before-review
-  // refusal above uses. A guard only ever exercised in its passing direction
-  // is a guard nobody would notice losing.
-  //
-  // The point of retiring the shared PIN was that a credential an
-  // ADMINISTRATOR knows must never sign in as a child. The code an admin
-  // issues is a one-time bearer token for the activation endpoint only; it is
-  // not a PIN, and the login route must not accept it as one.
-  await clearAuthThrottle();
-  await assertRefusal(
-    () => athlete.call('/api/pilot/auth/login', {
-      method: 'POST',
-      body: { account_id: athleteAccountId, pin: activationCode },
-    }),
-    'The activation code signed in through the ordinary PIN login. An administrator-known '
-    + 'value is a usable credential for a minor\'s account, which is the disclosure the '
-    + 'shared-PIN retirement exists to end.',
-    401,
-  );
+  console.log('9c) A promoted athlete has no credential until they make one');
+  /* Asserted BEFORE the redemption that makes it stop being interesting --
+     the same discipline the approval-before-review refusal above uses.
 
-  // Cleared again: the refusal above just recorded a failed attempt of its own.
+     THE COMPANION ASSERTION MOVED, and why is worth stating. This block used
+     to also try the ACTIVATION CODE as a PIN here, claiming it proved the
+     login route will not accept an administrator-known value as a
+     credential. It proved no such thing at this point in the run: the
+     account is still `active_flag = false`, so loginWithAccountIdAndPin
+     returns null on its `unknown_or_inactive_account` branch and never
+     reaches verifyPin at all. Both refusals were failing on the same line,
+     and the code-as-PIN one would have stayed green with the entire PIN
+     comparison deleted -- exactly the "guard nobody would notice losing"
+     this comment warns about.
+
+     It now runs after step 10, where the account is active and holds a real
+     pin_hash, so the refusal lands on the credential check it names. */
   await clearAuthThrottle();
   await assertRefusal(
     () => athlete.call('/api/pilot/auth/login', {
@@ -922,6 +943,28 @@ async function run() {
     + 'after the athlete has used it.',
   );
 
+  /* SIGN OUT, and prove the session is actually dead.
+
+     Placed here deliberately: before the throttle clear below and before
+     step 10's sign-in, because logout touches no PIN bucket, whereas putting
+     it after the deliberate refusals would meet their live 1000ms block and
+     fail as a 429 on the success path -- the false positive this file keeps
+     warning about.
+
+     The assertion checks the BODY, not for a throw. The logout route clears
+     the cookie and /auth/session answers an unauthenticated caller with HTTP
+     200 and `authenticated: false`, so an expectation of a 401 here would be
+     wrong about the contract and would fail against correct behaviour. */
+  await athlete.call('/api/pilot/auth/logout', { method: 'POST', body: {} });
+
+  const afterLogout = await athlete.call('/api/pilot/auth/session', { method: 'POST', body: {} });
+  if (afterLogout.authenticated !== false) {
+    throw new Error(
+      'Signing out left the athlete session live. A shared or kiosk device keeps a child '
+      + 'signed in after they believe they have left.',
+    );
+  }
+
   // ...and once more before the sign-in that must SUCCEED. Two deliberate
   // failures precede it, and a 429 here would read as "the athlete cannot get
   // in with the PIN they just chose" -- the most alarming possible false
@@ -947,6 +990,77 @@ async function run() {
   if (!athleteRead.found) {
     throw new Error('Athlete cannot retrieve persisted profile');
   }
+
+  /* THE ADMINISTRATOR-KNOWN VALUE, refused where the refusal means something.
+     This is the assertion that moved out of 9c. It belongs here because only
+     here is the account active and holding a real pin_hash, so
+     loginWithAccountIdAndPin gets past its active_flag and no_pin_set
+     branches and the code is actually compared against the stored hash. Run
+     it before step 10 and it passes for the wrong reason -- the account is
+     inactive, nothing is compared, and the whole PIN check could be deleted
+     without turning this red.
+
+     What it protects: an activation code is typed by an ADMINISTRATOR. It is
+     a one-time bearer token for /auth/activate and nothing else. The day it
+     also works at the PIN login is the day the shared-PIN retirement is
+     undone, quietly, for every child in the building.
+
+     A fresh client, so the session step 10 just established is not sent with
+     a deliberately failing sign-in. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => createClient('shadow-athlete-code-as-pin').call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: activationCode },
+    }),
+    'The activation code signed in through the ordinary PIN login, against an ACTIVE account '
+    + 'holding its own PIN. An administrator-known value is a usable credential for a minor\'s '
+    + 'account, which is the disclosure the shared-PIN retirement exists to end.',
+    401,
+  );
+
+  /* THE RETIRED SHARED PIN, refused against that same active account.
+
+     auth.ts refuses DEFAULT_FIRST_LOGIN_PIN in its own branch, which sits
+     BELOW the active_flag and pin_hash checks and above verifyPin. So it is
+     only reachable on an active account holding a real hash -- which is
+     exactly here, and nowhere earlier in this gate. Until now nothing
+     exercised it on a deployed revision at all: the guard that the published
+     bootstrap credential can never mint a session was asserted only in unit
+     tests.
+
+     Legacy rows in deployed databases still hold that PIN's hash. That is
+     precisely why the branch exists, and why proving it live is worth a
+     round-trip. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => createClient('shadow-athlete-retired-pin').call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: '123456' },
+    }),
+    'The retired shared bootstrap PIN signed in. It is published in source and was once handed '
+    + 'to every athlete in the gym, so any row still holding its hash is an account anybody can '
+    + 'open.',
+    401,
+  );
+
+  /* AND THE FIXTURE PIN THAT PROMOTION NULLED, on the active account.
+
+     Step 9c already tried this one, but at that point the account was
+     inactive, so login refused it on the unknown_or_inactive_account branch
+     and never compared anything. That proved promotion leaves no usable
+     credential -- worth proving, and it stays -- but it did NOT prove the old
+     PIN is dead now that the account holds a real hash again. This does. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => createClient('shadow-athlete-old-fixture-pin').call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: athletePin },
+    }),
+    'A PIN that intake promotion nulled still signs in now that the athlete has chosen their '
+    + 'own. The old credential outlived the account state that was supposed to end it.',
+    401,
+  );
 
   console.log('11) Verify guardian retrieval permissions');
   // A parent cannot sign in with a PIN -- PIN sessions are athlete-only -- so

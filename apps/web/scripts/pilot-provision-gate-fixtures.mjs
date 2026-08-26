@@ -160,8 +160,38 @@ async function run() {
         'delete from pilot.session_tokens where account_id = $1',
         [athleteAccountId],
       );
+      /* AND THE ACTIVATION CODES, or the cleanup above can be undone by
+         whoever is holding one.
+
+         Clearing pin_hash and revoking sessions leaves the account
+         deactivated, which is the point. But an activation code issued
+         earlier in the run and never redeemed is still live for its whole
+         TTL, and redeeming it sets active_flag = true with a fresh pin_hash
+         chosen by the redeemer. The account walks back up on its own.
+
+         The window is real and it grew. The gate issues a code at step 9b and
+         redeems it at 9d, and between those two now sit a deliberate refusal
+         and two throttle round-trips -- so a throw anywhere in there leaves a
+         working credential on a publicly reachable staging login, against an
+         account the cleanup step just reported as deactivated.
+
+         Superseded rather than deleted: the redeem path already filters on
+         `superseded_at is null`, this is the same mechanism reissuing a code
+         uses, and a deleted row destroys the record that the code ever
+         existed. Only unconsumed, not-yet-superseded rows are touched, so
+         nothing already spent is rewritten. */
+      const codes = await client.query(
+        `update pilot.account_activation_tokens
+         set superseded_at = now()
+         where account_id = $1
+           and consumed_at is null
+           and superseded_at is null
+         returning token_hash`,
+        [athleteAccountId],
+      );
       console.log(result.rowCount > 0
-        ? `Deactivated gate fixture athlete "${athleteAccountId}"; PIN cleared and sessions revoked.`
+        ? `Deactivated gate fixture athlete "${athleteAccountId}"; PIN cleared, sessions revoked, `
+          + `${codes.rowCount} outstanding activation code(s) superseded.`
         : `Gate fixture athlete "${athleteAccountId}" not found — nothing to deactivate.`);
       console.log('GATE FIXTURE DEACTIVATE PASS');
     } finally {
