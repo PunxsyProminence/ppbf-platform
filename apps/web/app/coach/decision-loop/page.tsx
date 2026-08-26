@@ -139,7 +139,6 @@ export default function DecisionLoopReviewPage() {
   const [decisionText, setDecisionText] = useState('');
   const [decisionExpectedOutcome, setDecisionExpectedOutcome] = useState('');
   const [decisionRecommendationId, setDecisionRecommendationId] = useState('');
-  const [decisionMedicallySensitive, setDecisionMedicallySensitive] = useState(false);
 
   const [nearMissDescription, setNearMissDescription] = useState('');
   const [nearMissSeverity, setNearMissSeverity] = useState<NearMissSeverity>('low');
@@ -265,19 +264,24 @@ export default function DecisionLoopReviewPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
+        // Exactly the four fields /api/pilot/shadow/decisions declares it
+        // reads. This body used to carry a fifth, isMedicallySensitive, off a
+        // checkbox the coach could tick; the route never mentioned it, so the
+        // control moved nothing in either direction while its label said it
+        // gated the clearance check. The check is not optional -- see the note
+        // above the form -- and a request must not carry a field that claims
+        // otherwise. decisionRequestContract.test.ts holds this shut.
         body: JSON.stringify({
           athleteId,
           recommendationId: decisionRecommendationId || undefined,
           decisionText,
           expectedOutcome: decisionExpectedOutcome,
-          isMedicallySensitive: decisionMedicallySensitive,
         }),
       });
       await readJsonOrThrow(response, 'Failed to record decision.');
       setDecisionText('');
       setDecisionExpectedOutcome('');
       setDecisionRecommendationId('');
-      setDecisionMedicallySensitive(false);
       await refreshAll(athleteId);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to record decision.');
@@ -678,14 +682,17 @@ export default function DecisionLoopReviewPage() {
                       className="textarea min-h-[56px]"
                     />
                   </label>
-                  <label className="t-label flex items-center gap-[var(--s3)]">
-                    <input
-                      type="checkbox"
-                      checked={decisionMedicallySensitive}
-                      onChange={(event) => setDecisionMedicallySensitive(event.target.checked)}
-                    />
-                    Medically sensitive (checks medical status before allowing this decision)
-                  </label>
+                  {/* This replaced a "Medically sensitive" checkbox. The box
+                      claimed to switch the clearance check on, and nothing read
+                      it: the server runs that check on every decision, whatever
+                      the wording, and refuses the write when the athlete's
+                      record does not allow one. Saying so is the honest version
+                      of what the checkbox implied. */}
+                  <p className="t-muted">
+                    The athlete&apos;s medical status is checked on every decision recorded here.
+                    There is nothing to switch on: if their record does not allow one, this refuses
+                    and tells you why.
+                  </p>
                   <button type="submit" className="btn">
                     Record Decision
                   </button>
