@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { createAthleteAccount } from '@/src/server/pilot/auth';
+import { provisionAthleteActivation } from '@/src/server/pilot/activation';
 import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
-jest.mock('@/src/server/pilot/auth', () => ({
-  createAthleteAccount: jest.fn().mockResolvedValue(undefined),
+jest.mock('@/src/server/pilot/activation', () => ({
+  provisionAthleteActivation: jest.fn().mockResolvedValue({ code: 'ABCD-2345-EFGH', expiresAt: '2026-08-26T00:00:00Z' }),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -24,7 +24,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 }));
 
 const mockRequireMicrosoftAuthenticatedPrincipal = requireMicrosoftAuthenticatedPrincipal as jest.Mock;
-const mockCreateAthleteAccount = createAthleteAccount as jest.Mock;
+const mockCreateAthleteAccount = provisionAthleteActivation as jest.Mock;
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest('http://localhost/api/pilot/admin/athlete-accounts', {
@@ -63,12 +63,13 @@ describe('POST /api/pilot/admin/athlete-accounts', () => {
     const response = await POST(makeRequest({ account_id: 'ath-account-1', athlete_id: 'ath-1' }));
 
     expect(response.status).toBe(200);
-    expect(mockCreateAthleteAccount).toHaveBeenCalledWith('ath-account-1', 'ath-1', 'org-1');
+    expect(mockCreateAthleteAccount).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'ath-account-1', athleteId: 'ath-1', organizationId: 'org-1', mode: 'create' }));
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       account_id: 'ath-account-1',
       athlete_id: 'ath-1',
-      account_state: 'pending_pin_activation',
+      account_state: 'pending_activation',
+      activation_code: 'ABCD-2345-EFGH',
     });
   });
 
