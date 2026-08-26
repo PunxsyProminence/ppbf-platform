@@ -40,8 +40,15 @@ const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
  * shared-PIN retirement, and it is why this is the ONLY PIN the account ever
  * holds. `athletePin` above is now just the fixture credential the provisioner
  * writes before the run; intake promotion nulls it (createOrUpdateAthleteAccount
- * clears pin_hash and active_flag on its update branch), and step 9c asserts
- * that it no longer signs in.
+ * clears pin_hash and active_flag on its update branch).
+ *
+ * That old PIN is refused TWICE, and the pair is deliberate. Step 9c tries it
+ * while the account is still inactive, which proves promotion leaves no usable
+ * credential -- but login bails on `unknown_or_inactive_account` there and
+ * compares nothing, so on its own it says nothing about the PIN. After step 10
+ * it is tried again against the now-active account holding a real hash, where
+ * the refusal has to come from the credential check itself. One assertion
+ * without the other is the weaker half of the claim.
  *
  * Deliberately NOT a new environment variable. A required env var the deploy
  * workflow does not set yet fails the gate on its next run for a
@@ -936,6 +943,28 @@ async function run() {
     + 'after the athlete has used it.',
   );
 
+  /* SIGN OUT, and prove the session is actually dead.
+
+     Placed here deliberately: before the throttle clear below and before
+     step 10's sign-in, because logout touches no PIN bucket, whereas putting
+     it after the deliberate refusals would meet their live 1000ms block and
+     fail as a 429 on the success path -- the false positive this file keeps
+     warning about.
+
+     The assertion checks the BODY, not for a throw. The logout route clears
+     the cookie and /auth/session answers an unauthenticated caller with HTTP
+     200 and `authenticated: false`, so an expectation of a 401 here would be
+     wrong about the contract and would fail against correct behaviour. */
+  await athlete.call('/api/pilot/auth/logout', { method: 'POST', body: {} });
+
+  const afterLogout = await athlete.call('/api/pilot/auth/session', { method: 'POST', body: {} });
+  if (afterLogout.authenticated !== false) {
+    throw new Error(
+      'Signing out left the athlete session live. A shared or kiosk device keeps a child '
+      + 'signed in after they believe they have left.',
+    );
+  }
+
   // ...and once more before the sign-in that must SUCCEED. Two deliberate
   // failures precede it, and a 429 here would read as "the athlete cannot get
   // in with the PIN they just chose" -- the most alarming possible false
@@ -987,6 +1016,49 @@ async function run() {
     'The activation code signed in through the ordinary PIN login, against an ACTIVE account '
     + 'holding its own PIN. An administrator-known value is a usable credential for a minor\'s '
     + 'account, which is the disclosure the shared-PIN retirement exists to end.',
+    401,
+  );
+
+  /* THE RETIRED SHARED PIN, refused against that same active account.
+
+     auth.ts refuses DEFAULT_FIRST_LOGIN_PIN in its own branch, which sits
+     BELOW the active_flag and pin_hash checks and above verifyPin. So it is
+     only reachable on an active account holding a real hash -- which is
+     exactly here, and nowhere earlier in this gate. Until now nothing
+     exercised it on a deployed revision at all: the guard that the published
+     bootstrap credential can never mint a session was asserted only in unit
+     tests.
+
+     Legacy rows in deployed databases still hold that PIN's hash. That is
+     precisely why the branch exists, and why proving it live is worth a
+     round-trip. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => createClient('shadow-athlete-retired-pin').call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: '123456' },
+    }),
+    'The retired shared bootstrap PIN signed in. It is published in source and was once handed '
+    + 'to every athlete in the gym, so any row still holding its hash is an account anybody can '
+    + 'open.',
+    401,
+  );
+
+  /* AND THE FIXTURE PIN THAT PROMOTION NULLED, on the active account.
+
+     Step 9c already tried this one, but at that point the account was
+     inactive, so login refused it on the unknown_or_inactive_account branch
+     and never compared anything. That proved promotion leaves no usable
+     credential -- worth proving, and it stays -- but it did NOT prove the old
+     PIN is dead now that the account holds a real hash again. This does. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => createClient('shadow-athlete-old-fixture-pin').call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: athletePin },
+    }),
+    'A PIN that intake promotion nulled still signs in now that the athlete has chosen their '
+    + 'own. The old credential outlived the account state that was supposed to end it.',
     401,
   );
 

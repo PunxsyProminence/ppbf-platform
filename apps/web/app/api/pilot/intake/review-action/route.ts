@@ -374,19 +374,28 @@ export async function POST(request: NextRequest) { // NOSONAR
       updated_at: athleteCreatedAt,
     });
 
-    // An athlete PIN is deliberately NOT settable at promotion. The account
-    // is provisioned with no credential and inactive, and the supported flow
-    // sets the PIN afterward through /api/pilot/admin/accounts/pin-reset with
-    // mode 'activate' — the same promote → activate → sign-in sequence the
-    // E2E gate exercises. This request used to ACCEPT athlete.pin and
-    // silently discard it (it landed in createOrUpdateAthleteAccount's
-    // ignored legacy parameter), so an administrator believed a credential
-    // was set that never was. Refuse it the way the guardian branch below
-    // refuses guardian.pin; the prefix keeps jsonError mapping it to a 400.
+    // An athlete PIN is deliberately NOT settable at promotion. The account is
+    // provisioned with no credential and inactive, and NOBODY sets a PIN for
+    // an athlete any more: an administrator issues a one-time activation code
+    // and the athlete redeems it, choosing a PIN only they know. That is the
+    // promote → issue code → redeem → sign-in sequence the E2E gate exercises.
+    //
+    // This request used to ACCEPT athlete.pin and silently discard it (it
+    // landed in createOrUpdateAthleteAccount's ignored legacy parameter), so
+    // an administrator believed a credential was set that never was. Refuse it
+    // the way the guardian branch below refuses guardian.pin; the prefix keeps
+    // jsonError mapping it to a 400.
+    //
+    // The guidance below is user-facing and was stale: it named a `mode`
+    // parameter that /admin/accounts/pin-reset no longer has, on a route that
+    // no longer sets a PIN at all. An error that tells an administrator to do
+    // something impossible is worse than one that says only "no".
     if (promotion.athlete.pin) {
       throw new Error(
-        'Unsupported athlete.pin: promotion provisions the account without a credential. '
-        + 'Set the PIN after promotion via /api/pilot/admin/accounts/pin-reset with mode "activate".',
+        'Unsupported athlete.pin: promotion provisions the account without a credential, and '
+        + 'no administrator sets an athlete PIN. Issue a one-time activation code via '
+        + 'POST /api/pilot/admin/accounts/pin-reset (or /api/pilot/admin/activation-codes), then '
+        + 'have the athlete redeem it at /api/pilot/auth/activate and choose their own PIN.',
       );
     }
 
