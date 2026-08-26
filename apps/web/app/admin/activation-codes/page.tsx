@@ -36,6 +36,26 @@ function ActivationCodesConsoleContent() {
   const [issuing, setIssuing] = useState(false);
   const [issuedCode, setIssuedCode] = useState<IssuedCodeState | null>(null);
   const [issueError, setIssueError] = useState('');
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  /**
+   * Puts the one-time code on the clipboard.
+   *
+   * Failure is reported rather than swallowed. navigator.clipboard is undefined
+   * outside a secure context and writeText rejects when the document is not
+   * focused or permission is refused, and on this screen a silent failure is
+   * the worst outcome available: the admin walks away believing they have a
+   * code that is shown once, is never stored in plaintext, and cannot be
+   * recovered. The failure label tells them to select it by hand instead.
+   */
+  async function copyIssuedCode(code: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+  }
 
   const loadCodes = useCallback(async () => {
     setError('');
@@ -108,6 +128,9 @@ function ActivationCodesConsoleContent() {
         activation_code: payload.activation_code,
         expires_at: payload.expires_at || '',
       });
+      // Without this the previous code's "✓ Copied" label sits above the new
+      // one, telling the admin they hold a copy of a code they have never seen.
+      setCopyState('idle');
       setAccountId('');
       setLoading(true);
       await loadCodes();
@@ -234,7 +257,17 @@ function ActivationCodesConsoleContent() {
               )}
 
               {issuedCode && (
-                <div className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] p-[var(--s4)] space-y-[var(--s2)]">
+                /* role="status" and aria-live, matching the panel /admin/pin
+                   grew in #682. This block appears in response to a submit that
+                   moves no focus, so a screen-reader administrator was never
+                   told the code had arrived -- on the one screen where missing
+                   it is unrecoverable, because the code is shown once and the
+                   plaintext is never stored. */
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] p-[var(--s4)] space-y-[var(--s2)]"
+                >
                   <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--cleared-ink)]">
                     ✓ Code Issued Successfully
                   </p>
@@ -245,8 +278,20 @@ function ActivationCodesConsoleContent() {
                       {issuedCode.activation_code}
                     </p>
                   </div>
+                  {/* The instruction below used to say "write down or print",
+                      and this screen offered neither. Copy is the one of the
+                      two that can be honoured here: window.print() would print
+                      the whole console, roster table included, which is not a
+                      slip anyone can hand an athlete. */}
+                  <button
+                    type="button"
+                    onClick={() => void copyIssuedCode(issuedCode.activation_code)}
+                    className="btn btn--ghost w-full"
+                  >
+                    {copyState === 'copied' ? '✓ Copied' : copyState === 'failed' ? 'Copy failed — select it by hand' : 'Copy code'}
+                  </button>
                   <p className="text-[length:var(--t-xs)] text-[color:var(--brass-400)] font-semibold">
-                    ▲ Write down or print this code now. It is shown ONCE and cannot be recovered later.
+                    ▲ Copy or write down this code now. It is shown ONCE and cannot be recovered later.
                   </p>
                 </div>
               )}
