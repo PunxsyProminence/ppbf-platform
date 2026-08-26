@@ -5,7 +5,12 @@ import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { upsertAthlete } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
+import {
+  assertShadowAuthority,
+  isShadowAutomationMode,
+  SHADOW_AUTOMATION_MODES,
+  type ShadowAutomationMode,
+} from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { buildReviewResearchFields } from '@/src/server/pilot/shadow';
@@ -89,12 +94,31 @@ export async function POST(request: NextRequest) { // NOSONAR
       action?: 'approve' | 'reject' | 'promote';
       notes?: string;
       promotion?: IntakePromotionPayload;
-      automation_mode?: ShadowAutomationMode;
+      automation_mode?: unknown;
     };
 
     const intakeCaseId = requireString(body.intake_case_id, 'intake_case_id');
     const action = body.action;
-    const automationMode = body.automation_mode ?? 'assisted';
+    // Validated against the closed vocabulary rather than cast to it.
+    //
+    // Two gates downstream compare this value for EXACT equality with
+    // 'automatic': assertShadowAuthority's automatic-actor refusals, and this
+    // route's own "automatic intake promotion is not allowed" stop further
+    // down. The declared type is erased at runtime, so a caller declaring
+    // "Automatic" was read as a non-automatic actor by both and promoted a
+    // child's record -- athlete, guardian, emergency contact, medical, waiver
+    // -- past a refusal that never fired, with the authority ledger recording
+    // the check as passed. shadow/medical-status/route.ts named this route as
+    // one of the two unchecked call sites; this is that check. Absent still
+    // means 'assisted', unchanged.
+    const automationMode: ShadowAutomationMode = body.automation_mode === undefined
+      ? 'assisted'
+      : (body.automation_mode as ShadowAutomationMode);
+    if (!isShadowAutomationMode(automationMode)) {
+      throw new Error(
+        `Unsupported automation_mode: must be one of ${SHADOW_AUTOMATION_MODES.join(', ')}`,
+      );
+    }
     if (!action || !['approve', 'reject', 'promote'].includes(action)) {
       throw new Error('Unsupported action');
     }
