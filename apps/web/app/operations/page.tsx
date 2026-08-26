@@ -6,7 +6,7 @@ import AnnouncementBanner from '@/components/AnnouncementBanner';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
-import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
+import { OPERATIONS_ROLES, canUseOperationsHub } from '@/components/operationsAccess';
 
 const roleSelector = [
   { role: 'Athlete', href: '/athlete/dashboard', status: 'Ready' },
@@ -61,8 +61,18 @@ const workspaces = [
   },
 ];
 
-/* OPERATIONS V1 (owner decision, 2026-08-21): the OTHER DESKS section below
-   renders only for the admin desks -- see showsLabDesks in the component.
+/* The OTHER DESKS section below renders only for the admin desks -- see
+   showsLabDesks in the component.
+
+   That narrowing came from Operations V1 (2026-08-21), when this page was a
+   launcher every role could open and the lab desks had to be hidden from most
+   of them. The owner decision of 2026-08-26 retired that: the hub itself is
+   now administration only, so everyone who reaches this render is already an
+   admin or the platform owner and the check below can no longer exclude
+   anybody. It is kept as belt-and-braces rather than deleted, because it is
+   what would still hold the lab desks back if the hub's gate were ever
+   widened again without anyone revisiting this section.
+
    The list itself stays whole: it is the record of what the lab holds, and
    hiding a desk from a corridor is a visibility decision, never an
    authorization one (buildingMap.ts's own rule). The data behind every one
@@ -179,24 +189,36 @@ function capabilityChip(state: CapabilityState): { cls: string; glyph: string } 
   };
 }
 
-// Navigation only, with no athlete-scoped data on the page, so the platform
-// owner belongs here alongside every gym role.
-const operationsRoles: ClubRole[] = [...roleRoutes.map((route) => route.role), 'platform_owner'];
+/* THE GATE IS THE POLICY, IMPORTED, NOT DERIVED HERE.
+
+   This was `[...roleRoutes.map((route) => route.role), 'platform_owner']` --
+   every role the platform has, computed from the role-selector list this page
+   happens to render. Two things were wrong with that beyond its breadth: a
+   policy derived from a UI list changes whenever somebody adds a row to the
+   selector, and it was one of six places that independently decided who gets
+   Operations. The owner decision of 2026-08-26 narrows the hub to gym
+   administration; operationsAccess.ts states it once and everything else --
+   this gate, the global header, the standalone band, and the building map's
+   visibility hint -- reads it from there. */
 
 export default function OperationsHubPage() {
   /* The viewer's own role, read the way Corridor and CardCatalog read it. By
      the time RoleSessionGate lets the children mount it has persisted the
      authoritative session, so the snapshot is the server's answer, not a
-     guess. Used for VISIBILITY ONLY (buildingMap.ts's rule): the lab desks
-     leave every ordinary role's launcher (Operations V1, 2026-08-21), while
-     the pages behind them keep their own guards and every lab API keeps its
-     own access checks. */
+     guess. Used for VISIBILITY ONLY (buildingMap.ts's rule): the pages behind
+     the lab desks keep their own guards and every lab API keeps its own
+     access checks.
+
+     canUseOperationsHub rather than a hand-written `=== 'admin' || ===
+     'platform_owner'`: that spelling was a second copy of the same two roles
+     the gate uses, and two copies of one policy are how a narrowing lands in
+     one place and not the other. */
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const viewerRole = session?.role ?? null;
-  const showsLabDesks = viewerRole === 'admin' || viewerRole === 'platform_owner';
+  const showsLabDesks = canUseOperationsHub(viewerRole);
 
   return (
-    <RoleSessionGate allowedRoles={operationsRoles}>
+    <RoleSessionGate allowedRoles={[...OPERATIONS_ROLES]}>
       {/* Front office. The hub is a launcher and a notice board -- the role
           selector, the workspace directory and AnnouncementBanner, which is
           office chrome by name in ROOM-PURPOSE-DNA -- rather than floor work

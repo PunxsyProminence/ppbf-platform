@@ -18,6 +18,7 @@ import {
   searchDoors,
   visibleDoors,
 } from './buildingMap';
+import type { ClubRole } from './roleRoutes';
 
 describe('the building map itself', () => {
   it('has no duplicate hrefs', () => {
@@ -238,6 +239,107 @@ describe('the lab doors are offered to the admin desks only', () => {
     expect(visibleDoors('coach').map((d) => d.href)).toContain('/coach/workout-templates');
     expect(visibleDoors('athlete').map((d) => d.href)).not.toContain('/evidence');
     expect(visibleDoors('admin').map((d) => d.href)).toContain('/evidence');
+  });
+});
+
+/* THE OPERATIONS HUB IS ADMINISTRATION NOW (owner decision, 2026-08-26).
+
+   The door carried `roles: OPEN`, and visibleDoors short-circuits on OPEN
+   BEFORE it looks at the session at all -- so every role, and a signed-out
+   visitor, found "Operations Hub" in the corridor and by typing "mission
+   control" into the card catalog. Nothing in this file asserted that either
+   way, which is why flipping the entry turned no test red.
+
+   The matrix below is exhaustive by construction: ROLE_ACCESS is typed
+   Record<ClubRole, ...>, so a role added to the union will not compile until
+   somebody states which side of this decision it falls on. A hand-written
+   list of six roles cannot make that promise, and the previous gate -- built
+   by mapping over the role selector -- is what happens when nobody has to. */
+describe('the Operations hub is offered to the admin desks only', () => {
+  const OPERATIONS_HUB = '/operations';
+
+  const ROLE_ACCESS: Record<ClubRole, 'admitted' | 'refused'> = {
+    admin: 'admitted',
+    platform_owner: 'admitted',
+    athlete: 'refused',
+    coach: 'refused',
+    parent: 'refused',
+    staff: 'refused',
+    volunteer: 'refused',
+    board: 'refused',
+    'board-president': 'refused',
+    'board-chair': 'refused',
+    'board-vice-chair': 'refused',
+    'board-treasurer': 'refused',
+    'board-secretary': 'refused',
+    'board-safety-director': 'refused',
+    'board-community-director': 'refused',
+    'board-at-large': 'refused',
+  };
+
+  const roles = Object.keys(ROLE_ACCESS) as ClubRole[];
+  const ADMITTED = roles.filter((role) => ROLE_ACCESS[role] === 'admitted');
+  const REFUSED = roles.filter((role) => ROLE_ACCESS[role] === 'refused');
+
+  it('names both sides, so the matrix is not a table that agrees with itself', () => {
+    // A table that had drifted to all-admitted or all-refused would satisfy
+    // every it.each below by running one of them over an empty list.
+    expect(ADMITTED).toEqual(['admin', 'platform_owner']);
+    expect(REFUSED.length).toBeGreaterThan(0);
+    expect(ADMITTED.length + REFUSED.length).toBe(roles.length);
+  });
+
+  it.each(ADMITTED)('%s is offered the hub', (role) => {
+    expect(visibleDoors(role).map((d) => d.href)).toContain(OPERATIONS_HUB);
+  });
+
+  it.each(REFUSED)('%s is not offered the hub', (role) => {
+    expect(visibleDoors(role).map((d) => d.href)).not.toContain(OPERATIONS_HUB);
+  });
+
+  /* A distinct case, not a duplicate of the row above: visibleDoors returns
+     true for an OPEN door before it reads the role, so the signed-out path
+     never consulted the list at all while the entry said OPEN. */
+  it('a signed-out visitor is not offered the hub either', () => {
+    expect(visibleDoors(null).map((d) => d.href)).not.toContain(OPERATIONS_HUB);
+  });
+
+  /* The command search reads the same filter. Asked by name, by the room's
+     own vocabulary, and by the heading the page prints -- a refused role must
+     find it under none of them. */
+  it.each(['operations', 'mission control', 'hub'])(
+    'the card catalog does not surface the hub to a coach searching %p',
+    (query) => {
+      expect(searchDoors('coach', query).map((d) => d.href)).not.toContain(OPERATIONS_HUB);
+      expect(searchDoors('admin', query).map((d) => d.href)).toContain(OPERATIONS_HUB);
+    },
+  );
+
+  /* THE HALF THAT MATTERS MOST. `/operations/external-competition` and
+     `/operations/wrestling-league` share the hub's path prefix and are NOT
+     part of this decision: each carries its own ['coach', 'admin'], and after
+     this change the corridor and the catalog are a coach's only route to
+     them. A prefix is not a gate in this map, and anyone "securing the whole
+     /operations tree" would take two coach surfaces with it. */
+  it('leaves the two coach surfaces under the same path prefix alone', () => {
+    const coachDoors = visibleDoors('coach').map((d) => d.href);
+    expect(coachDoors).toContain('/operations/external-competition');
+    expect(coachDoors).toContain('/operations/wrestling-league');
+  });
+
+  it('leaves every other coach surface where it was', () => {
+    // Narrowing the hub must not narrow the floor. These are the routes a
+    // coach reaches directly, and none of them goes through it.
+    const coachDoors = visibleDoors('coach').map((d) => d.href);
+    for (const href of [
+      '/coach/floor-groups',
+      '/coach/session-scripts',
+      '/coach/drills',
+      '/coach/progression-intelligence',
+      '/schedule',
+    ]) {
+      expect({ href, offered: coachDoors.includes(href) }).toEqual({ href, offered: true });
+    }
   });
 });
 

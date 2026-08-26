@@ -1,9 +1,11 @@
 "use client";
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { useSyncExternalStore, type ReactNode } from 'react';
 import RoleSessionGate from './RoleSessionGate';
 import ShadowChatButton from './ShadowChatButton';
+import { canUseOperationsHub } from './operationsAccess';
+import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 import type { ClubRole } from './roleRoutes';
 import { isFamilyGround } from './roleGround';
 
@@ -38,9 +40,16 @@ interface RoleStandaloneViewProps {
    on Fibonacci rather than p-8/md:p-10, and every link at --tap instead of the
    26px the px-3 py-1 pair produced.
 
-   The Operations and Bell links are deliberately left in place even though the
-   sticky bar above carries the same two. Removing duplicate navigation is a
-   behaviour change, not a restyle, so it is raised rather than taken.
+   The Bell link is deliberately left in place even though the sticky bar above
+   carries the same one. Removing duplicate navigation is a behaviour change,
+   not a restyle, so it is raised rather than taken.
+
+   Operations is the exception, and it is a behaviour change made on purpose:
+   the owner decision of 2026-08-26 restricts the hub to administrators and the
+   platform owner (see operationsAccess.ts). This band wraps every role route
+   in the app, so leaving the link here would put an Operations control on an
+   athlete's every screen -- the exact surface the decision removes -- and it
+   would lead somewhere that bounces them.
 
    The text-[length:...] / text-[color:...] hints are load-bearing: Tailwind v4
    cannot disambiguate text-[var(--x)] between a size and a colour and emits
@@ -158,6 +167,15 @@ export default function RoleStandaloneView({
 }: RoleStandaloneViewProps) {
   const familyGround = isFamilyGround(allowedRoles);
   const trail = breadcrumbs ?? [];
+  /* The VIEWER's role, which is not `allowedRoles` -- that is the set the
+     wrapped page admits, and on a page open to both a coach and an admin it
+     would answer "yes, show Operations" to the coach. Read the way Corridor,
+     CardCatalog and the hub itself read it: the session RoleSessionGate has
+     already persisted, so by the time these children mount it is the server's
+     answer rather than a guess. A null snapshot is refused, which is correct
+     while the session is still resolving. */
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const viewerRole = session?.role ?? null;
 
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
@@ -257,9 +275,11 @@ export default function RoleStandaloneView({
               </div>
               <div className="flex flex-wrap items-center gap-[var(--s3)]">
                 <span className={familyGround ? CHIP : CHIP_INK}>{routeLabel}</span>
-                <Link href="/operations" className={familyGround ? LINK : LINK_INK}>
-                  Operations
-                </Link>
+                {canUseOperationsHub(viewerRole) ? (
+                  <Link href="/operations" className={familyGround ? LINK : LINK_INK}>
+                    Operations
+                  </Link>
+                ) : null}
                 <Link href="/dashboard" className={familyGround ? LINK : LINK_INK}>
                   Bell
                 </Link>

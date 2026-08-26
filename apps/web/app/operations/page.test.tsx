@@ -12,15 +12,41 @@ import { act, render, screen } from '@testing-library/react';
 import OperationsHubPage from './page';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import type { ClubRole } from '@/components/roleRoutes';
+import { OPERATIONS_ROLES } from '@/components/operationsAccess';
 
 const capturedRoles: ClubRole[][] = [];
 
-jest.mock('@/components/RoleSessionGate', () => ({
-  __esModule: true,
-  default: ({ allowedRoles, children }: { readonly allowedRoles: ClubRole[]; readonly children: ReactNode }) => {
-    capturedRoles.push(allowedRoles);
-    return children;
-  },
+/* The gate is stubbed to a passthrough for the content tests -- most of this
+   file describes what the register prints, and routing it through a real
+   session check every time would test RoleSessionGate instead.
+   `useRealGate` flips it back on for the refusal tests at the bottom, which
+   are the only ones that need it and the only ones that can prove it. Same
+   switch app/research/page.test.tsx uses for the same reason. */
+let useRealGate = false;
+
+jest.mock('@/components/RoleSessionGate', () => {
+  const React = jest.requireActual('react');
+  const actual = jest.requireActual('@/components/RoleSessionGate');
+  return {
+    __esModule: true,
+    default: (props: { readonly allowedRoles: ClubRole[]; readonly children: ReactNode }) => {
+      capturedRoles.push(props.allowedRoles);
+      return useRealGate
+        ? React.createElement(actual.default, props)
+        : props.children;
+    },
+  };
+});
+
+const mockReplace = jest.fn();
+/* ONE router object for the life of the file. RoleSessionGate's effect depends
+   on [router], so a mock that builds a fresh object per render re-runs it on
+   every render, which re-checks the session forever and hangs the test with
+   nothing wrong with the page. The same note is written at the top of
+   app/shadow/page.test.tsx, which learned it the same way. */
+const mockRouter = { replace: mockReplace, push: jest.fn() };
+jest.mock('next/navigation', () => ({
+  useRouter: () => mockRouter,
 }));
 
 jest.mock('next/link', () => ({
@@ -34,6 +60,8 @@ const originalFetch = global.fetch;
 
 beforeEach(() => {
   capturedRoles.length = 0;
+  useRealGate = false;
+  mockReplace.mockClear();
   global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ ok: true, announcements: [] }) } as Response)) as unknown as typeof fetch;
 });
 
@@ -54,12 +82,26 @@ async function renderPage(role: ClubRole = 'admin') {
   });
 }
 
-test('the platform owner can reach the hub alongside every gym role', async () => {
+/* THE GATE, AFTER THE OWNER DECISION OF 2026-08-26.
+
+   This test used to be called "the platform owner can reach the hub alongside
+   every gym role", and it asserted that the allowed list contained 'athlete'
+   and 'coach'. That was true, and it was the whole defect: the list was built
+   by mapping over the role selector this page renders, so it admitted all
+   sixteen roles the platform has. The hub is administration now. */
+test('the hub admits the admin desks and nobody else', async () => {
   await renderPage();
 
-  expect(capturedRoles[0]).toContain('platform_owner');
-  expect(capturedRoles[0]).toContain('athlete');
-  expect(capturedRoles[0]).toContain('coach');
+  // Equality, not containment: a containment check would still pass if a role
+  // were added back, which is exactly the drift this decision is undoing.
+  expect(capturedRoles[0]).toEqual(['admin', 'platform_owner']);
+});
+
+test('the gate reads the shared policy rather than a list of its own', async () => {
+  await renderPage();
+
+  // One source. If this page ever grows its own copy again, these diverge.
+  expect(capturedRoles[0]).toEqual([...OPERATIONS_ROLES]);
 });
 
 // OPERATIONS V1 (2026-08-21): ordinary roles land in operational work and are
@@ -76,27 +118,16 @@ describe('the lab desks are offered to the admin desks only', () => {
     expect(screen.getByRole('heading', { name: 'Scenario Simulation' })).toBeTruthy();
   });
 
-  test.each(['coach', 'athlete', 'parent', 'staff', 'volunteer', 'board'] as const)(
-    '%s sees the operational desks only',
-    async (role) => {
-      await renderPage(role);
+  /* The other half of this describe used to be a six-role table asserting that
+     a coach, an athlete, a parent, staff, a volunteer and a board member each
+     "sees the operational desks only" -- that they READ this page, with the
+     lab desks hidden. Its premise is retired: none of those six can open the
+     hub at all now, and the assertions below prove that instead. What is left
+     here is the admin case, which is the only one there is.
 
-      expect(screen.queryByRole('heading', { name: 'OTHER DESKS' })).toBeNull();
-      expect(screen.queryByRole('link', { name: 'Research Intake' })).toBeNull();
-      expect(screen.queryByRole('link', { name: 'Scenario Simulator' })).toBeNull();
-      // The lab rows leave the register for these roles...
-      expect(screen.queryByRole('heading', { name: 'Research Intelligence' })).toBeNull();
-      expect(screen.queryByRole('heading', { name: 'Knowledge Graph' })).toBeNull();
-      expect(screen.queryByRole('heading', { name: 'Scenario Simulation' })).toBeNull();
-      expect(screen.queryByRole('heading', { name: 'Source Governance' })).toBeNull();
-      expect(screen.queryByRole('heading', { name: 'SHADOW Monitoring' })).toBeNull();
-      expect(screen.queryByRole('heading', { name: 'Publication Workflow Automation' })).toBeNull();
-      // ...and the operational rows and directories stay.
-      expect(screen.getByRole('heading', { name: 'Session Script Delivery' })).toBeTruthy();
-      expect(screen.getByRole('heading', { name: 'Drill Library' })).toBeTruthy();
-      expect(screen.getByRole('heading', { name: 'WORKSPACES' })).toBeTruthy();
-    },
-  );
+     showsLabDesks is consequently always true for anyone who reaches this
+     render. It is kept in the page as belt-and-braces against the gate ever
+     widening again; there is nothing left for a test to vary. */
 });
 
 test('no invented safety or governance alert is presented as live data', async () => {
@@ -367,5 +398,94 @@ describe('the hub certifies nothing it cannot show a signer for', () => {
     expect(document.body.textContent).not.toMatch(/production build v21\.1/i);
     expect(document.body.textContent).not.toMatch(/ultra-dense winter grit/i);
     expect(document.body.textContent).not.toMatch(/verified_by_jason/i);
+  });
+});
+
+/* ── THE REFUSAL, WITH THE REAL GATE ─────────────────────────────────────────
+
+   Everything above runs with RoleSessionGate stubbed to a passthrough, which
+   is right for describing the register and useless for proving who may read
+   it: with the gate mocked out, the page body renders for any role and the
+   old six-role table passed while asserting the opposite of today's policy.
+
+   These flip the real gate on. It answers a refused role by calling
+   router.replace and never setting its authorized state, so the correct
+   assertions are: none of the hub is on screen, the holding screen is, and
+   the redirect fired. */
+describe('a role the hub no longer admits', () => {
+  const REFUSED = ['athlete', 'coach', 'parent', 'staff', 'volunteer', 'board'] as const;
+
+  function serverSays(role: string) {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/auth/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ authenticated: true, role, auth_provider: 'microsoft' }),
+        } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, announcements: [] }) } as Response;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  test('the table names every role this page used to admit', () => {
+    // A table that emptied itself would run none of the cases below and still
+    // report green.
+    expect(REFUSED.length).toBeGreaterThan(0);
+  });
+
+  test.each(REFUSED)('%s never sees the hub, and is sent to their own surface', async (role) => {
+    useRealGate = true;
+    serverSays(role);
+
+    await act(async () => { render(<OperationsHubPage />); });
+
+    // queryBy*, never getBy*, so a rendered hub fails as an assertion rather
+    // than as a thrown lookup.
+    expect(screen.queryByRole('heading', { name: 'The Ring' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'WORKSPACES' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'THE ROLE SELECTOR' })).toBeNull();
+    expect(mockReplace).toHaveBeenCalled();
+  });
+
+  /* NO FLASH. The hub's markup is constructed when the component returns, but
+     it is passed to the gate as `children` and must never be mounted. What a
+     refused role sees instead is the gate's own holding screen. */
+  test('shows the holding screen rather than a moment of the hub', async () => {
+    useRealGate = true;
+    serverSays('coach');
+
+    await act(async () => { render(<OperationsHubPage />); });
+
+    expect(screen.getByText('Checking access')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'The Ring' })).toBeNull();
+  });
+
+  /* A refusal must not spend the refused role's session on requests made for
+     a page they cannot read. The hub mounts AnnouncementBanner inside the
+     gate; if that ever moves outside it, this catches it. */
+  test('asks for nothing on a refused role behalf', async () => {
+    useRealGate = true;
+    const fetchMock = serverSays('athlete');
+
+    await act(async () => { render(<OperationsHubPage />); });
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('/api/pilot/auth/session'))).toBe(true);
+    expect(urls.some((url) => url.includes('announcement'))).toBe(false);
+  });
+
+  /* The other direction, and it is not optional: without it, a gate that
+     refused EVERYBODY would pass every test above. */
+  test.each(['admin', 'platform_owner'])('%s still reads the hub', async (role) => {
+    useRealGate = true;
+    serverSays(role);
+
+    await act(async () => { render(<OperationsHubPage />); });
+
+    expect(screen.getByRole('heading', { name: 'The Ring' })).toBeTruthy();
+    expect(screen.queryByText('Checking access')).toBeNull();
   });
 });

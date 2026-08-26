@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RefusalStamp from '@/components/RefusalStamp';
 import { apiBase } from '@/lib/apiBase';
+import OperationsLink from '@/components/OperationsLink';
 
 // PASSBOOK GAPS -- the first page over `/api/pilot/passbook/gaps`.
 //
@@ -235,9 +236,9 @@ export default function CoachPassbookGapsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/operations" className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]">
+            <OperationsLink className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]">
               Back to Operations
-            </Link>
+            </OperationsLink>
           </div>
         </div>
       </main>
