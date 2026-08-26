@@ -100,6 +100,28 @@ const isSignedInJourneyPath = (file) =>
     'apps/web/src/server/pilot/pageGuard',
     'apps/web/app/api/pilot/auth/',
     'apps/web/e2e/support/',
+    /* The Card Catalog is how a signed-in person reaches most of this
+       building, it mounts on every gated surface, and coach-journey.spec.ts
+       now measures its rows. Without this line a change to the catalog itself
+       ran none of the suites that assert it. */
+    'apps/web/components/CardCatalog',
+    /* THE SHARED STYLESHEETS, and this one is a policy change worth stating.
+       `design-system/**` already set homepage_e2e and golden_era_e2e -- the
+       Bell's resolved-style proof and the eight scope proofs. Neither of those
+       suites looks at the chrome a signed-in person actually operates, so a
+       stylesheet edit could break the catalog, the session bar or the
+       standalone band on every gated route in the building and CI would have
+       run no suite capable of noticing.
+
+       That is not hypothetical either: `.catalog-row` shipped with a title
+       column that collapsed to zero width on any narrow viewport, and it was
+       found by a test written for an unrelated change, not by CI.
+
+       The cost is the three signed-in journeys on stylesheet PRs. They need
+       no database and Chromium is already installed for those PRs by the two
+       flags above, so it is roughly ninety seconds -- against a class of
+       regression that reaches every signed-in surface at once. */
+    'design-system/',
   ]) || file === 'apps/web/playwright.config.ts';
 
 /* THE GOLDEN-ERA RESOLVED-STYLE PROOFS (e2e/golden-era-scope-proofs.spec.ts).
