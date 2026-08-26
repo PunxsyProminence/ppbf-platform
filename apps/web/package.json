@@ -171,6 +171,7 @@
     "test:e2e:athlete": "playwright test e2e/athlete-journey.spec.ts",
     "test:e2e:guardian": "playwright test e2e/guardian-journey.spec.ts",
     "test:e2e:golden-era": "playwright test e2e/golden-era-scope-proofs.spec.ts",
+    "test:e2e:activation": "playwright test e2e/activation-journey.spec.ts",
     "test:migrations:feedback-exit": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/feedbackReviewExit.pg.test.ts --testTimeout=180000",
     "pilot:apply-video-sessions": "node scripts/pilot-apply-video-sessions-migration.mjs",
     "pilot:apply-progression": "node scripts/pilot-apply-progression-migration.mjs",
