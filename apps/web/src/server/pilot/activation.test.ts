@@ -257,14 +257,14 @@ describe('redeemActivationCode', () => {
     expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 
-  // The starting PIN is public by design (printed in the admin UI, named in
-  // pinPolicy.ts). It is only safe while it is ISSUED alongside
-  // must_change_pin = true. Activation is the path where the athlete CHOOSES a
-  // PIN, and its UPDATE never touches must_change_pin -- which defaults to
-  // false -- so accepting it here produced a fully active athlete account
-  // reachable by anyone who knows the published PIN. validatePinPolicy cannot
-  // catch it: it deliberately exempts DEFAULT_FIRST_LOGIN_PIN so the admin
-  // reset flow can issue it.
+  // The starting PIN is public by design (named in pinPolicy.ts). It is only
+  // safe while it is ISSUED alongside must_change_pin = true. Activation is
+  // the path where the athlete CHOOSES a PIN, and its UPDATE leaves the
+  // account with must_change_pin = false -- by default when this rule was
+  // written, explicitly now -- so accepting it here would produce a fully
+  // active athlete account reachable by anyone who knows the published PIN.
+  // validatePinPolicy cannot catch it: it deliberately exempts
+  // DEFAULT_FIRST_LOGIN_PIN so the admin reset flow can issue it.
   test('rejects the published starting PIN without touching the database', async () => {
     await expect(redeemActivationCode('ABCD-2345-EFGH', DEFAULT_FIRST_LOGIN_PIN)).rejects.toThrow(
       'starting PIN',
@@ -287,6 +287,22 @@ describe('redeemActivationCode', () => {
     expect(sql).toContain('consumed_at is null');
     expect(sql).toContain('superseded_at is null');
     expect(sql).toContain('expires_at > now()');
+  });
+
+  /* The athlete has just chosen a PIN nobody else has seen, so the flag that
+     means "this account still holds a credential an administrator knows" has
+     to come off. It was never named in this UPDATE and survived redemption on
+     any row that already had it set -- which issueActivationCode, the issuer
+     behind /admin/activation-codes, never clears because it writes only to the
+     token table. The athlete activated, was signed in, and was then refused by
+     requirePrincipal on every route and sent to /change-pin for a PIN nobody
+     issued. */
+  test('clears must_change_pin, so redemption cannot leave the athlete locked out', async () => {
+    stubRedeemableToken();
+    await redeemActivationCode('ABCD-2345-EFGH', '481902');
+
+    const [sql] = callsMatching(/update pilot\.accounts/)[0];
+    expect(sql).toContain('must_change_pin = false');
   });
 
   test('sets the PIN, activates membership, consumes the token and revokes sessions', async () => {

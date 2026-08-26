@@ -311,9 +311,25 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
     }
 
     const updated = await client.query<{ athlete_id: string | null }>(
+      /* must_change_pin is cleared here, and its absence was a latent lockout.
+         The flag exists to trap an account still holding a credential an
+         ADMINISTRATOR knows. Redemption is the moment that stops being true:
+         the athlete has just chosen a PIN nobody else has ever seen.
+
+         provisionAthleteActivation clears it on both of its modes, so the
+         admin reset path was safe. issueActivationCode -- the general-purpose
+         issuer behind /api/pilot/admin/activation-codes -- writes only to the
+         token table and never touches this row. So an athlete on a legacy row
+         with the flag already set could redeem a code, be signed in, and then
+         be refused by requirePrincipal on every route, with /auth/session
+         sending them to /change-pin for a PIN nobody issued. Their escape was
+         a page telling them "you are signed in with the starting PIN your gym
+         gave you" about a PIN they had chosen themselves thirty seconds
+         earlier. */
       `update pilot.accounts
        set pin_hash = $1,
            active_flag = true,
+           must_change_pin = false,
            updated_at = now()
        where account_id = $2
          and organization_id = $3
