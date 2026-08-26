@@ -15,10 +15,17 @@ OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-25T14:35Z
+2026-08-26T19:30Z — every SHA below re-read from the GitHub API in this pass,
+not carried forward. The three values this file had been reporting were all
+stale: CURRENT_MAIN by 40 commits, STAGING_SHA by two days, and
+PRODUCTION_SHA by TWO RELEASES.
 
 CURRENT_MAIN:
-a830eae24fdec92ebdf325235716aeb9d54482f4
+aff10dbfd5c25c542a4791515a9d550567b4579a  (2026-08-26T19:25:19Z, #676)
+Previously recorded here as a830eae2, which is 40 commits behind. Of those,
+the seven that landed on 2026-08-26 are, in order: #645 e8b663cf,
+#679 bdb51f57, #678 393b5a81, #671 61b0a352, #677 4e7da35c, #681 4980681a,
+#676 aff10dbf. The rest predate that day and are not enumerated here.
 NOTE FOR GROK / #606: main has moved past the 26519efd base your restore
 artifacts were packaged against. Since then #607 #609 #610 #612 (and #615
 once merged) changed athlete-side and test files -- #612 rewrote copy in
@@ -44,20 +51,51 @@ UI work. #604 (production revision-truth) is the release-critical repair inside
 it, and the traffic-wait step #604 added is what carried this release too.
 
 STAGING_SHA:
-26519efd49d04b0f4b72779b921174567dd48ed0
+02edec70bb38218d8ec6cd02f7b0f7eea47ce504  (deploy-staging run 33002830497,
+success 2026-08-26T19:10:53Z, all steps green INCLUDING the Guardian Contact
+Runtime Probe — read from the step list, not the job colour.)
+
+The previous value here, 26519efd, was recorded on 2026-08-24 and explicitly
+marked NOT RE-CHECKED. It was wrong for two days. Staging moved five times on
+2026-08-26 alone.
+
+AND A WARNING THAT COST REAL TIME TODAY: three of those five runs report as
+FAILURE while having deployed their image successfully. deploy-staging builds,
+pushes, updates the container app and waits for traffic BEFORE it runs the
+SHADOW gate, so a gate failure leaves the new revision live and the run red.
+c5e3addb, e8b663cf and af740929 were each live on staging under a red run.
+Deployed-but-unverified is a real state and the Actions UI does not show it.
 
 STAGING_IMAGE_DIGEST:
-sha256:17773a8f55b07114e7585b1c86972e34cacef34af31a9015e2db1e0b53810b5e
-NOT RE-CHECKED 2026-08-25: no deploy-staging run was inspected in that pass, so
-both staging values above are carried from the 2026-08-24 record rather than
-re-observed. Whether staging has since moved to a830eae2 is not_verified here.
+sha256:07ccd53c562e3c1685f540e96c084e9ffdb35144645fb46ef31066c56b2fa964
+Read from run 33002830497's own "release digest" step, which prints it for use
+as deploy-production's release_digest input. The previous value here belonged
+to the 2026-08-24 release and was carried forward unverified for two days.
 
 PRODUCTION_SHA:
-a830eae24fdec92ebdf325235716aeb9d54482f4  <-- LIVE (2026-08-25T13:46:54Z)
-Previously 26519efd49d04b0f4b72779b921174567dd48ed0 (2026-08-24T22:56:48Z).
+e8b663cff50bca2589129bd9365087656df2ee83  <-- LIVE
+(deploy-production run 32920784069, success 2026-08-26T11:39:25Z)
+
+TWO releases past what this file claimed. The chain, all deploy-production
+runs, all success: 26519efd (2026-08-24T22:08Z, run 32783211177) ->
+a830eae2 (2026-08-25T13:25Z, run 32853286769) -> b4eeceb2 (2026-08-25T20:08Z,
+run 32893571440) -> e8b663cf (2026-08-26T01:55Z, run 32920784069).
+
+WHAT BEING ON e8b663cf MEANS RIGHT NOW: that commit is the shared-PIN
+retirement, which rewrote /api/pilot/admin/accounts/pin-reset to ignore `pin`
+and `mode` and return a one-time activation code. Its callers were updated one
+at a time and /admin/pin -- in the nav as "PIN Management" -- was missed. In
+production today, a click there discards the typed PIN, DEACTIVATES the
+athlete, revokes their sessions, throws away the activation code the route
+returns, and reports "PIN activated. Tell the athlete this PIN." Fix open as
+PR #682. Recorded here because this file is where somebody looks to find out
+what is actually live.
 
 PRODUCTION_IMAGE_DIGEST:
-sha256:921a3f77a2040f28715bba55862808a68d201a6c3a4969558c69ac63e69dd9c1
+not_verified in this pass. The value previously recorded here,
+sha256:921a3f77…, belongs to the a830eae2 release and is therefore STALE by
+two releases. Re-reading it means opening run 32920784069's log; that was not
+done, and guessing a digest is worse than admitting the gap.
 NOT identical to the STAGING_IMAGE_DIGEST recorded above — that digest belongs
 to the 2026-08-24 release. deploy-production still built nothing: it is
 promote-only, and its "Verify release digest exists in ACR and was built from
