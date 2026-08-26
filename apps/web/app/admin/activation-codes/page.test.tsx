@@ -112,8 +112,11 @@ describe('ActivationCodesManagementPage', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => expect(screen.getByText('ABCD-1234-EFGH')).toBeInTheDocument());
+    // Reworded from "Write down or print" — this screen offers no print, and
+    // an instruction naming a control that does not exist is the same defect
+    // class as the review-action error corrected in #680.
     expect(
-      screen.getByText('▲ Write down or print this code now. It is shown ONCE and cannot be recovered later.'),
+      screen.getByText('▲ Copy or write down this code now. It is shown ONCE and cannot be recovered later.'),
     ).toBeInTheDocument();
   });
 
@@ -132,5 +135,100 @@ describe('ActivationCodesManagementPage', () => {
 
     await screen.findByRole('alert');
     expect(screen.getByRole('alert')).toHaveTextContent('Failed to load codes');
+  });
+
+  /**
+   * The issued code is shown once and its plaintext is never stored, so an
+   * admin who does not notice it has permanently lost it. That makes both the
+   * announcement and a working way to capture it load-bearing rather than
+   * polish.
+   */
+  describe('the one-time code an admin cannot get back', () => {
+    async function issueCode(clipboard?: { writeText: jest.Mock }) {
+      mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+      if (clipboard) {
+        Object.defineProperty(navigator, 'clipboard', { value: clipboard, configurable: true });
+      }
+
+      let issued = 0;
+      const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).includes('/api/pilot/admin/activation-codes')) {
+          if (init?.method === 'POST') {
+            issued += 1;
+            return jsonResponse({
+              ok: true,
+              account_id: `ath-00${issued}`,
+              activation_code: issued === 1 ? 'ABCD-1234-EFGH' : 'WXYZ-9876-MNOP',
+              expires_at: '2026-08-20T00:00:00Z',
+            });
+          }
+          return jsonResponse({ ok: true, codes: [] });
+        }
+        return jsonResponse({ ok: true });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      render(<ActivationCodesManagementPage />);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+      fireEvent.change(screen.getByLabelText('Athlete Account ID'), { target: { value: 'ath-001' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Issue Activation Code' }));
+      await screen.findByText('ABCD-1234-EFGH');
+    }
+
+    it('announces the issued code to a screen reader', async () => {
+      await issueCode();
+
+      // The panel appears in response to a submit that moves no focus, so
+      // without a live region the announcement never happens at all.
+      const live = screen.getByRole('status');
+      expect(live).toHaveAttribute('aria-live', 'polite');
+      expect(live).toHaveTextContent('ABCD-1234-EFGH');
+    });
+
+    it('copies the code to the clipboard and confirms it', async () => {
+      const writeText = jest.fn(async () => undefined);
+      await issueCode({ writeText });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('ABCD-1234-EFGH'));
+      expect(await screen.findByRole('button', { name: '✓ Copied' })).toBeInTheDocument();
+    });
+
+    it('says so when the copy fails instead of claiming success', async () => {
+      // navigator.clipboard is undefined outside a secure context and
+      // writeText rejects when the document is unfocused or permission is
+      // refused. Reporting success there would send the admin away believing
+      // they hold a code that cannot be recovered.
+      const writeText = jest.fn(async () => {
+        throw new Error('NotAllowedError');
+      });
+      await issueCode({ writeText });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+
+      expect(
+        await screen.findByRole('button', { name: 'Copy failed — select it by hand' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '✓ Copied' })).not.toBeInTheDocument();
+    });
+
+    it('does not carry the previous code’s confirmation onto a new one', async () => {
+      const writeText = jest.fn(async () => undefined);
+      await issueCode({ writeText });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+      await screen.findByRole('button', { name: '✓ Copied' });
+
+      fireEvent.change(screen.getByLabelText('Athlete Account ID'), { target: { value: 'ath-002' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Issue Activation Code' }));
+      await screen.findByText('WXYZ-9876-MNOP');
+
+      // A stale "✓ Copied" over a code the admin has never seen is worse than
+      // no affordance: it is an affirmative claim that they hold it.
+      expect(await screen.findByRole('button', { name: 'Copy code' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '✓ Copied' })).not.toBeInTheDocument();
+    });
   });
 });
