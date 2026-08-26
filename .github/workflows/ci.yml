@@ -278,7 +278,7 @@ jobs:
         run: npm run test:migrations
 
       - name: Install Playwright browsers
-        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true' || steps.changes.outputs.golden_era_e2e == 'true')
+        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true' || steps.changes.outputs.golden_era_e2e == 'true' || steps.changes.outputs.activation_e2e == 'true')
         run: npx --workspace web playwright install --with-deps chromium
 
       - name: Run board governance E2E
