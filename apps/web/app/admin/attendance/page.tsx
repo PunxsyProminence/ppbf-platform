@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateShort, formatGymDayShort } from '@/src/lib/gymTime';
@@ -304,9 +305,13 @@ export default function AttendanceDashboardPage() {
             <Link href="/admin/athletes" className="btn btn--ghost">
               Athlete Records
             </Link>
-            <Link href="/operations" className="btn btn--ghost">
+            {/* This page admits a coach as well as an admin, so the hub link
+                had to stop being unconditional here too -- a coach reaching
+                the attendance queue from the corridor would otherwise still
+                be offered a door that only bounces them. */}
+            <OperationsLink className="btn btn--ghost">
               Back to Mission Control
-            </Link>
+            </OperationsLink>
           </div>
         </div>
       </main>

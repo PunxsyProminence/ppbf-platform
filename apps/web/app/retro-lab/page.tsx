@@ -5,6 +5,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import Link from "next/link";
 import { ThemeToggle, useThemeOptional } from "@/components/ThemeProvider";
 import { formatGymClock24 } from '@/src/lib/gymTime';
+import OperationsLink from '@/components/OperationsLink';
 
 type LedgerLine = {
   id: string;
@@ -83,9 +84,9 @@ function RetroLabPageContent() {
               <Link href="/login" className="brass-plate no-underline">
                 Login
               </Link>
-              <Link href="/operations" className="leather-tag no-underline">
+              <OperationsLink className="leather-tag no-underline">
                 Operations
-              </Link>
+              </OperationsLink>
             </div>
           </div>
           <div className="brass-scoreboard" role="status">
