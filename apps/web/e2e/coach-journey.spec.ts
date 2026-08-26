@@ -249,7 +249,15 @@ test.describe('Coach journey', () => {
        ['coach', 'admin'], and after this change the catalog and the corridor
        are a coach's only route to them. */
     await search.fill('wrestling');
-    await expect(catalog.getByText('Wrestling League')).toBeVisible();
+    /* The OPTION, not the label inside it. The option is the unit the catalog
+       offers and the thing a finger lands on; the label is one box within it.
+       On a phone that inner box measures zero wide -- `.catalog-row-main` is
+       `min-width: 0` with no `flex-grow` beside a `flex-shrink: 0` sibling, so
+       the href column takes the row and the title overflows a collapsed box.
+       That is a real Card Catalog defect on narrow viewports, it predates this
+       change, and it is being fixed on its own branch. Asserting the option
+       keeps this test about what it is about: the door a coach keeps. */
+    await expect(catalog.getByRole('option', { name: /Wrestling League/ })).toBeVisible();
     await page.keyboard.press('Escape');
 
     /* 4. THE WORK THEY CAME FOR. Client-gated routes only: /coach/review-queue
