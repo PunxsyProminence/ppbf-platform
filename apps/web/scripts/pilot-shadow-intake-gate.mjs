@@ -32,8 +32,15 @@ const athleteAccountId = process.env.PILOT_SHADOW_ATHLETE_ACCOUNT_ID || '';
 const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
 
 /**
- * The PIN the gate's athlete picks for itself, replacing the one the
- * administrator typed at activation.
+ * The PIN the gate's athlete picks for itself when it redeems its activation
+ * code.
+ *
+ * No administrator ever types a PIN any more -- that is the whole point of the
+ * shared-PIN retirement, and it is why this is the ONLY PIN the account ever
+ * holds. `athletePin` above is now just the fixture credential the provisioner
+ * writes before the run; intake promotion nulls it (createOrUpdateAthleteAccount
+ * clears pin_hash and active_flag on its update branch), and step 9c asserts
+ * that it no longer signs in.
  *
  * Deliberately NOT a new environment variable. A required env var the deploy
  * workflow does not set yet fails the gate on its next run for a
@@ -88,6 +95,48 @@ try {
 } catch (error) {
   console.error(String(error));
   process.exit(1);
+}
+
+/**
+ * Asserts that a call is REFUSED, and fails with what it means when it is not.
+ *
+ * A negative is the easiest kind of assertion to write wrongly: `await
+ * expectToThrow(fn)` passes just as happily when the call throws for a reason
+ * nobody intended -- a typo in the path, a 500, a network blip -- so it can
+ * report a guard as holding while the guard is not being reached at all. This
+ * requires the refusal to be an HTTP status the client reports (createClient
+ * throws only on a non-2xx, with the status in the message) and requires it to
+ * be a 4xx: a 5xx is a broken route, not a refusal, and must never read as one.
+ *
+ * 429 is rejected even though it is a 4xx, and that is the important part: a
+ * throttled call never reached the guard, so accepting it would let a rate
+ * limit stand in as proof that a credential was refused on its merits. Pass
+ * `expectedStatus` wherever the exact refusal is known and pin it.
+ *
+ * `message` says what it MEANS for this call to have succeeded, not that it
+ * succeeded -- whoever reads a red gate at 2am needs the consequence.
+ */
+async function assertRefusal(call, message, expectedStatus) {
+  let refused = false;
+  try {
+    await call();
+  } catch (error) {
+    const status = Number(String(error).match(/failed \((\d{3})\)/)?.[1] ?? 0);
+    if (expectedStatus && status !== expectedStatus) {
+      throw new Error(`Expected a ${expectedStatus} refusal, got: ${String(error)}`);
+    }
+    if (status === 429) {
+      throw new Error(
+        `Throttled before the guard was reached, so nothing was proven: ${String(error)}`,
+      );
+    }
+    if (status >= 400 && status < 500) {
+      refused = true;
+    } else {
+      throw new Error(`Expected a refusal, got a different failure: ${String(error)}`);
+    }
+  }
+  if (!refused) throw new Error(message);
 }
 
 function createClient(name, initialCookie = '') {
@@ -711,70 +760,104 @@ async function run() {
   // credential that was never written, and that the athlete branch should
   // either honour the PIN with must_change_pin set or refuse it as loudly as
   // the guardian branch does. Both are now true: review-action throws
-  // "Unsupported athlete.pin ..." rather than discarding it, and
-  // activateAccountPin -- the supported way the PIN does get set -- sets
-  // must_change_pin, which steps 9c and 9d below exercise.
+  // "Unsupported athlete.pin ..." rather than discarding it, and the
+  // activation flow below is the supported way a credential comes to exist.
   //
   // Activating here is not a workaround: it is the real administrative flow a
-  // promoted athlete goes through, so the gate now covers promote -> activate
-  // -> sign in rather than assuming promotion alone produces a login.
-  console.log('9b) Activate the promoted athlete (real admin flow)');
-  await admin.call('/api/pilot/admin/accounts/pin-reset', {
-    method: 'POST',
-    body: { account_id: athleteAccountId, pin: athletePin, mode: 'activate' },
-  });
-
-  console.log('9c) The activation PIN must not be a usable credential on its own');
-  // An activation PIN is typed by an ADMINISTRATOR, so it is a PIN somebody
-  // other than the athlete knows. activateAccountPin sets must_change_pin for
-  // that reason, and requirePrincipal then refuses every route until the
-  // athlete has replaced it -- so the account can sign in and do exactly one
-  // thing: pick its own PIN.
+  // promoted athlete goes through, so the gate covers promote -> issue code ->
+  // athlete redeems and chooses a PIN -> sign in.
   //
-  // Asserted BEFORE the change, and never removed, for the same reason the
-  // approval-before-review refusal above is asserted before reviewing: a guard
-  // that is only ever exercised in its passing direction is a guard nobody
-  // would notice losing. Delete this block and the gate would still go green
-  // with must_change_pin never set at all.
-  await athlete.call('/api/pilot/auth/login', {
+  // THIS BLOCK WAS REWRITTEN because it had gone stale against the route it
+  // calls, and the staleness was invisible: /admin/accounts/pin-reset used to
+  // take `{ account_id, pin, mode }` and set the PIN an administrator typed.
+  // The shared-PIN retirement replaced that with one-time activation codes --
+  // the route now reads ONLY account_id, ignores `pin` and `mode` entirely,
+  // and answers with an activation_code. So the old step 9b still returned
+  // 200 while setting no credential at all, and step 9c's sign-in on that
+  // never-set PIN failed 401 with "Invalid credentials". The gate had been
+  // asserting a flow the platform no longer ships.
+  console.log('9b) Administrator issues a one-time activation code (real admin flow)');
+  const issued = await admin.call('/api/pilot/admin/accounts/pin-reset', {
     method: 'POST',
-    body: { account_id: athleteAccountId, pin: athletePin },
+    body: { account_id: athleteAccountId },
   });
-
-  let refusedOnActivationPin = false;
-  try {
-    await athlete.call('/api/pilot/athletes/get', {
-      method: 'POST',
-      body: { athlete_id: athleteId },
-    });
-  } catch (error) {
-    if (String(error).includes('PIN change required')) {
-      refusedOnActivationPin = true;
-    } else {
-      throw error;
-    }
-  }
-  if (!refusedOnActivationPin) {
+  const activationCode = typeof issued.activation_code === 'string' ? issued.activation_code : '';
+  if (!activationCode) {
     throw new Error(
-      'An athlete read succeeded while still on the administrator-issued activation PIN. '
-      + 'must_change_pin is not being set by activateAccountPin, so an admin-known credential '
-      + 'grants full athlete access indefinitely.',
+      'The administrator reset returned no activation_code. An admin who cannot issue a code '
+      + 'cannot get a promoted athlete signed in at all, so this is the whole flow, not a detail.',
     );
   }
 
-  console.log('9d) Athlete replaces the activation PIN with one only they know');
-  await athlete.call('/api/pilot/auth/change-pin', {
+  console.log('9c) The activation code is not a credential, and the athlete has none yet');
+  // TWO REFUSALS, both asserted BEFORE the redemption that makes them stop
+  // being interesting -- the same discipline the approval-before-review
+  // refusal above uses. A guard only ever exercised in its passing direction
+  // is a guard nobody would notice losing.
+  //
+  // The point of retiring the shared PIN was that a credential an
+  // ADMINISTRATOR knows must never sign in as a child. The code an admin
+  // issues is a one-time bearer token for the activation endpoint only; it is
+  // not a PIN, and the login route must not accept it as one.
+  await assertRefusal(
+    () => athlete.call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: activationCode },
+    }),
+    'The activation code signed in through the ordinary PIN login. An administrator-known '
+    + 'value is a usable credential for a minor\'s account, which is the disclosure the '
+    + 'shared-PIN retirement exists to end.',
+    401,
+  );
+
+  await assertRefusal(
+    () => athlete.call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: athletePin },
+    }),
+    'A promoted, not-yet-activated athlete account signed in. Promotion must not leave a '
+    + 'usable credential -- the account exists with pin_hash null and active_flag false '
+    + 'until the athlete redeems a code and chooses their own PIN.',
+    401,
+  );
+
+  console.log('9d) Athlete redeems the code and chooses a PIN only they know');
+  // The athlete picks the PIN. Nobody else ever holds it, which is why there
+  // is no must_change_pin step here any more: there is no admin-known PIN to
+  // change. The route signs them straight in on success and says so.
+  const activated = await athlete.call('/api/pilot/auth/activate', {
     method: 'POST',
-    body: { current_pin: athletePin, new_pin: athleteChosenPin },
+    body: { code: activationCode, pin: athleteChosenPin },
   });
+  if (activated.account_id !== athleteAccountId) {
+    throw new Error(
+      `Activation redeemed to the wrong account: expected ${athleteAccountId}, got ${activated.account_id}.`,
+    );
+  }
+  if (activated.signed_in !== true) {
+    throw new Error(
+      'Activation succeeded but did not sign the athlete in. The athlete is left at a login '
+      + 'form immediately after choosing their PIN, with no way to tell whether it took.',
+    );
+  }
+
+  // A one-time code has to be one-time. Serialized by `for update` on the
+  // token row, so a second redemption sees consumed_at set -- asserted here
+  // because it is the property that keeps a code found on a desk, in an
+  // email, or in a screenshot from being usable a second time.
+  await assertRefusal(
+    () => createClient('shadow-athlete-replay').call('/api/pilot/auth/activate', {
+      method: 'POST',
+      body: { code: activationCode, pin: athleteChosenPin },
+    }),
+    'An activation code was redeemed twice. A code left on a desk or in an inbox stays live '
+    + 'after the athlete has used it.',
+  );
 
   console.log('10) Verify athlete login and retrieval');
-  // Signing in again rather than reusing the session: changeOwnPin revokes
-  // every session for the account, including the one that called it, and the
-  // route clears the cookie. That is deliberate -- if the activation PIN was
-  // guessed in the window before the athlete first signed in, this is the
-  // moment that intruder's session dies -- so the gate has to walk the same
-  // path a real athlete does.
+  // Signing in again rather than reusing the activation session: a real
+  // athlete comes back to the login page on their next visit, and that is the
+  // path that has to work with the PIN they chose.
   await athlete.call('/api/pilot/auth/login', {
     method: 'POST',
     body: { account_id: athleteAccountId, pin: athleteChosenPin },
