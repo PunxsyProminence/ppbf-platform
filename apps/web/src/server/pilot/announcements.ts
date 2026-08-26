@@ -76,6 +76,59 @@ const ANNOUNCEMENT_FIELDS =
 // missing, the migration has not been run and the query should say so loudly
 // rather than silently creating schema in a request handler.
 
+/**
+ * What a `board` principal may see of an announcement.
+ *
+ * The board role is aggregate oversight only: no free-text member content and
+ * no author identity. A notice body is text a coach or admin typed, and it can
+ * name an athlete; author_name is a named individual. Neither belongs to a role
+ * whose whole contract is organization-level aggregates.
+ *
+ * Until this existed the boundary was a TypeScript interface in
+ * BoardSeatEvidence.tsx that simply left the two fields out. That is erased at
+ * compile time -- the server still sent both over the wire and the component
+ * just did not read them, so devtools, curl with the session cookie, or any
+ * non-browser client saw the whole payload. And it was not even applied
+ * consistently: /notices renders `message` and `author_name` to a board
+ * principal in a ledger with the column headers "What it says" and "Written
+ * by", three files from where BoardSeatEvidence tells the same board member
+ * that notice text and author names "stay outside this role".
+ *
+ * AN EXPLICIT ALLOW-LIST, not Omit<> or a destructured rest. A rest spread
+ * would carry any column added to PilotAnnouncement later straight through to
+ * the board -- the next sensitive field would leak by default and nothing here
+ * would change. Naming the survivors means a new column is invisible to the
+ * board until someone deliberately adds it.
+ */
+export type BoardVisibleAnnouncement = Pick<
+  PilotAnnouncement,
+  | 'announcement_id'
+  | 'organization_id'
+  | 'author_role'
+  | 'created_at'
+  | 'placement'
+  | 'kind'
+  | 'active'
+  | 'starts_at'
+  | 'ends_at'
+>;
+
+export function projectAnnouncementForBoard(announcement: PilotAnnouncement): BoardVisibleAnnouncement {
+  return {
+    announcement_id: announcement.announcement_id,
+    organization_id: announcement.organization_id,
+    // author_ROLE, not author_name: "a board notice was posted" is governance
+    // information; which person posted it is member identity.
+    author_role: announcement.author_role,
+    created_at: announcement.created_at,
+    placement: announcement.placement,
+    kind: announcement.kind,
+    active: announcement.active,
+    starts_at: announcement.starts_at,
+    ends_at: announcement.ends_at,
+  };
+}
+
 export function isAllowedAnnouncementRole(role: string): role is AnnouncementAuthorRole {
   return ALLOWED_AUTHOR_ROLES.includes(role as AnnouncementAuthorRole);
 }
