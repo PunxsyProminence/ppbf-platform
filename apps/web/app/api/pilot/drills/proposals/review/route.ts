@@ -42,11 +42,34 @@ export interface DrillChangeProposalReviewResponse {
 const ACTIONS = ['adopt', 'decline'] as const;
 type ReviewAction = (typeof ACTIONS)[number];
 
-function requireText(raw: unknown, field: string): string {
+const MAX_REVIEW_NOTE = 4000;
+
+/**
+ * See ../route.ts: `request.json()` resolves for `null`, `[]` and `"x"`, so a
+ * body that is valid JSON but not an object never reaches the `.catch` and
+ * reading a field off it throws a TypeError -- redacted to a 500.
+ */
+async function readJsonObject(request: NextRequest): Promise<Record<string, unknown>> {
+  const parsed = await request.json().catch(() => null);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {};
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function requireText(raw: unknown, field: string, max?: number): string {
   if (typeof raw !== 'string' || !raw.trim()) {
     throw new Error(`Missing ${field}`);
   }
-  return raw.trim();
+  // trim() does not strip U+0000, and a NUL in a text column is SQLSTATE 22021.
+  if (raw.includes('\u0000')) {
+    throw new Error(`Unsupported ${field}: control characters are not allowed`);
+  }
+  const value = raw.trim();
+  if (max !== undefined && value.length > max) {
+    throw new Error(`Unsupported ${field}: at most ${max} characters`);
+  }
+  return value;
 }
 
 function parseAction(raw: unknown): ReviewAction {
@@ -92,7 +115,7 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = await readJsonObject(request);
 
     const proposalId = requireText(body.proposal_id, 'proposal_id');
     const action = parseAction(body.action);
@@ -102,7 +125,7 @@ export async function POST(request: NextRequest) {
       // function guards this too, and its message ('Declining a drill change
       // proposal requires a review note.') matches no jsonError prefix, so
       // reaching it would produce a 500 for what is plainly a bad request.
-      const reviewNote = requireText(body.review_note, 'review_note');
+      const reviewNote = requireText(body.review_note, 'review_note', MAX_REVIEW_NOTE);
 
       const proposal = await declineDrillChangeProposal({
         organizationId: principal.organizationId,
@@ -137,7 +160,9 @@ export async function POST(request: NextRequest) {
       proposalId,
       reviewedByAccountId: principal.accountId,
       reviewedByRole: principal.role,
-      reviewNote: typeof body.review_note === 'string' ? body.review_note.trim() || null : null,
+      reviewNote: body.review_note === undefined || body.review_note === null
+        ? null
+        : requireText(body.review_note, 'review_note', MAX_REVIEW_NOTE),
     });
 
     // Written after the transaction commits, deliberately. An audit line for a
@@ -174,6 +199,31 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: error.message }, { status });
       }
     }
+
+    // The one constraint violation adoptDrillChangeProposal does NOT translate.
+    //
+    // It catches pilot_drills_lineage_version_uq and rethrows everything else
+    // raw, so adopting a proposal that renames a drill onto a name another
+    // ACTIVE drill already holds arrives here as a bare pg error and would be
+    // redacted to a 500. The drill-versioning migration replaced the total
+    // unique index with a PARTIAL one and deliberately KEPT THE NAME
+    // pilot_drills_one_name_per_org so that drills.ts#isDrillNameCollision's
+    // 409 "name taken" mapping would keep working -- this is that mapping, on
+    // the path that reaches the index by a different route. The constraint is
+    // matched by name, not the message, so a different unique violation stays
+    // an opaque 500 rather than being mislabelled a name collision.
+    if (isDrillNameCollision(error)) {
+      return NextResponse.json({ error: 'DRILL_NAME_TAKEN' }, { status: 409 });
+    }
+
     return jsonError(error);
   }
+}
+
+function isDrillNameCollision(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const { code, constraint } = error as { code?: unknown; constraint?: unknown };
+  return code === '23505' && constraint === 'pilot_drills_one_name_per_org';
 }

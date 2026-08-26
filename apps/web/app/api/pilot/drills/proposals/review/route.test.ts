@@ -205,6 +205,60 @@ describe('POST /api/pilot/drills/proposals/review', () => {
     await expect(res.json()).resolves.toEqual({ error: 'Internal server error' });
   });
 
+  // The versioning migration replaces pilot_drills_one_name_per_org with a
+  // PARTIAL unique index and keeps the name on purpose, so that
+  // drills.ts#isDrillNameCollision's 409 "name taken" mapping keeps working.
+  // adoptDrillChangeProposal only translates pilot_drills_lineage_version_uq
+  // and rethrows this one raw, so adopting a rename onto a name another
+  // ACTIVE drill holds arrives here as a bare pg error.
+  test('reports an adopted rename onto a taken name as a conflict, not a server fault', async () => {
+    mockAdopt.mockRejectedValueOnce(
+      Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint: 'pilot_drills_one_name_per_org',
+      }),
+    );
+
+    const res = await POST(postRequest({ proposal_id: 'propchg_1', action: 'adopt' }));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({ error: 'DRILL_NAME_TAKEN' });
+  });
+
+  // A different constraint must NOT be reported as a name collision.
+  test('does not mistake another unique violation for a name collision', async () => {
+    mockAdopt.mockRejectedValueOnce(
+      Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint: 'some_other_uq',
+      }),
+    );
+
+    const res = await POST(postRequest({ proposal_id: 'propchg_1', action: 'adopt' }));
+
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toEqual({ error: 'Internal server error' });
+  });
+
+  // `null` is valid JSON, so request.json() RESOLVES with it and the
+  // .catch(() => ({})) never fires -- then reading a field off it throws a
+  // TypeError that matches no jsonError prefix.
+  test.each([['null', 'null'], ['an array', '[]'], ['a string', '"x"']])(
+    'treats %s as a missing body rather than a server fault',
+    async (_label, raw) => {
+      const res = await POST(
+        new NextRequest('http://localhost/api/pilot/drills/proposals/review', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: raw,
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(mockAdopt).not.toHaveBeenCalled();
+    },
+  );
+
   test('audits an adoption with a verb the constraint already admits', async () => {
     await POST(postRequest({ proposal_id: 'propchg_1', action: 'adopt' }));
 

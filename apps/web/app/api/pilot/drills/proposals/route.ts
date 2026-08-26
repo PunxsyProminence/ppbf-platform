@@ -69,11 +69,51 @@ const EDITABLE_FIELDS = ['name', 'category', 'focus', 'cues', 'difficulty'] as c
 
 const MAX_CUES = 12;
 
-function requireText(raw: unknown, field: string): string {
+// Length caps. Not a style preference: an over-long `name` passes every check
+// in this file and then fails the btree index behind
+// pilot_drills_one_name_per_org at ADOPT time (SQLSTATE 54000) -- in front of
+// the reviewer, for input the author typed. Same principle as the type
+// validation below: keep the failure with its author.
+const MAX_LENGTHS: Record<string, number> = {
+  name: 200,
+  category: 200,
+  focus: 2000,
+  cue: 200,
+  rationale: 4000,
+};
+
+/**
+ * `request.json()` RESOLVES for any valid JSON document, so a body of `null`,
+ * `[]` or `"x"` never reaches the `.catch`. Reading a field off `null` then
+ * throws a TypeError, which matches no jsonError prefix and is redacted to a
+ * 500 -- an empty request reported as a server fault. Anything that is not a
+ * plain object becomes an empty one, so the field checks below produce the
+ * 400 they exist to produce.
+ */
+async function readJsonObject(request: NextRequest): Promise<Record<string, unknown>> {
+  const parsed = await request.json().catch(() => null);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {};
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function requireText(raw: unknown, field: string, limitKey = field): string {
   if (typeof raw !== 'string' || !raw.trim()) {
     throw new Error(`Missing ${field}`);
   }
-  return raw.trim();
+  // trim() does not strip U+0000. A NUL reaches Postgres as 22P05 inside a
+  // jsonb value ("unsupported Unicode escape sequence") and as 22021 in a
+  // text column -- both unhandled, both a 500.
+  if (raw.includes('\u0000')) {
+    throw new Error(`Unsupported ${field}: control characters are not allowed`);
+  }
+  const value = raw.trim();
+  const max = MAX_LENGTHS[limitKey];
+  if (max !== undefined && value.length > max) {
+    throw new Error(`Unsupported ${field}: at most ${max} characters`);
+  }
+  return value;
 }
 
 /**
@@ -89,9 +129,14 @@ function requireText(raw: unknown, field: string): string {
  * person than the one who made it. Refusing it here keeps the failure with
  * its author.
  */
-function parseProposedChange(raw: unknown): Record<string, unknown> | undefined {
+function parseProposedChange(raw: unknown): Record<string, unknown> {
+  // Absent is refused exactly like `{}`. It used to return undefined, which
+  // drillVersioning.ts stores as `proposedChange ?? {}` -- the same empty
+  // object by a different spelling -- so omitting the key produced the
+  // byte-identical version the empty-object branch below exists to refuse.
+  // One invariant, both spellings.
   if (raw === undefined || raw === null) {
-    return undefined;
+    throw new Error('Missing proposed_change: name, category, focus, cues or difficulty');
   }
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('Unsupported proposed_change');
@@ -111,7 +156,7 @@ function parseProposedChange(raw: unknown): Record<string, unknown> | undefined 
 
   for (const field of ['name', 'category', 'focus'] as const) {
     if (input[field] !== undefined) {
-      change[field] = requireText(input[field], `proposed_change.${field}`);
+      change[field] = requireText(input[field], `proposed_change.${field}`, field);
     }
   }
 
@@ -119,7 +164,9 @@ function parseProposedChange(raw: unknown): Record<string, unknown> | undefined 
     if (!Array.isArray(input.cues) || input.cues.some((cue) => typeof cue !== 'string')) {
       throw new Error('Unsupported proposed_change.cues');
     }
-    const cues = (input.cues as string[]).map((cue) => cue.trim()).filter((cue) => cue.length > 0);
+    const cues = (input.cues as string[])
+      .filter((cue) => cue.trim().length > 0)
+      .map((cue) => requireText(cue, 'proposed_change.cues', 'cue'));
     if (cues.length > MAX_CUES) {
       throw new Error(`Unsupported proposed_change.cues: at most ${MAX_CUES}`);
     }
@@ -179,11 +226,17 @@ export async function GET(request: NextRequest) {
       throw new Error(`Unsupported review_state: one of ${REVIEW_STATES.join(', ')}`);
     }
 
-    const lineageId = request.nextUrl.searchParams.get('lineage_id');
+    // Present-but-blank is refused rather than dropped. The mirror of the
+    // review_state check above: a filter that silently does not apply returns
+    // the whole queue while looking like a filtered view.
+    const rawLineageId = request.nextUrl.searchParams.get('lineage_id');
+    if (rawLineageId !== null && !rawLineageId.trim()) {
+      throw new Error('Missing lineage_id');
+    }
 
     const items = await listDrillChangeProposals(principal.organizationId, {
       reviewState: (rawState as DrillChangeReviewState | null) ?? undefined,
-      lineageId: lineageId?.trim() || undefined,
+      lineageId: rawLineageId?.trim() || undefined,
     });
 
     const body: DrillChangeProposalListResponse = {
@@ -202,7 +255,7 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...DRILL_PROPOSER_ROLES]);
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = await readJsonObject(request);
 
     const proposal = await proposeDrillChange({
       organizationId: principal.organizationId,

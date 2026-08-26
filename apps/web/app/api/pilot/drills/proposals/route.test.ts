@@ -137,6 +137,15 @@ describe('GET /api/pilot/drills/proposals', () => {
     expect(mockList).not.toHaveBeenCalled();
   });
 
+  // The mirror of the review_state check: a filter that silently does not
+  // apply returns the whole queue while looking like a filtered view.
+  test('refuses a present-but-blank lineage_id instead of dropping the filter', async () => {
+    const res = await GET(getRequest('?lineage_id=%20'));
+
+    expect(res.status).toBe(400);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
   test('answers with the proposals', async () => {
     const res = await GET(getRequest());
 
@@ -231,6 +240,63 @@ describe('POST /api/pilot/drills/proposals', () => {
   // 22P02 and surfaces as a 500.
   test('refuses observation note ids that are not UUIDs', async () => {
     const res = await POST(postRequest({ ...validBody, observation_note_ids: ['note-1'] }));
+
+    expect(res.status).toBe(400);
+    expect(mockPropose).not.toHaveBeenCalled();
+  });
+
+  // The route refuses proposed_change: {} because adopting it would mint a
+  // byte-identical v2 and deactivate v1. Omitting the key entirely reached
+  // the domain layer as `proposedChange ?? {}` -- the same stored value, by
+  // a different spelling -- so the stated invariant has to hold both ways.
+  test('refuses a proposal that omits proposed_change entirely', async () => {
+    const { proposed_change: _dropped, ...noChange } = validBody;
+    const res = await POST(postRequest(noChange));
+
+    expect(res.status).toBe(400);
+    expect(mockPropose).not.toHaveBeenCalled();
+  });
+
+  test.each([['null', 'null'], ['an array', '[]'], ['a string', '"x"']])(
+    'treats %s as a missing body rather than a server fault',
+    async (_label, raw) => {
+      const res = await POST(
+        new NextRequest('http://localhost/api/pilot/drills/proposals', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: raw,
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(mockPropose).not.toHaveBeenCalled();
+    },
+  );
+
+  // trim() does not strip U+0000. A NUL in a jsonb value reaches Postgres as
+  // 22P05 (unsupported Unicode escape) and in a text column as 22021.
+  test('refuses a NUL character rather than letting Postgres reject it', async () => {
+    const res = await POST(
+      postRequest({ ...validBody, proposed_change: { focus: 'a\u0000b' } }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(mockPropose).not.toHaveBeenCalled();
+  });
+
+  // An over-long name passes every check here and then fails the btree index
+  // at ADOPT time (54000) -- in front of the reviewer, for the author's input.
+  test('refuses an over-long field rather than failing at adopt time', async () => {
+    const res = await POST(
+      postRequest({ ...validBody, proposed_change: { name: 'x'.repeat(5000) } }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(mockPropose).not.toHaveBeenCalled();
+  });
+
+  test('refuses an over-long rationale', async () => {
+    const res = await POST(postRequest({ ...validBody, rationale: 'x'.repeat(20000) }));
 
     expect(res.status).toBe(400);
     expect(mockPropose).not.toHaveBeenCalled();
