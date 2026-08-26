@@ -179,6 +179,11 @@ const NON_STAFF_READERS: Array<[string, Partial<PilotPrincipal>]> = [
 
 const STAFF_READERS: Array<[string, Partial<PilotPrincipal>]> = [
   ['an organization admin', { accountId: 'acct-admin', role: 'organization_admin' }],
+  // The legacy role, which reaches this route: requireRole's roleEquals maps
+  // 'admin' and 'organization_admin' onto each other, and
+  // isOrganizationAdminRole admits both. It had no projection coverage at all,
+  // on a route where the two roles must not diverge.
+  ['the legacy admin role', { accountId: 'acct-legacy-admin', role: 'admin' }],
   ['a coach', { accountId: 'acct-coach', role: 'coach' }],
 ];
 
@@ -227,11 +232,119 @@ describe('the guardian projection is an explicit column list, never p.*', () => 
 
       await POST(domainRequest({ athlete_id: 'ath-1' }));
 
-      const columns = guardianSelectList();
-      expect(columns).toContain('p.phone');
-      expect(columns).toContain('p.email');
-      expect(columns).toContain('p.parent_id');
-      expect(columns).toContain('g.relationship_to_athlete');
+      // EQUALITY HERE TOO, and this half needed it more. The non-staff case
+      // was pinned by equality so a column added later would fail rather than
+      // ride along; the staff case was left on containment, which is the half
+      // where a column is more likely to be added. A wider
+      // GUARDIAN_CONTACT_COLUMNS shipped to every coach with nothing going
+      // red. Widening is a decision, so it has to change a test that says so.
+      expect(guardianSelectList()).toEqual([
+        'p.parent_id',
+        'p.full_name',
+        'p.account_id',
+        'p.phone',
+        'p.email',
+        'g.relationship_to_athlete',
+      ]);
+    },
+  );
+
+  /* "Identity only" is the wrong answer for the platform owner; "nothing" is
+     the right one. Two independent stops say so -- requireRole does not list
+     the role, and assertActorCanAccessAthlete refuses it by name -- and
+     neither was asserted here. */
+  test('the platform owner is refused before any guardian row is read', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-owner', role: 'platform_owner' }));
+
+    const response = await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+    expect(response.status).toBe(403);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AND THE TABLE THE CO-GUARDIAN'S NUMBER ACTUALLY LEFT BY.
+//
+// Narrowing the guardian list above does not, on its own, stop a guardian
+// reading the other household's phone number -- it moves it one key sideways
+// in the same response body.
+//
+// pilot.emergency_contacts carries full_name, relationship_to_athlete, a NOT
+// NULL phone, an email and free-text notes, and this route read it with
+// `select *` under the same gate. The other parent is the ordinary emergency
+// contact: one intake promotion request carries a `guardian` block and an
+// `emergency_contact` block side by side (IntakePromotionPayload) and
+// review-action writes both. So Guardian A took Guardian B's name out of the
+// narrowed `guardians` list and Guardian B's number out of
+// `emergency_contacts`, joined them on the name, and left with exactly what
+// the narrowing was meant to withhold. The child could do the same.
+//
+// `notes` is staff-only for a reason worth naming: it is where "do not call
+// the father" is written, and handing that to the household it names is worse
+// than handing over a number.
+
+/** The SQL the emergency-contact read was issued with. */
+function emergencyContactSelectList(): string[] {
+  const call = mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.emergency_contacts'));
+  if (!call) {
+    throw new Error('the route never read the emergency contacts');
+  }
+  const match = /select\s+([\s\S]*?)\s+from\s/i.exec(String(call[0]));
+  if (!match) {
+    throw new Error(`the emergency-contact read has no parsable select list: ${String(call[0])}`);
+  }
+  return match[1].split(',').map((column) => column.trim().replace(/\s+/g, ' ')).filter(Boolean);
+}
+
+describe('the emergency-contact projection is an explicit column list, never *', () => {
+  test.each([...NON_STAFF_READERS, ...STAFF_READERS])(
+    'for %s the emergency-contact read names its columns',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      expect(emergencyContactSelectList()).not.toContain('*');
+    },
+  );
+
+  test.each(NON_STAFF_READERS)(
+    'THE SECOND DEFECT: %s learns who the emergency contact is, and not how to reach them',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      // Equality for the same reason the guardian list uses it: "*" contains
+      // no substring named "phone", so a containment check would pass over
+      // precisely the defect this test is named for.
+      expect(emergencyContactSelectList()).toEqual([
+        'contact_id',
+        'athlete_id',
+        'full_name',
+        'relationship_to_athlete',
+        'is_primary',
+      ]);
+    },
+  );
+
+  test.each(STAFF_READERS)(
+    '%s keeps the number, the email and the note -- that is what the record is for',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      const columns = emergencyContactSelectList();
+      expect(columns).toContain('phone');
+      expect(columns).toContain('email');
+      expect(columns).toContain('notes');
+      // Every field app/admin/athletes renders (CT-15 StructuredEmergencyContact)
+      // is still here, so narrowing for families did not blank the admin table.
+      for (const column of ['contact_id', 'full_name', 'relationship_to_athlete', 'is_primary']) {
+        expect(columns).toContain(column);
+      }
     },
   );
 });

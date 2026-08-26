@@ -3,7 +3,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { coachObservationNoteTypesForReader, guardianColumnsForReader } from '@/src/server/pilot/intake';
+import {
+  coachObservationNoteTypesForReader,
+  emergencyContactColumnsForReader,
+  guardianColumnsForReader,
+} from '@/src/server/pilot/intake';
 
 export const runtime = 'nodejs';
 
@@ -35,9 +39,21 @@ export async function POST(request: NextRequest) {
     // next to that one in intake.ts.
     const readableNoteTypes = coachObservationNoteTypesForReader(principal.role);
     const guardianColumns = guardianColumnsForReader(principal.role);
+    const emergencyContactColumns = emergencyContactColumnsForReader(principal.role);
 
     const [emergencyContacts, medicalIntake, waivers, assessments, attendance, readiness, coachObservations, guardians] = await Promise.all([
-      query('select * from pilot.emergency_contacts where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
+      // The other half of the guardian narrowing below, and it has to be here
+      // or that narrowing achieves nothing: the other parent is the ordinary
+      // emergency contact, so `select *` on this table handed one household
+      // the other's NOT NULL phone, their email, and the free-text notes --
+      // keyed by a full_name that the guardians list right below supplies.
+      // Two fields of one response body reassembled the disclosure. See
+      // emergencyContactColumnsForReader for the per-role sets.
+      query(
+        `select ${emergencyContactColumns.join(', ')} from pilot.emergency_contacts
+         where organization_id = $1 and athlete_id = $2 order by created_at desc`,
+        [principal.organizationId, athleteId],
+      ),
       query('select * from pilot.medical_intake where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
       query('select * from pilot.waivers where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
       query('select * from pilot.assessments where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
