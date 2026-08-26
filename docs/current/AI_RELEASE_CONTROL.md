@@ -15,10 +15,25 @@ OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-25T14:35Z
+2026-08-26T20:05Z — every SHA below re-read from the GitHub API in this pass,
+not carried forward. The three values this file had been reporting were all
+stale: CURRENT_MAIN by 40 commits, STAGING_SHA by two days, and
+PRODUCTION_SHA by TWO RELEASES.
+
+This correction was itself re-checked before merge and had already drifted:
+main and staging both moved while the PR sat open. CURRENT_MAIN and the two
+staging values below are the second reading, not the first. A release record
+that goes stale between writing and merging is the failure it exists to
+prevent, so the rule is to re-read at merge time rather than at authoring time.
 
 CURRENT_MAIN:
-a830eae24fdec92ebdf325235716aeb9d54482f4
+b2e3746473a22e52dfb14b5ccaafeb6a9b6ec9ea  (2026-08-26T20:03Z, #686)
+Previously recorded here as a830eae2, which is 40 commits behind. Of those,
+the seven that landed on 2026-08-26 before this pass began are, in order:
+#645 e8b663cf, #679 bdb51f57, #678 393b5a81, #671 61b0a352, #677 4e7da35c,
+#681 4980681a, #676 aff10dbf. Three more landed while this PR was open:
+#682 4409f3ab, #680 9830aa46, #686 b2e37464. The rest predate that day and
+are not enumerated here.
 NOTE FOR GROK / #606: main has moved past the 26519efd base your restore
 artifacts were packaged against. Since then #607 #609 #610 #612 (and #615
 once merged) changed athlete-side and test files -- #612 rewrote copy in
@@ -44,20 +59,63 @@ UI work. #604 (production revision-truth) is the release-critical repair inside
 it, and the traffic-wait step #604 added is what carried this release too.
 
 STAGING_SHA:
-26519efd49d04b0f4b72779b921174567dd48ed0
+9830aa4694f1c90e073d19104a0f1dc9b4227526  (deploy-staging run 33006244055,
+success 2026-08-26T19:48:13Z — read from the step list, not the job colour.)
+Step 23 Run SHADOW E2E Gate: success, 19:44:58 → 19:47:50, a real 2m52s of
+execution rather than a short-circuit. Step 24 Guardian Contact Runtime Probe:
+success. Step 26 Deactivate Gate Athlete Fixture: success, logging "PIN cleared,
+sessions revoked, 0 outstanding activation code(s) superseded". Step 27 Report
+Gate Athlete Fixture Still Live: SKIPPED, which is its passing outcome — its
+condition names always() explicitly, so it is not subject to the inherited
+success() that makes a bypassed safeguard look identical to a green one.
+
+The value this replaces, 02edec70 (run 33002830497), was correct when written
+and was overtaken by two merges while this PR was open.
+
+The previous value here, 26519efd, was recorded on 2026-08-24 and explicitly
+marked NOT RE-CHECKED. It was wrong for two days. Staging moved five times on
+2026-08-26 alone.
+
+AND A WARNING THAT COST REAL TIME TODAY: three of those five runs report as
+FAILURE while having deployed their image successfully. deploy-staging builds,
+pushes, updates the container app and waits for traffic BEFORE it runs the
+SHADOW gate, so a gate failure leaves the new revision live and the run red.
+c5e3addb, e8b663cf and af740929 were each live on staging under a red run.
+Deployed-but-unverified is a real state and the Actions UI does not show it.
 
 STAGING_IMAGE_DIGEST:
-sha256:17773a8f55b07114e7585b1c86972e34cacef34af31a9015e2db1e0b53810b5e
-NOT RE-CHECKED 2026-08-25: no deploy-staging run was inspected in that pass, so
-both staging values above are carried from the 2026-08-24 record rather than
-re-observed. Whether staging has since moved to a830eae2 is not_verified here.
+sha256:93397a55fba884d8cd84c376b09696eae3e97bf56bb4b05a9ddd7a1eb41f7a5b
+Read from run 33006244055's own "release digest" step, which prints it for use
+as deploy-production's release_digest input. This is the digest for STAGING_SHA
+9830aa46 above; the digest belonging to 02edec70 was
+sha256:07ccd53c562e3c1685f540e96c084e9ffdb35144645fb46ef31066c56b2fa964, kept
+here only so the two are not confused. Before this pass the value carried was
+the 2026-08-24 release's, forwarded unverified for two days.
 
 PRODUCTION_SHA:
-a830eae24fdec92ebdf325235716aeb9d54482f4  <-- LIVE (2026-08-25T13:46:54Z)
-Previously 26519efd49d04b0f4b72779b921174567dd48ed0 (2026-08-24T22:56:48Z).
+e8b663cff50bca2589129bd9365087656df2ee83  <-- LIVE
+(deploy-production run 32920784069, success 2026-08-26T11:39:25Z)
+
+TWO releases past what this file claimed. The chain, all deploy-production
+runs, all success: 26519efd (2026-08-24T22:08Z, run 32783211177) ->
+a830eae2 (2026-08-25T13:25Z, run 32853286769) -> b4eeceb2 (2026-08-25T20:08Z,
+run 32893571440) -> e8b663cf (2026-08-26T01:55Z, run 32920784069).
+
+WHAT BEING ON e8b663cf MEANS RIGHT NOW: that commit is the shared-PIN
+retirement, which rewrote /api/pilot/admin/accounts/pin-reset to ignore `pin`
+and `mode` and return a one-time activation code. Its callers were updated one
+at a time and /admin/pin -- in the nav as "PIN Management" -- was missed. In
+production today, a click there discards the typed PIN, DEACTIVATES the
+athlete, revokes their sessions, throws away the activation code the route
+returns, and reports "PIN activated. Tell the athlete this PIN." Fix open as
+PR #682. Recorded here because this file is where somebody looks to find out
+what is actually live.
 
 PRODUCTION_IMAGE_DIGEST:
-sha256:921a3f77a2040f28715bba55862808a68d201a6c3a4969558c69ac63e69dd9c1
+not_verified in this pass. The value previously recorded here,
+sha256:921a3f77…, belongs to the a830eae2 release and is therefore STALE by
+two releases. Re-reading it means opening run 32920784069's log; that was not
+done, and guessing a digest is worse than admitting the gap.
 NOT identical to the STAGING_IMAGE_DIGEST recorded above — that digest belongs
 to the 2026-08-24 release. deploy-production still built nothing: it is
 promote-only, and its "Verify release digest exists in ACR and was built from
