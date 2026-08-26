@@ -16,6 +16,7 @@ import { createWriteStream } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
+import { Client } from 'pg';
 
 import { mintGateSession } from './lib/gate-session.mjs';
 
@@ -137,6 +138,70 @@ async function assertRefusal(call, message, expectedStatus) {
     }
   }
   if (!refused) throw new Error(message);
+}
+
+/**
+ * Clears the durable auth throttle so the NEXT deliberate failed sign-in
+ * reaches the credential check instead of the rate limiter.
+ *
+ * This is fixture hygiene, not a weakened guard, and the difference matters
+ * enough to spell out. The refusals in step 9c are about WHO may sign in --
+ * an activation code must not work as a PIN, a not-yet-activated account must
+ * not sign in at all. The rate limiter is a different guard with its own
+ * tests, and it is not under test here. Left alone it makes those two
+ * assertions untestable: recordDurableFailedAttempt sets
+ * `blocked_until = now() + 1000ms` on the VERY FIRST failure -- the
+ * MAX_ATTEMPTS_THRESHOLD of 5 only controls how fast the backoff grows, it is
+ * not a grace period -- so one deliberate failure throttles the next one, and
+ * the bucket survives in Postgres for fifteen minutes, across runs.
+ *
+ * That is exactly what happened on run 33000410968: step 9c's FIRST refusal
+ * came back 429 rather than 401, inherited from an earlier run's failed login
+ * against the same account.
+ *
+ * The safety property that keeps this honest: assertRefusal REJECTS a 429
+ * outright. So if this clear ever stops working, the gate goes red saying
+ * "throttled before the guard was reached, so nothing was proven" -- it can
+ * never turn a throttle into a passing refusal. The failure mode is loud.
+ *
+ * Both key shapes are cleared because the login route checks both
+ * (`pin_account:{id}` and `pin_ip:{ip}`) and the runner's egress IP is not
+ * knowable from here. These rows are transient anti-brute-force counters in a
+ * staging gate database, not records of anything.
+ */
+async function clearAuthThrottle() {
+  const client = new Client({
+    connectionString,
+    ssl: process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true'
+      ? false
+      : { rejectUnauthorized: true },
+  });
+  await client.connect();
+  try {
+    await client.query(
+      `delete from pilot.auth_rate_limit_buckets
+       where bucket_key = $1 or bucket_key like 'pin_ip:%'`,
+      [`pin_account:${athleteAccountId}`],
+    );
+  } finally {
+    await client.end().catch(() => {});
+  }
+
+  /* THE OTHER HALF, which the DELETE above cannot reach. The login route
+     consults FOUR limiters and 429s if any one of them says limited: a
+     durable bucket per account and per IP (the rows just cleared) and a
+     VOLATILE in-process Map of the same two keys, which lives inside the
+     running container on staging.
+
+     Waiting it out is the only lever available from here, and it is a short
+     wait by construction: delayMs is
+     `min(1000 * 2^max(0, attempts - 5), 60000)`, so while the count stays at
+     or below five -- this gate makes three sign-in attempts in total -- the
+     block is always exactly 1000ms. The DELETE is what keeps the count low
+     enough for that to remain true across repeated runs; without it
+     attempt_count accumulates for fifteen minutes and the backoff starts
+     doubling. The two halves are not alternatives. */
+  await new Promise((resolve) => { setTimeout(resolve, 1500); });
 }
 
 function createClient(name, initialCookie = '') {
@@ -799,6 +864,7 @@ async function run() {
   // ADMINISTRATOR knows must never sign in as a child. The code an admin
   // issues is a one-time bearer token for the activation endpoint only; it is
   // not a PIN, and the login route must not accept it as one.
+  await clearAuthThrottle();
   await assertRefusal(
     () => athlete.call('/api/pilot/auth/login', {
       method: 'POST',
@@ -810,6 +876,8 @@ async function run() {
     401,
   );
 
+  // Cleared again: the refusal above just recorded a failed attempt of its own.
+  await clearAuthThrottle();
   await assertRefusal(
     () => athlete.call('/api/pilot/auth/login', {
       method: 'POST',
@@ -853,6 +921,12 @@ async function run() {
     'An activation code was redeemed twice. A code left on a desk or in an inbox stays live '
     + 'after the athlete has used it.',
   );
+
+  // ...and once more before the sign-in that must SUCCEED. Two deliberate
+  // failures precede it, and a 429 here would read as "the athlete cannot get
+  // in with the PIN they just chose" -- the most alarming possible false
+  // positive on this gate.
+  await clearAuthThrottle();
 
   console.log('10) Verify athlete login and retrieval');
   // Signing in again rather than reusing the activation session: a real
