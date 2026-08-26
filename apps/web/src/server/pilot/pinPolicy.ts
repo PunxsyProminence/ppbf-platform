@@ -72,6 +72,30 @@ function isTriviallyGuessablePin(pin: string): boolean {
   return false;
 }
 
+/**
+ * The shapes above, written for the athlete choosing a PIN on a gym tablet.
+ *
+ * This exists because the rules and the screens that describe them had drifted
+ * apart. /activate said "6 numbers. Do not use your birthday." and /change-pin
+ * said "Exactly 6 digits. Do not use 123456." -- between them they named one of
+ * the six refusals, and a birthday rule that isTriviallyGuessablePin does not
+ * enforce at all. An athlete who tried 112233 was refused by a rule no screen
+ * had stated, and until the fix in the commit before this one that refusal also
+ * spent one of their attempts at the activation code.
+ *
+ * Kept beside the predicate rather than in the components so the sentence and
+ * the shapes it promises cannot drift again: pinPolicy.test.ts asserts that
+ * every example listed here is genuinely refused by validatePinPolicy AND that
+ * every one of them appears in the sentence. Loosen a rule, or reword the
+ * sentence past an example, and that test goes red on the promise it broke.
+ */
+export const PIN_RULES_REFUSED_EXAMPLES = ['111111', '123456', '121212', '112233', '123321'] as const;
+
+export const PIN_RULE_SUMMARY =
+  `${DEFAULT_PIN_LENGTH} numbers. Not all the same, not in counting order, and not a repeating or mirrored `
+  + `pattern — ${PIN_RULES_REFUSED_EXAMPLES.slice(0, -1).join(', ')} and ${PIN_RULES_REFUSED_EXAMPLES.at(-1)} `
+  + 'are all refused.';
+
 export function validatePinPolicy(pin: string): void {
   const normalized = pin.trim();
   if (!normalized) {

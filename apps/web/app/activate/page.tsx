@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 
 import { apiBase } from '@/lib/apiBase';
 import { useFocusOnStepChange } from '@/src/lib/useFocusOnStepChange';
-import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
+import { DEFAULT_PIN_LENGTH, PIN_RULE_SUMMARY } from '@/src/server/pilot/pinPolicy';
 
 // Single source of truth with the server policy: validatePinPolicy enforces
 // this exact length, so a local copy could silently disagree with it.
@@ -251,7 +251,7 @@ function ActivatePageContent() {
                 Choose your PIN
               </label>
               <p className={FIELD_HINT}>
-                {PIN_LENGTH} numbers. Do not use your birthday. Nobody at the gym can see this.
+                {PIN_RULE_SUMMARY} Nobody at the gym can see this.
               </p>
               <input
                 id="new-pin"
