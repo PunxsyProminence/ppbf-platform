@@ -71,6 +71,9 @@ const TEMPLATE_SEED_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/seed
 const TEMPLATE_SEED_DIR = path.resolve(__dirname, '../../../seed-data/workout-templates');
 
 const ORG_A = 'org-workouttemplates-a';
+// A second gym, so the organization_id predicate on every read in this module
+// is proven rather than assumed. Nothing in this suite had one before.
+const ORG_B = 'org-workouttemplates-b';
 
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
@@ -145,22 +148,59 @@ async function freshDatabase(name: string): Promise<Client> {
   return client;
 }
 
-async function insertDrill(client: Client, drillId: string, name: string): Promise<void> {
+async function insertDrill(
+  client: Client,
+  drillId: string,
+  name: string,
+  organizationId: string = ORG_A,
+): Promise<void> {
   await client.query(
     `insert into pilot.drill_library
        (organization_id, drill_id, lineage_id, version, name, discipline, category, difficulty, target_behavior,
         purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like)
      values ($1,$2,$2,1,$3,'boxing','technical','beginner','x','x','x','x','x','x')`,
-    [ORG_A, drillId, name],
+    [organizationId, drillId, name],
   );
 }
 
-async function insertTemplate(client: Client, templateId: string, name: string): Promise<void> {
+// The organization row a second-gym fixture needs. freshDatabase creates ORG_A
+// only, so a cross-organization test has to create its own counterpart -- the
+// foreign key on workout_templates.organization_id refuses a template for a
+// gym that does not exist.
+async function insertOrganization(client: Client, organizationId: string): Promise<void> {
+  await client.query(
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ($1, $1, 'active') on conflict do nothing`,
+    [organizationId],
+  );
+}
+
+async function insertTemplate(
+  client: Client,
+  templateId: string,
+  name: string,
+  overrides: {
+    organizationId?: string;
+    sessionType?: string;
+    difficulty?: string;
+    ageBand?: string;
+    active?: boolean;
+  } = {},
+): Promise<void> {
   await client.query(
     `insert into pilot.workout_templates
-       (organization_id, template_id, lineage_id, name, session_type, duration_minutes, intent)
-     values ($1,$2,$2,$3,'technical',45,'Test intent')`,
-    [ORG_A, templateId, name],
+       (organization_id, template_id, lineage_id, name, session_type, difficulty, age_band, active,
+        duration_minutes, intent)
+     values ($1,$2,$2,$3,$4,$5,$6,$7,45,'Test intent')`,
+    [
+      overrides.organizationId ?? ORG_A,
+      templateId,
+      name,
+      overrides.sessionType ?? 'technical',
+      overrides.difficulty ?? 'intermediate',
+      overrides.ageBand ?? 'any',
+      overrides.active ?? true,
+    ],
   );
 }
 
@@ -451,6 +491,144 @@ describe('workoutTemplates.ts read functions', () => {
       const detail = await getWorkoutTemplateWithItems(ORG_A, 'tpl-1');
       expect(detail).not.toBeNull();
       expect(detail?.items.map((i) => i.item_id)).toEqual(['item-1', 'item-2']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // ORGANIZATION ISOLATION.
+  //
+  // Every gym's templates live in one table, separated only by
+  // organization_id, so that predicate IS the tenancy boundary for this
+  // module. Until now nothing in this file proved it: there was no second
+  // organization anywhere in the suite, so `where organization_id = $1`
+  // could have been dropped from either read and all thirteen tests would
+  // still have passed. sessionScripts.pg.test.ts proves exactly this for its
+  // own module; these are the counterparts it has and this suite lacked.
+  test('listWorkoutTemplates returns only the caller organization templates', async () => {
+    const client = await freshDatabase('ppbf_test_wtpl_list_org_scope');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await insertOrganization(client, ORG_B);
+      await insertTemplate(client, 'tpl-a', 'A gym template');
+      await insertTemplate(client, 'tpl-b', 'B gym template', { organizationId: ORG_B });
+
+      expect((await listWorkoutTemplates(ORG_A)).map((t) => t.template_id)).toEqual(['tpl-a']);
+      expect((await listWorkoutTemplates(ORG_B)).map((t) => t.template_id)).toEqual(['tpl-b']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('getWorkoutTemplateWithItems reads another organization template as absent', async () => {
+    const client = await freshDatabase('ppbf_test_wtpl_detail_org_scope');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await insertOrganization(client, ORG_B);
+      await insertTemplate(client, 'tpl-b', 'B gym template', { organizationId: ORG_B });
+
+      // Null, not the other gym's row: a template_id from another gym must
+      // read as "no such template here", never as someone else's template.
+      expect(await getWorkoutTemplateWithItems(ORG_A, 'tpl-b')).toBeNull();
+      expect(await getWorkoutTemplateWithItems(ORG_B, 'tpl-b')).not.toBeNull();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // The sharp case: the same template_id existing in BOTH gyms. The template
+  // read is keyed on (organization_id, template_id), but the ITEMS are a
+  // second query -- so an items read scoped on template_id alone would return
+  // one gym's plan attached to the other gym's template, and the composite
+  // primary key would not catch it.
+  test('getWorkoutTemplateWithItems never mixes in another organization items', async () => {
+    const client = await freshDatabase('ppbf_test_wtpl_items_org_scope');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await insertOrganization(client, ORG_B);
+      await insertDrill(client, 'drl-a', 'A gym drill');
+      await insertDrill(client, 'drl-b', 'B gym drill', ORG_B);
+      await insertTemplate(client, 'shared-id', 'A gym template');
+      await insertTemplate(client, 'shared-id', 'B gym template', { organizationId: ORG_B });
+
+      await client.query(
+        `insert into pilot.workout_template_items
+           (organization_id, item_id, template_id, ordinal, block, drill_id)
+         values ($1,'item-a','shared-id',1,'warmup','drl-a')`,
+        [ORG_A],
+      );
+      await client.query(
+        `insert into pilot.workout_template_items
+           (organization_id, item_id, template_id, ordinal, block, drill_id)
+         values ($1,'item-b','shared-id',1,'warmup','drl-b')`,
+        [ORG_B],
+      );
+
+      const detailA = await getWorkoutTemplateWithItems(ORG_A, 'shared-id');
+      expect(detailA?.template.name).toBe('A gym template');
+      expect(detailA?.items.map((i) => i.item_id)).toEqual(['item-a']);
+
+      const detailB = await getWorkoutTemplateWithItems(ORG_B, 'shared-id');
+      expect(detailB?.template.name).toBe('B gym template');
+      expect(detailB?.items.map((i) => i.item_id)).toEqual(['item-b']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // listWorkoutTemplates hard-codes `and active` with no includeRetired escape
+  // hatch (unlike listSessionScripts). Nothing exercised that predicate, so a
+  // retired template appearing in the library was untested either way.
+  test('a retired template is left out of the library list', async () => {
+    const client = await freshDatabase('ppbf_test_wtpl_active_predicate');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await insertTemplate(client, 'tpl-live', 'Still taught');
+      await insertTemplate(client, 'tpl-retired', 'No longer taught', { active: false });
+
+      expect((await listWorkoutTemplates(ORG_A)).map((t) => t.template_id)).toEqual(['tpl-live']);
+
+      // Retired is hidden, not deleted -- the row is still there to be read
+      // directly, which is what makes this a list predicate rather than a
+      // destructive operation.
+      expect(await getWorkoutTemplateWithItems(ORG_A, 'tpl-retired')).not.toBeNull();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // Each filter is a `($n::text is null or col = $n)` pair. sessionScripts.pg
+  // .test.ts records why that idiom needs proving in both directions: a wrong
+  // cast makes it silently match NOTHING, which reads as an empty library
+  // rather than a broken filter. So each case asserts the filter narrows to
+  // the right row AND that leaving it unset does not narrow at all.
+  test('each filter narrows to its own axis, and an unset filter does not narrow', async () => {
+    const client = await freshDatabase('ppbf_test_wtpl_filters');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await insertTemplate(client, 'tpl-cond', 'Conditioning', { sessionType: 'conditioning' });
+      await insertTemplate(client, 'tpl-elite', 'Elite technical', { difficulty: 'elite' });
+      await insertTemplate(client, 'tpl-youth', 'Youth technical', { ageBand: 'youth' });
+
+      const all = await listWorkoutTemplates(ORG_A);
+      expect(all.map((t) => t.template_id).sort()).toEqual(['tpl-cond', 'tpl-elite', 'tpl-youth']);
+
+      expect((await listWorkoutTemplates(ORG_A, { sessionType: 'conditioning' })).map((t) => t.template_id))
+        .toEqual(['tpl-cond']);
+      expect((await listWorkoutTemplates(ORG_A, { difficulty: 'elite' })).map((t) => t.template_id))
+        .toEqual(['tpl-elite']);
+      expect((await listWorkoutTemplates(ORG_A, { ageBand: 'youth' })).map((t) => t.template_id))
+        .toEqual(['tpl-youth']);
+
+      // A filter naming something no template carries returns nothing --
+      // distinguishing "this filter works" from "this filter matches
+      // everything", which the positive cases alone cannot.
+      expect(await listWorkoutTemplates(ORG_A, { sessionType: 'sparring' })).toEqual([]);
     } finally {
       activeClient = null;
       await client.end();
