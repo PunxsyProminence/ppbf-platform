@@ -250,8 +250,12 @@ describe('POST /api/pilot/drills/proposals', () => {
   // the domain layer as `proposedChange ?? {}` -- the same stored value, by
   // a different spelling -- so the stated invariant has to hold both ways.
   test('refuses a proposal that omits proposed_change entirely', async () => {
-    const { proposed_change: _dropped, ...noChange } = validBody;
-    const res = await POST(postRequest(noChange));
+    const res = await POST(
+      postRequest({
+        based_on_drill_id: validBody.based_on_drill_id,
+        rationale: validBody.rationale,
+      }),
+    );
 
     expect(res.status).toBe(400);
     expect(mockPropose).not.toHaveBeenCalled();
