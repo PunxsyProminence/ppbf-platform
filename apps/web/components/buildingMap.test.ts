@@ -251,10 +251,20 @@ describe('the lab doors are offered to the admin desks only', () => {
    way, which is why flipping the entry turned no test red.
 
    The matrix below is exhaustive by construction: ROLE_ACCESS is typed
-   Record<ClubRole, ...>, so a role added to the union will not compile until
-   somebody states which side of this decision it falls on. A hand-written
-   list of six roles cannot make that promise, and the previous gate -- built
-   by mapping over the role selector -- is what happens when nobody has to. */
+   Record<ClubRole, ...>, so a role added to the union has to be given a side
+   before this file typechecks. A hand-written list of six roles cannot make
+   that promise, and the previous gate -- built by mapping over the role
+   selector -- is what happens when nobody has to.
+
+   BUT KNOW WHICH TOOL KEEPS THAT PROMISE. It is `npm run typecheck`, not this
+   suite. ts-jest is configured here with no diagnostics and the project sets
+   isolatedModules, so jest does not type-check at all: a deliberate
+   `const x: number = "no"` appended to this file still reports a green run.
+   Both halves were measured -- deleting a board seat from ROLE_ACCESS, and
+   adding a role to the ClubRole union, each leave the whole suite GREEN under
+   `npm test` and each produce TS2741 under `tsc --noEmit`, which CI runs. So
+   the guarantee holds in CI and is silent locally, and the count assertion
+   below is what catches a shrunken matrix in a plain jest run. */
 describe('the Operations hub is offered to the admin desks only', () => {
   const OPERATIONS_HUB = '/operations';
 
@@ -287,6 +297,12 @@ describe('the Operations hub is offered to the admin desks only', () => {
     expect(ADMITTED).toEqual(['admin', 'platform_owner']);
     expect(REFUSED.length).toBeGreaterThan(0);
     expect(ADMITTED.length + REFUSED.length).toBe(roles.length);
+    /* The count that makes the exhaustiveness claim above hold in a plain
+       jest run too. Deleting a seat from ROLE_ACCESS is caught by tsc in CI,
+       and is caught here as well -- so it is not possible to shrink this
+       matrix and watch a green local run. Sixteen is the size of ClubRole:
+       eight gym roles and eight board seats. */
+    expect(roles).toHaveLength(16);
   });
 
   it.each(ADMITTED)('%s is offered the hub', (role) => {

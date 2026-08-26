@@ -219,10 +219,19 @@ test.describe('Coach journey', () => {
   test('a coach is refused the Operations hub and keeps every surface of their own', async ({ page }) => {
     await installPilotApi(page, { session: { role: 'coach' } });
 
-    /* 1. THE REFUSAL, AND NO FLASH OF THE HUB ON THE WAY OUT. Absence is
-          asserted BEFORE the URL settles -- the ordering public-homepage.spec
-          uses -- so this covers the window while the gate is still resolving
-          and not merely the state after the redirect. */
+    /* 1. THE REFUSAL, AND NO HUB CONTENT ON THE WAY OUT. Absence is asserted
+          BEFORE the URL settles, the ordering public-homepage.spec uses.
+
+          Be honest about what that buys: toHaveCount(0) auto-retries and
+          returns on its FIRST satisfied poll, so this samples an instant, not
+          an interval -- it cannot prove no frame ever painted the hub. What
+          rules a flash out is structural, and it is asserted where it can be:
+          RoleSessionGate returns its holding screen from the same render and
+          only reaches its children once accessState is 'authorized', so a
+          refused role never mounts them at all. app/operations/page.test.tsx
+          proves that against the real gate by showing the children's own
+          effects never fire. This line is the browser-level corroboration of
+          it, not the proof itself. */
     await page.goto('/operations');
     await expect(page.getByRole('heading', { name: 'The Ring' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'WORKSPACES' })).toHaveCount(0);

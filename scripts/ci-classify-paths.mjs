@@ -47,6 +47,20 @@ const isBoardE2ePath = (file) => {
          the session gate and server auth module are not surfaces it touches. */
       'apps/web/app/login/',
       'apps/web/components/SignInPanel',
+      /* THE SHARED CHASSIS. board-governance.spec.ts drives a board session
+         through the same session bar and standalone band every other role
+         uses, so a change to either is a change to what this suite walks
+         through -- and `board` is a role those components make decisions
+         about. The Operations restriction is the case that exposed the gap:
+         it removed a control from the board role's bar and put `board` on the
+         refused side, and this predicate matched none of it, so the board
+         journey stayed skipped on the exact commit that changed it. Same
+         class of miss the comment above records for this predicate's own
+         spec. Still narrower than isSignedInJourneyPath: the session gate and
+         the server auth module are not surfaces a suite that never signs in
+         touches. */
+      'apps/web/components/GlobalRoleHeader',
+      'apps/web/components/RoleStandaloneView',
     ]) || component.includes('Board')
   );
 };
@@ -75,6 +89,14 @@ const isHomepageE2ePath = (file) => {
          unauthenticated visitor's journey touches. */
       'apps/web/app/login/',
       'apps/web/components/SignInPanel',
+      /* THE ROUTES THIS SUITE ASSERTS ARE CLOSED. public-homepage.spec.ts
+         ends on a protected-routes block that opens /operations as an
+         unauthenticated visitor and requires the redirect to /login -- so
+         that route is a surface this suite covers, and it reached this
+         predicate through nothing. The Operations restriction changed who
+         that route admits and this suite, the one holding the signed-out
+         assertion about it, stayed skipped. */
+      'apps/web/app/operations/',
     ]) ||
     ['Home', 'Landing', 'Public'].some((token) => component.includes(token))
   );

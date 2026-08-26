@@ -143,11 +143,11 @@ export const guideSections: GuideSection[] = [
     title: 'Start Here',
     whatThisAreaIsFor: 'Quick orientation before using any PPBF workspace.',
     whoShouldUseIt: 'All roles, pilot users, and partner gyms.',
-    activeNow: 'Role-based workspaces, mission control navigation, and placeholder labels are visible.',
+    activeNow: 'Role-based workspaces, the corridor and card catalog, and placeholder labels are visible.',
     placeholderOrPlanned: 'AI/ML automation, compliance automation, and publication automation are roadmap items.',
     doNotTestYet: 'Do not treat placeholders as completed production workflows.',
     usefulFeedback: 'Report navigation confusion, unclear labels, and missing expected links.',
-    whereToGoNext: 'Open Mission Control then choose the role-specific guide linked from each workspace.',
+    whereToGoNext: 'Open the guide for your own role -- each workspace links its own.',
   },
   {
     id: 'mission-control-overview',
@@ -180,7 +180,7 @@ export const guideSections: GuideSection[] = [
     placeholderOrPlanned: 'Film/video analysis and progression intelligence are front-end placeholders.',
     doNotTestYet: 'No ML film scoring, no autonomous recommendations, no backend queues on placeholder pages.',
     usefulFeedback: 'Capture gaps in review workflow order, decision labeling, and handoff clarity.',
-    whereToGoNext: 'Mission Control for adjacent workspaces or Planned Capabilities Guide for roadmap context.',
+    whereToGoNext: 'The card catalog for adjacent workspaces, or the Planned Capabilities Guide for roadmap context.',
   },
   {
     id: 'parent-guide',
@@ -257,7 +257,7 @@ export const guideSections: GuideSection[] = [
     placeholderOrPlanned: 'Submission handling is front-end only and requires human follow-up.',
     doNotTestYet: 'No account creation, no private workspace access, and no internal data exposure.',
     usefulFeedback: 'Report confusing language, missing pathway clarity, and boundary wording concerns.',
-    whereToGoNext: 'Tester guide and Mission Control overview for internal reviewers.',
+    whereToGoNext: 'Tester guide, for internal reviewers.',
   },
   {
     id: 'tester-guide',

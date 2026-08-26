@@ -120,7 +120,14 @@ const CAPABILITY_STATE_LABEL: Record<CapabilityState, string> = {
    operational one. The register keeps every row -- the record is the record --
    but a lab row prints only for the admin desks (Operations V1, 2026-08-21),
    the same visibility-only narrowing the building map applies to the same
-   doors. */
+   doors.
+
+   AFTER 2026-08-26 that narrowing separates nobody, because the gate on this
+   whole page now admits the same two roles the lab rows were narrowed to. It
+   is kept rather than deleted deliberately: it is the row-level statement of
+   who these desks are for, and if the page's gate is ever widened again it is
+   what stops the lab rows widening with it. Do not read its always-true-ness
+   today as evidence it is dead. */
 const capabilityRadar: Array<{ name: string; state: CapabilityState; href: string; record?: string; notes: string; lab?: true }> = [
   { name: 'Athlete Readiness', state: 'EXISTS', href: '/athlete/dashboard', notes: 'Check-ins, session logs, and goals are open to athletes today.' },
   { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/environment/intake-router', notes: 'The coach workspace, the review queue, and the floor controls are open.' },

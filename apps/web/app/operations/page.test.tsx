@@ -108,6 +108,13 @@ test('the gate reads the shared policy rather than a list of its own', async () 
 // not offered the lab. This is VISIBILITY ONLY -- hiding a desk from the
 // launcher gates nothing, and the data behind every lab surface keeps its own
 // API access checks (the same rule buildingMap.ts states for its rows).
+//
+// These cases render the component DIRECTLY, with the gate mocked to a
+// passthrough, so the refused roles below reach the register in a way they no
+// longer can through the route. That is on purpose: this describe block is
+// about the row-level narrowing surviving on its own, independent of the page
+// gate that now also happens to refuse them. The gate's own behaviour is
+// proven separately, against the real gate, further down this file.
 describe('the lab desks are offered to the admin desks only', () => {
   test.each(['admin', 'platform_owner'] as const)('%s sees OTHER DESKS and the lab register rows', async (role) => {
     await renderPage(role);

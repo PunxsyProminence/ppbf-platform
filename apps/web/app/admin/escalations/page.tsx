@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
@@ -459,9 +460,11 @@ export default function EscalationsPage() {
             <Link href="/admin/compliance-center" className="btn btn--ghost">
               Compliance Center
             </Link>
-            <Link href="/operations" className="btn btn--ghost">
+            {/* Admits a coach as well as an admin -- see the attendance queue,
+                which carried the same unconditional link for the same reason. */}
+            <OperationsLink className="btn btn--ghost">
               Back to Mission Control
-            </Link>
+            </OperationsLink>
           </div>
         </div>
       </main>
