@@ -74,35 +74,67 @@ primary agent owns it exclusively; no two agents edit it concurrently.
 
 ### Slice 1 — Repair the SHADOW activation gate
 
-- **Status:** `ACTIVE` — core `MERGED` and `STAGED_VERIFIED`; four of the
-  fourteen requirements remain open.
+- **Status:** `STAGED_VERIFIED` — all fourteen requirements met and proven on a
+  deployed revision.
 - **Baseline SHA:** `e8b663cf`
-- **PR:** #678 (merged), #680 (open, follow-up from its own adversarial review)
-- **Merged SHA:** `393b5a81`
-- **Staging SHA:** `3969fd3e` — run 33001246076, step 23 `Run SHADOW E2E Gate`
-  **success**. Re-exercised on `02edec70` in run 33002830497, also success.
+- **PR:** #678 (merged `393b5a81`), #680 (merged `9830aa46`, gap closure from
+  its own adversarial review)
+- **Merged SHA:** `9830aa46`
+- **Staging SHA:** `9830aa46` — run 33006244055. Earlier passes on `3969fd3e`
+  (run 33001246076) and `02edec70` (run 33002830497) proved the core; this run
+  is the one that closes the slice, because it is the first to carry #680's
+  four gap fixes.
 - **Focused tests:** `node --check`, `eslint`. The gate is a `.mjs` deploy
   script outside the TS project and the jest roots, so its only real proof is a
   staging dispatch with `enable_shadow_gate=true`.
-- **Staging verification:** PASS. Root cause was the shared-PIN retirement
-  rewriting `/api/pilot/admin/accounts/pin-reset` to issue a one-time
-  `activation_code` while the gate still asserted the obsolete admin-PIN flow.
-  Established as red on `main` first (run 32999742464 on `e8b663cf`, byte-identical
-  failure) so the repair was made in the right place.
-- **Remaining:** four requirements not met, tracked for gap closure —
-  (7) the gate never signs out between activation and re-login;
-  (10) `123456` / `DEFAULT_FIRST_LOGIN_PIN` is not asserted to be refused;
-  (3)(14) no explicit check that the activation code, either PIN, or a session
-  cookie cannot reach a log or `GITHUB_STEP_SUMMARY`.
-  Plus #680: one refusal was asserted where the account is still inactive, so it
-  never reached the credential check it named.
+- **Staging verification:** PASS, read from the **step list** of run
+  33006244055, not its job conclusion:
+  - step 23 `Run SHADOW E2E Gate` — **success**, 19:44:58 → 19:47:50. A real
+    2m52s of execution, so it ran rather than short-circuiting.
+  - step 24 `Guardian Contact Runtime Probe` — **success**. This is the step a
+    stale-branch merge silently dropped once before; its presence and result
+    were both checked.
+  - step 26 `Deactivate Gate Athlete Fixture` — **success**.
+  - step 27 `Report Gate Athlete Fixture Still Live` — **skipped**, which is the
+    passing outcome. Its condition is
+    `always() && steps.deactivate-gate-athlete.outcome == 'failure'`. Because it
+    names `always()` explicitly it does not inherit the implicit `success()`
+    that makes a skipped safeguarding step indistinguishable from a passing one,
+    so skipped here genuinely means the fixture was torn down.
+
+  Root cause of the original failure was the shared-PIN retirement rewriting
+  `/api/pilot/admin/accounts/pin-reset` to issue a one-time `activation_code`
+  while the gate still asserted the obsolete admin-PIN flow. Established as red
+  on `main` first (run 32999742464 on `e8b663cf`, byte-identical failure) so the
+  repair was made in the right place.
+- **Remaining:** none. The four requirements previously open —
+  (7) sign-out between activation and re-login;
+  (10) `123456` / `DEFAULT_FIRST_LOGIN_PIN` asserted refused;
+  (3)(14) no credential reaching a log or `GITHUB_STEP_SUMMARY` —
+  were closed by #680, along with the refusal that was asserted against an
+  inactive account and so never reached the credential check it named. All four
+  are now covered by a gate that has run green on a deployed revision.
 
 ### Slice 2 — Activation and onboarding handoff
 
-- **Status:** `NOT_STARTED`. Gap map complete; three defects found, one of them
-  live and harmful.
+- **Status:** `ACTIVE`. Gap map complete. The live defect is `MERGED`; two PRs
+  are open against the rest.
+- **Baseline SHA:** `9830aa46`
+- **PRs:**
+  - #682 — the `/admin/pin` lockout below. Merged `4409f3ab`.
+  - #684 — open. `must_change_pin` not cleared on redeem, and the
+    `startsWith('PIN')` prefix test replaced by `error instanceof
+    ValidationError` on the server and `payload.code?.startsWith('PIN_')` on the
+    client.
+  - #685 — open. The copy and navigation gaps: `PIN_RULE_SUMMARY` bound to
+    `pinPolicy` by a two-directional test, `/athlete/sign-in` → `/activate`, and
+    the `/admin/organizations` setup guide.
+- **Still open in this slice:** Copy/Print on the activation-code surfaces; the
+  live region and focus move on `/admin/activation-codes`' issued-code panel;
+  and **no e2e covers activation at all**.
 
-**LIVE DEFECT — `/admin/pin` strands athletes. Fix this first.**
+**LIVE DEFECT — `/admin/pin` strands athletes. Fixed in #682 (`4409f3ab`), and
+live in production until that ships.**
 `/admin/pin` is in the nav as "PIN Management" (`buildingMap.ts:143`,
 `ADMIN_GATE`). It posts `{account_id, pin, mode}` to `pin-reset`, which now
 reads **only** `account_id` and calls `provisionAthleteActivation({mode:'reset'})`
