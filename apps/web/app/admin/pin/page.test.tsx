@@ -62,7 +62,11 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
 
 /** Directory load, then whatever the issue call should answer with. */
 function installFetch(issueBody: unknown, issueOk = true) {
-  const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+  // `init` is declared even though only the body is read: without it the mock's
+  // call tuple types as length 1 and `call[1]` does not compile. jest does not
+  // typecheck, so this only shows up under `npm run typecheck`.
+  const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    void init;
     const url = String(input);
     if (url.includes('/api/pilot/admin/accounts/pin-reset')) {
       return jsonResponse(issueBody, issueOk, issueOk ? 200 : 500);
