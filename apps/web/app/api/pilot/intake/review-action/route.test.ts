@@ -504,3 +504,49 @@ describe('automation_mode is held to the closed vocabulary before any gate reads
     expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * `admin` is the LEGACY SPELLING of organization_admin, not a lesser role.
+ *
+ * This route said so twice and then contradicted itself once. requireRole at
+ * the top admits `admin` through roleEquals, and assertIntakeCaseAuthority
+ * admits it through isOrganizationAdminRole -- but the promote branch compared
+ * `principal.role !== 'organization_admin'` directly. So a legacy-admin
+ * organization could approve an intake case and reject one, and was refused on
+ * the single action that turns an approved case into an athlete record, by an
+ * error naming the role it is supposed to be equivalent to.
+ *
+ * The whole file used only `organization_admin` principals, so nothing caught
+ * it. These two cases pin both spellings to the same outcome.
+ */
+describe('legacy admin is organization_admin for promotion', () => {
+  function legacyAdminPrincipal(): PilotPrincipal {
+    return { ...principal(), role: 'admin' };
+  }
+
+  test('a legacy admin may promote, exactly as an organization_admin may', async () => {
+    mockRequirePrincipal.mockResolvedValue(legacyAdminPrincipal());
+    mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
+
+    const response = await POST(promoteRequest(undefined));
+
+    // The assertion that matters is that the promote gate did not refuse the
+    // role. A later failure in this route would be a different defect.
+    const body = (await response.json()) as { error?: string };
+    expect(body.error ?? '').not.toContain('only organization_admin can promote intake');
+  });
+
+  test('both spellings reach the same gate outcome', async () => {
+    const outcomes: string[] = [];
+    for (const role of ['organization_admin', 'admin'] as const) {
+      jest.clearAllMocks();
+      mockRequirePrincipal.mockResolvedValue({ ...principal(), role });
+      mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
+      const response = await POST(promoteRequest(undefined));
+      const body = (await response.json()) as { error?: string };
+      outcomes.push(body.error?.includes('only organization_admin can promote intake') ? 'refused' : 'admitted');
+    }
+    // Guards against "fixing" this by refusing both.
+    expect(outcomes).toEqual(['admitted', 'admitted']);
+  });
+});

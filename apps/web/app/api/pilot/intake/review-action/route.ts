@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { upsertAthlete } from '@/src/server/pilot/entities';
@@ -335,7 +335,18 @@ export async function POST(request: NextRequest) { // NOSONAR
       throw new Error('Forbidden: automatic intake promotion is not allowed');
     }
 
-    if (principal.role !== 'organization_admin') {
+    /* isOrganizationAdminRole, not a raw !==, because `admin` is the LEGACY
+       SPELLING of organization_admin and this route already says so twice
+       above: requireRole at the top of the handler admits it through
+       roleEquals, and assertIntakeCaseAuthority admits it through this same
+       helper. Only this third check compared the string directly.
+
+       The result was a role that could approve and reject an intake case and
+       then be refused on the one action that turns it into an athlete record,
+       by an error naming the role it is supposed to be equivalent to. Every
+       sibling admin route -- pin-reset, activation-codes, athlete-accounts --
+       uses the helper. */
+    if (!isOrganizationAdminRole(principal.role)) {
       throw new Error('Forbidden: only organization_admin can promote intake');
     }
     if (intakeCase.status !== 'approved') {
