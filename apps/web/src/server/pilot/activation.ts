@@ -256,11 +256,11 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
   // Validate the PIN first: a rejected PIN must not consume the code.
   validatePinPolicy(pin);
   // Activation is a path where the athlete CHOOSES their own PIN, so the
-  // starting PIN is refused here -- the rule pinPolicy states but only the
-  // change-PIN path enforced. validatePinPolicy deliberately PERMITS
-  // Defense in depth: the retired shared bootstrap PIN is rejected by the
-  // general policy and again here because this unauthenticated redemption is
-  // the credential-establishing boundary.
+  // retired shared bootstrap PIN is refused here too. validatePinPolicy
+  // deliberately permits it (the admin reset flow used to issue it, and rows
+  // holding its hash still exist in deployed databases), so this
+  // unauthenticated, credential-establishing boundary rejects it explicitly:
+  // a code redemption must never leave an account on the published PIN.
   assertChosenPinAllowed(pin);
 
   const canonicalCode = normalizeActivationCode(rawCode);
