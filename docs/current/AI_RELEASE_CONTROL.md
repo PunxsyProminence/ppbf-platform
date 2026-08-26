@@ -15,17 +15,25 @@ OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-26T19:30Z — every SHA below re-read from the GitHub API in this pass,
+2026-08-26T20:05Z — every SHA below re-read from the GitHub API in this pass,
 not carried forward. The three values this file had been reporting were all
 stale: CURRENT_MAIN by 40 commits, STAGING_SHA by two days, and
 PRODUCTION_SHA by TWO RELEASES.
 
+This correction was itself re-checked before merge and had already drifted:
+main and staging both moved while the PR sat open. CURRENT_MAIN and the two
+staging values below are the second reading, not the first. A release record
+that goes stale between writing and merging is the failure it exists to
+prevent, so the rule is to re-read at merge time rather than at authoring time.
+
 CURRENT_MAIN:
-aff10dbfd5c25c542a4791515a9d550567b4579a  (2026-08-26T19:25:19Z, #676)
+b2e3746473a22e52dfb14b5ccaafeb6a9b6ec9ea  (2026-08-26T20:03Z, #686)
 Previously recorded here as a830eae2, which is 40 commits behind. Of those,
-the seven that landed on 2026-08-26 are, in order: #645 e8b663cf,
-#679 bdb51f57, #678 393b5a81, #671 61b0a352, #677 4e7da35c, #681 4980681a,
-#676 aff10dbf. The rest predate that day and are not enumerated here.
+the seven that landed on 2026-08-26 before this pass began are, in order:
+#645 e8b663cf, #679 bdb51f57, #678 393b5a81, #671 61b0a352, #677 4e7da35c,
+#681 4980681a, #676 aff10dbf. Three more landed while this PR was open:
+#682 4409f3ab, #680 9830aa46, #686 b2e37464. The rest predate that day and
+are not enumerated here.
 NOTE FOR GROK / #606: main has moved past the 26519efd base your restore
 artifacts were packaged against. Since then #607 #609 #610 #612 (and #615
 once merged) changed athlete-side and test files -- #612 rewrote copy in
@@ -51,9 +59,18 @@ UI work. #604 (production revision-truth) is the release-critical repair inside
 it, and the traffic-wait step #604 added is what carried this release too.
 
 STAGING_SHA:
-02edec70bb38218d8ec6cd02f7b0f7eea47ce504  (deploy-staging run 33002830497,
-success 2026-08-26T19:10:53Z, all steps green INCLUDING the Guardian Contact
-Runtime Probe — read from the step list, not the job colour.)
+9830aa4694f1c90e073d19104a0f1dc9b4227526  (deploy-staging run 33006244055,
+success 2026-08-26T19:48:13Z — read from the step list, not the job colour.)
+Step 23 Run SHADOW E2E Gate: success, 19:44:58 → 19:47:50, a real 2m52s of
+execution rather than a short-circuit. Step 24 Guardian Contact Runtime Probe:
+success. Step 26 Deactivate Gate Athlete Fixture: success, logging "PIN cleared,
+sessions revoked, 0 outstanding activation code(s) superseded". Step 27 Report
+Gate Athlete Fixture Still Live: SKIPPED, which is its passing outcome — its
+condition names always() explicitly, so it is not subject to the inherited
+success() that makes a bypassed safeguard look identical to a green one.
+
+The value this replaces, 02edec70 (run 33002830497), was correct when written
+and was overtaken by two merges while this PR was open.
 
 The previous value here, 26519efd, was recorded on 2026-08-24 and explicitly
 marked NOT RE-CHECKED. It was wrong for two days. Staging moved five times on
@@ -67,10 +84,13 @@ c5e3addb, e8b663cf and af740929 were each live on staging under a red run.
 Deployed-but-unverified is a real state and the Actions UI does not show it.
 
 STAGING_IMAGE_DIGEST:
-sha256:07ccd53c562e3c1685f540e96c084e9ffdb35144645fb46ef31066c56b2fa964
-Read from run 33002830497's own "release digest" step, which prints it for use
-as deploy-production's release_digest input. The previous value here belonged
-to the 2026-08-24 release and was carried forward unverified for two days.
+sha256:93397a55fba884d8cd84c376b09696eae3e97bf56bb4b05a9ddd7a1eb41f7a5b
+Read from run 33006244055's own "release digest" step, which prints it for use
+as deploy-production's release_digest input. This is the digest for STAGING_SHA
+9830aa46 above; the digest belonging to 02edec70 was
+sha256:07ccd53c562e3c1685f540e96c084e9ffdb35144645fb46ef31066c56b2fa964, kept
+here only so the two are not confused. Before this pass the value carried was
+the 2026-08-24 release's, forwarded unverified for two days.
 
 PRODUCTION_SHA:
 e8b663cff50bca2589129bd9365087656df2ee83  <-- LIVE
