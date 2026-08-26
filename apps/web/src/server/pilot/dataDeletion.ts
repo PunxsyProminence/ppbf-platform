@@ -59,14 +59,61 @@ export async function deleteGuardianAccount(
     // round-tripped through JS no longer equals the one on the row, and the
     // count below silently returns zero. Keeping it as text preserves the exact
     // value for the comparison.
+    /* active_flag = false is not decoration, it is half of what makes this a
+       deletion at all.
+
+       Deleting a guardian used to write deleted_at and nothing else, and
+       NOTHING in the read path filters on deleted_at: resolvePrincipal's query
+       (auth.ts) joins accounts without it, and so does every guardian access
+       check. So the flag the rest of the platform actually gates on --
+       active_flag -- stayed true, and a "deleted" guardian kept reading their
+       linked minor's records.
+
+       Worse than a stale session: `parent` is a magic-link role, and both the
+       issue and redeem paths gate on active_flag (magicLink.ts) and never look
+       at deleted_at. A deleted guardian could request a fresh link to their own
+       inbox and sign in again, indefinitely, until the account row was purged a
+       year later. Deletion did not close the door; it did not touch it.
+
+       This is the platform's own stated contract, which only the cleanup script
+       implemented: scripts/lib/account-cleanup-plan.mjs defines "retire" as
+       "deleted_at set, active_flag cleared, sessions revoked". That script
+       deliberately skips parents precisely because deleting one fires the
+       cascade trigger across minors' records -- so guardians were only ever
+       deleted through the path that did one of the three. */
     const deleted = await client.query<{ deleted_at: string }>(
       `update pilot.accounts
-       set deleted_at = now(), updated_at = now()
+       set deleted_at = now(), active_flag = false, updated_at = now()
        where account_id = $1
        returning deleted_at::text as deleted_at`,
       [parentAccountId],
     );
     const deletionTime = deleted.rows[0].deleted_at;
+
+    /* Membership carries authorization independently of the account row:
+       resolvePrincipal INNER JOINs organization_memberships on
+       active_flag = true, so leaving it set is what let a deleted guardian's
+       existing cookie keep resolving. */
+    await client.query(
+      `update pilot.organization_memberships
+       set active_flag = false, updated_at = now()
+       where account_id = $1 and organization_id = $2`,
+      [parentAccountId, actor.organizationId],
+    );
+
+    /* In the SAME transaction as the deletion, so there is no window in which
+       the account is deleted but a live session still resolves. Every other
+       account-state mutation in auth.ts already does this -- resetAccountPin,
+       activateAccountPin, changeOwnPin, setAccountActiveStatus,
+       upsertOrganizationMembership, transferOrganizationAdmin,
+       promoteAccountToOrganizationAdmin. Deletion was the one that did not,
+       which is the reverse of the priority it should have had. */
+    await client.query(
+      `update pilot.session_tokens
+       set revoked_at = now()
+       where account_id = $1 and revoked_at is null`,
+      [parentAccountId],
+    );
 
     const athleteCount = await client.query<{ count: string }>(
       `select count(*)::text as count from pilot.athletes
