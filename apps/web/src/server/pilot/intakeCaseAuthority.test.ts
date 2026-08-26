@@ -15,9 +15,15 @@ jest.mock('./db', () => ({
 import { PASSBOOK_ATHLETE_NOTE_TYPES } from './passbook';
 import {
   ATHLETE_READABLE_NOTE_TYPES,
+  EMERGENCY_CONTACT_CONTACT_COLUMNS,
+  EMERGENCY_CONTACT_IDENTITY_COLUMNS,
+  GUARDIAN_CONTACT_COLUMNS,
+  GUARDIAN_IDENTITY_COLUMNS,
   PARENT_READABLE_NOTE_TYPES,
   assertActorCanAccessIntakeCase,
   coachObservationNoteTypesForReader,
+  emergencyContactColumnsForReader,
+  guardianColumnsForReader,
   resolveIntakeCaseAuthority,
 } from './intake';
 import { query, queryOne } from './db';
@@ -365,5 +371,94 @@ describe('coachObservationNoteTypesForReader', () => {
   test('the exported sets are the ones the function returns', () => {
     expect(coachObservationNoteTypesForReader('athlete')).toEqual([...ATHLETE_READABLE_NOTE_TYPES]);
     expect(coachObservationNoteTypesForReader('parent')).toEqual([...PARENT_READABLE_NOTE_TYPES]);
+  });
+});
+
+/**
+ * The column-list readers, held to the same standard as the note-type reader
+ * above. They had no unit block at all, which left two things unguarded that
+ * the note-type suite has covered since it was written: the legacy `admin`
+ * role (which `isOrganizationAdminRole` admits and `roleEquals` lets past
+ * `requireRole`, so it reaches these reads), and the fall-through, where an
+ * unenumerated role must land on the closed side rather than inherit contact
+ * details by default.
+ *
+ * EQUALITY ON BOTH SIDES. The route suite pins the non-staff list by equality
+ * and the staff list by containment, which means a column ADDED to the contact
+ * set ships to every coach with nothing going red. Widening is a decision; it
+ * should have to change a test that says so.
+ */
+describe('guardianColumnsForReader', () => {
+  test('staff keep the contact columns -- they make the emergency call', () => {
+    const withContact = [...GUARDIAN_IDENTITY_COLUMNS, ...GUARDIAN_CONTACT_COLUMNS];
+    expect(guardianColumnsForReader('organization_admin')).toEqual(withContact);
+    expect(guardianColumnsForReader('admin')).toEqual(withContact);
+    expect(guardianColumnsForReader('coach')).toEqual(withContact);
+  });
+
+  test.each(['athlete', 'parent'] as PilotRole[])(
+    '%s receives identity and relationship only -- never the other household\'s number',
+    (role) => {
+      expect(guardianColumnsForReader(role)).toEqual([...GUARDIAN_IDENTITY_COLUMNS]);
+    },
+  );
+
+  test.each(['volunteer', 'staff', 'board', 'platform_owner'] as PilotRole[])(
+    'any other role (%s) falls through to identity, not to contact',
+    (role) => {
+      expect(guardianColumnsForReader(role)).toEqual([...GUARDIAN_IDENTITY_COLUMNS]);
+    },
+  );
+
+  test('no contact column can reach a family reader, whatever the set grows to', () => {
+    for (const role of ['athlete', 'parent'] as PilotRole[]) {
+      for (const column of GUARDIAN_CONTACT_COLUMNS) {
+        expect(guardianColumnsForReader(role)).not.toContain(column);
+      }
+    }
+  });
+
+  test('the two guardian-facing reads agree on what a child may read about their parents', () => {
+    // Same drift risk as the note-type readers, and the same answer: passbook
+    // is the other module that hands a guardian row to these two readers, and
+    // it selects parent id and name. If one widens, this fails.
+    expect(guardianColumnsForReader('athlete')).toEqual(['p.parent_id', 'p.full_name']);
+  });
+});
+
+/**
+ * The emergency-contact reader. Narrowing the guardian list alone moved the
+ * disclosure one key sideways in the same response body: the other parent is
+ * the ordinary emergency contact, and that table carries a NOT NULL phone, an
+ * email, and free-text notes.
+ */
+describe('emergencyContactColumnsForReader', () => {
+  test('staff keep the number, the email and the note', () => {
+    const withContact = [...EMERGENCY_CONTACT_IDENTITY_COLUMNS, ...EMERGENCY_CONTACT_CONTACT_COLUMNS];
+    expect(emergencyContactColumnsForReader('organization_admin')).toEqual(withContact);
+    expect(emergencyContactColumnsForReader('admin')).toEqual(withContact);
+    expect(emergencyContactColumnsForReader('coach')).toEqual(withContact);
+  });
+
+  test.each(['athlete', 'parent'] as PilotRole[])(
+    '%s learns who the emergency contact is, and not how to reach them',
+    (role) => {
+      expect(emergencyContactColumnsForReader(role)).toEqual([...EMERGENCY_CONTACT_IDENTITY_COLUMNS]);
+    },
+  );
+
+  test.each(['volunteer', 'staff', 'board', 'platform_owner'] as PilotRole[])(
+    'any other role (%s) falls through to identity, not to contact',
+    (role) => {
+      expect(emergencyContactColumnsForReader(role)).toEqual([...EMERGENCY_CONTACT_IDENTITY_COLUMNS]);
+    },
+  );
+
+  test('notes stay with staff -- it is where "do not call the father" is written', () => {
+    for (const role of ['athlete', 'parent'] as PilotRole[]) {
+      expect(emergencyContactColumnsForReader(role)).not.toContain('notes');
+      expect(emergencyContactColumnsForReader(role)).not.toContain('phone');
+      expect(emergencyContactColumnsForReader(role)).not.toContain('email');
+    }
   });
 });

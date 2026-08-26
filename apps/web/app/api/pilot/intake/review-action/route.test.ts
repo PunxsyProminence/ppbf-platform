@@ -29,7 +29,14 @@ jest.mock('@/src/server/pilot/access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/shadowReadiness', () => ({ assertShadowRuntimeReadiness: jest.fn() }));
-jest.mock('@/src/server/pilot/shadowAuthority', () => ({ assertShadowAuthority: jest.fn() }));
+// Spread the real module rather than replacing it: only the ledger-writing
+// assertShadowAuthority needs stubbing. isShadowAutomationMode and
+// SHADOW_AUTOMATION_MODES are pure and are what the route validates against,
+// so a bare replacement would leave the route calling undefined.
+jest.mock('@/src/server/pilot/shadowAuthority', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowAuthority');
+  return { ...actual, assertShadowAuthority: jest.fn() };
+});
 jest.mock('@/src/server/pilot/shadowEvents', () => ({ emitShadowEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowTelemetry', () => ({ writeShadowTelemetryEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -386,5 +393,114 @@ describe('review-action authorizes the actor against the case before mutating it
 
     expect(response.status).toBe(200);
     expect(mockUpdateStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// automation_mode: a closed vocabulary that every gate compares for EXACT
+// equality.
+//
+// decideShadowAuthority refuses on `automationMode === 'automatic'` in three
+// branches, and this route refuses promotion outright on the same comparison.
+// The value arrived here straight off the request body with no check, typed as
+// ShadowAutomationMode by an `as` cast that proves nothing at runtime -- so a
+// caller declaring "Automatic" was read as a non-automatic actor by every one
+// of those gates and promoted a child's record with no human-in-the-loop
+// refusal, while pilot.shadow_authority_checks recorded the check as passed.
+//
+// The gap was already named, in shadow/medical-status/route.ts's own header:
+// "the two sibling assertShadowAuthority call sites take automation_mode
+// straight off the body with no check". This is one of the two.
+
+const NEAR_MISS_AUTOMATION_MODES = [
+  'Automatic',
+  'AUTOMATIC',
+  'aUtOmAtIc',
+  'automatic ',
+  ' automatic',
+  'automatic\n',
+];
+
+function promoteRequestWithMode(automationMode: unknown) {
+  return new NextRequest('http://localhost/api/pilot/intake/review-action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      intake_case_id: 'case-1',
+      action: 'promote',
+      automation_mode: automationMode,
+      promotion: {
+        athlete: {
+          athlete_id: 'ath-1',
+          full_name: 'Gate Athlete',
+          dob: '2011-02-10',
+          weight_class: '119',
+          gym_status: 'active',
+          emergency_contact: 'Guardian 555-0102',
+          coach_id: 'acct-admin',
+        },
+      },
+    }),
+  });
+}
+
+describe('automation_mode is held to the closed vocabulary before any gate reads it', () => {
+  // A table-driven guard written over an empty list passes without ever
+  // running. Pin the count so deleting the cases fails loudly.
+  test('the near-miss table is not empty', () => {
+    expect(NEAR_MISS_AUTOMATION_MODES.length).toBeGreaterThan(0);
+  });
+
+  test('the exact vocabulary value is still refused by the promotion gate', async () => {
+    const response = await POST(promoteRequestWithMode('automatic'));
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+  });
+
+  test.each(NEAR_MISS_AUTOMATION_MODES)(
+    'automation_mode %p is refused rather than read as non-automatic',
+    async (mode) => {
+      const response = await POST(promoteRequestWithMode(mode));
+
+      expect(response.status).toBe(400);
+      // The promotion must not have begun: upsertAthlete is the first write on
+      // that path, so a call here means a child's record was created past a
+      // gate that never fired.
+      expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    },
+  );
+
+  const NON_STRING_AUTOMATION_MODES: Array<[string, unknown]> = [
+    ['an object', { mode: 'automatic' }],
+    ['an array', ['manual']],
+    ['a number', 3],
+    ['a boolean', true],
+    ['an empty string', ''],
+  ];
+
+  test('the non-string table is not empty', () => {
+    expect(NON_STRING_AUTOMATION_MODES.length).toBeGreaterThan(0);
+  });
+
+  test.each(NON_STRING_AUTOMATION_MODES)('a %s automation_mode is refused', async (_label, mode) => {
+    const response = await POST(promoteRequestWithMode(mode));
+
+    expect(response.status).toBe(400);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+  });
+
+  test('an omitted automation_mode still defaults to assisted and promotes', async () => {
+    const response = await POST(promoteRequest(undefined));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['assisted', 'manual'])('the vocabulary value %p still promotes', async (mode) => {
+    const response = await POST(promoteRequestWithMode(mode));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
   });
 });

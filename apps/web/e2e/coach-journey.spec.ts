@@ -302,4 +302,62 @@ test.describe('Coach journey', () => {
     await expect(page).toHaveURL(/\/parent\/dashboard$/);
     await expect(page.getByRole('heading', { name: 'SHADOW Decision Loop' })).toHaveCount(0);
   });
+  /* THE CARD CATALOG'S TITLE COLUMN, MEASURED RATHER THAN READ.
+     ------------------------------------------------------------------------
+     The catalog is how a coach reaches most of this building, and its rows
+     had a layout defect no text scan of the stylesheet could have found: the
+     metadata column was `flex-shrink: 0` while the title column had no
+     `flex-grow`, so on a narrow viewport the route ate the row and the NAME
+     was squeezed to nothing. Measured on a Pixel 7 before the fix, at a 393px
+     row: "The Work" and "Progression Intelligence" 0px wide, "Community
+     Service" 2px, "Intervention Protocols" 10px, "Session Scripts" 54px wide
+     by 199px tall -- a title shredded one letter per line, overflowing a box
+     of no width. Playwright reported those titles `hidden`, which is how this
+     was found at all.
+
+     Asserted over EVERY row the catalog renders, in both viewport projects,
+     because the collapse is a function of how long a row's route is and
+     picking one row to check is picking which regression to catch. One
+     `evaluate` rather than 64 locator round-trips, and it names the offending
+     rows so a failure says which doors broke.
+
+     THE TWO LIMITS COME FROM MEASUREMENT, not from taste. Width must be
+     non-zero -- that is the hard collapse. Height must stay under 96px --
+     that is what catches the 2px and 10px columns, which are non-zero and
+     still ruined; a shredded title grows DOWN. After the fix the tallest
+     title column measures 53px on the Pixel 7 and 38px on the desktop, and
+     before it the same column measured 260px, so 96px sits clear of both. */
+  test('every catalog row gives its title a real column, at any viewport', async ({ page }) => {
+    await installPilotApi(page, { session: { role: 'coach' } });
+    await page.goto('/coach/environment/intake-router');
+    await expect(page.getByRole('link', { name: 'Bell' }).first()).toBeVisible();
+
+    await page.keyboard.press('Meta+k');
+    const catalog = page.getByRole('dialog');
+    // A single letter is the widest net this search offers: it matches most
+    // of the building map, so the sweep below runs over real rows and not
+    // over three.
+    await catalog.getByRole('combobox').fill('a');
+    await expect(catalog.getByRole('option').first()).toBeVisible();
+
+    const rows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('li.catalog-row')).map((li) => {
+        const box = li.querySelector('.catalog-row-main')?.getBoundingClientRect();
+        return {
+          label: li.querySelector('b')?.textContent ?? '(unnamed)',
+          width: Math.round(box?.width ?? 0),
+          height: Math.round(box?.height ?? 0),
+        };
+      }),
+    );
+
+    // A sweep over an empty list is a passing test that proves nothing.
+    expect(rows.length).toBeGreaterThan(20);
+
+    const collapsed = rows.filter((row) => row.width === 0);
+    expect(collapsed, 'catalog rows whose title column has no width').toEqual([]);
+
+    const shredded = rows.filter((row) => row.height > 96);
+    expect(shredded, 'catalog rows whose title is wrapping down a squeezed column').toEqual([]);
+  });
 });
