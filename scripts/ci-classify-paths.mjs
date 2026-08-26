@@ -243,6 +243,46 @@ const isGuardianE2ePath = (file) => {
   );
 };
 
+/* THE ACTIVATION JOURNEY (e2e/activation-journey.spec.ts).
+   ------------------------------------------------------------------------
+
+   Its own predicate rather than a few lines bolted onto isAthleteE2ePath, for
+   one reason: this journey is UNAUTHENTICATED. Every surface it walks is
+   reached by someone who holds no session at all -- a new athlete's account
+   has pin_hash null and active_flag false until a code is redeemed, so they
+   cannot be signed in while doing this. isSignedInJourneyPath, which the other
+   three journeys all consult, is therefore not part of this one: the session
+   gate, the role cache and the routing table are not on this path.
+
+   What IS on it, and why each is here:
+
+     * /activate and its route -- the journey itself.
+     * /athlete/sign-in -- the door the athlete lands on and the only place
+       linking to /activate. A change that drops that link strands them again,
+       which is the defect this suite was written for, so the suite has to run
+       on it.
+     * pinPolicy -- the refusals the journey types into the form, and the
+       sentence PIN_RULE_SUMMARY shows before they type. The suite asserts the
+       sentence names the shapes the policy refuses.
+     * the suite's own spec -- three predicates in this file previously did
+       not match the spec they run, so an edit to a spec could not run itself.
+       Stated here from the start rather than fixed later.
+
+   Note that pinPolicy and app/athlete/ already reach isAthleteE2ePath, so a
+   change to either runs both suites. That is correct rather than wasteful:
+   they assert different things about the same file, and the athlete journey
+   does not walk activation. */
+const isActivationE2ePath = (file) =>
+  startsWithAny(file, [
+    'apps/web/app/activate/',
+    'apps/web/app/athlete/sign-in/',
+    'apps/web/app/api/pilot/auth/activate/',
+    'apps/web/src/server/pilot/activation',
+    'apps/web/src/server/pilot/pinPolicy',
+    'apps/web/e2e/activation-journey',
+    'apps/web/e2e/support/',
+  ]) || file === 'apps/web/playwright.config.ts';
+
 export function classifyPaths(paths) {
   const files = paths.map((file) => file.trim()).filter(Boolean);
   const docsOnly =
@@ -255,6 +295,7 @@ export function classifyPaths(paths) {
   const athleteE2e = files.some(isAthleteE2ePath);
   const guardianE2e = files.some(isGuardianE2ePath);
   const goldenEraE2e = files.some(isGoldenEraE2ePath);
+  const activationE2e = files.some(isActivationE2ePath);
   const unknownCode =
     !docsOnly &&
     files.length > 0 &&
@@ -264,7 +305,8 @@ export function classifyPaths(paths) {
     !coachE2e &&
     !athleteE2e &&
     !guardianE2e &&
-    !goldenEraE2e;
+    !goldenEraE2e &&
+    !activationE2e;
 
   return {
     docsOnly,
@@ -275,6 +317,7 @@ export function classifyPaths(paths) {
     athleteE2e,
     guardianE2e,
     goldenEraE2e,
+    activationE2e,
     unknownCode,
   };
 }
@@ -289,6 +332,7 @@ function outputLines(result) {
     `athlete_e2e=${result.athleteE2e}`,
     `guardian_e2e=${result.guardianE2e}`,
     `golden_era_e2e=${result.goldenEraE2e}`,
+    `activation_e2e=${result.activationE2e}`,
     `unknown_code=${result.unknownCode}`,
   ].join('\n');
 }
