@@ -74,9 +74,13 @@ describe('parent hub placement schema ownership', () => {
     expect(packageJson.scripts['pilot:apply-parent-hub-placement']).toBe(
       'node scripts/pilot-apply-parent-hub-placement-migration.mjs',
     );
-    expect(packageJson.scripts['test:migrations']).toContain(
-      'npm run test:migrations:parent-hub-placement',
-    );
+    // `test:migrations` no longer names suites: it delegates to
+    // scripts/run-migration-suites.mjs, which discovers every
+    // `test:migrations:*` script. So the thing to assert is that the SCRIPT
+    // exists -- under discovery, existing IS being run, and there is no
+    // longer a list it can be absent from.
+    expect(packageJson.scripts['test:migrations:parent-hub-placement']).toBeDefined();
+    expect(packageJson.scripts['test:migrations']).toBe('node scripts/run-migration-suites.mjs');
     expect(packageJson.scripts['test:migrations:parent-hub-placement']).toContain(
       'src/server/pilot/announcementParentHubPlacement.pg.test.ts',
     );

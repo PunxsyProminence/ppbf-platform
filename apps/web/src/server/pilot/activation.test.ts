@@ -223,6 +223,34 @@ describe('provisionAthleteActivation', () => {
     expect(String(tokenParams[0])).toContain('sha256(activation:');
   });
 
+  // create mode binds a brand-new account_id to an athlete_id the caller
+  // supplies. Without this guard an admin could stand up a SECOND account for
+  // a child who already has one -- the child keeps using theirs, while the new
+  // account answers to whoever redeems the code. The roster check above does
+  // not catch it: the athlete IS on that gym's roster, which is the point.
+  test('create mode refuses an athlete who already holds an account, before any write', async () => {
+    respond(/select athlete_id from pilot\.athletes/, [{ athlete_id: 'ath-9' }]);
+    respond(/select account_id from pilot\.accounts where organization_id/, [
+      { account_id: 'the-childs-own-account' },
+    ]);
+
+    await expect(
+      provisionAthleteActivation({
+        accountId: 'brand-new-acct',
+        athleteId: 'ath-9',
+        organizationId: 'org-1',
+        issuedByAccountId: 'admin-1',
+        issuedByRole: 'organization_admin',
+        mode: 'create',
+      }),
+    ).rejects.toThrow('Athlete is already linked to another account');
+
+    // No account row and no activation token: the refusal lands before both
+    // writes, not merely before the token.
+    expect(callsMatching(/insert into pilot\.accounts/)).toHaveLength(0);
+    expect(callsMatching(/insert into pilot\.account_activation_tokens/)).toHaveLength(0);
+  });
+
   test('reset removes the old PIN, deactivates membership, revokes sessions, and supersedes old codes', async () => {
     respond(/update pilot\.accounts set pin_hash = null/, [{ athlete_id: 'ath-1' }]);
     respond(/insert into pilot\.account_activation_tokens/, [{ expires_at: '2026-08-26T00:00:00Z' }]);
