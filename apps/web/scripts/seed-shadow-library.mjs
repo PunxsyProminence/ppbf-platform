@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 const baseUrl = process.env.PILOT_GATE_BASE_URL || 'http://localhost:3000';
 const sessionCookie = process.env.PILOT_SESSION_COOKIE || '';
@@ -127,7 +128,14 @@ async function verifySession() {
 // doctrine_kind in source metadata: a source whose kind already exists in the
 // organization is skipped entirely, which keeps re-runs cheap and means an
 // edited file needs a new review pass, not a renamed kind.
-async function loadManifest() {
+// Where a manifest entry's file actually lives. One function, used by the
+// validation below AND by the seeding loop, so the path a run is refused on
+// cannot differ from the path it would have read.
+export function resolveManifestEntryFile(entry) {
+  return path.resolve(process.cwd(), '..', '..', entry.file);
+}
+
+export async function loadManifest() {
   const manifestPath = process.env.PILOT_LIBRARY_MANIFEST
     ? path.resolve(process.cwd(), process.env.PILOT_LIBRARY_MANIFEST)
     : path.resolve(process.cwd(), 'scripts', 'shadow-library-seed-manifest.json');
@@ -142,6 +150,38 @@ async function loadManifest() {
       }
     }
   }
+
+  // EVERY file, checked here, before the caller writes anything.
+  //
+  // The field loop above proves "file" is a non-empty string. It does not
+  // prove the string names a document. seedManifestSources reads each file
+  // INSIDE its registration loop, so a manifest whose second entry names a
+  // missing document registered the first entry completely -- source,
+  // document and every chunk, through live API calls -- and then threw
+  // ENOENT. That leaves a half-registered Library that no re-run repairs:
+  // dedupe is by doctrine_kind, so the finished entry is skipped and the
+  // missing file is still missing.
+  //
+  // Reported together rather than one per run, because an operator fixing a
+  // manifest should see the whole list, and collected before throwing for the
+  // same reason verifySession runs first: fail on the cheap local check
+  // before anything is written.
+  const missing = [];
+  for (const entry of raw.sources) {
+    const filePath = resolveManifestEntryFile(entry);
+    try {
+      await fs.access(filePath);
+    } catch {
+      missing.push(`  ${entry.doctrine_kind}: ${entry.file}`);
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Manifest at ${manifestPath} names ${missing.length} file(s) that do not exist:\n${missing.join('\n')}\n`
+      + 'Nothing was registered. Fix the path, or remove the entry, and re-run.',
+    );
+  }
+
   return raw.sources;
 }
 
@@ -226,7 +266,7 @@ async function seedManifestSources() {
       continue;
     }
 
-    const filePath = path.resolve(process.cwd(), '..', '..', entry.file);
+    const filePath = resolveManifestEntryFile(entry);
     const content = await fs.readFile(filePath, 'utf8');
 
     console.log(`2) ${label}: registering source, document, and chunks`);
@@ -312,9 +352,18 @@ async function run() {
   console.log('Reminder: everything registered is pending_review. Approve it at /admin/shadow before SHADOW can cite it.');
 }
 
-try {
-  await run();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
+// Run only when this file IS the entry point. Without this the whole seed
+// executed on import -- which is why loadManifest, the one part of this script
+// that touches no network, could not be tested.
+const isMainModule = process.argv[1]
+  ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  : false;
+
+if (isMainModule) {
+  try {
+    await run();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
 }
