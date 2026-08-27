@@ -43,6 +43,19 @@ interface SeedConfig {
 
 interface SeedResult {
   table: string;
+  /**
+   * Which input file this result's `row` numbers index into.
+   *
+   * NOT the same as `table`: guardians are read from the ATHLETES file, so an
+   * athlete row that fails validation produces an athletes error AND a
+   * consequential guardians error ("guardian named for athlete X, which was
+   * not imported") carrying the same row number. Counting error records would
+   * report one bad roster line as two rows not imported. Goals and sessions
+   * are separate files with their own numbering, so row 1 of goals is a
+   * different line from row 1 of athletes -- which is why this is a file key
+   * and not a global row id.
+   */
+  rowSource: 'athletes' | 'goals' | 'sessions';
   /** Distinct guardian records written, as opposed to athlete links. Only set by insertGuardians. */
   newParents?: number;
   inserted: number;
@@ -182,7 +195,7 @@ async function insertAthletes(
   dryRun: boolean,
   checkCoach: boolean
 ): Promise<{ result: SeedResult; athleteIds: Set<string> }> {
-  const result: SeedResult = { table: 'athletes', inserted: 0, skipped: 0, errors: [] };
+  const result: SeedResult = { table: 'athletes', rowSource: 'athletes', inserted: 0, skipped: 0, errors: [] };
   const athleteIds = new Set<string>();
 
   for (let i = 0; i < rows.length; i++) {
@@ -262,7 +275,7 @@ async function insertGuardians(
   dryRun: boolean,
   athleteIds: Set<string>
 ): Promise<SeedResult> {
-  const result: SeedResult = { table: 'guardians', inserted: 0, skipped: 0, errors: [] };
+  const result: SeedResult = { table: 'guardians', rowSource: 'athletes', inserted: 0, skipped: 0, errors: [] };
 
   // parent_id per deduplication key, so the second sibling links to the first's parent row.
   const parentIdByKey = new Map<string, string>();
@@ -379,7 +392,7 @@ async function insertGoals(
   athleteIds: Set<string>,
   dryRun: boolean
 ): Promise<SeedResult> {
-  const result: SeedResult = { table: 'goals', inserted: 0, skipped: 0, errors: [] };
+  const result: SeedResult = { table: 'goals', rowSource: 'goals', inserted: 0, skipped: 0, errors: [] };
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -424,7 +437,7 @@ async function insertSessions(
   athleteIds: Set<string>,
   dryRun: boolean
 ): Promise<SeedResult> {
-  const result: SeedResult = { table: 'sessions', inserted: 0, skipped: 0, errors: [] };
+  const result: SeedResult = { table: 'sessions', rowSource: 'sessions', inserted: 0, skipped: 0, errors: [] };
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -599,8 +612,31 @@ async function resolveCoachCheck(dryRun: boolean): Promise<boolean> {
 export interface SeedOutcome {
   readonly totalInserted: number;
   readonly totalSkipped: number;
-  /** Rows that did not import, whether refused by validation or rejected by the database. */
-  readonly totalErrors: number;
+  /**
+   * Distinct INPUT ROWS that did not import, whether refused by validation or
+   * rejected by the database. Deduplicated across result sets that read the
+   * same file -- see SeedResult.rowSource. This is the number an operator
+   * needs: how many lines of my roster are missing.
+   */
+  readonly failedRowCount: number;
+  /**
+   * Error RECORDS, which can exceed failedRowCount when one bad row produces a
+   * consequential error downstream. Reported separately rather than folded in,
+   * because the two answer different questions and calling either one "rows"
+   * when it is the other is how a count stops meaning anything.
+   */
+  readonly errorRecordCount: number;
+}
+
+/** Distinct (file, line) pairs behind a run's errors. */
+function failedSourceRows(results: readonly SeedResult[]): Set<string> {
+  const failed = new Set<string>();
+  for (const result of results) {
+    for (const error of result.errors) {
+      failed.add(`${result.rowSource}:${error.row}`);
+    }
+  }
+  return failed;
 }
 
 async function seedData(config: SeedConfig): Promise<SeedOutcome> {
@@ -725,10 +761,16 @@ async function seedData(config: SeedConfig): Promise<SeedOutcome> {
     } else {
       // NOT "complete". Every row above that failed is a child who is not in
       // the roster, and the operator is the only one who can put them there.
-      console.log(`\n⚠️  Seed finished with ${totalErrors} row(s) NOT imported. See the errors above.`);
+      const failedRows = failedSourceRows(results).size;
+      console.log(`\n⚠️  Seed finished with ${failedRows} row(s) NOT imported. See the errors above.`);
     }
 
-    return { totalInserted, totalSkipped, totalErrors };
+    return {
+      totalInserted,
+      totalSkipped,
+      failedRowCount: failedSourceRows(results).size,
+      errorRecordCount: totalErrors,
+    };
   } catch (error) {
     console.error(`\n❌ Error during seeding:`, error);
     process.exit(1);
@@ -820,9 +862,17 @@ function runCli(): void {
       // --allow-partial-import is the deliberate escape, for an operator who
       // has read the errors and wants the good rows anyway. It has to be typed;
       // it is never the default.
-      if (outcome.totalErrors > 0 && !allowPartialImport) {
+      if (outcome.failedRowCount > 0 && !allowPartialImport) {
+        // Rows, not error records. One roster line with a bad date of birth
+        // and a guardian on it produces two error records -- the athlete
+        // refusal and the guardian's consequential "athlete was not imported"
+        // -- and telling the operator two rows failed sends them looking for a
+        // second bad line that does not exist.
+        const records = outcome.errorRecordCount !== outcome.failedRowCount
+          ? ` (${outcome.errorRecordCount} error records)`
+          : '';
         console.error(
-          `\nExiting non-zero: ${outcome.totalErrors} row(s) did not import. `
+          `\nExiting non-zero: ${outcome.failedRowCount} row(s) did not import${records}. `
           + 'Fix them and re-run, or pass --allow-partial-import to accept a partial load.',
         );
         process.exit(1);

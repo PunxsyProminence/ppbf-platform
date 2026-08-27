@@ -48,12 +48,36 @@ const GOOD = 'EXAMPLE-001,EXAMPLE Athlete One,2010-01-01,fly,active,EX contact,t
 const BAD_DATE = 'EXAMPLE-002,EXAMPLE Athlete Two,NOT-A-DATE,fly,active,EX contact,true,EXAMPLE-COACH-1';
 const IMPOSSIBLE_DATE = 'EXAMPLE-003,EXAMPLE Athlete Three,2011-02-29,fly,active,EX contact,true,EXAMPLE-COACH-1';
 
+// The same roster shape with guardian columns, which makes insertGuardians run
+// over the SAME rows and report a consequential error for any athlete that did
+// not import. Without these columns the guardian pass is skipped entirely,
+// which is why the first version of this suite never reached the double-count.
+const GUARDIAN_HEADER = `${HEADER},guardian_full_name,guardian_phone,guardian_email,guardian_relationship`;
+
+// A second input file, so a goals failure and an athletes failure can share
+// a line number. Row 1 of goals is a different line from row 1 of athletes.
+const GOAL_HEADER = 'goal_id,athlete_id,title,target_date,metric,status';
+const GOAL_FOR_MISSING_ATHLETE = 'GOAL-1,NO-SUCH-ATHLETE,Land the jab,2026-12-01,accuracy,active';
+const GOOD_WITH_GUARDIAN = `${GOOD},EX Guardian One,000-0001,ex.guardian1@example.invalid,mother`;
+const BAD_DATE_WITH_GUARDIAN = `${BAD_DATE},EX Guardian Two,000-0002,ex.guardian2@example.invalid,father`;
+const IMPOSSIBLE_WITH_GUARDIAN = `${IMPOSSIBLE_DATE},EX Guardian Three,000-0003,ex.guardian3@example.invalid,mother`;
+
 let workDir: string;
 
 /** A dry run over one CSV, returning the exit status and combined output. */
-function runSeed(rows: string[], extraArgs: string[] = []): { status: number; output: string } {
+function runSeed(
+  rows: string[],
+  extraArgs: string[] = [],
+  header: string = HEADER,
+  goalRows?: string[],
+): { status: number; output: string } {
   const dir = fs.mkdtempSync(path.join(workDir, 'case-'));
-  fs.writeFileSync(path.join(dir, 'athletes.csv'), `${HEADER}\n${rows.join('\n')}\n`);
+  fs.writeFileSync(path.join(dir, 'athletes.csv'), `${header}\n${rows.join('\n')}\n`);
+  const files: Record<string, string> = { athletes: 'athletes.csv' };
+  if (goalRows) {
+    fs.writeFileSync(path.join(dir, 'goals.csv'), `${GOAL_HEADER}\n${goalRows.join('\n')}\n`);
+    files.goals = 'goals.csv';
+  }
   const configPath = path.join(dir, 'config.ts');
   fs.writeFileSync(
     configPath,
@@ -61,7 +85,7 @@ function runSeed(rows: string[], extraArgs: string[] = []): { status: number; ou
     + JSON.stringify({
       organizationId: 'ppbf-import-outcome-test-org',
       dataDir: dir,
-      files: { athletes: 'athletes.csv' },
+      files,
       options: { dryRun: true, skipValidation: false, batchSize: 1000, continueOnError: true },
     }, null, 2)
     + ';\n',
@@ -234,5 +258,69 @@ describe('a date of birth is checked against the calendar, not a regex', () => {
   it('reports the offending value back to the operator who typed it', () => {
     const { output } = runSeed([BAD_DATE]);
     expect(output).toContain('Invalid dob "NOT-A-DATE" (format: YYYY-MM-DD)');
+  });
+});
+
+describe('the count is input rows, not error records', () => {
+  // Found by the Codex reviewer on this PR, reproduced before fixing:
+  //
+  //   athletes   | Errors: 1   Row 1: Invalid dob "NOT-A-DATE"
+  //   guardians  | Errors: 1   Row 1: guardian named for athlete EXAMPLE-001,
+  //                            which was not imported
+  //   Exiting non-zero: 2 row(s) did not import
+  //
+  // Guardians are read from the ATHLETES file, so one bad roster line produces
+  // two error records: the refusal, and the guardian pass reporting the
+  // consequence. Reporting that as two rows sends the operator looking for a
+  // second bad line that does not exist.
+  it('reports ONE row when one roster line fails and takes its guardian with it', () => {
+    const { status, output } = runSeed([BAD_DATE_WITH_GUARDIAN], [], GUARDIAN_HEADER);
+    expect(status).toBe(1);
+    expect(output).toContain('1 row(s) did not import');
+    // Both error records are still shown -- the fix changes the count, never
+    // what the operator is told went wrong.
+    expect(output).toContain('Invalid dob');
+    expect(output).toContain('which was not imported');
+  });
+
+  it('says how many error records there were, when that differs from the row count', () => {
+    const { output } = runSeed([BAD_DATE_WITH_GUARDIAN], [], GUARDIAN_HEADER);
+    expect(output).toContain('(2 error records)');
+  });
+
+  it('still counts two when two roster lines genuinely failed', () => {
+    // The dedup must not collapse distinct failures. Two bad rows, each with a
+    // guardian, is four error records and two missing children.
+    const { status, output } = runSeed(
+      [BAD_DATE_WITH_GUARDIAN, IMPOSSIBLE_WITH_GUARDIAN, GOOD_WITH_GUARDIAN],
+      [],
+      GUARDIAN_HEADER,
+    );
+    expect(status).toBe(1);
+    expect(output).toContain('2 row(s) did not import');
+    expect(output).toContain('(4 error records)');
+  });
+
+  it('does not append a record count when every failure is its own row', () => {
+    const { output } = runSeed([GOOD, BAD_DATE]);
+    expect(output).toContain('1 row(s) did not import');
+    expect(output).not.toContain('error records');
+  });
+});
+
+describe('row numbers are scoped to their own file', () => {
+  it('counts a goals row 1 and an athletes row 1 as two different rows', () => {
+    // Without a per-file dedup key these collide: both errors are "row 1", the
+    // set holds one entry, and a run that lost a child AND a goal reports one
+    // failure. Goals and athletes are separate files with independent
+    // numbering, so the key has to carry the file.
+    const { status, output } = runSeed(
+      [BAD_DATE],
+      [],
+      HEADER,
+      [GOAL_FOR_MISSING_ATHLETE],
+    );
+    expect(status).toBe(1);
+    expect(output).toContain('2 row(s) did not import');
   });
 });
