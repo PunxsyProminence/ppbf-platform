@@ -396,6 +396,58 @@ export async function getActiveFormulaObservationsByIds(input: {
   return ids.map((id) => rowToObservation(byId.get(id)!));
 }
 
+/**
+ * Every active observation in one athlete's context, for a caller that does
+ * NOT already know which observation ids belong together.
+ *
+ * This is deliberately a second function rather than a widening of
+ * getActiveFormulaObservationsByIds above. That one is the manual execution
+ * path: a caller names ids, and being handed a superseded or out-of-scope id
+ * is an error it must throw on, because silently computing over fewer inputs
+ * than the caller asked for would produce a result nobody could account for.
+ * Detection is the opposite situation -- nothing has been asked for yet, and
+ * "this context holds no complete set" is an ordinary answer, not a fault. One
+ * function cannot hold both behaviours, so it holds one and this holds the
+ * other.
+ *
+ * The `not exists` clause is byte-identical to the one above on purpose:
+ * supersession is what makes a correction replace a measurement rather than
+ * sit beside it, and two spellings of that rule is how they come to disagree.
+ *
+ * The three equality predicates are the leading three columns of
+ * idx_shadow_formula_observations_scope (organization_id, athlete_id,
+ * context_id, observation_kind, observed_at desc). Read from the index
+ * definition in infra/azure/pilot_slice_postgres.sql:1162; not confirmed by
+ * EXPLAIN, which needs a database this environment does not have.
+ */
+export async function getActiveObservationsForContext(input: {
+  organizationId: string;
+  athleteId: string;
+  contextId: string;
+}): Promise<NumericObservation[]> {
+  if (!input.organizationId.trim() || !input.athleteId.trim() || !input.contextId.trim()) {
+    throw new TypeError(
+      'Formula observation context read requires an organization, athlete, and context.',
+    );
+  }
+  const rows = await query<FormulaObservationRow>(
+    `select o.*
+     from pilot.shadow_formula_observations o
+     where o.organization_id = $1
+       and o.athlete_id = $2
+       and o.context_id = $3
+       and not exists (
+         select 1
+         from pilot.shadow_formula_observations successor
+         where successor.organization_id = o.organization_id
+           and successor.supersedes_observation_id = o.observation_id
+       )
+     order by o.observed_at asc, o.observation_id asc`,
+    [input.organizationId, input.athleteId, input.contextId],
+  );
+  return rows.map(rowToObservation);
+}
+
 function requireFormulaResultScope(
   results: readonly FormulaResult[],
 ): { organizationId: string; athleteId: string } {
