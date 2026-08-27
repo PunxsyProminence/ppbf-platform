@@ -81,7 +81,13 @@ describe('safety gate seeds ownership', () => {
     expect(packageJson.scripts['pilot:apply-safety-gate-matrix']).toBe(
       'node scripts/pilot-apply-safety-gate-matrix-migration.mjs',
     );
-    expect(packageJson.scripts['test:migrations']).toContain('npm run test:migrations:safety-gate-matrix');
+    // `test:migrations` no longer names suites: it delegates to
+    // scripts/run-migration-suites.mjs, which discovers every
+    // `test:migrations:*` script. So the thing to assert is that the SCRIPT
+    // exists -- under discovery, existing IS being run, and there is no
+    // longer a list it can be absent from.
+    expect(packageJson.scripts['test:migrations:safety-gate-matrix']).toBeDefined();
+    expect(packageJson.scripts['test:migrations']).toBe('node scripts/run-migration-suites.mjs');
 
     expect(workflow).toMatch(/^\s+- safety-gate-matrix$/m);
 

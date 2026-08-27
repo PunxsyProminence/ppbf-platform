@@ -209,6 +209,86 @@ test.describe('Coach journey', () => {
     await expect(report.getByText(/Skipped/)).toBeVisible();
   });
 
+  /* THE OPERATIONS HUB IS ADMINISTRATION NOW (owner decision, 2026-08-26).
+
+     Both halves have to be one test. Narrowing the hub's gate and accidentally
+     narrowing the coach's own floor look identical from the passing side of a
+     refusal-only assertion, and the floor is the thing a coach actually came
+     for. So this refuses them the hub, checks every chassis surface that used
+     to offer it, and then walks the work they keep. */
+  test('a coach is refused the Operations hub and keeps every surface of their own', async ({ page }) => {
+    await installPilotApi(page, { session: { role: 'coach' } });
+
+    /* 1. THE REFUSAL, AND NO HUB CONTENT ON THE WAY OUT. Absence is asserted
+          BEFORE the URL settles, the ordering public-homepage.spec uses.
+
+          Be honest about what that buys: toHaveCount(0) auto-retries and
+          returns on its FIRST satisfied poll, so this samples an instant, not
+          an interval -- it cannot prove no frame ever painted the hub. What
+          rules a flash out is structural, and it is asserted where it can be:
+          RoleSessionGate returns its holding screen from the same render and
+          only reaches its children once accessState is 'authorized', so a
+          refused role never mounts them at all. app/operations/page.test.tsx
+          proves that against the real gate by showing the children's own
+          effects never fire. This line is the browser-level corroboration of
+          it, not the proof itself. */
+    await page.goto('/operations');
+    await expect(page.getByRole('heading', { name: 'The Ring' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'WORKSPACES' })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/coach\/environment\/intake-router$/);
+
+    /* 2. NO OPERATIONS CONTROL ON THE CHASSIS. The session bar mounts on every
+          route, so one signed-in surface proves it for all of them -- and the
+          bar itself must still be there, which is the half that catches a
+          removal that took its neighbours with it. */
+    await expect(page.getByRole('link', { name: 'Operations' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Bell' }).first()).toBeVisible();
+
+    /* 3. NOT IN THE CATALOG, however plainly a coach asks for it. The door
+          carried `roles: OPEN`, and the catalog searches labels, keywords and
+          hrefs -- so every name it answered to has to come back empty. */
+    await page.keyboard.press('Meta+k');
+    const catalog = page.getByRole('dialog');
+    const search = catalog.getByRole('combobox');
+    for (const query of ['operations', 'mission control', 'hub']) {
+      await search.fill(query);
+      await expect(catalog.getByText('Operations Hub')).toHaveCount(0);
+    }
+    /* The path prefix is not the gate: these two carry their own
+       ['coach', 'admin'], and after this change the catalog and the corridor
+       are a coach's only route to them. */
+    await search.fill('wrestling');
+    /* The OPTION, not the label inside it. The option is the unit the catalog
+       offers and the thing a finger lands on; the label is one box within it.
+       On a phone that inner box measures zero wide -- `.catalog-row-main` is
+       `min-width: 0` with no `flex-grow` beside a `flex-shrink: 0` sibling, so
+       the href column takes the row and the title overflows a collapsed box.
+       That is a real Card Catalog defect on narrow viewports, it predates this
+       change, and it is being fixed on its own branch. Asserting the option
+       keeps this test about what it is about: the door a coach keeps. */
+    await expect(catalog.getByRole('option', { name: /Wrestling League/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    /* 4. THE WORK THEY CAME FOR. Client-gated routes only: /coach/review-queue
+          and /coach/operations are in SERVER_GUARDED_ROUTES and answer 307 to
+          /login in this harness regardless of the session stub, so they would
+          fail here for a reason that has nothing to do with this change. */
+    for (const path of [
+      '/coach/floor-groups',
+      '/coach/session-scripts',
+      '/coach/drills',
+      '/coach/progression-intelligence',
+      '/schedule',
+    ]) {
+      await page.goto(path);
+      // Not bounced, and not stuck on the gate's holding screen.
+      await expect(page).toHaveURL(new RegExp(`${path.replace(/\//g, '\\/')}$`));
+      await expect(page.getByText('Checking access')).toHaveCount(0);
+      // And the hub is not offered from any of them either.
+      await expect(page.getByRole('link', { name: 'Operations' })).toHaveCount(0);
+    }
+  });
+
   test('a guardian who opens a coach route is sent to their own hub, not to a login form', async ({ page }) => {
     /* Signed in, just not to this surface. Sending them to /login is the
        defect requirePageRole and BoardRoleGate were both written to end: the
@@ -221,5 +301,63 @@ test.describe('Coach journey', () => {
 
     await expect(page).toHaveURL(/\/parent\/dashboard$/);
     await expect(page.getByRole('heading', { name: 'SHADOW Decision Loop' })).toHaveCount(0);
+  });
+  /* THE CARD CATALOG'S TITLE COLUMN, MEASURED RATHER THAN READ.
+     ------------------------------------------------------------------------
+     The catalog is how a coach reaches most of this building, and its rows
+     had a layout defect no text scan of the stylesheet could have found: the
+     metadata column was `flex-shrink: 0` while the title column had no
+     `flex-grow`, so on a narrow viewport the route ate the row and the NAME
+     was squeezed to nothing. Measured on a Pixel 7 before the fix, at a 393px
+     row: "The Work" and "Progression Intelligence" 0px wide, "Community
+     Service" 2px, "Intervention Protocols" 10px, "Session Scripts" 54px wide
+     by 199px tall -- a title shredded one letter per line, overflowing a box
+     of no width. Playwright reported those titles `hidden`, which is how this
+     was found at all.
+
+     Asserted over EVERY row the catalog renders, in both viewport projects,
+     because the collapse is a function of how long a row's route is and
+     picking one row to check is picking which regression to catch. One
+     `evaluate` rather than 64 locator round-trips, and it names the offending
+     rows so a failure says which doors broke.
+
+     THE TWO LIMITS COME FROM MEASUREMENT, not from taste. Width must be
+     non-zero -- that is the hard collapse. Height must stay under 96px --
+     that is what catches the 2px and 10px columns, which are non-zero and
+     still ruined; a shredded title grows DOWN. After the fix the tallest
+     title column measures 53px on the Pixel 7 and 38px on the desktop, and
+     before it the same column measured 260px, so 96px sits clear of both. */
+  test('every catalog row gives its title a real column, at any viewport', async ({ page }) => {
+    await installPilotApi(page, { session: { role: 'coach' } });
+    await page.goto('/coach/environment/intake-router');
+    await expect(page.getByRole('link', { name: 'Bell' }).first()).toBeVisible();
+
+    await page.keyboard.press('Meta+k');
+    const catalog = page.getByRole('dialog');
+    // A single letter is the widest net this search offers: it matches most
+    // of the building map, so the sweep below runs over real rows and not
+    // over three.
+    await catalog.getByRole('combobox').fill('a');
+    await expect(catalog.getByRole('option').first()).toBeVisible();
+
+    const rows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('li.catalog-row')).map((li) => {
+        const box = li.querySelector('.catalog-row-main')?.getBoundingClientRect();
+        return {
+          label: li.querySelector('b')?.textContent ?? '(unnamed)',
+          width: Math.round(box?.width ?? 0),
+          height: Math.round(box?.height ?? 0),
+        };
+      }),
+    );
+
+    // A sweep over an empty list is a passing test that proves nothing.
+    expect(rows.length).toBeGreaterThan(20);
+
+    const collapsed = rows.filter((row) => row.width === 0);
+    expect(collapsed, 'catalog rows whose title column has no width').toEqual([]);
+
+    const shredded = rows.filter((row) => row.height > 96);
+    expect(shredded, 'catalog rows whose title is wrapping down a squeezed column').toEqual([]);
   });
 });

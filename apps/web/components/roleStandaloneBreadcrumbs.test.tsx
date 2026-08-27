@@ -20,8 +20,25 @@ import RoleStandaloneView from './RoleStandaloneView';
  * the load-bearing case, not an edge one.
  */
 
+/* ONE router object for the life of the file.
+ *
+ * RoleSessionGate's effect depends on [router], so a mock that builds a fresh
+ * object on every render re-runs that effect on every render. That was survivable
+ * while this shell rendered nothing that reacted to the session: the effect
+ * settled because persisting the same session twice changed no state anybody
+ * was watching.
+ *
+ * It stopped being survivable when the band began reading the viewer's role to
+ * decide whether to offer Operations (2026-08-26): the shell now subscribes to
+ * the role-session store, so persist -> notify -> render -> new router ->
+ * persist is a closed loop, and the suite hangs with no output and no timeout
+ * -- a synchronous spin, not a slow await. The same note is written at the top
+ * of app/shadow/page.test.tsx, which learned it the same way.
+ */
+const router = { push: jest.fn(), replace: jest.fn() };
+
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => router,
 }));
 
 // The chat launcher opens a socket the shell's own markup has nothing to do with.

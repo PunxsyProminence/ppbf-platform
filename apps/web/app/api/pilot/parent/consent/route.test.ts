@@ -352,3 +352,111 @@ describe('POST /api/pilot/parent/consent', () => {
     consoleErrorSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// THE CONSENT SCOPE FLAGS ARE BOOLEANS, AND ONLY BOOLEANS.
+//
+// covers_video derived as `body?.covers_video !== false`. Absent meaning true
+// is the documented default and stays -- video/[videoId]'s own header records
+// that photo-only must be an affirmative act, never an absence. What was not
+// intended is that only the boolean `false` counted as that act: the string
+// "false", 0, "no" and null are all `!== false`, so a guardian unticking video
+// through any client that sends its form values as strings had their choice
+// recorded as FULL VIDEO CONSENT.
+//
+// The consequence is the whole of assertConsentCoversVideo in
+// /api/pilot/video/[videoId]: it refuses a playback SAS only on a stored
+// covers_video = false, so a photo-only decision silently widened here means
+// the gate never fires and a 60-minute bearer credential for a minor's footage
+// is minted against a consent the guardian did not give.
+//
+// public_use_allowed derived as `=== true`, which fails the other way -- the
+// string "true" under-grants. That direction is safe but it still misrecords
+// what the guardian chose, so both are held to the same rule: absent takes the
+// documented default, present must be an actual boolean.
+
+const NON_BOOLEANS: Array<[string, unknown]> = [
+  ['the string "false"', 'false'],
+  ['the string "true"', 'true'],
+  ['the string "no"', 'no'],
+  ['zero', 0],
+  ['one', 1],
+  ['null', null],
+  ['an empty string', ''],
+  ['an object', {}],
+  ['an array', [false]],
+];
+
+describe('POST /api/pilot/parent/consent -- the scope flags must be real booleans', () => {
+  // A table-driven guard over an empty list passes without ever running.
+  test('the non-boolean table is not empty', () => {
+    expect(NON_BOOLEANS.length).toBeGreaterThan(0);
+  });
+
+  test.each(NON_BOOLEANS)(
+    'THE DEFECT: covers_video sent as %s is refused, never widened to full video consent',
+    async (_label, value) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+
+      const response = await POST(
+        jsonRequest({ athlete_id: 'ath-1', decision: 'grant', covers_video: value }),
+      );
+
+      expect(response.status).toBe(400);
+      // Nothing may be written: a consent row recorded from a value the server
+      // had to guess at is worse than no row, because the gates trust it.
+      expect(mockGrant).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(NON_BOOLEANS)('public_use_allowed sent as %s is refused', async (_label, value) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+
+    const response = await POST(
+      jsonRequest({ athlete_id: 'ath-1', decision: 'grant', public_use_allowed: value }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockGrant).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a real boolean false still records photo-only consent', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockGrant.mockResolvedValueOnce('waiver-photo-only');
+
+    const response = await POST(
+      jsonRequest({ athlete_id: 'ath-1', decision: 'grant', covers_video: false }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockGrant).toHaveBeenCalledWith(expect.objectContaining({ coversVideo: false }));
+  });
+
+  test('an explicit null covers_video is refused rather than read as consent', async () => {
+    // Called out separately because `null !== false` is true: a client that
+    // clears the field sent the most emphatic "not set" JSON has, and the old
+    // derivation turned it into a grant.
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+
+    const response = await POST(
+      jsonRequest({ athlete_id: 'ath-1', decision: 'grant', covers_video: null }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockGrant).not.toHaveBeenCalled();
+  });
+
+  test('withdraw ignores the scope flags entirely -- a withdrawal has no scope', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockWithdraw.mockResolvedValueOnce('waiver-w');
+
+    const response = await POST(
+      jsonRequest({ athlete_id: 'ath-1', decision: 'withdraw', covers_video: 'false' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockWithdraw).toHaveBeenCalledTimes(1);
+  });
+});

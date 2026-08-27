@@ -2534,8 +2534,25 @@ body.ppbf.on-canvas {
   font: 650 9.5px/1 var(--font-data); letter-spacing: .14em; text-transform: uppercase;
   color: var(--brass-400); padding: var(--s4) var(--s5) var(--s2);
 }
+/* A row is a title column and a metadata column. The metadata column is
+   `flex-shrink: 0` because a route and a room tag broken across lines is
+   unreadable -- but that made it the column that always wins, and the title
+   column had no `flex-grow` to claim what was left, so on a narrow viewport
+   the metadata took the row and the TITLE collapsed. Measured on a Pixel 7,
+   at a 393px row: the href column took 328px and the title column was left
+   0px wide for "The Work" and "Progression Intelligence", 2px for "Community
+   Service", 10px for "Intervention Protocols", and 54px by 199px tall for
+   "Session Scripts" -- names overflowing a box of no width, down the row.
+
+   `flex-wrap` fixes it without a breakpoint: both columns stay on one line
+   wherever they both fit, and the metadata drops beneath the title when they
+   do not. A hardcoded width would have been a guess about the longest route
+   in the building map; this asks the browser instead, so a route added later
+   cannot reintroduce the collapse. Proven in
+   e2e/coach-journey.spec.ts, which measures the boxes in both viewports. */
 .catalog-row {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: var(--s2) var(--s5);
   padding: var(--s3) var(--s5); cursor: pointer;
   border-left: 3px solid transparent;
 }
@@ -2543,7 +2560,11 @@ body.ppbf.on-canvas {
   background: linear-gradient(90deg, rgb(var(--brass-400-rgb) / .16), transparent 78%);
   border-left-color: var(--brass-400);
 }
-.catalog-row-main { min-width: 0; }
+/* `flex: 1 1 auto` is the other half of the fix above: without a grow factor
+   this column only ever asked for its content width, so it had no claim on
+   the row at all. `min-width: 0` stays -- it is what lets a long title wrap
+   inside the column instead of forcing the row wider than the catalog. */
+.catalog-row-main { flex: 1 1 auto; min-width: 0; }
 .catalog-row-main b { display: block; font: 650 13.5px/1.35 var(--font-ui); color: var(--bone-100); }
 .catalog-row-hint { display: block; font-size: 11px; color: var(--bone-400); line-height: 1.4; }
 .catalog-row-meta { display: flex; align-items: center; gap: var(--s3); flex-shrink: 0; }

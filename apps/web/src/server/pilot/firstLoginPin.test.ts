@@ -30,19 +30,16 @@ afterEach(() => {
 
 const request = {} as NextRequest;
 
-describe('the bootstrap PIN itself', () => {
-  test('satisfies the PIN policy, so nothing downstream needs a special case', () => {
-    expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+describe('the retired bootstrap PIN itself', () => {
+  test('is rejected by the general PIN policy', () => {
+    expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).toThrow('starting PIN');
   });
 });
 
-// The starting PIN is published in pinPolicy.ts and printed in the admin UI, so
-// it is only safe while must_change_pin is set with it. validatePinPolicy has to
-// keep accepting it -- the admin "back to the starting PIN" reset sets exactly
-// this value -- so the refusal belongs on the paths where a PIN is CHOSEN.
-describe('the starting PIN can be issued but never chosen', () => {
-  test('validatePinPolicy still accepts it, so admin reset keeps working', () => {
-    expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+// The value remains published so legacy rows can be recognized and rejected.
+describe('the retired starting PIN can neither be issued nor chosen', () => {
+  test('validatePinPolicy rejects it', () => {
+    expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).toThrow('starting PIN');
   });
 
   test('choosing it is refused', () => {

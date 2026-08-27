@@ -148,6 +148,17 @@ export async function POST(request: NextRequest) {
       documentRef: blobPath,
       issuedOn: null,
       expiresOn: null,
+      /* `previous` is read above for the supersession record and is now also
+         the precondition. Without it, a coach's upload could land on top of an
+         admin verification made microseconds earlier: the upload resets
+         verified_by_account_id, verified_at, issued_on and expires_on to null,
+         so an in-date verified credential silently degrades to a bare
+         'submitted' row and the verifier's identity is destroyed.
+
+         `previous?.status ?? null` rather than a bare `previous.status`: a
+         first-ever upload has no prior row, and null means "no expectation",
+         which is the correct reading of that case. */
+      expectedStatus: previous?.status ?? null,
       verifiedByAccountId: null,
       verificationNote: null,
     });

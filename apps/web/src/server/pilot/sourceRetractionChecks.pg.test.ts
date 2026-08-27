@@ -74,7 +74,7 @@ const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-retraction-surveillance-migration.mjs',
 );
-const SCHEMA_FILES = ['pilot_slice_postgres.sql', 'pilot_slice_postgres_shadow_evidence_migration.sql'];
+const SCHEMA_FILES = ['pilot_slice_postgres.sql', 'pilot_slice_postgres_data_retention_deletion_migration.sql', 'pilot_slice_postgres_shadow_evidence_migration.sql'];
 
 const ORG_A = 'org-retractionchecks-a';
 const SOURCE_A = 'source-retractionchecks-a';

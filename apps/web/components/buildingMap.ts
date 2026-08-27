@@ -1,3 +1,4 @@
+import { OPERATIONS_ROLES } from './operationsAccess';
 import type { ClubRole } from './roleRoutes';
 
 /**
@@ -194,8 +195,18 @@ export const BUILDING: readonly Door[] = [
   { href: '/staff-credentials', label: 'Certified & Cleared', room: 'office', roles: ['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],
     keywords: 'safesport certification background check cpr first aid credential status staff trained certified',
     hint: 'The training and clearance status this gym’s coaches and staff hold — status only, never the documents.' },
-  { href: '/operations', label: 'Operations Hub', room: 'office', roles: OPEN,
-    keywords: 'mission control operations hub', hint: 'Cross-role operational launcher.' },
+  /* OPERATIONS_ROLES, not OPEN (owner decision, 2026-08-26). The hub stopped
+     being a cross-role launcher: it is administration, and only an admin or
+     the platform owner may open it. OPEN here advertised it to every role and
+     to a signed-out visitor, which visibleDoors admits before it looks at the
+     session at all -- so the corridor, the catalog and the command search all
+     offered a door that now bounces fourteen of the sixteen roles.
+
+     The two doors immediately below share the `/operations/` path prefix and
+     are NOT affected: each carries its own ['coach', 'admin'], and a coach
+     keeps both. A prefix is not a gate in this map; every door states its own. */
+  { href: '/operations', label: 'Operations Hub', room: 'office', roles: OPERATIONS_ROLES,
+    keywords: 'mission control operations hub', hint: 'Gym administration launcher.' },
   { href: '/operations/external-competition', label: 'External Competition', room: 'office', roles: ['coach', 'admin'],
     keywords: 'meets tournaments away events entries',
     hint: 'Outside meets and tournaments with athlete entries — skeleton records.' },

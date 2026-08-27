@@ -47,6 +47,20 @@ const isBoardE2ePath = (file) => {
          the session gate and server auth module are not surfaces it touches. */
       'apps/web/app/login/',
       'apps/web/components/SignInPanel',
+      /* THE SHARED CHASSIS. board-governance.spec.ts drives a board session
+         through the same session bar and standalone band every other role
+         uses, so a change to either is a change to what this suite walks
+         through -- and `board` is a role those components make decisions
+         about. The Operations restriction is the case that exposed the gap:
+         it removed a control from the board role's bar and put `board` on the
+         refused side, and this predicate matched none of it, so the board
+         journey stayed skipped on the exact commit that changed it. Same
+         class of miss the comment above records for this predicate's own
+         spec. Still narrower than isSignedInJourneyPath: the session gate and
+         the server auth module are not surfaces a suite that never signs in
+         touches. */
+      'apps/web/components/GlobalRoleHeader',
+      'apps/web/components/RoleStandaloneView',
     ]) || component.includes('Board')
   );
 };
@@ -75,6 +89,14 @@ const isHomepageE2ePath = (file) => {
          unauthenticated visitor's journey touches. */
       'apps/web/app/login/',
       'apps/web/components/SignInPanel',
+      /* THE ROUTES THIS SUITE ASSERTS ARE CLOSED. public-homepage.spec.ts
+         ends on a protected-routes block that opens /operations as an
+         unauthenticated visitor and requires the redirect to /login -- so
+         that route is a surface this suite covers, and it reached this
+         predicate through nothing. The Operations restriction changed who
+         that route admits and this suite, the one holding the signed-out
+         assertion about it, stayed skipped. */
+      'apps/web/app/operations/',
     ]) ||
     ['Home', 'Landing', 'Public'].some((token) => component.includes(token))
   );
@@ -100,6 +122,28 @@ const isSignedInJourneyPath = (file) =>
     'apps/web/src/server/pilot/pageGuard',
     'apps/web/app/api/pilot/auth/',
     'apps/web/e2e/support/',
+    /* The Card Catalog is how a signed-in person reaches most of this
+       building, it mounts on every gated surface, and coach-journey.spec.ts
+       now measures its rows. Without this line a change to the catalog itself
+       ran none of the suites that assert it. */
+    'apps/web/components/CardCatalog',
+    /* THE SHARED STYLESHEETS, and this one is a policy change worth stating.
+       `design-system/**` already set homepage_e2e and golden_era_e2e -- the
+       Bell's resolved-style proof and the eight scope proofs. Neither of those
+       suites looks at the chrome a signed-in person actually operates, so a
+       stylesheet edit could break the catalog, the session bar or the
+       standalone band on every gated route in the building and CI would have
+       run no suite capable of noticing.
+
+       That is not hypothetical either: `.catalog-row` shipped with a title
+       column that collapsed to zero width on any narrow viewport, and it was
+       found by a test written for an unrelated change, not by CI.
+
+       The cost is the three signed-in journeys on stylesheet PRs. They need
+       no database and Chromium is already installed for those PRs by the two
+       flags above, so it is roughly ninety seconds -- against a class of
+       regression that reaches every signed-in surface at once. */
+    'design-system/',
   ]) || file === 'apps/web/playwright.config.ts';
 
 /* THE GOLDEN-ERA RESOLVED-STYLE PROOFS (e2e/golden-era-scope-proofs.spec.ts).
@@ -199,6 +243,46 @@ const isGuardianE2ePath = (file) => {
   );
 };
 
+/* THE ACTIVATION JOURNEY (e2e/activation-journey.spec.ts).
+   ------------------------------------------------------------------------
+
+   Its own predicate rather than a few lines bolted onto isAthleteE2ePath, for
+   one reason: this journey is UNAUTHENTICATED. Every surface it walks is
+   reached by someone who holds no session at all -- a new athlete's account
+   has pin_hash null and active_flag false until a code is redeemed, so they
+   cannot be signed in while doing this. isSignedInJourneyPath, which the other
+   three journeys all consult, is therefore not part of this one: the session
+   gate, the role cache and the routing table are not on this path.
+
+   What IS on it, and why each is here:
+
+     * /activate and its route -- the journey itself.
+     * /athlete/sign-in -- the door the athlete lands on and the only place
+       linking to /activate. A change that drops that link strands them again,
+       which is the defect this suite was written for, so the suite has to run
+       on it.
+     * pinPolicy -- the refusals the journey types into the form, and the
+       sentence PIN_RULE_SUMMARY shows before they type. The suite asserts the
+       sentence names the shapes the policy refuses.
+     * the suite's own spec -- three predicates in this file previously did
+       not match the spec they run, so an edit to a spec could not run itself.
+       Stated here from the start rather than fixed later.
+
+   Note that pinPolicy and app/athlete/ already reach isAthleteE2ePath, so a
+   change to either runs both suites. That is correct rather than wasteful:
+   they assert different things about the same file, and the athlete journey
+   does not walk activation. */
+const isActivationE2ePath = (file) =>
+  startsWithAny(file, [
+    'apps/web/app/activate/',
+    'apps/web/app/athlete/sign-in/',
+    'apps/web/app/api/pilot/auth/activate/',
+    'apps/web/src/server/pilot/activation',
+    'apps/web/src/server/pilot/pinPolicy',
+    'apps/web/e2e/activation-journey',
+    'apps/web/e2e/support/',
+  ]) || file === 'apps/web/playwright.config.ts';
+
 export function classifyPaths(paths) {
   const files = paths.map((file) => file.trim()).filter(Boolean);
   const docsOnly =
@@ -211,6 +295,7 @@ export function classifyPaths(paths) {
   const athleteE2e = files.some(isAthleteE2ePath);
   const guardianE2e = files.some(isGuardianE2ePath);
   const goldenEraE2e = files.some(isGoldenEraE2ePath);
+  const activationE2e = files.some(isActivationE2ePath);
   const unknownCode =
     !docsOnly &&
     files.length > 0 &&
@@ -220,7 +305,8 @@ export function classifyPaths(paths) {
     !coachE2e &&
     !athleteE2e &&
     !guardianE2e &&
-    !goldenEraE2e;
+    !goldenEraE2e &&
+    !activationE2e;
 
   return {
     docsOnly,
@@ -231,6 +317,7 @@ export function classifyPaths(paths) {
     athleteE2e,
     guardianE2e,
     goldenEraE2e,
+    activationE2e,
     unknownCode,
   };
 }
@@ -245,6 +332,7 @@ function outputLines(result) {
     `athlete_e2e=${result.athleteE2e}`,
     `guardian_e2e=${result.guardianE2e}`,
     `golden_era_e2e=${result.goldenEraE2e}`,
+    `activation_e2e=${result.activationE2e}`,
     `unknown_code=${result.unknownCode}`,
   ].join('\n');
 }

@@ -103,6 +103,26 @@ type ConsentDecision = 'grant' | 'withdraw';
 
 const DECISIONS = new Set<ConsentDecision>(['grant', 'withdraw']);
 
+/**
+ * A consent scope flag: absent takes the documented default, present must be
+ * an actual boolean. `undefined` alone is absence -- `null` is a value the
+ * caller sent and could not have meant, so it is refused rather than silently
+ * read as the default.
+ *
+ * "Unsupported" is jsonError's recognized 400 prefix; anything else falls into
+ * the generic 500 branch, which would tell a guardian the server broke when
+ * what actually happened is that their client sent a string.
+ */
+function requireOptionalBoolean(value: unknown, field: string, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (typeof value !== 'boolean') {
+    throw new Error(`Unsupported ${field}: must be true or false`);
+  }
+  return value;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -144,8 +164,29 @@ export async function POST(request: NextRequest) {
     }
 
     if (decision === 'grant') {
-      const coversVideo = body?.covers_video !== false;
-      const publicUseAllowed = body?.public_use_allowed === true;
+      // ABSENT TAKES THE DOCUMENTED DEFAULT; PRESENT MUST BE A REAL BOOLEAN.
+      //
+      // covers_video defaulting to true when omitted is deliberate and
+      // unchanged -- /api/pilot/video/[videoId]'s consent gate is built on
+      // photo-only being an affirmative act rather than an absence, and the
+      // column defaults to true for the same reason.
+      //
+      // What was NOT intended is that only the boolean `false` counted as
+      // that act. The old derivation was `body?.covers_video !== false`, and
+      // the string "false", 0, "no" and null are all `!== false` -- so a
+      // guardian unticking video through any client that sends form values as
+      // strings had their choice stored as FULL VIDEO CONSENT. The gate at
+      // video/[videoId] then never fires, and a 60-minute bearer credential
+      // for a minor's footage is minted against a consent nobody gave. A
+      // value the server has to guess at is refused rather than coerced:
+      // this record is read as a guardian's decision by every gate downstream.
+      //
+      // public_use_allowed is held to the same rule. Its `=== true` failed the
+      // safe way (the string "true" under-granted), but it still misrecorded
+      // the guardian's answer, and one rule for both flags is one rule to keep
+      // right.
+      const coversVideo = requireOptionalBoolean(body?.covers_video, 'covers_video', true);
+      const publicUseAllowed = requireOptionalBoolean(body?.public_use_allowed, 'public_use_allowed', false);
       await grantMediaConsent({
         organizationId: principal.organizationId,
         athleteId,
