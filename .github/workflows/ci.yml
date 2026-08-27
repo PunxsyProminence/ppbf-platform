@@ -11,12 +11,27 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # Cancel superseded runs only for pull requests. On main, every push's run
-  # must complete: cancelling an in-flight main run when the next merge lands
-  # leaves the earlier merge commit with a cancelled required check, and a
-  # cancelled check reads as "never validated" -- the exact gap the branch
-  # protection's required `validate` context exists to close.
+  # PRs group by PR number, so a new push supersedes the previous run for that
+  # PR. Pushes to main group by COMMIT, so no main run can supersede another.
+  #
+  # WHY THE COMMIT AND NOT THE REF. cancel-in-progress below is already false
+  # for pushes, and that is not sufficient. GitHub holds at most one PENDING
+  # run per group: when a run is executing and a second is pending, a third
+  # arrival cancels the pending one. Keying every main push to the shared
+  # ref put all of them in one group, so merges landing faster than a run
+  # takes evicted each other while still queued.
+  #
+  # Measured on 2026-08-27 over the last 30 pushes to main: 16 cancelled,
+  # 13 success, 1 failure. Among the cancelled were the merge commits of
+  # #716 and #718, whose combination left main red -- a state nothing
+  # reported, because a cancelled check is not a failed one. It surfaced
+  # later against an unrelated PR and reached a staging deploy first.
+  #
+  # A cancelled required check reads as "never validated", which is the exact
+  # gap the branch protection's required `validate` context exists to close.
+  # github.sha is unique per commit, so every main commit now gets a run that
+  # nothing can evict.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
