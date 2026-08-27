@@ -57,7 +57,7 @@ const EXPECTED: Record<FormulaId, readonly BlockerCategory[]> = {
   'BF-10': ['CALIBRATION_GAP', 'POLICY_DECISION'],
   'BF-11': [],
   'BF-12': ['DATA_GAP'],
-  'BF-13': ['DATA_GAP', 'POLICY_DECISION'],
+  'BF-13': ['DATA_GAP'],
   'LEGACY-READINESS': ['RESEARCH_GAP', 'CALIBRATION_GAP', 'SAFETY_REVIEW_REQUIRED'],
 };
 
@@ -150,8 +150,11 @@ describe('SHADOW formula blocker map: the classification itself', () => {
 
     expect(blocked).toHaveLength(18);
     expect(classified).toHaveLength(15);
-    expect(classified.filter((entry) => entry.categories.length === 1)).toHaveLength(5);
-    expect(classified.filter((entry) => entry.categories.length > 1)).toHaveLength(10);
+    // BF-13 moved from two categories to one when its 'must remain'
+    // clause stopped licensing POLICY_DECISION, so single went 5 -> 6 and
+    // multi went 10 -> 9. The classified total is unchanged.
+    expect(classified.filter((entry) => entry.categories.length === 1)).toHaveLength(6);
+    expect(classified.filter((entry) => entry.categories.length > 1)).toHaveLength(9);
     expect(SHADOW_FORMULA_BLOCKERS.filter(needsOwnerClassification)).toHaveLength(24);
     expect(blocked.filter(needsOwnerClassification)).toHaveLength(3);
   });
@@ -174,7 +177,7 @@ describe('SHADOW formula blocker map: the classification itself', () => {
       TAXONOMY_GAP: 3,
       RESEARCH_GAP: 1,
       CALIBRATION_GAP: 2,
-      POLICY_DECISION: 8,
+      POLICY_DECISION: 7,
       SAFETY_REVIEW_REQUIRED: 1,
     });
   });
@@ -213,7 +216,7 @@ describe('SHADOW formula blocker map: research-requirement bridge', () => {
   const actor = {
     organizationId: 'org-1',
     createdByAccountId: 'account-1',
-    createdByRole: 'org_admin',
+    createdByRole: 'organization_admin',
   };
 
   test('produces the agreed source triple so the existing unique index dedupes it', () => {
@@ -221,7 +224,9 @@ describe('SHADOW formula blocker map: research-requirement bridge', () => {
 
     expect(built.sourceEventName).toBe('SHADOW_FORMULA_BLOCKER_CLASSIFIED');
     expect(built.sourceEntityType).toBe('formula_id');
-    expect(built.sourceEntityId).toBe('BF-10');
+    // The formula id plus the classification fingerprint -- see the note on
+    // sourceEntityId in blockerMap.ts for why the key is versioned.
+    expect(built.sourceEntityId).toBe('BF-10#unsupported:CALIBRATION_GAP,POLICY_DECISION');
     expect(built.subjectId).toBeNull();
     expect(built.organizationId).toBe('org-1');
   });
@@ -247,8 +252,15 @@ describe('SHADOW formula blocker map: research-requirement bridge', () => {
       input.sourceEntityId,
     ].join('|');
 
+    // Idempotency for an UNCHANGED classification is the property this test
+    // guards, and it still holds. The key now carries a classification
+    // fingerprint so a CHANGED one keys differently -- a resolved
+    // requirement must not silently cover a question that moved. See the
+    // 'a changed classification does not hide behind a stale requirement'
+    // block below.
     expect(key(first)).toBe(key(second));
-    expect(key(first)).toBe('org-1|SHADOW_FORMULA_BLOCKER_CLASSIFIED|formula_id|BF-09');
+    expect(key(first))
+      .toBe('org-1|SHADOW_FORMULA_BLOCKER_CLASSIFIED|formula_id|BF-09#unsupported:DATA_GAP,POLICY_DECISION,TAXONOMY_GAP');
   });
 
   test('reports an absent reason as an absent reason rather than inventing one', () => {
@@ -266,5 +278,105 @@ describe('SHADOW formula blocker map: research-requirement bridge', () => {
     expect(built.metadata?.support).toBe('experimental_unsupported');
     expect(built.metadata?.needs_owner_classification).toBe(false);
     expect(built.knowledgeGap).toBe(getFormulaDefinition('LEGACY-READINESS').unsupportedReason);
+  });
+});
+
+describe('POLICY_DECISION means a decision is owed, not a rule already in force', () => {
+  // Codex P2 on this PR. BF-13's reason ends "coach ordinal ratings must
+  // remain separately labeled observations" -- a constraint ALREADY IN FORCE,
+  // not an approval anyone is waiting on. Classifying it POLICY_DECISION
+  // reported a blocker that does not exist and inflated policy-gap coverage.
+  //
+  // The map is otherwise consistent on this: every other POLICY_DECISION
+  // phrase names something ABSENT ("not approved", "an approved X",
+  // "a pairing policy"). BF-13's named something present.
+  it('BF-13 is a data gap, with the labeling constraint recorded as a note', () => {
+    const blocker = getFormulaBlocker('BF-13');
+    expect(blocker.categories).toEqual(['DATA_GAP']);
+    expect(blocker.ownerNote).toContain('separately labeled');
+  });
+
+  it('every POLICY_DECISION phrase names something absent', () => {
+    // The guard that stops the next one slipping in. A phrase licensing
+    // POLICY_DECISION has to read as a thing not yet done.
+    const ABSENCE_WORDS = /\bnot approved\b|\bapproved\b|\bpolicy\b|\btaxonomy\b/i;
+    for (const formulaId of FORMULA_IDS) {
+      for (const evidence of FORMULA_BLOCKER_CATEGORY_EVIDENCE[formulaId]) {
+        if (evidence.category !== 'POLICY_DECISION') continue;
+        expect(evidence.phrase).toMatch(ABSENCE_WORDS);
+        // "must remain" is the specific shape that failed: a rule in force.
+        expect(evidence.phrase).not.toMatch(/must remain/i);
+      }
+    }
+  });
+});
+
+describe('a changed classification does not hide behind a stale requirement', () => {
+  // organization_admin, not 'org_admin': the canonical role vocabulary is
+  // platform_owner, organization_admin, admin, coach, athlete, parent, board,
+  // staff, volunteer. A fixture using a role that does not exist teaches the
+  // next reader a role that does not exist.
+  const actor = {
+    organizationId: 'org-1',
+    createdByAccountId: 'account-1',
+    createdByRole: 'organization_admin',
+  };
+
+  // Codex P2 on this PR. createShadowResearchRequirement's conflict handler is
+  // a deliberate no-op (shadowResearch.ts:58-60), so with a fixed uniqueness
+  // tuple the FIRST write wins forever: a later reason or category change
+  // leaves knowledge_gap, research_requirement and metadata stale, and a row
+  // somebody already RESOLVED stays resolved even though the blocker moved.
+  //
+  // The key therefore carries the classification. Prose changes deliberately
+  // do NOT version it -- a wording tweak should not reopen a closed question --
+  // but a support or category change does, because that is a different
+  // question being asked of the owner.
+  it('the same classification produces the same key, so re-running is still idempotent', () => {
+    const first = buildFormulaBlockerResearchRequirement({ blocker: getFormulaBlocker('BF-09'), ...actor });
+    const second = buildFormulaBlockerResearchRequirement({ blocker: getFormulaBlocker('BF-09'), ...actor });
+    expect(second.sourceEntityId).toBe(first.sourceEntityId);
+  });
+
+  it('a different classification produces a different key', () => {
+    const dataGap = buildFormulaBlockerResearchRequirement({
+      blocker: { ...getFormulaBlocker('BF-09'), categories: ['DATA_GAP'] },
+      ...actor,
+    });
+    const policy = buildFormulaBlockerResearchRequirement({
+      blocker: { ...getFormulaBlocker('BF-09'), categories: ['POLICY_DECISION'] },
+      ...actor,
+    });
+    expect(policy.sourceEntityId).not.toBe(dataGap.sourceEntityId);
+  });
+
+  it('an unclassified blocker becoming classified produces a different key', () => {
+    // The case that matters most: "classify this" is answered, so the
+    // requirement asking for it must not stay resolved over the new question.
+    const unclassified = buildFormulaBlockerResearchRequirement({
+      blocker: { ...getFormulaBlocker('BF-02'), categories: [] },
+      ...actor,
+    });
+    const classified = buildFormulaBlockerResearchRequirement({
+      blocker: { ...getFormulaBlocker('BF-02'), categories: ['INTEGRATION_GAP'] },
+      ...actor,
+    });
+    expect(classified.sourceEntityId).not.toBe(unclassified.sourceEntityId);
+  });
+
+  it('the formula id is still recoverable from the key and the metadata', () => {
+    const built = buildFormulaBlockerResearchRequirement({ blocker: getFormulaBlocker('BF-09'), ...actor });
+    expect(built.sourceEntityId).toContain('BF-09');
+    expect(built.metadata?.formula_id).toBe('BF-09');
+  });
+
+  it('a prose-only change does NOT version the key', () => {
+    const original = getFormulaBlocker('BF-09');
+    const reworded = buildFormulaBlockerResearchRequirement({
+      blocker: { ...original, reasonVerbatim: `${original.reasonVerbatim ?? ''} (reworded)` },
+      ...actor,
+    });
+    const built = buildFormulaBlockerResearchRequirement({ blocker: original, ...actor });
+    expect(reworded.sourceEntityId).toBe(built.sourceEntityId);
   });
 });

@@ -168,6 +168,15 @@ const BF03_OWNER_NOTE =
 const BF11_OWNER_NOTE =
   "CONTRADICTION, surfaced rather than reclassified. The reason says 'Immutable personal baselines and a calibrated versioned threshold are not available', but buildPersonalBaselineSnapshot exists in formulas/baseline.ts and MVP-09 (Personal Baseline Comparison, support 'implemented') emits a FormulaBaselineSnapshot. The qualifier 'Immutable' is not verified -- nothing checked here establishes whether an emitted snapshot is immutable, and that is the load-bearing word. The second clause, 'a calibrated versioned threshold', is uncontradicted and would read as CALIBRATION_GAP on its own; it is RECORDED here rather than assigned, because the formula-level classification is unresolved. NEEDS_OWNER_CLASSIFICATION.";
 
+const BF13_OWNER_NOTE =
+  "Constraint recorded, not classified. The reason's second clause -- 'coach "
+  + "ordinal ratings must remain separately labeled observations' -- states a rule "
+  + 'ALREADY IN FORCE, not an approval anyone is waiting on, so it licenses no '
+  + 'blocker category. It is kept here because it explains why the obvious '
+  + 'substitute for the missing center-zone data is refused: an ordinal coach '
+  + 'rating may not be folded into a center-time ratio. The DATA_GAP on '
+  + 'center-zone tracking is the blocker.';
+
 // --- Adjacency notes: checks run, deliberately not treated as findings -----
 
 const ADJACENCY_PREAMBLE =
@@ -305,10 +314,18 @@ export const FORMULA_BLOCKER_CLASSIFICATION: Readonly<Record<FormulaId, Classifi
   'BF-13': {
     // 'Center-zone tracking is unavailable and coach ordinal ratings must
     //  remain separately labeled observations.'
+    //
+    // The second clause is NOT a POLICY_DECISION. "must remain" states a rule
+    // ALREADY IN FORCE; every other phrase licensing that category in this map
+    // names something absent -- 'not approved', 'an approved X', 'a pairing
+    // policy'. Classifying a settled constraint as a pending decision reports
+    // a blocker nobody is waiting on and inflates policy-gap coverage. It is
+    // recorded as a note instead, because it does explain why the obvious
+    // substitute is refused.
     evidence: [
       { category: 'DATA_GAP', phrase: 'Center-zone tracking is unavailable' },
-      { category: 'POLICY_DECISION', phrase: 'must remain separately labeled observations' },
     ],
+    ownerNote: BF13_OWNER_NOTE,
   },
   'LEGACY-READINESS': {
     // 'Coefficients, input scales, fairness, and clinical/safety validity are
@@ -404,6 +421,18 @@ export interface FormulaBlockerResearchBridgeInput {
  * - `sourceStatus: 'missing'` matches how the shadowLibrary writers use the
  *   column: the thing the requirement asks for is absent, not merely thin.
  */
+/**
+ * A short, stable fingerprint of what is being ASKED, not of how it is worded.
+ *
+ * Support and categories only. Deterministic and order-independent -- the
+ * categories are sorted, so a reordering of the evidence list does not look
+ * like a new question.
+ */
+function classificationFingerprint(blocker: FormulaBlocker): string {
+  const categories = [...blocker.categories].sort().join(',');
+  return `${blocker.support}:${categories || 'unclassified'}`;
+}
+
 export function buildFormulaBlockerResearchRequirement(
   input: FormulaBlockerResearchBridgeInput,
 ): ShadowResearchRequirementInput {
@@ -414,7 +443,22 @@ export function buildFormulaBlockerResearchRequirement(
     organizationId: input.organizationId,
     sourceEventName: 'SHADOW_FORMULA_BLOCKER_CLASSIFIED',
     sourceEntityType: 'formula_id',
-    sourceEntityId: blocker.formulaId,
+    // THE KEY CARRIES THE CLASSIFICATION, and that is deliberate.
+    //
+    // createShadowResearchRequirement resolves a conflict on
+    // (organization_id, source_event_name, source_entity_type, source_entity_id)
+    // with a no-op `do update` -- it exists to RETURN the existing id, not to
+    // refresh the row. With a bare formula id as the key the first write would
+    // therefore win forever: a later reason or category change would leave
+    // knowledge_gap, research_requirement and metadata stale, and a row somebody
+    // had already RESOLVED would stay resolved over a question that had changed
+    // underneath it. Answering "classify BF-02" does not answer "close BF-02's
+    // INTEGRATION_GAP".
+    //
+    // Prose deliberately does NOT version the key. A reworded reason is the same
+    // question and must not reopen a closed one; a support or category change is
+    // a different question and must.
+    sourceEntityId: `${blocker.formulaId}#${classificationFingerprint(blocker)}`,
     researchRequirement: unclassified
       ? `Classify the SHADOW formula blocker for ${blocker.formulaId}`
       : `Close the SHADOW formula blocker for ${blocker.formulaId} (${blocker.categories.join(', ')})`,
