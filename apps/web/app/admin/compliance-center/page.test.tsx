@@ -60,14 +60,18 @@ async function closeWithReason(reason: string, confirmName: 'Resolve' | 'Dismiss
   });
 }
 
-async function renderWithViolations(items: Array<Record<string, unknown>>, patchResponse?: () => Response) {
+async function renderWithViolations(
+  items: Array<Record<string, unknown>>,
+  patchResponse?: () => Response,
+  readLimit = 50,
+) {
   const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'PATCH') {
       return patchResponse
         ? patchResponse()
         : ({ ok: true, json: async () => ({ ok: true }) } as Response);
     }
-    return { ok: true, json: async () => ({ items }) } as Response;
+    return { ok: true, json: async () => ({ items, limit: readLimit }) } as Response;
   });
   global.fetch = fetchMock as unknown as typeof fetch;
 
@@ -241,4 +245,78 @@ test("the server's refusal is shown, not swallowed into a fake success", async (
   await waitFor(() => {
     expect(screen.getByText('This violation cannot be resolved from its current state.')).toBeTruthy();
   });
+});
+
+// READ HONESTY (shapes 2 and 4: a count of the page shown as a count of the
+// set, and severity aggregates over an incomplete window).
+//
+// GET /api/pilot/compliance/violations reads
+// `order by created_at desc limit N` (parseSafeLimit default 50, hard max
+// 100) and this page sends no limit at all, so it always holds the 50 most
+// recently filed rows. Every figure on the page was then computed off that
+// slice and labelled as if it were the register: a "Total" tile, and two
+// "X of Y" counts whose Y is the page size.
+//
+// So a gym with 320 violations on file reads "Total 50". Worse, the severity
+// tiles are aggregates over the same slice: two critical violations filed
+// three months ago sit outside the 50 newest rows and the tile reads
+// "Critical 0". An admin closes the page believing there are none.
+//
+// The honest fix is the one /notices took -- name the window; not a pager.
+//
+// WATCHED TO FAIL: put the bare "Total" label back and the first test goes
+// red on the word; drop the window line and the second does.
+test('the metric tiles never call a capped slice the whole register', async () => {
+  await renderWithViolations([violation()]);
+
+  const total = await screen.findByText(/^Total/);
+  const tile = total.closest('article') as HTMLElement;
+  // Not vacuous: the tile really is on the page, carrying its figure.
+  expect(tile).toBeTruthy();
+  expect(within(tile).getByText('1')).toBeTruthy();
+
+  // "Total" alone is a claim about the register. It must be qualified.
+  expect(total.textContent ?? '').toMatch(/this view/i);
+});
+
+test('the page states the read window its figures were computed over', async () => {
+  await renderWithViolations([violation()]);
+
+  expect(await screen.findByText(/50 most recently filed/i)).toBeTruthy();
+});
+
+test('the stated window follows the limit the server actually applied', async () => {
+  await renderWithViolations([violation()], undefined, 100);
+
+  expect(await screen.findByText(/100 most recently filed/i)).toBeTruthy();
+  expect(screen.queryByText(/50 most recently filed/i)).toBeNull();
+});
+
+// READ HONESTY (shape 6). The header already refuses to draw the metrics as
+// zeroes when the read failed ("intentionally not shown as zero"), but the
+// list below it did not hold the same line: violations stays [] after a
+// failed read, so the register rendered "No violations match the current
+// filters", inviting the admin to widen filters that were never the reason
+// they saw nothing.
+//
+// WATCHED TO FAIL: drop the dataAuthoritative guard on the empty state and
+// this goes red on the filter wording.
+test('a failed read does not render the register as filtered-to-empty', async () => {
+  global.fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+
+  // The failure is stated.
+  expect(await screen.findByText(/Unable to load compliance violations/i)).toBeTruthy();
+
+  // The tiles withhold their figures rather than printing zeroes.
+  const total = screen.getByText(/^Total/).closest('article') as HTMLElement;
+  expect(total).toBeTruthy();
+  expect(within(total).queryByText('0')).toBeNull();
+
+  // ...and the list does not blame the filters for it.
+  expect(screen.queryByText(/No violations match the current filters/i)).toBeNull();
+  expect(screen.getByText(/could not be loaded/i)).toBeTruthy();
 });
