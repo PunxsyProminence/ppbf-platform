@@ -260,6 +260,10 @@ describe('establishing a ready video as a calibration study', () => {
       expect(clip.start_ms).toBe(91_337);
       expect(clip.end_ms).toBe(97_004);
       expect(clip.primary_sampling_reason).toBe('simultaneous_exchange');
+
+      // One clip, not one-or-more: the bootstrap cuts exactly what it was asked for.
+      expect(await calibration.listCalibrationClips(ORG_ID, project.calibration_project_id))
+        .toHaveLength(1);
     })();
   });
 
@@ -363,10 +367,66 @@ describe('a source the platform will not open is refused, and leaves nothing beh
     expect(await projectCount()).toBe(before);
   });
 
-  test('REFUSES a clip with no width, through the existing bounds check', async () => {
+  test('REFUSES a creator account from another organization', async () => {
+    // created_by_account_id references pilot.accounts(account_id) alone, so
+    // the database would accept a coach from another gym as the person who
+    // chose these clips. Calibration writes no audit event, so that column is
+    // the only record there is.
+    const before = await projectCount();
+
     await expect(
-      bootstrap.bootstrapCalibrationClip(request({ startMs: 97_004, endMs: 91_337 })),
-    ).rejects.toThrow(/a clip must end after it starts/);
+      bootstrap.bootstrapCalibrationClip(request({ createdByAccountId: OTHER_ORG_COACH_ID })),
+    ).rejects.toThrow(/Not found: no such account in this organization/);
+
+    expect(await projectCount()).toBe(before);
+  });
+
+  test('REFUSES a creator account that does not exist, with the same answer', async () => {
+    const before = await projectCount();
+
+    await expect(
+      bootstrap.bootstrapCalibrationClip(request({ createdByAccountId: 'acct-nobody' })),
+    ).rejects.toThrow(/Not found: no such account in this organization/);
+
+    expect(await projectCount()).toBe(before);
+  });
+});
+
+describe('a clip refused on its own merits, after the study already exists', () => {
+  test('leaves the study behind, and SAYS SO, naming it', async () => {
+    // THE HONEST VERSION OF THE LIMITATION. The source gate runs before the
+    // project is written, so a bad source costs nothing -- but a clip refused
+    // for its own reasons is refused after the project INSERT has committed,
+    // and the two writes cannot be one transaction from the caller's side.
+    //
+    // Study names are unique per organization, so a survivor nobody was told
+    // about turns the obvious retry into a collision with a row the operator
+    // does not know exists. The refusal names it instead.
+    const before = await projectCount();
+    const transposed = request({
+      projectName: 'Round two, offsets transposed',
+      startMs: 97_004,
+      endMs: 91_337,
+    });
+
+    // One refusal carrying both halves: why the clip was refused, and what
+    // was left behind.
+    await expect(bootstrap.bootstrapCalibrationClip(transposed)).rejects.toThrow(
+      /a clip must end after it starts[\s\S]*Round two, offsets transposed[\s\S]*still exists, with no clips/,
+    );
+    expect(await projectCount()).toBe(before + 1);
+
+    // And THIS is why the survivor has to be named. The obvious next move --
+    // fix the offsets, run it again -- now collides with a study the operator
+    // would otherwise have no idea existed.
+    await expect(bootstrap.bootstrapCalibrationClip({ ...transposed, endMs: 99_000 }))
+      .rejects.toThrow(/pilot_calibration_projects_name_uq/);
+    expect(await projectCount()).toBe(before + 1);
+
+    const [survivor] = (await calibration.listCalibrationProjects(ORG_ID))
+      .filter((row) => row.name === 'Round two, offsets transposed');
+    expect(await calibration.listCalibrationClips(ORG_ID, survivor.calibration_project_id))
+      .toEqual([]);
   });
 });
 
@@ -378,6 +438,9 @@ describe('re-running the bootstrap', () => {
     const fixed = request({ projectName: 'Round one, camera A', clipCode: 'C-07' });
 
     await bootstrap.bootstrapCalibrationClip(fixed);
-    await expect(bootstrap.bootstrapCalibrationClip(fixed)).rejects.toThrow();
+    // Matched on the constraint by name: a bare toThrow() here would be
+    // satisfied by a dropped connection or a typo in the fixture.
+    await expect(bootstrap.bootstrapCalibrationClip(fixed))
+      .rejects.toThrow(/pilot_calibration_projects_name_uq/);
   });
 });

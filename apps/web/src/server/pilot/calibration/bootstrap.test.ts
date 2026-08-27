@@ -93,9 +93,13 @@ describe('the arguments it refuses', () => {
       .toThrow(/Unrecognised argument: --ontology-version/);
   });
 
-  test('REFUSES --calibration-project-status, so a study cannot be born advanced', () => {
-    expect(() => parseCalibrationBootstrapArgv([...VALID, '--status', 'completed']))
-      .toThrow(/Unrecognised argument: --status/);
+  test('REFUSES a project-status flag, which is not an input this bootstrap has', () => {
+    // That a study cannot be born advanced is not this test's claim to make:
+    // it is guaranteed by the hardcoded 'draft' in createCalibrationProject,
+    // and asserted against a real database in calibrationBootstrap.pg.test.ts.
+    // All this proves is that the flag does not exist here.
+    expect(() => parseCalibrationBootstrapArgv([...VALID, '--calibration-project-status', 'completed']))
+      .toThrow(/Unrecognised argument: --calibration-project-status/);
   });
 
   test.each([
@@ -112,9 +116,32 @@ describe('the arguments it refuses', () => {
       .toThrow(new RegExp(`Missing required argument\\(s\\).*${flag}`, 's'));
   });
 
-  test('REFUSES a flag with no value rather than reading the next flag as one', () => {
+  test('REFUSES a flag left dangling at the end of the argument list', () => {
     expect(() => parseCalibrationBootstrapArgv(['--organization-id']))
       .toThrow(/Missing value for --organization-id/);
+  });
+
+  test('REFUSES the next flag as a value, rather than reading it as one', () => {
+    // Strict index pairing would otherwise set organizationId to
+    // '--athlete-id' and then refuse the token AFTER it -- an error naming
+    // something the operator never typed as a flag.
+    expect(() => parseCalibrationBootstrapArgv([
+      '--organization-id', '--video-session-id', 'vs-calib-ready',
+    ])).toThrow(/Missing value for --organization-id/);
+  });
+
+  test.each([
+    '--organization-id',
+    '--video-session-id',
+    '--project-name',
+    '--clip-code',
+    '--created-by-account-id',
+    '--start-ms',
+  ])('REFUSES a blank %s before it can strand a half-built study', (flag) => {
+    // An empty --clip-code is the one that matters: the services refuse it
+    // too, but only AFTER the project row has been written.
+    expect(() => parseCalibrationBootstrapArgv(withValue(flag, '   ')))
+      .toThrow(new RegExp(`Empty value for \\${flag}`));
   });
 
   test('REFUSES a repeated flag rather than silently taking one of them', () => {
@@ -127,7 +154,6 @@ describe('the arguments it refuses', () => {
     ['91.5', 'a fraction of a millisecond'],
     ['1_000', 'a digit separator Number.parseInt reads as 1'],
     ['-1', 'a negative offset'],
-    ['', 'an empty value'],
     ['0x10', 'hex'],
     [' 91337', 'a leading space'],
   ])('REFUSES --start-ms "%s" (%s)', (value) => {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { queryOne } from '../db';
 import {
   assertVideoClippable,
   createCalibrationClip,
@@ -128,8 +129,20 @@ export function parseCalibrationBootstrapArgv(
     if (!REQUIRED_FLAGS.includes(flag as (typeof REQUIRED_FLAGS)[number])) {
       throw new Error(`Unrecognised argument: ${flag}\n\n${BOOTSTRAP_USAGE}`);
     }
-    if (value === undefined) {
+    // A value that is itself a flag means the operator left one blank. Taking
+    // it literally would set organizationId to '--athlete-id' and then refuse
+    // the NEXT token with an unrecognised-argument error naming something the
+    // operator never typed as a flag.
+    if (value === undefined || value.startsWith('--')) {
       throw new Error(`Missing value for ${flag}\n\n${BOOTSTRAP_USAGE}`);
+    }
+    // Blank refused HERE rather than left to requireNonEmpty inside the
+    // services. Both refuse it, but they refuse it at different costs: an
+    // empty --clip-code survives all the way past the project INSERT and
+    // strands a study, while an empty value caught on this side costs a
+    // database connection that was never opened.
+    if (value.trim().length === 0) {
+      throw new Error(`Empty value for ${flag}\n\n${BOOTSTRAP_USAGE}`);
     }
     if (values.has(flag)) {
       throw new Error(`Repeated argument: ${flag}`);
@@ -166,15 +179,55 @@ export function parseCalibrationBootstrapArgv(
   };
 }
 
+/** Refuses a creator account that is not in the organization being written to.
+ *
+ * MEMBERSHIP ONLY, AND DELIBERATELY NOT ROLE. Who may set up a calibration
+ * study is an open owner question, so this takes no view on it: any account
+ * in the organization is accepted, exactly as before. What it will not accept
+ * is an account from ANOTHER organization, because the schema cannot refuse
+ * one -- created_by_account_id references pilot.accounts(account_id) alone
+ * (a single-column foreign key), so the database proves only that the account
+ * exists somewhere on the platform.
+ *
+ * That matters because calibration writes no audit event: created_by_account_id
+ * is the only record of who chose these clips, and a study in org A stamped
+ * with a coach from org B is a provenance claim no later reader can correct.
+ * assertActor in scripts/import-shadow-research.mjs makes the same check for
+ * the same reason.
+ */
+async function assertCreatorInOrganization(
+  organizationId: string,
+  createdByAccountId: string,
+): Promise<void> {
+  const account = await queryOne<{ account_id: string }>(
+    `select account_id
+     from pilot.accounts
+     where account_id = $1 and organization_id = $2`,
+    [createdByAccountId, organizationId],
+  );
+
+  if (!account) {
+    // Same shape as the source video's refusal: no existence oracle. An
+    // operator learns nothing about whether an account exists in some other
+    // organization.
+    throw new Error('Not found: no such account in this organization');
+  }
+}
+
 /**
  * Creates the study and the clip, in that order, through the existing
  * services.
  *
  * THE SOURCE IS CHECKED FIRST, before the project row exists. Not for safety
  * -- createCalibrationClip checks it again and is the gate that matters -- but
- * so a refused source leaves nothing behind. Without this call, pointing the
+ * so a refused SOURCE leaves nothing behind. Without this call, pointing the
  * bootstrap at a quarantined video would create an empty draft study and then
  * fail, and the operator's next attempt would be their second study.
+ *
+ * That covers the source and nothing else. A clip refused on its own merits
+ * -- no width, an empty code, a duplicate code -- is refused after the study
+ * exists, and the study stays. See the catch below, which names it rather
+ * than pretending otherwise.
  *
  * The ids are minted here with randomUUID, the same way the annotation-set
  * and event routes mint theirs, because both services require the caller to
@@ -191,6 +244,7 @@ export async function bootstrapCalibrationClip(
   request: CalibrationBootstrapRequest,
 ): Promise<CalibrationBootstrapResult> {
   await assertVideoClippable(request.organizationId, request.videoSessionId);
+  await assertCreatorInOrganization(request.organizationId, request.createdByAccountId);
 
   const project = await createCalibrationProject({
     organizationId: request.organizationId,
@@ -200,17 +254,38 @@ export async function bootstrapCalibrationClip(
     createdByAccountId: request.createdByAccountId,
   });
 
-  const clip = await createCalibrationClip({
-    organizationId: request.organizationId,
-    calibrationClipId: randomUUID(),
-    calibrationProjectId: project.calibration_project_id,
-    videoSessionId: request.videoSessionId,
-    clipCode: request.clipCode,
-    startMs: request.startMs,
-    endMs: request.endMs,
-    primarySamplingReason: request.primarySamplingReason,
-    createdByAccountId: request.createdByAccountId,
-  });
+  try {
+    const clip = await createCalibrationClip({
+      organizationId: request.organizationId,
+      calibrationClipId: randomUUID(),
+      calibrationProjectId: project.calibration_project_id,
+      videoSessionId: request.videoSessionId,
+      clipCode: request.clipCode,
+      startMs: request.startMs,
+      endMs: request.endMs,
+      primarySamplingReason: request.primarySamplingReason,
+      createdByAccountId: request.createdByAccountId,
+    });
 
-  return { project, clip };
+    return { project, clip };
+  } catch (error) {
+    // THE STUDY SURVIVES A REFUSED CLIP, and saying so is the whole of this
+    // catch. The two writes cannot be made one transaction from here:
+    // createCalibrationProject and createCalibrationClip each take their own
+    // pooled connection and neither accepts a client, so atomicity would be a
+    // change to projects.ts rather than to its caller -- a different slice.
+    //
+    // What can be fixed here is the operator being left to discover it. A
+    // study name is unique per organization, so a silent survivor turns the
+    // obvious next move -- run it again with the same name -- into a
+    // collision with a row nobody knew existed. Naming it costs one sentence
+    // and makes the failure recoverable.
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${reason} -- the study "${project.name}" (${project.calibration_project_id}) was `
+      + 'created before the clip was refused and still exists, with no clips. Re-run with a '
+      + 'different --project-name, or use that study.',
+      { cause: error },
+    );
+  }
 }

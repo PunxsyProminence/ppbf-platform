@@ -65,5 +65,9 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await closePool();
+    // A pool that fails to close is not a failed write. Without this catch the
+    // rejection is unhandled, and Node exits nonzero AFTER the PASS line has
+    // been printed -- telling anything reading the exit code that a write that
+    // succeeded had failed.
+    await closePool().catch(() => {});
   });
