@@ -229,14 +229,37 @@ function filterStateForActor(
 
     return {
       classes,
-      registrations: store.registrations.filter((row) => coachOwnedClassIds.has(row.class_id)),
+      /* Class ownership AND athlete-reachability, not class ownership alone.
+         These rows name individual athletes, so they need the same dimension
+         coaching_requests below already uses.
+
+         Ownership by itself was self-granting. cover_class checks only that the
+         caller is a coach, then writes their own accountId as the covering
+         coach -- no approval, no check that the class's coach is unavailable,
+         no time bound, no audit row -- and covering_coach_account_id is one of
+         the three things this filter counts as ownership. So one POST bought
+         any coach every registration and attendance row, including free-text
+         notes, for any class in the organization, covering athletes they hold
+         no assignment and no coverage grant for.
+
+         The write side was never the hole: assertCanActOnAthlete still gates
+         per-athlete writes. This was a read leak, and the fix is the filter the
+         next property down already had. */
+      registrations: store.registrations.filter(
+        (row) => coachOwnedClassIds.has(row.class_id) && coachReachableAthleteIds.has(row.athlete_id),
+      ),
       // Coaching requests carry an athlete_id and no class_id, so they are
       // scoped by athlete-reachability -- the same dimension the parent and
       // athlete branches use -- not by class ownership. Returning
       // store.coaching_requests unfiltered leaked every athlete's 1:1 request
       // (athlete_id, free-text goals, preferred_at) org-wide to any coach.
       coaching_requests: store.coaching_requests.filter((row) => coachReachableAthleteIds.has(row.athlete_id)),
-      attendance: store.attendance.filter((row) => coachOwnedClassIds.has(row.class_id)),
+      // Same reasoning as registrations above. Attendance rows carry an
+      // athlete_id and a free-text note, so class ownership alone is not a
+      // sufficient scope for them either.
+      attendance: store.attendance.filter(
+        (row) => coachOwnedClassIds.has(row.class_id) && coachReachableAthleteIds.has(row.athlete_id),
+      ),
     };
   }
 

@@ -85,6 +85,13 @@ const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedd
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_coach_cards_migration.sql';
 const PROGRESSION_MIGRATION_FILE = 'pilot_slice_postgres_progression_migration.sql';
+/* Applied because PRODUCTION HAS IT: it adds pilot.athletes.deleted_at, which
+   the authorization queries in access.ts now require. deploy-production's
+   schema check parses `add column` out of every migration and asserts it
+   exists, and it passed against the live production database on the
+   2026-08-27 release. A fixture without it is not a smaller production; it is
+   a schema nobody runs. */
+const RETENTION_MIGRATION_FILE = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 const DRILLS_MIGRATION_FILE = 'pilot_slice_postgres_drills_migration.sql';
 const MEMBERSHIPS_MIGRATION_FILE = 'pilot_slice_postgres_program_memberships_migration.sql';
 const PROGRAMS_MIGRATION_FILE = 'pilot_slice_postgres_programs_migration.sql';
@@ -136,6 +143,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let baseSchemaSql: string;
 let migrationSql: string;
+let retentionMigrationSql: string;
 let progressionMigrationSql: string;
 let drillsMigrationSql: string;
 let membershipsMigrationSql: string;
@@ -178,6 +186,7 @@ async function progressionOnlyDatabase(name: string): Promise<Client> {
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
   await client.query(baseSchemaSql);
+  await client.query(retentionMigrationSql);
   await client.query(progressionMigrationSql);
   for (const org of [ORG_ID, OTHER_ORG_ID]) {
     await client.query(
@@ -282,6 +291,7 @@ beforeAll(async () => {
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
   progressionMigrationSql = await fs.readFile(path.join(INFRA_DIR, PROGRESSION_MIGRATION_FILE), 'utf8');
+  retentionMigrationSql = await fs.readFile(path.join(INFRA_DIR, RETENTION_MIGRATION_FILE), 'utf8');
   drillsMigrationSql = await fs.readFile(path.join(INFRA_DIR, DRILLS_MIGRATION_FILE), 'utf8');
   membershipsMigrationSql = await fs.readFile(path.join(INFRA_DIR, MEMBERSHIPS_MIGRATION_FILE), 'utf8');
   programsMigrationSql = await fs.readFile(path.join(INFRA_DIR, PROGRAMS_MIGRATION_FILE), 'utf8');

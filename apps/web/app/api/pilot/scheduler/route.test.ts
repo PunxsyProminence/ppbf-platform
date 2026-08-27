@@ -711,3 +711,98 @@ describe('GET /api/pilot/scheduler scopes coaching requests to a coach’s reach
     expect(mockAthleteIdsForCoach).toHaveBeenCalledWith('org-1', 'acct-coach');
   });
 });
+
+/**
+ * The same leak the block above closed for coaching_requests, on the two
+ * properties that were missed.
+ *
+ * registrations and attendance were scoped by CLASS OWNERSHIP alone. That is
+ * self-granting: cover_class checks only that the caller is a coach and then
+ * writes their own accountId as covering_coach_account_id, with no approval,
+ * no check that the class's own coach is unavailable, no time bound and no
+ * audit row -- and covering_coach_account_id is one of the three things the
+ * ownership set counts. One POST therefore bought any coach every
+ * registration and attendance row, including free-text notes, for any class
+ * in the organization.
+ *
+ * The write side was never open: assertCanActOnAthlete still gates per-athlete
+ * writes. This is a read scope.
+ */
+describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes', () => {
+  const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
+  const mockListStore = listSchedulerStore as jest.Mock;
+
+  function coachPrincipal() {
+    return {
+      accountId: 'acct-coach',
+      role: 'coach' as const,
+      organizationId: 'org-1',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft' as const,
+    };
+  }
+
+  /** A class the coach owns ONLY by having covered it themselves. */
+  function storeWithCoveredClass() {
+    return {
+      classes: [
+        {
+          class_id: 'cls-not-mine',
+          coach_account_id: 'acct-other-coach',
+          scheduled_by_account_id: 'acct-other-coach',
+          covering_coach_account_id: 'acct-coach',
+          start_at: '2026-09-01T10:00:00Z',
+          end_at: '2026-09-01T11:00:00Z',
+          status: 'scheduled',
+        },
+      ],
+      registrations: [
+        { registration_id: 'reg-mine', class_id: 'cls-not-mine', athlete_id: 'ath-mine', status: 'registered' },
+        { registration_id: 'reg-other', class_id: 'cls-not-mine', athlete_id: 'ath-other', status: 'registered' },
+      ],
+      attendance: [
+        { attendance_id: 'att-mine', class_id: 'cls-not-mine', athlete_id: 'ath-mine', status: 'present', note: 'mine' },
+        { attendance_id: 'att-other', class_id: 'cls-not-mine', athlete_id: 'ath-other', status: 'present', note: 'private other' },
+      ],
+      coaching_requests: [],
+    };
+  }
+
+  test('covering a class does not disclose registrations for unreachable athletes', async () => {
+    mockRequirePrincipal.mockResolvedValue(coachPrincipal());
+    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockListStore.mockResolvedValue(storeWithCoveredClass());
+
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
+
+    const athleteIds = body.registrations.map((row: { athlete_id: string }) => row.athlete_id);
+    expect(athleteIds).toEqual(['ath-mine']);
+    expect(athleteIds).not.toContain('ath-other');
+  });
+
+  test('covering a class does not disclose attendance notes for unreachable athletes', async () => {
+    mockRequirePrincipal.mockResolvedValue(coachPrincipal());
+    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockListStore.mockResolvedValue(storeWithCoveredClass());
+
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
+
+    const athleteIds = body.attendance.map((row: { athlete_id: string }) => row.athlete_id);
+    expect(athleteIds).toEqual(['ath-mine']);
+    // The note is the part that matters: free text a coach wrote about a child.
+    expect(JSON.stringify(body.attendance)).not.toContain('private other');
+  });
+
+  test('a reachable athlete on an owned class is still returned', async () => {
+    // Guards against "fixing" this by filtering everything out.
+    mockRequirePrincipal.mockResolvedValue(coachPrincipal());
+    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockListStore.mockResolvedValue(storeWithCoveredClass());
+
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
+
+    expect(body.registrations).toHaveLength(1);
+    expect(body.attendance).toHaveLength(1);
+  });
+});

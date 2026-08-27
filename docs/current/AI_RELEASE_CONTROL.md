@@ -15,33 +15,36 @@ OUT of today's initial production release. Ship current functionally safe
 main; visual work returns afterwards through normal PR + CI + staging.
 
 LAST_VERIFIED_UTC:
-2026-08-26T20:05Z — every SHA below re-read from the GitHub API in this pass,
-not carried forward. The three values this file had been reporting were all
-stale: CURRENT_MAIN by 40 commits, STAGING_SHA by two days, and
-PRODUCTION_SHA by TWO RELEASES.
-
-This correction was itself re-checked before merge and had already drifted:
-main and staging both moved while the PR sat open. CURRENT_MAIN and the two
-staging values below are the second reading, not the first. A release record
-that goes stale between writing and merging is the failure it exists to
-prevent, so the rule is to re-read at merge time rather than at authoring time.
+2026-08-27T00:12Z -- production, staging, the shared image digest AND the
+revision name all re-read from this pass's own runs (33025393831 and
+33024642622), from the step lists rather than the job conclusions.
+PRODUCTION_REVISION is no longer not_verified: the name was read from the
+deploy's own log line, which prints the revision and the image it runs
+together.
 
 CURRENT_MAIN:
-b2e3746473a22e52dfb14b5ccaafeb6a9b6ec9ea  (2026-08-26T20:03Z, #686)
-Previously recorded here as a830eae2, which is 40 commits behind. Of those,
-the seven that landed on 2026-08-26 before this pass began are, in order:
-#645 e8b663cf, #679 bdb51f57, #678 393b5a81, #671 61b0a352, #677 4e7da35c,
-#681 4980681a, #676 aff10dbf. Three more landed while this PR was open:
-#682 4409f3ab, #680 9830aa46, #686 b2e37464. The rest predate that day and
-are not enumerated here.
-NOTE FOR GROK / #606: main has moved past the 26519efd base your restore
-artifacts were packaged against. Since then #607 #609 #610 #612 (and #615
-once merged) changed athlete-side and test files -- #612 rewrote copy in
-`app/athlete/dashboard/sparring/page.tsx`, and #615 removes the dead
-"Session Duration (minutes)" input from `components/AthleteWorkspace.tsx`
-itself. A body restore packaged at 26519efd is now STALE for
-AthleteWorkspace: re-cut it from the CURRENT main tip + ge- hooks only, or
-the restore will conflict (or worse, silently resurrect removed copy).
+bc82d41a532314e3b1a2f49356381d51d9af91d4  (#700)
+
+READ THIS FIELD WITH SUSPICION, ALWAYS. It is hand-transcribed into a file that
+travels through the same PR queue as everything else, so it is stale the moment
+another PR merges -- and on an active day that is minutes, not days.
+
+This release is the proof. A promotion of cb80cb32 was dispatched at 22:18Z and
+its staging gate went red; while it was being re-verified, a parallel lane
+merged #699 and #700. Because deploy-production refuses unless
+`confirm_sha == github.sha`, cb80cb32 became unpromotable the moment main moved
+-- not by policy but by mechanism. The release that actually shipped is
+therefore bc82d41a, two commits past the one that was staged first.
+
+The durable fix is to stop transcribing it: have a workflow step write
+github.sha at dispatch time rather than a human or an agent typing it here.
+Until that exists, `git log --oneline <this value>..origin/main` is the only
+trustworthy answer to "what is on main", and this line is a hint about when the
+file was last touched.
+
+Unstaged on main as of this entry: none. main, staging and production are all
+bc82d41a. #698 (clearance compare-and-swap) is open and green but deliberately
+unmerged until this record lands, so that main did not move again mid-promotion.
 
 RELEASE_CANDIDATE_SHA:
 a830eae24fdec92ebdf325235716aeb9d54482f4  <-- FROZEN, SHIPPED 2026-08-25
@@ -59,71 +62,147 @@ UI work. #604 (production revision-truth) is the release-critical repair inside
 it, and the traffic-wait step #604 added is what carried this release too.
 
 STAGING_SHA:
-9830aa4694f1c90e073d19104a0f1dc9b4227526  (deploy-staging run 33006244055,
-success 2026-08-26T19:48:13Z — read from the step list, not the job colour.)
-Step 23 Run SHADOW E2E Gate: success, 19:44:58 → 19:47:50, a real 2m52s of
+bc82d41a532314e3b1a2f49356381d51d9af91d4  (deploy-staging run 33024642622,
+success 2026-08-26T23:57:31Z -- read from the step list, not the job colour.)
+Step 23 Run SHADOW E2E Gate: success, 23:53:22 -> 23:57:09, a real 3m47s of
 execution rather than a short-circuit. Step 24 Guardian Contact Runtime Probe:
-success. Step 26 Deactivate Gate Athlete Fixture: success, logging "PIN cleared,
-sessions revoked, 0 outstanding activation code(s) superseded". Step 27 Report
-Gate Athlete Fixture Still Live: SKIPPED, which is its passing outcome — its
-condition names always() explicitly, so it is not subject to the inherited
-success() that makes a bypassed safeguard look identical to a green one.
+success. Step 25 Runtime Verification Ledger: success. Step 26 Deactivate Gate
+Athlete Fixture: success. Step 27 Report Gate Athlete Fixture Still Live:
+SKIPPED, which is its passing outcome -- its condition names always()
+explicitly, so it is not subject to the inherited success() that makes a
+bypassed safeguard look identical to a green one.
 
-The value this replaces, 02edec70 (run 33002830497), was correct when written
-and was overtaken by two merges while this PR was open.
+A RED GATE PRECEDED THIS ONE, AND IT WAS NOT THIS COMMIT'S FAULT. Run
+33019214969 (cb80cb32, 22:18Z) failed at step 23 with
 
-The previous value here, 26519efd, was recorded on 2026-08-24 and explicitly
-marked NOT RE-CHECKED. It was wrong for two days. Staging moved five times on
-2026-08-26 alone.
+    Background Heavy Bag job f3b491be ended 'failed': SHADOW_AI_EMPTY_RESPONSE
 
-AND A WARNING THAT COST REAL TIME TODAY: three of those five runs report as
-FAILURE while having deployed their image successfully. deploy-staging builds,
-pushes, updates the container app and waits for traffic BEFORE it runs the
-SHADOW gate, so a gate failure leaves the new revision live and the run red.
-c5e3addb, e8b663cf and af740929 were each live on staging under a red run.
-Deployed-but-unverified is a real state and the Actions UI does not show it.
+thrown at shadowJobProcessor.ts:415 when the provider returns HTTP 200 with an
+empty `content`. Three things establish it as provider nondeterminism rather
+than a regression: the delta 8fde7170..cb80cb32 touches ZERO AI/SHADOW files
+(shadowJobProcessor.ts last changed at 09f19e7b, before the prior release); step
+13, the SYNCHRONOUS Heavy Bag, passed on that same run; and the next gate run
+passed the identical step. The background job asks for
+`max_completion_tokens: 4096` against a gpt-5-family reasoning deployment, where
+reasoning tokens are spent from that same budget -- so an answer that reasons
+too long returns empty. There is NO retry on that path. This will keep costing
+gate cycles at random until it is fixed; it is logged as an open defect, not as
+a flake to be waved through.
+
+NOTE ON THAT RED RUN: deploy-staging deploys BEFORE it gates. Steps 14 and 16
+had already put cb80cb32 live on staging and taken traffic by 22:24Z, so
+staging ran an ungated revision for ~90 minutes under a red run. That is a
+property of the workflow's step order, not of this release, and it is why
+"the run was red" must never be read as "nothing was deployed".
 
 STAGING_IMAGE_DIGEST:
-sha256:93397a55fba884d8cd84c376b09696eae3e97bf56bb4b05a9ddd7a1eb41f7a5b
-Read from run 33006244055's own "release digest" step, which prints it for use
-as deploy-production's release_digest input. This is the digest for STAGING_SHA
-9830aa46 above; the digest belonging to 02edec70 was
-sha256:07ccd53c562e3c1685f540e96c084e9ffdb35144645fb46ef31066c56b2fa964, kept
-here only so the two are not confused. Before this pass the value carried was
-the 2026-08-24 release's, forwarded unverified for two days.
+sha256:080acbba443a29435e74626152daca1809522146d90e3321c698db98133cd226
+Read from run 33024642622's own "Report Release Digest Last" step, which prints
+it for use as deploy-production's release_digest input. It is the digest for
+STAGING_SHA bc82d41a above, and it is the same digest production now serves --
+promotion built nothing, so the two are byte-identical by construction rather
+than by coincidence.
+
+Superseded digests, kept only so nobody reaches for the wrong one:
+  8fde7170 -> sha256:74588ad2501ab6e41d20a27ead0cb46920f7886a5d60fe7398261b2d4fd335be
+  cb80cb32 -> sha256:03e89ff8ba28a60de820907a09f571633afe9be28624803019fdc9f4b24b3e2c  (RED GATE, never promoted)
+  9830aa46 -> sha256:93397a55fba884d8cd84c376b09696eae3e97bf56bb4b05a9ddd7a1eb41f7a5b
 
 PRODUCTION_SHA:
-e8b663cff50bca2589129bd9365087656df2ee83  <-- LIVE
-(deploy-production run 32920784069, success 2026-08-26T11:39:25Z)
+bc82d41a532314e3b1a2f49356381d51d9af91d4  <-- LIVE (2026-08-27T00:11:51Z)
+deploy-production run 33025393831. Read from the STEP LIST, not the job colour;
+every step ran, none skipped:
+  - Verify supplied SHA matches the checked-out commit: success
+  - Verify Production Schema Matches This Commit: success. This is the check
+    that matters more than the operator's attestation -- it ran against the
+    live production database and agreed that no migration was outstanding, so
+    the CONFIRMED input was true rather than merely asserted. Independently:
+    `git diff --name-only 8fde7170 bc82d41a -- 'infra/azure/**' 'migrations/**'`
+    returns nothing.
+  - Verify release digest exists in ACR and was built from this commit: success.
+    Provenance, not just shape: it fetches the ACR manifest and asserts the tag
+    list contains the confirm_sha, which is what catches a transposed
+    SHA/digest pair.
+  - Refuse a Rollback Nobody Asked For: success
+  - Deploy Tested Digest to Azure Container App: success 00:11:31
+  - Wait For Promoted Revision To Take Traffic: success 00:11:51 -- serving
+  - Pilot API Smoke Checks: success, log reads "Production smoke checks passed."
 
-TWO releases past what this file claimed. The chain, all deploy-production
-runs, all success: 26519efd (2026-08-24T22:08Z, run 32783211177) ->
-a830eae2 (2026-08-25T13:25Z, run 32853286769) -> b4eeceb2 (2026-08-25T20:08Z,
-run 32893571440) -> e8b663cf (2026-08-26T01:55Z, run 32920784069).
+Promoted on Jason's explicit approval, through the protected-environment gate:
+the guard job completed at 00:01:34Z and build-and-deploy sat in `waiting` until
+00:10:09Z, when Jason released it. The 8m35s gap is the human approval, and it
+is the reason this record can say approved rather than assumed.
 
-WHAT BEING ON e8b663cf MEANS RIGHT NOW: that commit is the shared-PIN
-retirement, which rewrote /api/pilot/admin/accounts/pin-reset to ignore `pin`
-and `mode` and return a one-time activation code. Its callers were updated one
-at a time and /admin/pin -- in the nav as "PIN Management" -- was missed. In
-production today, a click there discards the typed PIN, DEACTIVATES the
-athlete, revokes their sessions, throws away the activation code the route
-returns, and reports "PIN activated. Tell the athlete this PIN." Fix open as
-PR #682. Recorded here because this file is where somebody looks to find out
-what is actually live.
+Previous: 8fde7170 (2026-08-26T21:04:36Z, run 33013124125).
+
+WHAT THIS RELEASE CLOSES IN PRODUCTION. Seven P0 fixes that had been sitting on
+main, plus two from a parallel lane:
+  - #690 guardian deletion now clears active_flag, deactivates the
+    organization membership and revokes sessions in the SAME transaction.
+    Before this, deletion wrote deleted_at and nothing else, so a deleted
+    guardian WOULD have kept reading their linked minor's records and WOULD
+    have been able to mint a fresh session by emailing themselves a magic
+    link, indefinitely.
+
+    CORRECTED 2026-08-27, and the correction is the point of this file. The
+    sentence above originally read "a 'deleted' guardian in production kept
+    reading their linked minor's records" -- stated as a harm that was
+    happening. That was never verified. What was verified is what the code
+    does the first time somebody is deleted; whether anybody ever had been was
+    not checked before it was written down here.
+
+    The code says probably nobody. deleteGuardianAccount and
+    deleteAthleteRecord have exactly ONE caller between them --
+    DELETE /api/pilot/admin/data-deletion -- and nothing in app/ or
+    components/ calls that endpoint. There is no button anywhere in the
+    product, and no script or workflow calls it either. A deletion requires
+    somebody hand-crafting an authenticated request against the live API.
+
+    "Probably nobody" is still not a number, so check-database.yml now carries
+    a read-only `deletion-preflight` check that counts the deletion audit
+    rows and any record left marked-deleted-but-still-reachable. Until that
+    has been run against production, the honest status of this entry is: the
+    defect was real, the fix is correct, and the blast radius is UNMEASURED.
+  - #695 approving an already-promoted intake case is refused -- a second
+    promotion reset an activated athlete's PIN and revoked their sessions,
+    locking them out in two clicks.
+  - #693 the board's data boundary is now an explicit runtime allow-list
+    (projectAnnouncementForBoard), not a TypeScript interface. TypeScript is
+    erased at runtime, so the previous "boundary" shipped the fields it
+    claimed to omit.
+  - #691 scheduler registrations and attendance are filtered to athletes the
+    coach can actually reach, not merely to classes they own.
+  - #689 legacy `admin` role accepted where `organization_admin` was required
+    on intake promotion.
+  - #688 activation journey e2e coverage (the first browser test of the only
+    path a new athlete has into the product).
+  - #692 drill change-proposal lifecycle.
+  - #699 / #700 seed-loader hardening: six loaders now refuse a missing
+    PPBF_SEED_ORG_ID rather than defaulting to a hardcoded fixture
+    organization. Landed by a parallel lane, reviewed here as diff only.
 
 PRODUCTION_IMAGE_DIGEST:
-not_verified in this pass. The value previously recorded here,
-sha256:921a3f77…, belongs to the a830eae2 release and is therefore STALE by
-two releases. Re-reading it means opening run 32920784069's log; that was not
-done, and guessing a digest is worse than admitting the gap.
-NOT identical to the STAGING_IMAGE_DIGEST recorded above — that digest belongs
-to the 2026-08-24 release. deploy-production still built nothing: it is
-promote-only, and its "Verify release digest exists in ACR and was built from
-this commit" step passed, so this image was built from a830eae2 by an earlier
-workflow. WHICH workflow built it was not observed in this pass.
+sha256:080acbba443a29435e74626152daca1809522146d90e3321c698db98133cd226
+The digest supplied as deploy-production's release_digest input, and the SAME
+digest the staging gate verified -- deploy-production is promote-only and built
+nothing, so what production serves is byte-identical to what run 33024642622
+gated. Confirmed as built from bc82d41a by that run's own provenance step, not
+inferred.
 
 PRODUCTION_REVISION:
-app-ppbf-production--0000137  (previous: app-ppbf-production--0000136)
+app-ppbf-production--0000141  <-- VERIFIED, not inferred.
+Read from run 33025393831's own log line, which prints the revision and the
+image it runs in one statement:
+
+    Latest revision app-ppbf-production--0000141 runs image
+    ***.azurecr.io/ppbf-frontend@sha256:080acbba443a29435e74626152daca1809522146d90e3321c698db98133cd226
+
+That line is the evidence that the NAME and the DIGEST belong to each other --
+which is the whole point of the field, and why the previous entry was left
+not_verified rather than guessed. It then reached Running at 100% traffic on
+the fourth poll (00:11:51Z), so this revision is serving, not merely created.
+
+Previous: app-ppbf-production--0000137 (stale, belongs to the a830eae2 release).
 
 PRODUCTION_URL:
 https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io
