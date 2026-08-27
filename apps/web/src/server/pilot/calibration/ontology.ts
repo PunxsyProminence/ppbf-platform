@@ -316,3 +316,13 @@ export const CLIP_SAMPLING_REASONS = [
   'other',
 ] as const;
 export type ClipSamplingReason = (typeof CLIP_SAMPLING_REASONS)[number];
+
+/** Where one annotator's pass over one clip is in its life.
+ *
+ * There is deliberately no 'reopened'. Un-submitting a set would destroy the
+ * only evidence that a pass was ever completed independently, and a genuine
+ * re-annotation is a NEW set -- which is also the only shape that keeps both
+ * readings. The database enforces this with a trigger rather than trusting
+ * this constant to be consulted. */
+export const ANNOTATION_SET_STATUSES = ['in_progress', 'submitted'] as const;
+export type AnnotationSetStatus = (typeof ANNOTATION_SET_STATUSES)[number];
