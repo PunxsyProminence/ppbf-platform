@@ -373,22 +373,73 @@ describe('declared input requirements match the executable contract', () => {
 });
 
 describe('roles permitted to trigger a stored calculation', () => {
-  test('mirrors the manual calculation route and does not widen it', () => {
-    // app/api/pilot/shadow/formulas/results/route.ts:99 gates POST /results --
-    // the manual "run this formula" path -- to exactly these three. Athletes
-    // may POST observations and may READ results; they may not cause a
-    // calculation. Auto-orchestration must not become the way around that.
+  test('admits the athlete whose own submission completed the set', () => {
+    // OWNER DECISION, 2026-08-27. Both real producers of the MVP-03/MVP-04
+    // inputs are athlete surfaces, so under the previous list this module was
+    // reachable by almost nothing.
     expect([...STORED_CALCULATION_TRIGGER_ROLES]).toEqual([
+      'athlete',
       'coach',
       'organization_admin',
       'admin',
     ]);
-    expect(canTriggerStoredCalculation('athlete')).toBe(false);
-    expect(canTriggerStoredCalculation('parent')).toBe(false);
-    expect(canTriggerStoredCalculation('platform_owner')).toBe(false);
+    expect(canTriggerStoredCalculation('athlete')).toBe(true);
     expect(canTriggerStoredCalculation('coach')).toBe(true);
     expect(canTriggerStoredCalculation('organization_admin')).toBe(true);
     expect(canTriggerStoredCalculation('admin')).toBe(true);
+  });
+
+  test('DELIBERATELY diverges from the manual route, which still refuses athletes', () => {
+    // This asserts the DIFFERENCE, where the previous version of this test
+    // asserted the agreement. That inversion is the point: with the two lists
+    // no longer equal, somebody will eventually read the mismatch as a bug and
+    // re-narrow this one to "fix" it. The test has to say the divergence is
+    // intended, or the owner's decision gets quietly reverted by a tidy-up.
+    //
+    // The distinction is not WHO but WHAT. POST /results lets a caller NAME an
+    // arbitrary formula and arbitrary observation ids -- a capability, and one
+    // athletes still do not have. Auto-calculation runs only what the stored
+    // context deterministically satisfies; the caller selects nothing.
+    const manualRoute = readFileSync(
+      resolve(__dirname, '../../../../app/api/pilot/shadow/formulas/results/route.ts'),
+      'utf8',
+    );
+
+    // Scoped to the POST handler specifically. That file has TWO role gates
+    // and they are not the same question: GET admits athlete and parent to
+    // READ results, POST decides who may RUN one. A regex that takes the first
+    // match reads the reader's gate and concludes athletes are admitted -- it
+    // did exactly that on the first run of this test, which is why the
+    // extraction is anchored rather than convenient.
+    const postHandler = manualRoute.slice(manualRoute.indexOf('export async function POST'));
+    const gate = /requireRole\(principal, \[([^\]]+)\]\)/.exec(postHandler);
+    expect(gate).not.toBeNull();
+    const manualRoles = [...(gate as RegExpExecArray)[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+
+    // Guards the slice above: if POST were ever removed or renamed, the slice
+    // would silently fall back to the whole file and read GET's gate again.
+    expect(manualRoute).toContain('export async function POST');
+    expect(manualRoles.length).toBeGreaterThan(0);
+
+    expect(manualRoles).not.toContain('athlete');
+    expect(STORED_CALCULATION_TRIGGER_ROLES).toContain('athlete');
+
+    // Everything the manual route admits, this admits too. The divergence runs
+    // one way only -- auto-calculation is never NARROWER than the manual path,
+    // which would be a different and unintended asymmetry.
+    for (const role of manualRoles) {
+      expect(STORED_CALCULATION_TRIGGER_ROLES).toContain(role);
+    }
+  });
+
+  test('still refuses every role that was never admitted', () => {
+    // The decision widened the list by exactly one role. These are the ones it
+    // did not touch, asserted so a future widening has to be deliberate.
+    expect(canTriggerStoredCalculation('parent')).toBe(false);
+    expect(canTriggerStoredCalculation('platform_owner')).toBe(false);
+    expect(canTriggerStoredCalculation('board')).toBe(false);
+    expect(canTriggerStoredCalculation('volunteer')).toBe(false);
+    expect(canTriggerStoredCalculation('staff')).toBe(false);
   });
 });
 

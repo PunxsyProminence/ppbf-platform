@@ -215,12 +215,17 @@ export async function POST(request: NextRequest) {
     // of the database, so the observation this request just wrote has to be
     // visible to the calculation it may have completed.
     //
-    // The role check is the narrower of the two lists that meet here. This
-    // endpoint admits athletes; POST /api/pilot/shadow/formulas/results -- the
-    // manual "run this formula" path -- does not. An athlete's own submission
-    // must not become the side channel that runs a calculation they cannot
-    // ask for directly, so their observation is stored and no calculation
-    // follows it. Widening that is an owner decision, not this route's.
+    // The role check now admits athletes, by owner decision 2026-08-27.
+    // canTriggerStoredCalculation owns the reasoning; the short version is
+    // that the manual "run this formula" route (results/route.ts:99) still
+    // refuses them, because there a caller NAMES the formula and the
+    // observation ids, whereas here the formulas are whatever the stored
+    // context deterministically satisfies. An athlete can cause a calculation
+    // about themselves and still cannot choose which one.
+    //
+    // assertActorCanAccessAthlete has already run above, and refuses an
+    // athlete reaching any athlete_id but their own -- so this cannot become a
+    // path to another boxer's record.
     // A CORRECTION THAT COMPLETES A SET STILL HAS TO CALCULATE. Recalculation
     // above only finds formulas the REPLACED observation was already used in.
     // When a correction is what makes the context satisfy MVP-03 or MVP-04 in

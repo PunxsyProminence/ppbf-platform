@@ -53,20 +53,40 @@ import type {
 /**
  * Roles that may cause a stored calculation to be written.
  *
- * This mirrors the allow-list on POST /api/pilot/shadow/formulas/results
- * (app/api/pilot/shadow/formulas/results/route.ts:99) exactly, and it exists as
- * its own named constant rather than an import so that widening one does not
- * silently widen the other. autoCalculation.test.ts asserts the two agree.
+ * INCLUDES `athlete` BY OWNER DECISION, 2026-08-27. This list previously
+ * mirrored POST /api/pilot/shadow/formulas/results exactly, and the earlier
+ * revision of this comment recorded the narrower reading as a question left
+ * open for the owner rather than a conclusion. The owner has now answered it:
+ * an athlete's own submission may trigger the calculation it completes.
  *
- * The asymmetry is real and deliberate: an athlete may POST an observation and
- * may READ results, but may not ask for a calculation to be run. Letting
- * auto-orchestration run on an athlete's own POST would hand them, through a
- * side effect, precisely the capability the manual route refuses them. That is
- * an owner decision about where the boundary belongs, not one this module is
- * entitled to make, so it takes the narrower reading and leaves the question
- * visible.
+ * THE TWO LISTS NOW DELIBERATELY DIFFER, and a test asserts the divergence
+ * rather than the agreement, so nobody re-narrows this to "fix" a mismatch.
+ * The distinction that makes the difference safe is not WHO but WHAT:
+ *
+ *   * POST /results lets a caller NAME an arbitrary formula and an arbitrary
+ *     set of observation ids. That is a capability, and it still refuses
+ *     athletes (results/route.ts:99, unchanged).
+ *   * Auto-calculation runs only the formulas the context DETERMINISTICALLY
+ *     satisfies, over observations already stored. The caller selects nothing.
+ *
+ * So an athlete can now cause a calculation about themselves, from their own
+ * data, and still cannot choose which formula runs or over what. That was the
+ * distinction the previous comment collapsed by treating both as one boundary.
+ *
+ * WHAT THIS DOES NOT WIDEN. The route calls assertActorCanAccessAthlete before
+ * anything here runs (observations/route.ts:117), and that function refuses an
+ * athlete reaching any athlete_id but their own. Admitting `athlete` here
+ * therefore cannot reach another boxer's record -- the safeguarding boundary
+ * that matters is held one layer up and is untouched by this change.
+ *
+ * WHY IT MATTERED. Both real producers of the MVP-03/MVP-04 inputs are athlete
+ * surfaces (athlete/dashboard/sparring/page.tsx and AthleteWorkspace.tsx), so
+ * under the narrower list this module was reachable by almost nothing: the
+ * orchestration existed and the flow that generates its inputs could not run
+ * it.
  */
 export const STORED_CALCULATION_TRIGGER_ROLES: readonly PilotRole[] = Object.freeze([
+  'athlete',
   'coach',
   'organization_admin',
   'admin',

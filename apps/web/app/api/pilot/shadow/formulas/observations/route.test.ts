@@ -674,12 +674,16 @@ describe('degradation on a pre-migration database', () => {
  * autoCalculateForObservationContext call from route.ts turns the first test
  * below red.
  *
- * ON THE ROLE BOUNDARY. results/route.ts:99 gates the manual calculation POST
- * to coach/organization_admin/admin; this endpoint admits athletes as well.
- * Auto-orchestration must not become the way an athlete causes a calculation
- * they could not ask for directly, so the narrower list wins and the second
- * test asserts it. That asymmetry is an owner decision, recorded rather than
- * resolved here.
+ * ON THE ROLE BOUNDARY. The owner answered this on 2026-08-27: an athlete's
+ * own submission MAY trigger the calculation it completes. results/route.ts:99
+ * still gates the manual "run this formula" POST to
+ * coach/organization_admin/admin, and that difference is deliberate -- there a
+ * caller NAMES the formula and the observation ids, whereas here the formulas
+ * are whatever the stored context deterministically satisfies. An athlete can
+ * cause a calculation about themselves and still cannot choose which one.
+ *
+ * assertActorCanAccessAthlete runs first and refuses an athlete reaching any
+ * athlete_id but their own, so this is not a path to another boxer's record.
  */
 describe('an observation that completes an input set triggers its formula', () => {
   const completingObservationBody = {
@@ -715,7 +719,12 @@ describe('an observation that completes an input set triggers its formula', () =
     }));
   });
 
-  test('does not let an athlete cause a calculation they may not request directly', async () => {
+  test('an athlete completing their own set DOES trigger its calculation', async () => {
+    // OWNER DECISION, 2026-08-27, replacing the assertion that used to stand
+    // here. Both real producers of these inputs are athlete surfaces, so under
+    // the previous rule this whole path was reachable by almost nothing: the
+    // orchestration existed and the flow feeding it could not run it.
+    mockAutoCalculate.mockResolvedValue([{ formulaId: 'MVP-03' }] as never);
     mockRequirePrincipal.mockResolvedValue(principal({
       accountId: 'athlete-account-1',
       role: 'athlete',
@@ -725,13 +734,38 @@ describe('an observation that completes an input set triggers its formula', () =
     const response = await postObservation(jsonRequest(completingObservationBody));
 
     expect(response.status).toBe(200);
-    // The observation is still stored: the role boundary constrains the
-    // calculation, never the record of what happened.
     expect(mockSaveObservation).toHaveBeenCalledTimes(1);
-    expect(mockAutoCalculate).not.toHaveBeenCalled();
+    expect(mockAutoCalculate).toHaveBeenCalledTimes(1);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({
-      autoCalculatedResultCount: 0,
+      autoCalculatedResultCount: 1,
     }));
+  });
+
+  test('an athlete still cannot trigger a calculation about anyone else', async () => {
+    // The boundary that did NOT move, and the one that actually matters on a
+    // platform holding minors' records. Widening the trigger set says who may
+    // cause a calculation; it says nothing about WHOSE. That is
+    // assertActorCanAccessAthlete's job, it runs before any of this, and it
+    // refuses an athlete reaching another athlete_id.
+    mockRequirePrincipal.mockResolvedValue(principal({
+      accountId: 'athlete-account-1',
+      role: 'athlete',
+      athleteId: 'athlete-1',
+    }));
+    mockAssertAccess.mockRejectedValueOnce(
+      new Error('Forbidden: athlete cannot access another athlete record'),
+    );
+
+    const response = await postObservation(jsonRequest({
+      ...completingObservationBody,
+      athleteId: 'athlete-2',
+    }));
+
+    expect(response.status).toBe(403);
+    // Nothing was stored and nothing was calculated -- the refusal lands
+    // before the write, not after it.
+    expect(mockSaveObservation).not.toHaveBeenCalled();
+    expect(mockAutoCalculate).not.toHaveBeenCalled();
   });
 
   test('a superseding observation keeps the recalculation path and adds no second one', async () => {
