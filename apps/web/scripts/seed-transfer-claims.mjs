@@ -220,7 +220,12 @@ export async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
   const expectedHostname = required('PPBF_EXPECTED_POSTGRES_HOSTNAME');
   const expectedDatabase = required('PPBF_EXPECTED_POSTGRES_DATABASE');
-  const organizationId = process.env.PPBF_SEED_ORG_ID?.trim() || 'ppbf-default-org';
+  // No fallback. A loader that guesses its owning organization writes real
+  // rows under the wrong one, silently -- the operator's typed value
+  // discarded and the run still reporting success. The three loaders the
+  // workflow shipped with already refuse this way; this one did not, and
+  // seedWorkflowContract.test.ts's guard did not cover it.
+  const organizationId = required('PPBF_SEED_ORG_ID');
 
   const target = parseConnectionTarget(connectionString);
   assertExpectedTarget(target, expectedHostname, expectedDatabase);

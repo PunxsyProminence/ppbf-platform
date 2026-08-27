@@ -20,6 +20,7 @@ import {
 import { roleRoutes } from '@/components/roleRoutes';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import OperationsLink from '@/components/OperationsLink';
 
 const BOARD_SEATS = [
   'board-president',
@@ -572,12 +573,9 @@ function NoticesAuthoringPage() {
           <Link href="/chalkboard" className="btn btn--ghost">
             The boards, as they hang
           </Link>
-          <Link
-            href="/operations"
-            className="btn btn--ghost"
-          >
+          <OperationsLink className="btn btn--ghost">
             Back to Mission Control
-          </Link>
+          </OperationsLink>
         </div>
       </div>
     </main>

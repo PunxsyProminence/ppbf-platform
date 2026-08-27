@@ -6,6 +6,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import OperationsLink from '@/components/OperationsLink';
 
 const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
 
@@ -992,9 +993,9 @@ export default function CoachVideoAnalysisPage() {
           <Link href="/coach/environment/intake-router" className="btn btn--ghost">
             Back to Coach Workspace
           </Link>
-          <Link href="/operations" className="btn btn--ghost">
+          <OperationsLink className="btn btn--ghost">
             Mission Control
-          </Link>
+          </OperationsLink>
         </div>
       </div>
     </RoleStandaloneView>

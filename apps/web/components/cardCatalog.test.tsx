@@ -207,6 +207,45 @@ describe('CardCatalog', () => {
     // /admin/people is admin-gated; it must not appear.
     expect(screen.queryByText('People')).toBeNull();
   });
+
+  /* THE OPERATIONS HUB, ASKED FOR BY EVERY NAME IT ANSWERS TO.
+
+     The door carried `roles: OPEN` until 2026-08-26, and the catalog searches
+     labels, keywords AND hrefs -- so a coach typing "mission control" found
+     the hub, and so did a signed-out visitor. The owner decision makes it
+     administration; a coach must find it under none of its names. */
+  it.each(['operations', 'mission control', 'hub', '/operations'])(
+    'does not offer a coach the hub, asked for as %p',
+    (query) => {
+      role = 'coach';
+      render(<CardCatalog />);
+      openCatalog();
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: query } });
+
+      expect(screen.queryByText('Operations Hub')).toBeNull();
+    },
+  );
+
+  it('still offers the hub to an admin, so the search is narrowed and not broken', () => {
+    role = 'admin';
+    render(<CardCatalog />);
+    openCatalog();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'mission control' } });
+
+    expect(screen.getByText('Operations Hub')).toBeTruthy();
+  });
+
+  it('still offers a coach the two surfaces under the same path prefix', () => {
+    // /operations/external-competition and /operations/wrestling-league carry
+    // their own ['coach', 'admin'] and are not part of the hub's decision.
+    // After it, the catalog and the corridor are a coach's only route to them.
+    role = 'coach';
+    render(<CardCatalog />);
+    openCatalog();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'wrestling' } });
+
+    expect(screen.getByText('Wrestling League')).toBeTruthy();
+  });
 });
 
 describe('Corridor', () => {
@@ -223,6 +262,27 @@ describe('Corridor', () => {
     expect(screen.getByRole('navigation')).toBeTruthy();
     expect(screen.getByText('Gym Floor')).toBeTruthy();
     expect(screen.queryByText('Board Room')).toBeNull();
+  });
+
+  it('does not hang the Operations hub in a coach corridor', () => {
+    role = 'coach';
+    render(<Corridor />);
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+
+    expect(screen.queryByRole('link', { name: 'Operations Hub' })).toBeNull();
+    // The rest of the Front Office is untouched -- this narrows one door, not
+    // a room. A coach still reaches the two surfaces under the same prefix
+    // here, and the corridor is now their main route to both.
+    expect(screen.getByRole('link', { name: 'Wrestling League' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'External Competition' })).toBeTruthy();
+  });
+
+  it('still hangs it in an admin corridor', () => {
+    role = 'admin';
+    render(<Corridor />);
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+
+    expect(screen.getByRole('link', { name: 'Operations Hub' })).toBeTruthy();
   });
 
   it('marks the current room as where you are', () => {

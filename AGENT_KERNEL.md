@@ -379,6 +379,74 @@ Classify suspected work before implementing it as one of:
 - When a repeated manual investigation can be replaced by a cheap deterministic diagnostic/test, prefer the deterministic check.
 - Open PR state belongs in GitHub; query it live instead of copying it into another ledger.
 
+## What this repository does that will surprise you
+
+Each line below cost real time to rediscover. They are recorded so the next
+agent pays for them once. Every one was observed, not inferred; where a claim
+has an obvious way to check it, the check is named.
+
+**Running the tests**
+
+- `npm test` in full is **OOM-killed** in the standard agent sandbox — it dies
+  with exit code 137 and no failing test, which reads like a crash and is not
+  one. Run it in halves, or by path (`components/`, then `app/`), and say in
+  the PR that the full run was not executed locally.
+- **Jest does not typecheck.** ts-jest is configured with no diagnostics and
+  the project sets `isolatedModules`, so a deliberate
+  `const x: number = "no"` sits in a suite that reports green. Any guarantee
+  that rests on the type system — an exhaustive `Record<Union, …>`, a
+  discriminated union, a narrowed literal — is enforced by
+  `npm run typecheck` in CI and by nothing you run locally with jest. Do not
+  write "will not compile" in a test comment; write which command enforces it.
+- `.pg.test.ts` suites are **excluded from `npm test`**. A new one must be
+  wired into the `test:migrations` chain in `apps/web/package.json` or
+  `pgTestCoverage.test.ts` reds the build — the failure names the file, but
+  only after you have already pushed.
+- Playwright runs from `apps/web`, with
+  `PPBF_CHROMIUM_PATH=/opt/pw-browsers/chromium`. Never run
+  `playwright install`; the browser is preinstalled and the download is
+  blocked. From the repo root the projects list resolves empty and every
+  `--project=` argument fails with "not found", which looks like a config
+  error and is a working-directory error.
+
+**A hang with no output is almost always this**
+
+A `useRouter` mock that returns a **fresh object per render** closes an
+infinite loop with any component that subscribes to the role-session store:
+`persist → notify → render → new router identity → effect → persist`.
+`RoleSessionGate`'s effect depends on `[router]`, so the loop is synchronous
+and the suite hangs with no failing assertion and no timeout. Declare one
+`const router = { push: jest.fn(), replace: jest.fn() }` at module scope and
+return it. This is harmless until the component under test starts reading the
+session store — so a test that passed for months can begin hanging because of
+a change in a component it renders, not in itself.
+
+**Whether your new test will even run**
+
+`scripts/ci-classify-paths.mjs` decides which Playwright suites CI executes
+from the changed-file list. A suite whose predicate does not match the files
+you touched **does not run**, and CI is green without it. Before relying on a
+new e2e assertion, run
+`node scripts/ci-classify-paths.mjs <file-with-changed-paths>` and confirm the
+flag for the suite holding it comes back `true`. The file's own history is a
+list of times this was missed.
+
+**Deploying to staging**
+
+- `expected_sha` must be the **full 40-character SHA**. An abbreviated one is
+  refused, correctly, by the first gate step.
+- **Re-running a workflow run does not re-supply `workflow_dispatch` inputs.**
+  A re-run arrives with `expected_sha` empty and is refused. Dispatch a fresh
+  run instead.
+- `enable_shadow_gate` turns on the post-deploy gate steps. Any step
+  conditioned on an input inherits GitHub's implicit `success()`, so **an
+  earlier step failing skips the later ones silently** — a skipped safeguarding
+  probe and a passing one look the same in the run summary. Read the step
+  list, not the job conclusion.
+- The deploy and the gate are different things. A run can deploy the revision
+  successfully and still fail on a gate that runs after it, which means the
+  new image IS live on staging even though the run is red.
+
 ## Source hierarchy
 
 When sources disagree:

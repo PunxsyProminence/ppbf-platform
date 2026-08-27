@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// seed-reference-data.yml dispatches the three reference-data loaders. The
+// seed-reference-data.yml dispatches four reference-data loaders. The
 // operator types an organization_id into the workflow form; the loader reads an
 // environment variable. Nothing tied those two names together, and they drifted:
 // the workflow exported PPBF_ORG_ID / SEED_ACCOUNT_ID while the loaders read
@@ -24,11 +24,82 @@ const REPO_ROOT = path.resolve(PILOT_DIR, '../../../../..');
 const WORKFLOW = path.join(REPO_ROOT, '.github/workflows/seed-reference-data.yml');
 const SCRIPTS_DIR = path.resolve(PILOT_DIR, '../../../scripts');
 
-const LOADERS = [
-  'seed-drill-library.mjs',
-  'seed-disciplines.mjs',
-  'seed-competence-cohorts.mjs',
-];
+// Normalized because the repo checks out CRLF on Windows, and a trailing \r
+// silently defeats any regex anchored with $ or ending in \n. A structural
+// assertion that cannot match is a guard that always passes vacuously.
+const WORKFLOW_SOURCE = fs.readFileSync(WORKFLOW, 'utf8').replace(/\r\n/g, '\n');
+
+/**
+ * The loaders seed-reference-data.yml dispatches, read off the workflow's own
+ * dataset choices rather than listed here.
+ *
+ * A hand-maintained list is what failed. This one was written when three
+ * loaders existed; session-scripts later joined the workflow's choices and the
+ * list did not grow, so every assertion below -- including the
+ * owning-organization guard, the one this file exists for -- silently stopped
+ * covering it while still reporting green. Deriving the list means a dataset
+ * added to the workflow is covered the day it lands, with nobody having to
+ * remember this file.
+ *
+ * `all` is excluded: it is the aggregate choice, not a loader.
+ */
+function dispatchedLoaders(workflowSource: string): string[] {
+  // Anchored on the YAML key at its own indent, for the reason the
+  // dataset-choice test below records: `dataset:` also appears in the
+  // workflow's header comment.
+  const block = workflowSource.match(/\n {6}dataset:\n([\s\S]*?)\n {6}mode:/);
+  if (!block) {
+    throw new Error('seed-reference-data.yml: could not read the dataset choices');
+  }
+  return block[1]
+    .split('\n')
+    .map((line) => line.trim().match(/^- (\S+)$/)?.[1])
+    .filter((value): value is string => Boolean(value) && value !== 'all')
+    .map((dataset) => `seed-${dataset}.mjs`)
+    .sort();
+}
+
+/**
+ * The loaders the workflow's STEPS actually invoke, read from the
+ * `npm run seed:<dataset>` lines rather than from the input choices.
+ *
+ * A second, independent reading of the same file. dispatchedLoaders() parses
+ * the operator-facing choice list; this parses what the job runs. Asserting
+ * the two agree means a derivation that silently returns a SHORT list fails
+ * here -- which a "did we get at least one, and more than one" sanity check
+ * cannot do, because a truncated list satisfies it.
+ */
+function stepInvokedLoaders(workflowSource: string): string[] {
+  const invoked = [...workflowSource.matchAll(/npm run seed:([a-z0-9-]+)/g)]
+    .map((match) => `seed-${match[1]}.mjs`);
+  return [...new Set(invoked)].sort();
+}
+
+const LOADERS = dispatchedLoaders(WORKFLOW_SOURCE);
+
+/**
+ * Every seed loader that resolves an owning organization -- discovered from
+ * disk, not listed.
+ *
+ * Defaulting the owner is wrong however the loader is reached, not just when
+ * the workflow dispatches it: `npm run seed:<dataset>` exists for all of them,
+ * and the workflow's `Resolve Owning Organization` step (which writes
+ * PPBF_SEED_ORG_ID to $GITHUB_ENV) only masks the fallback on the CI path.
+ * A loader deliberately absent from the workflow -- transfer-claims, whose
+ * rows violate pilot_transfer_drill_fk -- must still not guess its owner.
+ *
+ * Read off the filesystem because a hand-maintained list is what failed here:
+ * LOADERS above was written when three loaders existed and did not grow with
+ * them. A new seed-*.mjs that reads PPBF_SEED_ORG_ID is covered the day it
+ * lands, with nobody having to remember this file.
+ */
+function orgOwningLoaders(): string[] {
+  return fs
+    .readdirSync(SCRIPTS_DIR)
+    .filter((file) => file.startsWith('seed-') && file.endsWith('.mjs'))
+    .filter((file) => fs.readFileSync(path.join(SCRIPTS_DIR, file), 'utf8').includes('PPBF_SEED_ORG_ID'))
+    .sort();
+}
 
 /** Seed-specific variables a loader reads out of the environment. */
 function seedVarsRequiredBy(loader: string): string[] {
@@ -47,17 +118,30 @@ function seedVarsRequiredBy(loader: string): string[] {
 }
 
 describe('seed-reference-data workflow contract', () => {
-  // Normalized because the repo checks out CRLF on Windows, and a trailing \r
-  // silently defeats any regex anchored with $ or ending in \n. A structural
-  // assertion that cannot match is a guard that always passes vacuously.
-  const workflow = fs.readFileSync(WORKFLOW, 'utf8').replace(/\r\n/g, '\n');
+  const workflow = WORKFLOW_SOURCE;
 
-  it('reads a workflow and three loaders that actually exist', () => {
+  it('reads a workflow and every dispatched loader that actually exists', () => {
     // A broken path or regex would make every assertion below vacuously pass.
     expect(workflow).toContain('name: seed-reference-data');
+    // The derivation feeds every it.each below, so an empty or truncated
+    // result would silently reduce this whole suite to nothing. Checked
+    // against the workflow's own step invocations -- a second, independent
+    // reading of the same file, so a short list fails rather than passing a
+    // "more than one" sanity check.
+    expect(LOADERS).toEqual(stepInvokedLoaders(workflow));
+    expect(LOADERS).toContain('seed-drill-library.mjs');
     for (const loader of LOADERS) {
       expect(fs.existsSync(path.join(SCRIPTS_DIR, loader))).toBe(true);
     }
+  });
+
+  // Guards the cross-check above against quietly becoming circular. A
+  // stepInvokedLoaders that ignored its argument -- or was rewritten to return
+  // the choice-derived list -- would satisfy that equality while proving
+  // nothing, so this pins that it genuinely reads what it is given.
+  it('derives the step invocations from the text it is given', () => {
+    expect(stepInvokedLoaders('')).toEqual([]);
+    expect(stepInvokedLoaders('        run: npm run seed:only-this')).toEqual(['seed-only-this.mjs']);
   });
 
   it.each(LOADERS)('%s reads at least one seed variable', (loader) => {
@@ -161,7 +245,33 @@ describe('seed-reference-data workflow contract', () => {
     expect(guard).toMatch(/DATASET"\s*=\s*"session-scripts"/);
   });
 
-  it.each(LOADERS)('%s does not default its owning organization', (loader) => {
+  // Discovery must not be able to pass vacuously: a truncated list would make
+  // the guard below assert nothing while still reporting green, which is the
+  // failure mode this file already warns about for its regexes.
+  //
+  // So this checks the CLASSIFICATION OF EVERY seed-*.mjs ON DISK, not just
+  // the ones discovery returned. Asserting only "discovery contains LOADERS"
+  // would be satisfied by a discovery that returned exactly LOADERS and
+  // dropped every loader the workflow does not dispatch -- which is precisely
+  // the hole this change exists to close.
+  it('classifies every seed loader on disk by whether it owns an organization', () => {
+    const all = fs
+      .readdirSync(SCRIPTS_DIR)
+      .filter((file) => file.startsWith('seed-') && file.endsWith('.mjs'));
+    const found = orgOwningLoaders();
+
+    expect(all.length).toBeGreaterThan(0);
+    expect(found).toEqual(expect.arrayContaining(LOADERS));
+
+    for (const file of all) {
+      const ownsAnOrganization = fs
+        .readFileSync(path.join(SCRIPTS_DIR, file), 'utf8')
+        .includes('PPBF_SEED_ORG_ID');
+      expect({ file, covered: found.includes(file) }).toEqual({ file, covered: ownsAnOrganization });
+    }
+  });
+
+  it.each(orgOwningLoaders())('%s does not default its owning organization', (loader) => {
     const source = fs.readFileSync(path.join(SCRIPTS_DIR, loader), 'utf8');
     // A loader that falls back to some literal organization writes real rows
     // under the wrong owner when the variable is missing, and says nothing.

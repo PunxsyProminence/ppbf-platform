@@ -202,6 +202,9 @@ export async function issueCoachCardToProgram(params: {
      from pilot.program_memberships m
      join pilot.athletes a
        on a.organization_id = m.organization_id and a.athlete_id = m.athlete_id
+      -- On the JOIN rather than the WHERE: an inner join makes them equivalent
+      -- here, and putting it beside the join keeps it with the table it filters.
+      and a.deleted_at is null
      where m.organization_id = $1 and m.program_name = $2 and m.status = 'active'
      order by a.full_name asc, m.athlete_id asc`,
     [organizationId, program.program_name],
@@ -321,6 +324,7 @@ export async function listCoachCards(actor: ActorIdentity): Promise<CoachCardRow
      ${ASSIGNMENT_DRILL_JOIN}
      join pilot.athletes ath
        on ath.organization_id = a.organization_id and ath.athlete_id = a.athlete_id
+      and ath.deleted_at is null
      left join lateral (
        select json_agg(json_build_object(
                 'completion_id', c.completion_id,

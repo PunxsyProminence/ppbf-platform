@@ -8,6 +8,7 @@ import {
   STAFF_CREDENTIAL_ROLES,
   type PersonClearanceRow,
 } from './clearanceRegister';
+import { ClearanceStateConflictError } from './clearanceRegister';
 import { query, queryOne } from './db';
 
 jest.mock('./db', () => ({
@@ -189,5 +190,70 @@ describe('supersededClearanceState', () => {
     // was nothing here".
     expect(supersededClearanceState(submitted)).not.toBeNull();
     expect(supersededClearanceState(submitted)).toMatchObject({ status: 'submitted' });
+  });
+});
+
+/**
+ * A clearance decision must not be a blind overwrite.
+ *
+ * recordPersonClearance's ON CONFLICT DO UPDATE had no state guard, and both
+ * decision routes read the current row, decided, and then wrote
+ * unconditionally. Two admins on stale pages both write and the later commit
+ * silently wins.
+ *
+ * The compounding half is the audit trail. Both routes serialize
+ * supersededClearanceState(existing) from the STALE read, so both audit events
+ * claim they superseded the same prior state and nothing records that the
+ * second overwrote the first's decision. The one mechanism designed to preserve
+ * overwritten clearance history produces a false statement exactly when it
+ * matters -- a post-incident "was this coach cleared, and until when" is
+ * answered wrongly rather than not at all.
+ *
+ * These are SQL-shape and parameter assertions. The behaviour against a real
+ * database is covered by clearanceRegister.pg.test.ts, run under its own
+ * migration runner.
+ */
+// Reads the module source rather than mocking the driver: what is being pinned
+// here is the SQL that ships, and a mocked query() would let the guard be
+// deleted while these stayed green.
+function readClearanceRegisterSource(): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as typeof import('node:fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('node:path') as typeof import('node:path');
+  return fs.readFileSync(path.join(__dirname, 'clearanceRegister.ts'), 'utf8');
+}
+
+describe('clearance decisions are compare-and-swap, not last-write-wins', () => {
+  test('the upsert carries a state guard, so a moved row declines the write', () => {
+    const sql = readClearanceRegisterSource();
+    const upsert = sql.slice(sql.indexOf('on conflict (organization_id, person_account_id'));
+    // The guard must be ON the conflict update, not merely present in the file.
+    expect(upsert.slice(0, upsert.indexOf('returning'))).toMatch(
+      /where \$11::text is null or pilot\.person_clearances\.status = \$11::text/,
+    );
+  });
+
+  test('omitting expectedStatus still writes, so a first-ever record is unaffected', () => {
+    // `$11 is null or ...` is the half that keeps this backward compatible.
+    // Without the null branch, every caller that has no prior state to protect
+    // would silently stop writing.
+    const sql = readClearanceRegisterSource();
+    expect(sql).toContain('$11::text is null');
+  });
+
+  test('a declined swap is reported as a conflict, not as a database failure', () => {
+    const source = readClearanceRegisterSource();
+    // The distinction is load-bearing: an admin told "the server broke" retries,
+    // and the retry reads the NEW state and succeeds in overwriting a decision
+    // they never saw. A 409 tells them to reload instead.
+    expect(source).toContain('ClearanceStateConflictError');
+    expect(source).toMatch(/if \(input\.expectedStatus != null\)/);
+  });
+
+  test('the conflict error carries 409 and a machine code, so it is not redacted', () => {
+    // errors.ts: a plain Error means "redact me" and becomes an opaque 500.
+    expect(new ClearanceStateConflictError('x').status).toBe(409);
+    expect(new ClearanceStateConflictError('x').code).toBe('CLEARANCE_STATE_CONFLICT');
   });
 });

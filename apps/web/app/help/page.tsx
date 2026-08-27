@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import TutorialCard from '@/components/TutorialCard';
 import { guideSections, masterTutorialCards, plannedCapabilityGuides } from '@/components/helpContent';
+import OperationsLink from '@/components/OperationsLink';
 
 export default function HelpCenterPage() {
   return (
@@ -13,9 +14,9 @@ export default function HelpCenterPage() {
             Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Link href="/operations" className="btn btn--ghost">
+            <OperationsLink className="btn btn--ghost">
               Mission Control
-            </Link>
+            </OperationsLink>
             <Link href="/admin" className="btn btn--ghost">
               Admin Hub
             </Link>
