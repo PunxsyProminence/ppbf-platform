@@ -2,7 +2,7 @@
 
 Coordination record for the multi-AI release lanes. NOT a source of truth
 above GitHub — every entry below cites the run, PR, or SHA that proves it.
-Claude (release commander) maintains this file. Grok does not edit it.
+The release-control lane maintains this file (AGENT_KERNEL.md, Lane model). Build lanes do not edit it.
 ChatGPT audits it against live GitHub.
 
 MODE:
