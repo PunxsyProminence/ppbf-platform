@@ -241,6 +241,11 @@ jobs:
       - name: Validate Research Package
         if: inputs.mode == 'dry-run'
         working-directory: apps/web
+        # `shell: bash` for pipefail. This is the VALIDATION GATE an operator
+        # reads before dispatching mode: apply, so a green step on a failed
+        # validation is the worst possible direction to fail. The apply arm
+        # below already sets `set -euo pipefail` for the same reason.
+        shell: bash
         run: npm run seed:shadow:research:dry 2>&1 | tee -a /tmp/tool-output.txt
 
       - name: Import Research Package
@@ -257,6 +262,9 @@ jobs:
           fi
 
       - name: Record Human Review Boundary
+        # Matches the equivalent step in every sibling workflow. The run whose
+        # boundary statement matters most is the one that failed part way.
+        if: always()
         run: |
           {
             echo '### SHADOW research intake'

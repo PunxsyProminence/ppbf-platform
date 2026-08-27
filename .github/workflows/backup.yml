@@ -365,7 +365,11 @@ jobs:
               echo 'Verification (counts only -- no row content is captured anywhere in this workflow):'
               echo ''
               echo '```'
-              cat "$RUNNER_TEMP/verify.txt" 2>/dev/null || echo '(no verification output captured)'
+              # `-s`: tee creates verify.txt before the verifier writes, so a
+              # run that failed early leaves it existing and empty -- `cat`
+              # then exits 0 and the fallback never fires, rendering an empty
+              # fence where "we captured nothing" is the honest answer.
+              [ -s "$RUNNER_TEMP/verify.txt" ] && cat "$RUNNER_TEMP/verify.txt" || echo '(no verification output captured)'
               echo '```'
               echo ''
               echo "Restore: \`gunzip -c pilot-$TARGET-<stamp>.sql.gz | psql <connection string>\` against an empty database."

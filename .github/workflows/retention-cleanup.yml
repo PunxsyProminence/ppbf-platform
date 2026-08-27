@@ -176,6 +176,10 @@ jobs:
         env:
           PPBF_RETENTION_APPLY: ${{ inputs.apply == 'APPLY' }}
           PPBF_RETENTION_MAX_ROWS: ${{ inputs.max_rows || '50' }}
+        # `shell: bash` for the pipefail it brings. Without it GitHub runs
+        # `bash -e {0}` -- errexit but NOT pipefail -- so the exit code of a
+        # failed sweep is discarded by `tee` and the step reports success.
+        shell: bash
         run: |
           npm --prefix apps/web run pilot:cleanup-deleted-data | tee cleanup-result.json
 
@@ -193,6 +197,10 @@ jobs:
             echo "- outcome: \`${{ job.status }}\`"
             echo ''
             echo '```json'
-            cat cleanup-result.json 2>/dev/null || echo '{"event":"retention.cleanup.no-output"}'
+            # `-s`, not `cat ... ||`: tee creates the file before the tool
+            # writes a byte, so on a failed sweep the file EXISTS and is
+            # empty. `cat` then exits 0 and the fallback never fires, leaving
+            # an empty json fence that reads as "nothing to delete".
+            [ -s cleanup-result.json ] && cat cleanup-result.json || echo '{"event":"retention.cleanup.no-output"}'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
