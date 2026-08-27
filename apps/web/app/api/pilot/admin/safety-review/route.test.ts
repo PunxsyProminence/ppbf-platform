@@ -32,9 +32,20 @@ function get(): Promise<Response> {
   return GET(new NextRequest('http://localhost/api/pilot/admin/safety-review'));
 }
 
+// violationsReadLimit/violationsTruncated ride along because the rollup's
+// compliance-violations feed is capped and says so -- see safetyReview.ts.
+// The route spreads whatever the rollup returns, so the fixtures carry the
+// full shape; the assertions below are unchanged.
 beforeEach(() => {
   jest.clearAllMocks();
-  mockGetReview.mockResolvedValue({ openHolds: [], failingGates: [], openEscalations: [], openViolations: [] });
+  mockGetReview.mockResolvedValue({
+    openHolds: [],
+    failingGates: [],
+    openEscalations: [],
+    openViolations: [],
+    violationsReadLimit: 200,
+    violationsTruncated: false,
+  });
 });
 
 test('an admin gets the rolled-up review, spread at the top level', async () => {
@@ -44,6 +55,8 @@ test('an admin gets the rolled-up review, spread at the top level', async () => 
     failingGates: [],
     openEscalations: [],
     openViolations: [],
+    violationsReadLimit: 200,
+    violationsTruncated: false,
   });
 
   const response = await get();

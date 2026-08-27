@@ -392,6 +392,37 @@ describe('coach session scripts page', () => {
     expect(screen.queryByRole('button', { name: 'Pause session' })).not.toBeInTheDocument();
   });
 
+  it('refreshes the open plan history when its live delivery settles', async () => {
+    let historyReads = 0;
+    routedFetch({
+      runsGet: () => jsonResponse({ run: null }),
+      runsPost: () => jsonResponse({ run: liveRunRow() }),
+      runsHistory: () => {
+        historyReads += 1;
+        return jsonResponse({
+          runs: historyReads === 1
+            ? []
+            : [liveRunRow({ run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' })],
+        });
+      },
+      runPatch: (body) => jsonResponse({
+        run: liveRunRow({ run_state: body.run_state, ended_at: '2026-08-14T23:00:00.000Z' }),
+      }),
+    });
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+    expect(await screen.findByText(/No deliveries recorded for this plan yet/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /start live delivery/i }));
+    fireEvent.click(await screen.findByText('End session...'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Record as completed' }));
+
+    expect(await screen.findByText('Completed')).toBeInTheDocument();
+    expect(screen.queryByText(/No deliveries recorded for this plan yet/)).not.toBeInTheDocument();
+    expect(historyReads).toBe(2);
+  });
+
   it('opening a plan shows its past deliveries with only the recorded fields', async () => {
     routedFetch({
       runsGet: () => jsonResponse({ run: null }),
