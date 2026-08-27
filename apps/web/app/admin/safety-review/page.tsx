@@ -49,6 +49,12 @@ interface SafetyReview {
   failingGates: GateFailureItem[];
   openEscalations: EscalationItem[];
   openViolations: ViolationItem[];
+  // The compliance-violations feed is the one capped read of the four --
+  // safetyReview.ts reads violationsReadLimit rows newest-first and filters to
+  // open statuses afterwards. Carried to the screen so this page can state its
+  // window rather than imply it has none.
+  violationsReadLimit: number;
+  violationsTruncated: boolean;
 }
 
 // Law 3: a severity badge carries a glyph and an uppercase label, never colour
@@ -83,6 +89,10 @@ export default function SafetyReviewPage() {
         failingGates: payload.failingGates ?? [],
         openEscalations: payload.openEscalations ?? [],
         openViolations: payload.openViolations ?? [],
+        violationsReadLimit: payload.violationsReadLimit ?? 0,
+        // A response that does not say whether it was cut is treated as cut.
+        // Fail closed: the expensive mistake here is a false all-clear.
+        violationsTruncated: payload.violationsTruncated !== false,
       });
       setErrorMessage('');
     } catch (error) {
@@ -119,11 +129,28 @@ export default function SafetyReviewPage() {
             >
               Safety Review
             </h1>
+            {/* NOT "Everything open, right now", which is what this said. The
+                compliance-violations feed is capped (safetyReview.ts reads
+                violationsReadLimit rows newest-first and only then filters to
+                the open statuses), so on a gym past that window an open
+                violation can be missing from this page. Three feeds are
+                whole; one is a window, and the sentence now says which. */}
             <p className="t-body mt-[var(--s3)] max-w-4xl">
-              Everything open, right now, across the four safety systems: training holds, safety-gate checks, the
-              red-flag escalation ladder, and compliance violations. Each item links to the page that can act on
-              it -- this view only rolls them up.
+              What is open across the four safety systems: training holds, safety-gate checks, the
+              red-flag escalation ladder, and compliance violations. Holds, gate checks and escalations
+              are read in full. Each item links to the page that can act on it -- this view only rolls
+              them up.
             </p>
+            {review && review.violationsTruncated ? (
+              <p role="status" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <span className="alert-msg">
+                  Compliance violations are read from the {review.violationsReadLimit} most recently filed only.
+                  This gym holds more than that, so an older violation that is still open would not appear here.
+                  Check the compliance register for the full picture.
+                </span>
+              </p>
+            ) : null}
             {/* A failed read is a network fact. --locked red is what this room
                 says when a clinician or a safeguarding decision has stopped
                 something, so it does not carry this. --restricted does, keeping
@@ -149,6 +176,18 @@ export default function SafetyReviewPage() {
               <div className="empty-glyph" aria-hidden="true">✕</div>
               <div className="empty-title">The review could not be loaded</div>
               <div className="empty-msg">Reload to retry.</div>
+            </div>
+          ) : totalOpen === 0 && review!.violationsTruncated ? (
+            /* An all-clear is a claim about every row, so a cut feed may not
+               make one. The three whole feeds can still speak for themselves;
+               compliance violations cannot, and the notice above says why. */
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">◌</div>
+              <div className="empty-title">Nothing open in what this page could read</div>
+              <div className="empty-msg">
+                No active holds, failing gate checks or open escalations — those three are read in full.
+                Compliance violations were not, so this is not an all-clear on them.
+              </div>
             </div>
           ) : totalOpen === 0 ? (
             <div className="empty mt-[var(--s5)]">

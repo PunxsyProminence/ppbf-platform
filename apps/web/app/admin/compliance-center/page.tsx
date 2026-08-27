@@ -50,6 +50,12 @@ export default function AdminComplianceCenterPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [dataAuthoritative, setDataAuthoritative] = useState(false);
+  // The cap the server applied to this read. The violations route is
+  // `order by created_at desc limit N` (default 50, max 100) and this page
+  // sends no limit, so every figure below covers that newest slice and not
+  // the register. Held in state so the window line quotes the real number
+  // rather than a copy of the default that could drift from it.
+  const [readLimit, setReadLimit] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [selectedViolation, setSelectedViolation] = useState<ComplianceViolation | null>(null);
@@ -100,9 +106,10 @@ export default function AdminComplianceCenterPage() {
           throw new Error('Unable to load compliance violations');
         }
 
-        const data = (await res.json()) as { items?: ComplianceViolation[] };
+        const data = (await res.json()) as { items?: ComplianceViolation[]; limit?: number };
         const allViolations = data.items ?? [];
         setViolations(allViolations);
+        setReadLimit(typeof data.limit === 'number' ? data.limit : null);
 
         // Calculate metrics
         const calc = {
@@ -122,6 +129,7 @@ export default function AdminComplianceCenterPage() {
       } catch (error) {
         setDataAuthoritative(false);
         setViolations([]);
+        setReadLimit(null);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load violations');
       } finally {
         setIsLoading(false);
@@ -295,14 +303,22 @@ export default function AdminComplianceCenterPage() {
           ) : null}
         </header>
 
-        {/* Metrics Dashboard */}
+        {/* Metrics Dashboard.
+
+            Every tile here is an aggregate over the rows this page loaded,
+            and that set is capped and ordered newest-first. A bare "Total"
+            was a claim about the register; worse, a bare "Critical" reads as
+            "this gym has no critical violations" when a critical row filed
+            before the window simply was not read. The labels are scoped the
+            way /admin/escalations already scopes its own -- "(this view)" --
+            and the window itself is stated underneath. */}
         <section className="grid grid-cols-2 gap-[var(--s4)] sm:grid-cols-5">
           {([
-            ['Total', metrics.total, null],
-            ['Critical', metrics.critical, '✕'],
-            ['High', metrics.high, '▲'],
-            ['Medium', metrics.medium, '◉'],
-            ['Low', metrics.low, '✓'],
+            ['Total (this view)', metrics.total, null],
+            ['Critical (this view)', metrics.critical, '✕'],
+            ['High (this view)', metrics.high, '▲'],
+            ['Medium (this view)', metrics.medium, '◉'],
+            ['Low (this view)', metrics.low, '✓'],
           ] as [string, number, string | null][]).map(([label, value, glyph]) => (
             <article key={label} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)] text-center">
               <p className="t-eyebrow">{glyph ? `${glyph} ` : ''}{label}</p>
@@ -310,6 +326,16 @@ export default function AdminComplianceCenterPage() {
             </article>
           ))}
         </section>
+
+        {/* The window the figures above were computed over. Stated only when
+            there are rows and a server-reported cap to state -- a caveat over
+            an unread or empty register would be furniture explaining nothing. */}
+        {dataAuthoritative && readLimit !== null && violations.length > 0 ? (
+          <p className="t-muted">
+            These figures cover the {readLimit} most recently filed violations, newest first — not this
+            gym&rsquo;s whole compliance record. A violation filed before that window is not counted here.
+          </p>
+        ) : null}
 
         <section className="mat-leather flex flex-wrap items-center gap-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
           <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Filter violations by status">
@@ -342,18 +368,33 @@ export default function AdminComplianceCenterPage() {
               <option value="low">Low</option>
             </select>
           </div>
+          {/* "of N" is the count of rows LOADED, which is not the count of
+              rows on file -- the read is capped. Said as "loaded" so the
+              denominator stops reading as the register's size. */}
           <div className="t-muted ml-auto">
-            Showing {dataAuthoritative ? filteredViolations.length : '--'} of {dataAuthoritative ? violations.length : '--'}
+            Showing {dataAuthoritative ? filteredViolations.length : '--'} of {dataAuthoritative ? violations.length : '--'} loaded
           </div>
         </section>
 
         {/* Violations List */}
         <section>
           <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>
-            Violations ({filteredViolations.length} of {violations.length})
+            Violations ({filteredViolations.length} of {violations.length} loaded)
           </h2>
           <div className="space-y-[var(--s4)]">
-            {filteredViolations.length === 0 ? (
+            {/* A register that failed to load is not a register the filters
+                emptied. Pointing the admin at the Status and Severity
+                selects for a read that never happened sends them to widen
+                filters that were never the reason they see nothing -- and
+                leaves them believing the gym has no matching violations. */}
+            {!isLoading && !dataAuthoritative ? (
+              <div className="empty mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
+                <p className="empty-msg mx-auto">
+                  The violations register could not be loaded. This list is unavailable, not empty — violations
+                  may be on file that are not shown here. Reload to retry.
+                </p>
+              </div>
+            ) : filteredViolations.length === 0 ? (
               <div className="empty mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
                 <p className="empty-msg mx-auto">
                   No violations match the current filters. Try setting Status to &quot;all&quot; and Severity to &quot;all&quot;.
