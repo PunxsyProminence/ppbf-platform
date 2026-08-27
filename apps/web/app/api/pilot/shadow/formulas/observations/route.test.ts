@@ -3,6 +3,9 @@ import { NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { queryOne } from '@/src/server/pilot/db';
+import {
+  autoCalculateForObservationContext,
+} from '@/src/server/pilot/formulas/autoCalculation';
 import { saveFormulaObservation } from '@/src/server/pilot/formulas/repository';
 import { recalculateForSupersededObservation } from '@/src/server/pilot/formulas/runner';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -68,6 +71,15 @@ jest.mock('@/src/server/pilot/formulas/runner', () => {
   const actual = jest.requireActual('@/src/server/pilot/formulas/runner');
   return { ...actual, recalculateForSupersededObservation: jest.fn() };
 });
+// The orchestrator's own detection and execution are covered by
+// formulas/autoCalculation.test.ts. What is untested anywhere else -- and what
+// this file exists to hold -- is that the route calls it at all, with the
+// authenticated scope, after the write, and only for a role allowed to cause
+// a calculation.
+jest.mock('@/src/server/pilot/formulas/autoCalculation', () => {
+  const actual = jest.requireActual('@/src/server/pilot/formulas/autoCalculation');
+  return { ...actual, autoCalculateForObservationContext: jest.fn() };
+});
 
 // The edges the REAL gates read through. flagContactWithoutClearance resolves
 // clearance via shadowMedicalStatus; flagContactDuringHold reads
@@ -99,6 +111,7 @@ const mockAssertAccess = jest.mocked(assertActorCanAccessAthlete);
 const mockReadiness = jest.mocked(assertShadowRuntimeReadiness);
 const mockSaveObservation = jest.mocked(saveFormulaObservation);
 const mockRecalculate = jest.mocked(recalculateForSupersededObservation);
+const mockAutoCalculate = jest.mocked(autoCalculateForObservationContext);
 const mockMedicalStatus = getLatestMedicalAdministrativeStatus as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockGetGate = getSafetyGateDefinition as jest.Mock;
@@ -176,6 +189,7 @@ beforeEach(() => {
     supersedesObservationId: input.supersedesObservationId ?? null,
   }));
   mockRecalculate.mockResolvedValue([]);
+  mockAutoCalculate.mockResolvedValue([]);
   mockEmitShadowEvent.mockResolvedValue(undefined);
 
   // Cleared and unheld by default, so each test below opts INTO the one unsafe
@@ -644,5 +658,227 @@ describe('degradation on a pre-migration database', () => {
     expect(nearMissCallsWithTrigger(CLEARANCE_TRIGGER)).toHaveLength(0);
     expect(nearMissCallsWithTrigger(HOLD_TRIGGER)).toHaveLength(1);
     await expect(response.json()).resolves.not.toHaveProperty('safetyReview');
+  });
+});
+
+/**
+ * SLICE 1: the observation that completes a formula's input set now causes
+ * that formula to run.
+ *
+ * WHAT THIS REPLACES. Before this, every path into pilot.shadow_formula_results
+ * required a human to already know which observation ids belonged together and
+ * to POST them to /api/pilot/shadow/formulas/results by hand. Nothing in the
+ * product does that, so the sparring page's Deep-Track form -- the only rich
+ * producer of formula observations there is -- filled a table nothing read.
+ * The claim these tests pin down is the wiring: deleting the
+ * autoCalculateForObservationContext call from route.ts turns the first test
+ * below red.
+ *
+ * ON THE ROLE BOUNDARY. The owner answered this on 2026-08-27: an athlete's
+ * own submission MAY trigger the calculation it completes. results/route.ts:99
+ * still gates the manual "run this formula" POST to
+ * coach/organization_admin/admin, and that difference is deliberate -- there a
+ * caller NAMES the formula and the observation ids, whereas here the formulas
+ * are whatever the stored context deterministically satisfies. An athlete can
+ * cause a calculation about themselves and still cannot choose which one.
+ *
+ * assertActorCanAccessAthlete runs first and refuses an athlete reaching any
+ * athlete_id but their own, so this is not a path to another boxer's record.
+ */
+describe('an observation that completes an input set triggers its formula', () => {
+  const completingObservationBody = {
+    athleteId: 'athlete-1',
+    contextId: '  sparring-2026-08-18  ',
+    kind: 'punch_landed',
+    value: 18,
+    unit: 'count',
+    dimensions: { punchType: 'Jab' },
+    observedAt: '2026-08-18T18:00:00.000Z',
+    idempotencyKey: 'sparring-2026-08-18-punch_landed',
+  };
+
+  test('runs the detected calculations for that observation context', async () => {
+    mockAutoCalculate.mockResolvedValue([
+      { formulaId: 'MVP-03' },
+      { formulaId: 'MVP-04' },
+    ] as never);
+
+    const response = await postObservation(jsonRequest(completingObservationBody));
+
+    expect(response.status).toBe(200);
+    expect(mockAutoCalculate).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      // Trimmed, and identical to the contextId the observation was stored
+      // under -- a different one would read an empty context and find nothing.
+      contextId: 'sparring-2026-08-18',
+    });
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      autoCalculatedResultCount: 2,
+    }));
+  });
+
+  test('an athlete completing their own set DOES trigger its calculation', async () => {
+    // OWNER DECISION, 2026-08-27, replacing the assertion that used to stand
+    // here. Both real producers of these inputs are athlete surfaces, so under
+    // the previous rule this whole path was reachable by almost nothing: the
+    // orchestration existed and the flow feeding it could not run it.
+    mockAutoCalculate.mockResolvedValue([{ formulaId: 'MVP-03' }] as never);
+    mockRequirePrincipal.mockResolvedValue(principal({
+      accountId: 'athlete-account-1',
+      role: 'athlete',
+      athleteId: 'athlete-1',
+    }));
+
+    const response = await postObservation(jsonRequest(completingObservationBody));
+
+    expect(response.status).toBe(200);
+    expect(mockSaveObservation).toHaveBeenCalledTimes(1);
+    expect(mockAutoCalculate).toHaveBeenCalledTimes(1);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      autoCalculatedResultCount: 1,
+    }));
+  });
+
+  test('an athlete still cannot trigger a calculation about anyone else', async () => {
+    // The boundary that did NOT move, and the one that actually matters on a
+    // platform holding minors' records. Widening the trigger set says who may
+    // cause a calculation; it says nothing about WHOSE. That is
+    // assertActorCanAccessAthlete's job, it runs before any of this, and it
+    // refuses an athlete reaching another athlete_id.
+    mockRequirePrincipal.mockResolvedValue(principal({
+      accountId: 'athlete-account-1',
+      role: 'athlete',
+      athleteId: 'athlete-1',
+    }));
+    mockAssertAccess.mockRejectedValueOnce(
+      new Error('Forbidden: athlete cannot access another athlete record'),
+    );
+
+    const response = await postObservation(jsonRequest({
+      ...completingObservationBody,
+      athleteId: 'athlete-2',
+    }));
+
+    expect(response.status).toBe(403);
+    // Nothing was stored and nothing was calculated -- the refusal lands
+    // before the write, not after it.
+    expect(mockSaveObservation).not.toHaveBeenCalled();
+    expect(mockAutoCalculate).not.toHaveBeenCalled();
+  });
+
+  test('a superseding observation keeps the recalculation path and adds no second one', async () => {
+    // recalculateForSupersededObservation already re-runs every calculation
+    // that used the replaced observation, which is a strictly better answer
+    // than re-detecting the context: it knows the parameters and policyVersion
+    // the original calculation ran under. Running both would double-run them.
+    mockSaveObservation.mockResolvedValueOnce({
+      observationId: 'observation-2',
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      contextId: 'sparring-2026-08-18',
+      kind: 'punch_landed',
+      value: 19,
+      unit: 'count',
+      dimensions: {},
+      observedAt: '2026-08-18T18:00:00.000Z',
+      source: { type: 'coach_tag', quality: 'moderate', referenceId: 'ref-1' },
+      supersedesObservationId: 'observation-1',
+    } as never);
+    mockRecalculate.mockResolvedValue([{ formulaId: 'MVP-03' }] as never);
+
+    const response = await postObservation(jsonRequest({
+      ...completingObservationBody,
+      value: 19,
+      idempotencyKey: 'sparring-2026-08-18-punch_landed-correction',
+      supersedesObservationId: 'observation-1',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockRecalculate).toHaveBeenCalledTimes(1);
+    expect(mockAutoCalculate).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      recalculatedResultCount: 1,
+      autoCalculatedResultCount: 0,
+    }));
+  });
+
+  test('a correction that COMPLETES a set still calculates, though nothing was recalculated', async () => {
+    // The gap Codex found on #718, and the one the test above could not see:
+    // it mocks a NON-EMPTY recalculation, so it only ever exercised the branch
+    // where a prior calculation existed.
+    //
+    // When the correction is what makes the context satisfy MVP-03 in the
+    // first place -- replacing a wrong-unit punch_absorbed, say -- no earlier
+    // result used the invalid observation, so
+    // recalculateForSupersededObservation returns []. Treating "this
+    // superseded something" as a blanket skip meant the newly valid set was
+    // never calculated at all: neither path ran, and the correction silently
+    // produced nothing.
+    mockSaveObservation.mockResolvedValueOnce({
+      observationId: 'observation-2',
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      contextId: 'sparring-2026-08-18',
+      kind: 'punch_landed',
+      value: 19,
+      unit: 'count',
+      dimensions: {},
+      observedAt: '2026-08-18T18:00:00.000Z',
+      source: { type: 'coach_tag', quality: 'moderate', referenceId: 'ref-1' },
+      supersedesObservationId: 'observation-1',
+    } as never);
+    // Nothing had used the observation being replaced.
+    mockRecalculate.mockResolvedValue([]);
+    mockAutoCalculate.mockResolvedValue([{ formulaId: 'MVP-03' }] as never);
+
+    const response = await postObservation(jsonRequest({
+      ...completingObservationBody,
+      value: 19,
+      idempotencyKey: 'sparring-2026-08-18-punch_landed-completing-correction',
+      supersedesObservationId: 'observation-1',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockRecalculate).toHaveBeenCalledTimes(1);
+    // Detection is the fallback, not a second run: it fires precisely because
+    // recalculation handled nothing.
+    expect(mockAutoCalculate).toHaveBeenCalledTimes(1);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      recalculatedResultCount: 0,
+      autoCalculatedResultCount: 1,
+    }));
+  });
+
+  test('runs only after the observation is stored', async () => {
+    // The detector reads the context back out of the database, so it has to
+    // see the row this request just wrote. Running it first would make the
+    // completing observation invisible to the calculation it completes.
+    await postObservation(jsonRequest(completingObservationBody));
+
+    const [saveOrder] = mockSaveObservation.mock.invocationCallOrder;
+    const [autoOrder] = mockAutoCalculate.mock.invocationCallOrder;
+    expect(saveOrder).toBeLessThan(autoOrder);
+  });
+
+  test('never runs when athlete access is refused', async () => {
+    mockAssertAccess.mockRejectedValueOnce(new Error('Forbidden: athlete outside scope'));
+
+    const response = await postObservation(jsonRequest(completingObservationBody));
+
+    expect(response.status).toBe(403);
+    expect(mockAutoCalculate).not.toHaveBeenCalled();
+  });
+
+  test('cannot be redirected at another organization by the payload', async () => {
+    await postObservation(jsonRequest({
+      ...completingObservationBody,
+      organizationId: 'org-spoofed',
+    }));
+
+    expect(mockAutoCalculate).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+    }));
   });
 });
