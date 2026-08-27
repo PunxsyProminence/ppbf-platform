@@ -82,7 +82,7 @@ concurrency:
   # nothing is cancelled: an operator who dispatches this while the nightly is
   # mid-run wants the answer, and a cancelled run reads as "never verified" --
   # the same reasoning ci.yml applies to pushes on main.
-  group: pre-release-migrations-${{ github.ref }}
+  group: pre-release-migrations-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
