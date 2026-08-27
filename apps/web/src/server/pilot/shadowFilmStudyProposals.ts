@@ -380,13 +380,23 @@ export async function listFilmStudyProposalRevisions(
  * EVIDENCE, and a read model that surfaced either would turn the acceptance
  * gate into decoration. That is the whole safety design of issue #103: vision
  * output never touches an athlete record until a human accepts it.
+ *
+ * ACCEPTED ONLY -- 'corrected' is excluded, by owner decision (2026-08-27).
+ *
+ * This was the open question #717 raised rather than settled. 'corrected' is
+ * not a settled state: listFilmStudyProposals' working view is
+ * `pending_review` + `corrected`, so a corrected proposal has NOT left the
+ * coach's queue. A coach has authored replacement wording for the model's
+ * claim, which is more than a pending row has -- but it is work in progress,
+ * not a verdict, and this predicate is the line that decides what may be read
+ * back as evidence about a child. Work in progress does not cross it.
+ *
+ * The rows are excluded from a READ, never deleted: a corrected proposal
+ * remains in the coach's queue, exactly where it is still owed a decision.
  */
-export const REVIEWED_FILM_STUDY_SCOPE_SQL = "review_state in ('accepted', 'corrected')";
+export const REVIEWED_FILM_STUDY_SCOPE_SQL = "review_state = 'accepted'";
 
-export type ReviewedFilmStudyState = Extract<
-  FilmStudyProposalReviewState,
-  'accepted' | 'corrected'
->;
+export type ReviewedFilmStudyState = Extract<FilmStudyProposalReviewState, 'accepted'>;
 
 /**
  * One piece of Film Study material a coach has actually worked on.
