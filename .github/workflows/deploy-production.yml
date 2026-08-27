@@ -81,26 +81,41 @@ jobs:
           fi
 
       - name: Verify supplied SHA matches the checked-out commit
+        env:
+          # Through the environment, never interpolated into the script.
+          # confirm_sha, release_digest and migrations_complete are all
+          # `type: string` -- free text, unconstrained -- and `${{ ... }}`
+          # inside a `run:` block is substituted BEFORE the shell parses the
+          # line, so a value containing a quote and a semicolon becomes
+          # commands. This job runs before any validation, and the
+          # build-and-deploy job below holds an Azure OIDC session and the
+          # production connection string. Same reasoning as
+          # migration-declaration.yml, which says it in full.
+          CONFIRM_SHA: ${{ inputs.confirm_sha }}
         run: |
-          if [ -z "${{ inputs.confirm_sha }}" ]; then
+          if [ -z "$CONFIRM_SHA" ]; then
             echo "::error::confirm_sha is empty. Re-running a previous run does not re-supply workflow_dispatch inputs -- dispatch a fresh run with confirm_sha=${{ github.sha }}."
             exit 1
           fi
-          if [ "${{ inputs.confirm_sha }}" != "${{ github.sha }}" ]; then
-            echo "::error::confirm_sha ('${{ inputs.confirm_sha }}') does not match the checked-out commit ('${{ github.sha }}'). Pass the full 40-character SHA. Refusing to deploy."
+          if [ "$CONFIRM_SHA" != "${{ github.sha }}" ]; then
+            echo "::error::confirm_sha ('$CONFIRM_SHA') does not match the checked-out commit ('${{ github.sha }}'). Pass the full 40-character SHA. Refusing to deploy."
             exit 1
           fi
 
       - name: Verify migration confirmation
+        env:
+          MIGRATIONS_COMPLETE: ${{ inputs.migrations_complete }}
         run: |
-          if [ "${{ inputs.migrations_complete }}" != "CONFIRMED" ]; then
+          if [ "$MIGRATIONS_COMPLETE" != "CONFIRMED" ]; then
             echo "::error::migrations_complete must be exactly 'CONFIRMED'. Refusing to deploy."
             exit 1
           fi
 
       - name: Verify supplied release digest format
+        env:
+          RELEASE_DIGEST: ${{ inputs.release_digest }}
         run: |
-          if ! printf '%s' "${{ inputs.release_digest }}" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+          if ! printf '%s' "$RELEASE_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
             echo "::error::release_digest must be a sha256 digest captured from staging."
             exit 1
           fi
@@ -229,10 +244,11 @@ jobs:
       # check -- but the fix then is the retention policy, not this gate.
       # ─────────────────────────────────────────────────────────────────────
       - name: Verify release digest exists in ACR and was built from this commit
+        env:
+          RELEASE_DIGEST: ${{ inputs.release_digest }}
+          CONFIRM_SHA: ${{ inputs.confirm_sha }}
         run: |
           set -euo pipefail
-          RELEASE_DIGEST='${{ inputs.release_digest }}'
-          CONFIRM_SHA='${{ inputs.confirm_sha }}'
 
           MANIFEST="$(az acr repository show-manifests \
             --name "$ACR_NAME" --repository ppbf-frontend \
@@ -592,6 +608,13 @@ jobs:
       - name: Deploy Tested Digest to Azure Container App (Production)
         env:
           PPBF_APP_ORIGIN: ${{ vars.PPBF_APP_ORIGIN }}
+          # Free-text dispatch inputs reach the shell through the environment,
+          # never by interpolation. The guard job has already checked both by
+          # the time this runs, so this is defence in depth -- but a guard that
+          # is reordered, weakened or skipped must not silently re-open a
+          # command-injection path into a step holding an Azure OIDC session.
+          RELEASE_DIGEST: ${{ inputs.release_digest }}
+          CONFIRM_SHA: ${{ inputs.confirm_sha }}
         run: |
           if [ -z "$PPBF_APP_ORIGIN" ]; then
             echo "Required production variable 'PPBF_APP_ORIGIN' is not configured."
@@ -603,9 +626,9 @@ jobs:
           az containerapp update \
             --name "$CONTAINER_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ inputs.release_digest }}" \
+            --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${RELEASE_DIGEST}" \
             --set-env-vars \
-              PPBF_RELEASE_SHA=${{ inputs.confirm_sha }} \
+              PPBF_RELEASE_SHA="$CONFIRM_SHA" \
               AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
               AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
               PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
@@ -642,6 +665,8 @@ jobs:
       # digest this run promoted, so the thing being waited on is OUR deploy,
       # not whatever revision happens to be latest.
       - name: Wait For Promoted Revision To Take Traffic
+        env:
+          RELEASE_DIGEST: ${{ inputs.release_digest }}
         run: |
           LATEST="$(az containerapp show --name "$CONTAINER_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
@@ -652,9 +677,9 @@ jobs:
             --query "properties.template.containers[0].image" -o tsv)"
           echo "Latest revision $LATEST runs image $REVISION_IMAGE"
           case "$REVISION_IMAGE" in
-            *"@${{ inputs.release_digest }}") ;;
+            *"@$RELEASE_DIGEST") ;;
             *)
-              echo "::error::Latest revision $LATEST does not carry the promoted digest ${{ inputs.release_digest }}. The update did not produce the expected revision."
+              echo "::error::Latest revision $LATEST does not carry the promoted digest $RELEASE_DIGEST. The update did not produce the expected revision."
               exit 1
               ;;
           esac

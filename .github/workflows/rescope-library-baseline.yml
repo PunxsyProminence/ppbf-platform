@@ -167,6 +167,13 @@ jobs:
 
       - name: Record What Moved
         if: always()
+        env:
+          # Free text reaches the shell through the environment, never by
+          # interpolation: `${{ ... }}` in a `run:` block is substituted before
+          # bash parses the line, so a value with a quote and a semicolon
+          # becomes commands. target and mode are `type: choice` and cannot
+          # carry one; this input is unconstrained.
+          FROM_ORGANIZATION_ID: ${{ inputs.from_organization_id }}
         run: |
           # Printed to stdout as well as the summary: the tool's final JSON is the
           # decisive line of the run, and it otherwise sits far above the runner's
@@ -180,7 +187,7 @@ jobs:
             echo ''
             echo "- target: \`${{ inputs.target }}\`"
             echo "- mode: \`${{ inputs.mode }}\`"
-            echo "- from organization: \`${{ inputs.from_organization_id }}\`"
+            echo "- from organization: \`$FROM_ORGANIZATION_ID\`"
             echo "- result: \`${{ job.status }}\`"
             echo ''
             echo 'Rows move to __platform__; the gym keeps its policy sources, their chunks,'
