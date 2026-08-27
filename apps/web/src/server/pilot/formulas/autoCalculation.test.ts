@@ -546,7 +546,26 @@ describe('observation kinds this application actually produces', () => {
     return found;
   }
 
-  const producerFiles = ['app', 'components', 'src', 'lib']
+  /**
+   * A file POSTS to the endpoint, as opposed to naming it.
+   *
+   * Both real producers write it the same way -- the endpoint inside the URL
+   * argument of a `fetch(` call:
+   *
+   *   await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
+   *
+   * The original scan asked only whether the file CONTAINED that path, which
+   * also matches prose. blockerMap.ts carries an evidence note reading
+   * "'punch_absorbed' ... is POSTed to /api/pilot/shadow/formulas/observations
+   * by app/athlete/dashboard/sparring/page.tsx" -- a sentence that CITES the
+   * producer, in a file that makes no network call of any kind. It reddened
+   * this suite as a third producer.
+   */
+  function postsToEndpoint(source: string): boolean {
+    return new RegExp(`fetch\\(\\s*[\`'"][^\`'"]*${OBSERVATION_ENDPOINT}`).test(source);
+  }
+
+  const filesNamingEndpoint = ['app', 'components', 'src', 'lib']
     .map((directory) => join(WEB_ROOT, directory))
     .flatMap((directory) => sourceFiles(directory))
     .filter((path) => (
@@ -556,11 +575,57 @@ describe('observation kinds this application actually produces', () => {
     .map((path) => relative(WEB_ROOT, path))
     .sort();
 
+  const producerFiles = filesNamingEndpoint
+    .filter((file) => postsToEndpoint(readFileSync(join(WEB_ROOT, file), 'utf8')));
+
+  /**
+   * Files that name the endpoint without calling it, and why.
+   *
+   * Narrowing the scan to real calls would otherwise reduce coverage in
+   * silence -- the failure this repository keeps meeting, where a guard stops
+   * matching and goes on reporting green. So the files the narrowing EXCLUDES
+   * are enumerated here, and a file that starts naming the endpoint has to be
+   * classified deliberately rather than just vanishing from the scan.
+   */
+  const NAMES_BUT_DOES_NOT_POST: Record<string, string> = {
+    [join('src', 'server', 'pilot', 'formulas', 'blockerMap.ts')]:
+      'Owner note ABSORBED_PUNCH_EVIDENCE cites the endpoint as evidence that '
+      + "'punch_absorbed' has a real producer, contradicting a registry blocker reason. "
+      + 'Server-side prose. It makes no request.',
+  };
+
   test('every producer of formula observations is one of the two known ones', () => {
     expect(producerFiles).toEqual([
       join('app', 'athlete', 'dashboard', 'sparring', 'page.tsx'),
       join('components', 'AthleteWorkspace.tsx'),
     ]);
+  });
+
+  test('the producer scan reads calls, and would still see a new one', () => {
+    // Guards the narrowing itself. A predicate that matched nothing would make
+    // the assertion above fail loudly, but one that matched only the two files
+    // named there -- by accident of how they are written -- would pass while
+    // being blind to a third. So it is checked against source it is given.
+    expect(postsToEndpoint('await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {')).toBe(true);
+    expect(postsToEndpoint("fetch('/api/pilot/shadow/formulas/observations', { method: 'POST' })")).toBe(true);
+    expect(postsToEndpoint('is POSTed to /api/pilot/shadow/formulas/observations by page.tsx')).toBe(false);
+    expect(postsToEndpoint('')).toBe(false);
+  });
+
+  test('every file that names the endpoint without posting is accounted for', () => {
+    const unclassified = filesNamingEndpoint
+      .filter((file) => !producerFiles.includes(file))
+      .filter((file) => !(file in NAMES_BUT_DOES_NOT_POST));
+
+    // Fix by adding the file with the reason it names the endpoint -- or, if it
+    // really does post, by making the scan see it.
+    expect(unclassified).toEqual([]);
+  });
+
+  test('does not carry a note for a file that no longer names the endpoint', () => {
+    const stale = Object.keys(NAMES_BUT_DOES_NOT_POST)
+      .filter((file) => !filesNamingEndpoint.includes(file));
+    expect(stale).toEqual([]);
   });
 
   test('six MVP formulas have no producer for their inputs at all', () => {
