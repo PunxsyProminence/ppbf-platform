@@ -297,6 +297,10 @@ jobs:
         run: npm run seed:session-scripts ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
 
       - name: Record What Ran
+        # Matches the equivalent step in every sibling workflow. This file
+        # explicitly anticipates a mid-chain failure leaving earlier datasets
+        # loaded -- that is precisely the run whose summary must still print.
+        if: always()
         run: |
           {
             echo "### Reference data seeding"

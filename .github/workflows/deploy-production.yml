@@ -302,11 +302,31 @@ jobs:
           # Recorded by this workflow on every deploy (see --set-env-vars
           # below). Absent only on an app that has not been deployed since this
           # guard shipped.
-          RUNNING_SHA="$(az containerapp show \
+          #
+          # THE `|| true` THAT USED TO BE HERE DISARMED THIS GUARD. It turned
+          # every az failure -- a throttled call, a transient 5xx, an expired
+          # token, a wrong resource group -- into an empty RUNNING_SHA, which
+          # falls into the `-z` branch below and exits 0 with a warning. So the
+          # ancestry check that exists because of the 2026-08-03 double-approval
+          # incident was contingent on one unrelated az call succeeding, and the
+          # stale-run failure mode it was written to catch is exactly the one it
+          # would have skipped.
+          #
+          # az distinguishes the two cases cleanly: a JMESPath that matches
+          # nothing exits 0 with empty output, while a call that FAILS exits
+          # non-zero. So "not recorded" stays a warning and "could not ask"
+          # becomes a refusal.
+          if ! RUNNING_SHA="$(az containerapp show \
             --name "$CONTAINER_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
             --query "properties.template.containers[0].env[?name=='PPBF_RELEASE_SHA'].value | [0]" \
-            -o tsv 2>/dev/null || true)"
+            -o tsv 2>/dev/null)"; then
+            echo "::error::Could not read PPBF_RELEASE_SHA from ${CONTAINER_APP_NAME}. The" \
+                 "rollback guard cannot run without it, and skipping it silently is how a" \
+                 "stale deploy gets promoted. Re-run; if it persists, check the Azure" \
+                 "credentials and resource group before deploying."
+            exit 1
+          fi
 
           echo "running digest : ${RUNNING_DIGEST:-<none>}"
           echo "incoming digest: ${INCOMING_DIGEST}"

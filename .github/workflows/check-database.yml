@@ -211,7 +211,9 @@ jobs:
             echo "- commit: \`${{ github.sha }}\`"
             echo ''
             echo '```'
-            cat /tmp/check-output.txt 2>/dev/null || echo '(no output captured)'
+            # `-s`: the file is created by the redirect before the tool
+            # writes, so `cat` on an empty one exits 0 and skips the fallback.
+            [ -s /tmp/check-output.txt ] && cat /tmp/check-output.txt || echo '(no output captured)'
             echo '```'
             echo ''
             echo 'This workflow only ran SELECT statements. Nothing in the target database was changed.'

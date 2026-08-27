@@ -160,6 +160,9 @@ jobs:
       # inside its own transaction and rolls back on any mismatch.
       - name: Re-scope Library Rows
         working-directory: apps/web
+        # `shell: bash` for pipefail; GitHub's default `bash -e {0}` lacks it
+        # and `tee` would discard a failed re-scope's exit code.
+        shell: bash
         run: npm run pilot:rescope-library-baseline 2>&1 | tee -a /tmp/tool-output.txt
 
       - name: Record What Moved
@@ -168,8 +171,10 @@ jobs:
           # Printed to stdout as well as the summary: the tool's final JSON is the
           # decisive line of the run, and it otherwise sits far above the runner's
           # cleanup where reading it costs more than guessing at it.
+          # `-s`, not `tail ... ||`: tee creates the file before the tool
+          # writes, so an empty file exits tail 0 and skips the fallback.
           echo '--- tool output (repeated) ---'
-          tail -n 12 /tmp/tool-output.txt 2>/dev/null || echo '(none captured)'
+          [ -s /tmp/tool-output.txt ] && tail -n 12 /tmp/tool-output.txt || echo '(none captured)'
           {
             echo '### SHADOW library re-scope'
             echo ''
