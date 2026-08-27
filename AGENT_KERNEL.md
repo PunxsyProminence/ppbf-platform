@@ -206,6 +206,15 @@ it does, exactly where ChatGPT said. The search was of this repository and the
 claim was reported without that qualifier: a real check, stated wider than it
 was run.
 
+**Amendment (owner decision, 2026-08-27).** The 2026-08-19 text above says all
+repository work runs through *the* owner's primary Claude Code session, and was
+written when there was one. There are now **several parallel Claude lanes**,
+each its own session in its own container, plus a release-control lane that
+owns `main`. Nothing in this section is relaxed by that -- nobody
+direct-pushes `main`, every change lands by PR with green CI -- but *which*
+lane may merge is now a narrower question than this section answers. See
+**Lane model** below, which governs it.
+
 ## Report the check, not the conclusion (owner instruction, 2026-08-20)
 
 The owner should not have to ask "what verified that?" Being asked is already
@@ -342,6 +351,140 @@ weakening safeguarding, authorization, and fail-closed controls. What this adds
 is who decides, which boundaries are not theirs to move, and the shape of
 raising it.
 
+## Lane model (owner decision, 2026-08-27)
+
+Work now runs in **parallel lanes**, each its own Claude session in its own
+container. That is a change of shape, not of volume, and the rules below exist
+because a single day of running it that way produced five distinct failures
+that a single-lane setup cannot have.
+
+**A build lane produces branches and pull requests. It does not release.**
+
+**One release-control lane owns `main`, migrations, staging and production.**
+It is the only lane that merges or deploys.
+
+A build lane MAY: create branches, write code and tests, open pull requests,
+investigate and report findings.
+
+A build lane MAY NOT: merge to `main`; dispatch `apply-migrations`,
+`deploy-staging` or `deploy-production`; decide product scope; remove or
+disable a feature because it looks out of scope; fix unrelated defects inside
+its PR; or act on a scoping question as though it were a decision.
+
+### A question is not an instruction
+
+Asking what a change would involve is a request for a finding, not for the
+branch that answers it. On 2026-08-27 the owner asked what removing the
+calibration build would involve; the lane built, verified and pushed the
+removal, and opened a PR to take eight merged commits back out of `main`.
+Nothing was merged and no harm reached the repository, but the lane had
+committed the owner to a decision he was still forming.
+
+Report the finding. Build when told to build.
+
+### Brief header — required on every PR and status report
+
+```
+LANE:        <thread name / branch prefix>
+MIGRATIONS:  NONE | <slug list>          <-- never omit
+STACKED ON:  NONE | #NNN (state the order)
+CONTESTED:   files other lanes may also touch
+SCOPE:       what the owner authorized, in his words
+```
+
+`MIGRATIONS` is the line that matters most. The release lane sizes and
+sequences a release from it, and a missing or wrong value produces a code
+deploy against a schema that does not have the tables. `NONE` is a real
+answer and must be written; an omitted line is not read as `NONE`.
+
+### Stacked work is declared, not discovered
+
+If a branch depends on another unmerged branch, `STACKED ON` says so and gives
+the order. A stacked PR retargeted to `main` once its parent lands is normal.
+Discovering the stack during a merge window is not.
+
+On 2026-08-27 eight calibration PRs were reported as independent branches off
+`main`. They were a stacked tree, each based on its parent. The symptoms read
+as infrastructure problems: seven had no CI at all, and one showed an 80-file
+diff that was 12 files once retargeted. GitHub was diffing them against stale
+parents. The stack was only found by reading a PR's `base.ref`.
+
+### Registration conflicts have no blanket answer
+
+`apps/web/package.json` and `.github/workflows/apply-migrations.yml` carry
+per-migration registrations. **Read both sides of every conflict.** Never apply
+an always-ours or always-theirs rule.
+
+The same conflict marker in the same file needed four different correct
+resolutions in one day:
+
+| situation | correct resolution |
+|---|---|
+| the `test:migrations` chain line, after it became a discovery runner | take **main** |
+| branch adds a registration `main` lacks | keep **HEAD** |
+| each side carries a *different* registration | keep **both** |
+| branch registers nothing; `main` carries one | keep **main** |
+
+A blanket rule silently deleted `test:migrations:athlete-intelligence` on one
+of these. `pgTestCoverage.test.ts` caught it and named the file. Nothing else
+would have: the discovery runner reads registrations out of `package.json` and
+runs inside `deploy-production.yml`, so a dropped entry removes a migration
+guard immediately before a production deploy rather than failing loudly.
+
+Where a resolution keeps one side of a long list line, prove that side is a
+strict superset before keeping it. Measure it; do not assume it.
+
+### Revert individually, never as a range
+
+Unrelated work lands between related commits. On 2026-08-27 a revert of eight
+calibration commits had a ninth, unrelated commit sitting between two of them.
+Reverting the range would have taken it out too.
+
+Revert commit by commit unless every commit in the range has been verified to
+belong to the same concern.
+
+### Handoff
+
+Open the PR. Report the brief header and the evidence. Stop.
+
+**Green CI is a precondition, not an authorization.** Do not merge, do not
+deploy, and do not ask the release lane to merge on the grounds that CI is
+green. `main` may be frozen with a gated release candidate, and a merge during
+a freeze invalidates it and costs a full re-verification cycle.
+
+### Your lane's state is not the system's state
+
+"This lane applied no migrations" is a fact about the lane. "No migrations are
+applied anywhere" is a claim about production, and no build lane can check it.
+On 2026-08-27 a lane wrote the second while only able to verify the first.
+
+Before writing any statement about what is deployed, applied, live, or merged,
+either verify it from an authoritative source in that moment, or mark it
+**UNKNOWN** and name where you checked. This is the "Report the check, not the
+conclusion" rule applied to environment state, which is the hardest place to
+observe and the easiest place to assert.
+
+Classify as **VERIFIED / UNKNOWN / BLOCKED / OWNER DECISION REQUIRED**.
+
+### Why the split exists
+
+On 2026-08-27 one lane merged 21 pull requests to `main` in a single session
+because nothing separated building from releasing. Two consequences followed
+that no per-PR check could have caught:
+
+- **#716 and #718 were each green alone and broke `main` together.** A
+  documentation constant became a third producer in the `autoCalculation`
+  census. Per-PR CI cannot see a semantic conflict between two branches by
+  construction.
+- The release-control lane later measured that **16 of the last 30 pushes to
+  `main` had their required check cancelled**, including both of those merge
+  commits (see PR #736, that lane's finding, not this one). A cancelled
+  required check reads as "never validated" rather than as a failure, so
+  nothing reported it. The breakage surfaced against an unrelated PR.
+
+Merging fast is what made both invisible. The lane split is the structural
+answer; being more careful is not.
+
 ## Six invariants
 
 1. **Start current.** Reconcile against current `origin/main`; stale branches and old prose are not current behavior.
@@ -349,7 +492,14 @@ raising it.
 3. **Keep scope bounded.** One concern per branch/PR. Do not drive-by fix adjacent work. If another open PR owns the same files or contract, sequence instead of colliding.
 4. **Preserve hard safety boundaries.** Do not weaken authorization, organization isolation, safeguarding, evidence validation, destructive-data protections, or fail-closed controls merely to make a task pass.
 5. **Claims need evidence.** Prefer the smallest relevant executable check while iterating; run the required final gate before claiming completion. Code-reading alone is not runtime proof.
-6. **Authority stays external to the model.** Do not deploy, approve production, make destructive data decisions, or invent owner policy without explicit authority. A direct owner/user request is sufficient authority to implement and open/merge ordinary bounded repo changes unless a protected environment or domain policy requires a separate human gate.
+6. **Authority stays external to the model.** Do not deploy, approve production, make destructive data decisions, or invent owner policy without explicit authority. A direct owner/user request is sufficient authority to implement and **open** ordinary bounded repo changes unless a protected environment or domain policy requires a separate human gate.
+
+   **Amended 2026-08-27.** This invariant previously read "open/merge". Under
+   the lane model above, **merging is not a build lane's to do** — an owner
+   request authorizes the branch and the PR, and the release-control lane
+   merges. The older wording was written when one session held both roles; a
+   lane reading it today would take a request to build as a licence to land,
+   which is exactly what happened on 2026-08-27.
 
 ## Execution loop
 
