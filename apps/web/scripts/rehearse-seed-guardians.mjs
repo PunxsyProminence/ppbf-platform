@@ -136,6 +136,14 @@ async function main() {
       PPBF_POSTGRES_DISABLE_SSL: 'true',
       AZURE_POSTGRES_CONNECTION_STRING: conn(DB),
       PPBF_ALLOW_DESTRUCTIVE_SEED: 'true',
+      // seed-data.ts refuses a real run against a database nobody declared.
+      // This harness runs it for real, five times, so it declares the
+      // disposable local one it just created. Without these the seeds exit 2
+      // before importing the config and this rehearsal would prove nothing
+      // while still printing its steps -- a harness that stops exercising
+      // writes is worse than one that fails, because it still looks like it ran.
+      PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+      PPBF_EXPECTED_POSTGRES_DATABASE: DB,
     };
 
     step(3, 'FIRST RUN — two siblings sharing a guardian, plus one more');
