@@ -66,6 +66,12 @@ const OTHER_ACCOUNT_ID = 'acct-curator-other';
 // depends on them, same as it always has.
 const SCHEMA_FILES = [
   'pilot_slice_postgres.sql',
+  // Applied because PRODUCTION HAS IT: it adds pilot.athletes.deleted_at, which
+  // the authorization queries in access.ts now require. deploy-production's
+  // schema check asserts every migration's `add column` exists in the live
+  // database, and it passed on the 2026-08-27 release. A fixture without it
+  // builds a schema nobody runs.
+  'pilot_slice_postgres_data_retention_deletion_migration.sql',
   'pilot_slice_postgres_shadow_runtime_migration.sql',
   'pilot_slice_postgres_shadow_evidence_migration.sql',
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
