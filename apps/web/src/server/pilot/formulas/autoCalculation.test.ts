@@ -546,11 +546,58 @@ describe('observation kinds this application actually produces', () => {
     return found;
   }
 
+  /**
+   * POSTING to the endpoint, not MENTIONING it.
+   *
+   * This used to be `contents.includes(OBSERVATION_ENDPOINT)`, which asks
+   * whether the endpoint path appears anywhere in the file's text -- prose
+   * included. blockerMap.ts tripped it with an owner note whose whole job is
+   * to cite the real producer by name: "'punch_absorbed' ... is POSTed to
+   * /api/pilot/shadow/formulas/observations by app/athlete/dashboard/
+   * sparring/page.tsx". A file that documents who posts is not a file that
+   * posts, and main went red on the difference.
+   *
+   * Allowlisting blockerMap.ts would have been the wrong repair twice over:
+   * it would assert in this suite's own vocabulary that a documentation
+   * constant produces observations, and it would then swallow a genuine
+   * producer if one were ever added to that same file.
+   *
+   * So the reference has to sit in a call rather than in a sentence. Both
+   * real producers write it the same way, and a prose mention never can:
+   *
+   *     await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
+   *       method: 'POST',
+   *
+   * The lookbehind window is generous enough to survive a reformat that puts
+   * the URL on its own line, and still cannot reach out of the call and into
+   * surrounding prose.
+   */
+  const FETCH_LOOKBEHIND = 200;
+
+  function postsObservations(contents: string): boolean {
+    let at = contents.indexOf(OBSERVATION_ENDPOINT);
+    while (at !== -1) {
+      const window = contents.slice(Math.max(0, at - FETCH_LOOKBEHIND), at);
+      const opensAt = window.lastIndexOf('fetch(');
+      if (opensAt !== -1) {
+        // Everything between that `fetch(` and this occurrence. A statement
+        // terminator in there means the call already closed and the mention
+        // belongs to whatever followed -- the case that made the first draft
+        // of this fix count `fetch(...definitions); // see /...observations`
+        // as a producer. The real call sites hold only `` `${apiBase()}/ ``
+        // in that span, which has no semicolon.
+        if (!window.slice(opensAt + 'fetch('.length).includes(';')) return true;
+      }
+      at = contents.indexOf(OBSERVATION_ENDPOINT, at + 1);
+    }
+    return false;
+  }
+
   const producerFiles = ['app', 'components', 'src', 'lib']
     .map((directory) => join(WEB_ROOT, directory))
     .flatMap((directory) => sourceFiles(directory))
     .filter((path) => (
-      readFileSync(path, 'utf8').includes(OBSERVATION_ENDPOINT)
+      postsObservations(readFileSync(path, 'utf8'))
       && !path.includes(join('app', 'api', 'pilot', 'shadow', 'formulas', 'observations'))
     ))
     .map((path) => relative(WEB_ROOT, path))
@@ -561,6 +608,36 @@ describe('observation kinds this application actually produces', () => {
       join('app', 'athlete', 'dashboard', 'sparring', 'page.tsx'),
       join('components', 'AthleteWorkspace.tsx'),
     ]);
+  });
+
+  // The detector is now the load-bearing part, so it is pinned directly.
+  // Without these, narrowing it to nothing at all would still pass the
+  // assertion above -- an empty producer list can never gain a member.
+  describe('the producer detector itself', () => {
+    test('counts a fetch to the endpoint', () => {
+      expect(postsObservations(
+        'await fetch(`${apiBase()}/' + OBSERVATION_ENDPOINT + '`, { method: \'POST\' })',
+      )).toBe(true);
+    });
+
+    test('counts it when a reformat puts the URL on its own line', () => {
+      expect(postsObservations(
+        'await fetch(\n  `${apiBase()}/' + OBSERVATION_ENDPOINT + '`,\n  { method: \'POST\' },\n)',
+      )).toBe(true);
+    });
+
+    test('does not count prose that names the endpoint', () => {
+      expect(postsObservations(
+        "'punch_absorbed' is POSTed to /" + OBSERVATION_ENDPOINT + ' by the sparring page.',
+      )).toBe(false);
+    });
+
+    test('does not count a fetch to some other endpoint in the same file', () => {
+      expect(postsObservations(
+        'await fetch(`${apiBase()}/api/pilot/shadow/formulas/definitions`);\n'
+        + '// see /' + OBSERVATION_ENDPOINT + ' for where these come from',
+      )).toBe(false);
+    });
   });
 
   test('six MVP formulas have no producer for their inputs at all', () => {
