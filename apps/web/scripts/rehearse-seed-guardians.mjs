@@ -78,7 +78,9 @@ function check(label, actual, expected) {
   console.log(`    ${pass ? 'PASS' : 'FAIL'}  ${label}: ${JSON.stringify(actual)}${pass ? '' : ` (expected ${JSON.stringify(expected)})`}`);
 }
 
-async function runSeed(env, csvName, label) {
+// expectedExit defaults to 0. Step 8 passes 1 on purpose: a roster row that
+// does not import is now a failed run, and that step feeds one deliberately.
+async function runSeed(env, csvName, label, expectedExit = 0) {
   const cfg = path.join(WORK, `${csvName}.config.mjs`);
   await fs.writeFile(cfg, `export default ${JSON.stringify({
     organizationId: ORG, dataDir: WORK, files: { athletes: `${csvName}.csv` }, options: {},
@@ -93,9 +95,9 @@ async function runSeed(env, csvName, label) {
     p.stderr.on('data', (c) => { out += c.toString(); });
     p.on('exit', (c) => {
       const line = out.split('\n').find((l) => l.includes('Guardian links')) || '(no guardian line)';
-      console.log(`    ${label}: exit ${c} | ${line.trim()}`);
+      console.log(`    ${label}: exit ${c} (expected ${expectedExit}) | ${line.trim()}`);
       // A harness that hides the seeder's own error turns a diagnosable failure into a mystery.
-      if (c !== 0) {
+      if (c !== expectedExit) {
         ok = false;
         console.log(`    --- ${label} output ---`);
         console.log(out.trim().split('\n').slice(-12).map((l) => `    ${l}`).join('\n'));
@@ -231,7 +233,13 @@ async function main() {
     await fs.writeFile(path.join(WORK, 'partial.csv'),
       `${HEADER}\nATH-9,Athlete Nine,2013-04-04,middleweight,active,c9,true,EXAMPLE-COACH-1,Nameless Relation,,,\n`);
     await v4.end();
-    await runSeed(env, 'partial', 'partial run');
+    // Exit 1, not 0. The refusal below is correct behaviour -- a guardian
+    // identified only by name cannot be told apart from another of the same
+    // name -- but the ROW still did not import, and a roster import that
+    // silently drops a family while returning success is the failure
+    // scripts/seed-data.ts was just changed to stop. The assertion that no
+    // guardian row was written is unchanged; only the exit expectation moves.
+    await runSeed(env, 'partial', 'partial run', 1);
     const v5 = new Client({ connectionString: conn(DB) });
     await v5.connect();
     check('no guardian row written from incomplete data', (await v5.query(

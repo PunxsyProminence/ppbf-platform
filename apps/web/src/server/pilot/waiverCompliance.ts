@@ -62,6 +62,9 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
        order by waiver_type, created_at desc
      ) w on true
      where a.organization_id = $1
+       -- A withdrawn athlete does not need a waiver, and listing them keeps a
+       -- permanent red row on a worklist nobody can ever clear.
+       and a.deleted_at is null
      order by a.full_name, a.athlete_id`,
     [organizationId, TRACKED_WAIVER_TYPES],
   );

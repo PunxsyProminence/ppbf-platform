@@ -23,7 +23,18 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
+import { pathToFileURL } from 'node:url';
+
 import { Client } from 'pg';
+
+/* ts-jest compiles a plain `await import()` down to require(), which cannot
+   load an ES module here. Building it through Function keeps a real dynamic
+   import in the emitted code, honored under --experimental-vm-modules. */
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
+
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 
 let activeClient: Client | null = null;
 
@@ -77,7 +88,7 @@ const CLASS_ID = 'class-1';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let membershipMigrationSql: string;
-let baseSchemaSql: string;
+let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -109,7 +120,11 @@ async function freshDatabase(name: string, { applyMembershipMigration = true }: 
 
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
-  await client.query(baseSchemaSql);
+  /* THE WHOLE SCHEMA, not the base file alone. This suite drives feature
+     code, so it has no business deciding which migrations exist -- and the
+     column it was missing (athletes.deleted_at) belongs to a migration it
+     never picked. See scripts/lib/full-schema.mjs. */
+  await applyFullSchema(client, { infraDir: INFRA_DIR });
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
      values ($1, $1, 'active') on conflict do nothing`,
@@ -185,7 +200,8 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+  const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  applyFullSchema = fullSchema.applyFullSchema as typeof applyFullSchema;
   membershipMigrationSql = await fs.readFile(path.join(INFRA_DIR, MEMBERSHIP_MIGRATION_FILE), 'utf8');
 });
 

@@ -16,6 +16,7 @@ import {
   smallestWorthwhileChangeWithinAthlete,
   standardizedChange,
 } from './primitives';
+import { getFormulaBlocker, isBlockedSupport } from './blockerMap';
 import { SHADOW_FORMULA_REGISTRY, getFormulaDefinition } from './registry';
 import {
   FORMULA_IDS,
@@ -94,6 +95,24 @@ describe('SHADOW formula registry', () => {
       expect(Object.isFrozen(item.requiredObservationKinds)).toBe(true);
       if (item.support === 'unsupported' || item.support === 'experimental_unsupported') {
         expect(item.unsupportedReason?.length).toBeGreaterThan(20);
+      }
+    }
+  });
+
+  test('accounts for every blocked formula in the blocker map', () => {
+    // The loop above asserts every blocked entry HAS a reason. This asserts
+    // the reason has been LOOKED AT: the blocker map carries a row for it
+    // whose categories are either a stated set or an explicit empty array
+    // meaning NEEDS_OWNER_CLASSIFICATION. A blocked formula that nobody has
+    // classified either way cannot pass both.
+    for (const item of SHADOW_FORMULA_REGISTRY) {
+      if (!isBlockedSupport(item.support)) continue;
+      const blocker = getFormulaBlocker(item.id);
+      expect(blocker.support).toBe(item.support);
+      expect(blocker.reasonVerbatim).toBe(item.unsupportedReason);
+      expect(Array.isArray(blocker.categories)).toBe(true);
+      if (blocker.categories.length === 0) {
+        expect(typeof blocker.ownerNote).toBe('string');
       }
     }
   });

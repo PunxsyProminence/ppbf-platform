@@ -9,6 +9,7 @@ import { deterministicKey } from './identity';
 import {
   FormulaRepositoryError,
   getActiveFormulaObservationsByIds,
+  getActiveObservationsForContext,
   listActiveFormulaResults,
   saveFormulaObservation,
   saveFormulaResults,
@@ -219,6 +220,59 @@ describe('formula repository', () => {
     })).rejects.toEqual(expect.objectContaining({
       code: 'OBSERVATION_NOT_FOUND',
     }));
+  });
+
+  /**
+   * The context read auto-orchestration detects from. It is a SECOND function
+   * rather than a widening of the id-based read above, and these tests hold
+   * both halves of that: this one answers "nothing here" with an empty list,
+   * and the one above still throws OBSERVATION_NOT_FOUND for a named id it
+   * cannot see. Merging them would have to give up one of those.
+   */
+  test('reads one context, filters superseded rows, and answers an empty context with an empty list', async () => {
+    const row = observationRow({ context_id: 'sparring_1' });
+    mockQuery.mockResolvedValue([row] as never);
+
+    await expect(getActiveObservationsForContext({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      contextId: 'sparring_1',
+    })).resolves.toEqual([expect.objectContaining({
+      observationId: row.observation_id,
+      contextId: 'sparring_1',
+    })]);
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    // Byte-identical to the predicate getActiveFormulaObservationsByIds uses.
+    // Two spellings of supersession is how they come to disagree, and a
+    // detector reading a superseded measurement would publish a result from a
+    // number somebody has already corrected.
+    expect(sql).toContain('successor.organization_id = o.organization_id');
+    expect(sql).toContain('successor.supersedes_observation_id = o.observation_id');
+    // Organization, athlete AND context, all parameterized: the leading three
+    // columns of idx_shadow_formula_observations_scope.
+    expect(sql).toContain('o.organization_id = $1');
+    expect(sql).toContain('o.athlete_id = $2');
+    expect(sql).toContain('o.context_id = $3');
+    expect(params).toEqual(['org-1', 'athlete-1', 'sparring_1']);
+
+    mockQuery.mockResolvedValueOnce([] as never);
+    await expect(getActiveObservationsForContext({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      contextId: 'context-with-nothing-in-it',
+    })).resolves.toEqual([]);
+  });
+
+  test('refuses an unscoped context read rather than reading across athletes', async () => {
+    for (const input of [
+      { organizationId: '', athleteId: 'athlete-1', contextId: 'sparring_1' },
+      { organizationId: 'org-1', athleteId: '  ', contextId: 'sparring_1' },
+      { organizationId: 'org-1', athleteId: 'athlete-1', contextId: '' },
+    ]) {
+      await expect(getActiveObservationsForContext(input)).rejects.toBeInstanceOf(TypeError);
+    }
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test('persists and exactly replays immutable formula results', async () => {
