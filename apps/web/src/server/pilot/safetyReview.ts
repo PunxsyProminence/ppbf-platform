@@ -16,8 +16,14 @@ import { listTrainingHolds, type TrainingHoldRow } from './trainingHolds';
  * real product question left open"); this module does not merge the
  * underlying tables (a bigger, riskier change this ticket does not attempt)
  * -- it is a pure read-side rollup, one Promise.all over the four systems'
- * own existing list functions, so an admin sees "everything open, right
- * now, for this org" without clicking between four pages.
+ * own existing list functions, so an admin sees what is open across all four
+ * without clicking between four pages.
+ *
+ * It is NOT "everything open", and the phrase is avoided deliberately: the
+ * compliance-violations feed is capped (VIOLATION_ROLLUP_READ_LIMIT) and
+ * filtered to open statuses after that cap. `violationsTruncated` carries
+ * that fact to the caller so the screen states its window instead of
+ * implying it has none.
  *
  * Each item is enriched with athlete_name (none of the four source tables
  * carry it) via one extra roster read, not by widening any of the four
@@ -46,11 +52,33 @@ export interface SafetyReviewViolationItem extends ComplianceViolation {
   athlete_name: string | null;
 }
 
+/**
+ * How many compliance violations the rollup reads before filtering to the
+ * open ones.
+ *
+ * This is the one capped feed of the four. Holds, escalations and the
+ * gate-failure query all read the organization entire; getOrganizationViolations
+ * is `order by created_at desc limit N`, and the filter to open statuses
+ * happens HERE, after the cap. Cap first, filter second: an open violation
+ * older than the newest N never reaches the status filter at all.
+ *
+ * Widening the read is a separate product decision (it needs a pager or a
+ * status-filtered query, neither of which belongs in a rollup). What this
+ * module owes its callers meanwhile is the truth that the feed was cut --
+ * hence the +1 probe below and `violationsTruncated`, so no screen can call
+ * this list "everything open".
+ */
+export const VIOLATION_ROLLUP_READ_LIMIT = 200;
+
 export interface OrganizationSafetyReview {
   openHolds: SafetyReviewHoldItem[];
   failingGates: SafetyReviewGateFailureItem[];
   openEscalations: SafetyReviewEscalationItem[];
   openViolations: SafetyReviewViolationItem[];
+  /** The cap applied to the compliance-violations feed before status filtering. */
+  violationsReadLimit: number;
+  /** True when the gym holds more violations than the rollup read. */
+  violationsTruncated: boolean;
 }
 
 interface GateFailureRow {
@@ -104,7 +132,10 @@ export async function getOrganizationSafetyReview(organizationId: string): Promi
     listTrainingHolds(organizationId, { status: 'active' }),
     getOrganizationFailingGateEvaluations(organizationId),
     listEscalations(organizationId, {}),
-    getOrganizationViolations(organizationId, { limit: 200 }),
+    // One row past the cap, so the count itself tells us whether the gym holds
+    // more than this rollup read. Same probe intake.ts and painReportAlert.ts
+    // already use for their own capped reads.
+    getOrganizationViolations(organizationId, { limit: VIOLATION_ROLLUP_READ_LIMIT + 1 }),
     query<{ athlete_id: string; full_name: string }>(
       `select athlete_id, full_name from pilot.athletes where organization_id = $1`,
       [organizationId],
@@ -113,6 +144,10 @@ export async function getOrganizationSafetyReview(organizationId: string): Promi
 
   const nameByAthlete = new Map(athleteNames.map((row) => [row.athlete_id, row.full_name]));
   const nameFor = (athleteId: string): string | null => nameByAthlete.get(athleteId) ?? null;
+
+  // Drop the probe row before anything renders it, but keep what it told us.
+  const violationsTruncated = violations.length > VIOLATION_ROLLUP_READ_LIMIT;
+  const violationsInWindow = violations.slice(0, VIOLATION_ROLLUP_READ_LIMIT);
 
   return {
     openHolds: holds.map((hold) => ({ ...hold, athlete_name: nameFor(hold.athlete_id) })),
@@ -128,8 +163,10 @@ export async function getOrganizationSafetyReview(organizationId: string): Promi
     openEscalations: escalations
       .filter((escalation) => escalation.status !== 'resolved')
       .map((escalation) => ({ ...escalation, athlete_name: nameFor(escalation.athlete_id) })),
-    openViolations: violations
+    openViolations: violationsInWindow
       .filter((violation) => OPEN_VIOLATION_STATUSES.has(violation.status))
       .map((violation) => ({ ...violation, athlete_name: nameFor(violation.athlete_id) })),
+    violationsReadLimit: VIOLATION_ROLLUP_READ_LIMIT,
+    violationsTruncated,
   };
 }
