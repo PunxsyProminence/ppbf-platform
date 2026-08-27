@@ -75,6 +75,32 @@ Once satisfied with the dry run:
 npm run seed:data
 ```
 
+### Reading the exit code
+
+**A row that did not import is a failed run.** Both `seed:data` and
+`seed:data:dry` exit **non-zero** when any row fails validation or is rejected
+by the database, and the summary names the count:
+
+```
+Exiting non-zero: 2 row(s) did not import. Fix them and re-run,
+or pass --allow-partial-import to accept a partial load.
+```
+
+This matters most on the **dry run**. The whole point of previewing is to
+learn whether the roster will import; a preview that finds bad rows and
+returns success is worse than no preview, because it gives you a reason to
+trust it.
+
+If you have read the errors and want the good rows anyway, say so explicitly:
+
+```bash
+npx tsx scripts/seed-data.ts --config scripts/seed-data.config.ts --allow-partial-import
+```
+
+Exit codes: **0** every row imported (or `--allow-partial-import` was given);
+**1** rows did not import, or the run itself failed; **2** a pre-run guard
+refused — the destructive-seed confirmation or the declared write target.
+
 ---
 
 ## 📋 Data Format Specifications
