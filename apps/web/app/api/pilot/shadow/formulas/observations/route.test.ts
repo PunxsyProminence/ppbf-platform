@@ -770,6 +770,53 @@ describe('an observation that completes an input set triggers its formula', () =
     }));
   });
 
+  test('a correction that COMPLETES a set still calculates, though nothing was recalculated', async () => {
+    // The gap Codex found on #718, and the one the test above could not see:
+    // it mocks a NON-EMPTY recalculation, so it only ever exercised the branch
+    // where a prior calculation existed.
+    //
+    // When the correction is what makes the context satisfy MVP-03 in the
+    // first place -- replacing a wrong-unit punch_absorbed, say -- no earlier
+    // result used the invalid observation, so
+    // recalculateForSupersededObservation returns []. Treating "this
+    // superseded something" as a blanket skip meant the newly valid set was
+    // never calculated at all: neither path ran, and the correction silently
+    // produced nothing.
+    mockSaveObservation.mockResolvedValueOnce({
+      observationId: 'observation-2',
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      contextId: 'sparring-2026-08-18',
+      kind: 'punch_landed',
+      value: 19,
+      unit: 'count',
+      dimensions: {},
+      observedAt: '2026-08-18T18:00:00.000Z',
+      source: { type: 'coach_tag', quality: 'moderate', referenceId: 'ref-1' },
+      supersedesObservationId: 'observation-1',
+    } as never);
+    // Nothing had used the observation being replaced.
+    mockRecalculate.mockResolvedValue([]);
+    mockAutoCalculate.mockResolvedValue([{ formulaId: 'MVP-03' }] as never);
+
+    const response = await postObservation(jsonRequest({
+      ...completingObservationBody,
+      value: 19,
+      idempotencyKey: 'sparring-2026-08-18-punch_landed-completing-correction',
+      supersedesObservationId: 'observation-1',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockRecalculate).toHaveBeenCalledTimes(1);
+    // Detection is the fallback, not a second run: it fires precisely because
+    // recalculation handled nothing.
+    expect(mockAutoCalculate).toHaveBeenCalledTimes(1);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      recalculatedResultCount: 0,
+      autoCalculatedResultCount: 1,
+    }));
+  });
+
   test('runs only after the observation is stored', async () => {
     // The detector reads the context back out of the database, so it has to
     // see the row this request just wrote. Running it first would make the

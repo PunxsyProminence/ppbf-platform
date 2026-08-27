@@ -221,7 +221,23 @@ export async function POST(request: NextRequest) {
     // must not become the side channel that runs a calculation they cannot
     // ask for directly, so their observation is stored and no calculation
     // follows it. Widening that is an owner decision, not this route's.
-    const autoCalculated = observation.supersedesObservationId
+    // A CORRECTION THAT COMPLETES A SET STILL HAS TO CALCULATE. Recalculation
+    // above only finds formulas the REPLACED observation was already used in.
+    // When a correction is what makes the context satisfy MVP-03 or MVP-04 in
+    // the first place -- replacing a wrong-unit punch_absorbed, say -- there is
+    // no prior result to re-run, `recalculated` comes back empty, and treating
+    // "this superseded something" as a blanket skip meant the newly valid set
+    // was never calculated at all. So detection is skipped only when
+    // recalculation actually handled the context.
+    //
+    // Running both is safe rather than merely tolerable: calculationKey is a
+    // sha256 over formula identity and scope, persisted under
+    // `on conflict (organization_id, calculation_key) do nothing`, so a
+    // duplicate computation cannot become a duplicate row.
+    const recalculationHandledContext =
+      observation.supersedesObservationId !== null && recalculated.length > 0;
+
+    const autoCalculated = recalculationHandledContext
       || !canTriggerStoredCalculation(principal.role)
       ? []
       : await autoCalculateForObservationContext({
