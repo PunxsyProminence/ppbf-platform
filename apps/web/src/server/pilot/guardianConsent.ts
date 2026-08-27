@@ -305,12 +305,15 @@ export async function listOrganizationConsentStatus(
   // genuinely wants a bounded page opts in explicitly.
   const athletes = page
     ? await query<{ athlete_id: string; full_name: string }>(
-        `select athlete_id, full_name from pilot.athletes where organization_id = $1
-         order by full_name asc limit $2 offset $3`,
+        `select athlete_id, full_name from pilot.athletes
+          where organization_id = $1 and deleted_at is null
+          order by full_name asc limit $2 offset $3`,
         [organizationId, page.limit, page.offset ?? 0],
       )
     : await query<{ athlete_id: string; full_name: string }>(
-        `select athlete_id, full_name from pilot.athletes where organization_id = $1 order by full_name asc`,
+        `select athlete_id, full_name from pilot.athletes
+          where organization_id = $1 and deleted_at is null
+          order by full_name asc`,
         [organizationId],
       );
 
