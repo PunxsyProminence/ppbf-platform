@@ -64,6 +64,15 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-athlete-ids-for-coach-pg-test-${Da
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_coach_coverage_migration.sql';
+/* The data-retention migration is applied here because PRODUCTION HAS IT.
+   It adds pilot.athletes.deleted_at, which the authorization queries in
+   access.ts now require, and deploy-production's schema check (which parses
+   `add column` out of every migration and asserts it exists) passed against
+   the live production database on the 2026-08-27 release. A fixture built
+   without it is not a smaller production -- it is a database that has never
+   existed, and it was quietly asserting that authorization works on a schema
+   nobody runs. */
+const RETENTION_MIGRATION_FILE = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 
 const ORG_ID = 'org-aifc';
 const OTHER_ORG_ID = 'org-aifc-other';
@@ -85,6 +94,7 @@ const CROSS_ORG_ATHLETE = 'ATH-CROSS-1';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let retentionMigrationSql: string;
 let baseSchemaSql: string;
 
 function connectionStringFor(database: string): string {
@@ -170,6 +180,7 @@ async function freshDatabase(
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
   await client.query(baseSchemaSql);
+  await client.query(retentionMigrationSql);
   await client.query(migrationSql);
   if (dropCoverageTable) {
     await client.query('drop table if exists pilot.coach_coverage cascade');
@@ -245,6 +256,7 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  retentionMigrationSql = await fs.readFile(path.join(INFRA_DIR, RETENTION_MIGRATION_FILE), 'utf8');
 });
 
 afterAll(async () => {
