@@ -164,11 +164,35 @@ establish.
 
 ## 5. The four blocked formula-registry entries
 
-`registry.ts` has four entries pre-wired — registry metadata, types and
-`requiredObservationKinds` all present — that cannot run: **Training Monotony**,
-**Strain**, **Typical Error**, **Recommendation Priority** (CORE-06/07/09,
-BF-10). They are blocked on a missing upstream **daily training-load observation
-stream** and a policy approval nobody has sought.
+> **Corrected 2026-08-27.** This section previously read *"`registry.ts` has
+> four entries pre-wired — registry metadata, types and
+> `requiredObservationKinds` all present — that cannot run"*, and said all four
+> are blocked on a missing daily training-load stream.
+>
+> **`requiredObservationKinds` is empty on all four.** It is empty on all 18
+> blocked entries, because the `unsupported()` helper in `registry.ts` takes no
+> parameter for it — every populated instance in the registry belongs to an
+> `implemented` entry. Measured by walking `SHADOW_FORMULA_REGISTRY` at
+> `f0bef421`; the check counts blocked entries with a non-empty
+> `requiredObservationKinds` and returns 0.
+>
+> This matters to a researcher rather than being a pedantic fix: "the required
+> kinds are already declared" reads as *the observation spec exists and only
+> the stream is missing*. It does not exist. Specifying it is part of this
+> item's deliverable, not a lookup. The daily-load framing was also too wide —
+> it is CORE-06 and CORE-07's stated blocker, but CORE-09's is paired
+> repeated-measure observations and a pairing policy, and BF-10's is
+> uncalibrated, unapproved weights with no data blocker stated at all.
+
+`registry.ts` has four entries registered with name, expression, output unit and
+a written blocking reason — and with **no `requiredObservationKinds`** — that
+cannot run: **Training Monotony**, **Strain**, **Typical Error**,
+**Recommendation Priority** (CORE-06/07/09, BF-10). Read each entry's own
+`unsupportedReason` rather than a summary of the four; they do not share one
+blocker. `apps/web/src/server/pilot/formulas/blockerMap.ts` sorts every blocked
+entry's reason into blocker categories and records the literal phrase that
+licensed each, so it is the fastest way to see which of these four needs data,
+which needs an approval, and which needs calibration.
 
 Needed:
 

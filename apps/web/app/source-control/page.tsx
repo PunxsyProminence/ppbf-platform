@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import OperationsLink from '@/components/OperationsLink';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import ShadowChatButton from '@/components/ShadowChatButton';
 
@@ -64,11 +65,19 @@ const automationWorkflowPanels = [
   'Jason Approval',
 ];
 
+/* The Operations Hub is deliberately NOT in this list. This page carries no
+   gate of its own -- no RoleSessionGate, no requirePageRole -- so everything
+   here is offered to every role and to a signed-out visitor, and the hub is
+   now admin and platform owner only. It is rendered below through
+   OperationsLink instead, which asks who is holding the session.
+
+   Not a hypothetical route either: Audit Trace is a door a COACH holds, its
+   page mounts DevelopmentPipelineBanner, and that banner links here. Three
+   clicks from a control a coach legitimately has. */
 const quickLinks = [
   { label: 'Audit trace', href: '/audit' },
   { label: 'Research intake', href: '/research' },
   { label: 'Publication workflow', href: '/source-control/publication-workflow' },
-  { label: 'Operations Hub', href: '/operations' },
   { label: 'Member Access', href: '/login' },
 ];
 
@@ -245,6 +254,7 @@ export default function SourceControlPage() {
                 {item.label}
               </Link>
             ))}
+            <OperationsLink className="btn btn--ghost">Operations Hub</OperationsLink>
           </div>
         </section>
       </div>

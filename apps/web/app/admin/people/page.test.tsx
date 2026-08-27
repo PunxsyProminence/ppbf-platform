@@ -39,10 +39,22 @@ interface MockOptions {
   rosterOk?: boolean;
   onPost?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
   onDelete?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
+  onActivationReset?: (body: Record<string, unknown>) => Record<string, unknown>;
+  onAthleteAccount?: (body: Record<string, unknown>) => Record<string, unknown>;
 }
 
 function fetchMock(options: MockOptions = {}) {
   return jest.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes('/api/pilot/admin/accounts/pin-reset')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      const payload = options.onActivationReset?.(body) ?? { ok: true, activation_code: 'ABCD-2345-EFGH', expires_at: '2026-08-26T00:00:00Z' };
+      return { ok: payload.ok === true, status: payload.ok === true ? 200 : 400, json: async () => payload } as Response;
+    }
+    if (url.includes('/api/pilot/admin/athlete-accounts')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      const payload = options.onAthleteAccount?.(body) ?? { ok: true, activation_code: 'ABCD-2345-EFGH', expires_at: '2026-08-26T00:00:00Z' };
+      return { ok: payload.ok === true, status: payload.ok === true ? 200 : 400, json: async () => payload } as Response;
+    }
     if (url.includes('/api/pilot/admin/athlete-pin-directory')) {
       return {
         ok: options.rosterOk !== false,
@@ -294,6 +306,26 @@ describe('sign-in status labels follow the credential policy', () => {
     expect(screen.getByText(/No email on file/i)).toBeTruthy();
     expect(screen.queryByText('Signs in with an email link')).toBeNull();
   });
+
+  test('an inactive local athlete with no PIN is awaiting activation, not deactivated', async () => {
+    global.fetch = fetchMock({ members: [{ account_id: 'ath-pending', login_email: null, auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-1', active_flag: false, has_pin: false, membership_active: false }], roster: ROSTER }) as never;
+    render(<PeopleConsolePage />);
+    expect(await screen.findByText('Awaiting activation')).toBeTruthy();
+    expect(screen.queryByText('Deactivated')).toBeNull();
+  });
+
+  test('reset sends no shared PIN and displays the returned one-time code', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({
+      members: [{ account_id: 'sriv', login_email: null, auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-2', active_flag: true, has_pin: true, membership_active: true }],
+      roster: ROSTER,
+      onActivationReset: (body) => { bodies.push(body); return { ok: true, activation_code: 'WXYZ-2345-6789', expires_at: '2026-08-26T00:00:00Z' }; },
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
+    await waitFor(() => expect(bodies).toEqual([{ account_id: 'sriv' }]));
+    expect(await screen.findByText('WXYZ-2345-6789')).toBeTruthy();
+  });
 });
 
 describe('removing a guardian link', () => {
@@ -374,18 +406,29 @@ describe('the add-athlete form', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
   }
 
-  test('the submit button promises the starting PIN, not a code nothing mints', async () => {
-    // "& Get Code" outlived the codes: activation codes were replaced by the
-    // shared starting PIN, so the button promised a minted secret this form
-    // no longer produces. Both modes now name what the admin actually gets.
+  test('the submit button promises the one-time code the server mints', async () => {
     await openAddAthlete();
 
-    expect(screen.getByRole('button', { name: 'Add Athlete & Get Starting PIN' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Get Code/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add Athlete & Get Code' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('radio', { name: /Already on the roster/i }));
-    expect(screen.getByRole('button', { name: 'Create Sign-In & Get Starting PIN' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Get Code/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Create Sign-In & Get Code' })).toBeTruthy();
+  });
+
+  test('existing-roster handoff posts the identity and displays the one-time code returned once', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({ members: [], guardianLinks: [], roster: ROSTER, onAthleteAccount: (body) => {
+      bodies.push(body);
+      return { ok: true, activation_code: 'CDEF-3456-GHJK', expires_at: '2026-08-26T00:00:00Z' };
+    } }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /Already on the roster/i }));
+    fireEvent.change(screen.getByLabelText(/Which athlete/i), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'alex-login' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Sign-In & Get Code' }));
+    await waitFor(() => expect(bodies).toEqual([{ account_id: 'alex-login', athlete_id: 'ath-1' }]));
+    expect(await screen.findByText('CDEF-3456-GHJK')).toBeTruthy();
   });
 
   test('names every field still holding the submit button down', async () => {

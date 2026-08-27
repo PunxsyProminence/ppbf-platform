@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { redeemActivationCode } from '@/src/server/pilot/activation';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
@@ -84,13 +85,23 @@ export async function POST(request: NextRequest) {
     try {
       redeemed = await redeemActivationCode(code, pin);
     } catch (error) {
-      const message = error instanceof Error ? error.message : '';
+      /* A malformed PIN is the athlete's own correctable mistake and does not
+         consume the code, so it must not count toward the brute-force budget
+         or the athlete locks themselves out while fixing a typo. Anything
+         else is a failed guess at the code.
 
-      // A malformed PIN is the athlete's own correctable mistake and does not
-      // consume the code, so it must not count toward the brute-force budget
-      // or the athlete locks themselves out while fixing a typo. Anything
-      // else is a failed guess at the code.
-      if (!message.startsWith('PIN')) {
+         Discriminated BY TYPE, not by message prefix. The prefix test this
+         replaces missed PIN_TRIVIALLY_GUESSABLE, whose message begins "That
+         PIN is too easy to guess" -- errors.ts documents that exact escape in
+         its own header. The consequence was not cosmetic: an athlete trying
+         111111, then 123123, then 112233 was charged three failed CODE
+         guesses and could rate-limit themselves out of their own activation
+         without ever mistyping the code.
+
+         validatePinPolicy and assertChosenPinAllowed both throw
+         ValidationError, so the type is the contract and a reworded message
+         can no longer break it. */
+      if (!(error instanceof ValidationError)) {
         recordFailedAttempt(ipKey);
         await recordDurableFailedAttempt(ipKey);
       }

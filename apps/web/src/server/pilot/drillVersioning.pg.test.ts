@@ -268,7 +268,19 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+
+/* PRODUCTION HAS THIS MIGRATION, so the fixture does too. It adds
+   pilot.athletes.deleted_at, which the authorization queries in access.ts now
+   require. deploy-production's schema check asserts every migration's
+   `add column` exists in the live database and it passed on the 2026-08-27
+   release, so a fixture without it is not a smaller production -- it is a
+   schema nobody runs. Concatenated onto the base schema rather than applied
+   separately so that every site which applies baseSchemaSql gets it. */
+  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8')
+    + '\n'
+    + await fs.readFile(
+      path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8',
+    );
   progressionMigrationSql = await fs.readFile(path.join(INFRA_DIR, PROGRESSION_MIGRATION_FILE), 'utf8');
   drillsMigrationSql = await fs.readFile(path.join(INFRA_DIR, DRILLS_MIGRATION_FILE), 'utf8');
   versioningMigrationSql = await fs.readFile(path.join(INFRA_DIR, VERSIONING_MIGRATION_FILE), 'utf8');
@@ -823,6 +835,167 @@ describe('drillVersioning.ts against real Postgres', () => {
           reviewNote: 'Again.',
         }),
       ).rejects.toThrow('DRILL_CHANGE_PROPOSAL_NOT_FOUND_OR_ALREADY_DECIDED');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the queue says which siblings adopting one proposal just made un-adoptable', async () => {
+    // THE REVIEWER'S PROBLEM. Three coaches propose changes to the same drill,
+    // all against v1. Adopting any one advances the lineage and leaves the
+    // other two based on a version that no longer exists as current -- so they
+    // are correctly refused, and before this the ONLY way to find that out was
+    // to attempt each adopt and collect identical errors.
+    const client = await freshDatabase('ppbf_test_drillver_stale_visible');
+    activeClient = client;
+    try {
+      await applyMigrationTransaction(client, versioningMigrationSql);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      const proposals = [];
+      for (const rationale of ['First reading.', 'Second reading.', 'Third reading.']) {
+        proposals.push(await proposeDrillChange({
+          organizationId: ORG_A,
+          basedOnDrillId: 'drill-jab',
+          proposedByAccountId: COACH_A,
+          proposedByRole: 'coach',
+          rationale,
+        }));
+      }
+
+      // Before any adopt: all three are actionable, and say so.
+      const before = await listDrillChangeProposals(ORG_A, { reviewState: 'proposed' });
+      expect(before).toHaveLength(3);
+      expect(before.every((row) => row.base_is_current)).toBe(true);
+      expect(before.every((row) => row.current_drill_id === 'drill-jab')).toBe(true);
+
+      const { newDrillVersion } = await adoptDrillChangeProposal({
+        organizationId: ORG_A,
+        proposalId: proposals[0].proposal_id,
+        reviewedByAccountId: ADMIN_A,
+        reviewedByRole: 'organization_admin',
+      });
+
+      const after = await listDrillChangeProposals(ORG_A, { reviewState: 'proposed' });
+      expect(after).toHaveLength(2);
+      // Both survivors now report themselves stale, and name what superseded
+      // them -- which is the thing a reviewer needs in order to tell the coach
+      // anything useful.
+      expect(after.every((row) => row.base_is_current)).toBe(false);
+      expect(after.every((row) => row.current_drill_id === newDrillVersion.drill_id)).toBe(true);
+      expect(after.every((row) => row.based_on_drill_id === 'drill-jab')).toBe(true);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('base_is_current PREDICTS the adopt: true adopts, false throws', async () => {
+    // The property that makes the flag worth trusting. The read computes the
+    // lineage's current version with the same `order by version desc limit 1`
+    // the adopt path locks on; if the two ever diverged, the queue would
+    // confidently mislabel exactly the rows a reviewer relies on it for.
+    //
+    // Asserted as a round trip rather than by comparing the two SQL strings:
+    // matching text would pass while both were wrong together.
+    const client = await freshDatabase('ppbf_test_drillver_flag_predicts');
+    activeClient = client;
+    try {
+      await applyMigrationTransaction(client, versioningMigrationSql);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      const first = await proposeDrillChange({
+        organizationId: ORG_A,
+        basedOnDrillId: 'drill-jab',
+        proposedByAccountId: COACH_A,
+        proposedByRole: 'coach',
+        rationale: 'First reading.',
+      });
+      const second = await proposeDrillChange({
+        organizationId: ORG_A,
+        basedOnDrillId: 'drill-jab',
+        proposedByAccountId: COACH_A,
+        proposedByRole: 'coach',
+        rationale: 'Second reading.',
+      });
+
+      const flagFor = async (proposalId: string): Promise<boolean> => {
+        const rows = await listDrillChangeProposals(ORG_A, { reviewState: 'proposed' });
+        const row = rows.find((entry) => entry.proposal_id === proposalId);
+        expect(row).toBeDefined();
+        return (row as { base_is_current: boolean }).base_is_current;
+      };
+
+      // Flag true -> the adopt succeeds.
+      expect(await flagFor(first.proposal_id)).toBe(true);
+      await expect(adoptDrillChangeProposal({
+        organizationId: ORG_A,
+        proposalId: first.proposal_id,
+        reviewedByAccountId: ADMIN_A,
+        reviewedByRole: 'organization_admin',
+      })).resolves.toBeDefined();
+
+      // Flag false -> the adopt throws, with the error the flag was warning about.
+      expect(await flagFor(second.proposal_id)).toBe(false);
+      await expect(adoptDrillChangeProposal({
+        organizationId: ORG_A,
+        proposalId: second.proposal_id,
+        reviewedByAccountId: ADMIN_A,
+        reviewedByRole: 'organization_admin',
+      })).rejects.toThrow('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a stale proposal can still be declined -- the queue has an exit', async () => {
+    // Staleness closes the adopt path and nothing else. If it closed decline
+    // too, the proposal would be stuck in the queue forever -- the no-exit
+    // defect the feedback review queue had (#122) and the Film Study proposals
+    // migration was written to avoid repeating. Asserted so a future
+    // "tidy up: refuse decisions on stale proposals" cannot reintroduce it.
+    const client = await freshDatabase('ppbf_test_drillver_stale_exit');
+    activeClient = client;
+    try {
+      await applyMigrationTransaction(client, versioningMigrationSql);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      const first = await proposeDrillChange({
+        organizationId: ORG_A,
+        basedOnDrillId: 'drill-jab',
+        proposedByAccountId: COACH_A,
+        proposedByRole: 'coach',
+        rationale: 'First reading.',
+      });
+      const stranded = await proposeDrillChange({
+        organizationId: ORG_A,
+        basedOnDrillId: 'drill-jab',
+        proposedByAccountId: COACH_A,
+        proposedByRole: 'coach',
+        rationale: 'Second reading.',
+      });
+
+      await adoptDrillChangeProposal({
+        organizationId: ORG_A,
+        proposalId: first.proposal_id,
+        reviewedByAccountId: ADMIN_A,
+        reviewedByRole: 'organization_admin',
+      });
+
+      const declined = await declineDrillChangeProposal({
+        organizationId: ORG_A,
+        proposalId: stranded.proposal_id,
+        reviewedByAccountId: ADMIN_A,
+        reviewedByRole: 'organization_admin',
+        reviewNote: 'Superseded by another change; please re-propose against v2.',
+      });
+      expect(declined.review_state).toBe('declined');
+
+      // And it is gone from the working queue rather than lingering.
+      const remaining = await listDrillChangeProposals(ORG_A, { reviewState: 'proposed' });
+      expect(remaining).toEqual([]);
     } finally {
       activeClient = null;
       await client.end();

@@ -31,6 +31,7 @@ import {
 import type {
   FormulaBaselineSnapshot,
   FormulaResult,
+  FormulaUnit,
   MvpFormulaId,
   NumericObservation,
   ObservationKind,
@@ -56,6 +57,87 @@ const POLICY_FORMULA_IDS = new Set<MvpFormulaId>([
   'MVP-09',
   'MVP-10',
   'MVP-12',
+]);
+
+/**
+ * What one calculation's worth of input looks like, stated precisely enough
+ * that a caller can RECOGNISE a satisfied set among loose observations instead
+ * of already knowing which ids belong together.
+ */
+export interface FormulaInputRequirement {
+  readonly formulaId: MvpFormulaId;
+  /**
+   * Exact count of each observation kind, per group. Exact in both directions:
+   * a group holding more than the stated count of a kind does not satisfy the
+   * requirement, because there is no rule anywhere in this module for choosing
+   * which of them the formula meant.
+   */
+  readonly kinds: Readonly<Partial<Record<ObservationKind, number>>>;
+  /** The single unit each kind must carry for the engine to accept it. */
+  readonly units: Readonly<Partial<Record<ObservationKind, FormulaUnit>>>;
+  /**
+   * Dimension keys every observation in the group must carry as a non-empty
+   * string. Empty when the formula reads no dimensions.
+   */
+  readonly requiredDimensionKeys: readonly string[];
+  /**
+   * The dimension that separates one calculation from another WITHIN a single
+   * context, or null when the context alone is the group. This mirrors the
+   * `groupKey` argument the switch below passes to `groupPairs`.
+   */
+  readonly groupByDimensionKey: string | null;
+}
+
+/**
+ * WHY THIS EXISTS, AND WHY IT IS NOT `registry.ts`.
+ *
+ * `registry.ts` already carries `requiredObservationKinds`, and it cannot do
+ * this job. It lists kinds with no counts, no units and no dimensions, so
+ * MVP-07 ("two or more rounds") and MVP-08 ("exactly two consecutive rounds")
+ * are the byte-identical entry `['round_output']` and nothing can tell them
+ * apart. It is also read by nothing that runs in production: 19 writes across
+ * registry.ts, and the only read in the repository is an `Object.isFrozen`
+ * assertion in formulaEngine.test.ts. A detector built on it would be a
+ * detector built on a decoration.
+ *
+ * The executable input contract is the `calculateStoredFormula` switch below
+ * plus each engine function's own validation. This const restates the part of
+ * that contract a detector needs, and autoCalculation.test.ts feeds every
+ * entry here back through `calculateStoredFormula` so the two cannot drift
+ * apart without a test going red.
+ *
+ * SCOPE: MVP-03 and MVP-04 only, and that is a fact about producers rather
+ * than a preference. Six of the other ten consume observation kinds no code in
+ * this application emits (`session_rpe`, `duration`, `punch_count`,
+ * `round_count`, `active_time`, `round_output`); autoCalculation.test.ts
+ * measures that from the source tree rather than asserting it. Of the
+ * remainder, MVP-06/MVP-09/MVP-10/MVP-12 are policy formulas whose parameters
+ * no caller can supply without an owner decision, and MVP-11's attainment
+ * window is undefined in code with no policy slot to hold it. See
+ * autoCalculation.ts.
+ */
+export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Object.freeze([
+  Object.freeze({
+    formulaId: 'MVP-03' as const,
+    // groupPairs(observations, 'punch_landed', 'punch_attempted', ...) demands
+    // exactly one of each per group and errors otherwise.
+    kinds: Object.freeze({ punch_landed: 1, punch_attempted: 1 }),
+    units: Object.freeze({ punch_landed: 'count' as const, punch_attempted: 'count' as const }),
+    // calculateAccuracyByPunchType hard-blocks INVALID_DIMENSION without a
+    // punchType on both halves, and names its output `accuracy_unknown` --
+    // there is no accuracy "by punch type" without the punch type.
+    requiredDimensionKeys: Object.freeze(['punchType']),
+    groupByDimensionKey: 'punchType',
+  }),
+  Object.freeze({
+    formulaId: 'MVP-04' as const,
+    kinds: Object.freeze({ punch_landed: 1, punch_absorbed: 1 }),
+    units: Object.freeze({ punch_landed: 'count' as const, punch_absorbed: 'count' as const }),
+    // calculateConnectDifferential reads no dimensions: landed minus absorbed
+    // is a whole-session figure, not a per-punch-type one.
+    requiredDimensionKeys: Object.freeze([]),
+    groupByDimensionKey: null,
+  }),
 ]);
 
 export class FormulaExecutionError extends Error {

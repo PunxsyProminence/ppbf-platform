@@ -40,6 +40,70 @@ export interface RedeemedActivation {
   athleteId: string | null;
 }
 
+export async function provisionAthleteActivation(params: {
+  accountId: string;
+  athleteId?: string;
+  organizationId: string;
+  issuedByAccountId: string;
+  issuedByRole: PilotRole;
+  mode: 'create' | 'reset';
+}): Promise<IssuedActivationCode> {
+  const code = generateActivationCode();
+  const tokenHash = hashActivationCode(normalizeActivationCode(code));
+  const expiresAt = await withTransaction(async (client) => {
+    if (params.mode === 'create') {
+      if (!params.athleteId) throw new Error('Missing athlete_id');
+      const athlete = await client.query(
+        'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2',
+        [params.organizationId, params.athleteId],
+      );
+      if (athlete.rows.length === 0) throw new Error('Athlete not found in organization');
+      const bound = await client.query(
+        'select account_id from pilot.accounts where organization_id = $1 and athlete_id = $2 limit 1',
+        [params.organizationId, params.athleteId],
+      );
+      if (bound.rows.length > 0) throw new Error('Athlete is already linked to another account');
+      const existing = await client.query('select account_id from pilot.accounts where account_id = $1 limit 1', [params.accountId]);
+      if (existing.rows.length > 0) throw new Error('Account already exists');
+      await client.query(
+        `insert into pilot.accounts
+           (account_id, role, organization_id, athlete_id, pin_hash, must_change_pin, active_flag, is_platform_owner)
+         values ($1, 'athlete', $2, $3, null, false, false, false)`,
+        [params.accountId, params.organizationId, params.athleteId],
+      );
+    } else {
+      const reset = await client.query(
+        `update pilot.accounts set pin_hash = null, must_change_pin = false, active_flag = false, updated_at = now()
+         where account_id = $1 and organization_id = $2 and role = 'athlete' and is_platform_owner = false
+         returning athlete_id`,
+        [params.accountId, params.organizationId],
+      );
+      if (reset.rows.length === 0) throw new Error('Account not found or cannot be reset');
+      await client.query('update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null', [params.accountId]);
+    }
+
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', false)
+       on conflict (account_id, organization_id) do update set role = 'athlete', active_flag = false, updated_at = now()`,
+      [params.accountId, params.organizationId],
+    );
+    await client.query(
+      `update pilot.account_activation_tokens set superseded_at = now()
+       where account_id = $1 and consumed_at is null and superseded_at is null`,
+      [params.accountId],
+    );
+    const inserted = await client.query<{ expires_at: string }>(
+      `insert into pilot.account_activation_tokens
+         (token_hash, account_id, organization_id, issued_by_account_id, issued_by_role, expires_at)
+       values ($1,$2,$3,$4,$5,now() + ($6 || ' hours')::interval) returning expires_at`,
+      [tokenHash, params.accountId, params.organizationId, params.issuedByAccountId, params.issuedByRole, DEFAULT_ACTIVATION_TTL_HOURS],
+    );
+    return inserted.rows[0].expires_at;
+  });
+  return { code, accountId: params.accountId, organizationId: params.organizationId, expiresAt };
+}
+
 /**
  * Generates a 12-character activation code using rejection-free uniform
  * selection (`randomInt` over an alphabet whose length divides evenly into the
@@ -192,14 +256,11 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
   // Validate the PIN first: a rejected PIN must not consume the code.
   validatePinPolicy(pin);
   // Activation is a path where the athlete CHOOSES their own PIN, so the
-  // starting PIN is refused here -- the rule pinPolicy states but only the
-  // change-PIN path enforced. validatePinPolicy deliberately PERMITS
-  // DEFAULT_FIRST_LOGIN_PIN (the admin reset flow legitimately issues it, and
-  // the trivially-guessable check carves it out), and this UPDATE never sets
-  // must_change_pin -- which defaults to false. So without this line an athlete
-  // could activate on the published bootstrap PIN and end up active, with
-  // must_change_pin false: a live account on a credential printed in the admin
-  // UI and in this repository.
+  // retired shared bootstrap PIN is refused here too. validatePinPolicy
+  // deliberately permits it (the admin reset flow used to issue it, and rows
+  // holding its hash still exist in deployed databases), so this
+  // unauthenticated, credential-establishing boundary rejects it explicitly:
+  // a code redemption must never leave an account on the published PIN.
   assertChosenPinAllowed(pin);
 
   const canonicalCode = normalizeActivationCode(rawCode);
@@ -250,9 +311,25 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
     }
 
     const updated = await client.query<{ athlete_id: string | null }>(
+      /* must_change_pin is cleared here, and its absence was a latent lockout.
+         The flag exists to trap an account still holding a credential an
+         ADMINISTRATOR knows. Redemption is the moment that stops being true:
+         the athlete has just chosen a PIN nobody else has ever seen.
+
+         provisionAthleteActivation clears it on both of its modes, so the
+         admin reset path was safe. issueActivationCode -- the general-purpose
+         issuer behind /api/pilot/admin/activation-codes -- writes only to the
+         token table and never touches this row. So an athlete on a legacy row
+         with the flag already set could redeem a code, be signed in, and then
+         be refused by requirePrincipal on every route, with /auth/session
+         sending them to /change-pin for a PIN nobody issued. Their escape was
+         a page telling them "you are signed in with the starting PIN your gym
+         gave you" about a PIN they had chosen themselves thirty seconds
+         earlier. */
       `update pilot.accounts
        set pin_hash = $1,
            active_flag = true,
+           must_change_pin = false,
            updated_at = now()
        where account_id = $2
          and organization_id = $3

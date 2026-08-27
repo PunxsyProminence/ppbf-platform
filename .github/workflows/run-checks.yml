@@ -90,6 +90,7 @@ on:
           - runtime-claims
           - shadow-filter-rate
           - medical-clearance-coverage
+          - deletion-preflight
 
 permissions:
   id-token: write
@@ -320,6 +321,7 @@ jobs:
               run_one runtime-claims      pilot:check-runtime-claims
               run_one shadow-filter-rate  pilot:check-shadow-filter-rate
               run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
+              run_one deletion-preflight  pilot:check-deletion-preflight
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
@@ -330,6 +332,7 @@ jobs:
             seed-identity)      run_one seed-identity       pilot:check-seed-identity ;;
             library-scope)      run_one library-scope       pilot:check-library-scope ;;
             runtime-claims)     run_one runtime-claims      pilot:check-runtime-claims ;;
+            deletion-preflight) run_one deletion-preflight  pilot:check-deletion-preflight ;;
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
             *)

@@ -3,24 +3,9 @@ import { ValidationError } from './errors';
 export const DEFAULT_PIN_LENGTH = 6;
 
 /**
- * The PIN every new athlete account starts on.
- *
- * This is a bootstrap credential, not a secret: it is public knowledge by
- * design, so an admin can say it out loud instead of shepherding a one-time
- * activation code. What stops it being a way in is accounts.must_change_pin --
- * while that flag is set requirePrincipal refuses every route except the PIN
- * change itself, so a session opened with this PIN can read nothing about the
- * athlete. It satisfies validatePinPolicy below, so no caller needs a special
- * case for it.
- *
- * It is still guessable for the window between the admin creating the account
- * and the athlete first signing in. Shortening that window is an operational
- * matter -- create the account when you are with the athlete, not in a batch
- * the week before.
- *
- * The invariant that makes all of the above true: this PIN is only ever written
- * alongside must_change_pin = true. Any path where a PIN is CHOSEN rather than
- * issued must refuse it -- see assertChosenPinAllowed.
+ * Retired shared bootstrap PIN. Kept only so login can fail closed against
+ * legacy rows and migrations can identify them; no creation/reset path may
+ * issue it.
  */
 export const DEFAULT_FIRST_LOGIN_PIN = '123456';
 
@@ -28,10 +13,7 @@ export const DEFAULT_FIRST_LOGIN_PIN = '123456';
  * Refuses a PIN that someone is choosing for themselves, as opposed to one the
  * platform issues as a bootstrap credential.
  *
- * Deliberately NOT folded into validatePinPolicy: the admin PIN-reset flow
- * legitimately sets DEFAULT_FIRST_LOGIN_PIN, and validatePinPolicy is on that
- * path. The distinction is not the value, it is whether must_change_pin is being
- * set with it.
+ * Also enforced by validatePinPolicy so no future caller can reissue it.
  *
  * Without this, an athlete could change their PIN back to the starting PIN,
  * which clears must_change_pin and leaves the account reachable by anyone who
@@ -63,11 +45,7 @@ export function assertChosenPinAllowed(pin: string): void {
  * it is the few dozen patterns a person actually picks -- which is why this
  * matters more than the digit count.
  *
- * DEFAULT_FIRST_LOGIN_PIN is deliberately NOT rejected here. The admin
- * PIN-reset flow legitimately issues it, and validatePinPolicy sits on that
- * path; refusing it would break the reset. What stops it being a way in is
- * must_change_pin, plus assertChosenPinAllowed refusing it on the path where
- * somebody CHOOSES their own -- the same split this file already draws.
+ * The retired bootstrap value is rejected before this helper runs.
  */
 function isTriviallyGuessablePin(pin: string): boolean {
   // All one digit: 000000, 111111, ...
@@ -94,6 +72,30 @@ function isTriviallyGuessablePin(pin: string): boolean {
   return false;
 }
 
+/**
+ * The shapes above, written for the athlete choosing a PIN on a gym tablet.
+ *
+ * This exists because the rules and the screens that describe them had drifted
+ * apart. /activate said "6 numbers. Do not use your birthday." and /change-pin
+ * said "Exactly 6 digits. Do not use 123456." -- between them they named one of
+ * the six refusals, and a birthday rule that isTriviallyGuessablePin does not
+ * enforce at all. An athlete who tried 112233 was refused by a rule no screen
+ * had stated, and until the fix in the commit before this one that refusal also
+ * spent one of their attempts at the activation code.
+ *
+ * Kept beside the predicate rather than in the components so the sentence and
+ * the shapes it promises cannot drift again: pinPolicy.test.ts asserts that
+ * every example listed here is genuinely refused by validatePinPolicy AND that
+ * every one of them appears in the sentence. Loosen a rule, or reword the
+ * sentence past an example, and that test goes red on the promise it broke.
+ */
+export const PIN_RULES_REFUSED_EXAMPLES = ['111111', '123456', '121212', '112233', '123321'] as const;
+
+export const PIN_RULE_SUMMARY =
+  `${DEFAULT_PIN_LENGTH} numbers. Not all the same, not in counting order, and not a repeating or mirrored `
+  + `pattern — ${PIN_RULES_REFUSED_EXAMPLES.slice(0, -1).join(', ')} and ${PIN_RULES_REFUSED_EXAMPLES.at(-1)} `
+  + 'are all refused.';
+
 export function validatePinPolicy(pin: string): void {
   const normalized = pin.trim();
   if (!normalized) {
@@ -108,9 +110,10 @@ export function validatePinPolicy(pin: string): void {
     throw new ValidationError(`PIN must be exactly ${DEFAULT_PIN_LENGTH} digits`, 'PIN_WRONG_LENGTH');
   }
 
-  // Checked after the shape rules so the message a caller sees is the most
-  // specific one, and skipped for the issued bootstrap PIN as described above.
-  if (normalized !== DEFAULT_FIRST_LOGIN_PIN && isTriviallyGuessablePin(normalized)) {
+  assertChosenPinAllowed(normalized);
+
+  // Checked after format and retired-credential rules.
+  if (isTriviallyGuessablePin(normalized)) {
     throw new ValidationError(
       'That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.',
       'PIN_TRIVIALLY_GUESSABLE',

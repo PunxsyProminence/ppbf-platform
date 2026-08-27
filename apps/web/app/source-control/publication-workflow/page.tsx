@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import OperationsLink from '@/components/OperationsLink';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
@@ -23,11 +24,12 @@ const publicationStages = [
   'Jason Approval',
 ];
 
+/* The Operations Hub is deliberately NOT in this list -- this page is ungated
+   too. See the note on the same list in ../page.tsx. */
 const quickLinks = [
   { label: 'Source control', href: '/source-control' },
   { label: 'Audit trace', href: '/audit' },
   { label: 'Admin compliance center', href: '/admin/compliance-center' },
-  { label: 'Operations Hub', href: '/operations' },
   { label: 'Member Access', href: '/login' },
 ];
 
@@ -139,6 +141,7 @@ export default function PublicationWorkflowPage() {
                 {item.label}
               </Link>
             ))}
+            <OperationsLink className="btn btn--ghost">Operations Hub</OperationsLink>
           </div>
         </section>
       </div>

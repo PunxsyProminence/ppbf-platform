@@ -37,6 +37,7 @@ import { promisify } from 'node:util';
 
 import { Client } from 'pg';
 
+import { GUARDIAN_CONTACT_FIXTURE } from './lib/guardian-contact-fixture.mjs';
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
 
 const scrypt = promisify(nodeScrypt);
@@ -117,6 +118,27 @@ async function run() {
   const probeCoachAccountId = process.env.PILOT_PROBE_COACH_ACCOUNT_ID?.trim() || null;
   const probeOwnerAccountId = process.env.PILOT_PROBE_PLATFORM_OWNER_ACCOUNT_ID?.trim() || null;
 
+  // THE SPLIT HOUSEHOLD, for the guardian-contact probe.
+  //
+  // Two guardians linked to ONE athlete, each carrying a phone, an email and
+  // an account_id, plus an emergency-contact row naming the second of them.
+  // That is not a contrived arrangement -- it is what one intake promotion
+  // writes (IntakePromotionPayload carries a `guardian` block and an
+  // `emergency_contact` block side by side) and it is the ordinary shape of a
+  // separated family, and of one under a protective order.
+  //
+  // It exists because the property under test is a NEGATIVE about a real
+  // response body: that Guardian A's read of this athlete contains no trace of
+  // Guardian B's number. A negative cannot be proven against an empty table --
+  // with one guardian and no emergency contact, every "must not contain" check
+  // passes while proving nothing at all.
+  //
+  // Both are 'microsoft' for the same reason every other privileged fixture
+  // is: resolvePrincipal revokes a privileged ppbf_local session on sight.
+  const probeGuardianAAccountId = process.env.PILOT_PROBE_GUARDIAN_A_ACCOUNT_ID?.trim() || null;
+  const probeGuardianBAccountId = process.env.PILOT_PROBE_GUARDIAN_B_ACCOUNT_ID?.trim() || null;
+  const provisionSplitHousehold = Boolean(probeGuardianAAccountId && probeGuardianBAccountId);
+
   // Fixture-specific address on an RFC 2606 reserved TLD: cannot collide with
   // a real person's login_email under the unique lower(login_email) index, and
   // cannot receive mail.
@@ -138,8 +160,38 @@ async function run() {
         'delete from pilot.session_tokens where account_id = $1',
         [athleteAccountId],
       );
+      /* AND THE ACTIVATION CODES, or the cleanup above can be undone by
+         whoever is holding one.
+
+         Clearing pin_hash and revoking sessions leaves the account
+         deactivated, which is the point. But an activation code issued
+         earlier in the run and never redeemed is still live for its whole
+         TTL, and redeeming it sets active_flag = true with a fresh pin_hash
+         chosen by the redeemer. The account walks back up on its own.
+
+         The window is real and it grew. The gate issues a code at step 9b and
+         redeems it at 9d, and between those two now sit a deliberate refusal
+         and two throttle round-trips -- so a throw anywhere in there leaves a
+         working credential on a publicly reachable staging login, against an
+         account the cleanup step just reported as deactivated.
+
+         Superseded rather than deleted: the redeem path already filters on
+         `superseded_at is null`, this is the same mechanism reissuing a code
+         uses, and a deleted row destroys the record that the code ever
+         existed. Only unconsumed, not-yet-superseded rows are touched, so
+         nothing already spent is rewritten. */
+      const codes = await client.query(
+        `update pilot.account_activation_tokens
+         set superseded_at = now()
+         where account_id = $1
+           and consumed_at is null
+           and superseded_at is null
+         returning token_hash`,
+        [athleteAccountId],
+      );
       console.log(result.rowCount > 0
-        ? `Deactivated gate fixture athlete "${athleteAccountId}"; PIN cleared and sessions revoked.`
+        ? `Deactivated gate fixture athlete "${athleteAccountId}"; PIN cleared, sessions revoked, `
+          + `${codes.rowCount} outstanding activation code(s) superseded.`
         : `Gate fixture athlete "${athleteAccountId}" not found — nothing to deactivate.`);
       console.log('GATE FIXTURE DEACTIVATE PASS');
     } finally {
@@ -271,6 +323,95 @@ async function run() {
       );
     }
 
+    if (provisionSplitHousehold) {
+      const { parentA, parentB, emergencyContact } = GUARDIAN_CONTACT_FIXTURE;
+
+      for (const [accountId, parent] of [
+        [probeGuardianAAccountId, parentA],
+        [probeGuardianBAccountId, parentB],
+      ]) {
+        await client.query(
+          `insert into pilot.accounts
+             (account_id, login_email, auth_provider, role, organization_id,
+              pin_hash, must_change_pin, active_flag)
+           values ($1, $2, 'microsoft', 'parent', $3, null, false, true)
+           on conflict (account_id) do update set
+             login_email = excluded.login_email,
+             auth_provider = excluded.auth_provider,
+             role = excluded.role,
+             organization_id = excluded.organization_id,
+             pin_hash = null,
+             must_change_pin = false,
+             active_flag = true,
+             updated_at = now()`,
+          [accountId, `${accountId}.gate@ppbf.invalid`, organizationId],
+        );
+
+        await client.query(
+          `insert into pilot.organization_memberships
+             (account_id, organization_id, role, active_flag)
+           values ($1, $2, 'parent', true)
+           on conflict (account_id, organization_id) do update set
+             role = excluded.role,
+             active_flag = true,
+             updated_at = now()`,
+          [accountId, organizationId],
+        );
+
+        // The contact columns are the entire point: a probe that asserts a
+        // phone number is absent proves nothing unless a phone number was
+        // there to withhold.
+        await client.query(
+          `insert into pilot.parents
+             (organization_id, parent_id, account_id, full_name, phone, email)
+           values ($1, $2, $3, $4, $5, $6)
+           on conflict (organization_id, parent_id) do update set
+             account_id = excluded.account_id,
+             full_name = excluded.full_name,
+             phone = excluded.phone,
+             email = excluded.email,
+             updated_at = now()`,
+          [organizationId, parent.parentId, accountId, parent.fullName, parent.phone, parent.email],
+        );
+
+        await client.query(
+          `insert into pilot.guardian_links
+             (organization_id, parent_id, athlete_id, relationship_to_athlete)
+           values ($1, $2, $3, $4)
+           on conflict (organization_id, parent_id, athlete_id) do update set
+             relationship_to_athlete = excluded.relationship_to_athlete,
+             updated_at = now()`,
+          [organizationId, parent.parentId, athleteId, parent.relationship],
+        );
+      }
+
+      await client.query(
+        `insert into pilot.emergency_contacts
+           (organization_id, contact_id, athlete_id, full_name,
+            relationship_to_athlete, phone, email, is_primary, notes)
+         values ($1, $2, $3, $4, $5, $6, $7, true, $8)
+         on conflict (organization_id, contact_id) do update set
+           athlete_id = excluded.athlete_id,
+           full_name = excluded.full_name,
+           relationship_to_athlete = excluded.relationship_to_athlete,
+           phone = excluded.phone,
+           email = excluded.email,
+           is_primary = true,
+           notes = excluded.notes,
+           updated_at = now()`,
+        [
+          organizationId,
+          emergencyContact.contactId,
+          athleteId,
+          emergencyContact.fullName,
+          emergencyContact.relationship,
+          emergencyContact.phone,
+          emergencyContact.email,
+          emergencyContact.notes,
+        ],
+      );
+    }
+
     await client.query('commit');
   } catch (error) {
     await client.query('rollback').catch(() => {});
@@ -288,6 +429,14 @@ async function run() {
       : `SKIPPED the ${probeRole} probe fixture: ${variable} is not set. `
         + 'pilot:runtime-verify will report its role probes as SKIPPED rather than invent a fixture.');
   }
+
+  console.log(provisionSplitHousehold
+    ? `Provisioned the split-household fixture on athlete_id ${athleteId}: guardians `
+      + `"${probeGuardianAAccountId}" and "${probeGuardianBAccountId}", with the second also `
+      + 'recorded as the emergency contact.'
+    : 'SKIPPED the split-household fixture: PILOT_PROBE_GUARDIAN_A_ACCOUNT_ID and '
+      + 'PILOT_PROBE_GUARDIAN_B_ACCOUNT_ID must BOTH be set. The guardian-contact probe will '
+      + 'refuse to report a pass without it rather than assert a negative against an empty table.');
 
   console.log(`Provisioned gate fixture administrator "${adminAccountId}" in organization "${organizationId}".`);
   console.log(`Provisioned gate fixture athlete "${athleteAccountId}" (athlete_id ${athleteId}).`);

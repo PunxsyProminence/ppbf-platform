@@ -1,12 +1,11 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { activateAccountPin, resetAccountPin } from '@/src/server/pilot/auth';
+import { provisionAthleteActivation } from '@/src/server/pilot/activation';
 import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
-jest.mock('@/src/server/pilot/auth', () => ({
-  activateAccountPin: jest.fn().mockResolvedValue(undefined),
-  resetAccountPin: jest.fn().mockResolvedValue(undefined),
+jest.mock('@/src/server/pilot/activation', () => ({
+  provisionAthleteActivation: jest.fn().mockResolvedValue({ code: 'ABCD-2345-EFGH', expiresAt: '2026-08-26T00:00:00Z' }),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -25,8 +24,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 }));
 
 const mockRequireMicrosoftAuthenticatedPrincipal = requireMicrosoftAuthenticatedPrincipal as jest.Mock;
-const mockActivate = activateAccountPin as jest.Mock;
-const mockReset = resetAccountPin as jest.Mock;
+const mockReset = provisionAthleteActivation as jest.Mock;
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest('http://localhost/api/pilot/admin/accounts/pin-reset', {
@@ -47,7 +45,6 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
     const response = await POST(makeRequest({ account_id: 'ath-1', pin: '123456', mode: 'reset' }));
     expect(response.status).toBe(403);
     expect(mockReset).not.toHaveBeenCalled();
-    expect(mockActivate).not.toHaveBeenCalled();
   });
 
   test('requires an authenticated organization admin', async () => {
@@ -63,10 +60,9 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
     const response = await POST(makeRequest({ account_id: 'ath-1', pin: '123456', mode: 'reset' }));
     expect(response.status).toBe(403);
     expect(mockReset).not.toHaveBeenCalled();
-    expect(mockActivate).not.toHaveBeenCalled();
   });
 
-  test('activates PIN only within principal organization scope', async () => {
+  test('reissues a one-time code only within principal organization scope', async () => {
     mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
       accountId: 'admin@punxsyprominence.org',
       role: 'organization_admin',
@@ -76,11 +72,10 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
       authProvider: 'microsoft',
     });
 
-    const response = await POST(makeRequest({ account_id: 'ath-account-1', pin: '123456', mode: 'activate' }));
+    const response = await POST(makeRequest({ account_id: 'ath-account-1' }));
 
     expect(response.status).toBe(200);
-    expect(mockActivate).toHaveBeenCalledWith('ath-account-1', '123456', 'org-1');
-    expect(mockReset).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'ath-account-1', organizationId: 'org-1', mode: 'reset' }));
   });
 
   test('resets PIN and revokes sessions via auth service', async () => {
@@ -96,8 +91,7 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
     const response = await POST(makeRequest({ account_id: 'ath-account-2', pin: '123456', mode: 'reset' }));
 
     expect(response.status).toBe(200);
-    expect(mockReset).toHaveBeenCalledWith('ath-account-2', '123456', 'org-1');
-    expect(mockActivate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'ath-account-2', organizationId: 'org-1', mode: 'reset' }));
   });
 
   test('the legacy admin alias is still accepted', async () => {
@@ -113,7 +107,7 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
     const response = await POST(makeRequest({ account_id: 'ath-account-3', pin: '123456', mode: 'reset' }));
 
     expect(response.status).toBe(200);
-    expect(mockReset).toHaveBeenCalledWith('ath-account-3', '123456', 'org-1');
+    expect(mockReset).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'ath-account-3', organizationId: 'org-1', mode: 'reset' }));
   });
 
   test.each(['activate', 'reset'])('refuses the platform owner: %s', async (mode) => {
@@ -132,7 +126,6 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
     const response = await POST(makeRequest({ account_id: 'ath-account-3', pin: '123456', mode }));
 
     expect(response.status).toBe(403);
-    expect(mockActivate).not.toHaveBeenCalled();
     expect(mockReset).not.toHaveBeenCalled();
   });
 });

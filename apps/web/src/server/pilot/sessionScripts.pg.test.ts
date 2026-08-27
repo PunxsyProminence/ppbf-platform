@@ -147,6 +147,31 @@ async function insertBlock(opts: {
   );
 }
 
+async function insertRendering(opts: {
+  organizationId: string;
+  scriptId: string;
+  renderingId: string;
+  format: string;
+  audienceNote?: string;
+  body?: string;
+  generatedFromBlocks?: boolean;
+}): Promise<void> {
+  await client.query(
+    `insert into pilot.session_script_renderings
+       (organization_id, rendering_id, script_id, format, audience_note, body, generated_from_blocks)
+     values ($1,$2,$3,$4,$5,$6,$7)`,
+    [
+      opts.organizationId,
+      opts.renderingId,
+      opts.scriptId,
+      opts.format,
+      opts.audienceNote ?? `note for ${opts.format}`,
+      opts.body ?? `body for ${opts.format}`,
+      opts.generatedFromBlocks ?? false,
+    ],
+  );
+}
+
 beforeAll(async () => {
   PG_PORT = await findFreePort();
 
@@ -273,6 +298,73 @@ describe('getSessionScriptWithDetail against real Postgres', () => {
     expect(detail).not.toBeNull();
     expect(detail?.blocks).toEqual([]);
     expect(detail?.renderings).toEqual([]);
+  });
+
+  // Until now nothing in this file inserted a rendering: the only assertion
+  // was `expect(detail?.renderings).toEqual([])` on a script that had none, so
+  // `order by format` and every column in RENDERING_FIELDS were unproven
+  // against real rows -- while production seed data carries four of them.
+  test('returns renderings ordered by format, not by insertion order', async () => {
+    await insertScript({ organizationId: ORG_A, scriptId: 'scr-rend', createdBy: COACH_A });
+    // Inserted in reverse alphabetical order, so any ordering other than
+    // `order by format` -- including none at all -- shows up here.
+    await insertRendering({ organizationId: ORG_A, scriptId: 'scr-rend', renderingId: 'r-3', format: 'instructor_script' });
+    await insertRendering({ organizationId: ORG_A, scriptId: 'scr-rend', renderingId: 'r-2', format: 'class_plan' });
+    await insertRendering({ organizationId: ORG_A, scriptId: 'scr-rend', renderingId: 'r-1', format: 'cheat_sheet' });
+
+    const detail = await getSessionScriptWithDetail(ORG_A, 'scr-rend');
+
+    expect(detail?.renderings.map((r) => r.format)).toEqual([
+      'cheat_sheet',
+      'class_plan',
+      'instructor_script',
+    ]);
+  });
+
+  // The projection, column by column. A SELECT that dropped or misnamed a
+  // field would still satisfy an ordering assertion, because format survives.
+  test('returns every rendering field, not only the ones ordering depends on', async () => {
+    await insertScript({ organizationId: ORG_A, scriptId: 'scr-fields', createdBy: COACH_A });
+    await insertRendering({
+      organizationId: ORG_A,
+      scriptId: 'scr-fields',
+      renderingId: 'r-fields',
+      format: 'class_flow',
+      audienceNote: 'for the coach on the floor',
+      body: 'the rendered plan text',
+      generatedFromBlocks: true,
+    });
+
+    const detail = await getSessionScriptWithDetail(ORG_A, 'scr-fields');
+    const rendering = detail?.renderings[0];
+
+    expect(rendering).toMatchObject({
+      organization_id: ORG_A,
+      rendering_id: 'r-fields',
+      script_id: 'scr-fields',
+      format: 'class_flow',
+      audience_note: 'for the coach on the floor',
+      body: 'the rendered plan text',
+      generated_from_blocks: true,
+    });
+    // Selected but easy to drop, and the only field that says when a rendering
+    // was produced.
+    expect(typeof rendering?.created_at).not.toBe('undefined');
+  });
+
+  // The same sharp case the block test below covers: renderings are a SECOND
+  // query, so a read scoped on script_id alone would hand one gym's rendering
+  // back under the other gym's script, and the composite key would not catch it.
+  test('never returns another organization\'s renderings under this organization\'s script', async () => {
+    await insertScript({ organizationId: ORG_A, scriptId: 'shared-rend', createdBy: COACH_A });
+    await insertScript({ organizationId: ORG_B, scriptId: 'shared-rend', createdBy: COACH_B });
+    await insertRendering({ organizationId: ORG_A, scriptId: 'shared-rend', renderingId: 'ours', format: 'cheat_sheet', body: 'ours' });
+    await insertRendering({ organizationId: ORG_B, scriptId: 'shared-rend', renderingId: 'theirs', format: 'cheat_sheet', body: 'theirs' });
+
+    const detail = await getSessionScriptWithDetail(ORG_A, 'shared-rend');
+
+    expect(detail?.renderings.map((r) => r.rendering_id)).toEqual(['ours']);
+    expect(detail?.renderings.map((r) => r.body)).toEqual(['ours']);
   });
 
   test('never returns another organization\'s blocks under this organization\'s script', async () => {

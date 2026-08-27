@@ -332,7 +332,17 @@ beforeAll(async () => {
 
   const readInfra = (file: string) => fs.readFile(path.join(INFRA_DIR, file), 'utf8');
 
-  baseSchemaSql = await readInfra('pilot_slice_postgres.sql');
+
+/* PRODUCTION HAS THIS MIGRATION, so the fixture does too. It adds
+   pilot.athletes.deleted_at, which the authorization queries in access.ts now
+   require. deploy-production's schema check asserts every migration's
+   `add column` exists in the live database and it passed on the 2026-08-27
+   release, so a fixture without it is not a smaller production -- it is a
+   schema nobody runs. Concatenated onto the base schema rather than applied
+   separately so that every site which applies baseSchemaSql gets it. */
+  baseSchemaSql = await readInfra('pilot_slice_postgres.sql')
+    + '\n'
+    + await readInfra('pilot_slice_postgres_data_retention_deletion_migration.sql');
   boardRoleSql = await readInfra('pilot_slice_postgres_board_role_migration.sql');
   progressionSql = await readInfra('pilot_slice_postgres_progression_migration.sql');
   videoSessionsSql = await readInfra('pilot_slice_postgres_video_sessions_migration.sql');

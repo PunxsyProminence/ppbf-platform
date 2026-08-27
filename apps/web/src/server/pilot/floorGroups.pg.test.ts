@@ -31,6 +31,8 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
+
 let activeClient: Client | null = null;
 
 jest.mock('./db', () => ({
@@ -80,7 +82,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
-let baseSchemaSql: string;
+let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -103,7 +105,16 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-async function freshDatabase(name: string): Promise<Client> {
+/* `preMigration` reproduces a database where the floor-groups migration never
+   ran. It has to be reproduced by DROPPING, because the fixture now builds the
+   whole schema -- which is the point: production has every migration, so a
+   fixture that simply omits one is not a smaller production. The readiness
+   assertion still needs that world to exist, so it is constructed explicitly
+   here rather than obtained by accident from a partial build. */
+async function freshDatabase(
+  name: string,
+  { preMigration = false }: { preMigration?: boolean } = {},
+): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
   await admin.query(`drop database if exists ${name}`);
@@ -112,7 +123,11 @@ async function freshDatabase(name: string): Promise<Client> {
 
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
-  await client.query(baseSchemaSql);
+  /* THE WHOLE SCHEMA, not the base file alone. This suite drives feature
+     code, so it has no business deciding which migrations exist -- and the
+     column it was missing (athletes.deleted_at) belongs to a migration it
+     never picked. See scripts/lib/full-schema.mjs. */
+  await applyFullSchema(client, { infraDir: INFRA_DIR });
   for (const org of [ORG_ID, OTHER_ORG_ID]) {
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status)
@@ -133,6 +148,12 @@ async function freshDatabase(name: string): Promise<Client> {
      on conflict do nothing`,
     [ORG_ID, ATHLETE_ID, COACH_ID],
   );
+  if (preMigration) {
+    await client.query(
+      'drop table if exists pilot.floor_plan_members, pilot.floor_plan_groups, pilot.floor_plans_daily cascade',
+    );
+  }
+
   return client;
 }
 
@@ -170,7 +191,8 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+  const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  applyFullSchema = fullSchema.applyFullSchema as typeof applyFullSchema;
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
@@ -417,7 +439,7 @@ describe('the real floor-group lifecycle against real rows', () => {
 // this cannot stay green while the runner rots.
 describe('floor groups runner readiness assertion', () => {
   test('the real runner REFUSES a database where the migration never ran', async () => {
-    const client = await freshDatabase('flrgrp_rdy_no');
+    const client = await freshDatabase('flrgrp_rdy_no', { preMigration: true });
     try {
       await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
         /FLOOR_GROUPS_NOT_READY/,

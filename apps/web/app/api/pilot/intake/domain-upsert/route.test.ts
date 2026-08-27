@@ -288,3 +288,68 @@ test('a zero readiness score is a real, legitimate reading -- accepted, not mist
   expect(response.status).toBe(200);
   expect(mockCreateReadiness).toHaveBeenCalledWith(expect.objectContaining({ score: 0 }));
 });
+
+// ---------------------------------------------------------------------------
+// automation_mode is the second of the two unchecked assertShadowAuthority
+// call sites named in shadow/medical-status/route.ts's header.
+//
+// The value was taken straight off the body, typed ShadowAutomationMode by an
+// `as` cast that proves nothing at runtime, and handed to the authority
+// decider -- whose automatic-actor refusals all compare `=== 'automatic'` --
+// before being persisted verbatim into pilot.shadow_authority_checks,
+// pilot.shadow_events and pilot.shadow_telemetry_events, none of which carry a
+// CHECK on the column. So an unrecognised value was both a gate that never
+// fired and an audit vocabulary a caller could write anything into.
+
+const INVALID_AUTOMATION_MODES: Array<[string, unknown]> = [
+  ['a cased near-miss', 'Automatic'],
+  ['an upper-cased near-miss', 'AUTOMATIC'],
+  ['a padded near-miss', ' automatic '],
+  ['an unknown word', 'supervised'],
+  ['an empty string', ''],
+  ['an object', { mode: 'manual' }],
+  ['an array', ['manual']],
+  ['a number', 1],
+  ['a boolean', false],
+];
+
+describe('automation_mode is held to the closed vocabulary', () => {
+  // A table-driven guard over an empty list passes without running.
+  test('the invalid-mode table is not empty', () => {
+    expect(INVALID_AUTOMATION_MODES.length).toBeGreaterThan(0);
+  });
+
+  test.each(INVALID_AUTOMATION_MODES)('%s automation_mode is refused before the write', async (_label, mode) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockAccess.mockResolvedValue(undefined);
+    mockCreate.mockResolvedValue('note-1');
+
+    const response = await POST(postRequest({ ...COACH_NOTE_BODY, automation_mode: mode }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each(['automatic', 'assisted', 'manual'])('the vocabulary value %p is accepted', async (mode) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockAccess.mockResolvedValue(undefined);
+    mockCreate.mockResolvedValue('note-1');
+
+    const response = await POST(postRequest({ ...COACH_NOTE_BODY, automation_mode: mode }));
+
+    expect(response.status).toBe(200);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  test('an omitted automation_mode still defaults to assisted', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockAccess.mockResolvedValue(undefined);
+    mockCreate.mockResolvedValue('note-1');
+
+    const response = await POST(postRequest(COACH_NOTE_BODY));
+
+    expect(response.status).toBe(200);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});

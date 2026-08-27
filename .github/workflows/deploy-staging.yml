@@ -508,6 +508,15 @@ jobs:
           # hash, so neither can ever authenticate through the login form.
           PILOT_PROBE_COACH_ACCOUNT_ID: gate_probe_coach
           PILOT_PROBE_PLATFORM_OWNER_ACCOUNT_ID: gate_probe_platform_owner
+          # The split household: two guardians on one athlete, the second of
+          # them also the emergency contact. The guardian-contact probe below
+          # asserts a NEGATIVE about a real response body -- that one household
+          # sees no trace of the other's phone, email or account_id -- and a
+          # negative asserted against a table with one guardian in it passes
+          # while proving nothing. Both are Microsoft-authenticated with no PIN
+          # hash, so neither can ever authenticate through the login form.
+          PILOT_PROBE_GUARDIAN_A_ACCOUNT_ID: gate_probe_guardian_a
+          PILOT_PROBE_GUARDIAN_B_ACCOUNT_ID: gate_probe_guardian_b
         run: |
           npm --prefix apps/web run gate:pilot:fixtures
 
@@ -532,6 +541,58 @@ jobs:
           PILOT_SHADOW_GUARDIAN_PARENT_ID: gate_shadow_parent_1
         run: |
           npm --prefix apps/web run gate:pilot:shadow-e2e
+
+      # THE SAFEGUARDING INVARIANT, ON THE REVISION THAT WAS JUST DEPLOYED.
+      #
+      # An athlete or a guardian must never receive another guardian's phone,
+      # email or account_id through an intake/domain read, and authorized staff
+      # must keep them. Unit tests prove the SQL string; the embedded-Postgres
+      # suite proves the rows a database returns. Neither can tell you what the
+      # image now serving traffic does -- a stale revision, a half-applied
+      # deploy, or a route that never made it into the build passes every test
+      # in the repository.
+      #
+      # This signs in against the deployed URL as Guardian A, as the athlete,
+      # and as the organization admin, and reads the real response bodies. It
+      # writes nothing but its own short-lived session rows and revokes every
+      # one. It is deliberately NOT a pilot:runtime-verify probe: that engine
+      # refuses any probe that sends a non-read-only method and treats 2xx as a
+      # pass, and domain-get is a POST that reads -- expressing it there would
+      # mean weakening a guard that is right.
+      #
+      # This GATES. A leak here is the disclosure the platform exists to
+      # prevent, and a deploy that produces one must not be reported green.
+      - name: Guardian Contact Runtime Probe
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          PILOT_PROBE_GUARDIAN_A_ACCOUNT_ID: gate_probe_guardian_a
+          PILOT_PROBE_GUARDIAN_B_ACCOUNT_ID: gate_probe_guardian_b
+        run: |
+          {
+            echo ''
+            echo '### Guardian contact runtime probe'
+            echo ''
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          set +e
+          npm --prefix apps/web run gate:pilot:guardian-contact \
+            2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo '```'
+            echo ''
+            echo "Probe exit status: \`$status\`. Non-zero means a guardian's contact details"
+            echo 'reached a reader who must not have them, or that staff lost fields they need.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$status"
 
       # Thirty-two queue rows reached PRODUCTION_DEPLOYED having skipped
       # RUNTIME_VERIFIED. Deploying is not verifying: what those rows attest is

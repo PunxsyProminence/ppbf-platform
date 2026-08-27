@@ -59,14 +59,61 @@ export async function deleteGuardianAccount(
     // round-tripped through JS no longer equals the one on the row, and the
     // count below silently returns zero. Keeping it as text preserves the exact
     // value for the comparison.
+    /* active_flag = false is not decoration, it is half of what makes this a
+       deletion at all.
+
+       Deleting a guardian used to write deleted_at and nothing else, and
+       NOTHING in the read path filters on deleted_at: resolvePrincipal's query
+       (auth.ts) joins accounts without it, and so does every guardian access
+       check. So the flag the rest of the platform actually gates on --
+       active_flag -- stayed true, and a "deleted" guardian kept reading their
+       linked minor's records.
+
+       Worse than a stale session: `parent` is a magic-link role, and both the
+       issue and redeem paths gate on active_flag (magicLink.ts) and never look
+       at deleted_at. A deleted guardian could request a fresh link to their own
+       inbox and sign in again, indefinitely, until the account row was purged a
+       year later. Deletion did not close the door; it did not touch it.
+
+       This is the platform's own stated contract, which only the cleanup script
+       implemented: scripts/lib/account-cleanup-plan.mjs defines "retire" as
+       "deleted_at set, active_flag cleared, sessions revoked". That script
+       deliberately skips parents precisely because deleting one fires the
+       cascade trigger across minors' records -- so guardians were only ever
+       deleted through the path that did one of the three. */
     const deleted = await client.query<{ deleted_at: string }>(
       `update pilot.accounts
-       set deleted_at = now(), updated_at = now()
+       set deleted_at = now(), active_flag = false, updated_at = now()
        where account_id = $1
        returning deleted_at::text as deleted_at`,
       [parentAccountId],
     );
     const deletionTime = deleted.rows[0].deleted_at;
+
+    /* Membership carries authorization independently of the account row:
+       resolvePrincipal INNER JOINs organization_memberships on
+       active_flag = true, so leaving it set is what let a deleted guardian's
+       existing cookie keep resolving. */
+    await client.query(
+      `update pilot.organization_memberships
+       set active_flag = false, updated_at = now()
+       where account_id = $1 and organization_id = $2`,
+      [parentAccountId, actor.organizationId],
+    );
+
+    /* In the SAME transaction as the deletion, so there is no window in which
+       the account is deleted but a live session still resolves. Every other
+       account-state mutation in auth.ts already does this -- resetAccountPin,
+       activateAccountPin, changeOwnPin, setAccountActiveStatus,
+       upsertOrganizationMembership, transferOrganizationAdmin,
+       promoteAccountToOrganizationAdmin. Deletion was the one that did not,
+       which is the reverse of the priority it should have had. */
+    await client.query(
+      `update pilot.session_tokens
+       set revoked_at = now()
+       where account_id = $1 and revoked_at is null`,
+      [parentAccountId],
+    );
 
     const athleteCount = await client.query<{ count: string }>(
       `select count(*)::text as count from pilot.athletes
@@ -144,6 +191,55 @@ export async function deleteAthleteRecord(
     );
     const deletionTime = deletedAthlete.rows[0].deleted_at;
 
+    /* The athlete's ACCOUNT, which deleting the athlete used to leave running.
+
+       deleteGuardianAccount does all three of these -- deleted_at, active_flag
+       and session revocation -- because #690 found that writing deleted_at
+       alone left a deleted guardian reading their minor's records. This
+       function is the same function for the other party and it did exactly one
+       of the three, so the same hole was open on the athlete side and nobody
+       had looked.
+
+       Concretely, before this: the athlete row was marked deleted while
+       pilot.accounts.active_flag stayed true, so the athlete kept signing in
+       with their PIN. The self-access branch of assertActorCanAccessAthlete
+       compares actor.athleteId to the requested id and reads no row at all, so
+       it could not have noticed either. A withdrawn athlete kept a working
+       login to their own record for the entire two-year retention window.
+
+       pilot.accounts.athlete_id is the link, and (organization_id, athlete_id)
+       is unique on that table, so this addresses at most one account and cannot
+       reach another gym's. Scoped on role as well: the column is nullable and
+       only athlete accounts carry it, but an explicit role predicate means a
+       future account type that borrows the column cannot be caught by this. */
+    const deactivatedAccount = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set deleted_at = now(), active_flag = false, updated_at = now()
+       where organization_id = $1 and athlete_id = $2 and role = 'athlete'
+       returning account_id`,
+      [actor.organizationId, athleteId],
+    );
+
+    /* In the SAME transaction as the deletion, so there is no window in which
+       the athlete is deleted but a live session still resolves -- the identical
+       reasoning deleteGuardianAccount records above. A PIN that no longer works
+       is not enough on its own: an athlete already signed in holds a session
+       token that resolvePrincipal accepts without re-reading active_flag. */
+    let sessionsRevoked = 0;
+    if (deactivatedAccount.rows.length > 0) {
+      /* rowCount, not `returning` anything. The only columns this table has
+         to return are the token hash and the account id, and there is no
+         reason to pull session-token material into application memory to
+         count rows the driver has already counted. */
+      const revoked = await client.query(
+        `update pilot.session_tokens
+         set revoked_at = now()
+         where account_id = $1 and revoked_at is null`,
+        [deactivatedAccount.rows[0].account_id],
+      );
+      sessionsRevoked = revoked.rowCount ?? 0;
+    }
+
     // Observations still on file for this athlete. NOT a deletion count: a soft
     // delete leaves the athlete row in place, so the FK cascade does not fire
     // and nothing here is removed. The audit record used to call this
@@ -174,6 +270,11 @@ export async function deleteAthleteRecord(
         JSON.stringify({
           reason: reason || 'Not specified',
           observations_retained: parseInt(observationCount.rows[0].count, 10),
+          // Counts, not claims. An athlete record with no account deactivates
+          // nothing and revokes nothing, and the audit row should say so
+          // rather than imply an access closure that did not happen.
+          account_deactivated: deactivatedAccount.rows.length > 0,
+          sessions_revoked: sessionsRevoked,
           deleted_at: new Date(deletionTime).toISOString(),
         }),
       ],
@@ -184,6 +285,7 @@ export async function deleteAthleteRecord(
       deletedEntityId: athleteId,
       deletedRecordsCounts: {
         athletes: 1,
+        accounts: deactivatedAccount.rows.length,
         coachObservationsRetained: parseInt(observationCount.rows[0].count, 10),
       },
       deletedAt: new Date(deletionTime).toISOString(),
