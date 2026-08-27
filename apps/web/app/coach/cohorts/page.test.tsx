@@ -148,6 +148,33 @@ describe('coach cohorts page -- the rooms', () => {
 });
 
 describe('coach cohorts page -- one athlete', () => {
+  it('offers coach-visible athlete names instead of requiring a memorized id', async () => {
+    mockFetch((url) => {
+      if (url.includes('/athletes/list')) {
+        return jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Alex Rivera' }] });
+      }
+      return jsonResponse({ levels: LEVELS, cohorts: [OPEN_FLOOR] });
+    });
+
+    render(<CoachCohortsPage />);
+
+    // Not findByRole('option'). A <datalist> is a completion source rather
+    // than a listbox, so its options are not exposed with role=option; that
+    // query matched only under an older aria-query and stopped matching when
+    // the floating range moved under us. The DOM never changed -- the option
+    // still renders with the coach-visible name and the id as its value.
+    //
+    // Reaching it by its text and then pinning what it IS asserts strictly
+    // more than the role query did: that the element is an <option>, that it
+    // carries the athlete id, and that it hangs off the datalist this page's
+    // input names -- which the role query never checked.
+    const option = await screen.findByText('Alex Rivera');
+    expect(option.tagName).toBe('OPTION');
+    expect(option).toHaveValue('ath-1');
+    expect(option.closest('datalist')).toHaveAttribute('id', 'cohort-athletes');
+    expect(screen.getByLabelText(/athlete id/i)).toHaveAttribute('list', 'cohort-athletes');
+  });
+
   function withReport() {
     return mockFetch((url) => (url.includes('athlete_id')
       ? jsonResponse({ report: report() })
@@ -229,6 +256,17 @@ describe('coach cohorts page -- one athlete', () => {
 
     // The first athlete's assessment must not linger under the second's id.
     expect(await screen.findByText(/No assessed competence levels yet/i)).toBeInTheDocument();
+    expect(screen.queryByText('No assessed level in composure.')).not.toBeInTheDocument();
+  });
+
+  it('clears the displayed report as soon as the athlete id is edited', async () => {
+    withReport();
+    render(<CoachCohortsPage />);
+    await lookUp('ath-1');
+    expect(await screen.findByText('No assessed level in composure.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/athlete id/i), { target: { value: 'ath-2' } });
+
     expect(screen.queryByText('No assessed level in composure.')).not.toBeInTheDocument();
   });
 

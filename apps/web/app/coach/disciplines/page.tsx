@@ -25,6 +25,7 @@ import type {
 type Discipline = DisciplineRow;
 type Exposure = GrapplingExposureRow;
 type Participation = AthleteDisciplineParticipationRow;
+type AthleteChoice = { athlete_id: string; full_name: string };
 
 // Exposures a coach should be able to pick out of a long list without reading
 // every row. Everything else renders plainly rather than being colour-coded
@@ -46,6 +47,7 @@ function CoachDisciplines() {
   const [loadError, setLoadError] = useState('');
 
   const [athleteId, setAthleteId] = useState('');
+  const [athleteChoices, setAthleteChoices] = useState<AthleteChoice[]>([]);
   const [exposure, setExposure] = useState<Exposure[] | null>(null);
   const [participation, setParticipation] = useState<Participation[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -74,6 +76,21 @@ function CoachDisciplines() {
       await load();
     })();
   }, [load]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
+          method: 'GET', credentials: 'include',
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items?: AthleteChoice[] };
+        if (Array.isArray(payload.items)) setAthleteChoices(payload.items);
+      } catch {
+        // The roster is a convenience only. Coaches can still enter an id.
+      }
+    })();
+  }, []);
 
   const lookUp = useCallback(async (id: string) => {
     const trimmed = id.trim();
@@ -178,11 +195,23 @@ function CoachDisciplines() {
               <label htmlFor="athlete-id" className="t-label">Athlete id</label>
               <input
                 id="athlete-id"
+                list="discipline-athletes"
                 value={athleteId}
-                onChange={(event) => setAthleteId(event.target.value)}
+                onChange={(event) => {
+                  setAthleteId(event.target.value);
+                  setExposure(null);
+                  setParticipation([]);
+                  setLookupError('');
+                }}
+                disabled={lookupLoading}
                 className="input"
                 placeholder="ath_..."
               />
+              <datalist id="discipline-athletes">
+                {athleteChoices.map((athlete) => (
+                  <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                ))}
+              </datalist>
             </div>
             <button
               type="button"
