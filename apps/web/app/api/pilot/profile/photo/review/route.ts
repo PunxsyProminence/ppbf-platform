@@ -75,11 +75,79 @@ export async function POST(request: NextRequest) {
     const profile = await getAccountProfile(principal.organizationId, accountId);
     if (!profile.photoBlobPath) return hiddenNotFound();
 
-    if (decision === 'release') {
-      await releasePhoto(principal.organizationId, accountId, principal.accountId);
-    } else {
+    // THE DECISION IS BOUND TO THE PHOTOGRAPH IT WAS MADE ABOUT.
+    //
+    // The read above is what the reviewer acted on; without carrying it into
+    // the WHERE clause, the write lands on whatever the row holds by the time
+    // it runs. A member may replace their portrait at any moment, and setPhoto
+    // sends a replacement back to 'pending_review' -- so between this read and
+    // an unguarded UPDATE:
+    //
+    //   release -- flips a photograph NOBODY HAS LOOKED AT to 'released',
+    //     attributed to this reviewer. decidePortrait shows a released
+    //     portrait of a minor to their coaches and guardians; the human review
+    //     this route exists to be is defeated in one statement.
+    //   block -- deletes the blob the reviewer read while nulling the row's
+    //     path, stranding the replacement's bytes in the container with
+    //     nothing referencing them and no path left that can remove them,
+    //     against this route's own promise that a block takes the bytes with
+    //     it.
+    //
+    // Both halves of the CAS ride on the UPDATE: the state as read, and
+    // photo_uploaded_at, which is the photograph's identity (the blob path is
+    // deliberately account-stable, so it does NOT move on a replacement --
+    // see setPhoto). Zero rows matched is the denial. This is the same guard
+    // the sibling admin console (admin/portrait-review) already carries, and
+    // the same shape as video/[videoId]/release repeating its state predicate
+    // on the write.
+    //
+    // Block CASes FIRST and deletes only after it has won, so a reviewer who
+    // loses the race never destroys bytes another decision is still using.
+    //
+    // A row holding a photograph with no photo_uploaded_at has no identity to
+    // bind, so there is no safe decision to record about it: refuse rather
+    // than fall back to the state guard alone, the same way the admin console
+    // fails closed on a null attestation. setPhoto has always stamped this
+    // column, so no row any current write path produces reaches here.
+    if (profile.photoUploadedAt === null) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'This portrait cannot be decided on: the record does not say which photograph it is.',
+        },
+        { status: 409 },
+      );
+    }
+
+    const applied = decision === 'release'
+      ? await releasePhoto(
+          principal.organizationId,
+          accountId,
+          principal.accountId,
+          profile.photoReviewState,
+          profile.photoUploadedAt,
+        )
+      : await clearPhoto(
+          principal.organizationId,
+          accountId,
+          'blocked',
+          principal.accountId,
+          profile.photoReviewState,
+          profile.photoUploadedAt,
+        );
+
+    if (!applied) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'This portrait changed before your decision was recorded. Reload and look at it again.',
+        },
+        { status: 409 },
+      );
+    }
+
+    if (decision === 'block') {
       await deletePilotProfilePhoto(profile.photoBlobPath);
-      await clearPhoto(principal.organizationId, accountId, 'blocked', principal.accountId);
     }
 
     await writePilotAuditEvent({

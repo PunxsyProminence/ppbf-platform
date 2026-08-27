@@ -141,6 +141,33 @@ describe('coach disciplines page -- what the gym runs', () => {
 });
 
 describe('coach disciplines page -- grappling exposure history', () => {
+  it('offers coach-visible athlete names instead of requiring a memorized id', async () => {
+    mockFetch((url) => {
+      if (url.includes('/athletes/list')) {
+        return jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Alex Rivera' }] });
+      }
+      return jsonResponse({ disciplines: [GRAPPLING] });
+    });
+
+    render(<CoachDisciplinesPage />);
+
+    // Not findByRole('option'). A <datalist> is a completion source rather
+    // than a listbox, so its options are not exposed with role=option; that
+    // query matched only under an older aria-query and stopped matching when
+    // the floating range moved under us. The DOM never changed -- the option
+    // still renders with the coach-visible name and the id as its value.
+    //
+    // Reaching it by its text and then pinning what it IS asserts strictly
+    // more than the role query did: that the element is an <option>, that it
+    // carries the athlete id, and that it hangs off the datalist this page's
+    // input names -- which the role query never checked.
+    const option = await screen.findByText('Alex Rivera');
+    expect(option.tagName).toBe('OPTION');
+    expect(option).toHaveValue('ath-1');
+    expect(option.closest('datalist')).toHaveAttribute('id', 'discipline-athletes');
+    expect(screen.getByLabelText(/athlete id/i)).toHaveAttribute('list', 'discipline-athletes');
+  });
+
   function withExposure(rows: Record<string, unknown>[]) {
     return mockFetch((url) => (url.includes('athlete_id')
       ? jsonResponse({ exposure: rows, participation: [] })
@@ -221,6 +248,17 @@ describe('coach disciplines page -- grappling exposure history', () => {
     await lookUp('ath-2');
 
     expect(await screen.findByText(/No grappling exposure recorded/i)).toBeInTheDocument();
+    expect(screen.queryByText('First athlete note.')).not.toBeInTheDocument();
+  });
+
+  it('clears displayed history as soon as the athlete id is edited', async () => {
+    withExposure([exposureRow({ coach_note: 'First athlete note.' })]);
+    render(<CoachDisciplinesPage />);
+    await lookUp('ath-1');
+    expect(await screen.findByText('First athlete note.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/athlete id/i), { target: { value: 'ath-2' } });
+
     expect(screen.queryByText('First athlete note.')).not.toBeInTheDocument();
   });
 

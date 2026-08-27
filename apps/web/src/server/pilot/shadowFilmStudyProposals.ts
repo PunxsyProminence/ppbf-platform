@@ -370,3 +370,108 @@ export async function listFilmStudyProposalRevisions(
     [organizationId, proposalId],
   );
 }
+
+/**
+ * The SQL predicate that separates coach-reviewed Film Study material from a
+ * queue of unreviewed AI claims, exported so no caller hand-rolls it.
+ *
+ * 'pending_review' is a vision model's unreviewed claim about an identifiable
+ * minor, and 'rejected' is a claim a coach looked at and said no to. NEITHER IS
+ * EVIDENCE, and a read model that surfaced either would turn the acceptance
+ * gate into decoration. That is the whole safety design of issue #103: vision
+ * output never touches an athlete record until a human accepts it.
+ */
+export const REVIEWED_FILM_STUDY_SCOPE_SQL = "review_state in ('accepted', 'corrected')";
+
+export type ReviewedFilmStudyState = Extract<
+  FilmStudyProposalReviewState,
+  'accepted' | 'corrected'
+>;
+
+/**
+ * One piece of Film Study material a coach has actually worked on.
+ *
+ * Deliberately NOT a narrowed FilmStudyProposalRow: the fields kept here are
+ * the ones a reader needs in order to tell whose claim this is and what it was
+ * based on. Nothing is merged -- `observation_text` and
+ * `corrected_observation_text` stay separate, and `origin` is never collapsed.
+ */
+export interface ReviewedFilmStudyRow {
+  proposal_id: string;
+  organization_id: string;
+  athlete_id: string;
+  video_session_id: string;
+  /** Never collapsed. 'model_proposed' is what the vision model claimed;
+   * 'coach_reported' is what the model MISSED and a coach entered by hand.
+   * Flattened together, an accepted missed-detection reads as the model
+   * succeeding -- the exact inversion MODEL_PROPOSAL_SCOPE_SQL exists to
+   * prevent in the validation figures. */
+  origin: FilmStudyProposalOrigin;
+  /** 'accepted' is settled. 'corrected' IS NOT: a corrected proposal is still
+   * in the coach's working queue (see listFilmStudyProposals) and can still be
+   * accepted or rejected. It is included here because a coach has authored its
+   * replacement wording, which a pending proposal has not -- but it is carried
+   * verbatim, never as "reviewed", so a reader can see which it is. */
+  review_state: ReviewedFilmStudyState;
+  /** The ORIGINAL wording, never overwritten -- on a corrected row this is
+   * still what the model said. */
+  observation_text: string;
+  /** The coach's replacement wording. Present only on a corrected row. Both
+   * texts travel together: the model said X, the coach made it Y, and carrying
+   * one without the other makes the model look either right or absent. */
+  corrected_observation_text: string | null;
+  evidence_id: string;
+  /** Null exactly when origin is 'coach_reported' -- there was no inference run
+   * to name. The database enforces that. */
+  model_deployment: string | null;
+  frames_analyzed: number | null;
+  /** Null exactly when origin is 'model_proposed'. */
+  reported_by_account_id: string | null;
+  reviewed_by_account_id: string | null;
+  reviewed_by_role: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const REVIEWED_COLUMNS = `
+  proposal_id, organization_id, athlete_id, video_session_id, origin, review_state,
+  observation_text, corrected_observation_text, evidence_id, model_deployment,
+  frames_analyzed, reported_by_account_id, reviewed_by_account_id, reviewed_by_role,
+  reviewed_at, created_at, updated_at
+`;
+
+/**
+ * Film Study material for ONE athlete that a coach has accepted or corrected.
+ *
+ * `listFilmStudyProposals` cannot serve this: its working view is
+ * `review_state in ('pending_review','corrected')` -- the queue of what still
+ * needs a coach -- which is the precise opposite of what may be read back as
+ * evidence. `getFilmStudyValidation` cannot either: it measures the MODEL over
+ * a whole organization and says nothing about any athlete.
+ *
+ * `athleteId` IS REQUIRED. `listFilmStudyProposals` returns the entire
+ * organization when it is omitted, and this reader has no such mode -- there is
+ * no argument list that reads another child's film by accident.
+ *
+ * This is a filter on a READ. Nothing here deletes, hides or settles a row: a
+ * pending proposal still reaches the coach's queue, and a rejected one stays as
+ * the record that the model was wrong.
+ */
+export async function listReviewedFilmStudyMaterial(input: {
+  organizationId: string;
+  athleteId: string;
+  limit?: number;
+}): Promise<ReviewedFilmStudyRow[]> {
+  const limit = Math.min(Math.max(input.limit ?? 100, 1), 200);
+  return query<ReviewedFilmStudyRow>(
+    `select ${REVIEWED_COLUMNS}
+     from pilot.shadow_film_study_proposals
+     where organization_id = $1
+       and athlete_id = $2
+       and ${REVIEWED_FILM_STUDY_SCOPE_SQL}
+     order by reviewed_at desc nulls last, created_at desc
+     limit ${limit}`,
+    [input.organizationId, input.athleteId],
+  );
+}

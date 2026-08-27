@@ -26,6 +26,7 @@ import type {
 type Level = CompetenceLevelRow;
 type Cohort = CohortDefinitionRow;
 type Report = AthleteCohortReport;
+type AthleteChoice = { athlete_id: string; full_name: string };
 
 function levelRange(cohort: Cohort): string {
   const { min_level_ordinal: min, max_level_ordinal: max } = cohort;
@@ -42,6 +43,7 @@ function CoachCohorts() {
   const [loadError, setLoadError] = useState('');
 
   const [athleteId, setAthleteId] = useState('');
+  const [athleteChoices, setAthleteChoices] = useState<AthleteChoice[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState('');
@@ -71,6 +73,21 @@ function CoachCohorts() {
       await load();
     })();
   }, [load]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
+          method: 'GET', credentials: 'include',
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items?: AthleteChoice[] };
+        if (Array.isArray(payload.items)) setAthleteChoices(payload.items);
+      } catch {
+        // The roster is a convenience only. Coaches can still enter an id.
+      }
+    })();
+  }, []);
 
   const lookUp = useCallback(async (id: string) => {
     const trimmed = id.trim();
@@ -121,11 +138,22 @@ function CoachCohorts() {
               <label htmlFor="athlete-id" className="t-label">Athlete id</label>
               <input
                 id="athlete-id"
+                list="cohort-athletes"
                 value={athleteId}
-                onChange={(event) => setAthleteId(event.target.value)}
+                onChange={(event) => {
+                  setAthleteId(event.target.value);
+                  setReport(null);
+                  setReportError('');
+                }}
+                disabled={reportLoading}
                 className="input"
                 placeholder="ath_..."
               />
+              <datalist id="cohort-athletes">
+                {athleteChoices.map((athlete) => (
+                  <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                ))}
+              </datalist>
             </div>
             <button
               type="button"
