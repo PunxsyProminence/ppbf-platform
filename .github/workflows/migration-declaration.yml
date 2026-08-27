@@ -48,7 +48,12 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=0 origin "$BASE_REF"
+          # No --depth: actions/checkout above already fetched full history
+          # (fetch-depth: 0). `git fetch --depth=0` is not the same spelling --
+          # checkout treats 0 as "everything", git rejects it outright with
+          # "fatal: depth 0 is not a positive number", which is how this step
+          # failed on its first run before the checker was ever reached.
+          git fetch --no-tags origin "$BASE_REF"
           git diff --name-status "origin/${BASE_REF}...HEAD" > /tmp/name-status.txt
           echo "Changed files:"
           cat /tmp/name-status.txt
