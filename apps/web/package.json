@@ -125,6 +125,7 @@
     "test:migrations:film-study-revisions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyRevisions.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-projects": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationProjects.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-annotations": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationAnnotations.pg.test.ts --testTimeout=180000",
+    "test:migrations:calibration-blinding": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationBlinding.pg.test.ts --testTimeout=180000",
     "test:migrations:programs": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/programs.pg.test.ts --testTimeout=180000",
     "test:migrations:coach-cards": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachCards.pg.test.ts --testTimeout=180000",
     "test:migrations:external-competition": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/externalCompetition.pg.test.ts --testTimeout=180000",
