@@ -47,6 +47,27 @@ jest.mock('./db', () => ({
     const result = await activeClient.query(text, params);
     return result.rows[0] ?? null;
   }),
+  // correctExecution runs its two-step supersession inside withTransaction,
+  // so the mock has to provide one -- without it the module throws
+  // "withTransaction is not a function" before touching a row.
+  //
+  // It issues real BEGIN/COMMIT/ROLLBACK against the embedded server rather
+  // than handing the callback a bare client. That is the whole point of the
+  // function under test: the supersession is ONE act. A pass-through mock
+  // would let a half-applied correction commit and still report success,
+  // which is exactly the failure this suite exists to rule out.
+  withTransaction: jest.fn(async (fn: (client: Client) => Promise<unknown>) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    await activeClient.query('begin');
+    try {
+      const result = await fn(activeClient);
+      await activeClient.query('commit');
+      return result;
+    } catch (error) {
+      await activeClient.query('rollback');
+      throw error;
+    }
+  }),
 }));
 
 import {
