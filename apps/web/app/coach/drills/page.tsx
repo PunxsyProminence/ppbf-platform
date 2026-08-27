@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import type { DrillLibraryRow } from '@/src/server/pilot/drillLibraryV3';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
 
 // The gym's drill library, written by the coaches who teach it.
@@ -20,6 +21,7 @@ import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills
 // the library render empty; the second was dead weight waiting to do the same.
 // Type-only import, so nothing server-side is pulled into this client bundle.
 type Drill = PilotDrill;
+type ReferenceDrill = DrillLibraryRow;
 
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'elite'] as const;
 
@@ -27,6 +29,9 @@ function CoachDrillLibrary() {
   const [drills, setDrills] = useState<Drill[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [referenceDrills, setReferenceDrills] = useState<ReferenceDrill[]>([]);
+  const [referenceLoading, setReferenceLoading] = useState(true);
+  const [referenceLoadError, setReferenceLoadError] = useState('');
 
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
@@ -54,7 +59,8 @@ function CoachDrillLibrary() {
       // tests and component tests both passed; nothing covered the seam, which
       // is the only place the defect lived.
       const payload = (await response.json()) as Partial<DrillLibraryResponse>;
-      setDrills(payload.items ?? []);
+      if (!Array.isArray(payload.items)) throw new Error('The drill library returned an invalid response.');
+      setDrills(payload.items);
       setLoadError('');
     } catch (error) {
       setDrills([]);
@@ -64,12 +70,31 @@ function CoachDrillLibrary() {
     }
   }, []);
 
+  const loadReferenceLibrary = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/drill-library`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('The reference drill library could not be loaded.');
+      const payload = (await response.json()) as { drills?: ReferenceDrill[] };
+      if (!Array.isArray(payload.drills)) throw new Error('The reference drill library returned an invalid response.');
+      setReferenceDrills(payload.drills);
+      setReferenceLoadError('');
+    } catch (error) {
+      setReferenceDrills([]);
+      setReferenceLoadError(error instanceof Error ? error.message : 'The reference drill library could not be loaded.');
+    } finally {
+      setReferenceLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     // Deferred behind an await so no state is set while the effect body runs.
     void (async () => {
-      await load();
+      await Promise.all([load(), loadReferenceLibrary()]);
     })();
-  }, [load]);
+  }, [load, loadReferenceLibrary]);
 
   async function createDrill() {
     // Held in a ref as well as state: a second click lands before React has
@@ -225,7 +250,51 @@ function CoachDrillLibrary() {
         </section>
 
         <section className="mt-[var(--s6)]">
-          <h2 className="t-command text-[length:var(--t-lg)]">In the library</h2>
+          <h2 className="t-command text-[length:var(--t-lg)]">Reference library</h2>
+          <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
+            Seeded coaching material for planning and review. These reference drills are read-only;
+            assignments continue to use the gym-authored drills below.
+          </p>
+
+          {referenceLoading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading reference drills...</p>}
+
+          {!referenceLoading && referenceLoadError && (
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{referenceLoadError}</p>
+              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                This is a failure to load, not an empty reference library.
+              </p>
+            </div>
+          )}
+
+          {!referenceLoading && !referenceLoadError && referenceDrills.length === 0 && (
+            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No reference drills are available.</p>
+          )}
+
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+            {referenceDrills.map((drill) => (
+              <article key={drill.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
+                <div className="flex items-baseline justify-between gap-[var(--s3)]">
+                  <h3 className="t-command text-[length:var(--t-md)]">{drill.name}</h3>
+                  <span className="plaque">{drill.difficulty}</span>
+                </div>
+                <p className="t-label mt-[var(--s2)]">{drill.discipline} · {drill.category}</p>
+                <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{drill.purpose}</p>
+                <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+                  <span className="font-semibold text-[color:var(--bone-200)]">Setup:</span> {drill.standard_setup}
+                </p>
+                {drill.requires_coach_authorization && (
+                  <p className="mt-[var(--s3)] text-[length:var(--t-xs)] font-semibold text-[var(--locked-ink)]">
+                    Coach authorization required
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-[var(--s6)]">
+          <h2 className="t-command text-[length:var(--t-lg)]">Gym-authored drills</h2>
 
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 

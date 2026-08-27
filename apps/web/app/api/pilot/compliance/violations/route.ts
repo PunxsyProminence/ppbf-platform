@@ -56,7 +56,12 @@ export async function GET(request: NextRequest) {
       coachAccountId: principal.role === 'coach' && !athleteId ? principal.accountId : undefined,
     });
 
-    return NextResponse.json({ items: violations });
+    // `limit` travels with the rows because this read is capped and ordered
+    // `created_at desc`: what comes back is the newest slice of the register,
+    // not the register. Callers were computing totals and severity counts off
+    // it and labelling them as the whole record. Naming the applied cap is
+    // what lets a screen say which window its figures cover.
+    return NextResponse.json({ items: violations, limit });
   } catch (error) {
     return jsonError(error);
   }

@@ -41,6 +41,7 @@ beforeAll(() => {
 
 afterEach(() => {
   global.fetch = originalFetch;
+  feedbackBodies.length = 0;
   jest.clearAllMocks();
 });
 
@@ -57,8 +58,11 @@ const savedSession = {
   updatedAt: '2026-07-30T12:00:00.000Z',
 };
 
+/** Every POST body the page sent to the feedback route, in order. */
+const feedbackBodies: Array<Record<string, unknown>> = [];
+
 function shadowFetchMock(mode: 'omega' | 'master' | 'scoped', role = 'admin') {
-  return jest.fn(async (url: string) => {
+  return jest.fn(async (url: string, init?: RequestInit) => {
     const target = String(url);
     if (target.includes('/auth/session')) {
       return jsonResponse({ authenticated: true, role, auth_provider: 'microsoft' });
@@ -69,8 +73,36 @@ function shadowFetchMock(mode: 'omega' | 'master' | 'scoped', role = 'admin') {
     if (target.includes('/shadow/sessions')) {
       return jsonResponse({ success: true, conversations: [savedSession] });
     }
+    if (target.includes('/shadow/feedback')) {
+      feedbackBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return jsonResponse({ ok: true });
+    }
+    if (target.includes('/shadow/chat')) {
+      // A durable, server-persisted answer: state 'ok' with both a
+      // conversation and a message id is exactly the combination the page
+      // requires before it will offer a rating at all.
+      return jsonResponse({
+        success: true,
+        state: 'ok',
+        response: 'Drop the lead shoulder on the exit.\n\n- Reset the guard first.\n- Then the pivot.',
+        messageId: '11111111-2222-4333-8444-555555555555',
+        conversationId: 'conv-1',
+        tier: 'quick_round',
+        modelUsed: 'scout-1',
+        evidenceTier: 'EMERGING',
+      });
+    }
     return jsonResponse({ ok: true });
   });
+}
+
+/** Ask a question and wait for the answer bubble to land. */
+async function askShadow() {
+  fireEvent.change(await screen.findByLabelText('Your question'), {
+    target: { value: 'What does the third round look like' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Ask SHADOW' }));
+  await screen.findByText('Drop the lead shoulder on the exit.');
 }
 
 async function renderShadow(mode: 'omega' | 'master' | 'scoped', role = 'admin') {
@@ -104,11 +136,90 @@ it('opens with one spare line and a scope sentence instead of a first-person men
 
 it('carries the rating on its word, never a medal emoji', async () => {
   await renderShadow('scoped', 'coach');
+  await askShadow();
 
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Helpful' })).toBeTruthy());
-  expect(screen.getByRole('button', { name: 'Not helpful' })).toBeTruthy();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Yes' })).toBeTruthy());
+  expect(screen.getByRole('button', { name: 'Not yet' })).toBeTruthy();
   expect(document.body.textContent).not.toMatch(/[\u{1F44D}\u{1F44E}]/u);
   expect(document.body.textContent).not.toMatch(/RLHF/);
+});
+
+/* THE FIFTH THING THIS PAGE GOT WRONG, and the one nothing above caught: the
+   rating block rendered under EVERY shadow bubble, so the opening line -- a
+   sentence the page wrote itself, which no server ever stored and no reviewer
+   could ever act on -- came with a required-reason textarea and two disabled
+   buttons under it. A rating belongs to an answer that exists on the server. */
+it('offers no rating on the line the page wrote itself', async () => {
+  await renderShadow('scoped', 'coach');
+
+  expect(screen.queryByText('Did this help?')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Yes' })).toBeNull();
+
+  await askShadow();
+
+  // Exactly one rating on screen: the answer's. Not the welcome's, and not
+  // one under the coach's own question either.
+  expect(screen.getAllByText('Did this help?')).toHaveLength(1);
+});
+
+/* Saying yes was a paragraph of writing: sendFeedback returned early without
+   a reason, on a route whose `comment` field is optional. */
+it('takes a positive rating in one action, with no reason demanded', async () => {
+  await renderShadow('scoped', 'coach');
+  await askShadow();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Yes' }));
+
+  await waitFor(() => expect(feedbackBodies).toHaveLength(1));
+  expect(feedbackBodies[0]).toEqual({
+    helpful: true,
+    message_id: '11111111-2222-4333-8444-555555555555',
+  });
+  // outcome_signal is the server's to derive. A client-supplied one outside
+  // the review queue's allowlist would strand the row unapprovable forever.
+  expect(feedbackBodies[0]).not.toHaveProperty('outcome_signal');
+  await screen.findByText('Feedback recorded.');
+});
+
+/* Running text was `.t-body` -- 14px -- and one <p> per answer however many
+   paragraphs the model wrote. The transcript itself announced nothing. */
+it('sets the answer for reading and announces the transcript', async () => {
+  await renderShadow('scoped', 'coach');
+  await askShadow();
+
+  const log = document.querySelector('[role="log"]');
+  expect(log?.getAttribute('aria-live')).toBe('polite');
+  expect(log?.getAttribute('aria-label')).toBe('SHADOW conversation');
+
+  const answer = screen.getByText('Drop the lead shoulder on the exit.');
+  const prose = answer.parentElement;
+  expect(prose?.className).toContain('text-[16px]');
+  expect(prose?.className).toContain('max-w-[66ch]');
+  // The bulleted half of the answer is a real list, not more of the paragraph.
+  expect(prose?.querySelectorAll('ul li')).toHaveLength(2);
+});
+
+/* Which model ran and when it answered are diagnostics. They sat at full
+   contrast between the answer and the controls, on a surface an athlete or a
+   parent reaches. */
+it('keeps model, tier and timestamp behind a disclosure', async () => {
+  await renderShadow('scoped', 'coach');
+  await askShadow();
+
+  const details = screen.getByText('Details').closest('details');
+  expect(details).toBeTruthy();
+  expect((details as HTMLDetailsElement).open).toBe(false);
+  expect(details?.textContent).toContain('scout-1');
+  expect(details?.textContent).toContain('Quick Round');
+});
+
+/* The page carried its own Logout next to the role badge while the signed-in
+   header carried one too -- two doors to the same POST, two tab stops apart,
+   on the surface where a mis-click costs a conversation in progress. */
+it('does not hang a second Logout beside the global one', async () => {
+  await renderShadow('scoped', 'coach');
+
+  expect(screen.queryByRole('button', { name: 'Logout' })).toBeNull();
 });
 
 it('advertises no doors: the unfiltered nine-link row is gone', async () => {
