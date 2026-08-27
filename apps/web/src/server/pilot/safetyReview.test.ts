@@ -14,7 +14,7 @@ jest.mock('./compliance', () => ({
   getOrganizationViolations: jest.fn(),
 }));
 
-import { getOrganizationSafetyReview } from './safetyReview';
+import { getOrganizationSafetyReview, VIOLATION_ROLLUP_READ_LIMIT } from './safetyReview';
 import { query } from './db';
 import { listTrainingHolds } from './trainingHolds';
 import { listEscalations } from './escalationLadder';
@@ -165,6 +165,63 @@ describe('getOrganizationSafetyReview', () => {
       failingGates: [],
       openEscalations: [],
       openViolations: [],
+      violationsReadLimit: VIOLATION_ROLLUP_READ_LIMIT,
+      violationsTruncated: false,
     });
+  });
+
+  // READ HONESTY (shapes 1 and 4: a capped read presented as the whole one).
+  //
+  // Three of the four feeds are uncapped -- listTrainingHolds, listEscalations
+  // and the gate-failure query all read the organization entire. The fourth is
+  // not: getOrganizationViolations is `order by created_at desc limit N`, and
+  // this rollup then filters the rows it got down to the OPEN statuses. Cap
+  // first, filter second, so an open violation older than the newest N is
+  // dropped before the status filter ever sees it.
+  //
+  // /admin/safety-review renders that under "Everything open, right now" and,
+  // when the four lists come back empty, under "Nothing open right now -- no
+  // active holds, failing gate checks, open escalations, or open compliance
+  // violations". Neither sentence is something a capped feed can support.
+  //
+  // The fix does not widen the read (that would be a pagination/product change
+  // and is filed separately) -- it makes the truncation observable so the page
+  // can stop claiming totality.
+  //
+  // WATCHED TO FAIL: drop the +1 probe and pass VIOLATION_ROLLUP_READ_LIMIT
+  // straight through, and the first test goes red on violationsTruncated.
+  test('a violations feed at the cap reports itself truncated', async () => {
+    const overflowing = Array.from({ length: VIOLATION_ROLLUP_READ_LIMIT + 1 }, (_unused, index) =>
+      violation({ violation_id: `v-${index}`, status: 'new' }),
+    );
+    // Not vacuous: this really is one row past the cap.
+    expect(overflowing.length).toBe(VIOLATION_ROLLUP_READ_LIMIT + 1);
+    mockGetViolations.mockResolvedValueOnce(overflowing as never);
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce(ATHLETES_ROW);
+
+    const review = await getOrganizationSafetyReview('org-1');
+
+    expect(review.violationsTruncated).toBe(true);
+    expect(review.violationsReadLimit).toBe(VIOLATION_ROLLUP_READ_LIMIT);
+    // The probe row is never rendered as a finding.
+    expect(review.openViolations).toHaveLength(VIOLATION_ROLLUP_READ_LIMIT);
+  });
+
+  test('the rollup reads one row past the cap so it can tell', async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce(ATHLETES_ROW);
+
+    await getOrganizationSafetyReview('org-1');
+
+    expect(mockGetViolations).toHaveBeenCalledWith('org-1', { limit: VIOLATION_ROLLUP_READ_LIMIT + 1 });
+  });
+
+  test('a violations feed under the cap is not reported truncated', async () => {
+    mockGetViolations.mockResolvedValueOnce([violation({ violation_id: 'v-1', status: 'new' }) as never]);
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce(ATHLETES_ROW);
+
+    const review = await getOrganizationSafetyReview('org-1');
+
+    expect(review.violationsTruncated).toBe(false);
+    expect(review.openViolations).toHaveLength(1);
   });
 });

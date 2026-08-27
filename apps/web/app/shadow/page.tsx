@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
 import RefusalStamp from '@/components/RefusalStamp';
+import ShadowDisclosure from '@/components/ShadowDisclosure';
+import ShadowFeedback from '@/components/ShadowFeedback';
+import ShadowStructuredProse from '@/components/shadowStructuredProse';
 import {
   EVIDENCE_TIER_MEANINGS,
   EVIDENCE_TIER_ORDER,
@@ -204,10 +207,22 @@ async function fetchShadowJobStatus(jobId: string, apiBaseUrl: string): Promise<
   return response.json() as Promise<ShadowJobStatusResult>;
 }
 
+/**
+ * `comment` is optional here because it is optional on the route: POST
+ * /api/pilot/shadow/feedback requires `helpful` and a durable `message_id`,
+ * and nothing else. The reason requirement this page used to enforce lived
+ * only in the browser, so saying "yes, this helped" cost a paragraph of
+ * writing that the answer did not need.
+ *
+ * `outcome_signal` is deliberately NOT sent. The route derives it from
+ * `helpful` and the human review queue's SQL filters on that exact derived
+ * vocabulary -- a client-supplied value outside it would strand the row as
+ * permanently unapprovable.
+ */
 async function submitFeedback(
   messageId: string,
   helpful: boolean,
-  comment: string,
+  comment: string | undefined,
   apiBaseUrl: string,
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/pilot/shadow/feedback`, {
@@ -217,8 +232,7 @@ async function submitFeedback(
     body: JSON.stringify({
       helpful,
       message_id: messageId,
-      comment,
-      outcome_signal: helpful ? 'thumbs_up' : 'thumbs_down',
+      ...(comment ? { comment } : {}),
     }),
   });
   if (!response.ok) {
@@ -342,8 +356,8 @@ function ShadowChatPageContent() {
   const [renameDraft, setRenameDraft] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string>();
   const [sessionActionBusyId, setSessionActionBusyId] = useState<string>();
-  const [feedbackReasons, setFeedbackReasons] = useState<Record<string, string>>({});
   const [feedbackSubmitting, setFeedbackSubmitting] = useState<Record<string, boolean>>({});
+  const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const restoreAbortRef = useRef<AbortController | null>(null);
   const restoreRequestIdRef = useRef(0);
@@ -770,19 +784,19 @@ function ShadowChatPageContent() {
     }
   }
 
-  async function sendFeedback(messageId: string, helpful: boolean) {
-    const reason = (feedbackReasons[messageId] ?? '').trim();
-    if (!reason) {
-      setSessionNotice('A reason is required before rating an answer.');
-      return;
-    }
+  async function sendFeedback(messageId: string, helpful: boolean, comment?: string) {
     setFeedbackSubmitting((prev) => ({ ...prev, [messageId]: true }));
+    setFeedbackErrors((prev) => {
+      if (!prev[messageId]) return prev;
+      const next = { ...prev };
+      delete next[messageId];
+      return next;
+    });
     try {
-      await submitFeedback(messageId, helpful, reason, apiBase());
+      await submitFeedback(messageId, helpful, comment, apiBase());
       setMessages((prev) => prev.map((m) => (
         m.id === messageId ? { ...m, feedbackSent: true } : m
       )));
-      setSessionNotice(undefined);
     } catch (feedbackError) {
       // Only 401 means the session is actually gone. Treating 403 the same way
       // logged a user out mid-conversation over a rating -- any role the chat
@@ -797,11 +811,15 @@ function ShadowChatPageContent() {
       // Everything else was previously swallowed: the thumb stayed unset with
       // no explanation, so the natural response was to click again and spend
       // more of the 30/min feedback budget on a request that could not succeed.
-      setSessionNotice(
-        feedbackError instanceof ShadowApiError && feedbackError.status === 429
+      // The message belongs AT the rating that failed -- it used to go to the
+      // session notice above the saved-sessions list, several hundred pixels
+      // and one scroll away from the button that had just done nothing.
+      setFeedbackErrors((prev) => ({
+        ...prev,
+        [messageId]: feedbackError instanceof ShadowApiError && feedbackError.status === 429
           ? 'Too much feedback too quickly. Wait a moment and try again.'
           : 'SHADOW could not record that feedback. Your conversation is unaffected.',
-      );
+      }));
     } finally {
       setFeedbackSubmitting((prev) => ({ ...prev, [messageId]: false }));
     }
@@ -1124,19 +1142,19 @@ function ShadowChatPageContent() {
             <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>{heading}</h1>
             <p className="t-muted mt-[var(--s2)]">{intro}</p>
           </div>
+          {/* No local Logout. The signed-in chrome already carries one, and
+              revokeShadowSession posts the same /api/pilot/auth/logout the
+              global control does -- so this button was a second door to the
+              same room, two tab stops apart, on the surface where a mis-click
+              costs an in-progress conversation. The refusal screen below keeps
+              its own Logout: the global bar suppresses itself there, so that
+              one is the only way out. */}
           <div className="flex flex-wrap items-center gap-[var(--s4)] text-right">
             <div>
               <p className="t-label">Role: {roleLabel}</p>
               {context ? <p className="t-label mt-[var(--s1)]">Context: {context}</p> : null}
               <p className="t-data mt-[var(--s2)] uppercase tracking-[0.12em] text-[color:var(--bone-300)]">LIVE</p>
             </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="btn btn--ghost"
-            >
-              Logout
-            </button>
           </div>
         </div>
       </header>
@@ -1316,10 +1334,10 @@ function ShadowChatPageContent() {
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-          <details className="mat-leather--raised mb-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
-            <summary className="t-label cursor-pointer">
-              What the evidence labels mean
-            </summary>
+          <ShadowDisclosure
+            label="What the evidence labels mean"
+            className="mat-leather--raised mb-[var(--s3)] rounded-[var(--r-md)] px-[var(--s3)]"
+          >
             <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
               {EVIDENCE_TIER_ORDER.map((tier) => (
                 <li key={tier} className="t-muted">
@@ -1328,8 +1346,20 @@ function ShadowChatPageContent() {
                 </li>
               ))}
             </ul>
-          </details>
-          <div className="mb-[var(--s5)] max-h-[550px] space-y-[var(--s4)] overflow-y-auto pr-[var(--s2)]">
+          </ShadowDisclosure>
+          {/* The transcript is a log, and it was a bare scrolling <div>: a
+              screen reader was told nothing when an answer arrived, and a
+              keyboard user could not scroll it at all because nothing in it
+              could hold focus. role="log" with additions-only politeness is
+              the pattern research/chat already uses. */}
+          <div
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-label="SHADOW conversation"
+            tabIndex={0}
+            className="mb-[var(--s5)] max-h-[550px] space-y-[var(--s4)] overflow-y-auto pr-[var(--s2)]"
+          >
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -1342,10 +1372,25 @@ function ShadowChatPageContent() {
                       : `border-[color:var(--brass-900)] bg-[var(--hide-900)] text-[color:var(--bone-300)] ${EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]}`
                   }`}
                 >
-                  <p className="t-body">{msg.text}</p>
+                  {/* THE ANSWER FIRST, AND AT A SIZE MEANT FOR READING.
+                      `.t-body` is 14px: right for a caption in a table, wrong
+                      for four paragraphs of coaching guidance read on a phone
+                      in a gym. 16px/1.6 capped near 66 characters is the
+                      running-text setting, and the answer is rendered as real
+                      paragraphs and lists rather than one wall of text --
+                      through React text nodes only, never HTML, so nothing a
+                      model emits can become markup. */}
+                  {msg.type === 'shadow' ? (
+                    <ShadowStructuredProse
+                      text={msg.text}
+                      className="max-w-[66ch] space-y-[var(--s3)] text-[16px] leading-[1.6]"
+                    />
+                  ) : (
+                    <p className="max-w-[66ch] text-[16px] leading-[1.6]">{msg.text}</p>
+                  )}
                   {msg.type === 'shadow' && msg.evidenceTier ? (
                     <p
-                      className="t-label mt-[var(--s2)]"
+                      className="t-label mt-[var(--s3)]"
                       title={EVIDENCE_TIER_MEANINGS[msg.evidenceTier]}
                     >
                       Evidence: {getEvidenceTierLabel(msg.evidenceTier)}
@@ -1361,23 +1406,16 @@ function ShadowChatPageContent() {
                       that what they just read is unsourced and should not be
                       acted on alone. Amber rather than the tier's red, because
                       this is an answer to weigh, not a refusal. */}
+                  {/* Set at reading size, not caption size. This sentence and
+                      the handoff below it were the two smallest things in the
+                      bubble at 12.5px, under an answer at 16 -- the shape that
+                      reads as fine print, which is exactly what a limitation
+                      must not read as. */}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' ? (
-                    <p className="t-muted mt-[var(--s1)] text-[color:var(--restricted)]">
+                    <p className="mt-[var(--s2)] max-w-[66ch] text-[16px] leading-[1.6] text-[color:var(--restricted)]">
                       No verified Library evidence matched this question. Treat the answer above as
                       unsourced -- confirm it with a coach before acting on it.
                     </p>
-                  ) : null}
-                  {msg.type === 'shadow' && msg.citations?.length ? (
-                    <div className="mt-[var(--s2)] border-t border-[color:var(--brass-900)] pt-[var(--s2)]">
-                      <p className="t-label">Sources</p>
-                      <ul className="mt-[var(--s1)] space-y-[var(--s1)]">
-                        {msg.citations.map((citation) => (
-                          <li key={citation.evidenceId} className="t-data text-[color:var(--bone-400)]">
-                            [{citation.token}] {citation.sourceTitle} — {citation.documentName}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
                   ) : null}
                   {/* Law 2/3: a response state is a queue outcome, so it rides
                       the badge ladder -- glyph plus uppercase word, never a
@@ -1399,71 +1437,91 @@ function ShadowChatPageContent() {
                         <i aria-hidden="true">▲</i>
                         Human Handoff Required
                       </span>
-                      <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">{msg.handoff}</p>
+                      <p className="mt-[var(--s2)] max-w-[66ch] text-[16px] leading-[1.6] text-[color:var(--bone-300)]">
+                        {msg.handoff}
+                      </p>
                     </div>
                   ) : null}
-                  {msg.tier ? (
-                    <div className="mt-[var(--s3)] space-y-[var(--s2)] border-t border-[color:var(--brass-900)] pt-[var(--s2)]">
-                      <div className="flex items-center justify-between gap-[var(--s3)]">
-                        <p className="t-label">
-                          {msg.tier === 'heavy_bag' ? 'Heavy Bag' : 'Quick Round'}
-                          {getProfileTierLabel(msg.profileTier)}
-                          {msg.isAsync ? ' · Processing...' : ''}
-                        </p>
-                        {msg.feedbackSent ? <p className="t-muted">Feedback recorded.</p> : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  {/* Law 3, stated 200 lines above this block and then broken
-                      by it: the rating is carried by its uppercase word, not by
-                      a medal emoji that vanishes in greyscale packets and screen
-                      readers alike. "Human-in-the-loop RLHF" was implementation
-                      jargon on a surface an athlete or a parent can reach. The
-                      reason IS required -- sendFeedback returns early without
-                      one -- so the label says so in words rather than marking
-                      it with a bare asterisk. */}
+                  {/* THE RATING, ON ANSWERS THAT CAN ACTUALLY CARRY ONE.
+                      This block used to render under every SHADOW bubble
+                      including the welcome, where the only thing it could do
+                      was sit there disabled with a required-reason textarea
+                      three rows tall -- a form asking for a paragraph before
+                      it would accept the word "yes". The endpoint never
+                      wanted that paragraph. ShadowFeedback renders nothing
+                      unless the message is a durable server answer, asks one
+                      question, and only asks for a reason when the answer is
+                      that it did not help. */}
                   {msg.type === 'shadow' ? (
-                    <div className="mt-[var(--s3)] border-t border-[color:var(--brass-900)] pt-[var(--s3)]">
-                      <p className="t-eyebrow">Rate this answer</p>
-                      <label htmlFor={`feedback-reason-${msg.id}`} className="t-label mt-[var(--s2)] block">
-                        Reason — required
-                      </label>
-                      <textarea
-                        id={`feedback-reason-${msg.id}`}
-                        value={feedbackReasons[msg.id] ?? ''}
-                        onChange={(event) => setFeedbackReasons((prev) => ({ ...prev, [msg.id]: event.target.value }))}
-                        disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
-                        rows={3}
-                        className="textarea mt-[var(--s1)] disabled:opacity-60"
-                      />
-                      <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
-                        <button
-                          type="button"
-                          onClick={() => void sendFeedback(msg.id, true)}
-                          disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
-                          className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Helpful
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void sendFeedback(msg.id, false)}
-                          disabled={msg.feedbackSent || !msg.feedbackEligible || Boolean(feedbackSubmitting[msg.id])}
-                          className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Not helpful
-                        </button>
-                      </div>
-                    </div>
+                    <ShadowFeedback
+                      messageId={msg.id}
+                      eligible={Boolean(msg.feedbackEligible)}
+                      sent={Boolean(msg.feedbackSent)}
+                      submitting={Boolean(feedbackSubmitting[msg.id])}
+                      error={feedbackErrors[msg.id]}
+                      onSubmit={(helpful, comment) => void sendFeedback(msg.id, helpful, comment)}
+                    />
                   ) : null}
-                  <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{msg.timestamp}</p>
+                  {/* THE MACHINERY, COLLAPSED. Which tier answered, which model
+                      ran, and when are diagnostics: they told an athlete
+                      nothing about whether to trust the answer, and they sat
+                      between the answer and the controls at full contrast.
+                      Behind one disclosure, in the order someone debugging
+                      would want them. */}
+                  {msg.type === 'shadow' && (msg.tier || msg.modelUsed) ? (
+                    <ShadowDisclosure label="Details" className="mt-[var(--s3)] border-t border-[color:var(--brass-900)]">
+                      <ul className="space-y-[var(--s1)]">
+                        {msg.tier ? (
+                          <li className="t-data text-[color:var(--bone-400)]">
+                            {msg.tier === 'heavy_bag' ? 'Heavy Bag' : 'Quick Round'}
+                            {getProfileTierLabel(msg.profileTier)}
+                            {msg.isAsync ? ' · Processing...' : ''}
+                          </li>
+                        ) : null}
+                        {msg.modelUsed ? (
+                          <li className="t-data text-[color:var(--bone-400)]">Model: {msg.modelUsed}</li>
+                        ) : null}
+                        <li className="t-data text-[color:var(--bone-400)]">Answered {msg.timestamp}</li>
+                      </ul>
+                    </ShadowDisclosure>
+                  ) : null}
+                  {/* The receipts. Kept out of the always-visible band because
+                      the grade above already states how well evidenced the
+                      answer is; this is for the reader who wants to go and
+                      read the source. */}
+                  {msg.type === 'shadow' && msg.citations?.length ? (
+                    <ShadowDisclosure
+                      label={`Sources (${msg.citations.length})`}
+                      className="border-t border-[color:var(--brass-900)]"
+                    >
+                      <ul className="space-y-[var(--s1)]">
+                        {msg.citations.map((citation) => (
+                          <li key={citation.evidenceId} className="t-data text-[color:var(--bone-400)]">
+                            [{citation.token}] {citation.sourceTitle} — {citation.documentName}
+                          </li>
+                        ))}
+                      </ul>
+                    </ShadowDisclosure>
+                  ) : null}
+                  {/* A bubble with nothing to collapse -- your own question,
+                      the opening line, a network error -- keeps its clock
+                      where it always was. A disclosure holding one timestamp
+                      would be furniture. */}
+                  {msg.type === 'user' || !(msg.tier || msg.modelUsed) ? (
+                    <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{msg.timestamp}</p>
+                  ) : null}
                 </div>
               </div>
             ))}
             {isLoading ? (
               <div className="flex justify-start">
                 <div className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
-                  <p className="t-label">SHADOW {heavyBagMode ? 'Heavy Bag' : 'Quick Round'} processing...</p>
+                  {/* Announced, not just drawn. Inside a polite log a screen
+                      reader may or may not read an inserted node; role="status"
+                      says this one is a state change worth hearing. */}
+                  <p role="status" className="t-label">
+                    Working on your {heavyBagMode ? 'deep' : 'quick'} answer…
+                  </p>
                 </div>
               </div>
             ) : null}
@@ -1487,51 +1545,90 @@ function ShadowChatPageContent() {
             </div>
           ) : null}
 
-          <form onSubmit={handleSendMessage} className="flex flex-wrap gap-[var(--s3)]">
+          <form onSubmit={handleSendMessage} className="flex flex-col gap-[var(--s3)]">
             {allowedSessionTypes.includes('heavy_bag') ? (
-              <button
-                type="button"
-                onClick={() => setHeavyBagMode((v) => !v)}
-                disabled={Boolean(restoringSessionId)}
-                aria-pressed={heavyBagMode}
-                title={heavyBagMode ? 'Switch to Quick Round' : 'Switch to Heavy Bag Session (deep reasoning)'}
-                className={`btn disabled:cursor-not-allowed disabled:opacity-60 ${heavyBagMode ? '' : 'btn--ghost'}`}
-              >
-                {heavyBagMode ? 'Heavy Bag' : 'Quick'}
-              </button>
-            ) : null}
-            {heavyBagMode ? (
-              <label
-                title="Queue this Heavy Bag question for background processing -- the answer is added to this conversation when ready, instead of holding the page for the full generation."
-                className={`btn btn--ghost cursor-pointer ${
-                  backgroundHeavyBag ? 'border-[color:var(--brass-400)] text-[color:var(--bone-100)]' : ''
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={backgroundHeavyBag}
-                  onChange={(event) => setBackgroundHeavyBag(event.target.checked)}
+              <fieldset className="flex flex-wrap items-center gap-[var(--s3)]">
+                {/* "Quick" / "Heavy Bag" was the room's own vocabulary printed
+                    on a toggle that showed its STATE -- so the button read
+                    "Quick" while you were in quick mode and pressing it did
+                    the opposite of what it said. Same two modes, same request
+                    field, named by what you get. */}
+                <legend className="t-label mb-[var(--s2)]">How deep should the answer go?</legend>
+                <button
+                  type="button"
+                  onClick={() => setHeavyBagMode(false)}
                   disabled={Boolean(restoringSessionId)}
-                  className="sr-only"
-                />
-                BG
-              </label>
+                  aria-pressed={!heavyBagMode}
+                  className={`btn disabled:cursor-not-allowed disabled:opacity-60 ${heavyBagMode ? 'btn--ghost' : ''}`}
+                >
+                  Quick answer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeavyBagMode(true)}
+                  disabled={Boolean(restoringSessionId)}
+                  aria-pressed={heavyBagMode}
+                  className={`btn disabled:cursor-not-allowed disabled:opacity-60 ${heavyBagMode ? '' : 'btn--ghost'}`}
+                >
+                  Full session
+                </button>
+                {heavyBagMode ? (
+                  /* The checkbox was .sr-only inside a .btn label, so the
+                     focus ring drew around a 1px box in the corner: keyboard
+                     users could tab to it and see nothing move. It is a real
+                     visible checkbox now, and "BG" -- which named nothing --
+                     says what it does. */
+                  <label className="btn btn--ghost flex cursor-pointer items-center gap-[var(--s2)]">
+                    <input
+                      type="checkbox"
+                      checked={backgroundHeavyBag}
+                      onChange={(event) => setBackgroundHeavyBag(event.target.checked)}
+                      disabled={Boolean(restoringSessionId)}
+                      className="h-[18px] w-[18px]"
+                    />
+                    Finish in background
+                  </label>
+                ) : null}
+              </fieldset>
             ) : null}
-            <input
-              type="text"
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              disabled={Boolean(restoringSessionId)}
-              placeholder="What do you need to know?"
-              className="input min-w-[220px] flex-1"
-            />
-            <button
-              type="submit"
-              disabled={isLoading || Boolean(restoringSessionId)}
-              className="btn disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isLoading ? '...' : 'Ask'}
-            </button>
+            <div className="flex flex-col gap-[var(--s2)]">
+              {/* Was a single-line <input> with a placeholder for a label:
+                  the label vanished the moment anyone typed, and a
+                  three-sentence question scrolled sideways through a 220px
+                  slot. A textarea that grows to two rows, Enter to send so
+                  the habit still works, Shift+Enter for a new line. */}
+              <label htmlFor="shadow-composer" className="t-label">
+                Your question
+              </label>
+              <textarea
+                id="shadow-composer"
+                value={userInput}
+                onChange={(e) => setUserInput(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void handleSendMessage(event);
+                  }
+                }}
+                disabled={Boolean(restoringSessionId)}
+                rows={2}
+                aria-describedby="shadow-composer-hint"
+                placeholder="What do you need to know?"
+                className="textarea w-full"
+              />
+              <p id="shadow-composer-hint" className="t-muted">
+                Enter sends. Shift + Enter starts a new line.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-[var(--s3)]">
+              <button
+                type="submit"
+                disabled={isLoading || Boolean(restoringSessionId) || !userInput.trim()}
+                className="btn disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isLoading ? 'Asking…' : 'Ask SHADOW'}
+              </button>
+            </div>
           </form>
         </section>
 
