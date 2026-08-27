@@ -34,6 +34,12 @@ const REPO_ROOT = path.resolve(__dirname, '../../../../..');
 // A file:// URL, not a bare path: on Windows an absolute path is not a legal
 // ESM specifier, which is the trap postgresWriteTarget.test.ts records.
 const MODULE_URL = pathToFileURL(path.join(REPO_ROOT, 'scripts/seed-data.ts')).href;
+// The JS guard seed-data.ts imports. It has a hand-written .d.mts beside it,
+// because tsconfig.scripts.json sets allowJs: false on purpose -- so the
+// declaration can drift from the module without any compiler noticing.
+const GUARD_URL = pathToFileURL(
+  path.join(REPO_ROOT, 'apps/web/scripts/lib/postgres-write-target.mjs'),
+).href;
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules/.bin/tsx');
 
 const STAGING = 'postgres://u:sekrit@ppbf-pg-staging.postgres.database.azure.com:5432/postgres';
@@ -70,6 +76,7 @@ const CASES: Record<string, [boolean, Record<string, string>]> = {
 };
 
 let outcomes: Record<string, Outcome>;
+let guardExports: string[];
 
 beforeAll(() => {
   const body = Object.entries(CASES)
@@ -86,15 +93,18 @@ beforeAll(() => {
   fs.writeFileSync(
     probe,
     `import * as g from ${JSON.stringify(MODULE_URL)};\n`
+    + `import * as guard from ${JSON.stringify(GUARD_URL)};\n`
     + 'const out: Record<string, unknown> = {};\n'
     + `${body}\n`
-    + 'process.stdout.write(JSON.stringify(out));\n',
+    + "process.stdout.write(JSON.stringify({ out, guardExports: Object.keys(guard).sort() }));\n",
   );
 
   try {
-    outcomes = JSON.parse(
+    const parsed = JSON.parse(
       execFileSync(TSX_BIN, [probe], { encoding: 'utf8', cwd: REPO_ROOT }),
     );
+    outcomes = parsed.out;
+    guardExports = parsed.guardExports;
   } finally {
     fs.rmSync(path.dirname(probe), { recursive: true, force: true });
   }
@@ -121,6 +131,18 @@ describe('roster seeder write-target guard', () => {
   // a config that does not exist.
   it('can be imported without the CLI running', () => {
     expect(Object.keys(outcomes).sort()).toEqual(Object.keys(CASES).sort());
+  });
+
+  // The declaration file is hand-written and nothing compiles the module it
+  // describes, so a renamed or removed export would leave TypeScript happily
+  // checking against a shape that no longer exists. This compares the declared
+  // names to what the module really exports at runtime.
+  it('has a declaration file naming the module real exports', () => {
+    expect(guardExports).toEqual([
+      'assertDeclaredWriteTarget',
+      'assertDeclaredWriteTargetFromEnv',
+      'parseConnectionTarget',
+    ]);
   });
 
   describe('a dry run is exempt, because it writes nothing', () => {
