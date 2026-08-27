@@ -12,7 +12,7 @@
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { pathToFileURL } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { parse as csvParse } from 'csv-parse/sync';
 // Relative, not '@/...'. That alias is declared in apps/web/tsconfig.json and
 // this file sits outside that project, so the alias resolved for the editor
@@ -20,6 +20,10 @@ import { parse as csvParse } from 'csv-parse/sync';
 // single row. db.ts pulls in only `pg` and a relative './env', so reaching it
 // directly costs nothing and needs no root tsconfig to exist.
 import { query } from '../apps/web/src/server/pilot/db';
+// The guard the six apps/web reference-data loaders already use. Imported
+// rather than reimplemented: this repository carries many inline copies of the
+// same parse, and postgresWriteTarget.test.ts covers this one.
+import { assertDeclaredWriteTargetFromEnv } from '../apps/web/scripts/lib/postgres-write-target.mjs';
 
 interface SeedConfig {
   organizationId: string;
@@ -473,6 +477,69 @@ function assertDestructiveSeedAllowed(dryRun: boolean): void {
   );
 }
 
+// Refuses a real seed against a database nobody named.
+//
+// WHY THIS SCRIPT NEEDED IT AND DID NOT HAVE IT
+//
+// Every loader under apps/web/scripts asserts its write target before writing
+// a row -- postgres-write-target.mjs records why: a run from a laptop or agent
+// shell holding a production connection string put 361 orphaned rows into
+// production, and nothing objected because the script had no notion of an
+// intended target. This script had no such assertion at all. It is also the
+// one that writes pilot.athletes, pilot.parents and pilot.guardian_links --
+// children's records -- so it was the seeder with the most to lose and the
+// least protection.
+//
+// DRY RUN IS EXEMPT, deliberately, and for the reason resolveCoachCheck below
+// already records: a dry run writes nothing, and requiring a live connection
+// string made --dry-run unusable on the laptop most likely to want a preview.
+// A guard on a path that cannot write buys nothing and costs the preview.
+//
+// The refusal never echoes the connection string: it carries credentials, and
+// the shared guard throws bare machine tokens for exactly that reason. These
+// translate each token into what the operator should do about it.
+const TARGET_REFUSALS: Record<string, string> = {
+  MISSING_PPBF_EXPECTED_POSTGRES_HOSTNAME:
+    'Refusing to run: PPBF_EXPECTED_POSTGRES_HOSTNAME is not set, so this script cannot tell '
+    + 'which database it is about to write children\'s records into. Set it and '
+    + 'PPBF_EXPECTED_POSTGRES_DATABASE to the target you intend, or pass --dry-run.',
+  MISSING_PPBF_EXPECTED_POSTGRES_DATABASE:
+    'Refusing to run: PPBF_EXPECTED_POSTGRES_DATABASE is not set, so this script cannot tell '
+    + 'which database it is about to write children\'s records into. Set it and '
+    + 'PPBF_EXPECTED_POSTGRES_HOSTNAME to the target you intend, or pass --dry-run.',
+  POSTGRES_TARGET_MISMATCH:
+    'Refusing to run: AZURE_POSTGRES_CONNECTION_STRING points at a different host or database '
+    + 'than PPBF_EXPECTED_POSTGRES_HOSTNAME / PPBF_EXPECTED_POSTGRES_DATABASE declare. One of '
+    + 'the two is wrong; this script will not guess which.',
+  INVALID_POSTGRES_CONNECTION_STRING:
+    'Refusing to run: AZURE_POSTGRES_CONNECTION_STRING is not a parseable URL.',
+  INVALID_POSTGRES_PROTOCOL:
+    'Refusing to run: AZURE_POSTGRES_CONNECTION_STRING is not a postgres:// or postgresql:// URL.',
+  INCOMPLETE_POSTGRES_TARGET:
+    'Refusing to run: AZURE_POSTGRES_CONNECTION_STRING names no hostname or no database.',
+};
+
+export function assertDeclaredWriteTarget(dryRun: boolean, env = process.env): void {
+  if (dryRun) {
+    return;
+  }
+
+  const connectionString = env.AZURE_POSTGRES_CONNECTION_STRING?.trim();
+  if (!connectionString) {
+    throw new Error(
+      'Refusing to run: AZURE_POSTGRES_CONNECTION_STRING is not set, so there is no target to '
+      + 'check. Pass --dry-run to preview without writing.',
+    );
+  }
+
+  try {
+    assertDeclaredWriteTargetFromEnv(connectionString, env);
+  } catch (error) {
+    const token = error instanceof Error ? error.message : String(error);
+    throw new Error(TARGET_REFUSALS[token] ?? `Refusing to run: ${token}.`);
+  }
+}
+
 // Whether the coach-existence check can run.
 //
 // A real seed always needs the database -- it is about to write to it, and a
@@ -504,6 +571,7 @@ async function resolveCoachCheck(dryRun: boolean): Promise<boolean> {
 async function seedData(config: SeedConfig) {
   const dryRun = config.options.dryRun || false;
   assertDestructiveSeedAllowed(dryRun);
+  assertDeclaredWriteTarget(dryRun);
 
   console.log(`\n📊 PPBF Data Seed Script`);
   console.log(`Organization: ${config.organizationId}`);
@@ -630,28 +698,40 @@ async function seedData(config: SeedConfig) {
 // CLI
 // ============================================================================
 
-const args = process.argv.slice(2);
-let configPath = 'scripts/seed-data.config.ts';
-let dryRun = false;
-let iUnderstandOverwrite = false;
+function runCli(): void {
+  const args = process.argv.slice(2);
+  let configPath = 'scripts/seed-data.config.ts';
+  let dryRun = false;
+  let iUnderstandOverwrite = false;
 
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--config') configPath = args[i + 1];
-  if (args[i] === '--dry-run') dryRun = true;
-  if (args[i] === '--i-understand-overwrite') iUnderstandOverwrite = true;
-}
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--config') configPath = args[i + 1];
+    if (args[i] === '--dry-run') dryRun = true;
+    if (args[i] === '--i-understand-overwrite') iUnderstandOverwrite = true;
+  }
 
-// Checked before the config file is even imported, so refusal never depends
-// on how far a real run would have gotten -- the config could point at
-// production and this still exits before that path is read.
-if (!destructiveSeedAllowed(dryRun, iUnderstandOverwrite)) {
-  console.error(
-    'Refusing to run: this script overwrites existing athletes, goals, and sessions on conflict '
-    + '(roster import never does). Preview with --dry-run, or confirm the overwrite explicitly '
-    + 'with --i-understand-overwrite or PPBF_ALLOW_DESTRUCTIVE_SEED=true.',
-  );
-  process.exit(2);
-}
+  // Checked before the config file is even imported, so refusal never depends
+  // on how far a real run would have gotten -- the config could point at
+  // production and this still exits before that path is read.
+  if (!destructiveSeedAllowed(dryRun, iUnderstandOverwrite)) {
+    console.error(
+      'Refusing to run: this script overwrites existing athletes, goals, and sessions on conflict '
+      + '(roster import never does). Preview with --dry-run, or confirm the overwrite explicitly '
+      + 'with --i-understand-overwrite or PPBF_ALLOW_DESTRUCTIVE_SEED=true.',
+    );
+    process.exit(2);
+  }
+
+  // Same placement, same reason: the target is checked before the config is
+  // read, so a config naming a production organization cannot get as far as
+  // being loaded against a database nobody declared. seedData() checks it
+  // again for a programmatic caller, exactly as the destructive guard does.
+  try {
+    assertDeclaredWriteTarget(dryRun);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(2);
+  }
 
 // Import config.
 //
@@ -666,23 +746,41 @@ if (!destructiveSeedAllowed(dryRun, iUnderstandOverwrite)) {
 // by a message about overwriting athletes, which sends the reader to inspect a
 // file that loaded perfectly. Loading and running fail for unrelated reasons
 // and now report separately.
-import(pathToFileURL(path.resolve(configPath)).href)
-  .catch((err) => {
-    console.error(`Failed to load config from ${configPath}:`, err.message);
-    if (err instanceof Error && 'code' in err && err.code === 'ERR_MODULE_NOT_FOUND') {
-      console.error(
-        'Copy scripts/seed-data.config.example.ts to scripts/seed-data.config.ts, '
-        + 'or pass --config <path>.',
-      );
-    }
-    process.exit(1);
-  })
-  .then((module) => {
-    const config: SeedConfig = module.default;
-    if (dryRun) config.options.dryRun = true;
-    return seedData(config);
-  })
-  .catch((err) => {
-    console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
-  });
+  void import(pathToFileURL(path.resolve(configPath)).href)
+    .catch((err) => {
+      console.error(`Failed to load config from ${configPath}:`, err.message);
+      if (err instanceof Error && 'code' in err && err.code === 'ERR_MODULE_NOT_FOUND') {
+        console.error(
+          'Copy scripts/seed-data.config.example.ts to scripts/seed-data.config.ts, '
+          + 'or pass --config <path>.',
+        );
+      }
+      process.exit(1);
+    })
+    .then((module) => {
+      const config: SeedConfig = module.default;
+      if (dryRun) config.options.dryRun = true;
+      return seedData(config);
+    })
+    .catch((err) => {
+      console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    });
+}
+
+// Run the CLI only when this file IS the entry point.
+//
+// Without this the whole block above executed on import -- reading argv,
+// possibly calling process.exit(2), and importing a config that deliberately
+// does not exist in the repository. That is why nothing tests this file: it
+// could not be imported. Matches the pattern
+// apps/web/scripts/pilot-apply-drills-migration.mjs already uses, and
+// path.resolve on argv[1] so a relative invocation (`tsx scripts/seed-data.ts`)
+// compares equal to the resolved module path.
+const isMainModule = process.argv[1]
+  ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  : false;
+
+if (isMainModule) {
+  runCli();
+}
