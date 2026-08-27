@@ -43,12 +43,20 @@ Ship **P0.1–P0.6** to **deployed production**. No mid-loop Jason mock reviews.
 1. Create/use branch `p0-production`  
 2. Implement P0.1 → P0.6 completely  
 3. Build green  
-4. Deploy **staging** → smoke click path  
-5. Fix until smoke passes  
-6. Open PR → merge to `main` with green CI. **That is `MERGED`, and nothing
-   more.**  
-7. Reply: `READY FOR STAGING` + the staging URL + the click path, and hand the
-   release to Jason. Production is his instruction, not this file's step 8.  
+4. Open PR with green CI. **Stop there.** That is the whole of this lane's
+   work.  
+5. Reply: `READY FOR RELEASE` + the PR number, and hand it to Jason.  
+
+**Amended 2026-08-27.** Steps 4-6 previously read "Deploy **staging** → smoke
+click path", "Fix until smoke passes", and "Open PR → merge to `main`". Under
+`AGENT_KERNEL.md`'s Lane model a build lane does neither: it does not dispatch
+`deploy-staging`, and it does not merge. One release-control lane stages,
+gates, and merges. Green CI is a precondition, not an authorization.
+
+The staging smoke check did not disappear — it moved to the lane that owns the
+deploy, which is also the lane that can read the run's step list and capture
+the release digest. This file previously asked a ticket lane to do a thing it
+cannot verify the result of.  
 
 **Corrected 2026-08-22 — steps 6 and 7 used to read "Open PR → merge to main
 (or prod branch) for PRODUCTION" and "Reply: READY FOR PRODUCTION".** Both were

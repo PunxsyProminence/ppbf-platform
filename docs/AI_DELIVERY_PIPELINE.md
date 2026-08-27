@@ -7,7 +7,14 @@ This file governs staging and production release work only. Ordinary building fo
 There is no permanent production bot, deploy coordinator, gatekeeper model, or model-specific release owner.
 
 - Jason is the sole human production approval authority.
-- Any current repo-capable AI/session may temporarily prepare or operate one release after Jason explicitly requests that release work.
+- Release work runs in the release-control lane. Jason names which session holds
+  that role, and the authority is task-scoped and ends when the release is
+  completed, stopped, or handed back. A build lane does not dispatch
+  `apply-migrations`, `deploy-staging` or `deploy-production` -- see
+  AGENT_KERNEL.md's Lane model. The older wording here read "any current
+  repo-capable AI/session may temporarily prepare or operate one release",
+  which a build lane handed a release request could read as permission the
+  kernel denies.
 - That authority is task-scoped and ends when the release is completed, stopped, or handed back.
 - No AI may approve the protected GitHub `production` environment, invent a migration attestation, authorize a rollback, weaken a failed gate, or claim live verification from source reading.
 

@@ -63,13 +63,13 @@ Magic-link sign-in -- required in every environment real families use:
 ## Step 4: Governance
 A direct owner/user request may go straight to a bounded branch/PR after
 checking current source and open PRs; a ticket is optional unless the work
-needs coordination, handoff, scheduling, or a durable decision record. The
-owner has authorized the authoring session to merge ordinary bounded PRs once
-every required check and branch-protection requirement passes -- see
-docs/current/ACTIVE_WORK.md's "Builder rule" for the current, authoritative
-statement of this. That authorization does not extend to production
-deployment, migrations against protected environments, or anything the
-guardrails place behind a separate human gate.
+needs coordination, handoff, scheduling, or a durable decision record. A build
+lane opens the PR and stops there; one release-control lane merges it. See
+AGENT_KERNEL.md's Lane model, which is authoritative -- the older wording
+here said the authoring session could merge, and was written when one session
+held both roles. Green CI is a precondition, not an authorization. Merging
+was never the widest thing withheld: production deployment and migrations
+against protected environments remain behind a separate human gate.
 
 ## Step 5: Start Development
 From the repository root:
