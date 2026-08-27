@@ -66,6 +66,7 @@ jobs:
             athleteE2e: false,
             guardianE2e: false,
             goldenEraE2e: false,
+            activationE2e: false,
             unknownCode: false,
           });
 
@@ -86,6 +87,10 @@ jobs:
             athleteE2e: true,
             guardianE2e: true,
             goldenEraE2e: true,
+            // roleSession is not on the activation path: that journey is
+            // unauthenticated from end to end, so the client role cache is
+            // never consulted during it.
+            activationE2e: false,
             unknownCode: false,
           });
 
@@ -97,6 +102,29 @@ jobs:
           assert.equal(classifyPaths(['apps/web/e2e/athlete-journey.spec.ts']).athleteE2e, true);
           assert.equal(classifyPaths(['apps/web/e2e/guardian-journey.spec.ts']).guardianE2e, true);
           assert.equal(classifyPaths(['apps/web/e2e/support/signIn.ts']).coachE2e, true);
+
+          // THE ACTIVATION JOURNEY. Same rule as every predicate above: the
+          // suite must fire for its own spec and for each surface it walks, or
+          // it is a spec that never runs -- which reads as coverage while
+          // providing none.
+          assert.equal(classifyPaths(['apps/web/e2e/activation-journey.spec.ts']).activationE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/activate/page.tsx']).activationE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/api/pilot/auth/activate/route.ts']).activationE2e, true);
+          assert.equal(classifyPaths(['apps/web/src/server/pilot/pinPolicy.ts']).activationE2e, true);
+
+          // The door, and the reason this suite exists at all: /athlete/sign-in
+          // is the only page linking to /activate, and before that link a new
+          // athlete holding a code had a form that would refuse them and
+          // nowhere to go. A change dropping it must run the suite that checks
+          // it is there.
+          assert.equal(classifyPaths(['apps/web/app/athlete/sign-in/page.tsx']).activationE2e, true);
+
+          // ...and no wider. This journey never signs in, so the session gate,
+          // the server auth module and the role routing table are not on its
+          // path; matching them would run it on every session-layer change for
+          // no coverage gained. Same restraint the homepage predicate states.
+          assert.equal(classifyPaths(['apps/web/src/server/pilot/pageGuard.ts']).activationE2e, false);
+          assert.equal(classifyPaths(['apps/web/components/RoleSessionGate.tsx']).activationE2e, false);
 
           // The homepage suite was the one journey whose own spec did not fire
           // its flag, so an edit to public-homepage.spec.ts could not run
@@ -250,7 +278,7 @@ jobs:
         run: npm run test:migrations
 
       - name: Install Playwright browsers
-        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true' || steps.changes.outputs.golden_era_e2e == 'true')
+        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true' || steps.changes.outputs.golden_era_e2e == 'true' || steps.changes.outputs.activation_e2e == 'true')
         run: npx --workspace web playwright install --with-deps chromium
 
       - name: Run board governance E2E
@@ -277,6 +305,10 @@ jobs:
       - name: Run guardian journey E2E
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.guardian_e2e == 'true'
         run: npm --workspace web run test:e2e:guardian
+
+      - name: Run activation journey E2E
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.activation_e2e == 'true'
+        run: npm --workspace web run test:e2e:activation
 
       # The golden-era resolved-style proofs. Same shape as the five suites
       # above and needing no database either -- but the reason it is its own

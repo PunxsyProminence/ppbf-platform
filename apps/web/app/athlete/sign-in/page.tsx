@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import {
@@ -61,10 +62,16 @@ export default function AthletePinSignInPage() {
       }
 
       const resolution = await loadAuthoritativeRoleSession(`${apiBase()}/api/pilot/auth/session`);
-      // Every athlete starts on the gym-issued PIN with must_change_pin set, so
-      // this is the FIRST sign-in of every account, not an error. /login and
-      // RoleSessionGate both send this state to /change-pin; without the same
+      // An account still holding a PIN somebody at the gym set for it, which
+      // /login and RoleSessionGate both send to /change-pin; without the same
       // branch here the athlete looped on "please sign in again" forever.
+      //
+      // This is no longer the first sign-in of every account, as it said until
+      // now. Self-activation at /activate leaves must_change_pin false because
+      // the athlete chose the PIN themselves and nobody else knows it, so the
+      // ordinary path through this page does not reach this branch at all. It
+      // stays because rows predating the shared-PIN retirement still carry the
+      // flag, and an admin reset still sets it.
       if (!resolution.ok && resolution.reason === 'pin_change_required') {
         router.replace('/change-pin');
         return;
@@ -177,6 +184,27 @@ export default function AthletePinSignInPage() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        {/* The way in, which this page did not have.
+
+            An athlete's first credential is a one-time activation code, not a
+            PIN -- createAthleteAccount inserts pin_hash null and active_flag
+            false, so a new account cannot sign in here at all until the code is
+            redeemed at /activate. This page named neither the code nor that
+            route, and /activate is not linked from anywhere else an athlete
+            reaches, so the only way to it was a URL somebody had to already
+            know. An athlete standing at the tablet holding their code had a
+            sign-in form that would refuse them and no door.
+
+            Below the button rather than above it: an athlete who already has a
+            PIN is the common case and should not have to read past this. */}
+        <p className="mt-[var(--s5)] border-t border-[color:rgba(0,0,0,.14)] pt-[var(--s5)] text-[length:var(--t-md)] leading-[1.55] text-[color:var(--hide-800)]">
+          First time here, or holding a one-time code from your gym?{' '}
+          <Link href="/activate" className="underline underline-offset-4 text-[color:var(--brass-800)]">
+            Set up your sign-in
+          </Link>
+          .
+        </p>
       </div>
     </main>
   );

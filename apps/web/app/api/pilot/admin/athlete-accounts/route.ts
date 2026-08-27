@@ -1,11 +1,23 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
-import { createAthleteAccount } from '@/src/server/pilot/auth';
+import { provisionAthleteActivation } from '@/src/server/pilot/activation';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
+
+// Provisioning and code issuance have already committed together before this
+// runs. An audit outage must not hide the only plaintext copy of that code and
+// strand the inactive account; log only a sanitized SQLSTATE and return it.
+async function auditCreate(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try { await writePilotAuditEvent(event); } catch (error) {
+    const raw = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(raw);
+    console.error({ event: 'pilot-athlete-activation-audit-write-failed', ...(code ? { code } : {}) });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,19 +44,22 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing account_id or athlete_id');
     }
 
-    await createAthleteAccount(accountId, athleteId, principal.organizationId);
+    const activation = await provisionAthleteActivation({
+      accountId, athleteId, organizationId: principal.organizationId,
+      issuedByAccountId: principal.accountId, issuedByRole: principal.role, mode: 'create',
+    });
 
-    await writePilotAuditEvent({
+    await auditCreate({
       event_type: 'create',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
       organization_id: principal.organizationId,
       entity_type: 'athlete_account',
       entity_id: accountId,
-      details: { athlete_id: athleteId, account_state: 'pending_pin_activation' },
+      details: { athlete_id: athleteId, account_state: 'pending_activation' },
     });
 
-    return NextResponse.json({ ok: true, account_id: accountId, athlete_id: athleteId, account_state: 'pending_pin_activation' });
+    return NextResponse.json({ ok: true, account_id: accountId, athlete_id: athleteId, account_state: 'pending_activation', activation_code: activation.code, expires_at: activation.expiresAt });
   } catch (error) {
     return jsonError(error);
   }

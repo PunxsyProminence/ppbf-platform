@@ -6,7 +6,6 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
-import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
 interface AthletePinItem {
   athlete_id: string;
@@ -17,18 +16,29 @@ interface AthletePinItem {
   account_updated_at: string | null;
 }
 
-type PinActionMode = 'activate' | 'reset';
+/* THIS DESK STOPPED ISSUING PINS, AND THE PAGE HAD NOT NOTICED.
+   ------------------------------------------------------------------------
+   It used to POST {account_id, pin, mode} and tell the administrator to read
+   the PIN out to the athlete. The shared-PIN retirement rewrote
+   /api/pilot/admin/accounts/pin-reset to read ONLY account_id and answer with
+   a one-time activation code; `pin` and `mode` are ignored.
 
-const PIN_REGEX = /^\d{6}$/;
+   So every click here did this: the typed PIN was discarded, the athlete's
+   account was DEACTIVATED and their sessions revoked (the route's reset path),
+   an activation code was minted and returned -- and this page dropped it on
+   the floor, because nothing in it read the response body. The athlete was
+   locked out, the administrator was told "PIN activated. Tell the athlete this
+   PIN", and the one credential that could have let them back in was gone.
+
+   The page now does what the route does: it issues a code and shows it once. */
+type IssuedCode = { code: string; expiresAt: string | null; athleteName: string };
 
 function PinManagementPageContent() {
   const [items, setItems] = useState<AthletePinItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
-  const [mode, setMode] = useState<PinActionMode>('activate');
-  const [pin, setPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
+  const [issued, setIssued] = useState<IssuedCode | null>(null);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [createAccountId, setCreateAccountId] = useState('');
@@ -77,19 +87,10 @@ function PinManagementPageContent() {
     event.preventDefault();
     setError('');
     setSuccess('');
+    setIssued(null);
 
     if (!selectedItem?.account_id) {
       setError('This athlete does not have a linked account ID yet.');
-      return;
-    }
-
-    if (!PIN_REGEX.test(pin)) {
-      setError('PIN must be exactly 6 digits.');
-      return;
-    }
-
-    if (pin !== confirmPin) {
-      setError('PIN and confirmation do not match.');
       return;
     }
 
@@ -99,37 +100,41 @@ function PinManagementPageContent() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_id: selectedItem.account_id,
-          pin,
-          mode,
-        }),
+        // account_id ONLY. The route ignores anything else, and sending a PIN
+        // it will not store is how this page came to lie about what it did.
+        body: JSON.stringify({ account_id: selectedItem.account_id }),
       });
       const payload = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        activation_code?: string;
+        expires_at?: string | null;
       };
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || 'PIN operation failed');
+        throw new Error(payload.error || 'Could not issue an activation code');
       }
 
-      setPin('');
-      setConfirmPin('');
-      // Both messages now say what the athlete has to do next, because both
-      // paths set must_change_pin: the PIN typed on this screen is one the
-      // administrator knows, so it gets the athlete in once and no further.
-      // Saying only "activated successfully" left an admin telling a kid a
-      // PIN and believing that was the end of it.
-      setSuccess(
-        mode === 'activate'
-          ? 'PIN activated. Tell the athlete this PIN -- they will be asked to choose their own the first time they sign in, and it will not work for anything else until they do.'
-          : 'PIN reset successfully. Existing sessions were revoked, and the athlete will be asked to choose their own PIN on their next sign-in.',
-      );
+      // The account has just been deactivated and its sessions revoked, and
+      // this code is the only way back in. If it did not arrive, say so
+      // loudly rather than reporting success -- an administrator who walks
+      // away from this screen without the code has locked the athlete out.
+      if (!payload.activation_code) {
+        throw new Error(
+          'The code did not come back. This athlete is now deactivated and cannot sign in. '
+          + 'Issue another code from Activation Codes before they next come to the gym.',
+        );
+      }
+
+      setIssued({
+        code: payload.activation_code,
+        expiresAt: payload.expires_at ?? null,
+        athleteName: selectedItem.full_name,
+      });
       setLoading(true);
       await loadDirectory();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'PIN operation failed');
+      setError(submitError instanceof Error ? submitError.message : 'Could not issue an activation code');
     } finally {
       setSaving(false);
     }
@@ -195,10 +200,11 @@ function PinManagementPageContent() {
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s5)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-          <p className="t-eyebrow">Gym Admin PIN Control</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Activate or Reset Athlete PIN</h1>
+          <p className="t-eyebrow">Gym Admin Credential Control</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Issue an Athlete Activation Code</h1>
           <p className="t-body mt-[var(--s3)]">
-            Select an athlete, choose activate or reset, then save a 6-digit PIN. Stored PIN values are never displayed.
+            Select an athlete and issue a one-time code. They redeem it and choose a PIN only they
+            know -- no administrator sets or sees an athlete&apos;s PIN.
           </p>
         </header>
 
@@ -310,67 +316,15 @@ function PinManagementPageContent() {
             </form>
 
             <form className="mt-[var(--s3)] space-y-[var(--s3)]" onSubmit={submitPinAction}>
-              <fieldset className="space-y-[var(--s2)]">
-                <legend className="t-label">Action</legend>
-                <label className="flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]">
-                  <input
-                    type="radio"
-                    name="pin-mode"
-                    value="activate"
-                    checked={mode === 'activate'}
-                    onChange={() => setMode('activate')}
-                    className="accent-[var(--brass-500)]"
-                  />
-                  Activate PIN
-                </label>
-                <label className="flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]">
-                  <input
-                    type="radio"
-                    name="pin-mode"
-                    value="reset"
-                    checked={mode === 'reset'}
-                    onChange={() => setMode('reset')}
-                    className="accent-[var(--brass-500)]"
-                  />
-                  Reset PIN
-                </label>
-              </fieldset>
-
-              <div className="field">
-                <label htmlFor="pin-value" className="t-label">
-                  Enter PIN
-                </label>
-                <input
-                  id="pin-value"
-                  type="password"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={pin}
-                  maxLength={DEFAULT_PIN_LENGTH}
-                  onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-                  className="input font-mono"
-                  placeholder="6 digits"
-                  autoComplete="new-password"
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="pin-confirm" className="t-label">
-                  Confirm PIN
-                </label>
-                <input
-                  id="pin-confirm"
-                  type="password"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={confirmPin}
-                  maxLength={DEFAULT_PIN_LENGTH}
-                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-                  className="input font-mono"
-                  placeholder="Repeat 6 digits"
-                  autoComplete="new-password"
-                />
-              </div>
+              <p className="t-body">
+                Issues a one-time activation code for{' '}
+                <strong>{selectedItem?.full_name ?? 'the selected athlete'}</strong>. This
+                deactivates the account and revokes every open session, so the athlete cannot
+                sign in until they redeem the code and choose their own PIN.
+              </p>
+              <p className="t-body">
+                You will never see their PIN. Nobody but the athlete ever knows it.
+              </p>
 
               {error && (
                 <div role="alert" className="alert alert--critical alert--tight">
@@ -389,12 +343,52 @@ function PinManagementPageContent() {
                 </div>
               )}
 
+              {/* THE CODE ITSELF. This block is the whole repair: the route has
+                  been returning it all along and this page discarded it, so the
+                  athlete was left deactivated with no way back.
+
+                  role="status" and aria-live so a screen-reader administrator is
+                  told it arrived -- it appears without any navigation, and an
+                  announcement is the only way they learn it is on screen. */}
+              {issued && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="mat-leather--raised rounded-[var(--r-md)] border border-[color:var(--brass-400)] p-[var(--s4)]"
+                >
+                  <p className="t-eyebrow">One-time code for {issued.athleteName}</p>
+                  <p className="t-data mt-[var(--s3)] select-all break-all text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-lg)' }}>
+                    {issued.code}
+                  </p>
+                  <p className="t-body mt-[var(--s3)]">
+                    Write it down or hand it over now. It is shown once, it works once, and it
+                    cannot be read back from anywhere.
+                  </p>
+                  {issued.expiresAt && (
+                    <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
+                      Expires {issued.expiresAt}
+                    </p>
+                  )}
+                  <p className="t-body mt-[var(--s3)]">
+                    The athlete redeems it at <strong>/activate</strong> and chooses their own PIN.
+                    Until they do, they cannot sign in.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIssued(null)}
+                    className="btn btn--ghost mt-[var(--s3)] w-full"
+                  >
+                    Done — I have written it down
+                  </button>
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={saving || !selectedItem?.account_id}
                 className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving ? 'Saving...' : mode === 'activate' ? 'Activate PIN' : 'Reset PIN'}
+                {saving ? 'Issuing...' : 'Issue Activation Code'}
               </button>
             </form>
           </section>

@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
+import OperationsLink from '@/components/OperationsLink';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -295,9 +296,9 @@ export default function SchedulerPage() {
                   Attendance Dashboard
                 </Link>
               ) : null}
-              <Link href="/operations" className="btn btn--ghost btn--tap">
+              <OperationsLink className="btn btn--ghost btn--tap">
                 Back to Operations
-              </Link>
+              </OperationsLink>
             </div>
           </header>
 

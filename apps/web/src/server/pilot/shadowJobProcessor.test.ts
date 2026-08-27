@@ -189,3 +189,94 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     expect(mockFailJob).not.toHaveBeenCalled();
   });
 });
+
+/* THE BUDGET THE JOB ASKS FOR, AND WHAT IT DOES WHEN THE BUDGET RUNS OUT.
+   ------------------------------------------------------------------------
+
+   Staging gate run 33019214969 failed with SHADOW_AI_EMPTY_RESPONSE on the
+   background Heavy Bag job while the SYNCHRONOUS Heavy Bag passed on the same
+   run. That asymmetry was the clue: the synchronous path takes its ceiling
+   from the per-model registry (16384 for the heavy tier), and this file
+   hardcoded 4096.
+
+   shadowRouter.ts measured these deployments on 2026-07-29 and every one of
+   them produced MORE completion tokens than 4096 -- the smallest, luna, came
+   in at 4110. Reasoning tokens are spent from the same budget, so gpt-5's
+   2560 reasoning alone exceeded the 2048 the two JSON jobs asked for.
+
+   So the failure was never a flake. The jobs were provisioned below the
+   platform's own measured floor and succeeded only when a model happened to
+   finish short. Nothing asserted the budget, so nothing failed until a real
+   answer ran long against a real deployment. */
+describe('background jobs ask for a budget a real answer fits in', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQueryOne.mockResolvedValue({
+      role: 'coach',
+      athlete_id: null,
+      is_platform_owner: false,
+      organization_status: 'active',
+    } as never);
+  });
+
+  /** The worst completion length shadowRouter measured, across all four
+      deployments (gpt-5: 6352 tokens). A ceiling at or below this is a job
+      that fails whenever the model answers at its measured typical length. */
+  const WORST_MEASURED_COMPLETION_TOKENS = 6352;
+
+  function requestedMaxCompletionTokens(): number {
+    const mockFetch = jest.mocked(global.fetch);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const init = mockFetch.mock.calls[0][1];
+    const body = JSON.parse(String(init?.body)) as { max_completion_tokens?: number };
+    expect(typeof body.max_completion_tokens).toBe('number');
+    return body.max_completion_tokens as number;
+  }
+
+  test('Heavy Bag asks for more than the longest answer any deployment measured', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+    llmReply('Rotate the lead foot before the hand lands.');
+
+    await processNextShadowJob();
+
+    // Strictly greater, not >=: a ceiling exactly at the measured length
+    // leaves zero headroom for a prompt that reasons longer than the sample.
+    expect(requestedMaxCompletionTokens()).toBeGreaterThan(WORST_MEASURED_COMPLETION_TOKENS);
+  });
+
+  test('an empty answer that ran out of budget is not reported as an empty answer', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      // What a reasoning deployment returns when reasoning consumed the whole
+      // ceiling: HTTP 200, a choice, no content, finish_reason 'length'.
+      json: async () => ({ choices: [{ message: { content: '' }, finish_reason: 'length' }] }),
+    }) as unknown as typeof fetch;
+
+    const result = await processNextShadowJob();
+
+    // The distinction is the point. Both used to be SHADOW_AI_EMPTY_RESPONSE,
+    // so the job row recorded the symptom and lost the cause -- and an
+    // operator could not tell "the provider returned nothing" from "we
+    // refused to pay for the answer we asked for". Those want opposite fixes.
+    expect(result.error).toBe('SHADOW_AI_BUDGET_EXHAUSTED');
+    expect(mockFailJob).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: heavyBagJob().jobId }),
+      'SHADOW_AI_BUDGET_EXHAUSTED',
+    );
+  });
+
+  test('an empty answer that did NOT run out of budget still reports empty', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '   ' }, finish_reason: 'stop' }] }),
+    }) as unknown as typeof fetch;
+
+    const result = await processNextShadowJob();
+
+    // Without this case the new branch could swallow every empty response and
+    // the two tests above would both still pass.
+    expect(result.error).toBe('SHADOW_AI_EMPTY_RESPONSE');
+  });
+});

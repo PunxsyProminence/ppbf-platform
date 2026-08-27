@@ -16,6 +16,7 @@ import { createWriteStream } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
+import { Client } from 'pg';
 
 import { mintGateSession } from './lib/gate-session.mjs';
 
@@ -32,8 +33,22 @@ const athleteAccountId = process.env.PILOT_SHADOW_ATHLETE_ACCOUNT_ID || '';
 const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
 
 /**
- * The PIN the gate's athlete picks for itself, replacing the one the
- * administrator typed at activation.
+ * The PIN the gate's athlete picks for itself when it redeems its activation
+ * code.
+ *
+ * No administrator ever types a PIN any more -- that is the whole point of the
+ * shared-PIN retirement, and it is why this is the ONLY PIN the account ever
+ * holds. `athletePin` above is now just the fixture credential the provisioner
+ * writes before the run; intake promotion nulls it (createOrUpdateAthleteAccount
+ * clears pin_hash and active_flag on its update branch).
+ *
+ * That old PIN is refused TWICE, and the pair is deliberate. Step 9c tries it
+ * while the account is still inactive, which proves promotion leaves no usable
+ * credential -- but login bails on `unknown_or_inactive_account` there and
+ * compares nothing, so on its own it says nothing about the PIN. After step 10
+ * it is tried again against the now-active account holding a real hash, where
+ * the refusal has to come from the credential check itself. One assertion
+ * without the other is the weaker half of the claim.
  *
  * Deliberately NOT a new environment variable. A required env var the deploy
  * workflow does not set yet fails the gate on its next run for a
@@ -88,6 +103,132 @@ try {
 } catch (error) {
   console.error(String(error));
   process.exit(1);
+}
+
+/**
+ * Asserts that a call is REFUSED, and fails with what it means when it is not.
+ *
+ * A negative is the easiest kind of assertion to write wrongly: `await
+ * expectToThrow(fn)` passes just as happily when the call throws for a reason
+ * nobody intended -- a typo in the path, a 500, a network blip -- so it can
+ * report a guard as holding while the guard is not being reached at all. This
+ * requires the refusal to be an HTTP status the client reports (createClient
+ * throws only on a non-2xx, with the status in the message) and requires it to
+ * be a 4xx: a 5xx is a broken route, not a refusal, and must never read as one.
+ *
+ * 429 is rejected even though it is a 4xx, and that is the important part: a
+ * throttled call never reached the guard, so accepting it would let a rate
+ * limit stand in as proof that a credential was refused on its merits. Pass
+ * `expectedStatus` wherever the exact refusal is known and pin it.
+ *
+ * `message` says what it MEANS for this call to have succeeded, not that it
+ * succeeded -- whoever reads a red gate at 2am needs the consequence.
+ */
+async function assertRefusal(call, message, expectedStatus) {
+  let refused = false;
+  try {
+    await call();
+  } catch (error) {
+    const status = Number(String(error).match(/failed \((\d{3})\)/)?.[1] ?? 0);
+    /* 429 is checked FIRST, before the expectedStatus comparison. It used to
+       be second, which made this branch unreachable for exactly the two calls
+       that pin a status: a throttled call fell into the mismatch arm and
+       reported "Expected a 401 refusal, got ... (429)". True, but it buries
+       the lede -- the useful fact is not that the status differed, it is that
+       the guard was never reached, and the doc above names that message as
+       the property keeping clearAuthThrottle honest. A safety message that
+       cannot fire on the calls it was written for is not a safety message. */
+    if (status === 429) {
+      throw new Error(
+        `Throttled before the guard was reached, so nothing was proven: ${String(error)}`,
+      );
+    }
+    if (expectedStatus && status !== expectedStatus) {
+      throw new Error(`Expected a ${expectedStatus} refusal, got: ${String(error)}`);
+    }
+    if (status >= 400 && status < 500) {
+      refused = true;
+    } else {
+      throw new Error(`Expected a refusal, got a different failure: ${String(error)}`);
+    }
+  }
+  if (!refused) throw new Error(message);
+}
+
+/**
+ * Clears the durable auth throttle so the NEXT deliberate failed sign-in
+ * reaches the credential check instead of the rate limiter.
+ *
+ * This is fixture hygiene, not a weakened guard, and the difference matters
+ * enough to spell out. The refusals in this gate are about WHO may sign in --
+ * a not-yet-activated account must not sign in at all, and an
+ * administrator-known activation code must not work as a PIN. The rate
+ * limiter is a different guard with its own tests, and it is not under test
+ * here. Left alone it makes those assertions untestable:
+ * recordDurableFailedAttempt sets `blocked_until = now() + 1000ms` on the
+ * VERY FIRST failure -- the MAX_ATTEMPTS_THRESHOLD of 5 only controls how
+ * fast the backoff grows, it is not a grace period -- so one deliberate
+ * failure throttles the next one.
+ *
+ * That is what happened on run 33000410968, and the mechanism is worth
+ * stating precisely because the first version of this comment got it wrong.
+ * The 429 was NOT inherited from an earlier run: `delayMs` is
+ * `min(1000 * 2^max(0, attempts - 5), 60000)`, so a bucket blocks for at most
+ * SIXTY SECONDS and a run seven minutes earlier cannot have caused it. The
+ * fifteen minutes in `rateLimit.ts` is how long the ROW is retained before
+ * the sweep deletes it, not how long it blocks. What actually happened is
+ * this gate throttling itself: the first deliberate refusal blocked the
+ * second, one second later.
+ *
+ * The row retention still matters, just not for the blocking. It is why
+ * `attempt_count` accumulates across runs inside that window, and the
+ * accumulation is what would eventually push the count past five and start
+ * the backoff doubling. Deleting the rows is what keeps the count low enough
+ * that the 1500ms wait below stays sufficient.
+ *
+ * The safety property that keeps this honest: assertRefusal REJECTS a 429
+ * outright. So if this clear ever stops working, the gate goes red saying
+ * "throttled before the guard was reached, so nothing was proven" -- it can
+ * never turn a throttle into a passing refusal. The failure mode is loud.
+ *
+ * Both key shapes are cleared because the login route checks both
+ * (`pin_account:{id}` and `pin_ip:{ip}`) and the runner's egress IP is not
+ * knowable from here. These rows are transient anti-brute-force counters in a
+ * staging gate database, not records of anything.
+ */
+async function clearAuthThrottle() {
+  const client = new Client({
+    connectionString,
+    ssl: process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true'
+      ? false
+      : { rejectUnauthorized: true },
+  });
+  await client.connect();
+  try {
+    await client.query(
+      `delete from pilot.auth_rate_limit_buckets
+       where bucket_key = $1 or bucket_key like 'pin_ip:%'`,
+      [`pin_account:${athleteAccountId}`],
+    );
+  } finally {
+    await client.end().catch(() => {});
+  }
+
+  /* THE OTHER HALF, which the DELETE above cannot reach. The login route
+     consults FOUR limiters and 429s if any one of them says limited: a
+     durable bucket per account and per IP (the rows just cleared) and a
+     VOLATILE in-process Map of the same two keys, which lives inside the
+     running container on staging.
+
+     Waiting it out is the only lever available from here, and it is a short
+     wait by construction: delayMs is
+     `min(1000 * 2^max(0, attempts - 5), 60000)`, so while the count stays at
+     or below five -- this gate makes three sign-in attempts in total -- the
+     block is always exactly 1000ms. The DELETE is what keeps the count low
+     enough for that to remain true across repeated runs; without it
+     attempt_count accumulates for fifteen minutes and the backoff starts
+     doubling. The two halves are not alternatives. */
+  await new Promise((resolve) => { setTimeout(resolve, 1500); });
 }
 
 function createClient(name, initialCookie = '') {
@@ -711,70 +852,129 @@ async function run() {
   // credential that was never written, and that the athlete branch should
   // either honour the PIN with must_change_pin set or refuse it as loudly as
   // the guardian branch does. Both are now true: review-action throws
-  // "Unsupported athlete.pin ..." rather than discarding it, and
-  // activateAccountPin -- the supported way the PIN does get set -- sets
-  // must_change_pin, which steps 9c and 9d below exercise.
+  // "Unsupported athlete.pin ..." rather than discarding it, and the
+  // activation flow below is the supported way a credential comes to exist.
   //
   // Activating here is not a workaround: it is the real administrative flow a
-  // promoted athlete goes through, so the gate now covers promote -> activate
-  // -> sign in rather than assuming promotion alone produces a login.
-  console.log('9b) Activate the promoted athlete (real admin flow)');
-  await admin.call('/api/pilot/admin/accounts/pin-reset', {
-    method: 'POST',
-    body: { account_id: athleteAccountId, pin: athletePin, mode: 'activate' },
-  });
-
-  console.log('9c) The activation PIN must not be a usable credential on its own');
-  // An activation PIN is typed by an ADMINISTRATOR, so it is a PIN somebody
-  // other than the athlete knows. activateAccountPin sets must_change_pin for
-  // that reason, and requirePrincipal then refuses every route until the
-  // athlete has replaced it -- so the account can sign in and do exactly one
-  // thing: pick its own PIN.
+  // promoted athlete goes through, so the gate covers promote -> issue code ->
+  // athlete redeems and chooses a PIN -> sign in.
   //
-  // Asserted BEFORE the change, and never removed, for the same reason the
-  // approval-before-review refusal above is asserted before reviewing: a guard
-  // that is only ever exercised in its passing direction is a guard nobody
-  // would notice losing. Delete this block and the gate would still go green
-  // with must_change_pin never set at all.
-  await athlete.call('/api/pilot/auth/login', {
+  // THIS BLOCK WAS REWRITTEN because it had gone stale against the route it
+  // calls, and the staleness was invisible: /admin/accounts/pin-reset used to
+  // take `{ account_id, pin, mode }` and set the PIN an administrator typed.
+  // The shared-PIN retirement replaced that with one-time activation codes --
+  // the route now reads ONLY account_id, ignores `pin` and `mode` entirely,
+  // and answers with an activation_code. So the old step 9b still returned
+  // 200 while setting no credential at all, and step 9c's sign-in on that
+  // never-set PIN failed 401 with "Invalid credentials". The gate had been
+  // asserting a flow the platform no longer ships.
+  console.log('9b) Administrator issues a one-time activation code (real admin flow)');
+  const issued = await admin.call('/api/pilot/admin/accounts/pin-reset', {
     method: 'POST',
-    body: { account_id: athleteAccountId, pin: athletePin },
+    body: { account_id: athleteAccountId },
   });
-
-  let refusedOnActivationPin = false;
-  try {
-    await athlete.call('/api/pilot/athletes/get', {
-      method: 'POST',
-      body: { athlete_id: athleteId },
-    });
-  } catch (error) {
-    if (String(error).includes('PIN change required')) {
-      refusedOnActivationPin = true;
-    } else {
-      throw error;
-    }
-  }
-  if (!refusedOnActivationPin) {
+  const activationCode = typeof issued.activation_code === 'string' ? issued.activation_code : '';
+  if (!activationCode) {
     throw new Error(
-      'An athlete read succeeded while still on the administrator-issued activation PIN. '
-      + 'must_change_pin is not being set by activateAccountPin, so an admin-known credential '
-      + 'grants full athlete access indefinitely.',
+      'The administrator reset returned no activation_code. An admin who cannot issue a code '
+      + 'cannot get a promoted athlete signed in at all, so this is the whole flow, not a detail.',
     );
   }
 
-  console.log('9d) Athlete replaces the activation PIN with one only they know');
-  await athlete.call('/api/pilot/auth/change-pin', {
+  console.log('9c) A promoted athlete has no credential until they make one');
+  /* Asserted BEFORE the redemption that makes it stop being interesting --
+     the same discipline the approval-before-review refusal above uses.
+
+     THE COMPANION ASSERTION MOVED, and why is worth stating. This block used
+     to also try the ACTIVATION CODE as a PIN here, claiming it proved the
+     login route will not accept an administrator-known value as a
+     credential. It proved no such thing at this point in the run: the
+     account is still `active_flag = false`, so loginWithAccountIdAndPin
+     returns null on its `unknown_or_inactive_account` branch and never
+     reaches verifyPin at all. Both refusals were failing on the same line,
+     and the code-as-PIN one would have stayed green with the entire PIN
+     comparison deleted -- exactly the "guard nobody would notice losing"
+     this comment warns about.
+
+     It now runs after step 10, where the account is active and holds a real
+     pin_hash, so the refusal lands on the credential check it names. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => athlete.call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: athletePin },
+    }),
+    'A promoted, not-yet-activated athlete account signed in. Promotion must not leave a '
+    + 'usable credential -- the account exists with pin_hash null and active_flag false '
+    + 'until the athlete redeems a code and chooses their own PIN.',
+    401,
+  );
+
+  console.log('9d) Athlete redeems the code and chooses a PIN only they know');
+  // The athlete picks the PIN. Nobody else ever holds it, which is why there
+  // is no must_change_pin step here any more: there is no admin-known PIN to
+  // change. The route signs them straight in on success and says so.
+  const activated = await athlete.call('/api/pilot/auth/activate', {
     method: 'POST',
-    body: { current_pin: athletePin, new_pin: athleteChosenPin },
+    body: { code: activationCode, pin: athleteChosenPin },
   });
+  if (activated.account_id !== athleteAccountId) {
+    throw new Error(
+      `Activation redeemed to the wrong account: expected ${athleteAccountId}, got ${activated.account_id}.`,
+    );
+  }
+  if (activated.signed_in !== true) {
+    throw new Error(
+      'Activation succeeded but did not sign the athlete in. The athlete is left at a login '
+      + 'form immediately after choosing their PIN, with no way to tell whether it took.',
+    );
+  }
+
+  // A one-time code has to be one-time. Serialized by `for update` on the
+  // token row, so a second redemption sees consumed_at set -- asserted here
+  // because it is the property that keeps a code found on a desk, in an
+  // email, or in a screenshot from being usable a second time.
+  await assertRefusal(
+    () => createClient('shadow-athlete-replay').call('/api/pilot/auth/activate', {
+      method: 'POST',
+      body: { code: activationCode, pin: athleteChosenPin },
+    }),
+    'An activation code was redeemed twice. A code left on a desk or in an inbox stays live '
+    + 'after the athlete has used it.',
+  );
+
+  /* SIGN OUT, and prove the session is actually dead.
+
+     Placed here deliberately: before the throttle clear below and before
+     step 10's sign-in, because logout touches no PIN bucket, whereas putting
+     it after the deliberate refusals would meet their live 1000ms block and
+     fail as a 429 on the success path -- the false positive this file keeps
+     warning about.
+
+     The assertion checks the BODY, not for a throw. The logout route clears
+     the cookie and /auth/session answers an unauthenticated caller with HTTP
+     200 and `authenticated: false`, so an expectation of a 401 here would be
+     wrong about the contract and would fail against correct behaviour. */
+  await athlete.call('/api/pilot/auth/logout', { method: 'POST', body: {} });
+
+  const afterLogout = await athlete.call('/api/pilot/auth/session', { method: 'POST', body: {} });
+  if (afterLogout.authenticated !== false) {
+    throw new Error(
+      'Signing out left the athlete session live. A shared or kiosk device keeps a child '
+      + 'signed in after they believe they have left.',
+    );
+  }
+
+  // ...and once more before the sign-in that must SUCCEED. Two deliberate
+  // failures precede it, and a 429 here would read as "the athlete cannot get
+  // in with the PIN they just chose" -- the most alarming possible false
+  // positive on this gate.
+  await clearAuthThrottle();
 
   console.log('10) Verify athlete login and retrieval');
-  // Signing in again rather than reusing the session: changeOwnPin revokes
-  // every session for the account, including the one that called it, and the
-  // route clears the cookie. That is deliberate -- if the activation PIN was
-  // guessed in the window before the athlete first signed in, this is the
-  // moment that intruder's session dies -- so the gate has to walk the same
-  // path a real athlete does.
+  // Signing in again rather than reusing the activation session: a real
+  // athlete comes back to the login page on their next visit, and that is the
+  // path that has to work with the PIN they chose.
   await athlete.call('/api/pilot/auth/login', {
     method: 'POST',
     body: { account_id: athleteAccountId, pin: athleteChosenPin },
@@ -790,6 +990,77 @@ async function run() {
   if (!athleteRead.found) {
     throw new Error('Athlete cannot retrieve persisted profile');
   }
+
+  /* THE ADMINISTRATOR-KNOWN VALUE, refused where the refusal means something.
+     This is the assertion that moved out of 9c. It belongs here because only
+     here is the account active and holding a real pin_hash, so
+     loginWithAccountIdAndPin gets past its active_flag and no_pin_set
+     branches and the code is actually compared against the stored hash. Run
+     it before step 10 and it passes for the wrong reason -- the account is
+     inactive, nothing is compared, and the whole PIN check could be deleted
+     without turning this red.
+
+     What it protects: an activation code is typed by an ADMINISTRATOR. It is
+     a one-time bearer token for /auth/activate and nothing else. The day it
+     also works at the PIN login is the day the shared-PIN retirement is
+     undone, quietly, for every child in the building.
+
+     A fresh client, so the session step 10 just established is not sent with
+     a deliberately failing sign-in. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => createClient('shadow-athlete-code-as-pin').call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: activationCode },
+    }),
+    'The activation code signed in through the ordinary PIN login, against an ACTIVE account '
+    + 'holding its own PIN. An administrator-known value is a usable credential for a minor\'s '
+    + 'account, which is the disclosure the shared-PIN retirement exists to end.',
+    401,
+  );
+
+  /* THE RETIRED SHARED PIN, refused against that same active account.
+
+     auth.ts refuses DEFAULT_FIRST_LOGIN_PIN in its own branch, which sits
+     BELOW the active_flag and pin_hash checks and above verifyPin. So it is
+     only reachable on an active account holding a real hash -- which is
+     exactly here, and nowhere earlier in this gate. Until now nothing
+     exercised it on a deployed revision at all: the guard that the published
+     bootstrap credential can never mint a session was asserted only in unit
+     tests.
+
+     Legacy rows in deployed databases still hold that PIN's hash. That is
+     precisely why the branch exists, and why proving it live is worth a
+     round-trip. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => createClient('shadow-athlete-retired-pin').call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: '123456' },
+    }),
+    'The retired shared bootstrap PIN signed in. It is published in source and was once handed '
+    + 'to every athlete in the gym, so any row still holding its hash is an account anybody can '
+    + 'open.',
+    401,
+  );
+
+  /* AND THE FIXTURE PIN THAT PROMOTION NULLED, on the active account.
+
+     Step 9c already tried this one, but at that point the account was
+     inactive, so login refused it on the unknown_or_inactive_account branch
+     and never compared anything. That proved promotion leaves no usable
+     credential -- worth proving, and it stays -- but it did NOT prove the old
+     PIN is dead now that the account holds a real hash again. This does. */
+  await clearAuthThrottle();
+  await assertRefusal(
+    () => createClient('shadow-athlete-old-fixture-pin').call('/api/pilot/auth/login', {
+      method: 'POST',
+      body: { account_id: athleteAccountId, pin: athletePin },
+    }),
+    'A PIN that intake promotion nulled still signs in now that the athlete has chosen their '
+    + 'own. The old credential outlived the account state that was supposed to end it.',
+    401,
+  );
 
   console.log('11) Verify guardian retrieval permissions');
   // A parent cannot sign in with a PIN -- PIN sessions are athlete-only -- so

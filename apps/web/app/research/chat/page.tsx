@@ -11,6 +11,7 @@ import {
   type LibraryEvidenceItem,
 } from '@/client/libraryResearch';
 import { formatGymClock24 } from '@/src/lib/gymTime';
+import OperationsLink from '@/components/OperationsLink';
 
 interface QAMessage {
   id: string;
@@ -286,9 +287,9 @@ export default function ResearchQAChatPage() {
               <Link href="/evidence" className="btn btn--ghost justify-start">
                 Evidence Review
               </Link>
-              <Link href="/operations" className="btn btn--ghost justify-start">
+              <OperationsLink className="btn btn--ghost justify-start">
                 Operations Hub
-              </Link>
+              </OperationsLink>
               <Link href="/admin/shadow" className="btn btn--ghost justify-start">
                 SHADOW (Admin)
               </Link>

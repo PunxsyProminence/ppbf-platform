@@ -371,7 +371,41 @@ async function executeJob(
   }
 }
 
-async function callAI(systemPrompt: string, userMessage: string, maxTokens = 4096): Promise<string> {
+/* TOKEN BUDGETS -- why these are not the numbers that were here before.
+
+   Reasoning tokens are spent FROM max_completion_tokens. A ceiling sized for
+   the answer alone leaves nothing to answer with once the model has finished
+   thinking.
+
+   shadowRouter.ts records what these deployments actually produce, measured
+   2026-07-29 at max_completion_tokens 16384 against a representative Heavy Bag
+   prompt:
+
+     gpt-5.6-sol    5579 completion (2255 reasoning)
+     gpt-5.6-luna   4110 completion ( 776 reasoning)
+     gpt-5          6352 completion (2560 reasoning)
+     gpt-5-mini     5168 completion (1344 reasoning)
+
+   EVERY one of those exceeds the 4096 this file passed for Heavy Bag, and
+   gpt-5's reasoning ALONE (2560) exceeds the 2048 it passed for the two JSON
+   jobs -- meaning those could return empty with the model never having emitted
+   a single content token. So this was not an occasional flake: the background
+   jobs were provisioned below the platform's own measured floor and succeeded
+   only when a model happened to come in short. Staging gate run 33019214969
+   is one that did not.
+
+   A ceiling is not a reservation -- max_completion_tokens caps output, it is
+   not charged unless spent. The price of setting it too low is a failed job,
+   and that is the price we were paying.
+
+   The synchronous path never had this problem because it takes its ceiling
+   from the per-model registry (shadowHeavyBag.ts passes routing.maxTokens,
+   16384 for the heavy tier). That asymmetry is why the SYNCHRONOUS Heavy Bag
+   passed on the same gate run where the BACKGROUND one failed. */
+const HEAVY_BAG_MAX_COMPLETION_TOKENS = 16_384;
+const STRUCTURED_MAX_COMPLETION_TOKENS = 8_192;
+
+async function callAI(systemPrompt: string, userMessage: string, maxTokens: number): Promise<string> {
   const runtime = getAzureAiRuntimeConfig();
   if (!runtime.ok || !runtime.config) {
     throw new Error('SHADOW_AI_UNAVAILABLE');
@@ -408,10 +442,22 @@ async function callAI(systemPrompt: string, userMessage: string, maxTokens = 409
   }
 
   const data = await response.json() as {
-    choices?: Array<{ message?: { content?: unknown } }>;
+    choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
   };
-  const content = data.choices?.[0]?.message?.content;
+  const choice = data.choices?.[0];
+  const content = choice?.message?.content;
   if (typeof content !== 'string' || !content.trim()) {
+    /* finish_reason 'length' means the model hit the ceiling. On a reasoning
+       deployment that almost always means reasoning consumed the whole budget
+       and the answer never started -- our configuration, not a provider fault.
+
+       Both cases used to surface as SHADOW_AI_EMPTY_RESPONSE, so the job row
+       recorded the symptom and lost the cause, and an operator reading it had
+       no way to tell "the provider returned nothing" from "we refused to pay
+       for the answer we asked for". Those want opposite responses. */
+    if (choice?.finish_reason === 'length') {
+      throw new Error('SHADOW_AI_BUDGET_EXHAUSTED');
+    }
     throw new Error('SHADOW_AI_EMPTY_RESPONSE');
   }
   return content;
@@ -691,7 +737,7 @@ You are in a **Heavy Bag Session** — full reasoning mode.
 ## SERVER-AUTHORIZED CONTEXT
 ${trust.authorizedContext}`;
 
-  const response = await callAI(systemPrompt, message, 4096);
+  const response = await callAI(systemPrompt, message, HEAVY_BAG_MAX_COMPLETION_TOKENS);
 
   return {
     response,
@@ -719,7 +765,7 @@ async function executeScoutReportJob(payload: Record<string, unknown>): Promise<
 
 ## SERVER-AUTHORIZED CONTEXT
 ${trust.authorizedContext}`;
-    const raw = await callAI(systemPrompt, message, 2048);
+    const raw = await callAI(systemPrompt, message, STRUCTURED_MAX_COMPLETION_TOKENS);
     const jsonText = extractJsonObjectText(raw);
     let report: Record<string, unknown>;
     try {
@@ -943,7 +989,7 @@ Mark unsupported claims RESEARCH NEEDED.
 ## SERVER-AUTHORIZED CONTEXT
 ${trust.authorizedContext}`;
 
-  const summary = await callAI(systemPrompt, message, 2048);
+  const summary = await callAI(systemPrompt, message, STRUCTURED_MAX_COMPLETION_TOKENS);
   return { summary, generatedAt: new Date().toISOString() };
 }
 

@@ -37,6 +37,10 @@ jest.mock('next/navigation', () => ({
 // of these would hand an invited volunteer a 403.
 const FORBIDDEN_HREF_PREFIXES = [
   '/admin',
+  // Administration since 2026-08-26 (operationsAccess.ts). Staff and
+  // volunteers are refused the hub, so a link here would be a 403 with extra
+  // steps -- exactly what this list exists to stop.
+  '/operations',
   '/board',
   '/coach',
   '/athlete',

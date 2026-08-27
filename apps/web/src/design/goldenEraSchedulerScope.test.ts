@@ -141,8 +141,20 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
     'Decline',
   ] as const;
 
-  /** The two navigation destinations that really exist in the header rail. */
-  const REAL_LINKS = ['/admin/attendance', '/operations'] as const;
+  /** The navigation destinations that really exist in the header rail. */
+  const REAL_LINKS = ['/admin/attendance'] as const;
+
+  /* Operations left this list on 2026-08-26, and it is still asserted -- one
+     line down, against the component that now renders it.
+
+     The owner decision restricting the hub to administrators means an athlete,
+     a coach and a parent -- three of the four roles this page admits -- must
+     not be offered it, so the rail's Operations control is <OperationsLink>
+     rather than a raw <Link href="/operations">. A raw-href assertion would
+     now fail for the right reason and read like a deletion, which is exactly
+     the confusion this scope test exists to prevent. The control is still
+     required to be here; what changed is who it renders for. */
+  const OPERATIONS_RAIL_CONTROL = '<OperationsLink';
 
   /** The role gates that decide who sees which of the above. */
   const REAL_ROLE_GATES = [
@@ -178,6 +190,13 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
     expect(PAGE).toContain(`href="${href}"`);
   });
 
+  test('the Operations rail control still exists, now role-scoped', () => {
+    expect(PAGE).toContain(OPERATIONS_RAIL_CONTROL);
+    // And it is NOT a raw link any more: a plain href here would put the hub
+    // back in front of every role this page admits.
+    expect(PAGE).not.toContain('href="/operations"');
+  });
+
   test.each(REAL_ROLE_GATES)('the %s gate still exists', (gate) => {
     expect(PAGE).toContain(`function ${gate}(`);
   });
@@ -195,7 +214,13 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
     expect(PAGE.match(/<select/g) ?? []).toHaveLength(4);
     expect(PAGE.match(/<input/g) ?? []).toHaveLength(7);
     expect(PAGE.match(/<textarea/g) ?? []).toHaveLength(2);
-    expect(PAGE.match(/<Link/g) ?? []).toHaveLength(2);
+    /* Still two navigation controls in the rail, and the count is still what
+       catches a quiet deletion -- but one of them is <OperationsLink> since
+       2026-08-26, so counting `<Link` alone would now read 1 and report a
+       restyle that never happened. Both halves are pinned, so removing either
+       control still fails. */
+    expect(PAGE.match(/<Link/g) ?? []).toHaveLength(1);
+    expect(PAGE.match(/<OperationsLink/g) ?? []).toHaveLength(1);
     expect(PAGE.match(/action: '/g) ?? []).toHaveLength(8);
   });
 

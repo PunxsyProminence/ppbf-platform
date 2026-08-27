@@ -1,11 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { upsertAthlete } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
+import {
+  assertShadowAuthority,
+  isShadowAutomationMode,
+  SHADOW_AUTOMATION_MODES,
+  type ShadowAutomationMode,
+} from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { buildReviewResearchFields } from '@/src/server/pilot/shadow';
@@ -89,12 +94,31 @@ export async function POST(request: NextRequest) { // NOSONAR
       action?: 'approve' | 'reject' | 'promote';
       notes?: string;
       promotion?: IntakePromotionPayload;
-      automation_mode?: ShadowAutomationMode;
+      automation_mode?: unknown;
     };
 
     const intakeCaseId = requireString(body.intake_case_id, 'intake_case_id');
     const action = body.action;
-    const automationMode = body.automation_mode ?? 'assisted';
+    // Validated against the closed vocabulary rather than cast to it.
+    //
+    // Two gates downstream compare this value for EXACT equality with
+    // 'automatic': assertShadowAuthority's automatic-actor refusals, and this
+    // route's own "automatic intake promotion is not allowed" stop further
+    // down. The declared type is erased at runtime, so a caller declaring
+    // "Automatic" was read as a non-automatic actor by both and promoted a
+    // child's record -- athlete, guardian, emergency contact, medical, waiver
+    // -- past a refusal that never fired, with the authority ledger recording
+    // the check as passed. shadow/medical-status/route.ts named this route as
+    // one of the two unchecked call sites; this is that check. Absent still
+    // means 'assisted', unchanged.
+    const automationMode: ShadowAutomationMode = body.automation_mode === undefined
+      ? 'assisted'
+      : (body.automation_mode as ShadowAutomationMode);
+    if (!isShadowAutomationMode(automationMode)) {
+      throw new Error(
+        `Unsupported automation_mode: must be one of ${SHADOW_AUTOMATION_MODES.join(', ')}`,
+      );
+    }
     if (!action || !['approve', 'reject', 'promote'].includes(action)) {
       throw new Error('Unsupported action');
     }
@@ -229,6 +253,35 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
 
     if (action === 'approve') {
+      /* A promoted case cannot be walked back to 'approved'.
+
+         approve had no status precondition at all -- it wrote 'approved'
+         unconditionally, over any prior status including 'promoted'. That made
+         a destructive sequence reachable in two clicks: promote, approve,
+         promote again.
+
+         The second promote is the damage. createOrUpdateAthleteAccount's
+         update branch sets pin_hash = null, active_flag = false and revokes
+         every session, because re-running a review is meant to RE-PROVISION.
+         That is correct for an athlete who has not activated yet. Run it on one
+         who has already redeemed their code and chosen a PIN nobody else knows,
+         and they are locked out of their own account, with no way to ask for a
+         new activation code themselves -- while the admin who did it sees
+         ok: true and no signal that anything was undone.
+
+         The guard is on approve rather than on promote deliberately. Promote's
+         own precondition (status must be 'approved') is doing its job; what
+         defeated it was another action silently restoring the state it checks
+         for. Promotion remains re-runnable for a case that genuinely needs
+         re-provisioning -- an admin has to move it out of 'promoted'
+         deliberately, not by clicking approve. */
+      if (intakeCase.status === 'promoted') {
+        throw new Error(
+          'Forbidden: this intake case is already promoted. Approving it again would allow a second promotion, '
+          + 'which resets the athlete PIN and revokes their sessions.',
+        );
+      }
+
       const researchFields = buildReviewResearchFields({ action: 'approve', intakeCaseId });
 
       await updateIntakeCaseStatus({
@@ -311,7 +364,18 @@ export async function POST(request: NextRequest) { // NOSONAR
       throw new Error('Forbidden: automatic intake promotion is not allowed');
     }
 
-    if (principal.role !== 'organization_admin') {
+    /* isOrganizationAdminRole, not a raw !==, because `admin` is the LEGACY
+       SPELLING of organization_admin and this route already says so twice
+       above: requireRole at the top of the handler admits it through
+       roleEquals, and assertIntakeCaseAuthority admits it through this same
+       helper. Only this third check compared the string directly.
+
+       The result was a role that could approve and reject an intake case and
+       then be refused on the one action that turns it into an athlete record,
+       by an error naming the role it is supposed to be equivalent to. Every
+       sibling admin route -- pin-reset, activation-codes, athlete-accounts --
+       uses the helper. */
+    if (!isOrganizationAdminRole(principal.role)) {
       throw new Error('Forbidden: only organization_admin can promote intake');
     }
     if (intakeCase.status !== 'approved') {
@@ -350,19 +414,28 @@ export async function POST(request: NextRequest) { // NOSONAR
       updated_at: athleteCreatedAt,
     });
 
-    // An athlete PIN is deliberately NOT settable at promotion. The account
-    // is provisioned with no credential and inactive, and the supported flow
-    // sets the PIN afterward through /api/pilot/admin/accounts/pin-reset with
-    // mode 'activate' — the same promote → activate → sign-in sequence the
-    // E2E gate exercises. This request used to ACCEPT athlete.pin and
-    // silently discard it (it landed in createOrUpdateAthleteAccount's
-    // ignored legacy parameter), so an administrator believed a credential
-    // was set that never was. Refuse it the way the guardian branch below
-    // refuses guardian.pin; the prefix keeps jsonError mapping it to a 400.
+    // An athlete PIN is deliberately NOT settable at promotion. The account is
+    // provisioned with no credential and inactive, and NOBODY sets a PIN for
+    // an athlete any more: an administrator issues a one-time activation code
+    // and the athlete redeems it, choosing a PIN only they know. That is the
+    // promote → issue code → redeem → sign-in sequence the E2E gate exercises.
+    //
+    // This request used to ACCEPT athlete.pin and silently discard it (it
+    // landed in createOrUpdateAthleteAccount's ignored legacy parameter), so
+    // an administrator believed a credential was set that never was. Refuse it
+    // the way the guardian branch below refuses guardian.pin; the prefix keeps
+    // jsonError mapping it to a 400.
+    //
+    // The guidance below is user-facing and was stale: it named a `mode`
+    // parameter that /admin/accounts/pin-reset no longer has, on a route that
+    // no longer sets a PIN at all. An error that tells an administrator to do
+    // something impossible is worse than one that says only "no".
     if (promotion.athlete.pin) {
       throw new Error(
-        'Unsupported athlete.pin: promotion provisions the account without a credential. '
-        + 'Set the PIN after promotion via /api/pilot/admin/accounts/pin-reset with mode "activate".',
+        'Unsupported athlete.pin: promotion provisions the account without a credential, and '
+        + 'no administrator sets an athlete PIN. Issue a one-time activation code via '
+        + 'POST /api/pilot/admin/accounts/pin-reset (or /api/pilot/admin/activation-codes), then '
+        + 'have the athlete redeem it at /api/pilot/auth/activate and choose their own PIN.',
       );
     }
 

@@ -70,6 +70,7 @@ on:
           - orphan-chat-audit
           - seed-identity
           - library-scope
+          - deletion-preflight
 
 permissions:
   id-token: write
@@ -173,6 +174,14 @@ jobs:
               # staging baseline import raised, where a corpus source id already
               # existed under a gym organization.
               npm run pilot:check-library-scope | tee /tmp/check-output.txt
+              ;;
+            deletion-preflight)
+              # Read-only. Answers whether anybody has ever actually been deleted, and
+              # whether any deleted record still has access open -- the footprint the two
+              # bugs fixed in #690 and #709 would leave behind. Counts and timestamps only;
+              # no account ids, athlete ids, names or emails. Exits non-zero only when a
+              # deleted record still has access, never merely because deletions exist.
+              npm run pilot:check-deletion-preflight | tee /tmp/check-output.txt
               ;;
             seed-identity)
               # Read-only. Prints the organization ids and the PRIVILEGED account ids that the
