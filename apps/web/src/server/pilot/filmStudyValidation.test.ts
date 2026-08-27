@@ -26,6 +26,7 @@ interface RowShape {
   rejected_count: string;
   pending_count: string;
   corrected_count: string;
+  ever_corrected_count: string;
   proposal_count: string;
   mean_frames: string | null;
 }
@@ -38,6 +39,7 @@ function row(overrides: Partial<RowShape> = {}): RowShape {
     rejected_count: '0',
     pending_count: '0',
     corrected_count: '0',
+    ever_corrected_count: '0',
     proposal_count: '0',
     mean_frames: null,
     ...overrides,
@@ -61,7 +63,10 @@ function mockRows(
   mockQuery
     .mockResolvedValueOnce([overall] as never)
     .mockResolvedValueOnce(byDeployment as never)
-    .mockResolvedValueOnce([{ coach_reported_count: coachReportedCount }] as never);
+    .mockResolvedValueOnce([{
+      coach_reported_count: coachReportedCount,
+      coach_reported_confirmed_count: coachReportedCount,
+    }] as never);
 }
 
 describe('a rate is withheld until the sample can support it', () => {
@@ -284,7 +289,11 @@ describe('the one-line summary never states a rate without its sample', () => {
   test('an unreviewed queue says nothing can be said yet', async () => {
     const summary = await summaryFor(row({ pending_count: '7' }));
 
-    expect(summary).toMatch(/7 waiting/);
+    // "outstanding", not "waiting": the count now includes proposals a coach
+    // corrected but has not finished, which are genuinely still in the queue.
+    // The substance the test guards is unchanged -- the number travels with
+    // the claim.
+    expect(summary).toMatch(/7 outstanding/);
     expect(summary).toMatch(/Nothing can be said about the model/);
   });
 
@@ -391,6 +400,10 @@ describe('the numbers a reader could otherwise infer wrongly', () => {
       accepted_count: '6',
       rejected_count: '2',
       corrected_count: '2',
+      // Two proposals needed correcting; both are still paused in that state
+      // here, so state and history agree. They diverge once a coach finishes
+      // one -- see the pg suite, which is where that case is proven.
+      ever_corrected_count: '2',
       pending_count: '2',
       proposal_count: '12',
     }));

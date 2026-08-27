@@ -73,6 +73,22 @@ export interface FilmStudyAcceptanceMetric {
    */
   correctedCount: number;
   /**
+   * Distinct proposals that needed correcting AT ANY POINT, from the revision
+   * ledger rather than the current state.
+   *
+   * `corrected` is NOT terminal -- resolveFilmStudyProposal admits
+   * `in ('pending_review','corrected')` -- so a coach who corrects a proposal
+   * and then accepts it moves review_state off 'corrected' entirely. Counting
+   * the state alone therefore DROPS the correction, and the correction rate
+   * improves because the coach finished the queue rather than because the
+   * model got better. That is the opposite of what the metric means, so the
+   * rate below is computed from this, not from correctedCount.
+   *
+   * Distinct PROPOSALS, not revisions: a proposal corrected twice is one
+   * proposal the model got wrong, not two.
+   */
+  everCorrectedCount: number;
+  /**
    * What a coach still has to open: pending plus corrected.
    *
    * `corrected` is not terminal -- the update guard in shadowFilmStudyProposals
@@ -89,7 +105,8 @@ export interface FilmStudyAcceptanceMetric {
   modelProposalCount: number;
   /** accepted / modelProposalCount. Null below the sample floor. */
   acceptanceRateAmongProposals: number | null;
-  /** corrected / modelProposalCount. Null below the sample floor. */
+  /** everCorrected / modelProposalCount. Null below the sample floor.
+   * Uses the history count, so finishing the queue cannot improve it. */
   correctionRateAmongProposals: number | null;
   /** rejected / modelProposalCount. Null below the sample floor. */
   rejectionRateAmongProposals: number | null;
@@ -126,9 +143,10 @@ export interface FilmStudyValidationReport {
   organizationId: string;
   minimumReviewed: number;
   /**
-   * Observations a coach entered that the model did not propose -- the
-   * false-negative record, and the only evidence this platform has of what the
-   * model failed to see.
+   * Observations a coach entered that the model did not propose -- what a
+   * coach CLAIMS the model failed to see. Includes reports still awaiting
+   * review and reports another coach rejected; see
+   * coachReportedConfirmedCount for the ones a reviewer confirmed.
    *
    * Reported beside the model's numbers and excluded from all of them. It is
    * org-scoped rather than per-deployment because a coach report has no
@@ -136,6 +154,17 @@ export interface FilmStudyValidationReport {
    * model_deployment to be NULL on exactly these rows.
    */
   coachReportedCount: number;
+  /**
+   * Coach reports a reviewer ACCEPTED -- the confirmed misses.
+   *
+   * coachReportedCount above is every report entered, including ones still
+   * awaiting review and ones another coach REJECTED. A mistaken report that
+   * was rejected is not evidence the model missed anything, and counting it
+   * as such would permanently inflate the number the report describes as the
+   * false-negative record. Both are given because they answer different
+   * questions: what was claimed, and what was confirmed.
+   */
+  coachReportedConfirmedCount: number;
   /**
    * ALWAYS the unavailable literal.
    *
@@ -170,6 +199,7 @@ interface AcceptanceRow {
   rejected_count: string;
   pending_count: string;
   corrected_count: string;
+  ever_corrected_count: string;
   proposal_count: string;
   mean_frames: string | null;
 }
@@ -224,6 +254,7 @@ function toMetric(row: AcceptanceRow): FilmStudyAcceptanceMetric {
   const rejectedCount = toInt(row.rejected_count);
   const pendingCount = toInt(row.pending_count);
   const correctedCount = toInt(row.corrected_count);
+  const everCorrectedCount = toInt(row.ever_corrected_count);
   const modelProposalCount = toInt(row.proposal_count);
 
   const belowFloor = reviewedCount < FILM_STUDY_MINIMUM_REVIEWED;
@@ -241,6 +272,7 @@ function toMetric(row: AcceptanceRow): FilmStudyAcceptanceMetric {
     rejectedCount,
     pendingCount,
     correctedCount,
+    everCorrectedCount,
     outstandingCount: pendingCount + correctedCount,
     modelProposalCount,
     acceptRate: belowFloor
@@ -254,7 +286,7 @@ function toMetric(row: AcceptanceRow): FilmStudyAcceptanceMetric {
       : rateOver(acceptedCount, modelProposalCount),
     correctionRateAmongProposals: proposalsBelowFloor
       ? null
-      : rateOver(correctedCount, modelProposalCount),
+      : rateOver(everCorrectedCount, modelProposalCount),
     rejectionRateAmongProposals: proposalsBelowFloor
       ? null
       : rateOver(rejectedCount, modelProposalCount),
@@ -287,9 +319,19 @@ const OVERALL_SQL = `
     count(*) filter (where review_state = 'rejected')::text as rejected_count,
     count(*) filter (where review_state = 'pending_review')::text as pending_count,
     count(*) filter (where review_state = 'corrected')::text as corrected_count,
+    -- Distinct proposals carrying at least one revision: "was ever corrected",
+    -- which survives the proposal being finished. EXISTS rather than a join so
+    -- a proposal corrected twice counts once.
+    count(*) filter (
+      where exists (
+        select 1 from pilot.film_study_proposal_revisions r
+        where r.organization_id = p.organization_id
+          and r.proposal_id = p.proposal_id
+      )
+    )::text as ever_corrected_count,
     count(*)::text as proposal_count,
     avg(frames_analyzed) filter (where review_state in ('accepted', 'rejected'))::text as mean_frames
-  from pilot.shadow_film_study_proposals
+  from pilot.shadow_film_study_proposals p
   where organization_id = $1
     and ${MODEL_PROPOSAL_SCOPE_SQL}
 `;
@@ -300,7 +342,9 @@ const OVERALL_SQL = `
    and merging it into a query about model proposals is how the two got
    conflated in the first place. */
 const COACH_REPORTED_SQL = `
-  select count(*)::text as coach_reported_count
+  select
+    count(*)::text as coach_reported_count,
+    count(*) filter (where review_state = 'accepted')::text as coach_reported_confirmed_count
   from pilot.shadow_film_study_proposals
   where organization_id = $1
     and origin = 'coach_reported'
@@ -314,9 +358,19 @@ const BY_DEPLOYMENT_SQL = `
     count(*) filter (where review_state = 'rejected')::text as rejected_count,
     count(*) filter (where review_state = 'pending_review')::text as pending_count,
     count(*) filter (where review_state = 'corrected')::text as corrected_count,
+    -- Distinct proposals carrying at least one revision: "was ever corrected",
+    -- which survives the proposal being finished. EXISTS rather than a join so
+    -- a proposal corrected twice counts once.
+    count(*) filter (
+      where exists (
+        select 1 from pilot.film_study_proposal_revisions r
+        where r.organization_id = p.organization_id
+          and r.proposal_id = p.proposal_id
+      )
+    )::text as ever_corrected_count,
     count(*)::text as proposal_count,
     avg(frames_analyzed) filter (where review_state in ('accepted', 'rejected'))::text as mean_frames
-  from pilot.shadow_film_study_proposals
+  from pilot.shadow_film_study_proposals p
   where organization_id = $1
     and ${MODEL_PROPOSAL_SCOPE_SQL}
   group by model_deployment
@@ -337,7 +391,10 @@ export async function getFilmStudyValidation(
   const [overallRows, deploymentRows, coachReportedRows] = await Promise.all([
     query<AcceptanceRow>(OVERALL_SQL, [organizationId]),
     query<AcceptanceRow>(BY_DEPLOYMENT_SQL, [organizationId]),
-    query<{ coach_reported_count: string }>(COACH_REPORTED_SQL, [organizationId]),
+    query<{ coach_reported_count: string; coach_reported_confirmed_count: string }>(
+      COACH_REPORTED_SQL,
+      [organizationId],
+    ),
   ]);
 
   const overallRow = overallRows[0] ?? {
@@ -347,6 +404,7 @@ export async function getFilmStudyValidation(
     rejected_count: '0',
     pending_count: '0',
     corrected_count: '0',
+    ever_corrected_count: '0',
     proposal_count: '0',
     mean_frames: null,
   };
@@ -355,6 +413,9 @@ export async function getFilmStudyValidation(
     organizationId,
     minimumReviewed: FILM_STUDY_MINIMUM_REVIEWED,
     coachReportedCount: toInt(coachReportedRows[0]?.coach_reported_count ?? '0'),
+    coachReportedConfirmedCount: toInt(
+      coachReportedRows[0]?.coach_reported_confirmed_count ?? '0',
+    ),
     missedObservationRate: DENOMINATOR_NOT_CAPTURED,
     overall: toMetric(overallRow),
     byDeployment: deploymentRows.map((row) => {
@@ -389,8 +450,13 @@ export function describeFilmStudyValidation(report: FilmStudyValidationReport): 
   const { overall } = report;
 
   if (overall.reviewedCount === 0) {
-    return overall.pendingCount > 0
-      ? `No Film Study proposal has been reviewed yet (${overall.pendingCount} waiting).`
+    // outstandingCount, not pendingCount. A proposal a coach CORRECTED but has
+    // not finished has reviewedCount 0 and pendingCount 0, and this branch used
+    // to answer "no proposals exist yet" -- a false absence claim, about the
+    // one thing this module exists to refuse to claim, sent straight to the
+    // coach page by the validation route.
+    return overall.outstandingCount > 0
+      ? `No Film Study proposal has been reviewed yet (${overall.outstandingCount} outstanding).`
         + ' Nothing can be said about the model until coaches clear the queue.'
       : 'No Film Study proposals exist yet -- the model has not been asked for anything.';
   }
@@ -405,5 +471,5 @@ export function describeFilmStudyValidation(report: FilmStudyValidationReport): 
   // empty one -- the counts alone are still true.
   const percent = overall.acceptRateDisplay === null ? '' : ` (${overall.acceptRateDisplay})`;
   return `Coaches accepted ${overall.acceptedCount} of ${overall.reviewedCount} reviewed proposals${percent}`
-    + `${overall.pendingCount > 0 ? `, ${overall.pendingCount} still waiting` : ''}.`;
+    + `${overall.outstandingCount > 0 ? `, ${overall.outstandingCount} still outstanding` : ''}.`;
 }

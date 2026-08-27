@@ -493,3 +493,131 @@ describe('a corrected proposal is a verdict, not a gap in the numbers', () => {
     expect(two?.correctedCount).toBe(0);
   });
 });
+
+describe('a correction survives the proposal being finished', () => {
+  beforeEach(truncateProposals);
+
+  // Found by the Codex reviewer on this PR. `corrected` is NOT terminal --
+  // resolveFilmStudyProposal's guard admits `in ('pending_review','corrected')`
+  // -- so a coach who corrects a proposal and then accepts it moves
+  // review_state off 'corrected' entirely. A state-only count therefore drops
+  // the correction, and the correction rate IMPROVES because the coach
+  // finished the queue. That is the exact opposite of what the metric means.
+  //
+  // pilot.film_study_proposal_revisions keeps every pass, so "was ever
+  // corrected" is answerable. Both numbers are kept because they answer
+  // different questions: the STATE count is what makes outstandingCount and
+  // the four-state arithmetic correct; the HISTORY count is the model
+  // evaluation.
+  test('a corrected-then-accepted proposal still counts as ever corrected', async () => {
+    const proposalId = await correctedModelProposal('gpt-vision-1');
+    await proposals.resolveFilmStudyProposal({
+      organizationId: ORG_ID,
+      proposalId,
+      verdict: 'accepted',
+      reviewerAccountId: COACH_ID,
+      reviewerRole: 'coach',
+    });
+
+    const { overall } = await validation.getFilmStudyValidation(ORG_ID);
+    // No longer paused in the corrected state...
+    expect(overall.correctedCount).toBe(0);
+    // ...but the model still needed correcting on this proposal.
+    expect(overall.everCorrectedCount).toBe(1);
+    expect(overall.acceptedCount).toBe(1);
+  });
+
+  test('the correction rate does not improve when a coach clears the queue', async () => {
+    // Five proposals, one of which needed correcting before it was accepted.
+    for (let i = 0; i < 4; i += 1) {
+      await settledModelProposal('gpt-vision-1', 'accepted');
+    }
+    const proposalId = await correctedModelProposal('gpt-vision-1');
+
+    const before = await validation.getFilmStudyValidation(ORG_ID);
+    expect(before.overall.correctionRateAmongProposals).toBe(0.2);
+
+    await proposals.resolveFilmStudyProposal({
+      organizationId: ORG_ID,
+      proposalId,
+      verdict: 'accepted',
+      reviewerAccountId: COACH_ID,
+      reviewerRole: 'coach',
+    });
+
+    const after = await validation.getFilmStudyValidation(ORG_ID);
+    expect(after.overall.correctionRateAmongProposals).toBe(0.2);
+  });
+
+  test('a proposal corrected twice is one correction, not two', async () => {
+    // revision_number increments per pass; the metric is proposals that needed
+    // correcting, not passes made.
+    const proposalId = await correctedModelProposal('gpt-vision-1');
+    await proposals.resolveFilmStudyProposal({
+      organizationId: ORG_ID,
+      proposalId,
+      verdict: 'corrected',
+      reviewerAccountId: COACH_ID,
+      reviewerRole: 'coach',
+      correctedObservationText: 'Second pass: only on the double jab, and only off the back foot.',
+    });
+
+    const { overall } = await validation.getFilmStudyValidation(ORG_ID);
+    expect(overall.everCorrectedCount).toBe(1);
+  });
+});
+
+describe('the summary line never claims an absence that is not there', () => {
+  beforeEach(truncateProposals);
+
+  // Codex P2. With one corrected proposal, reviewedCount and pendingCount are
+  // both 0, and describeFilmStudyValidation returned "No Film Study proposals
+  // exist yet -- the model has not been asked for anything." The route sends
+  // that string straight to the coach page. It is false, and it is false about
+  // an absence, which is the shape of claim this module exists to refuse.
+  test('a single corrected proposal is not described as no proposals at all', async () => {
+    await correctedModelProposal('gpt-vision-1');
+
+    const report = await validation.getFilmStudyValidation(ORG_ID);
+    const line = validation.describeFilmStudyValidation(report);
+    expect(line).not.toContain('No Film Study proposals exist yet');
+    expect(line).toContain('1');
+  });
+
+  test('genuinely empty still says so', async () => {
+    const report = await validation.getFilmStudyValidation(ORG_ID);
+    expect(validation.describeFilmStudyValidation(report))
+      .toContain('No Film Study proposals exist yet');
+  });
+});
+
+describe('a coach report is a claimed miss until a coach confirms it', () => {
+  beforeEach(truncateProposals);
+
+  // Codex P2. coachReportedCount was origin-only, so a report still awaiting
+  // review -- or one another coach REJECTED -- counted toward what the report
+  // documents as "the false-negative record". A mistaken report that was
+  // rejected would permanently inflate the model's advertised miss count.
+  test('a rejected coach report is not a confirmed miss', async () => {
+    await settledCoachReport('accepted');
+    await settledCoachReport('rejected');
+
+    const report = await validation.getFilmStudyValidation(ORG_ID);
+    expect(report.coachReportedCount).toBe(2);
+    expect(report.coachReportedConfirmedCount).toBe(1);
+  });
+
+  test('a coach report nobody has reviewed is not a confirmed miss either', async () => {
+    await proposals.createCoachReportedObservation({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      videoSessionId: VIDEO_ID,
+      observationText: 'Model said nothing about the feet crossing.',
+      reportedByAccountId: COACH_ID,
+    });
+
+    const report = await validation.getFilmStudyValidation(ORG_ID);
+    expect(report.coachReportedCount).toBe(1);
+    expect(report.coachReportedConfirmedCount).toBe(0);
+  });
+});
