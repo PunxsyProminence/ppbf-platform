@@ -133,12 +133,32 @@ checkRequiredScripts(webScripts, webManifestPath, [
 
 checkChainsResolve(webScripts, webManifestPath);
 
-// Every migration suite the repository defines has to be in the chain the
-// release gate runs. A suite that exists but is not chained is invisible.
+// Every migration suite the repository defines has to be reachable from the
+// entry point the release gate runs. A suite that exists but is not reached is
+// invisible, and `npm run test:migrations` runs inside deploy-production.yml.
+//
+// THIS USED TO WALK A CHAIN, and the chain is gone. `test:migrations` was a
+// single line naming all 118 scripts with `&&`; it is now a discovery runner
+// that executes every `test:migrations:*` script it finds
+// (apps/web/scripts/run-migration-suites.mjs). Under discovery a defined suite
+// CANNOT be unreached -- there is no list to fall off -- so the old assertion
+// would fail every suite, which is exactly what it did when the runner landed.
+//
+// What still needs checking is that the entry point really is the runner. If
+// somebody reintroduces a hand-written chain, the old gap comes back with it,
+// so the two shapes are checked separately rather than collapsed.
 const migrationChain = webScripts['test:migrations'];
+const RUNNER_COMMAND = 'node scripts/run-migration-suites.mjs';
 
-if (typeof migrationChain === 'string') {
+if (typeof migrationChain === 'string' && migrationChain !== RUNNER_COMMAND) {
   const chained = new Set(chainedScriptNames(migrationChain));
+
+  if (chained.size === 0) {
+    fail(
+      `${webManifestPath} "test:migrations" is neither the discovery runner `
+      + `("${RUNNER_COMMAND}") nor a chain naming suites. It reaches nothing.`,
+    );
+  }
 
   for (const name of Object.keys(webScripts)) {
     if (name.startsWith('test:migrations:') && !chained.has(name)) {
@@ -368,9 +388,15 @@ console.log(
       `${Object.keys(webManifest?.dependencies ?? {}).length} dependencies, ` +
       `${Object.keys(webManifest?.devDependencies ?? {}).length} devDependencies`,
     `- ${runnerFiles.length} pilot-apply-*.mjs runners, each with a pilot:apply-* script`,
-    `- test:migrations chains ${
-      chainedScriptNames(webScripts['test:migrations'] ?? '').length
-    } suites, all defined`,
+    // Reports whichever shape is actually in use. "chains 0 suites" was
+    // technically true of the discovery runner and read like a failure.
+    migrationChain === RUNNER_COMMAND
+      ? `- test:migrations delegates to the discovery runner, which finds ${
+        Object.keys(webScripts).filter((name) => /^test:migrations:[a-z0-9-]+$/.test(name)).length
+      } suites`
+      : `- test:migrations chains ${
+        chainedScriptNames(webScripts['test:migrations'] ?? '').length
+      } suites, all defined`,
     `- ${rootManifestPath} delegates only to scripts that exist`,
     `- ${lockPath} agrees with both manifests`,
     `- ${stylesheetPath} is structurally intact`,

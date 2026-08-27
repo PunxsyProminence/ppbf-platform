@@ -34,7 +34,18 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
+import { pathToFileURL } from 'node:url';
+
 import { Client } from 'pg';
+
+/* ts-jest compiles a plain `await import()` down to require(), which cannot
+   load an ES module here. Building it through Function keeps a real dynamic
+   import in the emitted code, honored under --experimental-vm-modules. */
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
+
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 
 // Routes access.ts's and guardianAccess.ts's queries into whichever embedded
 // database the current test opened. Declared before the import so jest's mock
@@ -71,9 +82,7 @@ const PG_PASSWORD = 'postgres';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-soft-deleted-athlete-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
-const COVERAGE_MIGRATION = 'pilot_slice_postgres_coach_coverage_migration.sql';
-/** deleted_at does not exist in the base schema -- this migration adds it. */
-const RETENTION_MIGRATION = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
+
 
 const ORG_ID = 'org-sda';
 const COACH = 'acct-coach-sda';
@@ -99,9 +108,7 @@ const RECORD_COACH = 'acct-coach-record-sda';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
-let baseSchemaSql: string;
-let coverageMigrationSql: string;
-let retentionMigrationSql: string;
+let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 const adminActor: ActorIdentity = {
   accountId: ADMIN_ACCOUNT,
@@ -162,9 +169,10 @@ async function freshDatabase(name: string): Promise<Client> {
 
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
-  await client.query(baseSchemaSql);
-  await client.query(coverageMigrationSql);
-  await client.query(retentionMigrationSql);
+  /* THE WHOLE SCHEMA, not a hand-picked subset -- this suite drives feature
+     code and tests no migration, so it has no business deciding which
+     migrations exist. See scripts/lib/full-schema.mjs. */
+  await applyFullSchema(client, { infraDir: INFRA_DIR });
 
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
@@ -273,9 +281,8 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
-  coverageMigrationSql = await fs.readFile(path.join(INFRA_DIR, COVERAGE_MIGRATION), 'utf8');
-  retentionMigrationSql = await fs.readFile(path.join(INFRA_DIR, RETENTION_MIGRATION), 'utf8');
+  const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  applyFullSchema = helper.applyFullSchema as typeof applyFullSchema;
 });
 
 afterAll(async () => {
