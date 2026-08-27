@@ -4,6 +4,10 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { flagContactWithoutClearance } from '@/src/server/pilot/contactClearanceGate';
 import { flagContactDuringHold } from '@/src/server/pilot/trainingHolds';
 import {
+  autoCalculateForObservationContext,
+  canTriggerStoredCalculation,
+} from '@/src/server/pilot/formulas/autoCalculation';
+import {
   deterministicKey,
 } from '@/src/server/pilot/formulas/identity';
 import {
@@ -193,6 +197,11 @@ export async function POST(request: NextRequest) {
       createdByAccountId: principal.accountId,
     });
 
+    // A correction re-runs the calculations the replaced observation was
+    // actually used in, which knows more than re-detecting the context can:
+    // it carries the parameters and policyVersion each original ran under.
+    // Auto-detection below is therefore the else-branch, not an addition --
+    // running both would compute the same context twice.
     const recalculated = observation.supersedesObservationId
       ? await recalculateForSupersededObservation({
           organizationId: principal.organizationId,
@@ -202,10 +211,51 @@ export async function POST(request: NextRequest) {
         })
       : [];
 
+    // Runs AFTER the store, and must: the detector reads this context back out
+    // of the database, so the observation this request just wrote has to be
+    // visible to the calculation it may have completed.
+    //
+    // The role check now admits athletes, by owner decision 2026-08-27.
+    // canTriggerStoredCalculation owns the reasoning; the short version is
+    // that the manual "run this formula" route (results/route.ts:99) still
+    // refuses them, because there a caller NAMES the formula and the
+    // observation ids, whereas here the formulas are whatever the stored
+    // context deterministically satisfies. An athlete can cause a calculation
+    // about themselves and still cannot choose which one.
+    //
+    // assertActorCanAccessAthlete has already run above, and refuses an
+    // athlete reaching any athlete_id but their own -- so this cannot become a
+    // path to another boxer's record.
+    // A CORRECTION THAT COMPLETES A SET STILL HAS TO CALCULATE. Recalculation
+    // above only finds formulas the REPLACED observation was already used in.
+    // When a correction is what makes the context satisfy MVP-03 or MVP-04 in
+    // the first place -- replacing a wrong-unit punch_absorbed, say -- there is
+    // no prior result to re-run, `recalculated` comes back empty, and treating
+    // "this superseded something" as a blanket skip meant the newly valid set
+    // was never calculated at all. So detection is skipped only when
+    // recalculation actually handled the context.
+    //
+    // Running both is safe rather than merely tolerable: calculationKey is a
+    // sha256 over formula identity and scope, persisted under
+    // `on conflict (organization_id, calculation_key) do nothing`, so a
+    // duplicate computation cannot become a duplicate row.
+    const recalculationHandledContext =
+      observation.supersedesObservationId !== null && recalculated.length > 0;
+
+    const autoCalculated = recalculationHandledContext
+      || !canTriggerStoredCalculation(principal.role)
+      ? []
+      : await autoCalculateForObservationContext({
+          organizationId: principal.organizationId,
+          athleteId: body.athleteId,
+          contextId: body.contextId.trim(),
+        });
+
     return NextResponse.json({
       ok: true,
       observation,
       recalculatedResultCount: recalculated.length,
+      autoCalculatedResultCount: autoCalculated.length,
       // Surfaced rather than silent: whoever logged this should know a review
       // was raised, and the sparring page displays this back to them.
       ...(clearance.flagged

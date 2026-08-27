@@ -20,6 +20,19 @@ import path from 'node:path';
  * and forgetting to wire it up is the natural mistake -- nothing fails, the file
  * looks like every other test in the directory, and the gap is invisible until
  * someone diffs the directory against the script by hand.
+ *
+ * THE CHECK IS NOW ONE HOP, NOT TWO. `test:migrations` used to be a chain
+ * naming 118 scripts, so a suite could be unreachable two different ways: no
+ * script, or a script the chain forgot. This file followed both hops
+ * deliberately. The chain is now a discovery runner
+ * (scripts/run-migration-suites.mjs) that executes every `test:migrations:*`
+ * script it finds, which makes the second way UNREPRESENTABLE -- there is no
+ * list left to fall off. What remains to check is that every .pg.test.ts has a
+ * script at all, and that every script names a file that exists.
+ *
+ * Equivalence was measured at the swap rather than assumed: the chain named
+ * 118 scripts, package.json defined 118, and the difference was empty in both
+ * directions. That property is asserted below so it cannot rot.
  */
 
 const PILOT_DIR = __dirname;
@@ -52,11 +65,19 @@ function migrationChainScripts(): { chain: string; scripts: Record<string, strin
  * for the filename -- a script that exists but is missing from the chain is
  * exactly the bug here, and a naive text search would call that covered.
  */
+function suiteScriptNames(): string[] {
+  const { scripts } = migrationChainScripts();
+  // The same predicate the runner uses. Restated rather than imported because
+  // this file must be able to disagree with the runner: a test that asks the
+  // runner what it runs cannot notice the runner running the wrong thing.
+  return Object.keys(scripts).filter((name) => /^test:migrations:[a-z0-9-]+$/.test(name));
+}
+
 function coveredPgTests(): Set<string> {
-  const { chain, scripts } = migrationChainScripts();
+  const { scripts } = migrationChainScripts();
   const covered = new Set<string>();
 
-  for (const scriptName of chain.match(/test:migrations:[a-z0-9-]+/g) ?? []) {
+  for (const scriptName of suiteScriptNames()) {
     const command = scripts[scriptName];
     if (!command) continue;
 
@@ -69,7 +90,7 @@ function coveredPgTests(): Set<string> {
 }
 
 describe('pg test coverage', () => {
-  it('runs every .pg.test.ts file from the test:migrations chain', () => {
+  it('runs every .pg.test.ts file from the test:migrations runner', () => {
     const orphaned = pgTestFiles().filter((file) => !coveredPgTests().has(file));
 
     expect(orphaned).toEqual([]);
@@ -97,5 +118,23 @@ describe('pg test coverage', () => {
     expect(covered.size).toBeGreaterThan(0);
     expect(pgTestFiles().length).toBeGreaterThan(0);
     expect(covered.has(pretendNewFile)).toBe(false);
+  });
+
+  it('test:migrations delegates to the runner rather than naming suites itself', () => {
+    const { chain } = migrationChainScripts();
+
+    // If somebody reintroduces a hand-written chain, the two-hop gap comes back
+    // with it and the comment above stops being true. Naming the file keeps the
+    // failure legible.
+    expect(chain).toBe('node scripts/run-migration-suites.mjs');
+    expect(chain).not.toContain('npm run test:migrations:');
+  });
+
+  it('the runner would discover a plural set, not a truncated one', () => {
+    // The failure a discovery runner can have and a chain cannot: matching
+    // nothing, running nothing, and exiting 0. The runner refuses below 50 for
+    // this reason; this asserts the manifest actually holds that many, so the
+    // refusal is a floor and not the normal case.
+    expect(suiteScriptNames().length).toBeGreaterThanOrEqual(100);
   });
 });
