@@ -46,6 +46,13 @@ export function isPainReport(kind: string, value: number | null): boolean {
   return kind === PAIN_REPORT_KIND && value !== null && value > 0;
 }
 
+function assertValidPainReportSeverity(kind: string, value: number | null): void {
+  if (kind !== PAIN_REPORT_KIND || value === null || value <= 0) return;
+  if (!Number.isFinite(value) || value > 10) {
+    throw new RangeError('Pain report severity must be a finite value from 1 through 10.');
+  }
+}
+
 /**
  * Severity band for a 1-10 self-reported pain score.
  *
@@ -190,6 +197,7 @@ export async function alertCoachToPainReport(input: {
   contextId: string;
   observedAt: string;
 }): Promise<PainReportAlertOutcome> {
+  assertValidPainReportSeverity(input.kind, input.value);
   if (!isPainReport(input.kind, input.value)) {
     return { raised: false };
   }
