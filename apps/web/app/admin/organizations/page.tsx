@@ -437,8 +437,15 @@ export default function SetupWizard() {
               <ol className="t-body space-y-[var(--s2)]">
                 <li><strong>1. Invite the gym admin as an Entra guest</strong> if their email is outside your Microsoft tenant — they cannot sign in until you do</li>
                 <li><strong>2. Have them sign in with Microsoft</strong> and open People to add their coaches</li>
-                <li><strong>3. They add athletes in People</strong> and hand out each athlete&apos;s sign-in ID plus the starting PIN</li>
-                <li><strong>4. Athletes choose their own PIN</strong> the first time they sign in</li>
+                {/* Step 3 told the admin to hand out "the starting PIN". There
+                    is no starting PIN: createAthleteAccount inserts pin_hash
+                    null, so a new athlete holds no credential at all until an
+                    activation code is issued and redeemed. An admin following
+                    this guide had nothing to hand out and no step telling them
+                    to issue the code, which is the one thing that makes the
+                    account reachable. */}
+                <li><strong>3. They add athletes in People</strong> and give each athlete their sign-in ID plus a one-time activation code from that same page</li>
+                <li><strong>4. Athletes redeem the code</strong> and choose their own PIN, which nobody at the gym can see</li>
               </ol>
             </div>
 

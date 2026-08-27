@@ -129,6 +129,15 @@ beforeAll(async () => {
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
   await migrateClient.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+  /* Applied outside SHADOW_RUNTIME_MIGRATION_FILES on purpose -- that list is a
+     deliberate mirror of scripts/pilot-apply-shadow-runtime-migration.mjs and
+     must keep matching it. This one is here because PRODUCTION HAS IT: it adds
+     pilot.athletes.deleted_at, which the authorization queries in access.ts now
+     require, and deploy-production's schema check confirmed it live on the
+     2026-08-27 release. */
+  await migrateClient.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'),
+  );
   for (const file of SHADOW_RUNTIME_MIGRATION_FILES) {
     await migrateClient.query(await fs.readFile(path.join(INFRA_DIR, file), 'utf8'));
   }

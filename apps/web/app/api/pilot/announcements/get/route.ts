@@ -7,9 +7,23 @@ import {
   isAnnouncementPlacement,
   listAnnouncements,
   listLiveAnnouncements,
+  projectAnnouncementForBoard,
+  type BoardVisibleAnnouncement,
+  type PilotAnnouncement,
 } from '@/src/server/pilot/announcements';
 
 export const runtime = 'nodejs';
+
+/* One place, both reads. Applied by ROLE rather than by which endpoint the
+   caller used: the boundary belongs to the board role, not to a particular
+   route, so a third reader added later gets it by calling this rather than by
+   remembering to. */
+function projectForPrincipal(
+  role: string,
+  announcements: PilotAnnouncement[],
+): PilotAnnouncement[] | BoardVisibleAnnouncement[] {
+  return role === 'board' ? announcements.map(projectAnnouncementForBoard) : announcements;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +46,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         organization_id: principal.organizationId,
-        announcements,
+        // Projected for board HERE, on the server, because a board principal is
+        // in the allow-list one line above. The client-side omission this
+        // replaces was a TypeScript interface, which is erased at runtime.
+        announcements: projectForPrincipal(principal.role, announcements),
       });
     }
 
@@ -52,7 +69,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       organization_id: principal.organizationId,
-      announcements,
+      // The live read too. It carries no role check at all -- every
+      // authenticated principal reaches it, board included -- so projecting
+      // only the authoring view above would leave the same fields reachable
+      // through the path with the weaker gate.
+      announcements: projectForPrincipal(principal.role, announcements),
     });
   } catch (error) {
     return jsonError(error);

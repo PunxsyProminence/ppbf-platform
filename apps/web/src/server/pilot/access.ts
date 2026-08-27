@@ -49,9 +49,36 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
  * something the error channel should disclose -- and the pre-coverage
  * assertion text stays byte-identical for every existing caller and test.
  */
+/* SOFT-DELETED ATHLETES ARE NOT AUTHORIZABLE.
+   ------------------------------------------------------------------------
+
+   Every query in this file that decides whether an actor may reach an athlete
+   now requires a LIVE athlete row (`deleted_at is null`).
+
+   Before this, deleting an athlete wrote `deleted_at` and nothing downstream
+   read it -- the exact shape #690 fixed for guardians. An organization admin
+   who deleted an athlete got a row marked deleted and a platform that carried
+   on authorizing every actor against it: the assigned coach still reached the
+   record, the org admin still reached it, a linked guardian still reached it.
+   `getDeletionStatus` would report the athlete as soft-deleted while the rest
+   of the product behaved as though nothing had happened.
+
+   WHY THE FILTER GOES HERE. assertActorCanAccessAthlete is the chokepoint --
+   92 non-test files call it. Filtering at the authorization layer covers all
+   of them at once, and it cannot be forgotten by the next caller the way a
+   per-route filter can.
+
+   WHAT STILL SEES DELETED ATHLETES, deliberately. The compliance path does not
+   pass through here: /api/pilot/admin/data-deletion calls getDeletionStatus,
+   which queries `pilot.athletes where deleted_at is not null` directly and is
+   untouched by this change (it references none of these helpers -- verified by
+   grep, not assumed). Retention reporting keeps working precisely because it
+   never asked this file's permission. */
 export async function assertCoachAssignedToAthlete(coachId: string, athleteId: string, organizationId: string): Promise<void> {
   const row = await queryOne<{ athlete_id: string }>(
-    'select athlete_id from pilot.athletes where athlete_id = $1 and coach_id = $2 and organization_id = $3',
+    `select athlete_id from pilot.athletes
+     where athlete_id = $1 and coach_id = $2 and organization_id = $3
+       and deleted_at is null`,
     [athleteId, coachId, organizationId],
   );
 
@@ -303,7 +330,8 @@ export async function listActiveCoachCoverage(organizationId: string): Promise<A
 
 export async function assertAthleteBelongsToOrganization(organizationId: string, athleteId: string): Promise<void> {
   const row = await queryOne<{ athlete_id: string }>(
-    'select athlete_id from pilot.athletes where athlete_id = $1 and organization_id = $2',
+    `select athlete_id from pilot.athletes
+     where athlete_id = $1 and organization_id = $2 and deleted_at is null`,
     [athleteId, organizationId],
   );
 
@@ -377,7 +405,9 @@ export async function accessibleAthleteIds(
 
   if (isOrganizationAdminRole(actor.role)) {
     const rows = await query<{ athlete_id: string }>(
-      'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = any($2::text[])',
+      `select athlete_id from pilot.athletes
+       where organization_id = $1 and athlete_id = any($2::text[])
+         and deleted_at is null`,
       [actor.organizationId, distinctIds],
     );
     return new Set(rows.map((row) => row.athlete_id));
@@ -385,7 +415,9 @@ export async function accessibleAthleteIds(
 
   if (actor.role === 'coach') {
     const assignedRows = await query<{ athlete_id: string }>(
-      'select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2 and athlete_id = any($3::text[])',
+      `select athlete_id from pilot.athletes
+       where organization_id = $1 and coach_id = $2 and athlete_id = any($3::text[])
+         and deleted_at is null`,
       [actor.organizationId, actor.accountId, distinctIds],
     );
     const result = new Set(assignedRows.map((row) => row.athlete_id));
@@ -452,11 +484,18 @@ export async function accessibleAthleteIds(
 export async function athleteIdsForCoach(organizationId: string, coachAccountId: string): Promise<string[]> {
   try {
     const rows = await query<{ athlete_id: string }>(
-      `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2
+      `select athlete_id from pilot.athletes
+       where organization_id = $1 and coach_id = $2 and deleted_at is null
        union
-       select athlete_id from pilot.coach_coverage
-       where organization_id = $1 and covering_coach_id = $2
-         and starts_at <= now() and expires_at > now()`,
+       select cc.athlete_id from pilot.coach_coverage cc
+       where cc.organization_id = $1 and cc.covering_coach_id = $2
+         and cc.starts_at <= now() and cc.expires_at > now()
+         and exists (
+           select 1 from pilot.athletes a
+           where a.athlete_id = cc.athlete_id
+             and a.organization_id = cc.organization_id
+             and a.deleted_at is null
+         )`,
       [organizationId, coachAccountId],
     );
     return rows.map((row) => row.athlete_id);
@@ -468,7 +507,8 @@ export async function athleteIdsForCoach(organizationId: string, coachAccountId:
       throw error;
     }
     const rows = await query<{ athlete_id: string }>(
-      `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2`,
+      `select athlete_id from pilot.athletes
+       where organization_id = $1 and coach_id = $2 and deleted_at is null`,
       [organizationId, coachAccountId],
     );
     return rows.map((row) => row.athlete_id);

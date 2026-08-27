@@ -12,6 +12,7 @@ import {
 } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
 import { isRefusalSurface } from "./buildingMap";
+import { canUseOperationsHub } from "./operationsAccess";
 import FeedbackBox from "./FeedbackBox";
 import Corridor from "./Corridor";
 import CardCatalog from "./CardCatalog";
@@ -213,9 +214,18 @@ export default function GlobalRoleHeader() {
               Triage
             </Link>
           ) : null}
-          <Link href="/operations" className={CONTROL_QUIET}>
-            Operations
-          </Link>
+          {/* Administration, not a cross-role launcher (owner decision,
+              2026-08-26). This link sat on every signed-in surface for every
+              role, one tab stop from Logout, and led to a page that now
+              bounces fourteen of the sixteen roles straight back to their own
+              dashboard -- a control whose only outcome is a silent redirect.
+              The same predicate the page's own gate uses, so the two cannot
+              disagree about who this is for. */}
+          {canUseOperationsHub(session.role) ? (
+            <Link href="/operations" className={CONTROL_QUIET}>
+              Operations
+            </Link>
+          ) : null}
           <Link href="/dashboard" className={CONTROL_QUIET}>
             Bell
           </Link>

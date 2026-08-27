@@ -131,6 +131,11 @@ export async function POST(request: NextRequest) {
         documentRef: existing.document_ref,
         verifiedByAccountId: principal.accountId,
         verificationNote: text(body.note)?.trim() || null,
+        /* The status this decision was made ABOUT. `existing` was already read
+           above and used for document_ref and for the supersession record; it
+           just was not used as a precondition, so the write was a blind
+           overwrite of whatever the row held by the time it landed. */
+        expectedStatus: existing.status,
       });
 
       await audit(principal, updated.clearance_id, {
@@ -163,6 +168,10 @@ export async function POST(request: NextRequest) {
         documentRef: existing.document_ref,
         verifiedByAccountId: principal.accountId,
         verificationNote: note,
+        // Same precondition as verify. A reject writes status='not_started' with
+        // the dates nulled, so landing it on a 'current' clearance erases the
+        // window that clearance was valid for.
+        expectedStatus: existing.status,
       });
 
       await audit(principal, updated.clearance_id, {

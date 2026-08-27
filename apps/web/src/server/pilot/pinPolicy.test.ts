@@ -1,6 +1,8 @@
 import {
   DEFAULT_FIRST_LOGIN_PIN,
   DEFAULT_PIN_LENGTH,
+  PIN_RULE_SUMMARY,
+  PIN_RULES_REFUSED_EXAMPLES,
   assertChosenPinAllowed,
   validatePinPolicy,
 } from './pinPolicy';
@@ -52,14 +54,9 @@ describe('PIN policy', () => {
     });
   });
 
-  // The distinction this file already draws, now load-bearing for the weak-PIN
-  // rule: the platform ISSUES the bootstrap PIN (admin reset), and a person
-  // CHOOSES their own. validatePinPolicy sits on the issuing path.
-  describe('the issued bootstrap PIN', () => {
-    test('validatePinPolicy accepts it, so the admin reset flow keeps working', () => {
-      // It is a sequential run, so without the explicit carve-out the new
-      // weak-PIN rule would have broken every PIN reset.
-      expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+  describe('the retired bootstrap PIN', () => {
+    test('validatePinPolicy rejects it everywhere', () => {
+      expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).toThrow('starting PIN');
     });
 
     test('assertChosenPinAllowed still refuses it when somebody picks it', () => {
@@ -74,5 +71,50 @@ describe('PIN policy', () => {
       expect(() => assertChosenPinAllowed('111111')).not.toThrow();
       expect(() => validatePinPolicy('111111')).toThrow('too easy to guess');
     });
+  });
+});
+
+/**
+ * These keep one sentence honest.
+ *
+ * PIN_RULE_SUMMARY is shown to an athlete on /activate and /change-pin as the
+ * statement of what will be refused. A sentence living in a component is
+ * enforced by nothing, and the two halves had drifted: between them those
+ * screens named one of the six refusals above, plus a birthday rule that
+ * isTriviallyGuessablePin does not implement, while four shapes it does refuse
+ * went unmentioned. An athlete who tried 112233 met a rule no screen had
+ * stated.
+ *
+ * The describe blocks above already prove the shapes are refused. What is new
+ * here is the binding between those rules and the words shown to the athlete,
+ * checked in both directions so neither half can be satisfied by editing the
+ * other.
+ */
+describe('the athlete-facing rule summary matches the rules it describes', () => {
+  test.each(PIN_RULES_REFUSED_EXAMPLES)(
+    'the summary promises %s is refused, and validatePinPolicy refuses it',
+    (example) => {
+      expect(() => validatePinPolicy(example)).toThrow();
+    },
+  );
+
+  test.each(PIN_RULES_REFUSED_EXAMPLES)('the summary actually names %s', (example) => {
+    // A refusal the athlete is never warned about is the defect this constant
+    // exists to fix, so an example may not be quietly dropped from the sentence
+    // while remaining in the list.
+    expect(PIN_RULE_SUMMARY).toContain(example);
+  });
+
+  test('every named example is a PIN the athlete could actually have typed', () => {
+    // The examples are literals while the length is a constant, so raising
+    // DEFAULT_PIN_LENGTH would leave the screens citing PINs the field cannot
+    // hold -- refused for the wrong reason, not the pattern being illustrated.
+    for (const example of PIN_RULES_REFUSED_EXAMPLES) {
+      expect(example).toHaveLength(DEFAULT_PIN_LENGTH);
+    }
+  });
+
+  test('the summary states the required length', () => {
+    expect(PIN_RULE_SUMMARY).toContain(String(DEFAULT_PIN_LENGTH));
   });
 });

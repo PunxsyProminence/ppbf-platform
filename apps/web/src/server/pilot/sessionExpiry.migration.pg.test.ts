@@ -619,8 +619,8 @@ describe('session revocation regressions (real database, real application code)'
     await seedOrganization('org-B-inherit');
 
     await auth.createOrUpdateAthleteAccount('athlete-cross-org-1', 'athlete-cross-org-1', 'org-A-inherit');
-    await auth.activateAccountPin('athlete-cross-org-1', '123456', 'org-A-inherit');
-    const loginA = await auth.loginWithAccountIdAndPin('athlete-cross-org-1', '123456');
+    await auth.activateAccountPin('athlete-cross-org-1', '482913', 'org-A-inherit');
+    const loginA = await auth.loginWithAccountIdAndPin('athlete-cross-org-1', '482913');
     expect(loginA).not.toBeNull();
 
     const principalBefore = await auth.resolvePrincipal(requestWithSessionCookie(loginA!.token));
@@ -642,8 +642,8 @@ describe('session revocation regressions (real database, real application code)'
     await seedOrganization('org-secondary-B');
 
     await auth.createOrUpdateAthleteAccount('athlete-secondary-1', 'athlete-secondary-1', 'org-primary-A');
-    await auth.activateAccountPin('athlete-secondary-1', '123456', 'org-primary-A');
-    const loginInPrimary = await auth.loginWithAccountIdAndPin('athlete-secondary-1', '123456');
+    await auth.activateAccountPin('athlete-secondary-1', '482913', 'org-primary-A');
+    const loginInPrimary = await auth.loginWithAccountIdAndPin('athlete-secondary-1', '482913');
     expect(loginInPrimary).not.toBeNull();
 
     // This account also holds an active membership in a second organization,
@@ -736,9 +736,9 @@ describe('session revocation regressions (real database, real application code)'
   test('cookie lifetime and the database session expire at the same time (24 hours)', async () => {
     await seedOrganization('org-cookie-align');
     await auth.createOrUpdateAthleteAccount('athlete-cookie-1', 'athlete-cookie-1', 'org-cookie-align');
-    await auth.activateAccountPin('athlete-cookie-1', '123456', 'org-cookie-align');
+    await auth.activateAccountPin('athlete-cookie-1', '482913', 'org-cookie-align');
     const before = Date.now();
-    const login = await auth.loginWithAccountIdAndPin('athlete-cookie-1', '123456');
+    const login = await auth.loginWithAccountIdAndPin('athlete-cookie-1', '482913');
     const after = Date.now();
     expect(login).not.toBeNull();
 

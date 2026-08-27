@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 
 import { apiBase } from '@/lib/apiBase';
 import { useFocusOnStepChange } from '@/src/lib/useFocusOnStepChange';
-import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
+import { DEFAULT_PIN_LENGTH, PIN_RULE_SUMMARY } from '@/src/server/pilot/pinPolicy';
 
 // Single source of truth with the server policy: validatePinPolicy enforces
 // this exact length, so a local copy could silently disagree with it.
@@ -134,15 +134,24 @@ function ActivatePageContent() {
       const payload = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        code?: string;
         account_id?: string;
         signed_in?: boolean;
       };
 
       if (!response.ok || !payload.ok) {
-        // A rejected PIN is correctable in place; a rejected code means the
-        // athlete has to start over with a different slip.
+        /* A rejected PIN is correctable in place; a rejected code means the
+           athlete has to start over with a different slip.
+
+           Told apart by the machine CODE the server sends, not by how the
+           message happens to be spelled. The prefix test this replaces missed
+           PIN_TRIVIALLY_GUESSABLE -- its message begins "That PIN is too easy
+           to guess" -- so an athlete who picked 111111 was thrown back to the
+           code screen and shown a PIN error there, with both PIN fields
+           cleared, as though the slip in their hand were the problem. */
         const message = payload.error || 'We could not activate your account.';
-        if (!message.startsWith('PIN')) {
+        const isPinProblem = payload.code?.startsWith('PIN_') ?? false;
+        if (!isPinProblem) {
           setStage('code');
           setPin('');
           setConfirmPin('');
@@ -242,7 +251,7 @@ function ActivatePageContent() {
                 Choose your PIN
               </label>
               <p className={FIELD_HINT}>
-                {PIN_LENGTH} numbers. Do not use your birthday. Nobody at the gym can see this.
+                {PIN_RULE_SUMMARY} Nobody at the gym can see this.
               </p>
               <input
                 id="new-pin"

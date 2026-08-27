@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { apiBase } from '@/lib/apiBase';
-import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
+import { DEFAULT_PIN_LENGTH, PIN_RULE_SUMMARY } from '@/src/server/pilot/pinPolicy';
 
 const PIN_PATTERN = /^\d{6}$/;
 
@@ -105,8 +105,8 @@ export default function ChangePinPage() {
                 Choose your PIN
               </h1>
               <p className="t-body mt-[var(--s3)]">
-                You are signed in with the starting PIN your gym gave you. Everyone gets the same one, so pick your own
-                before you go any further. Nobody at the gym can see what you choose.
+                You are signed in with a PIN your gym set for you, so somebody there knows it. Pick your own before you
+                go any further. Nobody at the gym can see what you choose.
               </p>
             </header>
 
@@ -148,7 +148,7 @@ export default function ChangePinPage() {
                 <label htmlFor="new-pin" className="t-label">
                   Your new PIN
                 </label>
-                <p className="t-muted mb-[var(--s3)]">Exactly 6 digits. Do not use 123456.</p>
+                <p className="t-muted mb-[var(--s3)]">{PIN_RULE_SUMMARY}</p>
                 <input
                   id="new-pin"
                   type="password"

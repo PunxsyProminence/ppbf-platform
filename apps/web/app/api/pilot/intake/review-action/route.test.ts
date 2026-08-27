@@ -29,7 +29,14 @@ jest.mock('@/src/server/pilot/access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/shadowReadiness', () => ({ assertShadowRuntimeReadiness: jest.fn() }));
-jest.mock('@/src/server/pilot/shadowAuthority', () => ({ assertShadowAuthority: jest.fn() }));
+// Spread the real module rather than replacing it: only the ledger-writing
+// assertShadowAuthority needs stubbing. isShadowAutomationMode and
+// SHADOW_AUTOMATION_MODES are pure and are what the route validates against,
+// so a bare replacement would leave the route calling undefined.
+jest.mock('@/src/server/pilot/shadowAuthority', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowAuthority');
+  return { ...actual, assertShadowAuthority: jest.fn() };
+});
 jest.mock('@/src/server/pilot/shadowEvents', () => ({ emitShadowEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowTelemetry', () => ({ writeShadowTelemetryEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -386,5 +393,226 @@ describe('review-action authorizes the actor against the case before mutating it
 
     expect(response.status).toBe(200);
     expect(mockUpdateStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// automation_mode: a closed vocabulary that every gate compares for EXACT
+// equality.
+//
+// decideShadowAuthority refuses on `automationMode === 'automatic'` in three
+// branches, and this route refuses promotion outright on the same comparison.
+// The value arrived here straight off the request body with no check, typed as
+// ShadowAutomationMode by an `as` cast that proves nothing at runtime -- so a
+// caller declaring "Automatic" was read as a non-automatic actor by every one
+// of those gates and promoted a child's record with no human-in-the-loop
+// refusal, while pilot.shadow_authority_checks recorded the check as passed.
+//
+// The gap was already named, in shadow/medical-status/route.ts's own header:
+// "the two sibling assertShadowAuthority call sites take automation_mode
+// straight off the body with no check". This is one of the two.
+
+const NEAR_MISS_AUTOMATION_MODES = [
+  'Automatic',
+  'AUTOMATIC',
+  'aUtOmAtIc',
+  'automatic ',
+  ' automatic',
+  'automatic\n',
+];
+
+function promoteRequestWithMode(automationMode: unknown) {
+  return new NextRequest('http://localhost/api/pilot/intake/review-action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      intake_case_id: 'case-1',
+      action: 'promote',
+      automation_mode: automationMode,
+      promotion: {
+        athlete: {
+          athlete_id: 'ath-1',
+          full_name: 'Gate Athlete',
+          dob: '2011-02-10',
+          weight_class: '119',
+          gym_status: 'active',
+          emergency_contact: 'Guardian 555-0102',
+          coach_id: 'acct-admin',
+        },
+      },
+    }),
+  });
+}
+
+describe('automation_mode is held to the closed vocabulary before any gate reads it', () => {
+  // A table-driven guard written over an empty list passes without ever
+  // running. Pin the count so deleting the cases fails loudly.
+  test('the near-miss table is not empty', () => {
+    expect(NEAR_MISS_AUTOMATION_MODES.length).toBeGreaterThan(0);
+  });
+
+  test('the exact vocabulary value is still refused by the promotion gate', async () => {
+    const response = await POST(promoteRequestWithMode('automatic'));
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+  });
+
+  test.each(NEAR_MISS_AUTOMATION_MODES)(
+    'automation_mode %p is refused rather than read as non-automatic',
+    async (mode) => {
+      const response = await POST(promoteRequestWithMode(mode));
+
+      expect(response.status).toBe(400);
+      // The promotion must not have begun: upsertAthlete is the first write on
+      // that path, so a call here means a child's record was created past a
+      // gate that never fired.
+      expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    },
+  );
+
+  const NON_STRING_AUTOMATION_MODES: Array<[string, unknown]> = [
+    ['an object', { mode: 'automatic' }],
+    ['an array', ['manual']],
+    ['a number', 3],
+    ['a boolean', true],
+    ['an empty string', ''],
+  ];
+
+  test('the non-string table is not empty', () => {
+    expect(NON_STRING_AUTOMATION_MODES.length).toBeGreaterThan(0);
+  });
+
+  test.each(NON_STRING_AUTOMATION_MODES)('a %s automation_mode is refused', async (_label, mode) => {
+    const response = await POST(promoteRequestWithMode(mode));
+
+    expect(response.status).toBe(400);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+  });
+
+  test('an omitted automation_mode still defaults to assisted and promotes', async () => {
+    const response = await POST(promoteRequest(undefined));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['assisted', 'manual'])('the vocabulary value %p still promotes', async (mode) => {
+    const response = await POST(promoteRequestWithMode(mode));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `admin` is the LEGACY SPELLING of organization_admin, not a lesser role.
+ *
+ * This route said so twice and then contradicted itself once. requireRole at
+ * the top admits `admin` through roleEquals, and assertIntakeCaseAuthority
+ * admits it through isOrganizationAdminRole -- but the promote branch compared
+ * `principal.role !== 'organization_admin'` directly. So a legacy-admin
+ * organization could approve an intake case and reject one, and was refused on
+ * the single action that turns an approved case into an athlete record, by an
+ * error naming the role it is supposed to be equivalent to.
+ *
+ * The whole file used only `organization_admin` principals, so nothing caught
+ * it. These two cases pin both spellings to the same outcome.
+ */
+describe('legacy admin is organization_admin for promotion', () => {
+  function legacyAdminPrincipal(): PilotPrincipal {
+    return { ...principal(), role: 'admin' };
+  }
+
+  test('a legacy admin may promote, exactly as an organization_admin may', async () => {
+    mockRequirePrincipal.mockResolvedValue(legacyAdminPrincipal());
+    mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
+
+    const response = await POST(promoteRequest(undefined));
+
+    // The assertion that matters is that the promote gate did not refuse the
+    // role. A later failure in this route would be a different defect.
+    const body = (await response.json()) as { error?: string };
+    expect(body.error ?? '').not.toContain('only organization_admin can promote intake');
+  });
+
+  test('both spellings reach the same gate outcome', async () => {
+    const outcomes: string[] = [];
+    for (const role of ['organization_admin', 'admin'] as const) {
+      jest.clearAllMocks();
+      mockRequirePrincipal.mockResolvedValue({ ...principal(), role });
+      mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
+      const response = await POST(promoteRequest(undefined));
+      const body = (await response.json()) as { error?: string };
+      outcomes.push(body.error?.includes('only organization_admin can promote intake') ? 'refused' : 'admitted');
+    }
+    // Guards against "fixing" this by refusing both.
+    expect(outcomes).toEqual(['admitted', 'admitted']);
+  });
+});
+
+/**
+ * Approving a promoted case must not walk it back.
+ *
+ * approve had no status precondition -- it wrote 'approved' unconditionally,
+ * over any prior status including 'promoted'. Promote's own precondition
+ * (status must be 'approved') was therefore defeatable by another action
+ * silently restoring the state it checks for: promote, approve, promote again.
+ *
+ * The second promote is the damage, and it is not cosmetic.
+ * createOrUpdateAthleteAccount's update branch sets pin_hash = null,
+ * active_flag = false and revokes every session, because re-running a review is
+ * meant to re-provision. Correct for an athlete who has not activated yet;
+ * catastrophic for one who already redeemed their code and chose a PIN nobody
+ * else knows. They are locked out with no way to request a new activation code
+ * themselves, and the admin sees ok: true.
+ */
+describe('approve cannot un-promote a case', () => {
+  test('refuses to approve a case that is already promoted', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'promoted' } as never);
+
+    const response = await POST(new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ intake_case_id: 'case-1', action: 'approve' }),
+    }));
+
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toContain('already promoted');
+    // The status write must not have happened -- a refusal that still mutates
+    // is not a refusal.
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+
+  test('an approved case can still be approved, so ordinary review is unaffected', async () => {
+    // Guards against "fixing" this by refusing approve outright. Re-approving a
+    // case that has not been promoted is a normal thing an admin may do.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
+
+    const response = await POST(new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ intake_case_id: 'case-1', action: 'approve' }),
+    }));
+
+    const body = (await response.json()) as { error?: string };
+    expect(body.error ?? '').not.toContain('already promoted');
+    expect(mockUpdateStatus).toHaveBeenCalled();
+  });
+
+  test('a submitted case can still be approved', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'submitted' } as never);
+
+    const response = await POST(new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ intake_case_id: 'case-1', action: 'approve' }),
+    }));
+
+    const body = (await response.json()) as { error?: string };
+    expect(body.error ?? '').not.toContain('already promoted');
   });
 });
