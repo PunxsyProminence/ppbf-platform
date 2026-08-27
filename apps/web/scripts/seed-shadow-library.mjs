@@ -151,33 +151,44 @@ export async function loadManifest() {
     }
   }
 
-  // EVERY file, checked here, before the caller writes anything.
+  // EVERY file, READ here, before the caller writes anything -- and retained,
+  // so the seeding loop never reads again.
   //
   // The field loop above proves "file" is a non-empty string. It does not
-  // prove the string names a document. seedManifestSources reads each file
-  // INSIDE its registration loop, so a manifest whose second entry names a
-  // missing document registered the first entry completely -- source,
-  // document and every chunk, through live API calls -- and then threw
-  // ENOENT. That leaves a half-registered Library that no re-run repairs:
-  // dedupe is by doctrine_kind, so the finished entry is skipped and the
-  // missing file is still missing.
+  // prove the string names a readable document. seedManifestSources used to
+  // read each file INSIDE its registration loop, so a manifest whose second
+  // entry named a missing document registered the first entry completely --
+  // source, document and every chunk, through live API calls -- and then
+  // threw ENOENT. That leaves a half-registered Library no re-run repairs:
+  // dedupe is by doctrine_kind, so the finished entry is skipped and the bad
+  // entry is still bad.
+  //
+  // READING rather than checking existence is the whole point, and the first
+  // version of this preflight got it wrong: it used fs.access(), which asks
+  // only "is there something at this path". A DIRECTORY answers yes, and
+  // readFile on a directory throws EISDIR -- inside the loop, after writes,
+  // which is precisely the failure being prevented. An existing but unreadable
+  // file does the same with EACCES. Reading here cannot have that gap: the
+  // content the loop registers is the content this already read, so there is
+  // no second read left to fail, and no window between the check and the use.
   //
   // Reported together rather than one per run, because an operator fixing a
   // manifest should see the whole list, and collected before throwing for the
-  // same reason verifySession runs first: fail on the cheap local check
-  // before anything is written.
-  const missing = [];
+  // same reason verifySession runs first: fail on the cheap local work before
+  // anything is written.
+  const unreadable = [];
   for (const entry of raw.sources) {
     const filePath = resolveManifestEntryFile(entry);
     try {
-      await fs.access(filePath);
-    } catch {
-      missing.push(`  ${entry.doctrine_kind}: ${entry.file}`);
+      entry.contents = await fs.readFile(filePath, 'utf8');
+    } catch (error) {
+      unreadable.push(`  ${entry.doctrine_kind}: ${entry.file} (${error?.code ?? 'unreadable'})`);
     }
   }
-  if (missing.length > 0) {
+  if (unreadable.length > 0) {
     throw new Error(
-      `Manifest at ${manifestPath} names ${missing.length} file(s) that do not exist:\n${missing.join('\n')}\n`
+      `Manifest at ${manifestPath} names ${unreadable.length} file(s) that cannot be read:\n`
+      + `${unreadable.join('\n')}\n`
       + 'Nothing was registered. Fix the path, or remove the entry, and re-run.',
     );
   }
@@ -266,8 +277,10 @@ async function seedManifestSources() {
       continue;
     }
 
-    const filePath = resolveManifestEntryFile(entry);
-    const content = await fs.readFile(filePath, 'utf8');
+    // Read by loadManifest before any of this ran. Not re-read here: a second
+    // read is a second chance to fail, and this one would fail after earlier
+    // entries were already registered.
+    const content = entry.contents;
 
     console.log(`2) ${label}: registering source, document, and chunks`);
     const source = await registerSource(entry);

@@ -49,6 +49,11 @@ function entry(file: string, kind = 'authority_model') {
 
 const CASES: Record<string, unknown> = {
   all_files_present: { sources: [entry(REAL_FILE)] },
+  // fs.access() answers "does this path exist", which a DIRECTORY also
+  // satisfies -- and readFile on a directory throws EISDIR. Checking existence
+  // rather than readability rebuilds the partial seed this preflight exists to
+  // stop, one entry later.
+  entry_names_a_directory: { sources: [entry(REAL_FILE), entry('docs', 'specification')] },
   one_file_missing: { sources: [entry(REAL_FILE), entry(MISSING_FILE, 'specification')] },
   every_missing_file_reported: {
     sources: [entry(MISSING_FILE, 'specification'), entry(ALSO_MISSING, 'event_model')],
@@ -57,7 +62,9 @@ const CASES: Record<string, unknown> = {
   no_sources_at_all: { sources: [] },
 };
 
-type Outcome = { ok: true; count: number } | { ok: false; message: string };
+type Outcome =
+  | { ok: true; count: number; contentLengths: number[] }
+  | { ok: false; message: string };
 
 let outcomes: Record<string, Outcome>;
 let workdir: string;
@@ -75,7 +82,8 @@ beforeAll(() => {
     .map((name) =>
       `try { process.env.PILOT_LIBRARY_MANIFEST = P[${JSON.stringify(name)}];`
       + ` const r = await m.loadManifest();`
-      + ` out[${JSON.stringify(name)}] = {ok: true, count: r.length}; }`
+      + ` out[${JSON.stringify(name)}] = {ok: true, count: r.length,`
+      + ` contentLengths: r.map((e) => (typeof e.contents === 'string' ? e.contents.length : -1))}; }`
       + ` catch (e) { out[${JSON.stringify(name)}] = {ok: false, message: e.message}; }`)
     .join('\n');
 
@@ -120,6 +128,27 @@ describe('SHADOW library seed manifest', () => {
       throw new Error(`a manifest naming a real file was refused: ${outcome.message}`);
     }
     expect(outcome.count).toBe(1);
+  });
+
+  // Existence is not readability. A directory exists; reading it throws
+  // EISDIR -- and that throw would land inside the registration loop, after
+  // earlier entries were already written, which is the failure this preflight
+  // is for. Raised by the Codex review bot against the first version of this
+  // check, which used fs.access().
+  it('refuses an entry naming a directory rather than a document', () => {
+    expect(refusal('entry_names_a_directory')).toContain('docs');
+  });
+
+  // The stronger property, and the one that actually closes the hole: the
+  // contents are READ during validation and retained, so the seeding loop
+  // never performs a second read that could fail after writes have started.
+  it('reads and retains every file, so the seed loop re-reads nothing', () => {
+    const outcome = outcomes.all_files_present;
+    if (!outcome.ok) {
+      throw new Error(`a manifest naming a real file was refused: ${outcome.message}`);
+    }
+    expect(outcome.contentLengths).toHaveLength(1);
+    expect(outcome.contentLengths[0]).toBeGreaterThan(0);
   });
 
   // The case this exists for: without it, entry one registers through live API
