@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { getProtocol } from './interventionProtocols';
 
 // Intervention executions (register module 026 slice 2) -- what ACTUALLY
@@ -268,6 +268,14 @@ export async function closeExecution(input: ExecutionFactsInput & {
   return getExecution(input.organizationId, input.executionId);
 }
 
+/**
+ * Raised inside correctExecution's transaction when the record it read has
+ * already been superseded by the time the stamp runs. Private to this
+ * module: it only rolls the transaction back, and is converted straight back
+ * to the null this function has always returned for "not correctable".
+ */
+class ExecutionCorrectionLostRace extends Error {}
+
 /** Correction is supersession: a NEW version row with a stated reason; the
  * original keeps its values forever and is stamped superseded. Actual
  * facts are re-stated; identity, links, and the planned snapshot are
@@ -286,59 +294,92 @@ export async function correctExecution(input: ExecutionFactsInput & {
 
   const finalStatus = input.outcome ?? current.status;
   const newId = randomUUID();
-  await queryOne(
-    `insert into pilot.intervention_executions
-       (organization_id, execution_id, lineage_id, version, supersedes_execution_id,
-        athlete_id, decision_id, protocol_id, protocol_version, session_run_id,
-        recorded_by_account_id, planned_start, actual_start, actual_end, status,
-        planned_exposure, planned_task_context, actual_exposure, trained_context,
-        task_constraint, partner_context, adherence, deviations, deviation_reason,
-        stop_change_reason, notes, correction_reason)
-     select organization_id, $3, lineage_id, version + 1, execution_id,
-            athlete_id, decision_id, protocol_id, protocol_version, session_run_id,
-            $4, planned_start, coalesce($5, actual_start), coalesce($6, actual_end), 'superseded',
-            planned_exposure, planned_task_context,
-            coalesce($7::jsonb, actual_exposure), coalesce($8, trained_context),
-            coalesce($9, task_constraint), coalesce($10, partner_context),
-            coalesce($11, adherence), coalesce($12, deviations), coalesce($13, deviation_reason),
-            coalesce($14, stop_change_reason), coalesce($15, notes), $16
-     from pilot.intervention_executions
-     where organization_id = $1 and execution_id = $2
-     returning execution_id`,
-    [
-      input.organizationId,
-      input.executionId,
-      newId,
-      input.correctedByAccountId,
-      input.actualStart ?? null,
-      input.actualEnd ?? null,
-      input.actualExposure === undefined ? null : JSON.stringify(input.actualExposure),
-      input.trainedContext ?? null,
-      input.taskConstraint ?? null,
-      input.partnerContext ?? null,
-      input.adherence ?? null,
-      input.deviations ?? null,
-      input.deviationReason ?? null,
-      input.stopChangeReason ?? null,
-      input.notes ?? null,
-      input.correctionReason,
-    ],
-  );
 
-  // Two steps under the one-current-record unique index: the correction is
-  // born superseded, the original flips, then the correction takes the
-  // lineage's final status. A crash between steps never leaves two current
-  // records for one lineage.
-  await queryOne(
-    `update pilot.intervention_executions set status = 'superseded', updated_at = now()
-     where organization_id = $1 and execution_id = $2 returning execution_id`,
-    [input.organizationId, input.executionId],
-  );
-  await queryOne(
-    `update pilot.intervention_executions set status = $3, updated_at = now()
-     where organization_id = $1 and execution_id = $2 returning execution_id`,
-    [input.organizationId, newId, finalStatus],
-  );
+  // ONE TRANSACTION, AND THE FLIP CARRIES THE STATE IT READ.
+  //
+  // Three statements build a correction -- insert the successor born
+  // 'superseded' (so the one-current-record unique index is never contended),
+  // stamp the original, then give the successor the lineage's final status.
+  // On autocommit the old comment's claim ("a crash between steps never
+  // leaves two current records") was true and beside the point: what a
+  // failure after the second statement leaves is ZERO current records. Both
+  // rows read 'superseded', listExecutions filters exactly that out, and the
+  // execution -- the record of what a child was actually put through --
+  // disappears from every current view while its rows sit in the table.
+  //
+  // The same gap opens without any crash: two corrections of one execution
+  // both read `current` as non-superseded, both insert, and both then flipped
+  // the original because that UPDATE named no state. One raise wins the
+  // unique index and the other 500s on a 23505, leaving its successor
+  // stranded as a version nothing can raise or remove.
+  //
+  // The transaction makes the three all-or-nothing, and `and status <>
+  // 'superseded'` on the stamp is the compare-and-set that settles the race
+  // in the database: the loser matches zero rows, rolls its own insert back,
+  // and returns null -- which is what this function already returns for "not
+  // correctable", and what the route renders as a hidden not-found.
+  const corrected = await withTransaction(async (client) => {
+    await client.query(
+      `insert into pilot.intervention_executions
+         (organization_id, execution_id, lineage_id, version, supersedes_execution_id,
+          athlete_id, decision_id, protocol_id, protocol_version, session_run_id,
+          recorded_by_account_id, planned_start, actual_start, actual_end, status,
+          planned_exposure, planned_task_context, actual_exposure, trained_context,
+          task_constraint, partner_context, adherence, deviations, deviation_reason,
+          stop_change_reason, notes, correction_reason)
+       select organization_id, $3, lineage_id, version + 1, execution_id,
+              athlete_id, decision_id, protocol_id, protocol_version, session_run_id,
+              $4, planned_start, coalesce($5, actual_start), coalesce($6, actual_end), 'superseded',
+              planned_exposure, planned_task_context,
+              coalesce($7::jsonb, actual_exposure), coalesce($8, trained_context),
+              coalesce($9, task_constraint), coalesce($10, partner_context),
+              coalesce($11, adherence), coalesce($12, deviations), coalesce($13, deviation_reason),
+              coalesce($14, stop_change_reason), coalesce($15, notes), $16
+       from pilot.intervention_executions
+       where organization_id = $1 and execution_id = $2
+       returning execution_id`,
+      [
+        input.organizationId,
+        input.executionId,
+        newId,
+        input.correctedByAccountId,
+        input.actualStart ?? null,
+        input.actualEnd ?? null,
+        input.actualExposure === undefined ? null : JSON.stringify(input.actualExposure),
+        input.trainedContext ?? null,
+        input.taskConstraint ?? null,
+        input.partnerContext ?? null,
+        input.adherence ?? null,
+        input.deviations ?? null,
+        input.deviationReason ?? null,
+        input.stopChangeReason ?? null,
+        input.notes ?? null,
+        input.correctionReason,
+      ],
+    );
 
-  return getExecution(input.organizationId, newId);
+    const stamped = await client.query<{ execution_id: string }>(
+      `update pilot.intervention_executions set status = 'superseded', updated_at = now()
+       where organization_id = $1 and execution_id = $2 and status <> 'superseded'
+       returning execution_id`,
+      [input.organizationId, input.executionId],
+    );
+    if (stamped.rows.length === 0) {
+      throw new ExecutionCorrectionLostRace();
+    }
+
+    await client.query(
+      `update pilot.intervention_executions set status = $3, updated_at = now()
+       where organization_id = $1 and execution_id = $2 returning execution_id`,
+      [input.organizationId, newId, finalStatus],
+    );
+
+    return newId;
+  }).catch((error: unknown) => {
+    if (error instanceof ExecutionCorrectionLostRace) return null;
+    throw error;
+  });
+
+  if (!corrected) return null;
+  return getExecution(input.organizationId, corrected);
 }

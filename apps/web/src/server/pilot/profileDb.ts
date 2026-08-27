@@ -479,10 +479,31 @@ export async function clearPhoto(
   // expectedCurrentState serialize correctly: the first commits and moves
   // the state off expectedCurrentState, and the second's WHERE clause then
   // fails to match, returning false rather than silently overwriting a
-  // decision another reviewer already made. Omitted, this is the sibling
-  // photo/review route's original unconditional toggle -- unchanged.
+  // decision another reviewer already made. Omitted, the write is
+  // unconditional -- which is correct only for a caller acting on its own
+  // row with nothing to lose a race to (the self-serve DELETE).
   expectedCurrentState?: PhotoReviewState,
+  // The IDENTITY half of the CAS -- see releasePhoto's identical parameter,
+  // whose contract this matches exactly (same operator, same $-position
+  // convention, same "omitted means unguarded"). A block DELETES BYTES, so it
+  // needs this at least as much as a release does: without it a member who
+  // replaces the photograph between the reviewer's read and this UPDATE has
+  // the reviewer delete the blob they looked at while the row is nulled out
+  // from under the replacement, leaving the never-reviewed bytes in the
+  // container with nothing referencing them and no path left that can ever
+  // remove them.
+  expectedPhotoUploadedAt?: string,
 ): Promise<boolean> {
+  const params: unknown[] = [organizationId, accountId, reviewState, reviewedByAccountId];
+  const guards: string[] = [];
+  if (expectedCurrentState) {
+    params.push(expectedCurrentState);
+    guards.push(`and photo_review_state = $${params.length}`);
+  }
+  if (expectedPhotoUploadedAt !== undefined) {
+    params.push(expectedPhotoUploadedAt);
+    guards.push(`and photo_uploaded_at = $${params.length}`);
+  }
   const rows = await query<{ account_id: string }>(
     `update pilot.account_profiles
      set photo_blob_path = null,
@@ -496,11 +517,9 @@ export async function clearPhoto(
          photo_reviewed_by_account_id = $4,
          updated_at = now()
      where organization_id = $1 and account_id = $2
-       ${expectedCurrentState ? 'and photo_review_state = $5' : ''}
+       ${guards.join('\n       ')}
      returning account_id`,
-    expectedCurrentState
-      ? [organizationId, accountId, reviewState, reviewedByAccountId, expectedCurrentState]
-      : [organizationId, accountId, reviewState, reviewedByAccountId],
+    params,
   );
   return rows.length > 0;
 }
