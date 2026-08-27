@@ -9,9 +9,10 @@
 //      latest value of every formula output" and "the latest N rows", which are
 //      the same answer only until one formula is recomputed more often than
 //      another.
-//   2. `review_state in ('accepted','corrected')` -- the difference between
-//      coach-reviewed Film Study material and a pile of pending AI proposals
-//      about an identifiable minor.
+//   2. `review_state = 'accepted'` -- the difference between Film Study
+//      material a coach has actually signed off on and everything still
+//      awaiting one, including a 'corrected' row a coach has reworded but not
+//      yet settled. Accepted-only is an owner decision (2026-08-27).
 //   3. `organization_id = $1` on every read -- the tenancy boundary.
 //
 // Each is mutation-tested: the suite was watched to go RED with the predicate
@@ -426,7 +427,7 @@ describe('reviewed-only Film Study material', () => {
    * identifiable minor, and a rejected one is a claim a coach looked at and
    * said no to. Neither is evidence. This is the case that goes red when the
    * filter is broken, and it was watched doing so. */
-  test('pending and rejected never appear; accepted and corrected do', async () => {
+  test('only accepted appears; pending, rejected and corrected do not', async () => {
     const pendingId = await proposalIn('pending_review');
     const rejectedId = await proposalIn('rejected');
     const acceptedId = await proposalIn('accepted');
@@ -437,11 +438,14 @@ describe('reviewed-only Film Study material', () => {
       athleteId: ATHLETE_ID,
     });
 
-    const ids = reviewed.map((row) => row.proposal_id).sort();
-    expect(ids).toEqual([acceptedId, correctedId].sort());
+    const ids = reviewed.map((row) => row.proposal_id);
+    expect(ids).toEqual([acceptedId]);
     expect(ids).not.toContain(pendingId);
     expect(ids).not.toContain(rejectedId);
-    expect(reviewed.every((row) => row.review_state === 'accepted' || row.review_state === 'corrected')).toBe(true);
+    // The owner decision. 'corrected' is a coach's replacement wording on a
+    // proposal still sitting in their queue -- work in progress, not a verdict.
+    expect(ids).not.toContain(correctedId);
+    expect(reviewed.every((row) => row.review_state === 'accepted')).toBe(true);
   });
 
   /* The rows excluded above are excluded from a READ, never deleted. A pending
@@ -457,20 +461,25 @@ describe('reviewed-only Film Study material', () => {
     expect((await proposals.getFilmStudyProposal(ORG_ID, rejectedId))?.review_state).toBe('rejected');
   });
 
-  /* A corrected row is TWO facts: what the model said, and what the coach
-   * changed it to. Carrying only one of them would make the model look either
-   * right or absent, and both are wrong. */
-  test('a corrected row carries both the model text and the coach text', async () => {
-    await proposalIn('corrected');
+  /* A corrected proposal is excluded from the READ and left in the table --
+   * the same treatment pending and rejected get, for the same reason. It is
+   * still owed a coach decision, and it stays in the queue that owes it.
+   *
+   * Asserting the row survives matters as much as asserting it is unread: an
+   * exclusion implemented by deleting would lose a coach's authored wording. */
+  test('a corrected row is withheld from the read and left in the queue', async () => {
+    const correctedId = await proposalIn('corrected');
 
-    const [row] = await proposals.listReviewedFilmStudyMaterial({
+    const reviewed = await proposals.listReviewedFilmStudyMaterial({
       organizationId: ORG_ID,
       athleteId: ATHLETE_ID,
     });
 
-    expect(row.origin).toBe('model_proposed');
-    expect(row.observation_text).toBe('model text for corrected');
-    expect(row.corrected_observation_text).toBe('coach text for corrected');
+    expect(reviewed).toHaveLength(0);
+
+    const stored = await proposals.getFilmStudyProposal(ORG_ID, correctedId);
+    expect(stored?.review_state).toBe('corrected');
+    expect(stored?.corrected_observation_text).toBe('coach text for corrected');
   });
 
   /* Origin is never collapsed. A coach-reported observation that a coach then

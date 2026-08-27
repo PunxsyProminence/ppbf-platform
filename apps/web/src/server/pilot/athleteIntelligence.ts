@@ -22,9 +22,12 @@
 //     drill. progressionSuggestions.getGapSuggestions already joins transfer
 //     and performance and emits prescriptive prose over many athletes; it is
 //     not reused for exactly those two reasons.
-//   * NO PENDING PROPOSAL BECOMES A FACT. Film Study material arrives through
-//     `listReviewedFilmStudyMaterial`, which is filtered to accepted/corrected.
-//     A rejected proposal is not evidence and never appears.
+//   * NO UNSETTLED PROPOSAL BECOMES A FACT. Film Study material arrives
+//     through `listReviewedFilmStudyMaterial`, which is filtered to ACCEPTED
+//     ONLY. A rejected proposal is not evidence and never appears; neither
+//     does a 'corrected' one, which is a coach's replacement wording on a
+//     proposal still sitting in their queue -- work in progress, not a
+//     verdict. Accepted-only is an owner decision (2026-08-27).
 //   * ABSENCE IS NOT IMPROVEMENT. An athlete with no rows reads
 //     `none_recorded`, which says nothing was recorded and nothing else. It is
 //     not "no problems", not "improving", and not zero.
@@ -133,7 +136,7 @@ export interface AthleteIntelligenceReadModel {
   readonly metricTransfer: IntelligenceSection<MetricTransferReadout> & {
     readonly windowDays: number;
   };
-  /** Accepted or corrected Film Study material only. Pending and rejected rows
+  /** ACCEPTED Film Study material only. Pending, rejected and corrected rows
    * are excluded from this READ and remain untouched in the table. */
   readonly reviewedFilmStudy: IntelligenceSection<ReviewedFilmStudyRow>;
 }
