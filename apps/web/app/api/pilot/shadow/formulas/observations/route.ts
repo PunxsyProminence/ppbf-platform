@@ -4,6 +4,10 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { flagContactWithoutClearance } from '@/src/server/pilot/contactClearanceGate';
 import { flagContactDuringHold } from '@/src/server/pilot/trainingHolds';
 import {
+  autoCalculateForObservationContext,
+  canTriggerStoredCalculation,
+} from '@/src/server/pilot/formulas/autoCalculation';
+import {
   deterministicKey,
 } from '@/src/server/pilot/formulas/identity';
 import {
@@ -193,6 +197,11 @@ export async function POST(request: NextRequest) {
       createdByAccountId: principal.accountId,
     });
 
+    // A correction re-runs the calculations the replaced observation was
+    // actually used in, which knows more than re-detecting the context can:
+    // it carries the parameters and policyVersion each original ran under.
+    // Auto-detection below is therefore the else-branch, not an addition --
+    // running both would compute the same context twice.
     const recalculated = observation.supersedesObservationId
       ? await recalculateForSupersededObservation({
           organizationId: principal.organizationId,
@@ -202,10 +211,30 @@ export async function POST(request: NextRequest) {
         })
       : [];
 
+    // Runs AFTER the store, and must: the detector reads this context back out
+    // of the database, so the observation this request just wrote has to be
+    // visible to the calculation it may have completed.
+    //
+    // The role check is the narrower of the two lists that meet here. This
+    // endpoint admits athletes; POST /api/pilot/shadow/formulas/results -- the
+    // manual "run this formula" path -- does not. An athlete's own submission
+    // must not become the side channel that runs a calculation they cannot
+    // ask for directly, so their observation is stored and no calculation
+    // follows it. Widening that is an owner decision, not this route's.
+    const autoCalculated = observation.supersedesObservationId
+      || !canTriggerStoredCalculation(principal.role)
+      ? []
+      : await autoCalculateForObservationContext({
+          organizationId: principal.organizationId,
+          athleteId: body.athleteId,
+          contextId: body.contextId.trim(),
+        });
+
     return NextResponse.json({
       ok: true,
       observation,
       recalculatedResultCount: recalculated.length,
+      autoCalculatedResultCount: autoCalculated.length,
       // Surfaced rather than silent: whoever logged this should know a review
       // was raised, and the sparring page displays this back to them.
       ...(clearance.flagged
