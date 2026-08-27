@@ -24,8 +24,8 @@ import { apiBase } from '@/lib/apiBase';
  *   2. THE BOARDS. The chalk lines members see on their dashboards, writable
  *      here with the same component that draws them -- no new storage, the
  *      same pilot.announcements rows /notices manages. Writing on a board
- *      rubs out what was there; the full record with windows and retiring
- *      stays on /notices.
+ *      rubs out what was there; windows and retiring live on /notices, which
+ *      shows the 25 most recent notices rather than the whole history.
  *
  *   3. THE RECORD. Links to the surfaces that keep history -- notices with
  *      their lifecycle, and the boards' own desk page.
@@ -331,7 +331,13 @@ export default function AdminCustomizePage() {
           so the person releasing a named coach&apos;s face is looking at the repository, not a form.
         </p>
         <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
-          <Link href="/notices" className="btn btn--ghost">Notices — the full record</Link>
+          {/* NOT "the full record", which is what this label used to say.
+              /notices reads NOTICE_READ_LIMIT (25) and announcements.ts
+              clamps that read to 25 anyway, newest first, with no pager --
+              so the destination holds the recent slice, not the record. The
+              page's own heading was corrected to "Recently Posted"; a button
+              promising the whole record to get there put the claim back. */}
+          <Link href="/notices" className="btn btn--ghost">Notices — recently posted</Link>
           <Link href="/chalkboard" className="btn btn--ghost">The boards&apos; own desk</Link>
           <Link href="/admin" className="btn btn--ghost">Back to the office</Link>
         </div>

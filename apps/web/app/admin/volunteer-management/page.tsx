@@ -73,7 +73,14 @@ function VolunteerRow(props: Readonly<VolunteerRowProps>) {
 }
 
 export default function VolunteerManagementPage() {
-  const [items, setItems] = useState<VolunteerRecord[]>([]);
+  // `null` is "not read", NOT "read and empty". This roster carries every
+  // volunteer's background_check_status, so an absence shown here is a
+  // safeguarding claim and must never be produced by a read that failed or
+  // was refused. GET /api/admin/volunteers throws for both (requireRole
+  // outside organization_admin/admin/platform_owner, and an expired session
+  // failing requirePrincipal), and the old `useState([])` collapsed all three
+  // facts -- not yet loaded, refused, genuinely empty -- into "no volunteers".
+  const [items, setItems] = useState<VolunteerRecord[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [message, setMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -99,18 +106,24 @@ export default function VolunteerManagementPage() {
         setItems(payload.items ?? []);
         setErrorMessage('');
       } catch (error) {
-        setItems([]);
+        // Back to "not read" rather than to an empty roster.
+        setItems(null);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load volunteer roster.');
       }
     })();
   }, []);
 
+  // null counts where there is no roster to count. A zero drawn from an
+  // unread roster is a measurement the page never made.
   const counts = useMemo(
-    () => ({
-      active: items.filter((item) => item.status === 'active').length,
-      pending: items.filter((item) => item.status === 'pending').length,
-      inactive: items.filter((item) => item.status === 'inactive').length,
-    }),
+    () =>
+      items === null
+        ? { active: null, pending: null, inactive: null }
+        : {
+            active: items.filter((item) => item.status === 'active').length,
+            pending: items.filter((item) => item.status === 'pending').length,
+            inactive: items.filter((item) => item.status === 'inactive').length,
+          },
     [items],
   );
 
@@ -155,7 +168,7 @@ export default function VolunteerManagementPage() {
           status: 'pending',
           notes: draft.notes || null,
         },
-        ...current,
+        ...(current ?? []),
       ]);
       setDraft({
         full_name: '',
@@ -193,7 +206,7 @@ export default function VolunteerManagementPage() {
         throw new Error('That volunteer is no longer on this roster, so nothing was changed.');
       }
 
-      setItems((current) => current.map((item) => (item.volunteer_id === volunteerId ? { ...item, status } : item)));
+      setItems((current) => (current ?? []).map((item) => (item.volunteer_id === volunteerId ? { ...item, status } : item)));
       setMessage(`Volunteer status updated to ${status}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to update volunteer status.');
@@ -227,7 +240,11 @@ export default function VolunteerManagementPage() {
             ].map((item) => (
               <article key={item.label} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
                 <p className="t-eyebrow">{item.label}</p>
-                <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{item.value}</p>
+                {/* An em dash where the roster was never read. Printing 0 here
+                    would put a measurement on screen that nothing measured. */}
+                <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">
+                  {item.value === null ? '—' : item.value}
+                </p>
               </article>
             ))}
           </section>
@@ -274,7 +291,26 @@ export default function VolunteerManagementPage() {
             </button>
           </section>
 
-          {items.length === 0 ? (
+          {/* Three facts, three renderings. "No volunteers on record" is a
+              claim about the gym's safeguarding record and is reserved for a
+              read that actually came back empty -- a roster that failed to
+              load, or that this account is not permitted to read, says so
+              instead. Same line /admin/compliance-center and
+              /admin/escalations already hold. */}
+          {items === null && errorMessage ? (
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">✕</div>
+              <div className="empty-title">The volunteer roster could not be loaded</div>
+              <div className="empty-msg">
+                This list is unavailable, not empty — volunteers may be on record that are not shown here. Reload to retry.
+              </div>
+            </div>
+          ) : items === null ? (
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">◌</div>
+              <div className="empty-title">Loading the volunteer roster…</div>
+            </div>
+          ) : items.length === 0 ? (
             <div className="empty mt-[var(--s5)]">
               <div className="empty-glyph" aria-hidden="true">◌</div>
               <div className="empty-title">No volunteers on record yet</div>
