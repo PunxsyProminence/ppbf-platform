@@ -123,6 +123,9 @@ export async function getOrganizationAttendanceSummary(
      ) agg on agg.athlete_id = ath.athlete_id
      where ath.organization_id = $1
        and ath.active_flag = true
+       -- active_flag and deleted_at are different things: deletion clears
+       -- neither the other's flag nor this row, so both predicates are needed.
+       and ath.deleted_at is null
        and (
          $2::text is null
          or agg.athlete_id is not null
