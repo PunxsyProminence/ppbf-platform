@@ -1,9 +1,13 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { listCueLibrary } from '@/src/server/pilot/drillLibraryV3';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import type { PilotRole } from '@/src/server/pilot/contracts';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -59,4 +63,54 @@ test('an unauthenticated caller is refused', async () => {
 
   expect((await GET(getRequest())).status).toBeGreaterThanOrEqual(400);
   expect(mockList).not.toHaveBeenCalled();
+});
+
+// CHARACTERIZATION, NOT ENDORSEMENT.
+//
+// Every case above fixes `role: 'coach'` through the principal() default, so
+// none of them varied the role and this route's posture was unpinned.
+//
+// This route claims parity with /api/pilot/drill-library in its own header --
+// "the same access posture as the drill-library browse it is a view over" --
+// under a recorded owner decision of 2026-08-16. That claim is true of
+// drill-library and false of /api/pilot/drills, which gates the same class of
+// content to seven roles and excludes board and platform_owner with a written
+// reason of its own.
+//
+// Which posture is right is an OPEN OWNER DECISION; module 114's own "Roles
+// that may read / write" checklist is still unticked. These cases record what
+// the route does so a change becomes visible, and settle nothing.
+
+const ALL_ROLES: PilotRole[] = [
+  'platform_owner',
+  'organization_admin',
+  'admin',
+  'coach',
+  'athlete',
+  'parent',
+  'board',
+  'volunteer',
+  'staff',
+];
+
+describe('who may read the cue library today', () => {
+  it.each(ALL_ROLES)('%s is admitted', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+    mockList.mockResolvedValue([]);
+
+    const response = await GET(getRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+  });
+
+  it('parity with drill-library is a fact about the code, not only a comment', () => {
+    // The header asserts the two routes share a posture. If either grew a role
+    // gate the claim would silently become false, so the absence is asserted
+    // on both files rather than trusted.
+    const read = (relative: string) => fs.readFileSync(path.resolve(__dirname, relative), 'utf8');
+
+    expect(read('./route.ts')).not.toMatch(/requireRole/);
+    expect(read('../../drill-library/route.ts')).not.toMatch(/requireRole/);
+  });
 });
