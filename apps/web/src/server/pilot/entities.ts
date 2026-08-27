@@ -399,6 +399,7 @@ function coachRosterQuery(relationship: string): string {
             select a.*, ${relationship} as coach_related
             from pilot.athletes a
             where a.organization_id = $1
+              and a.deleted_at is null
           ) scoped
           order by created_at desc`;
 }

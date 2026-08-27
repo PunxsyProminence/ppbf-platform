@@ -153,17 +153,69 @@ export async function proposeDrillChange(input: {
  * by lineage_id (every proposal ever made about one drill, regardless of
  * outcome).
  */
+/**
+ * A proposal, plus whether it can still be adopted.
+ *
+ * WHY THIS IS NOT JUST THE ROW. review_state alone cannot answer "may I act
+ * on this", and a reviewer working a queue has no other signal. Adopting any
+ * one proposal on a lineage advances that lineage, which leaves every SIBLING
+ * proposal based on the version that just got superseded -- correctly
+ * un-adoptable, because applying their field-level changes onto a version
+ * they were not written against could silently discard whatever the adopted
+ * change did.
+ *
+ * Before this, the only way to discover that was to attempt the adopt and
+ * receive DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION. A queue of five proposals
+ * on one drill therefore read as five actionable items, and a reviewer who
+ * adopted the first met four identical errors with nothing explaining why,
+ * what superseded them, or that declining was now the only move left.
+ */
+export interface DrillChangeProposalListing extends DrillChangeProposalRow {
+  /** The lineage's current version, or null if the lineage has no rows at
+   * all. This is the drill an adopt would apply the change ONTO. */
+  current_drill_id: string | null;
+  /** Whether based_on_drill_id still names that current version.
+   *
+   * False means an adopt would be refused. It does NOT mean the proposal is
+   * worthless -- the coach's rationale and observation notes are still the
+   * evidence they were, and the usual answer is to decline with a note asking
+   * for a re-proposal against the new version. */
+  base_is_current: boolean;
+}
+
+/**
+ * The review queue, with staleness readable rather than discoverable by
+ * failure.
+ *
+ * THE SUBQUERY MUST MATCH adoptDrillChangeProposal'S LOCK QUERY. Both take
+ * the highest `version` in the lineage -- deliberately NOT `where active`.
+ * The two definitions coincide today, but they are different questions, and a
+ * read model that answered a different one from the writer would produce a
+ * flag that lies in exactly the edge cases a reviewer would most rely on it.
+ * drillVersioning.pg.test.ts asserts the flag PREDICTS the write: where it is
+ * true an adopt succeeds, where it is false the adopt throws.
+ */
 export async function listDrillChangeProposals(
   organizationId: string,
   filter: { reviewState?: DrillChangeReviewState; lineageId?: string } = {},
-): Promise<DrillChangeProposalRow[]> {
-  return query<DrillChangeProposalRow>(
-    `select ${PROPOSAL_FIELDS}
-     from pilot.drill_change_proposals
-     where organization_id = $1
-       and ($2::text is null or review_state = $2)
-       and ($3::text is null or lineage_id = $3)
-     order by created_at desc`,
+): Promise<DrillChangeProposalListing[]> {
+  return query<DrillChangeProposalListing>(
+    `select ${PROPOSAL_FIELDS.split(', ').map((f) => `p.${f}`).join(', ')},
+            cur.drill_id as current_drill_id,
+            (cur.drill_id is not null and cur.drill_id = p.based_on_drill_id) as base_is_current
+     from pilot.drill_change_proposals p
+     left join lateral (
+       select d.drill_id
+       from pilot.drills d
+       where d.organization_id = p.organization_id
+         and d.lineage_id = p.lineage_id
+       order by d.version desc
+       limit 1
+     ) cur on true
+     where p.organization_id = $1
+       and ($2::text is null or p.review_state = $2)
+       and ($3::text is null or p.lineage_id = $3)
+     order by p.created_at desc`,
     [organizationId, filter.reviewState ?? null, filter.lineageId ?? null],
   );
 }
