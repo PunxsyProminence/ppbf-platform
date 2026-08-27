@@ -49,8 +49,26 @@ describe('deploy-production promotes a tested digest and never builds', () => {
   });
 
   test('the deployed image is the release_digest input, verbatim', () => {
-    expect(production).toMatch(
-      /--image "\$\{ACR_LOGIN_SERVER\}\/ppbf-frontend@\$\{\{ inputs\.release_digest \}\}"/
+    // The input no longer reaches the shell by `${{ }}` interpolation: it is
+    // bound in the step's `env:` and referenced as a variable, because
+    // substitution happens before bash parses the line and release_digest is
+    // free text. That splits this contract into two facts, so both are pinned
+    // rather than the weaker "the literal appears somewhere" this used to
+    // assert. The binding must come from inputs.release_digest and nothing
+    // else, and the deployed image must be that variable and not any value
+    // derived on the runner -- which is the property the test is really for.
+    //
+    // Scoped to the deploy step, not the whole file. Three steps now bind
+    // RELEASE_DIGEST, so a file-wide match would be satisfied by any one of
+    // them -- this assertion passed a mutant that hardcoded the deploy step's
+    // binding to a literal digest, because the other two still matched.
+    const deployAt = production.indexOf('- name: Deploy Tested Digest to Azure Container App');
+    expect(deployAt).toBeGreaterThan(-1);
+    const nextAt = production.indexOf('      - name:', deployAt + 1);
+    const deploy = production.slice(deployAt, nextAt === -1 ? undefined : nextAt);
+    expect(deploy).toMatch(/RELEASE_DIGEST: \$\{\{ inputs\.release_digest \}\}/);
+    expect(deploy).toMatch(
+      /--image "\$\{ACR_LOGIN_SERVER\}\/ppbf-frontend@\$\{RELEASE_DIGEST\}"/
     );
   });
 
@@ -115,7 +133,11 @@ describe('post-deploy verification talks to the revision that was deployed', () 
     const nextStepAt = production.indexOf('- name:', waitAt + 1);
     const wait = production.slice(waitAt, nextStepAt === -1 ? undefined : nextStepAt);
     expect(wait).toMatch(/latestRevisionName/);
-    expect(wait).toMatch(/@\$\{\{ inputs\.release_digest \}\}/);
+    // Same two facts as the deploy step above: the digest this wait compares
+    // against must be the dispatched input, and it must arrive through the
+    // environment rather than being interpolated into the script.
+    expect(wait).toMatch(/RELEASE_DIGEST: \$\{\{ inputs\.release_digest \}\}/);
+    expect(wait).toMatch(/@\$RELEASE_DIGEST/);
     expect(wait).toMatch(/runningState/);
     expect(wait).toMatch(/"Running 100"/);
     // A wait that cannot fail is a sleep: both refusal paths must exist.
