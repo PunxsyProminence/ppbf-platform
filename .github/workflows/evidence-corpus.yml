@@ -12,12 +12,38 @@ name: evidence-corpus
 # not catching drift, since the whole point is noticing a change nobody
 # meant to make.
 #
+# TWO STEPS, NOT ONE, AND WHY. verify-evidence-tier-corpus.mjs scores the
+# corpus with its OWN copy of the tier rule (deliberately duplicated: it
+# must run with no database and no TypeScript build). On its own that makes
+# a hollow gate -- the PRODUCTION rule is
+# apps/web/src/server/pilot/shadowEvidenceTier.ts, the one
+# shadowJobProcessor.ts actually labels chat responses with, and a change
+# to IT could move the real distribution while this workflow went on
+# reporting 115/796/227/55 from the duplicate. So the second step runs
+# shadowEvidenceTierCorpus.test.ts, which scores the same committed CSV
+# with the production export and compares it against the script's copy row
+# by row. Both implementations are pinned to the same corpus, and neither
+# can drift without a red check.
+#
+# That is also why the production rule and the parity suite are in the path
+# filters below: a pull request touching only shadowEvidenceTier.ts changes
+# the tier every athlete-facing answer is labelled with, and this gate has
+# to fire for it.
+#
 # WHY A SEPARATE WORKFLOW, not a step on ci.yml. research-bridge-ci.yml
 # already records the reasoning and it applies unchanged here: ci.yml is
 # the load-bearing required check for the whole repository, and keeping a
 # narrow gate separate means a corpus-only regression cannot be read as a
 # web-workspace CI failure, and this file can be made a required check --
 # or not -- without touching ci.yml's branch-protection contract.
+#
+# IF ANYONE MAKES THIS A REQUIRED CHECK, READ THIS FIRST. It is path
+# filtered, so on a pull request that touches none of those paths GitHub
+# never creates the check run at all -- and a required check that was never
+# created blocks merge indefinitely rather than passing vacuously. Making
+# it required therefore needs a paths-ignore-style always-runs companion
+# job that reports success, not just a branch-protection tick. Nothing in
+# this pull request marks it required; it is added as an ordinary check.
 #
 # WHY THE OTHER TWO VERIFIERS ARE NOT HERE. verify-research-citations.mjs
 # and check-source-retractions.mjs are also unwired, and they do NOT belong
@@ -35,12 +61,16 @@ on:
     paths:
       - 'apps/web/seed-data/shadow-research/**'
       - 'apps/web/scripts/verify-evidence-tier-corpus.mjs'
+      - 'apps/web/src/server/pilot/shadowEvidenceTier.ts'
+      - 'apps/web/src/server/pilot/shadowEvidenceTierCorpus.test.ts'
       - '.github/workflows/evidence-corpus.yml'
   push:
     branches: [main]
     paths:
       - 'apps/web/seed-data/shadow-research/**'
       - 'apps/web/scripts/verify-evidence-tier-corpus.mjs'
+      - 'apps/web/src/server/pilot/shadowEvidenceTier.ts'
+      - 'apps/web/src/server/pilot/shadowEvidenceTierCorpus.test.ts'
       - '.github/workflows/evidence-corpus.yml'
   workflow_dispatch:
 
@@ -71,7 +101,8 @@ jobs:
 
       # Scoped, as research-bridge-ci.yml does: the verifier needs only
       # csv-parse, which apps/web declares, and this gate has no reason to
-      # install the whole repository.
+      # install the whole repository. The parity suite below needs jest and
+      # ts-jest, which apps/web also declares.
       - name: Install locked dependencies (web workspace only)
         run: npm ci --workspace web --include-workspace-root=false
 
@@ -80,3 +111,11 @@ jobs:
       # numbers. No network, no database, no arguments.
       - name: Verify evidence tier corpus matches the published spec
         run: npm run --workspace web verify:evidence-tier-corpus
+
+      # The half the script cannot check about itself: that the rule the
+      # application actually uses agrees with the rule the script scored
+      # with, on every one of the 1,193 chunks. Named explicitly rather
+      # than folded into the whole jest run, which this scoped install and
+      # this gate's purpose both exclude.
+      - name: Verify the production rule agrees with the script, chunk by chunk
+        run: npm run --workspace web test -- --runTestsByPath src/server/pilot/shadowEvidenceTierCorpus.test.ts
