@@ -20,6 +20,7 @@
     "pilot:check-multiorg-orphans": "node scripts/pilot-check-multiorg-orphans.mjs",
     "pilot:check-stranded-guardians": "node scripts/pilot-check-stranded-guardians.mjs",
     "pilot:check-duplicate-guardians": "node scripts/pilot-check-duplicate-guardians.mjs",
+    "pilot:check-deletion-preflight": "node scripts/pilot-check-deletion-preflight.mjs",
     "pilot:check-orphan-chat-audit": "node scripts/pilot-check-orphan-chat-audit.mjs",
     "pilot:check-seed-identity": "node scripts/pilot-check-seed-identity.mjs",
     "pilot:check-library-scope": "node scripts/pilot-check-library-scope.mjs",
