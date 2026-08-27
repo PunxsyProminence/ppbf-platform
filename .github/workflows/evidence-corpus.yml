@@ -1,0 +1,82 @@
+name: evidence-corpus
+
+# The SHADOW evidence corpus is 1,193 scored chunks, and
+# EVIDENCE_TIER_SPEC.md publishes the distribution they are supposed to
+# form: 115 PROVEN / 796 EMERGING / 227 EXPERIMENTAL / 55 RESEARCH_NEEDED.
+# verify-evidence-tier-corpus.mjs recomputes that distribution from the
+# chunk CSV and fails when the two disagree.
+#
+# Nothing ran it. `grep -rn "verify:evidence-tier" .github/` returned
+# nothing before this file, so the script that exists to catch corpus/spec
+# drift only ran when a human remembered to type it -- which is the same as
+# not catching drift, since the whole point is noticing a change nobody
+# meant to make.
+#
+# WHY A SEPARATE WORKFLOW, not a step on ci.yml. research-bridge-ci.yml
+# already records the reasoning and it applies unchanged here: ci.yml is
+# the load-bearing required check for the whole repository, and keeping a
+# narrow gate separate means a corpus-only regression cannot be read as a
+# web-workspace CI failure, and this file can be made a required check --
+# or not -- without touching ci.yml's branch-protection contract.
+#
+# WHY THE OTHER TWO VERIFIERS ARE NOT HERE. verify-research-citations.mjs
+# and check-source-retractions.mjs are also unwired, and they do NOT belong
+# in a per-PR gate: both call NCBI eutils and CrossRef with 45-second
+# timeouts, so every build would depend on two third-party APIs, and both
+# require an operator-supplied --csv registry rather than reading their own
+# input. A retraction also happens AFTER a pull request merges, so a
+# per-commit check is the wrong shape for it -- surveillance belongs on a
+# schedule, against a registry someone has chosen. That is a separate
+# decision and a separate workflow, deliberately not made here.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/seed-data/shadow-research/**'
+      - 'apps/web/scripts/verify-evidence-tier-corpus.mjs'
+      - '.github/workflows/evidence-corpus.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/seed-data/shadow-research/**'
+      - 'apps/web/scripts/verify-evidence-tier-corpus.mjs'
+      - '.github/workflows/evidence-corpus.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evidence-corpus-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify-corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          # The web workspace's runtime, matching ci.yml.
+          node-version: 22
+          cache: npm
+
+      # Scoped, as research-bridge-ci.yml does: the verifier needs only
+      # csv-parse, which apps/web declares, and this gate has no reason to
+      # install the whole repository.
+      - name: Install locked dependencies (web workspace only)
+        run: npm ci --workspace web --include-workspace-root=false
+
+      # Offline and deterministic: it reads the committed chunk CSV and
+      # compares the distribution it computes against the spec's published
+      # numbers. No network, no database, no arguments.
+      - name: Verify evidence tier corpus matches the published spec
+        run: npm run --workspace web verify:evidence-tier-corpus
