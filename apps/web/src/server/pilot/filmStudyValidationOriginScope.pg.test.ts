@@ -131,6 +131,32 @@ async function settledModelProposal(
   return proposal.proposal_id;
 }
 
+/** A model proposal a coach CORRECTED -- the model saw something real and
+ * described it wrong. Not an acceptance and not a rejection. */
+async function correctedModelProposal(
+  deployment: string,
+  framesAnalyzed = 6,
+): Promise<string> {
+  const proposal = await proposals.createFilmStudyProposal({
+    organizationId: ORG_ID,
+    athleteId: ATHLETE_ID,
+    videoSessionId: VIDEO_ID,
+    jobId: crypto.randomUUID(),
+    observationText: 'Lead hand returns low after the jab.',
+    modelDeployment: deployment,
+    framesAnalyzed,
+  });
+  await proposals.resolveFilmStudyProposal({
+    organizationId: ORG_ID,
+    proposalId: proposal.proposal_id,
+    verdict: 'corrected',
+    reviewerAccountId: COACH_ID,
+    reviewerRole: 'coach',
+    correctedObservationText: 'Lead hand returns low only on the second jab of a double.',
+  });
+  return proposal.proposal_id;
+}
+
 /** A settled coach-reported observation -- what the model missed. */
 async function settledCoachReport(
   verdict: 'accepted' | 'rejected' = 'accepted',
@@ -375,5 +401,95 @@ describe('the accept rate counts model proposals and nothing else', () => {
     expect(stored?.origin).toBe('coach_reported');
     expect(stored?.review_state).toBe('accepted');
     expect(stored?.reported_by_account_id).toBe(COACH_ID);
+  });
+});
+
+describe('a corrected proposal is a verdict, not a gap in the numbers', () => {
+  beforeEach(truncateProposals);
+
+  // THE DEFECT THIS SUITE WAS EXTENDED FOR.
+  //
+  // review_state has four values. Every count in getFilmStudyValidation
+  // filters on three of them: reviewedCount is `in ('accepted','rejected')`,
+  // pendingCount is `= 'pending_review'`. A corrected row matches none, so it
+  // is in no count at all -- while listFilmStudyProposals treats it as still
+  // outstanding (its working view is `in ('pending_review','corrected')`).
+  // Two shipped reads disagree about the same row, and the one an operator
+  // reads reports it as though it did not exist.
+  //
+  // A correction is also the most informative label the queue produces: the
+  // model saw something real and described it wrong. That is neither an
+  // acceptance nor a rejection, and it is the row an evaluation dataset most
+  // wants.
+  test('a corrected proposal is counted, and not as an acceptance', async () => {
+    await correctedModelProposal('gpt-vision-1');
+    await settledModelProposal('gpt-vision-1', 'accepted');
+
+    const report = await validation.getFilmStudyValidation(ORG_ID);
+    expect(report.overall.correctedCount).toBe(1);
+    // reviewedCount keeps its shipped meaning -- settled as accepted or
+    // rejected. Folding corrections in would change a number already on a
+    // coach's screen.
+    expect(report.overall.reviewedCount).toBe(1);
+    expect(report.overall.acceptedCount).toBe(1);
+    expect(report.overall.rejectedCount).toBe(0);
+  });
+
+  test('a corrected proposal counts as outstanding, matching the proposal list', async () => {
+    await correctedModelProposal('gpt-vision-1');
+    await proposals.createFilmStudyProposal({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      videoSessionId: VIDEO_ID,
+      jobId: crypto.randomUUID(),
+      observationText: 'Chin rises when the right hand goes.',
+      modelDeployment: 'gpt-vision-1',
+      framesAnalyzed: 6,
+    });
+
+    const report = await validation.getFilmStudyValidation(ORG_ID);
+    // pendingCount keeps its shipped meaning: never reviewed.
+    expect(report.overall.pendingCount).toBe(1);
+    // outstandingCount is the working queue, which is what
+    // listFilmStudyProposals returns and what a coach still has to open.
+    expect(report.overall.outstandingCount).toBe(2);
+  });
+
+  test('every model proposal lands in exactly one of the four states', async () => {
+    // The arithmetic that makes the report readable: nothing falls through.
+    await settledModelProposal('gpt-vision-1', 'accepted');
+    await settledModelProposal('gpt-vision-1', 'rejected');
+    await correctedModelProposal('gpt-vision-1');
+    await proposals.createFilmStudyProposal({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      videoSessionId: VIDEO_ID,
+      jobId: crypto.randomUUID(),
+      observationText: 'Feet cross on the retreat.',
+      modelDeployment: 'gpt-vision-1',
+      framesAnalyzed: 6,
+    });
+    await settledCoachReport('accepted');
+
+    const report = await validation.getFilmStudyValidation(ORG_ID);
+    const { overall } = report;
+    expect(overall.modelProposalCount).toBe(4);
+    expect(
+      overall.acceptedCount + overall.rejectedCount
+      + overall.correctedCount + overall.pendingCount,
+    ).toBe(overall.modelProposalCount);
+    // And the coach report is still excluded from the model's denominator.
+    expect(report.coachReportedCount).toBe(1);
+  });
+
+  test('corrections are counted per deployment too', async () => {
+    await correctedModelProposal('gpt-vision-1');
+    await settledModelProposal('gpt-vision-2', 'accepted');
+
+    const report = await validation.getFilmStudyValidation(ORG_ID);
+    const one = report.byDeployment.find((d) => d.modelDeployment === 'gpt-vision-1');
+    const two = report.byDeployment.find((d) => d.modelDeployment === 'gpt-vision-2');
+    expect(one?.correctedCount).toBe(1);
+    expect(two?.correctedCount).toBe(0);
   });
 });
