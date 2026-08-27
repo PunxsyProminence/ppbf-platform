@@ -1,0 +1,63 @@
+# Fails a pull request whose MIGRATIONS declaration does not match its diff.
+#
+# deploy-production.yml takes `migrations_complete` as an ATTESTATION, not a
+# check. The release lane sizes and sequences a release from the MIGRATIONS
+# line in the pull request body, so a missing or wrong value produces a code
+# deploy against a schema that does not have the tables -- a failure that
+# surfaces at runtime on a live system rather than at deploy time.
+#
+# AGENT_KERNEL.md asks every lane to write that line. This is the half that
+# does not depend on the lane having read it.
+#
+# `pull_request`, not `pull_request_target`: this needs no write token and no
+# secrets, so it runs the pull request's own code with a read-only token rather
+# than base code with elevated rights.
+#
+# `edited` is in the trigger list on purpose. The body is the thing being
+# checked and it can change after the pull request is opened, so a check that
+# ran only on `synchronize` would grade a body nobody had written yet.
+
+name: migration-declaration
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keyed by pull request, and superseded runs are cancelled: unlike ci.yml's
+  # push path, an evicted run here loses nothing -- the next one re-reads the
+  # same body against the same diff.
+  group: migration-declaration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  declaration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect the changed files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=0 origin "$BASE_REF"
+          git diff --name-status "origin/${BASE_REF}...HEAD" > /tmp/name-status.txt
+          echo "Changed files:"
+          cat /tmp/name-status.txt
+
+      - name: Check the MIGRATIONS declaration against the diff
+        env:
+          # Through the environment, never interpolated into the script. A pull
+          # request body is attacker-controlled text; `${{ ... }}` inside a
+          # `run:` block is substituted before the shell sees it, which turns
+          # any body into a command.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node apps/web/scripts/check-migration-declaration.mjs /tmp/name-status.txt
