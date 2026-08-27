@@ -31,7 +31,6 @@ const STATS = [
 const QUICK_LINKS = [
   { label: 'Progress Visibility', href: '/parent/progression-visibility' },
   { label: 'SHADOW Intel', href: '/shadow' },
-  { label: 'The Ring', href: '/operations' },
   { label: 'Member Access', href: '/login' },
 ] as const;
 

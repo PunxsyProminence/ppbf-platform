@@ -50,7 +50,9 @@ const FIELDS = `m.organization_id, m.membership_id, m.athlete_id,
 
 const FROM = `from pilot.program_memberships m
   join pilot.athletes a
-    on a.organization_id = m.organization_id and a.athlete_id = m.athlete_id`;
+    on a.organization_id = m.organization_id and a.athlete_id = m.athlete_id
+   -- One shared FROM, so this predicate reaches every caller of it at once.
+   and a.deleted_at is null`;
 
 export function isMembershipStatus(value: unknown): value is MembershipStatus {
   return typeof value === 'string' && (MEMBERSHIP_STATUSES as readonly string[]).includes(value);

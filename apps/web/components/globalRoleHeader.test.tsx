@@ -92,6 +92,53 @@ it.each(['athlete', 'parent', 'coach', 'volunteer', 'staff', 'board'])(
   },
 );
 
+/* THE OPERATIONS CONTROL, WHICH HAD NO COVERAGE AT ALL.
+
+   It sat on this bar unconditionally -- every signed-in role, every route,
+   one tab stop from Logout -- while the Triage link directly above it was
+   already role-scoped. The owner decision of 2026-08-26 makes the hub
+   administration, so for fourteen of the sixteen roles this control's only
+   outcome was a redirect back to the dashboard they came from, with nothing
+   said about why.
+
+   Written as the same admitted/refused pair as Triage on purpose: these two
+   controls sit beside each other and now answer the same shape of question,
+   so a future reader can see at a glance that both are scoped. */
+it.each(['admin', 'platform_owner'])('offers %s the Operations hub', (role) => {
+  renderAs(role);
+
+  const link = screen.getByRole('link', { name: 'Operations' }) as HTMLAnchorElement;
+  expect(link.getAttribute('href')).toBe('/operations');
+});
+
+it.each(['athlete', 'parent', 'coach', 'volunteer', 'staff', 'board'])(
+  'does not offer %s a control that would only bounce them',
+  (role) => {
+    renderAs(role);
+
+    expect(screen.queryByRole('link', { name: 'Operations' })).toBeNull();
+  },
+);
+
+it('offers a signed-out visitor nothing of the kind', () => {
+  renderAs(null);
+
+  expect(screen.queryByRole('link', { name: 'Operations' })).toBeNull();
+});
+
+/* The bar still has to be a bar. Removing a control from a row is exactly the
+   change that quietly takes its neighbours with it, and Bell is the one exit
+   every refused role still needs. */
+it.each(['athlete', 'coach', 'parent', 'staff', 'volunteer', 'board'])(
+  'still gives %s the rest of the session bar',
+  (role) => {
+    renderAs(role);
+
+    expect(screen.getByRole('link', { name: 'Bell' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
+  },
+);
+
 // Regression coverage for the bug this branch fixes: the Logout button used
 // to depend entirely on some OTHER component (RoleSessionGate, /login's own
 // effect) having already populated the shared in-memory cache. A page

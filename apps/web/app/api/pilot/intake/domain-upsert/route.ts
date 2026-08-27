@@ -3,7 +3,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActiveParentAccount, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
+import {
+  assertShadowAuthority,
+  isShadowAutomationMode,
+  SHADOW_AUTOMATION_MODES,
+  type ShadowAutomationMode,
+} from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import {
@@ -55,12 +60,27 @@ export async function POST(request: NextRequest) { // NOSONAR
       entity_type?: 'emergency_contact' | 'medical' | 'waiver' | 'assessment' | 'attendance' | 'readiness' | 'coach_note' | 'guardian_link';
       athlete_id?: string;
       payload?: Record<string, unknown>;
-      automation_mode?: ShadowAutomationMode;
+      automation_mode?: unknown;
     };
 
     const entityType = body.entity_type;
     const athleteId = body.athlete_id?.trim() || '';
-    const automationMode = body.automation_mode ?? 'assisted';
+    // Validated against the closed vocabulary rather than cast to it. The
+    // declared type is erased at runtime, and this value reaches
+    // assertShadowAuthority -- whose automatic-actor refusals all compare for
+    // exact equality -- before being persisted verbatim into
+    // shadow_authority_checks, shadow_events and shadow_telemetry_events, none
+    // of which carry a CHECK on the column. shadow/medical-status/route.ts
+    // named this route as one of the two unchecked call sites; this is that
+    // check. Absent still means 'assisted', unchanged.
+    const automationMode: ShadowAutomationMode = body.automation_mode === undefined
+      ? 'assisted'
+      : (body.automation_mode as ShadowAutomationMode);
+    if (!isShadowAutomationMode(automationMode)) {
+      throw new Error(
+        `Unsupported automation_mode: must be one of ${SHADOW_AUTOMATION_MODES.join(', ')}`,
+      );
+    }
     if (!entityType || !athleteId || !body.payload) {
       throw new Error('Missing entity_type, athlete_id, or payload');
     }

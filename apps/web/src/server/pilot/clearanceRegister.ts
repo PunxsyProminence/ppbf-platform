@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { PilotError } from './errors';
 import { query, queryOne } from './db';
 
 // pilot.clearance_types, pilot.person_clearances,
@@ -140,6 +141,26 @@ export async function listPersonClearances(
  * standing, not an audit trail -- that lives in pilot.audit_events via the
  * calling route).
  */
+/**
+ * Thrown when the row moved between the caller's read and this write.
+ *
+ * Distinguishable from a database error on purpose: the caller must be able to
+ * tell "somebody else decided this first" from "the write failed", because the
+ * first is a 409 the admin can act on and the second is a 500.
+ */
+export class ClearanceStateConflictError extends PilotError {
+  constructor(message: string) {
+    /* 409, and a PilotError rather than a plain Error, because this message is
+       authored for the admin to read and carries no internal detail -- which is
+       exactly the disclosure rule errors.ts states. A plain Error would be
+       redacted to "Internal server error", and an admin told the server broke
+       will retry; the retry reads the NEW state and succeeds in overwriting a
+       decision they never saw. The opaque 500 is the more dangerous outcome
+       here, not the safer one. */
+    super(409, message, 'CLEARANCE_STATE_CONFLICT');
+  }
+}
+
 export async function recordPersonClearance(input: {
   organizationId: string;
   personAccountId: string;
@@ -150,6 +171,15 @@ export async function recordPersonClearance(input: {
   documentRef?: string | null;
   verifiedByAccountId?: string | null;
   verificationNote?: string | null;
+  /**
+   * The status the caller believes this clearance currently holds, read
+   * immediately before deciding. When supplied, the update only lands if the
+   * row still holds it -- a compare-and-swap rather than a blind overwrite.
+   *
+   * Omit it only where there is genuinely no prior state to protect. Every
+   * decision path should pass it.
+   */
+  expectedStatus?: ClearanceStatus | null;
 }): Promise<PersonClearanceRow> {
   const clearanceId = randomUUID();
   const row = await queryOne<PersonClearanceRow>(
@@ -166,6 +196,7 @@ export async function recordPersonClearance(input: {
            verified_at = excluded.verified_at,
            verification_note = excluded.verification_note,
            updated_at = now()
+       where $11::text is null or pilot.person_clearances.status = $11::text
      returning ${PERSON_CLEARANCE_FIELDS}`,
     [
       input.organizationId,
@@ -178,9 +209,27 @@ export async function recordPersonClearance(input: {
       input.documentRef ?? null,
       input.verifiedByAccountId ?? null,
       input.verificationNote ?? null,
+      input.expectedStatus ?? null,
     ],
   );
   if (!row) {
+    /* Zero rows has two causes and they are not the same event.
+
+       With an expectedStatus, the overwhelmingly likely one is that the
+       compare-and-swap declined: the row moved between the caller's read and
+       this write, so somebody else's decision is already standing. Reporting
+       that as a generic failure would be the worst outcome available here --
+       the admin would retry, the retry would read the NEW state, and the
+       second attempt would succeed in overwriting a decision they never saw.
+
+       Without an expectedStatus there is no guard to decline, so a null row is
+       a real database problem and keeps the original message. */
+    if (input.expectedStatus != null) {
+      throw new ClearanceStateConflictError(
+        `This clearance is no longer ${input.expectedStatus}. Somebody else recorded a decision first -- `
+        + 'reload before deciding again, so you are acting on what the record actually says now.',
+      );
+    }
     throw new Error('Unable to record person clearance.');
   }
   return row;
