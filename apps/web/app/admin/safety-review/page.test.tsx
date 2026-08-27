@@ -30,9 +30,14 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+// The fixture carries violationsTruncated because the route now always sends
+// it, and the page fails closed on its absence: a response that will not say
+// whether the violations feed was cut cannot buy an all-clear. The assertion
+// below is unchanged -- an untruncated, genuinely empty review still renders
+// the all-clear.
 test('nothing open renders the all-clear empty state', async () => {
   global.fetch = jest.fn().mockResolvedValue(
-    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [] }),
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: false }),
   ) as unknown as typeof fetch;
 
   render(<SafetyReviewPage />);
@@ -133,4 +138,64 @@ test('a failed load is not stamped as a medical emergency', async () => {
   expect(alert.className).toContain('alert--warning');
   expect(alert.className).not.toContain('alert--critical');
   expect(within(alert).getByText('Attention')).toBeTruthy();
+});
+
+// READ HONESTY (shapes 1 and 4). Three of this rollup's four feeds read the
+// organization entire; the compliance-violations feed does not. safetyReview.ts
+// reads VIOLATION_ROLLUP_READ_LIMIT rows `order by created_at desc` and only
+// THEN filters them to the open statuses, so an open violation older than that
+// window is dropped before the filter sees it.
+//
+// The page introduced all four with "Everything open, right now, across the
+// four safety systems", and when the four lists came back empty it said
+// "Nothing open right now -- No active holds, failing gate checks, open
+// escalations, or open compliance violations."
+//
+// An admin doing the pre-session safety sweep reads that and stands the
+// session up. On a gym past the cap there may be open violations the page
+// never read.
+//
+// WATCHED TO FAIL: restore the word "Everything" in the header and the first
+// test goes red naming it; drop the truncation notice and the second does.
+test('the rollup header never calls a capped read everything open', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: false }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  const heading = await screen.findByRole('heading', { name: 'Safety Review' });
+  const header = heading.closest('header') as HTMLElement;
+  // Not vacuous: this really is the page's own header.
+  expect(header).toBeTruthy();
+  expect(within(header).getByText(/four safety systems/i)).toBeTruthy();
+
+  expect(header.textContent ?? '').not.toMatch(/everything open/i);
+});
+
+test('a truncated violations feed says so instead of claiming nothing is open', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: true }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  // The window is named, with its number.
+  const notice = await screen.findByText(/200 most recently filed/i);
+  expect(notice).toBeTruthy();
+
+  // And the all-clear does not get to speak for compliance violations while
+  // the feed that backs it was cut short.
+  expect(screen.queryByText('Nothing open right now')).toBeNull();
+});
+
+test('an untruncated all-clear still reads as an all-clear', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: false }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  await screen.findByText('Nothing open right now');
+  expect(screen.queryByText(/200 most recently filed/i)).toBeNull();
 });
