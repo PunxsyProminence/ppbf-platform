@@ -35,7 +35,18 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
+import { pathToFileURL } from 'node:url';
+
 import { Client } from 'pg';
+
+/* ts-jest compiles a plain `await import()` down to require(), which cannot
+   load an ES module here. Building it through Function keeps a real dynamic
+   import in the emitted code, honored under --experimental-vm-modules. */
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
+
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 
 // Routes access.ts's queries into whichever embedded database the current
 // test opened. Declared before the import so jest's mock hoisting sees it.
@@ -63,7 +74,6 @@ const PG_PASSWORD = 'postgres';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-athlete-ids-for-coach-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
-const MIGRATION_FILE = 'pilot_slice_postgres_coach_coverage_migration.sql';
 /* The data-retention migration is applied here because PRODUCTION HAS IT.
    It adds pilot.athletes.deleted_at, which the authorization queries in
    access.ts now require, and deploy-production's schema check (which parses
@@ -72,7 +82,6 @@ const MIGRATION_FILE = 'pilot_slice_postgres_coach_coverage_migration.sql';
    without it is not a smaller production -- it is a database that has never
    existed, and it was quietly asserting that authorization works on a schema
    nobody runs. */
-const RETENTION_MIGRATION_FILE = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 
 const ORG_ID = 'org-aifc';
 const OTHER_ORG_ID = 'org-aifc-other';
@@ -93,9 +102,7 @@ const CROSS_ORG_ATHLETE = 'ATH-CROSS-1';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
-let migrationSql: string;
-let retentionMigrationSql: string;
-let baseSchemaSql: string;
+let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -179,9 +186,12 @@ async function freshDatabase(
 
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
-  await client.query(baseSchemaSql);
-  await client.query(retentionMigrationSql);
-  await client.query(migrationSql);
+  /* THE WHOLE SCHEMA, not a hand-picked subset. This suite drives
+     athleteIdsForCoach, which is feature code -- it does not test any
+     migration, so there is no reason for it to decide which migrations exist.
+     Picking a subset is what left fourteen suites testing a database that has
+     never existed anywhere (see scripts/lib/full-schema.mjs). */
+  await applyFullSchema(client, { infraDir: INFRA_DIR });
   if (dropCoverageTable) {
     await client.query('drop table if exists pilot.coach_coverage cascade');
   }
@@ -254,9 +264,8 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
-  migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
-  retentionMigrationSql = await fs.readFile(path.join(INFRA_DIR, RETENTION_MIGRATION_FILE), 'utf8');
+  const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  applyFullSchema = helper.applyFullSchema as typeof applyFullSchema;
 });
 
 afterAll(async () => {
