@@ -546,3 +546,53 @@ export async function findFormulaResultsUsingObservation(input: {
   );
   return rows.map(rowToFormulaResult);
 }
+
+/**
+ * The latest result for EVERY formula output this athlete has, one row per
+ * (formula_id, output_key).
+ *
+ * `listActiveFormulaResults` above answers a different question and is kept
+ * for the callers that want it: it orders by computed_at and takes the newest N
+ * ROWS. Nothing in it is per-output, so a formula that recomputes often buries
+ * every formula that does not -- fifty recomputes of MVP-01 push MVP-05 off the
+ * page, and the caller cannot tell that from MVP-05 having no value at all.
+ * Raising the limit does not fix it; it only moves the number of recomputes
+ * needed to hide something. `athleteIntelligence.pg.test.ts` measures the
+ * difference on real rows rather than asserting it.
+ *
+ * The superseded-input exclusion is carried over verbatim: a result computed
+ * from an observation that has since been corrected is not a current value.
+ *
+ * `limit` caps DISTINCT OUTPUTS, not rows -- the shape of the answer is one row
+ * per output, so a cap on rows would be a cap on formulas.
+ */
+export async function listLatestFormulaResultsPerOutput(input: {
+  organizationId: string;
+  athleteId: string;
+  formulaId?: FormulaId;
+  limit?: number;
+}): Promise<FormulaResult[]> {
+  const limit = Math.max(1, Math.min(500, Math.trunc(input.limit ?? 200)));
+  const rows = await query<PersistedFormulaResultRow>(
+    `select distinct on (r.formula_id, r.output_key) r.*
+     from pilot.shadow_formula_results r
+     where r.organization_id = $1
+       and r.athlete_id = $2
+       and ($3::text is null or r.formula_id = $3)
+       and not exists (
+         select 1
+         from unnest(r.input_observation_ids) input_id
+         join pilot.shadow_formula_observations successor
+           on successor.organization_id = r.organization_id
+          and successor.supersedes_observation_id = input_id
+       )
+     -- distinct on keeps the FIRST row of each group, so the group key must
+     -- lead the sort and recency must follow it. created_at and result_id are
+     -- tie-breakers only: two rows with the same computed_at would otherwise
+     -- resolve arbitrarily, and an arbitrary winner is an unreproducible read.
+     order by r.formula_id, r.output_key, r.computed_at desc, r.created_at desc, r.result_id desc
+     limit $4`,
+    [input.organizationId, input.athleteId, input.formulaId ?? null, limit],
+  );
+  return rows.map(rowToFormulaResult);
+}
