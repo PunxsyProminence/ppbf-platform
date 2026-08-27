@@ -151,8 +151,20 @@ describe('coach disciplines page -- grappling exposure history', () => {
 
     render(<CoachDisciplinesPage />);
 
-    const option = await screen.findByRole('option', { name: 'Alex Rivera' });
+    // Not findByRole('option'). A <datalist> is a completion source rather
+    // than a listbox, so its options are not exposed with role=option; that
+    // query matched only under an older aria-query and stopped matching when
+    // the floating range moved under us. The DOM never changed -- the option
+    // still renders with the coach-visible name and the id as its value.
+    //
+    // Reaching it by its text and then pinning what it IS asserts strictly
+    // more than the role query did: that the element is an <option>, that it
+    // carries the athlete id, and that it hangs off the datalist this page's
+    // input names -- which the role query never checked.
+    const option = await screen.findByText('Alex Rivera');
+    expect(option.tagName).toBe('OPTION');
     expect(option).toHaveValue('ath-1');
+    expect(option.closest('datalist')).toHaveAttribute('id', 'discipline-athletes');
     expect(screen.getByLabelText(/athlete id/i)).toHaveAttribute('list', 'discipline-athletes');
   });
 
