@@ -13,14 +13,24 @@
 // migration suites use. It NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
-import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
+import { pathToFileURL } from 'node:url';
+
 import { Client } from 'pg';
+
+/* ts-jest compiles a plain `await import()` down to require(), which cannot
+   load an ES module here. Building it through Function keeps a real dynamic
+   import in the emitted code, honored under --experimental-vm-modules. */
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
+
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 
 // Routes entities.ts's queries into whichever embedded database the current
 // test opened. Declared before the import so jest's mock hoisting sees it.
@@ -68,7 +78,7 @@ const CONTACT_COVERED = 'Ivan Sokol 814-555-0112';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
-let baseSchemaSql: string;
+let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -110,7 +120,11 @@ async function freshDatabase(name: string, { dropCoverageTable = false }: { drop
 
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
-  await client.query(baseSchemaSql);
+  /* THE WHOLE SCHEMA, not the base file alone. This suite drives feature
+     code, so it has no business deciding which migrations exist -- and the
+     column it was missing (athletes.deleted_at) belongs to a migration it
+     never picked. See scripts/lib/full-schema.mjs. */
+  await applyFullSchema(client, { infraDir: INFRA_DIR });
   if (dropCoverageTable) {
     await client.query('drop table if exists pilot.coach_coverage cascade');
   }
@@ -232,7 +246,8 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+  const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  applyFullSchema = fullSchema.applyFullSchema as typeof applyFullSchema;
 });
 
 afterAll(async () => {

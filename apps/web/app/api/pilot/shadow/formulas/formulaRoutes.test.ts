@@ -7,6 +7,9 @@ import {
   saveFormulaObservation,
 } from '@/src/server/pilot/formulas/repository';
 import {
+  autoCalculateForObservationContext,
+} from '@/src/server/pilot/formulas/autoCalculation';
+import {
   recalculateForSupersededObservation,
   runStoredMvpFormula,
 } from '@/src/server/pilot/formulas/runner';
@@ -46,6 +49,17 @@ jest.mock('@/src/server/pilot/formulas/runner', () => {
     recalculateForSupersededObservation: jest.fn(),
   };
 });
+// A successful observation POST from a role that may trigger a calculation now
+// reads that observation's context back out of the database to see whether it
+// completed a formula's input set. Unmocked, that read reaches the real pool
+// and fails the request -- which is the failure coupling this orchestration
+// carries, correctly surfaced. The behaviour itself is asserted in
+// observations/route.test.ts; this suite is about the trust boundaries, so it
+// mocks the read out of its way.
+jest.mock('@/src/server/pilot/formulas/autoCalculation', () => {
+  const actual = jest.requireActual('@/src/server/pilot/formulas/autoCalculation');
+  return { ...actual, autoCalculateForObservationContext: jest.fn() };
+});
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockAssertAccess = jest.mocked(assertActorCanAccessAthlete);
@@ -54,6 +68,7 @@ const mockSaveObservation = jest.mocked(saveFormulaObservation);
 const mockListResults = jest.mocked(listActiveFormulaResults);
 const mockRunFormula = jest.mocked(runStoredMvpFormula);
 const mockRecalculate = jest.mocked(recalculateForSupersededObservation);
+const mockAutoCalculate = jest.mocked(autoCalculateForObservationContext);
 const mockFlagNearMiss = jest.mocked(flagNearMiss);
 const mockEmitShadowEvent = jest.mocked(emitShadowEvent);
 
@@ -100,6 +115,7 @@ describe('formula API access and trust boundaries', () => {
       supersedesObservationId: input.supersedesObservationId ?? null,
     }));
     mockRecalculate.mockResolvedValue([]);
+    mockAutoCalculate.mockResolvedValue([]);
     mockRunFormula.mockResolvedValue({ results: [] });
     mockListResults.mockResolvedValue([]);
     mockFlagNearMiss.mockResolvedValue({

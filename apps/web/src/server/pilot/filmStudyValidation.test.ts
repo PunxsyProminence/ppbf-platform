@@ -25,6 +25,9 @@ interface RowShape {
   accepted_count: string;
   rejected_count: string;
   pending_count: string;
+  corrected_count: string;
+  ever_corrected_count: string;
+  proposal_count: string;
   mean_frames: string | null;
 }
 
@@ -35,17 +38,35 @@ function row(overrides: Partial<RowShape> = {}): RowShape {
     accepted_count: '0',
     rejected_count: '0',
     pending_count: '0',
+    corrected_count: '0',
+    ever_corrected_count: '0',
+    proposal_count: '0',
     mean_frames: null,
     ...overrides,
   };
 }
 
-/** Mocks the overall query then the per-deployment query, in call order. */
-function mockRows(overall: RowShape, byDeployment: RowShape[] = []): void {
+/**
+ * Mocks the overall query, the per-deployment query, then the coach-report
+ * count, in call order.
+ *
+ * The third mock is not optional padding: getFilmStudyValidation issues three
+ * reads, and a helper that stubs two would leave the third resolving undefined
+ * -- which is a test failing for its own reason rather than the code's.
+ */
+function mockRows(
+  overall: RowShape,
+  byDeployment: RowShape[] = [],
+  coachReportedCount = '0',
+): void {
   mockQuery.mockReset();
   mockQuery
     .mockResolvedValueOnce([overall] as never)
-    .mockResolvedValueOnce(byDeployment as never);
+    .mockResolvedValueOnce(byDeployment as never)
+    .mockResolvedValueOnce([{
+      coach_reported_count: coachReportedCount,
+      coach_reported_confirmed_count: coachReportedCount,
+    }] as never);
 }
 
 describe('a rate is withheld until the sample can support it', () => {
@@ -268,7 +289,11 @@ describe('the one-line summary never states a rate without its sample', () => {
   test('an unreviewed queue says nothing can be said yet', async () => {
     const summary = await summaryFor(row({ pending_count: '7' }));
 
-    expect(summary).toMatch(/7 waiting/);
+    // "outstanding", not "waiting": the count now includes proposals a coach
+    // corrected but has not finished, which are genuinely still in the queue.
+    // The substance the test guards is unchanged -- the number travels with
+    // the claim.
+    expect(summary).toMatch(/7 outstanding/);
     expect(summary).toMatch(/Nothing can be said about the model/);
   });
 
@@ -303,14 +328,38 @@ describe('scope', () => {
    * cannot tell reuse from a copy, so the real behavioural proof is
    * filmStudyValidationOriginScope.pg.test.ts, which inserts rows of both
    * origins and reads the counts back out of Postgres. */
-  test('both queries carry the shared model-proposal predicate', async () => {
+  test('both model queries carry the shared model-proposal predicate', async () => {
     mockRows(row({ reviewed_count: '5', accepted_count: '5' }));
 
     await getFilmStudyValidation('org-scoped');
 
-    expect(mockQuery.mock.calls).toHaveLength(2);
+    // Three reads now: the two model-proposal aggregates, and a third that
+    // counts coach reports. The third is the ONLY one allowed to omit the
+    // predicate, because it exists to count the rows the predicate excludes --
+    // so it is named here rather than letting the loop's arity quietly grow.
+    expect(mockQuery.mock.calls).toHaveLength(3);
+
+    const [overallSql, byDeploymentSql, coachReportedSql] =
+      mockQuery.mock.calls.map((call) => String(call[0]));
+
+    expect(overallSql).toContain(MODEL_PROPOSAL_SCOPE_SQL);
+    expect(byDeploymentSql).toContain(MODEL_PROPOSAL_SCOPE_SQL);
+
+    // The inverse, asserted rather than assumed: if this query ever picked up
+    // the model predicate it would count zero coach reports forever, and a
+    // silent zero reads as "the model missed nothing".
+    expect(coachReportedSql).not.toContain(MODEL_PROPOSAL_SCOPE_SQL);
+    expect(coachReportedSql).toContain("origin = 'coach_reported'");
+  });
+
+  test('every query is organization-scoped', async () => {
+    mockRows(row({ reviewed_count: '5', accepted_count: '5' }));
+
+    await getFilmStudyValidation('org-scoped');
+
     for (const call of mockQuery.mock.calls) {
-      expect(String(call[0])).toContain(MODEL_PROPOSAL_SCOPE_SQL);
+      expect(String(call[0])).toContain('organization_id = $1');
+      expect(call[1]).toEqual(['org-scoped']);
     }
   });
 
@@ -323,5 +372,71 @@ describe('scope', () => {
     for (const call of mockQuery.mock.calls) {
       expect(String(call[0])).not.toMatch(/athlete_id/);
     }
+  });
+});
+
+describe('the numbers a reader could otherwise infer wrongly', () => {
+  it('states the missed-observation rate as unavailable rather than omitting it', async () => {
+    // Nothing records how many observations COULD have been made, so this
+    // rate has no denominator. A null would read as "not measured yet" and an
+    // absent key as an oversight; both invite someone to fill it in.
+    mockRows(row({ reviewed_count: '10', accepted_count: '6', proposal_count: '12' }), [], '4');
+    const report = await getFilmStudyValidation('org-1');
+    expect(report.missedObservationRate).toBe('UNAVAILABLE — DENOMINATOR_NOT_CAPTURED');
+  });
+
+  it('reports coach-reported misses beside the model numbers, never inside them', async () => {
+    mockRows(row({ reviewed_count: '10', accepted_count: '6', proposal_count: '12' }), [], '4');
+    const report = await getFilmStudyValidation('org-1');
+    expect(report.coachReportedCount).toBe(4);
+    // The model's own denominator is untouched by what it missed.
+    expect(report.overall.modelProposalCount).toBe(12);
+  });
+
+  it('names the denominator for the among-proposals rates', async () => {
+    // 12 proposals: 6 accepted, 2 corrected, 2 rejected, 2 pending.
+    mockRows(row({
+      reviewed_count: '8',
+      accepted_count: '6',
+      rejected_count: '2',
+      corrected_count: '2',
+      // Two proposals needed correcting; both are still paused in that state
+      // here, so state and history agree. They diverge once a coach finishes
+      // one -- see the pg suite, which is where that case is proven.
+      ever_corrected_count: '2',
+      pending_count: '2',
+      proposal_count: '12',
+    }));
+    const { overall } = await getFilmStudyValidation('org-1');
+    expect(overall.acceptanceRateAmongProposals).toBe(0.5);
+    expect(overall.correctionRateAmongProposals).toBeCloseTo(0.167, 3);
+    expect(overall.rejectionRateAmongProposals).toBeCloseTo(0.167, 3);
+    // acceptRate keeps its shipped denominator -- settled proposals only.
+    expect(overall.acceptRate).toBe(0.75);
+  });
+
+  it('withholds the among-proposals rates on their own floor, not the settled one', async () => {
+    // A queue of 40 pending and 2 settled has plenty of denominator for an
+    // among-proposals rate while reviewedCount is still 2. Withholding on the
+    // settled floor would hide the number that says the queue is not worked.
+    mockRows(row({
+      reviewed_count: '2',
+      accepted_count: '2',
+      pending_count: '40',
+      proposal_count: '42',
+    }));
+    const { overall } = await getFilmStudyValidation('org-1');
+    expect(overall.acceptRate).toBeNull();
+    expect(overall.status).toBe('insufficient_data');
+    expect(overall.acceptanceRateAmongProposals).toBeCloseTo(0.048, 3);
+  });
+
+  it('has no rate at all when there are no proposals', async () => {
+    mockRows(row());
+    const { overall } = await getFilmStudyValidation('org-1');
+    expect(overall.modelProposalCount).toBe(0);
+    expect(overall.acceptanceRateAmongProposals).toBeNull();
+    expect(overall.correctionRateAmongProposals).toBeNull();
+    expect(overall.rejectionRateAmongProposals).toBeNull();
   });
 });

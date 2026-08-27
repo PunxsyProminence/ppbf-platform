@@ -139,6 +139,7 @@ export async function listGroups(organizationId: string, planId: string): Promis
      from pilot.floor_plan_members m
      join pilot.athletes a
        on a.organization_id = m.organization_id and a.athlete_id = m.athlete_id
+      and a.deleted_at is null
      where m.organization_id = $1 and m.plan_id = $2
      order by a.full_name asc`,
     [organizationId, planId],
