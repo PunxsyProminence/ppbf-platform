@@ -185,11 +185,18 @@ jobs:
 
       - name: Record What Ran
         if: always()
+        env:
+          # Free text reaches the shell through the environment, never by
+          # interpolation: `${{ ... }}` in a `run:` block is substituted before
+          # bash parses the line, so a value with a quote and a semicolon
+          # becomes commands. target and mode are `type: choice` and cannot
+          # carry one; this input is unconstrained.
+          APPLY: ${{ inputs.apply }}
         run: |
           {
             echo "### Retention sweep -- \`$TARGET\`"
             echo ''
-            if [ "${{ inputs.apply }}" = "APPLY" ]; then
+            if [ "$APPLY" = "APPLY" ]; then
               echo '- mode: **APPLY** (rows were deleted)'
             else
               echo '- mode: dry run (nothing deleted)'

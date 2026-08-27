@@ -176,6 +176,13 @@ jobs:
 
       - name: Record The Attestation
         if: always()
+        env:
+          # Free text reaches the shell through the environment, never by
+          # interpolation: `${{ ... }}` in a `run:` block is substituted before
+          # bash parses the line, so a value with a quote and a semicolon
+          # becomes commands. target and mode are `type: choice` and cannot
+          # carry one; this input is unconstrained.
+          ORGANIZATION_ID: ${{ inputs.organization_id || '__platform__' }}
         run: |
           # Repeated to STDOUT deliberately, not only to the step summary. The
           # decisive line of every one of these runs is the tool's final JSON, and
@@ -195,7 +202,7 @@ jobs:
             echo ''
             echo "- target: \`${{ inputs.target }}\`"
             echo "- mode: \`${{ inputs.mode }}\`"
-            echo "- organization: \`${{ inputs.organization_id || '__platform__' }}\`"
+            echo "- organization: \`$ORGANIZATION_ID\`"
             echo "- result: \`${{ job.status }}\`"
             echo ''
             echo 'Tool output (last lines):'
