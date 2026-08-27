@@ -191,6 +191,55 @@ export async function deleteAthleteRecord(
     );
     const deletionTime = deletedAthlete.rows[0].deleted_at;
 
+    /* The athlete's ACCOUNT, which deleting the athlete used to leave running.
+
+       deleteGuardianAccount does all three of these -- deleted_at, active_flag
+       and session revocation -- because #690 found that writing deleted_at
+       alone left a deleted guardian reading their minor's records. This
+       function is the same function for the other party and it did exactly one
+       of the three, so the same hole was open on the athlete side and nobody
+       had looked.
+
+       Concretely, before this: the athlete row was marked deleted while
+       pilot.accounts.active_flag stayed true, so the athlete kept signing in
+       with their PIN. The self-access branch of assertActorCanAccessAthlete
+       compares actor.athleteId to the requested id and reads no row at all, so
+       it could not have noticed either. A withdrawn athlete kept a working
+       login to their own record for the entire two-year retention window.
+
+       pilot.accounts.athlete_id is the link, and (organization_id, athlete_id)
+       is unique on that table, so this addresses at most one account and cannot
+       reach another gym's. Scoped on role as well: the column is nullable and
+       only athlete accounts carry it, but an explicit role predicate means a
+       future account type that borrows the column cannot be caught by this. */
+    const deactivatedAccount = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set deleted_at = now(), active_flag = false, updated_at = now()
+       where organization_id = $1 and athlete_id = $2 and role = 'athlete'
+       returning account_id`,
+      [actor.organizationId, athleteId],
+    );
+
+    /* In the SAME transaction as the deletion, so there is no window in which
+       the athlete is deleted but a live session still resolves -- the identical
+       reasoning deleteGuardianAccount records above. A PIN that no longer works
+       is not enough on its own: an athlete already signed in holds a session
+       token that resolvePrincipal accepts without re-reading active_flag. */
+    let sessionsRevoked = 0;
+    if (deactivatedAccount.rows.length > 0) {
+      /* rowCount, not `returning` anything. The only columns this table has
+         to return are the token hash and the account id, and there is no
+         reason to pull session-token material into application memory to
+         count rows the driver has already counted. */
+      const revoked = await client.query(
+        `update pilot.session_tokens
+         set revoked_at = now()
+         where account_id = $1 and revoked_at is null`,
+        [deactivatedAccount.rows[0].account_id],
+      );
+      sessionsRevoked = revoked.rowCount ?? 0;
+    }
+
     // Observations still on file for this athlete. NOT a deletion count: a soft
     // delete leaves the athlete row in place, so the FK cascade does not fire
     // and nothing here is removed. The audit record used to call this
@@ -221,6 +270,11 @@ export async function deleteAthleteRecord(
         JSON.stringify({
           reason: reason || 'Not specified',
           observations_retained: parseInt(observationCount.rows[0].count, 10),
+          // Counts, not claims. An athlete record with no account deactivates
+          // nothing and revokes nothing, and the audit row should say so
+          // rather than imply an access closure that did not happen.
+          account_deactivated: deactivatedAccount.rows.length > 0,
+          sessions_revoked: sessionsRevoked,
           deleted_at: new Date(deletionTime).toISOString(),
         }),
       ],
@@ -231,6 +285,7 @@ export async function deleteAthleteRecord(
       deletedEntityId: athleteId,
       deletedRecordsCounts: {
         athletes: 1,
+        accounts: deactivatedAccount.rows.length,
         coachObservationsRetained: parseInt(observationCount.rows[0].count, 10),
       },
       deletedAt: new Date(deletionTime).toISOString(),

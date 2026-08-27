@@ -139,9 +139,30 @@ WHAT THIS RELEASE CLOSES IN PRODUCTION. Seven P0 fixes that had been sitting on
 main, plus two from a parallel lane:
   - #690 guardian deletion now clears active_flag, deactivates the
     organization membership and revokes sessions in the SAME transaction.
-    Until this deploy, a "deleted" guardian in production kept reading their
-    linked minor's records and could mint a fresh session by emailing
-    themselves a magic link, indefinitely. This is the one that mattered most.
+    Before this, deletion wrote deleted_at and nothing else, so a deleted
+    guardian WOULD have kept reading their linked minor's records and WOULD
+    have been able to mint a fresh session by emailing themselves a magic
+    link, indefinitely.
+
+    CORRECTED 2026-08-27, and the correction is the point of this file. The
+    sentence above originally read "a 'deleted' guardian in production kept
+    reading their linked minor's records" -- stated as a harm that was
+    happening. That was never verified. What was verified is what the code
+    does the first time somebody is deleted; whether anybody ever had been was
+    not checked before it was written down here.
+
+    The code says probably nobody. deleteGuardianAccount and
+    deleteAthleteRecord have exactly ONE caller between them --
+    DELETE /api/pilot/admin/data-deletion -- and nothing in app/ or
+    components/ calls that endpoint. There is no button anywhere in the
+    product, and no script or workflow calls it either. A deletion requires
+    somebody hand-crafting an authenticated request against the live API.
+
+    "Probably nobody" is still not a number, so check-database.yml now carries
+    a read-only `deletion-preflight` check that counts the deletion audit
+    rows and any record left marked-deleted-but-still-reachable. Until that
+    has been run against production, the honest status of this entry is: the
+    defect was real, the fix is correct, and the blast radius is UNMEASURED.
   - #695 approving an already-promoted intake case is refused -- a second
     promotion reset an activated athlete's PIN and revoked their sessions,
     locking them out in two clicks.
