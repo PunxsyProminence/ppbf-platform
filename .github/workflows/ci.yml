@@ -284,9 +284,9 @@ jobs:
         run: npm test
 
       # Covers this PR's own diff. It is not a release gate: it never runs for
-      # a diff the classifier does not flag, and `test:migrations` chains with
-      # `&&`, so it stops at the first failure. pre-release-migrations.yml is
-      # the gate that runs every suite against merged `main` and reports all
+      # a diff the classifier does not flag, and `test:migrations` is
+      # fail-fast, so it stops at the first failure. pre-release-migrations.yml
+      # is the gate that runs every suite against merged `main` and reports all
       # failures.
       - name: Run PostgreSQL migration suite
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.migrations == 'true'

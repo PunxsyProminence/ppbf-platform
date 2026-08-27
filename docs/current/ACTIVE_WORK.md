@@ -8,7 +8,13 @@ Do **not** preload `docs/current/WORK_QUEUE.md` for ordinary implementation. Tha
 
 A direct owner/user request may go straight to a bounded branch/PR after checking current source and open PRs. A ticket is optional unless the work needs coordination, handoff, scheduling, or a durable decision record.
 
-Owner authorization (2026-08-15): ordinary bounded PRs may be merged by the authoring session once every required check and branch-protection requirement on the repository passes — "i give permission for all merges." Repo enforcement always wins over this note. The authorization does not extend to production deployment, migrations against protected environments, or anything the guardrails place behind a separate human gate; those still require an explicit release task from the owner.
+Owner authorization (2026-08-15, **superseded 2026-08-27**): this note read "ordinary bounded PRs may be merged by the authoring session once every required check and branch-protection requirement on the repository passes -- 'i give permission for all merges.'" That was written when one session held both the building and the releasing role.
+
+It no longer holds. `AGENT_KERNEL.md`'s Lane model and its amended invariant 6 give a build lane authority to implement and **open** a bounded change; **one release-control lane merges**. Green CI is a precondition, not an authorization.
+
+This correction matters more than most stale prose, because `AGENT_KERNEL.md` sends every lane to this file second, immediately after reading the invariant that contradicts the old sentence. `docs/capabilities/NETWORK_STATUS.md` already records this exact sentence, read literally by several sessions at once, as how `main` broke.
+
+Unchanged: repo enforcement always wins over any note here, and nothing in this file authorizes production deployment or migrations against protected environments. Those were never covered and still require an explicit release task from the owner.
 
 Use only these working states here:
 

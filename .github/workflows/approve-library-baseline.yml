@@ -167,6 +167,11 @@ jobs:
       # later edited carelessly.
       - name: Approve Library Evidence
         working-directory: apps/web
+        # `shell: bash` for pipefail. GitHub's default `bash -e {0}` has
+        # errexit without it, so `tee` swallows a failed approval's exit code
+        # and this step goes green -- the exact "silent half-approval got
+        # believed" failure the next step's comment was written about.
+        shell: bash
         run: npm run pilot:approve-library-baseline 2>&1 | tee /tmp/tool-output.txt
 
       - name: Record The Attestation
@@ -178,8 +183,13 @@ jobs:
           # the runner's cleanup -- far enough that reading it cost more than
           # guessing at it, which is exactly how a silent half-approval got
           # believed. Printing it here puts it within a dozen lines of the end.
+          #
+          # `-s` rather than `tail ... ||`: tee creates the file first, so a
+          # tool that died before printing leaves it existing and empty. tail
+          # then exits 0 and prints nothing, and '(none captured)' -- the
+          # thing that would have told the reader -- never runs.
           echo '--- tool output (repeated) ---'
-          tail -n 12 /tmp/tool-output.txt 2>/dev/null || echo '(none captured)'
+          [ -s /tmp/tool-output.txt ] && tail -n 12 /tmp/tool-output.txt || echo '(none captured)'
           {
             echo '### SHADOW library approval'
             echo ''
@@ -190,7 +200,7 @@ jobs:
             echo ''
             echo 'Tool output (last lines):'
             echo '```'
-            tail -n 12 /tmp/tool-output.txt 2>/dev/null || echo '(none captured)'
+            [ -s /tmp/tool-output.txt ] && tail -n 12 /tmp/tool-output.txt || echo '(none captured)'
             echo '```'
             echo ''
             echo 'On apply, one platform owner is recorded as approver AND verifier on every'

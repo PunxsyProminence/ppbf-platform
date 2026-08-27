@@ -82,7 +82,7 @@ concurrency:
   # nothing is cancelled: an operator who dispatches this while the nightly is
   # mid-run wants the answer, and a cancelled run reads as "never verified" --
   # the same reasoning ci.yml applies to pushes on main.
-  group: pre-release-migrations-${{ github.ref }}
+  group: pre-release-migrations-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -122,61 +122,53 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Single source of truth: the suite list is READ OUT OF the
-          # `test:migrations` chain in apps/web/package.json rather than
-          # restated here. A restated list is a list that drifts, and a
-          # migration suite that silently stops running is the exact failure
-          # class this workflow exists to prevent.
+          # Single source of truth: the suite list is derived by the SAME
+          # function the runner uses, imported rather than reimplemented.
+          #
+          # WHY IMPORTED AND NOT PARSED. This step used to read the suite names
+          # out of `test:migrations` by matching /npm run (test:migrations:...)/
+          # against it, because that script was a 5,000-character `&&` chain.
+          # #722 replaced the chain with a discovery runner, so the value became
+          # `node scripts/run-migration-suites.mjs` -- which contains no
+          # `npm run` at all. The match returned zero, the step threw, and under
+          # `set -euo pipefail` the job died before running a single suite.
+          #
+          # That is not hypothetical. Scheduled runs 1-7 (2026-08-20 .. 08-26)
+          # succeeded; run 8, the first after #722 landed, failed at this step
+          # with "Run every migration suite" skipped. The gate that exists so a
+          # release operator never burns a staging dispatch on a broken
+          # readiness assertion verified nothing for that window.
+          #
+          # A second parser is a second thing to desync. Importing the runner's
+          # own `discoverSuiteScripts` makes the two sets equal by construction
+          # rather than by agreement, and migrationRunnerCoverage.test.ts pins
+          # that this step imports rather than reimplements.
           node --input-type=module <<'NODE' > suites.txt
           import fs from 'node:fs';
+          import { discoverSuiteScripts } from './apps/web/scripts/run-migration-suites.mjs';
 
           const { scripts } = JSON.parse(
             fs.readFileSync('apps/web/package.json', 'utf8'),
           );
 
-          const chain = scripts['test:migrations'];
-          if (!chain) {
+          const suites = discoverSuiteScripts(scripts);
+
+          // The same floor the runner refuses on, for the same reason: a
+          // discovery that returns nothing would run zero suites and report a
+          // clean gate. A chain cannot fail this way; discovery can, so it is
+          // refused explicitly rather than trusted.
+          if (suites.length < 50) {
             throw new Error(
-              'apps/web/package.json has no `test:migrations` script -- this ' +
-                'workflow derives its suite list from that chain.',
+              `discovered only ${suites.length} migration suite scripts, which cannot be right. ` +
+                'Expected 100+. Either apps/web/package.json is truncated or the naming ' +
+                'convention changed. Refusing to report a clean gate while running almost nothing.',
             );
           }
 
-          const chained = [
-            ...chain.matchAll(/npm run (test:migrations:[A-Za-z0-9:_-]+)/g),
-          ].map((match) => match[1]);
-
-          if (chained.length === 0) {
-            throw new Error(
-              '`test:migrations` matched no `npm run test:migrations:*` steps.',
-            );
-          }
-
-          const undefined_ = chained.filter((name) => !scripts[name]);
-          if (undefined_.length > 0) {
-            throw new Error(
-              `test:migrations chains scripts that do not exist: ${undefined_.join(', ')}`,
-            );
-          }
-
-          // Drift guard, in both directions. A `test:migrations:*` script that
-          // nobody chained runs nowhere -- not in ci.yml's conditional step,
-          // not locally, not here -- which looks exactly like coverage until
-          // the day it matters.
-          const orphans = Object.keys(scripts)
-            .filter((name) => name.startsWith('test:migrations:'))
-            .filter((name) => !chained.includes(name));
-          if (orphans.length > 0) {
-            throw new Error(
-              `these test:migrations:* scripts are not in the test:migrations ` +
-                `chain, so nothing runs them: ${orphans.join(', ')}`,
-            );
-          }
-
-          process.stdout.write(`${chained.join('\n')}\n`);
+          process.stdout.write(`${suites.join('\n')}\n`);
           NODE
 
-          echo "Resolved $(wc -l < suites.txt) migration suites from the test:migrations chain."
+          echo "Resolved $(wc -l < suites.txt) migration suites by discovery."
 
       - name: Run every migration suite (report all failures)
         shell: bash
