@@ -39,10 +39,20 @@ export async function isGuardianLinkedToAthlete(
   accountId: string,
   athleteId: string,
 ): Promise<boolean> {
+  /* The join onto pilot.athletes is the deletion filter, and it is a JOIN
+     rather than a second query because the link row alone cannot answer this.
+     guardian_links stores an athlete_id; it carries no deleted_at of its own,
+     so a link to a soft-deleted athlete stayed true forever and a guardian
+     kept reading a record the gym had deleted. Same shape as #690: deletion
+     wrote deleted_at, and the read paths never asked. */
   const linked = await queryOne<{ athlete_id: string }>(
-    `select athlete_id
-     from pilot.guardian_links
-     where organization_id = $1 and athlete_id = $2 and parent_id in (
+    `select gl.athlete_id
+     from pilot.guardian_links gl
+     join pilot.athletes a
+       on a.athlete_id = gl.athlete_id
+      and a.organization_id = gl.organization_id
+      and a.deleted_at is null
+     where gl.organization_id = $1 and gl.athlete_id = $2 and gl.parent_id in (
        select parent_id
        from pilot.parents
        where organization_id = $1 and account_id = $3
@@ -67,6 +77,10 @@ export async function guardianAthleteIds(organizationId: string, accountId: stri
      join pilot.parents p
        on p.organization_id = gl.organization_id
       and p.parent_id = gl.parent_id
+     join pilot.athletes a
+       on a.athlete_id = gl.athlete_id
+      and a.organization_id = gl.organization_id
+      and a.deleted_at is null
      where gl.organization_id = $1 and p.account_id = $2`,
     [organizationId, accountId],
   );

@@ -203,6 +203,16 @@ beforeAll(async () => {
   db = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await db.connect();
   await db.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+/* PRODUCTION HAS THIS MIGRATION, so the fixture does too. It adds
+   pilot.athletes.deleted_at, which the authorization queries in access.ts now
+   require. deploy-production's schema check asserts every migration's
+   `add column` exists in the live database and it passed on the 2026-08-27
+   release, so a fixture without it is not a smaller production -- it is a
+   schema nobody runs. Concatenated onto the base schema rather than applied
+   separately so that every site which applies baseSchemaSql gets it. */
+  await db.query(await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8',
+  ));
 
   await db.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
