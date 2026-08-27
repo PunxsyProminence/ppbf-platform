@@ -122,71 +122,79 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Single source of truth: the suite list is READ OUT OF the
-          # `test:migrations` chain in apps/web/package.json rather than
-          # restated here. A restated list is a list that drifts, and a
-          # migration suite that silently stops running is the exact failure
-          # class this workflow exists to prevent.
+          # Single source of truth: the suite list is produced by the SAME
+          # function `npm run test:migrations` uses, rather than restated
+          # here. A restated list is a list that drifts, and a migration suite
+          # that silently stops running is the exact failure class this
+          # workflow exists to prevent.
+          #
+          # This step used to regex `npm run test:migrations:*` out of the
+          # `test:migrations` chain. PR #722 replaced that 5,000-character
+          # chain with a discovery runner, the regex began matching nothing,
+          # and the `chained.length === 0` guard below threw -- so this job
+          # died at this step and ran ZERO suites. Observed, not inferred:
+          # run 33102822878 (2026-08-27), step "Resolve the migration suite
+          # list" failure, step "Run every migration suite" skipped, after
+          # seven consecutive green nightlies. Importing the runner's own
+          # exported function is what makes that class of drift
+          # unrepresentable rather than merely fixed.
           node --input-type=module <<'NODE' > suites.txt
           import fs from 'node:fs';
+          import { discoverSuiteScripts } from './apps/web/scripts/run-migration-suites.mjs';
 
           const { scripts } = JSON.parse(
             fs.readFileSync('apps/web/package.json', 'utf8'),
           );
 
-          const chain = scripts['test:migrations'];
-          if (!chain) {
+          // The exact call `npm run test:migrations` makes. Importing it is
+          // the point: a second implementation of "which suites exist" is a
+          // second thing to keep in sync, and this workflow already lost a
+          // whole nightly to exactly that. Importing the module does not run
+          // the suites -- run-migration-suites.mjs only calls main() when it
+          // is process.argv[1].
+          const suites = discoverSuiteScripts(scripts);
+
+          // A floor, not decoration, and deliberately the same floor the
+          // runner enforces. Discovery's failure mode is the one a hand-list
+          // cannot have: if the naming convention or the regex ever changed,
+          // it returns nothing, and a release gate that runs zero suites and
+          // exits 0 reports every migration guarded while guarding none.
+          if (suites.length < 50) {
             throw new Error(
-              'apps/web/package.json has no `test:migrations` script -- this ' +
-                'workflow derives its suite list from that chain.',
+              `discovered only ${suites.length} test:migrations:* scripts, which cannot be right. `
+                + 'Expected 100+. Either apps/web/package.json is truncated or the naming '
+                + 'convention changed. Refusing to run a release gate over almost nothing.',
             );
           }
 
-          const chained = [
-            ...chain.matchAll(/npm run (test:migrations:[A-Za-z0-9:_-]+)/g),
-          ].map((match) => match[1]);
-
-          if (chained.length === 0) {
-            throw new Error(
-              '`test:migrations` matched no `npm run test:migrations:*` steps.',
-            );
-          }
-
-          const undefined_ = chained.filter((name) => !scripts[name]);
-          if (undefined_.length > 0) {
-            throw new Error(
-              `test:migrations chains scripts that do not exist: ${undefined_.join(', ')}`,
-            );
-          }
-
-          // Drift guard, in both directions. A `test:migrations:*` script that
-          // nobody chained runs nowhere -- not in ci.yml's conditional step,
-          // not locally, not here -- which looks exactly like coverage until
-          // the day it matters.
-          const orphans = Object.keys(scripts)
-            .filter((name) => name.startsWith('test:migrations:'))
-            .filter((name) => !chained.includes(name));
-          if (orphans.length > 0) {
-            throw new Error(
-              `these test:migrations:* scripts are not in the test:migrations ` +
-                `chain, so nothing runs them: ${orphans.join(', ')}`,
-            );
-          }
-
-          process.stdout.write(`${chained.join('\n')}\n`);
+          // NOT re-checked here, and each for a reason:
+          //
+          //   "chains a script that does not exist" -- unrepresentable now.
+          //   Every name discovery returns is a key of `scripts` by
+          //   construction, so the old check could only ever pass.
+          //
+          //   "a test:migrations:* script nobody runs" -- likewise. Discovery
+          //   runs the whole set, so a script cannot be orphaned from it.
+          //
+          // The drift that IS still possible is a `.pg.test.ts` file with no
+          // `test:migrations:*` script pointing at it. That is a different
+          // question, it is not answerable from package.json alone, and it
+          // already has an owner: pgTestCoverage.test.ts, which runs in
+          // `npm test` on every non-docs PR.
+          process.stdout.write(`${suites.join('\n')}\n`);
           NODE
 
-          echo "Resolved $(wc -l < suites.txt) migration suites from the test:migrations chain."
+          echo "Resolved $(wc -l < suites.txt) migration suites by discovery."
 
       - name: Run every migration suite (report all failures)
         shell: bash
         run: |
-          # Deliberately NOT `npm run test:migrations`. That script chains its
-          # ~105 steps with `&&`, which is right for a human running it locally
-          # -- you want to stop and fix the first thing that broke. It is wrong
-          # for a release gate: it reports one failure and hides every later
-          # one, so an operator fixes it, re-runs the ~20 minute job, and
-          # discovers the next. Here each suite runs independently (they are
+          # Deliberately NOT `npm run test:migrations`. That runner is
+          # fail-fast, which is right for a human running it locally -- you
+          # want to stop and fix the first thing that broke. It is wrong for a
+          # release gate: it reports one failure and hides every later one, so
+          # an operator fixes it, re-runs the ~20 minute job, and discovers the
+          # next. Here each suite runs independently (they are
           # independent -- every one stands up its own embedded Postgres from
           # the base schema) and the job fails once at the end with the
           # complete list.
