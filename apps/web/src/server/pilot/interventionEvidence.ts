@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { getExecution } from './interventionExecutions';
 import type { FilmStudyProposalReviewState } from './shadowFilmStudyProposals';
 import {
@@ -410,6 +410,15 @@ export function computeSourceAdmissible(
   return true;
 }
 
+/**
+ * Raised inside reviewOutcome's transaction when the active verdict it read
+ * has already been superseded by the time the stamp runs. Private to this
+ * module: it only rolls the transaction back, and is converted straight back
+ * to the null this function already returns when a review cannot be
+ * recorded.
+ */
+class OutcomeReviewLostRace extends Error {}
+
 /** Records the human review of a CLOSED execution. Reviewing work still in
  * progress is premature and refused; the three answers are separate
  * columns, and the database's own constraints refuse a miss dressed up as
@@ -434,44 +443,78 @@ export async function reviewOutcome(input: {
   );
 
   const reviewId = randomUUID();
-  // Re-review supersedes: the new verdict is born superseded, the old one
-  // is stamped, then the new one becomes active -- under the one-active
-  // index a crash never leaves two verdicts standing.
-  await queryOne(
-    `insert into pilot.intervention_outcome_reviews
-       (organization_id, review_id, execution_id, supersedes_review_id, performance_result,
-        performance_notes, hypothesis_result, learning_signal, learning_notes, status, reviewed_by_account_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'superseded', $10)
-     returning review_id`,
-    [
-      input.organizationId,
-      reviewId,
-      input.executionId,
-      existing?.review_id ?? null,
-      input.performanceResult,
-      input.performanceNotes,
-      input.hypothesisResult,
-      input.learningSignal,
-      input.learningNotes ?? '',
-      input.reviewedByAccountId,
-    ],
-  );
-  if (existing) {
-    await queryOne(
-      `update pilot.intervention_outcome_reviews set status = 'superseded', updated_at = now()
-       where organization_id = $1 and review_id = $2 returning review_id`,
-      [input.organizationId, existing.review_id],
+
+  // ONE TRANSACTION, AND THE FLIP CARRIES THE STATE IT READ.
+  //
+  // Re-review supersedes in three statements -- the new verdict is born
+  // superseded (so the one-active index is never contended), the old one is
+  // stamped, then the new one becomes active. On autocommit the old comment's
+  // claim ("a crash never leaves two verdicts standing") was true and beside
+  // the point: what a failure after the stamp leaves is NO verdict standing.
+  // getActiveReview returns null, and the human review of what an
+  // intervention did to a child reads as never having happened while both
+  // rows sit in the table.
+  //
+  // And without a crash: two reviewers submitting at once both read the same
+  // `existing`, both insert, and both then stamped it, because that UPDATE
+  // named no state. One raise wins the one-active index and the other 500s on
+  // a 23505, stranding a verdict nothing can raise or remove.
+  //
+  // The transaction makes the three all-or-nothing, and `and status =
+  // 'active'` on the stamp is the compare-and-set that settles the race in
+  // the database: the loser matches zero rows, rolls its own insert back, and
+  // returns null -- the same "could not review" this function already returns
+  // for an execution that is not closed.
+  const recorded = await withTransaction(async (client) => {
+    await client.query(
+      `insert into pilot.intervention_outcome_reviews
+         (organization_id, review_id, execution_id, supersedes_review_id, performance_result,
+          performance_notes, hypothesis_result, learning_signal, learning_notes, status, reviewed_by_account_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'superseded', $10)
+       returning review_id`,
+      [
+        input.organizationId,
+        reviewId,
+        input.executionId,
+        existing?.review_id ?? null,
+        input.performanceResult,
+        input.performanceNotes,
+        input.hypothesisResult,
+        input.learningSignal,
+        input.learningNotes ?? '',
+        input.reviewedByAccountId,
+      ],
     );
-  }
-  await queryOne(
-    `update pilot.intervention_outcome_reviews set status = 'active', updated_at = now()
-     where organization_id = $1 and review_id = $2 returning review_id`,
-    [input.organizationId, reviewId],
-  );
+
+    if (existing) {
+      const stamped = await client.query<{ review_id: string }>(
+        `update pilot.intervention_outcome_reviews set status = 'superseded', updated_at = now()
+         where organization_id = $1 and review_id = $2 and status = 'active'
+         returning review_id`,
+        [input.organizationId, existing.review_id],
+      );
+      if (stamped.rows.length === 0) {
+        throw new OutcomeReviewLostRace();
+      }
+    }
+
+    await client.query(
+      `update pilot.intervention_outcome_reviews set status = 'active', updated_at = now()
+       where organization_id = $1 and review_id = $2 returning review_id`,
+      [input.organizationId, reviewId],
+    );
+
+    return reviewId;
+  }).catch((error: unknown) => {
+    if (error instanceof OutcomeReviewLostRace) return null;
+    throw error;
+  });
+
+  if (!recorded) return null;
 
   return queryOne<OutcomeReviewRow>(
     `select * from pilot.intervention_outcome_reviews where organization_id = $1 and review_id = $2`,
-    [input.organizationId, reviewId],
+    [input.organizationId, recorded],
   );
 }
 
