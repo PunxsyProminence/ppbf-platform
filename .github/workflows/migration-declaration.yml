@@ -1,4 +1,14 @@
-# Fails a pull request whose MIGRATIONS declaration does not match its diff.
+# Grades the declarations a pull request body has to get right for somebody else
+# to act on: MIGRATIONS, against the diff, and any Evidence Applicability Record,
+# against its own structural contract.
+#
+# WHY BOTH LIVE HERE. This workflow already checks out the diff and reads
+# `PR_BODY` safely through the environment, and its check name is already wired
+# into whatever branch protection the owner has set. A second workflow would add
+# a second required-check surface for one more `node` invocation of the same
+# body, so the second declaration is a step here instead of a file of its own.
+# The evidence step is opt-in and cannot fail a body that carries no record --
+# see the script's own docblock for why that asymmetry is deliberate.
 #
 # deploy-production.yml takes `migrations_complete` as an ATTESTATION, not a
 # check. The release lane sizes and sequences a release from the MIGRATIONS
@@ -66,3 +76,16 @@ jobs:
           # any body into a command.
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node apps/web/scripts/check-migration-declaration.mjs /tmp/name-status.txt
+
+      - name: Check the structure of any Evidence Applicability Record
+        # `if: always()` so a MIGRATIONS failure above does not hide this one.
+        # GitHub's implicit success() would skip this step, and a skipped check
+        # and a passing check look the same in a run summary -- the exact
+        # confusion AGENT_KERNEL.md records against the staging gate steps.
+        if: always()
+        env:
+          # Through the environment for the same reason as the step above: a
+          # body is attacker-controlled text and `${{ ... }}` inside `run:` is
+          # substituted before the shell sees it.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node apps/web/scripts/check-evidence-applicability.mjs
