@@ -49,57 +49,50 @@ function resolveSslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Deliberately does NOT assert that the constraint is still un-validated.
-//
-// The `all` chain re-runs every migration on every dispatch, so this query runs
-// again after any future `validate constraint`. Asserting `not convalidated`
-// would turn a correctly validated environment into a failing dispatch -- the
-// readiness check would start refusing the very state it is meant to reach.
-// That the constraint is created NOT VALID is a property of the migration, and
-// is asserted where it belongs: drillLibraryDisciplineFk.pg.test.ts.
-//
-// `contype = 'f'` is checked rather than the name alone, because a CHECK
-// constraint that happened to carry this name would satisfy a name-only lookup
-// while enforcing something else entirely.
-//
-// `pre_existing_check_intact` USED TO BE HERE, AND THE OWNER HAS RETIRED IT.
-//
-// It asserted that pilot_drill_library_discipline_check was still installed,
-// because this migration's promise was to be ADDITIVE: it added a foreign key
-// and left the CHECK exactly as it found it, reporting the two constraints'
-// disagreement about 'general' and 'bjj' as an open question rather than
-// resolving it. Its stated purpose was that "a future edit that DID drop the
-// CHECK should not be able to reach a live environment through a dispatch that
-// still reports PASS."
-//
-// That tripwire has now fired and been answered. The open question it was
-// holding open went to the owner, who decided it on 2026-08-28, verbatim:
-// "drop the check and let the registry govern." The drill-library-check-drop
-// migration drops the CHECK, and it runs AFTER this one in the `all` list --
-// so leaving this clause would have made the first dispatch after that drop
-// fail here, refusing the very state the owner ratified.
-//
-// It is removed rather than inverted: this migration must be correct both
-// before and after the drop, and it has no business asserting anything about a
-// constraint another migration owns. What actually protects the column now is
-// stated where it belongs -- the drop migration raises unless this foreign key
-// is present, and its runner asserts the key is still governing afterwards.
 const READINESS_QUERY = `
   select
-    to_regclass('pilot.disciplines') is not null as registry_ready,
-    to_regclass('pilot.drill_library') is not null as library_table_ready,
+    to_regclass('pilot.parent_task_state') is not null as table_ready,
+    (
+      select count(*) = 8
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'parent_task_state'
+    ) as column_count_ready,
+    -- The design property, asserted by the runner rather than trusted: this
+    -- table must carry NO verification column. pilot.assignment_completions
+    -- has verification_status and verified_by_account_id because a coach
+    -- verifies an athlete's technical work; a guardian bringing gloves is not
+    -- that, and a column to countersign it would be the masquerade this table
+    -- exists to avoid. If a later migration adds one, the deploy stops here.
+    (
+      select count(*) = 0
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'parent_task_state'
+        and (column_name like '%verif%' or column_name like '%approv%')
+    ) as no_verification_column_ready,
     exists (
       select 1 from pg_constraint
-      where conname = 'pilot_drill_library_discipline_fk'
-        and conrelid = to_regclass('pilot.drill_library')
+      where conname = 'pilot_parent_task_state_note_fk'
+        and conrelid = to_regclass('pilot.parent_task_state')
         and contype = 'f'
-        and confrelid = to_regclass('pilot.disciplines')
-    ) as discipline_fk_ready
+    ) as note_fk_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_parent_task_state_completion_paired'
+        and conrelid = to_regclass('pilot.parent_task_state')
+        and contype = 'c'
+    ) as completion_check_ready,
+    exists (
+      select 1 from pg_indexes
+      where schemaname = 'pilot'
+        and indexname = 'idx_parent_task_state_open'
+    ) as index_ready
 `;
 
 function assertReadiness(row) {
   if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('DRILL_LIBRARY_DISCIPLINE_FK_NOT_READY');
+    throw new Error('PARENT_TASK_STATE_NOT_READY');
   }
 }
 
@@ -128,7 +121,7 @@ export async function run() {
   const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
     __dirname,
-    '../../../infra/azure/pilot_slice_postgres_drill_library_discipline_fk_migration.sql',
+    '../../../infra/azure/pilot_slice_postgres_parent_task_state_migration.sql',
   );
 
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -147,8 +140,8 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied drill library discipline FK migration: ${migrationPath}`);
-  console.log('PILOT DRILL LIBRARY DISCIPLINE FK MIGRATION PASS');
+  console.log(`Applied parent task state migration: ${migrationPath}`);
+  console.log('PILOT PARENT TASK STATE MIGRATION PASS');
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
@@ -156,7 +149,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT DRILL LIBRARY DISCIPLINE FK MIGRATION FAIL');
+    console.error('PILOT PARENT TASK STATE MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }
