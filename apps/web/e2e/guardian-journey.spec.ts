@@ -125,6 +125,65 @@ test.describe('Guardian journey', () => {
     await expect(page.getByText('Consent granted.')).toBeVisible();
   });
 
+  /* THE SAME PLAN THEIR CHILD READS, AND NO MORE.
+     A guardian reads exactly what their child reads -- the rule
+     /parent/progression-visibility already states, and the reason both pages
+     render one shared component. This drives the guardian's half in a real
+     browser: the child picker names which child, and the plan that comes back
+     is the coach's words unaltered. */
+  test('reads the plan their child\'s coach wrote, choosing which child', async ({ page }) => {
+    const asked: string[] = [];
+
+    await installPilotApi(page, {
+      session: { role: 'parent' },
+      routes: {
+        '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
+        '/api/pilot/athlete/development-blocks': (url) => {
+          // A guardian may hold several links, so the child is named --
+          // and it is the one they chose.
+          asked.push(url.searchParams.get('athlete_id') ?? '');
+          return {
+            ok: true,
+            blocks: [{
+              block_id: 'blk-1',
+              title: 'Winter technical block',
+              training_emphasis: 'Stop backing straight up when the pressure comes.',
+              starts_on: '2026-09-01',
+              ends_on: '2026-10-13',
+              status: 'active',
+              objectives: [{
+                objective_id: 'obj-1',
+                domain: 'nutrition_body_composition',
+                objective: 'Eat a real breakfast before morning conditioning.',
+                status: 'draft',
+              }],
+            }],
+          };
+        },
+      },
+    });
+
+    await page.goto('/parent/development-blocks');
+
+    // Nothing is read until a child is chosen: a guardian of two children has
+    // no default, and picking one for them would invent an answer.
+    await expect(page.getByRole('heading', { level: 1, name: 'Their Development Plan' })).toBeVisible();
+    expect(asked).toEqual([]);
+
+    await page.getByLabel('Which child').selectOption(ROSA.athlete_id);
+
+    await expect.poll(() => asked).toEqual([ROSA.athlete_id]);
+    await expect(page.getByText('Winter technical block')).toBeVisible();
+    await expect(page.getByText('Stop backing straight up when the pressure comes.')).toBeVisible();
+    await expect(page.getByText('Eat a real breakfast before morning conditioning.')).toBeVisible();
+
+    /* Read-only, and the page says so to the parent in words as well as by
+       carrying no control that could change anything. */
+    await expect(page.getByText(/nothing on this page can be changed from it/i)).toBeVisible();
+    await expect(page.locator('form, textarea')).toHaveCount(0);
+    await expect(page.locator('progress, meter, [role="progressbar"]')).toHaveCount(0);
+  });
+
   test('an unauthenticated visitor never sees a family surface', async ({ page }) => {
     // The negative that gives the two tests above their meaning: with the
     // session route answering 401, no part of the hub may render on the way
