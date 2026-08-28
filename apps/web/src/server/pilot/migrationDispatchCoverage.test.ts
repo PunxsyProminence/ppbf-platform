@@ -24,8 +24,10 @@
  * disk, not from the scripts. A migration file is only real if an operator can
  * dispatch it, and it is only in the rebuild path if `all` names it.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const repositoryRoot = path.resolve(__dirname, '../../../../..');
 const infraDir = path.join(repositoryRoot, 'infra/azure');
@@ -33,27 +35,46 @@ const scriptsDir = path.join(repositoryRoot, 'apps/web/scripts');
 const workflowPath = path.join(repositoryRoot, '.github/workflows/apply-migrations.yml');
 const packageJsonPath = path.join(repositoryRoot, 'apps/web/package.json');
 
-/**
- * Migration slugs whose SQL filename does not mechanically produce the name the
- * workflow uses. Kept as an explicit map rather than a looser derivation, so a
- * new mismatch is a decision someone records here rather than a silent miss.
- */
-const SLUG_OVERRIDES: Record<string, string> = {
-  'scheduler_registration_race': 'scheduler-race',
-  'sparring_exposure_and_load': 'sparring-exposure',
-};
-
-function slugFor(sqlFileName: string): string {
-  const stem = sqlFileName
-    .replace(/^pilot_slice_postgres_/, '')
-    .replace(/_migration\.sql$/, '');
-  return SLUG_OVERRIDES[stem] ?? stem.replace(/_/g, '-');
-}
-
 const migrationFiles = fs
   .readdirSync(infraDir)
   .filter((name) => /^pilot_slice_postgres_.+_migration\.sql$/.test(name))
   .sort();
+
+/**
+ * filename -> slug, from scripts/migration-apply-order.mjs.
+ *
+ * The override table for the two filenames that do not mechanically produce
+ * their workflow name (scheduler_registration_race, sparring_exposure_and_load)
+ * used to be declared here as well as being needed by the schema verifier.
+ * Two copies of it is the silent-divergence failure this file exists to catch,
+ * applied to itself: a third mismatch added to one copy leaves the other
+ * confidently wrong. There is one copy now, and this reads it.
+ *
+ * That module is real ESM consumed by a workflow-facing script, and the default
+ * jest runner has no ESM loader (`npm test` does not pass
+ * --experimental-vm-modules), so it is evaluated in one real `node` child
+ * process -- the same shape as check-migration-declaration.test.ts.
+ */
+const slugByFile: Record<string, string> = (() => {
+  const moduleUrl = pathToFileURL(
+    path.join(scriptsDir, 'migration-apply-order.mjs'),
+  ).href;
+  const script = `
+    import { slugFor } from ${JSON.stringify(moduleUrl)};
+    const files = ${JSON.stringify(migrationFiles)};
+    process.stdout.write(JSON.stringify(Object.fromEntries(files.map((f) => [f, slugFor(f)]))));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    maxBuffer: 8 * 1024 * 1024,
+  }));
+})();
+
+function slugFor(sqlFileName: string): string {
+  const slug = slugByFile[sqlFileName];
+  if (!slug) throw new Error(`No slug derived for ${sqlFileName}`);
+  return slug;
+}
 
 const workflow = fs.readFileSync(workflowPath, 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {

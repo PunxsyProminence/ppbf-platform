@@ -190,13 +190,40 @@ describe('the pre-deploy schema verifier', () => {
   test('the check is not vacuous -- it asserts a real number of objects', async () => {
     const { result } = await runVerifier();
     const checked = result.checked as Record<string, number>;
-    expect(checked.tables).toBeGreaterThan(30);
-    expect(checked.columns).toBeGreaterThan(20);
-    expect(checked.constraints).toBeGreaterThan(20);
+
+    // THE STRONGEST CLAUSE HERE, and the reason the others are floors rather
+    // than the whole test. Since 2026-08-28 the expected set is built by
+    // walking the migrations in the order apply-migrations.yml applies them,
+    // read out of that workflow's `all` list. A parse that came back partial
+    // would shrink the expected set in proportion, and a pre-deploy gate whose
+    // expectations have shrunk PASSES a database missing everything it stopped
+    // asking about -- while reporting green. So the number of files the run
+    // actually read is asserted against the files on disk, computed here rather
+    // than written down, so it cannot drift into agreement with a smaller list.
+    const onDisk = (await fs.readdir(INFRA_DIR))
+      .filter((name) => /^pilot_slice_postgres.*\.sql$/.test(name));
+    expect(onDisk.length).toBeGreaterThan(100);
+    expect(checked.sqlFiles).toBe(onDisk.length);
+
+    // MEASURED FLOORS, taken from this commit (175 tables, 157 columns, 250
+    // indexes, 144 constraints, 12 views). They are floors, not targets: adding
+    // migrations only raises them, and a floor left behind by growth is stale
+    // rather than wrong. The previous values -- 30 / 20 / 20 / 0 -- were an
+    // order of magnitude below the real counts, so the expected set could have
+    // lost five sixths of itself and still passed this test.
+    //
+    // LOWERING ONE IS NOT A WAY TO MAKE A RED RUN GREEN. A migration that
+    // genuinely removes objects has to move the floor in the same change, with
+    // the reason written down, exactly as safetyCriticalSuites.json requires of
+    // its own minimums.
+    expect(checked.tables).toBeGreaterThanOrEqual(170);
+    expect(checked.columns).toBeGreaterThanOrEqual(150);
+    expect(checked.indexes).toBeGreaterThanOrEqual(240);
+    expect(checked.constraints).toBeGreaterThanOrEqual(140);
     // Views were unchecked until the research-triage migration exposed it. A
     // zero here would mean the parser stopped recognising `create view` and the
     // gate had quietly gone back to passing regardless.
-    expect(checked.views).toBeGreaterThan(0);
+    expect(checked.views).toBeGreaterThanOrEqual(12);
   });
 
   test('fails and names the object when a migration has not been applied', async () => {
@@ -295,6 +322,94 @@ describe('the pre-deploy schema verifier', () => {
         ),
       );
     }
+  });
+
+  test('a constraint dropped by a LATER migration is not expected, though its filename sorts FIRST', async () => {
+    // The case that made this suite red on 2026-08-28, and the one supersession
+    // alone could not answer. drill-library-v3 creates
+    // pilot_drill_library_discipline_check; drill-library-check-drop removes it
+    // and is LAST in the workflow's `all` list. Their filenames sort the other
+    // way round:
+    //
+    //   pilot_slice_postgres_drill_library_check_drop_migration.sql   <- DROP
+    //   pilot_slice_postgres_drill_library_v3_migration.sql           <- ADD
+    //
+    // Walked by filename the drop came first, hit nothing, and the add that
+    // followed put the constraint into the expected set -- so the gate demanded
+    // a constraint a correctly migrated database does not have, and every
+    // deploy after this migration would have been blocked by it. The verifier
+    // now walks the order apply-migrations.yml actually applies.
+    const rows = await client.query(
+      `select conname, contype from pg_constraint
+       where conrelid = 'pilot.drill_library'::regclass
+         and conname like 'pilot_drill_library_discipline%'`,
+    );
+    const names = rows.rows.map((row) => row.conname as string);
+
+    // The check is genuinely gone from the database, and the registry key the
+    // drop hands the column over to is genuinely there -- so this is a real
+    // migrated state, not an unmigrated one the gate is being asked to excuse.
+    expect(names).not.toContain('pilot_drill_library_discipline_check');
+    expect(names).toContain('pilot_drill_library_discipline_fk');
+
+    const { code, result } = await runVerifier();
+    expect(result.event).toBe('schema.verify.ok');
+    expect(code).toBe(0);
+  });
+
+  test('dropping the FK the check was retired in favour of still fails', async () => {
+    // The dangerous half, the same shape as the supersession pair above:
+    // teaching the verifier the apply order removes names from the expected
+    // set, and could have removed the replacement's name with them. The column
+    // is governed by exactly one authority now, and the gate has to notice when
+    // that authority is missing.
+    await client.query(
+      `alter table pilot.drill_library drop constraint pilot_drill_library_discipline_fk`,
+    );
+    try {
+      const { code, result } = await runVerifier();
+      expect(result.event).toBe('schema.verify.failed');
+      expect((result.missing as { constraints: string[] }).constraints)
+        .toContain('pilot_drill_library_discipline_fk');
+      expect(code).not.toBe(0);
+    } finally {
+      await client.query(
+        await fs.readFile(
+          path.join(INFRA_DIR, 'pilot_slice_postgres_drill_library_discipline_fk_migration.sql'),
+          'utf8',
+        ),
+      );
+    }
+  });
+
+  test('refuses out loud when a migration file is not in the workflow order', async () => {
+    // The failure that would be worse than the one this change fixes. If the
+    // order came back short, the verifier could carry on with a smaller
+    // expected set -- a pre-deploy gate that has stopped checking, reporting
+    // green. It refuses instead, and this is that refusal end to end: a real
+    // migration file on disk that the `all` list does not name.
+    const stray = path.join(
+      INFRA_DIR,
+      'pilot_slice_postgres_zzz_schema_verify_test_stray_migration.sql',
+    );
+    await fs.writeFile(stray, '-- temporary fixture; removed by the test that wrote it\n');
+    try {
+      const { code, result } = await runVerifier();
+      expect(result.event).toBe('schema.verify.failed');
+      expect(result.reason).toBe('MIGRATION_ORDER_UNREADABLE');
+      expect(String(result.detail)).toContain(
+        'pilot_slice_postgres_zzz_schema_verify_test_stray_migration.sql',
+      );
+      expect(code).not.toBe(0);
+    } finally {
+      await fs.rm(stray, { force: true });
+    }
+
+    // And the gate is working again once the tree is consistent, so the fixture
+    // cannot leave the rest of the suite verifying nothing.
+    const { code, result } = await runVerifier();
+    expect(result.event).toBe('schema.verify.ok');
+    expect(code).toBe(0);
   });
 
   test('fails when a constraint the code writes against is missing', async () => {
