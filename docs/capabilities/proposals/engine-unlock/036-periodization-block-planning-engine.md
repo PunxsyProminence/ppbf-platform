@@ -71,9 +71,18 @@ Read every `periodization_blocks` reference below as naming this table.
 - Every comparison / plan-vs-actual surface in sections (a)–(d). Nothing
   reads a block yet. No block carries an adherence state, because the
   execution/comparison row that would hold one does not exist.
-- Any surface that reads an objective. The rows exist; nothing displays,
-  summarizes or rolls them up, and no count of completed objectives is
-  presented as a judgment about an athlete.
+- ~~Any surface that reads an objective.~~ **Built.**
+  `/api/pilot/coach/development-block-objectives` and an objectives panel on
+  `/coach/development-blocks`: a coach attaches an objective per Full Spectrum
+  domain, reads them back in the coach's own words, and moves one through the
+  lifecycle. What is still NOT built is any roll-up — nothing counts how many
+  reached `completed`, expresses that count as a proportion, or presents
+  either as a judgment about a block or the athlete it names, and both the
+  route test and the page test assert the absence rather than trusting it.
+  The domain vocabulary is served by the route rather than copied into the
+  screen, so a screen can never offer a value the database would refuse; the
+  human labels are local and pinned to `FULL_SPECTRUM_DOMAINS` in both
+  directions.
 - ~~Any API route or UI.~~ **#767 shipped both** while this slice was in
   flight: `/api/pilot/coach/development-blocks` and
   `/coach/development-blocks`, plus `updateDevelopmentBlock`. That route had
@@ -87,10 +96,15 @@ Read every `periodization_blocks` reference below as naming this table.
   answered. `updateDevelopmentBlock` gained the write gate the other two
   mutators carry.
 - Any read surface for an **athlete or a guardian**. The data layer serves
-  them; the only route that exists serves staff. That is the right order —
-  the boundary is enforced before anything is built on it.
-- The optional competition/event target (Open Question 2), still open and
-  still unbuilt.
+  them; every route that exists serves staff, objectives included. That is the
+  right order — the boundary is enforced before anything is built on it — and
+  the slice that changes it owes its own safeguarding decisions first: what a
+  minor sees of a coach's raw words, and whether a body-composition objective
+  about them is part of it.
+- ~~The optional competition/event target (Open Question 2), still open and
+  still unbuilt.~~ **Answered (a) and built by #771**, as a name and a date
+  only: naming a target derives no taper, no peak, no volume curve and no
+  weight plan, and nothing reads it back as a training input.
 
 Nothing about the unlock gates in this document is satisfied by the table
 existing. Layer 0 is now structurally possible, not met.
