@@ -386,6 +386,46 @@ describe('a deleted athlete is unreachable through the guardian path', () => {
       await expect(guardianAthleteIds(ORG_ID, GUARDIAN_ACCOUNT)).resolves.toEqual([LIVE_ATHLETE]);
     });
   });
+
+  // The guardian's child list does not go through guardianAccess. It is on
+  // that consolidation sweep's reasoned allowlist -- "projects full athlete
+  // rows through the link in one statement" -- and the reason given there is
+  // organization scoping, which says nothing about deleted_at. So the two
+  // assertions above prove nothing about this route, and it is the one every
+  // parent surface builds its child list from.
+  //
+  // Reading the statement out of the route file rather than restating it here
+  // is the point: a copy in this file would keep passing while the route
+  // drifted. This executes what the route actually sends.
+  test('the athletes/list statement the route really sends drops the deleted athlete', async () => {
+    const routeSource = await fs.readFile(
+      path.resolve(__dirname, '../../../app/api/pilot/athletes/list/route.ts'),
+      'utf8',
+    );
+
+    // Odd indices are the inside of backtick literals. The SQL here carries
+    // no ${} interpolation -- $1/$2 are Postgres placeholders, plain text --
+    // so a split is enough, and exactly one literal may match.
+    const guardianStatements = routeSource
+      .split('`')
+      .filter((_, index) => index % 2 === 1)
+      .filter((literal) => literal.includes('pilot.guardian_links') && literal.includes('pilot.athletes'));
+
+    expect(guardianStatements).toHaveLength(1);
+
+    await withDatabase('sda_roster_route_sql', async () => {
+      const rows = await activeClient!.query<{ athlete_id: string }>(guardianStatements[0], [
+        ORG_ID,
+        GUARDIAN_ACCOUNT,
+      ]);
+      const listed = rows.rows.map((row) => row.athlete_id);
+
+      // Control: the guardian genuinely reaches a child through this
+      // statement, so the exclusion below cannot be "the join is broken".
+      expect(listed).toContain(LIVE_ATHLETE);
+      expect(listed).not.toContain(DELETED_ATHLETE);
+    });
+  });
 });
 
 describe('assertActorCanAccessAthlete, the chokepoint 92 files call', () => {

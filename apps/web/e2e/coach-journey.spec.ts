@@ -66,6 +66,73 @@ test.describe('Coach journey', () => {
     await expect(page.getByRole('heading', { name: 'Unable to verify access' })).toHaveCount(0);
   });
 
+  /* The hub's account of what the platform can do, in a real browser.
+     ----------------------------------------------------------------
+
+     The workspace used to tell a coach that live session tracking was not
+     built, that there was no scheduling feed, and that video upload was a
+     front-end placeholder -- while pilot.session_script_runs, the scheduler
+     and /api/pilot/video/* were all serving. The Jest suite pins the copy;
+     these two pin that the copy is driven by what the routes actually answer,
+     through hydration and the session gate, which is the layer that decides
+     whether a coach ever sees it. */
+  test('a session already in progress is on the coach hub, with the way back to it', async ({ page }) => {
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
+        // The route's real shape: { run } for the caller's own live delivery,
+        // with the elapsed count computed on the server.
+        '/api/pilot/session-scripts/runs': {
+          run: {
+            run_id: 'run-1',
+            script_id: 'scr-1',
+            script_version: 2,
+            delivered_by_account_id: 'acct-coach',
+            delivered_on: '2026-08-28',
+            athletes_present: 9,
+            run_state: 'in_progress',
+            started_at: '2026-08-28T22:00:00.000Z',
+            ended_at: null,
+            current_block_id: 'blk-2',
+            paused_at: null,
+            paused_seconds: 0,
+            elapsed_seconds: 1530,
+            is_paused: false,
+          },
+        },
+      },
+    });
+
+    // Twice on purpose, and both are checked: the KPI summary sentence and the
+    // Today's Session panel. A coach who reads either must not be told the
+    // opposite by the other.
+    await expect(page.getByText('Session in progress -- running 25m 30s.')).toBeVisible();
+    // 1530 server-side seconds, rendered as the panel's own elapsed field. Not
+    // a figure this page counted.
+    await expect(page.getByText('25m 30s', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Return to live delivery' }).first())
+      .toHaveAttribute('href', '/coach/session-scripts');
+
+    // The sentence that used to sit here regardless of the answer.
+    await expect(page.getByText(/Live session tracking is not built/i)).toHaveCount(0);
+  });
+
+  test('with nothing running, the hub says so -- and still does not deny the capability', async ({ page }) => {
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
+        // { run: null } is the route's success shape for an idle coach.
+        '/api/pilot/session-scripts/runs': { run: null },
+      },
+    });
+
+    await expect(page.getByText('No session in progress.', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Live session tracking is not built/i)).toHaveCount(0);
+    await expect(page.getByText(/There is no scheduling backend feed/i)).toHaveCount(0);
+  });
+
   test('reaches the decision loop and records a decision on a provisional recommendation', async ({ page }) => {
     const decided: Array<Record<string, unknown>> = [];
 
@@ -209,6 +276,68 @@ test.describe('Coach journey', () => {
     await expect(report.getByText(/Skipped/)).toBeVisible();
   });
 
+  /* A RED FLAG ABOUT A CHILD, ON WHATEVER SCREEN THE COACH IS ALREADY ON.
+     -------------------------------------------------------------------
+
+     /api/pilot/escalations is a pull surface by construction; its own header
+     records that this platform sends no email, ever. So an unacknowledged
+     high or critical escalation waited for a coach to choose to open the
+     escalation inbox. The count now rides the session bar, which is the one
+     component mounted on every route.
+
+     This is asserted in a real browser, on a route that has nothing to do
+     with safety, because that is the entire claim: not that the badge can
+     render, but that a coach cannot get through a session without passing it. */
+  test('an unacknowledged critical escalation follows the coach onto every surface', async ({ page }) => {
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/escalations': {
+          ok: true,
+          escalations: [
+            {
+              escalation_id: 'esc-1',
+              source_type: 'near_miss',
+              athlete_id: ROSA.athlete_id,
+              severity: 'critical',
+              reason: 'Headache reported after contact rounds, twice this week.',
+              status: 'open',
+              escalated_to_role: 'coach',
+              created_at: '2026-08-27T22:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+
+    // The drill library: about as far from a safety surface as a coach gets.
+    await page.goto('/coach/drills');
+
+    const badge = page.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveAttribute('href', '/admin/escalations');
+    await expect(page.getByText('Safety 1 critical')).toBeVisible();
+
+    /* A COUNT, AND NOTHING ABOUT THE CHILD. This bar is on every screen in
+       the building, including whichever one happens to be facing the room. */
+    await expect(page.getByText(ROSA.athlete_id)).toHaveCount(0);
+    await expect(page.getByText('Headache reported after contact rounds')).toHaveCount(0);
+  });
+
+  test('a coach with nothing flagged carries no safety chip at all', async ({ page }) => {
+    // Silence means none. A permanent "0 open" chip on every screen is how a
+    // person stops seeing this row.
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: { '/api/pilot/escalations': { ok: true, escalations: [] } },
+    });
+
+    await page.goto('/coach/drills');
+
+    await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+    await expect(page.getByText(/^Safety/)).toHaveCount(0);
+  });
+
   /* THE OPERATIONS HUB IS ADMINISTRATION NOW (owner decision, 2026-08-26).
 
      Both halves have to be one test. Narrowing the hub's gate and accidentally
@@ -289,6 +418,82 @@ test.describe('Coach journey', () => {
     }
   });
 
+  /* A coach's multi-week plan for one athlete, written in a real browser.
+     -----------------------------------------------------------------
+
+     The persistence foundation shipped with no route and no UI, and its own
+     header said so: which staff roles may author a block was left as an owner
+     decision. The API answers that with the platform's existing answer
+     (assertActorCanAccessAthlete) and this is the surface over it.
+
+     What this asserts beyond the unit suites: the page reaches a coach through
+     the real role gate, the picker is the access-contract one, and the plan
+     that comes back carries no score, no percentage and no progress bar --
+     which is the part a mocked render cannot see going wrong in CSS. */
+  test('a coach writes a development block, and it comes back as words rather than numbers', async ({ page }) => {
+    const written: Array<Record<string, unknown>> = [];
+    const stored: Array<Record<string, unknown>> = [];
+
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': (_url, route) => {
+          if (route.request().method() === 'POST') {
+            const body = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>;
+            written.push(body);
+            stored.push({
+              block_id: 'blk-1',
+              athlete_id: body.athlete_id,
+              title: body.title,
+              training_emphasis: body.training_emphasis,
+              starts_on: body.starts_on,
+              ends_on: body.ends_on,
+              status: body.status,
+              created_by_account_id: 'acct-coach',
+              created_at: '2026-08-28T00:00:00.000Z',
+              updated_at: '2026-08-28T00:00:00.000Z',
+            });
+            return { ok: true, block: stored[0] };
+          }
+          return { ok: true, blocks: stored };
+        },
+      },
+    });
+
+    await page.goto('/coach/development-blocks');
+
+    await expect(page.getByRole('heading', { level: 1, name: 'The Next Several Weeks' })).toBeVisible();
+
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+    await page.getByLabel('Title').fill('Winter technical block');
+    await page.getByLabel('Training emphasis').fill('Guard recovery off the jab.');
+    await page.getByLabel('Starts on').fill('2026-09-01');
+    await page.getByLabel('Ends on').fill('2026-10-13');
+    await page.getByRole('button', { name: 'Save block' }).click();
+
+    // Filed against the athlete the coach chose, attributed by the server.
+    await expect.poll(() => written).toHaveLength(1);
+    expect(written[0]).toMatchObject({
+      athlete_id: ROSA.athlete_id,
+      title: 'Winter technical block',
+      training_emphasis: 'Guard recovery off the jab.',
+    });
+    expect(written[0]).not.toHaveProperty('organization_id');
+    expect(written[0]).not.toHaveProperty('created_by_account_id');
+
+    // And read back from the server, in the coach's own words.
+    await expect(page.getByText('Guard recovery off the jab.')).toBeVisible();
+
+    /* NO INVENTED TRAINING SCIENCE ON THE PAGE. Each of these is named in the
+       build order as something this slice must not produce. */
+    await expect(page.locator('progress')).toHaveCount(0);
+    await expect(page.locator('[role="progressbar"]')).toHaveCount(0);
+    const body = (await page.locator('body').textContent()) ?? '';
+    expect(body).not.toMatch(/\d+%/);
+    expect(body).not.toMatch(/workload|ACWR|fatigue|taper|injury risk/i);
+  });
+
   test('a guardian who opens a coach route is sent to their own hub, not to a login form', async ({ page }) => {
     /* Signed in, just not to this surface. Sending them to /login is the
        defect requirePageRole and BoardRoleGate were both written to end: the
@@ -359,5 +564,46 @@ test.describe('Coach journey', () => {
 
     const shredded = rows.filter((row) => row.height > 96);
     expect(shredded, 'catalog rows whose title is wrapping down a squeezed column').toEqual([]);
+  });
+
+  /* The sparring log, opened by a coach rather than by the boxer.
+     -----------------------------------------------------------
+
+     /athlete/dashboard/sparring has admitted the coach role since it gained
+     its gate, and the observations route has accepted a coach submission for
+     an authorized athlete for just as long. The page could not do it: the
+     subject came from the session's athlete_id, a coach's session carries
+     none, and the submit button was disabled forever with nothing on screen
+     saying why. The jsdom suite pins the wiring; this pins that a coach in a
+     real browser, through the real role gate, actually gets the control. */
+  test('a coach opens the sparring log and is offered only their own athletes', async ({ page }) => {
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        // The access-contract read behind the picker. ROSA is this coach's;
+        // the gym's other athletes are deliberately not in this answer.
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        // The whole-gym roster read. If the picker is ever built on THIS
+        // instead, the extra name appears and this test says so.
+        '/api/pilot/athletes/list': {
+          ok: true,
+          items: [ROSA, { athlete_id: 'ath-not-mine', full_name: 'Not This Coach Athlete' }],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/athlete/dashboard/sparring');
+
+    const picker = page.getByLabel('Which athlete is this for');
+    await expect(picker).toBeVisible();
+    await expect(picker.locator('option')).toHaveText(['Choose an athlete', 'Rosa Delgado']);
+    await expect(page.getByText('Not This Coach Athlete')).toHaveCount(0);
+
+    // Nothing chosen yet, so there is nothing to file this against.
+    await expect(page.getByRole('button', { name: 'Log This Session' })).toBeDisabled();
+
+    await picker.selectOption(ROSA.athlete_id);
+    await expect(page.getByRole('button', { name: 'Log This Session' })).toBeEnabled();
   });
 });

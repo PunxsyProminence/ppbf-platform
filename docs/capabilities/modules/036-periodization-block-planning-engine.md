@@ -37,3 +37,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-28 | foundation slice | `pilot.athlete_development_blocks` shipped: the coach-authored plan record the engine-unlock proposal found missing. Parent planning object only — no objectives, no comparison surface, no API, no UI. Status stays **DRAFT** and Active stays **false**; a parent table is not a module. See the proposal's "Implementation status" section. |

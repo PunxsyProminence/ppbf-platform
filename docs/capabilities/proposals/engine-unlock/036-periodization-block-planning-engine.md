@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | PROPOSAL (owner approval requested) — no code changes made |
+| Status | PROPOSAL (owner approval requested) — **partially superseded by the foundation slice below** |
 | Module stub | `docs/capabilities/modules/036-periodization-block-planning-engine.md` |
 | Category | Physical Training System (`physicalTrainingSystem`) |
 | Prepared against | current `infra/azure/*.sql` schema, read-only |
@@ -15,13 +15,58 @@ not do.
 
 ---
 
+## Implementation status (added after the foundation slice shipped)
+
+This section records what is now true in the repository. Everything below it
+was written before any of it existed and is left standing as the reasoning
+that produced it, **which means the present tense elsewhere in this document
+is the present tense of the day it was written.** Where the two disagree,
+this section is current.
+
+**Built (foundation slice, this branch):** `pilot.athlete_development_blocks`
+— the coach-authored plan record the "Schema reality check" below says does
+not exist. One row per block: `organization_id`, `block_id`, `athlete_id`,
+`title`, `training_emphasis`, `starts_on`, `ends_on`, `status`
+(`draft`/`active`/`completed`/`cancelled`), `created_by_account_id`,
+`created_at`, `updated_at`. Composite FK into
+`pilot.athletes(organization_id, athlete_id)`, `ends_on >= starts_on`, a
+closed lifecycle vocabulary, non-blank title and emphasis. A thin
+organization-scoped data layer (`apps/web/src/server/pilot/athleteDevelopmentBlocks.ts`)
+creates, reads and re-states a block, and refuses a creator holding no active
+`pilot.organization_memberships` row in the block's organization.
+
+**The illustrative name in this document is not the shipped name.** Section
+(b) below writes `pilot.periodization_blocks`; the table is
+`pilot.athlete_development_blocks`, which is the owner's own vocabulary for
+the capability and avoids implying the platform models periodization science.
+Read every `periodization_blocks` reference below as naming this table.
+
+**NOT built, and not decided:**
+
+- Every comparison / plan-vs-actual surface in sections (a)–(d). Nothing
+  reads a block yet. No block carries an adherence state, because the
+  execution/comparison row that would hold one does not exist.
+- Full Spectrum block objectives (the child structure). The block is
+  deliberately the parent only; there is no per-domain column and there must
+  not be one.
+- Any API route or UI. Which staff roles may author a block is an **open
+  owner decision** — see Open Question 5, added below.
+- The optional competition/event target (Open Question 2), still open and
+  still unbuilt.
+
+Nothing about the unlock gates in this document is satisfied by the table
+existing. Layer 0 is now structurally possible, not met.
+
+---
+
 ## Schema reality check (read first)
 
 **The single largest finding of this review: no table in `infra/azure/*.sql`
 currently stores a coach-authored training plan — a block, mesocycle,
 macrocycle, or taper with a name, a date range, and a stated training intent.
-This does not exist today, anywhere in the schema, and this proposal does not
-create it.** What exists instead, and what is adjacent enough to be
+This did not exist anywhere in the schema when this review was written, and
+this proposal did not create it — the foundation slice recorded above
+subsequently did, as `pilot.athlete_development_blocks`.** What exists instead, and what is adjacent enough to be
 mistaken for it:
 
 - `pilot.session_scripts.phase` — a **nullable free-text** field on a
@@ -279,7 +324,11 @@ athlete or guardian, and never aggregated into a cohort comparison):
 
 ## (e) Open questions for the owner
 
-**1. Should the plan-recording table this module needs be built as its
+**1. [ANSWERED — (a), built.]** The foundation slice built option (a) as
+`pilot.athlete_development_blocks`, on the owner's direct instruction. The
+question as originally put:
+
+**Should the plan-recording table this module needs be built as its
 own new table (e.g. `periodization_blocks`), or does periodization belong
 inside an extension of the existing `intervention_protocols` /
 `intervention_executions` ledger instead of a parallel table?**
@@ -299,7 +348,13 @@ inside an extension of the existing `intervention_protocols` /
   inherits that field's lack of date range or cross-session linkage and
   would likely undercount or misgroup blocks.
 
-**2. Should a block be allowed to target a competition/event at all,
+**2. [STILL OPEN — nothing built.]** The foundation slice ships NO
+competition or event foreign key, deliberately: both competition surfaces are
+skeletal by prior owner decision, and choosing among (a)/(b)/(c) is the
+owner's. Nothing is foreclosed — under (a) this is a later additive nullable
+column with a composite FK, one migration wide. The question as put:
+
+**Should a block be allowed to target a competition/event at all,
 given both competition surfaces are deliberately skeletal by prior owner
 decision?**
 - (a) Yes — allow an optional FK to `external_competitions.competition_id`
@@ -344,3 +399,30 @@ phase names?**
   ("block structures... are NOT derivable from this platform's data and
   must not be invented"), included here only so the owner can see it named
   and declined, not silently omitted.
+
+**5. [NEW, raised by the foundation slice.] Which staff roles may create and
+modify an athlete development block?**
+
+The foundation slice does not answer this and does not need to: it ships no
+API route and no UI, so no role gate had to be invented to land the schema.
+What it does enforce is the floor every write path in this codebase already
+stands on — the creator must hold an ACTIVE `pilot.organization_memberships`
+row in the block's organization, checked against the membership table rather
+than `pilot.accounts.organization_id`, so a coach whose home gym is elsewhere
+but who holds an active membership here is correctly allowed and a
+deactivated one is correctly refused.
+
+That floor is not a permission model. `pilot.organization_memberships.role`
+admits `platform_owner`, `organization_admin`, `admin`, `coach`, `athlete`,
+`parent`, `volunteer`, `staff`, and this document should not decide which of
+them may author a coach's training plan.
+- (a) `coach`, `organization_admin` and `admin`, matching the write posture
+  of the nearest analogous coach-authored records.
+- (b) `coach` only — a development block is a coaching artifact, and an
+  administrator who needs one asks a coach.
+- (c) Something narrower still, e.g. only the athlete's assigned coach
+  (`pilot.athletes.coach_id`) plus organization admins.
+
+Whichever is chosen, `athlete`, `parent` and `volunteer` are not write roles
+here, and read access for an athlete or their guardian is a separate
+safeguarding question this slice does not open.

@@ -107,12 +107,21 @@ An organization admin can request immediate deletion of a guardian's account or 
 
 ### Method 3: Automatic Cascade on Parent Deletion
 
-When a guardian is deleted, all their linked athlete records are automatically soft-deleted.
+When a guardian is deleted, their linked athlete records are automatically soft-deleted
+**where that guardian was the last one holding them**. A child who still has another
+guardian in the organization is not withdrawn by a different adult's account deletion --
+withdrawing that child stays a separate, explicit action (see *Athlete Withdraws* below).
+
+"Another guardian" is counted by account, so a single adult holding two guardian records
+for the same child is still that child's only guardian, and a co-guardian whose own account
+has already been deleted does not count as remaining. A guardian recorded without a login
+does count -- such a record cannot be deleted, so the child is retained rather than
+withdrawn, which is the recoverable direction.
 
 **Cascade:**
 ```
 Parent account deleted
-  → All linked athlete records marked deleted
+  → Linked athlete records with no remaining guardian marked deleted
     → All athlete photos marked deleted
     → All athlete videos marked deleted
     → All training notes marked deleted
@@ -127,7 +136,7 @@ Parent account deleted
 1. Parent contacts the organization (email, phone, or in-app request)
 2. Organization admin verifies the request (identity confirmation)
 3. Admin uses the deletion console to initiate: "Delete parent account ID: parent-123"
-4. System soft-deletes the account and all linked athlete records
+4. System soft-deletes the account, and any linked athlete record left with no other guardian
 5. Background process hard-deletes after 1-year retention window
 
 ### Athlete Withdraws

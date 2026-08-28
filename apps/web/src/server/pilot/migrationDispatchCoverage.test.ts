@@ -147,5 +147,29 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // origin, the reporter, the correction column and the 'corrected' verdict
     // -- against the table film-study-proposals creates.
     expect(at('film-study-coach-reported')).toBeGreaterThan(at('film-study-proposals'));
+    // session-scripts-discipline-fk points pilot.session_scripts at
+    // pilot.disciplines. It needs BOTH: multidiscipline creates the registry it
+    // references, session-scripts creates the table it constrains. Applied
+    // before either, a rebuild dies on ALTER against a missing table -- and
+    // this is the ordering a fresh environment depends on, because
+    // multidiscipline sits at 62 while the table it constrains was created at
+    // 63 and the drill library it does NOT constrain at 49.
+    for (const prerequisite of ['multidiscipline', 'session-scripts']) {
+      expect(at('session-scripts-discipline-fk')).toBeGreaterThan(at(prerequisite));
+    }
+    // drill-library-discipline-fk is the same shape and the ordering is LESS
+    // obvious, which is exactly why it is asserted: drill-library-v3 creates
+    // the table at 49, and the registry it must now reference is not created
+    // until 62. Anyone grouping this migration next to the table it constrains
+    // would place it thirteen entries too early, and a rebuild would die on
+    // ALTER against a pilot.disciplines that does not exist yet.
+    for (const prerequisite of ['multidiscipline', 'drill-library-v3']) {
+      expect(at('drill-library-discipline-fk')).toBeGreaterThan(at(prerequisite));
+    }
+    // cohort-definitions-discipline-fk completes the set. competence-cohorts
+    // creates the table it constrains; multidiscipline creates the registry.
+    for (const prerequisite of ['multidiscipline', 'competence-cohorts']) {
+      expect(at('cohort-definitions-discipline-fk')).toBeGreaterThan(at(prerequisite));
+    }
   });
 });
