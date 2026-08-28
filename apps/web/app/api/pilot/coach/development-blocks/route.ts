@@ -1,11 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import {
-  assertActorCanAccessAthlete,
-  athleteIdsForCoach,
-  isOrganizationAdminRole,
-  requireRole,
-} from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import {
   createDevelopmentBlock,
   getDevelopmentBlock,
@@ -16,7 +11,6 @@ import {
   type DevelopmentBlockStatus,
   DEVELOPMENT_BLOCK_STATUSES,
 } from '@/src/server/pilot/athleteDevelopmentBlocks';
-import type { PilotRole } from '@/src/server/pilot/contracts';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -63,27 +57,6 @@ function trimmedString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/**
- * A coach's blocks across every athlete they may reach, for the landing view.
- *
- * Filtered by the access contract rather than read per-athlete: the ids come
- * from athleteIdsForCoach, and a block whose athlete is not in that set never
- * enters the response. An organization admin reads the organization's blocks,
- * which is what listDevelopmentBlocks already returns.
- */
-async function blocksInScope(
-  organizationId: string,
-  role: PilotRole,
-  accountId: string,
-) {
-  const all = await listDevelopmentBlocks(organizationId);
-  if (isOrganizationAdminRole(role)) {
-    return all;
-  }
-  const reachable = new Set(await athleteIdsForCoach(organizationId, accountId));
-  return all.filter((block) => reachable.has(block.athlete_id));
-}
-
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -94,16 +67,25 @@ export async function GET(request: NextRequest) {
     if (athleteId) {
       // The gate, before the read. A caller who may not reach this athlete
       // learns nothing about whether they have blocks -- or exist.
+      /* Kept even though listDevelopmentBlocksForAthlete now makes the same
+         check itself. The two answers differ on purpose: the module returns
+         [] because a data-layer read must not disclose that a block exists
+         for someone else's athlete, while this route owes an authorized
+         coach a 403 rather than an empty list that reads as "this athlete
+         has no plan". Belt and braces, with the braces load-bearing. */
       await assertActorCanAccessAthlete(principal, athleteId);
-      const blocks = await listDevelopmentBlocksForAthlete(principal.organizationId, athleteId);
+      const blocks = await listDevelopmentBlocksForAthlete(principal, athleteId);
       return NextResponse.json({ ok: true, blocks }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const blocks = await blocksInScope(
-      principal.organizationId,
-      principal.role,
-      principal.accountId,
-    );
+    /* The landing view's scope is the data layer's, not a second copy of it.
+       This route used to hand listDevelopmentBlocks an organization id and
+       then re-derive a coach's reach with athleteIdsForCoach, because the
+       module read the whole gym and the filtering had to happen somewhere.
+       listDevelopmentBlocks now takes the actor and filters through
+       accessibleAthleteIds -- assertActorCanAccessAthlete's batched
+       counterpart -- so the re-derivation is gone rather than duplicated. */
+    const blocks = await listDevelopmentBlocks(principal);
     return NextResponse.json({ ok: true, blocks }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return jsonError(error);
@@ -133,9 +115,8 @@ export async function POST(request: NextRequest) {
     }
 
     const block = await createDevelopmentBlock({
-      organizationId: principal.organizationId,
+      actor: principal,
       athleteId,
-      createdByAccountId: principal.accountId,
       title: trimmedString(body.title) ?? '',
       trainingEmphasis: trimmedString(body.training_emphasis) ?? '',
       startsOn: trimmedString(body.starts_on) ?? '',
@@ -175,7 +156,7 @@ export async function PATCH(request: NextRequest) {
        the caller can reach while writing to a block about one they cannot.
        updateDevelopmentBlock does not accept an athlete_id at all, which is
        the other half of the same guard. */
-    const existing = await getDevelopmentBlock(principal.organizationId, blockId);
+    const existing = await getDevelopmentBlock(principal, blockId);
     if (!existing) {
       // Also the answer for a block in another organization: a caller must
       // not be able to tell those two apart.
@@ -198,7 +179,7 @@ export async function PATCH(request: NextRequest) {
       ...(status ? { status: status as DevelopmentBlockStatus } : {}),
     };
 
-    const block = await updateDevelopmentBlock(principal.organizationId, blockId, patch);
+    const block = await updateDevelopmentBlock(principal, blockId, patch);
     if (!block) {
       return NextResponse.json({ error: 'Development block not found.' }, { status: 404 });
     }

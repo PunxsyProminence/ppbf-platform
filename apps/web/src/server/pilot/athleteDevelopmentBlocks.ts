@@ -400,8 +400,17 @@ export async function setDevelopmentBlockStatus(
  * that produces a block ending before it begins, and a patch-only check
  * cannot see it.
  *
- * Returns null for a block in another organization -- or one that does not
- * exist -- so this cannot be used to probe for either.
+ * Returns null for a block in another organization, one about an athlete this
+ * actor cannot reach, or one that does not exist -- so this cannot be used to
+ * probe for any of the three.
+ *
+ * CORRECTING A PLAN IS AUTHORING IT, so this carries the same
+ * DEVELOPMENT_BLOCK_WRITE_ROLES gate the create path and the status setter
+ * carry. This function arrived from #767 while reads were still
+ * organization-scoped, when the route above it was the only thing standing
+ * between an athlete and their own block's title; now that an athlete and a
+ * guardian can READ a block, the gate belongs here, next to the other two,
+ * rather than in the one route that happens to exist today.
  */
 export interface DevelopmentBlockPatch {
   title?: string;
@@ -412,11 +421,18 @@ export interface DevelopmentBlockPatch {
 }
 
 export async function updateDevelopmentBlock(
-  organizationId: string,
+  actor: ActorIdentity,
   blockId: string,
   patch: DevelopmentBlockPatch,
 ): Promise<AthleteDevelopmentBlockRow | null> {
-  const existing = await getDevelopmentBlock(organizationId, blockId);
+  if (!(await hasBlockWriteMembership(actor.accountId, actor.organizationId))) {
+    throw new ForbiddenError(
+      'This account may not modify development blocks in this organization.',
+      'DEVELOPMENT_BLOCK_WRITER_NOT_PERMITTED',
+    );
+  }
+
+  const existing = await getDevelopmentBlock(actor, blockId);
   if (!existing) return null;
 
   const merged: DevelopmentBlockInput = {
@@ -444,7 +460,7 @@ export async function updateDevelopmentBlock(
      where organization_id = $1 and block_id = $2
      returning ${FIELDS}`,
     [
-      organizationId,
+      actor.organizationId,
       blockId,
       merged.title.trim(),
       merged.trainingEmphasis.trim(),

@@ -1277,13 +1277,12 @@ describe('athlete development blocks runner readiness assertion', () => {
 describe('the module correcting a block (real database)', () => {
   async function seed(client: Client) {
     const created = await createDevelopmentBlock({
-      organizationId: ORG_ID,
+      actor: COACH,
       athleteId: ATHLETE_ID,
       title: 'Fall strength block',
       trainingEmphasis: EMPHASIS,
       startsOn: '2026-09-02',
       endsOn: '2026-10-14',
-      createdByAccountId: COACH_ID,
     });
     if (!created) throw new Error('test bug: seed block was not created');
     void client;
@@ -1295,7 +1294,7 @@ describe('the module correcting a block (real database)', () => {
     try {
       const created = await seed(client);
 
-      const updated = await updateDevelopmentBlock(ORG_ID, created.block_id, {
+      const updated = await updateDevelopmentBlock(COACH, created.block_id, {
         endsOn: '2026-11-04',
       });
 
@@ -1319,11 +1318,11 @@ describe('the module correcting a block (real database)', () => {
     try {
       const created = await seed(client);
 
-      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { startsOn: '2026-12-01' }))
+      await expect(updateDevelopmentBlock(COACH, created.block_id, { startsOn: '2026-12-01' }))
         .rejects.toBeInstanceOf(ValidationError);
 
       // And the stored row is untouched.
-      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      const after = await getDevelopmentBlock(COACH, created.block_id);
       expect(after).toMatchObject({ starts_on: '2026-09-02', ends_on: '2026-10-14' });
     } finally {
       await client.end();
@@ -1335,12 +1334,12 @@ describe('the module correcting a block (real database)', () => {
     try {
       const created = await seed(client);
 
-      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { trainingEmphasis: '   ' }))
+      await expect(updateDevelopmentBlock(COACH, created.block_id, { trainingEmphasis: '   ' }))
         .rejects.toBeInstanceOf(ValidationError);
-      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { title: '\t\n' }))
+      await expect(updateDevelopmentBlock(COACH, created.block_id, { title: '\t\n' }))
         .rejects.toBeInstanceOf(ValidationError);
 
-      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      const after = await getDevelopmentBlock(COACH, created.block_id);
       expect(after?.training_emphasis).toBe(EMPHASIS);
       expect(after?.title).toBe('Fall strength block');
     } finally {
@@ -1356,7 +1355,7 @@ describe('the module correcting a block (real database)', () => {
     try {
       const created = await seed(client);
 
-      await updateDevelopmentBlock(ORG_ID, created.block_id, {
+      await updateDevelopmentBlock(COACH, created.block_id, {
         title: 'Renamed',
         trainingEmphasis: 'Different emphasis entirely.',
         startsOn: '2026-09-10',
@@ -1364,7 +1363,7 @@ describe('the module correcting a block (real database)', () => {
         status: 'active',
       });
 
-      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      const after = await getDevelopmentBlock(COACH, created.block_id);
       expect(after).toMatchObject({
         created_by_account_id: COACH_ID,
         athlete_id: ATHLETE_ID,
@@ -1386,10 +1385,10 @@ describe('the module correcting a block (real database)', () => {
     try {
       const created = await seed(client);
 
-      expect(await updateDevelopmentBlock(OTHER_ORG_ID, created.block_id, { title: 'Reached across' }))
+      expect(await updateDevelopmentBlock(OTHER_ADMIN, created.block_id, { title: 'Reached across' }))
         .toBeNull();
 
-      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      const after = await getDevelopmentBlock(COACH, created.block_id);
       expect(after?.title).toBe('Fall strength block');
     } finally {
       await client.end();
@@ -1399,7 +1398,7 @@ describe('the module correcting a block (real database)', () => {
   test('a block id that does not exist is not found either -- the two are indistinguishable', async () => {
     const client = await migratedDatabase('adb_upd_missing');
     try {
-      expect(await updateDevelopmentBlock(ORG_ID, 'blk-never-existed', { title: 'T' })).toBeNull();
+      expect(await updateDevelopmentBlock(COACH, 'blk-never-existed', { title: 'T' })).toBeNull();
     } finally {
       await client.end();
     }
@@ -1410,7 +1409,7 @@ describe('the module correcting a block (real database)', () => {
     try {
       const created = await seed(client);
 
-      const updated = await updateDevelopmentBlock(ORG_ID, created.block_id, {});
+      const updated = await updateDevelopmentBlock(COACH, created.block_id, {});
 
       expect(updated).toMatchObject({
         title: 'Fall strength block',
@@ -1430,21 +1429,54 @@ describe('the module correcting a block (real database)', () => {
     const client = await migratedDatabase('adb_upd_no_auto');
     try {
       const created = await createDevelopmentBlock({
-        organizationId: ORG_ID,
+        actor: COACH,
         athleteId: ATHLETE_ID,
         title: 'Long finished',
         trainingEmphasis: EMPHASIS,
         startsOn: '2020-01-01',
         endsOn: '2020-02-01',
         status: 'active',
-        createdByAccountId: COACH_ID,
       });
 
-      const reread = await getDevelopmentBlock(ORG_ID, created!.block_id);
+      const reread = await getDevelopmentBlock(COACH, created!.block_id);
       expect(reread?.status).toBe('active');
 
-      const touched = await updateDevelopmentBlock(ORG_ID, created!.block_id, { title: 'Long finished, renamed' });
+      const touched = await updateDevelopmentBlock(COACH, created!.block_id, { title: 'Long finished, renamed' });
       expect(touched?.status).toBe('active');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('correcting a block is authoring it, so a reader cannot do it', async () => {
+    /* NEW WITH THE READ DECISION. When this function arrived, its only
+       caller was a route that had already refused everyone but a coach and
+       an admin, so an ungated module function was survivable. It is not
+       survivable now: an athlete and their guardian can READ a block, and an
+       ungated corrector would let them rewrite the coach's stated emphasis
+       -- the one field this whole table exists to preserve verbatim.
+
+       Each refusal is preceded by the read that proves the actor could see
+       the row, so a failure cannot be dismissed as "they never had access". */
+    const client = await migratedDatabase('adb_upd_write_gate');
+    try {
+      const created = await seed(client);
+
+      for (const actor of [ATHLETE, GUARDIAN]) {
+        expect((await getDevelopmentBlock(actor, created.block_id))?.block_id).toBe(created.block_id);
+        await expect(updateDevelopmentBlock(actor, created.block_id, { title: 'Mine now' }))
+          .rejects.toBeInstanceOf(ForbiddenError);
+      }
+
+      // A coach of this gym who is not this athlete's coach is a writer by
+      // role and still not for this block: null, not Forbidden, and not a
+      // write.
+      expect(await updateDevelopmentBlock(UNASSIGNED_COACH, created.block_id, { title: 'Not mine' }))
+        .toBeNull();
+
+      const after = await getDevelopmentBlock(COACH, created.block_id);
+      expect(after?.title).toBe('Fall strength block');
+      expect(after?.training_emphasis).toBe(EMPHASIS);
     } finally {
       await client.end();
     }

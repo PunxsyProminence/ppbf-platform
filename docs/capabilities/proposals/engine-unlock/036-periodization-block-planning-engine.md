@@ -74,10 +74,21 @@ Read every `periodization_blocks` reference below as naming this table.
 - Any surface that reads an objective. The rows exist; nothing displays,
   summarizes or rolls them up, and no count of completed objectives is
   presented as a judgment about an athlete.
-- Any API route or UI. Who may author a block and who may read one are both
-  **answered** now (Open Questions 5 and 7) and enforced in the data layer;
-  what does not exist is anything that calls it. The route that ships first
-  must pass a real `ActorIdentity` rather than reconstruct one.
+- ~~Any API route or UI.~~ **#767 shipped both** while this slice was in
+  flight: `/api/pilot/coach/development-blocks` and
+  `/coach/development-blocks`, plus `updateDevelopmentBlock`. That route had
+  already reached the same answer this slice's Open Question 7 reaches — it
+  gates every entry point on `assertActorCanAccessAthlete` and serves
+  `['coach','organization_admin','admin']`, the same set as
+  `DEVELOPMENT_BLOCK_WRITE_ROLES` — so the two agree rather than collide. What
+  changed on merge is where the rule lives: the route used to re-derive a
+  coach's reach with `athleteIdsForCoach` and filter the module's gym-wide
+  output; it now hands the principal down and returns what the data layer
+  answered. `updateDevelopmentBlock` gained the write gate the other two
+  mutators carry.
+- Any read surface for an **athlete or a guardian**. The data layer serves
+  them; the only route that exists serves staff. That is the right order —
+  the boundary is enforced before anything is built on it.
 - The optional competition/event target (Open Question 2), still open and
   still unbuilt.
 
@@ -577,8 +588,9 @@ per-subject relationship that makes the role meaningful:
 | `parent` | their linked children | `pilot.guardian_links` → `pilot.parents`, org-scoped on both |
 | `platform_owner`, `board` | nothing here | refused unconditionally |
 
-Every read function in both modules now takes an `ActorIdentity` instead of
-an `organizationId` string. Organization scoping did not go away — it is
+Every read function in both modules — and, since the #767 merge,
+`updateDevelopmentBlock` too — now takes an `ActorIdentity` instead of an
+`organizationId` string. Organization scoping did not go away — it is
 still in the `where` clause of every statement, and the composite FK still
 makes a cross-gym row unrepresentable — the athlete check sits on top of it.
 The list reads use `accessibleAthleteIds`, the batched counterpart, so a
@@ -596,9 +608,11 @@ rather than a gym-wide read wearing a filter.
    for it. Reversing it is one line (`canActorReachAthlete` back to
    `assertAthleteBelongsToOrganization`) if the owner wants any gym coach to
    be able to author for any athlete.
-2. **Moving a block or an objective is authoring it.** The status setters
-   were organization-scoped and ungated, which was survivable only because
-   nothing could call them. Now that an athlete and a guardian can read their
+2. **Moving or correcting a block or an objective is authoring it.** The
+   status setters were organization-scoped and ungated, which was survivable
+   only because nothing could call them; `updateDevelopmentBlock`, which
+   arrived from #767 in the same state, was survivable only because its one
+   caller was a staff-only route. Now that an athlete and a guardian can read their
    own blocks, an ungated status mutator would let an athlete mark their own
    block `completed` — precisely the coach judgment this table refuses to
    compute. Both setters carry the Question 5 gate.
