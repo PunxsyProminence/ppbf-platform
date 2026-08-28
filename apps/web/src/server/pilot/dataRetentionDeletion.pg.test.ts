@@ -747,6 +747,216 @@ describe('the data retention migration applies and cascades', () => {
     expect(Number(counted.rows[0].count)).toBe(1);
   });
 
+  test('a cascade-withdrawn athlete loses the login an explicitly-withdrawn one loses', async () => {
+    // deleteAthleteRecord closes three doors when it withdraws an athlete:
+    // athletes.deleted_at, accounts.active_flag, and every live session token.
+    // Its own comment records why -- writing deleted_at alone left "a withdrawn
+    // athlete with a working login to their own record for the entire two-year
+    // retention window", because the self-access branch of
+    // assertActorCanAccessAthlete compares actor.athleteId to the requested id
+    // and reads no row at all.
+    //
+    // The cascade reaches the same end state -- an athlete withdrawn from the
+    // program -- through the trigger instead, and the trigger writes exactly one
+    // of the three. So the hole that path closed stayed open on this one, for
+    // the athletes nobody chose individually.
+    const CASCADE_ATHLETE_ID = 'ATH-RET-CASCADE-LOGIN';
+    const CASCADE_ACCOUNT_ID = 'acct-retention-cascade-athlete';
+    const CASCADE_GUARDIAN_ACCOUNT_ID = 'acct-retention-cascade-guardian';
+    const CASCADE_PARENT_ID = 'parent-retention-cascade';
+
+    await seedAthlete(CASCADE_ATHLETE_ID, ORG_ID);
+    // The minor's own login. auth.ts creates exactly this shape: role 'athlete'
+    // with athlete_id pointing at the record.
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id, active_flag)
+       values ($1, 'athlete', $2, 'ppbf_local', $3, true)`,
+      [CASCADE_ACCOUNT_ID, ORG_ID, CASCADE_ATHLETE_ID],
+    );
+    await client.query(
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id)
+       values ($1, $2, $3)`,
+      [`hash-${CASCADE_ATHLETE_ID}`, CASCADE_ACCOUNT_ID, ORG_ID],
+    );
+
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'parent', $2, 'microsoft')`,
+      [CASCADE_GUARDIAN_ACCOUNT_ID, ORG_ID],
+    );
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+       values ($1, $2, $3, 'Cascade Guardian')`,
+      [ORG_ID, CASCADE_PARENT_ID, CASCADE_GUARDIAN_ACCOUNT_ID],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, $2, $3, 'mother')`,
+      [ORG_ID, CASCADE_PARENT_ID, CASCADE_ATHLETE_ID],
+    );
+
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [
+      CASCADE_GUARDIAN_ACCOUNT_ID,
+    ]);
+
+    const athlete = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, CASCADE_ATHLETE_ID],
+    );
+    expect(athlete.rows[0].deleted_at).not.toBeNull();
+
+    const account = await client.query<{ active_flag: boolean; deleted_at: Date | null }>(
+      `select active_flag, deleted_at from pilot.accounts where account_id = $1`,
+      [CASCADE_ACCOUNT_ID],
+    );
+    expect(account.rows[0].active_flag).toBe(false);
+    expect(account.rows[0].deleted_at).not.toBeNull();
+
+    const sessions = await client.query<{ revoked_at: Date | null }>(
+      `select revoked_at from pilot.session_tokens where account_id = $1`,
+      [CASCADE_ACCOUNT_ID],
+    );
+    expect(sessions.rows).toHaveLength(1);
+    expect(sessions.rows[0].revoked_at).not.toBeNull();
+  });
+
+  test('an athlete the cascade left enrolled keeps their login', async () => {
+    // The mirror of the case above, and the one that makes it a real assertion
+    // rather than "deactivate every athlete account in reach". A co-guardianed
+    // child is NOT withdrawn when one guardian retires, so nothing about their
+    // own access may change either -- otherwise the narrowing PR #770 made to
+    // the row would be undone through the account.
+    const KEPT_ATHLETE_ID = 'ATH-RET-KEPT-LOGIN';
+    const KEPT_ACCOUNT_ID = 'acct-retention-kept-athlete';
+    const KEPT_RETIRING_ACCOUNT_ID = 'acct-retention-kept-retiring';
+    const KEPT_REMAINING_ACCOUNT_ID = 'acct-retention-kept-remaining';
+    const KEPT_RETIRING_PARENT_ID = 'parent-retention-kept-a';
+    const KEPT_REMAINING_PARENT_ID = 'parent-retention-kept-b';
+
+    await seedAthlete(KEPT_ATHLETE_ID, ORG_ID);
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id, active_flag)
+       values ($1, 'athlete', $2, 'ppbf_local', $3, true)`,
+      [KEPT_ACCOUNT_ID, ORG_ID, KEPT_ATHLETE_ID],
+    );
+    await client.query(
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id)
+       values ($1, $2, $3)`,
+      [`hash-${KEPT_ATHLETE_ID}`, KEPT_ACCOUNT_ID, ORG_ID],
+    );
+
+    for (const [accountId, parentId, name] of [
+      [KEPT_RETIRING_ACCOUNT_ID, KEPT_RETIRING_PARENT_ID, 'Kept Retiring Guardian'],
+      [KEPT_REMAINING_ACCOUNT_ID, KEPT_REMAINING_PARENT_ID, 'Kept Remaining Guardian'],
+    ] as const) {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, 'parent', $2, 'microsoft')`,
+        [accountId, ORG_ID],
+      );
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+         values ($1, $2, $3, $4)`,
+        [ORG_ID, parentId, accountId, name],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, $2, $3, 'parent')`,
+        [ORG_ID, parentId, KEPT_ATHLETE_ID],
+      );
+    }
+
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [
+      KEPT_RETIRING_ACCOUNT_ID,
+    ]);
+
+    const athlete = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, KEPT_ATHLETE_ID],
+    );
+    expect(athlete.rows[0].deleted_at).toBeNull();
+
+    const account = await client.query<{ active_flag: boolean; deleted_at: Date | null }>(
+      `select active_flag, deleted_at from pilot.accounts where account_id = $1`,
+      [KEPT_ACCOUNT_ID],
+    );
+    expect(account.rows[0].active_flag).toBe(true);
+    expect(account.rows[0].deleted_at).toBeNull();
+
+    const sessions = await client.query<{ revoked_at: Date | null }>(
+      `select revoked_at from pilot.session_tokens where account_id = $1`,
+      [KEPT_ACCOUNT_ID],
+    );
+    expect(sessions.rows[0].revoked_at).toBeNull();
+  });
+
+  test('the cascade does not reach an athlete account in another organization', async () => {
+    // pilot.accounts is keyed by account_id alone, so an athlete-account update
+    // written without an organization predicate would be free to cross gyms.
+    // Two organizations may hold athletes under the same athlete_id -- the
+    // uniqueness constraint is (organization_id, athlete_id), not athlete_id --
+    // which is exactly the collision that makes an unscoped update reach the
+    // wrong minor.
+    const SHARED_ATHLETE_ID = 'ATH-RET-CROSS-ORG';
+    const HOME_ACCOUNT_ID = 'acct-retention-cross-home';
+    const AWAY_ACCOUNT_ID = 'acct-retention-cross-away';
+    const CROSS_GUARDIAN_ACCOUNT_ID = 'acct-retention-cross-guardian';
+    const CROSS_PARENT_ID = 'parent-retention-cross';
+
+    await seedAthlete(SHARED_ATHLETE_ID, ORG_ID);
+    await seedAthlete(SHARED_ATHLETE_ID, OTHER_ORG_ID);
+
+    for (const [accountId, organizationId] of [
+      [HOME_ACCOUNT_ID, ORG_ID],
+      [AWAY_ACCOUNT_ID, OTHER_ORG_ID],
+    ] as const) {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id, active_flag)
+         values ($1, 'athlete', $2, 'ppbf_local', $3, true)`,
+        [accountId, organizationId, SHARED_ATHLETE_ID],
+      );
+    }
+
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'parent', $2, 'microsoft')`,
+      [CROSS_GUARDIAN_ACCOUNT_ID, ORG_ID],
+    );
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+       values ($1, $2, $3, 'Cross Org Guardian')`,
+      [ORG_ID, CROSS_PARENT_ID, CROSS_GUARDIAN_ACCOUNT_ID],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, $2, $3, 'mother')`,
+      [ORG_ID, CROSS_PARENT_ID, SHARED_ATHLETE_ID],
+    );
+
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [
+      CROSS_GUARDIAN_ACCOUNT_ID,
+    ]);
+
+    const home = await client.query<{ active_flag: boolean }>(
+      `select active_flag from pilot.accounts where account_id = $1`,
+      [HOME_ACCOUNT_ID],
+    );
+    expect(home.rows[0].active_flag).toBe(false);
+
+    const away = await client.query<{ active_flag: boolean; deleted_at: Date | null }>(
+      `select active_flag, deleted_at from pilot.accounts where account_id = $1`,
+      [AWAY_ACCOUNT_ID],
+    );
+    expect(away.rows[0].active_flag).toBe(true);
+    expect(away.rows[0].deleted_at).toBeNull();
+
+    const awayAthlete = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [OTHER_ORG_ID, SHARED_ATHLETE_ID],
+    );
+    expect(awayAthlete.rows[0].deleted_at).toBeNull();
+  });
+
   test('a second update to an already-deleted guardian does not re-cascade', async () => {
     // The trigger fires on every UPDATE of a parent row. Only the transition
     // from NULL to NOT NULL is a deletion; anything else must leave athletes
