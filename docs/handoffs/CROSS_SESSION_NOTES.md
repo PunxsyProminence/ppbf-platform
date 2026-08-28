@@ -21,31 +21,60 @@ not replace it.
 
 ---
 
-## 2026-08-28 18:31Z — release lane: the entry below is STALE, do not act on it
+## 2026-08-28 — release lane: production migration, and why it is safe to lead with
 
-**`athlete-check-in-measures` IS applied to staging.** The entry immediately
-below says the migration is "applied NOWHERE" and that the columns "do not
-exist in staging or production". That was true when it was written and was
-already false when it merged: `apply-migrations` run
-[33199537359](https://github.com/PunxsyProminence/ppbf-platform/actions/runs/33199537359)
-applied it to staging at 18:31Z, and #815 merged at 18:54Z. Verified from that
-run's own log, not inferred: `MIGRATION: all`, `TARGET: staging`, commit
-`98eb3ae1`, and `PILOT ATHLETE CHECK IN MEASURES MIGRATION PASS`.
+The entry below (#818) settles staging. This adds only what it does not cover.
 
-**Production: NOT applied.** Run
-[33201379330](https://github.com/PunxsyProminence/ppbf-platform/actions/runs/33201379330)
-(`target=production`, `migration=all`, commit `98eb3ae1`) is sitting at
-`waiting` on the `production` environment's required-reviewer rule. Until the
-owner approves it, the below entry's warning still holds **for production
-only** — do not deploy code carrying `98eb3ae1` there first.
+**Production migration is RUNNING, not merely dispatched.** `apply-migrations`
+run [33201379330](https://github.com/PunxsyProminence/ppbf-platform/actions/runs/33201379330)
+(`target=production`, `migration=all`, head `98eb3ae1`) sat at `waiting` on the
+`production` environment's required-reviewer rule and has since been approved
+and moved to `in_progress`. #818's "treat it as unapplied until someone reads
+the schema" was right when written; when this run reports success, the run's own
+`Record What Ran` block is that read. Until it does, production is unapplied.
 
-**Applying it to production ahead of the code deploy is safe, and that is the
-prescribed order** (`deploy-production.yml` header, step 1). Checked against
-the DDL rather than the migration's prose: all six columns are added `null`
-with no default, every constraint is `check (<col> is null or ...)` so NULL
-always passes, and there are no drops, no destructive alters and no
-`UPDATE`/`DELETE`. Production's current code (`cc07529c`) never writes these
-columns, so it cannot be broken by the columns existing.
+**Applying it to production AHEAD of the code deploy is safe, and is the
+prescribed order** (`deploy-production.yml` header, step 1). Checked against the
+DDL rather than the migration's prose, because the prose is the thing that would
+be wrong if anything were: all six columns are added `null` with no default,
+every constraint is written `check (<col> is null or ...)` so a NULL row always
+passes, and there are no drops, no destructive alters, and no `UPDATE`/`DELETE`.
+Production's currently deployed code (`cc07529c`) contains no write path to
+those columns, so their mere existence cannot break it. This is the general
+shape worth reusing: an additive migration is safe to lead with exactly when
+every new constraint admits the absent value.
+
+— release-control lane.
+
+## 2026-08-28 — training-content build lane (correcting the entry below, per this file's stale-note rule)
+
+**"Applied NOWHERE" is stale for staging.** It was true when written and stopped
+being true about a minute later. `athlete-check-in-measures` IS applied to
+staging:
+
+- run `33199537359`, 18:29Z, `MIGRATION: all` / `TARGET: staging`, head
+  `98eb3ae1` — the release lane's own `all` dispatch, which carried this
+  migration along with everything else. Succeeded.
+- run `33201656557`, 18:58Z, `MIGRATION: athlete-check-in-measures` /
+  `TARGET: staging`, head `ee5ca8a7` — this lane, re-applying at the owner's
+  direction before the overlap was noticed. Also succeeded; its Apply step took
+  **one second**, which is what convergence over an already-migrated database
+  looks like rather than a create.
+
+**Production is still believed unapplied, and that is an inference, not a read.**
+The most recent `all` against production this lane can point to is run
+`33089360578` (2026-08-27), which predates this migration. Nobody has queried
+production's schema. Treat it as unapplied until someone does.
+
+**Two things this accidentally proved, worth keeping.** The `all` chain ran
+against real staging Postgres and passed WITH the repaired
+`pilot-apply-athlete-check-ins-migration.mjs` readiness gate in it — the defect
+described below reproduced and fixed in the environment where it would actually
+have blocked a dispatch, which is stronger than the local embedded-Postgres
+evidence the fix originally shipped with. And idempotency here is now
+demonstrated rather than assumed.
+
+— training-content build lane.
 
 ---
 
