@@ -163,7 +163,13 @@ describe('active training hold visibility (#5)', () => {
     expect(screen.getByText('Rear foot stays flat through the cross.')).toBeTruthy();
   });
 
-  test('a failed hold fetch shows no banner rather than breaking the page', async () => {
+  // Renamed: this used to be called "shows no banner rather than breaking the
+  // page", which read as though silence on a failed read were the intent. It
+  // was not -- silence is what a child with NO hold looks like. What this
+  // test actually holds is the narrower thing its assertion says: a read that
+  // failed is not evidence of a hold and is never dressed as one. The banner
+  // such a read DOES owe the coach is pinned in the last describe of this file.
+  test('a failed hold fetch is never shown as an active hold, and does not break the page', async () => {
     const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/api/pilot/training-holds')) {
@@ -443,5 +449,133 @@ describe('the roster picker', () => {
     await waitFor(() => {
       expect(screen.queryByRole('option', { name: 'ath-0f3c9a21' })).toBeNull();
     });
+  });
+});
+
+// ON THIS PAGE THE ABSENCE OF A BANNER IS ITSELF A CLAIM.
+//
+// Every other unreadable state in this app has a sentence a coach can read.
+// This one did not: a hold read that failed wrote `hold: null`, `null` renders
+// nothing, and nothing is exactly what a child with no hold looks like. So the
+// failure mode was silent and it pointed the wrong way -- a coach who cannot
+// see the hold their own gym placed sends a child who is not cleared back into
+// contact work, which is the harm the hold read's own comment names.
+//
+// Three states now, not two: held, not held, and nobody could look.
+describe('a hold read nobody could complete is not the absence of a hold', () => {
+  async function selectAthlete(id: string) {
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: id } });
+    });
+  }
+
+  test('a refused hold read says the hold is UNKNOWN, and does not stand silent as a child with no hold does', async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/training-holds')) {
+        return { ok: false, json: async () => ({ error: 'Forbidden' }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+
+    await renderWithAthlete(fetchMock);
+
+    // The claim is made out loud, in the word that matters.
+    expect(await screen.findByText('Training hold: could not be read')).toBeTruthy();
+    expect(screen.getByText(/Whether this athlete is under a training hold is UNKNOWN/)).toBeTruthy();
+
+    // Note what the absence assertion has to be here: on this page the old
+    // false claim was not a sentence, it was SILENCE, so what is pinned is
+    // that the failure is no longer indistinguishable from a clean read --
+    // the test below holds the other half of that pair. What must still be
+    // absent is the overshoot: a read that failed is not evidence of a hold
+    // either, and must not be dressed as one.
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+
+    // And the page still works underneath it. This banner is context, not a
+    // gate; the repair must not cost the coach the board they came for.
+    expect(screen.getByText('Rear foot stays flat through the cross.')).toBeTruthy();
+  });
+
+  test('a hold read that throws is treated the same as one the server refused', async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/training-holds')) {
+        throw new Error('Network request failed');
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+
+    await renderWithAthlete(fetchMock);
+
+    expect(await screen.findByText('Training hold: could not be read')).toBeTruthy();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
+
+  test('an athlete the platform looked at and found no hold for gets no banner at all', async () => {
+    // The other half of the pair, and the one that gives the test above its
+    // meaning. Without it, a page that shouted UNKNOWN over every athlete on
+    // every load would pass -- and a banner a coach sees on every child is a
+    // banner a coach stops seeing, which puts them back where they started on
+    // the day it is true.
+    await renderWithAthlete(mockFetch({}, [GAP], []));
+
+    await screen.findByText('Rear foot stays flat through the cross.');
+    expect(screen.queryByText('Training hold: could not be read')).toBeNull();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
+
+  test('a hold read the coach superseded never lands as UNKNOWN on the athlete they came back to', async () => {
+    /* The abort is not a failure and must write nothing. The scenario is a
+       coach flicking between two children and returning to the first: read #1
+       for athlete-001 is superseded, athlete-002 answers, then the coach comes
+       back to athlete-001 whose read #2 is still in flight -- and only THEN
+       does the abandoned read #1 fail. Its athlete is selected again, so
+       nothing downstream would filter it: if a superseded read were allowed to
+       write, UNKNOWN would appear over a child whose real answer nobody has
+       yet, from a request that was cancelled. */
+    const holdReads: Record<string, number> = {};
+    let failSupersededRead: () => void = () => {};
+    const supersededRead = new Promise<Response>((resolve) => {
+      failSupersededRead = () => resolve({ ok: false, json: async () => ({ error: 'Forbidden' }) } as Response);
+    });
+
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/training-holds')) {
+        if (url.includes('athlete_id=athlete-001')) {
+          holdReads['athlete-001'] = (holdReads['athlete-001'] ?? 0) + 1;
+          // The first read is the one the coach abandons. The second is the
+          // live one, and it deliberately never answers within this test --
+          // so anything on screen about a hold came from the abandoned read.
+          return holdReads['athlete-001'] === 1 ? supersededRead : new Promise<Response>(() => {});
+        }
+        return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    await selectAthlete('athlete-001');
+    await selectAthlete('athlete-002');
+    await selectAthlete('athlete-001');
+
+    await act(async () => {
+      failSupersededRead();
+    });
+
+    expect(screen.queryByText('Training hold: could not be read')).toBeNull();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
   });
 });
