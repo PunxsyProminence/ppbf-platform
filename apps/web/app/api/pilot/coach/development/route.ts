@@ -112,6 +112,24 @@ function parseStatus(value: unknown): CoachDevelopmentGoalStatus | undefined {
   return value as CoachDevelopmentGoalStatus;
 }
 
+/**
+ * A goal id, null when deliberately absent, or a refusal.
+ *
+ * null and undefined both mean "not toward a particular goal" -- an activity
+ * without one is ordinary. Anything else that is not a string is a client
+ * bug, and answering it with a silent null hides the bug inside a 201.
+ */
+function parseOptionalGoalId(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new ValidationError(
+      'goal_id must be a string, or omitted for an activity not toward a particular goal.',
+      'COACH_DEVELOPMENT_ACTIVITY_INVALID',
+    );
+  }
+  return value.trim() ? value.trim() : null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -172,7 +190,13 @@ export async function POST(request: NextRequest) {
       occurredOn: optionalString(body.occurred_on) ?? '',
       durationMinutes: parseDurationMinutes(body.duration_minutes),
       notes: optionalString(body.notes),
-      goalId: optionalString(body.goal_id) ?? null,
+      /* A non-string goal_id is REFUSED, not dropped. optionalString mapped
+         42 or {} to undefined and then to null, so an activity a client meant
+         to attach came back 201 with goal_id null -- indistinguishable in the
+         response from "not toward a particular goal". body.status two fields
+         up refuses an unrecognised value for exactly this reason: so it
+         cannot quietly become the default. */
+      goalId: parseOptionalGoalId(body.goal_id),
     });
 
     if (!activity) {
@@ -218,8 +242,24 @@ export async function PATCH(request: NextRequest) {
       patch.developmentFocus = optionalString(body.development_focus) ?? '';
     }
     if (body.target_on !== undefined) {
+      /* '' CLEARS THE DATE. WHITESPACE IS A MISTAKE, NOT A CLEARING.
+         This read `target?.trim() ? target : null`, which mapped '   ' to
+         null and erased a date the coach had set, with a 200 and no message
+         -- while POST refused the identical value with a 400. The same input
+         meant two different things depending on which verb carried it, and
+         the destructive reading was the silent one. A trailing space from a
+         mobile keyboard was enough. */
       const target = optionalString(body.target_on);
-      patch.targetOn = target?.trim() ? target : null;
+      if (target !== undefined && target !== '' && !target.trim()) {
+        // Refused HERE rather than left to the module, so the route's own
+        // parsing holds the rule its sibling fields hold, and the caller gets
+        // the same 400 POST gives for the same value.
+        throw new ValidationError(
+          'target_on must be a calendar date written as YYYY-MM-DD, or empty to clear it.',
+          'COACH_DEVELOPMENT_GOAL_INVALID',
+        );
+      }
+      patch.targetOn = target === undefined || target === '' ? null : target;
     }
     if (body.status !== undefined) patch.status = parseStatus(body.status);
 

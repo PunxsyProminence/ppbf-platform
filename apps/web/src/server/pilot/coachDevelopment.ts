@@ -2,7 +2,18 @@ import { randomUUID } from 'node:crypto';
 
 import { gymDayIso } from '../../lib/gymTime';
 import { query, queryOne } from './db';
+import { STAFF_CREDENTIAL_ROLES } from './clearanceRegister';
 import { ForbiddenError, ValidationError } from './errors';
+
+/**
+ * Who may record their OWN development, on the membership row for the
+ * organization being written to.
+ *
+ * The same set the routes gate on, named once here so the data layer and the
+ * HTTP layer cannot drift apart -- and so the floor is enforced where the
+ * write happens rather than only at the door.
+ */
+export const COACH_DEVELOPMENT_WRITE_ROLES = STAFF_CREDENTIAL_ROLES;
 
 // Coach self-development: a coach's own development goals, and the
 // development work they actually did.
@@ -103,19 +114,44 @@ function isCalendarDate(value: string): boolean {
  * question and would refuse every visiting coach. It is left alone because
  * its own callers depend on the check it actually makes.
  *
- * athleteDevelopmentBlocks.ts holds a private copy of this query. The two
- * are deliberately not merged yet: that file is inside an open PR stack
- * (#767/#771) that another lane's #762 also extends, and hoisting a shared
- * helper out of it mid-stack would collide in a file three branches are
- * already editing. When that stack lands, one of these should move to
- * access.ts and the other should be deleted.
+ * THE ROLE ON THE MEMBERSHIP ROW IS PART OF THE QUESTION, and leaving it out
+ * was a real hole rather than a simplification. This function shipped
+ * checking only active_flag, which is precisely the floor
+ * athleteDevelopmentBlocks.ts records having raised for the same reason:
+ * "an ACTIVE membership of ANY role satisfied it, and
+ * pilot.organization_memberships.role admits 'athlete', 'parent' and
+ * 'volunteer'."
+ *
+ * The route was no backstop. resolvePrincipal selects a.role from
+ * pilot.accounts -- the account's HOME role -- while resolving the
+ * organization as coalesce(st.organization_id, a.organization_id), so the
+ * role and the organization come from different rows. An account whose home
+ * role is 'coach' but whose membership in the SESSION's organization carries
+ * 'parent' or 'athlete' passed requireRole (which read the home role) and
+ * passed this check (which read no role at all), and could write
+ * coach-development rows in a gym where it is a parent. That is exactly the
+ * multi-organization case this table's schema was built for, so the gap
+ * widened rather than narrowed as visiting sessions became reachable.
+ *
+ * NOT SHARED WITH hasBlockWriteMembership, deliberately, and the reason is
+ * the argument rather than the query: that helper admits
+ * DEVELOPMENT_BLOCK_WRITE_ROLES (coach, organization_admin, admin) because
+ * authoring a plan for a CHILD is a coaching act. Recording your own
+ * development is not -- staff and volunteers hold credentials and do courses
+ * too -- so this one takes the caller's role set instead of naming one, and
+ * the routes pass the same set they gate on.
  */
-async function hasActiveMembership(accountId: string, organizationId: string): Promise<boolean> {
+async function hasActiveMembership(
+  accountId: string,
+  organizationId: string,
+  allowedRoles: readonly string[],
+): Promise<boolean> {
   const membership = await queryOne<{ account_id: string }>(
     `select om.account_id
      from pilot.organization_memberships om
-     where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true`,
-    [accountId, organizationId],
+     where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true
+       and om.role = any($3::text[])`,
+    [accountId, organizationId, [...allowedRoles]],
   );
   return membership !== null;
 }
@@ -191,10 +227,15 @@ export function coachDevelopmentActivityShapeError(input: CoachDevelopmentActivi
   }
   const minutes = input.durationMinutes;
   if (minutes != null) {
-    if (!Number.isInteger(minutes) || minutes <= 0) {
+    /* An upper bound as well as a lower one. The column is int4, so a value
+       past 2147483647 reached Postgres, raised 22003, and came back to the
+       coach as "Internal server error" -- the one message this module takes
+       care never to give. 1440 is a day: anything longer is a typo, and a
+       multi-day course is several entries or a note. */
+    if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 1440) {
       // Zero is not a duration and a negative one is a typo. Null stays the
       // honest "not recorded" and is handled by the branch above.
-      return 'duration_minutes must be a whole number of minutes greater than zero, or omitted.';
+      return 'duration_minutes must be a whole number of minutes between 1 and 1440, or omitted.';
     }
   }
   return null;
@@ -223,7 +264,9 @@ export async function createCoachDevelopmentGoal(input: CoachDevelopmentGoalInpu
     throw new ValidationError(shapeError, 'COACH_DEVELOPMENT_GOAL_INVALID');
   }
 
-  if (!(await hasActiveMembership(input.coachAccountId, input.organizationId))) {
+  if (!(await hasActiveMembership(
+    input.coachAccountId, input.organizationId, COACH_DEVELOPMENT_WRITE_ROLES,
+  ))) {
     throw new ForbiddenError(
       'This account holds no active membership in this organization.',
       'COACH_DEVELOPMENT_NOT_A_MEMBER',
@@ -377,7 +420,9 @@ export async function createCoachDevelopmentActivity(input: CoachDevelopmentActi
     throw new ValidationError(shapeError, 'COACH_DEVELOPMENT_ACTIVITY_INVALID');
   }
 
-  if (!(await hasActiveMembership(input.coachAccountId, input.organizationId))) {
+  if (!(await hasActiveMembership(
+    input.coachAccountId, input.organizationId, COACH_DEVELOPMENT_WRITE_ROLES,
+  ))) {
     throw new ForbiddenError(
       'This account holds no active membership in this organization.',
       'COACH_DEVELOPMENT_NOT_A_MEMBER',
