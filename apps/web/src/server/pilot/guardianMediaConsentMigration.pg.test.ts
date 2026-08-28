@@ -99,6 +99,7 @@ const SECOND_PARENT_ID = 'parent-consent-2';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let waiverRecordedBySql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let baseSchemaSql: string;
 
@@ -135,6 +136,17 @@ async function freshDatabase(name: string, options: { withSecondGuardian?: boole
   await client.connect();
   await client.query(baseSchemaSql);
   await client.query(migrationSql);
+  /* upsertWaiverWithClient now writes recorded_by_account_id, which the
+     waiver-recorded-by migration adds. Applied here rather than concatenated
+     onto baseSchemaSql so the "before the migration" test above keeps building
+     a genuine before-state from the base schema alone.
+
+     This is the failure fullSchemaFixture.pg.test.ts exists to warn about: a
+     suite that hand-picks its migrations breaks the moment shared code touches
+     a column it did not pick. It surfaced here as five consent tests failing
+     with `column "recorded_by_account_id" of relation "waivers" does not
+     exist` -- nothing to do with media consent. */
+  await client.query(waiverRecordedBySql);
 
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
@@ -236,6 +248,9 @@ beforeAll(async () => {
       path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8',
     );
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  waiverRecordedBySql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_waiver_recorded_by_migration.sql'), 'utf8',
+  );
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
