@@ -1,3 +1,4 @@
+import { type ActorIdentity } from './access';
 import { query, queryOne } from './db';
 import {
   updateDevelopmentBlock,
@@ -207,12 +208,19 @@ export async function listDevelopmentBlockTargetOptions(
  * intentions -- `{ kind: 'none' }` against an omitted field -- which is why
  * the input is a value rather than a nullable column.
  *
- * Returns null for a block in another organization, or one that does not
- * exist -- indistinguishable, so this cannot be used to probe for either.
- * Neither the athlete nor the creator is touched.
+ * Returns null for a block in another organization, one about an athlete this
+ * actor cannot reach, or one that does not exist -- indistinguishable, so this
+ * cannot be used to probe for any of them. Neither the athlete nor the creator
+ * is touched.
+ *
+ * Takes an actor rather than an organization id because updateDevelopmentBlock
+ * does: #762 moved the athlete-access gate out of the route and into the data
+ * layer, on the grounds that an athlete and a guardian can now read a block, so
+ * the gate belongs beside the row rather than in the one route that happens to
+ * exist. A target write is a write to that row and gets the same gate.
  */
 export async function setDevelopmentBlockTarget(
-  organizationId: string,
+  actor: ActorIdentity,
   blockId: string,
   target: DevelopmentBlockTargetInput,
 ): Promise<AthleteDevelopmentBlockRow | null> {
@@ -226,5 +234,5 @@ export async function setDevelopmentBlockTarget(
      AND belongs to this organization, so there is no pre-check here that
      could drift out of step with them. A bad id raises a foreign-key
      violation and the whole statement rolls back, fields included. */
-  return updateDevelopmentBlock(organizationId, blockId, { target });
+  return updateDevelopmentBlock(actor, blockId, { target });
 }

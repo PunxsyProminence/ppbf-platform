@@ -33,6 +33,23 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * coachAuthorizedRoster.pg.test.ts. Nothing here re-asserts them with mocks.
  * What is asserted here is that no path reaches a block without the gate, and
  * that the gate is applied to the athlete the STORED row names.
+ *
+ * WHAT MOVED, 2026-08-28. This route used to hand the module an
+ * organizationId string and then re-derive a coach's reach itself, filtering
+ * listDevelopmentBlocks' output through athleteIdsForCoach -- because the
+ * module read the whole gym and the narrowing had to happen somewhere. Reads
+ * are now athlete-scoped in the data layer (owner decision: "Admin, Coach,
+ * Athlete, Guardian"), so every function here takes the principal and the
+ * re-derivation is gone rather than duplicated.
+ *
+ * That changes what these mocked tests CAN prove, and the change is stated
+ * rather than papered over: with the module mocked, this file can no longer
+ * watch a block get filtered out, because nothing in this file filters any
+ * more. What it asserts instead is DELEGATION -- that the identity handed
+ * down is the session's and never the caller's, and that the route returns
+ * what the module answered without widening it. The filtering itself is
+ * proven against real rows in athleteDevelopmentBlocks.pg.test.ts, where an
+ * unassigned coach of the same gym reads an empty list.
  */
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -199,21 +216,30 @@ describe('reading blocks', () => {
     expect(mockListForAthlete).not.toHaveBeenCalled();
   });
 
-  test("the landing list is filtered to the coach's own athletes", async () => {
+  test('the landing list delegates its scope to the data layer, and does not re-derive one', async () => {
+    /* The route hands down the PRINCIPAL and returns what comes back. It no
+       longer calls athleteIdsForCoach: listDevelopmentBlocks filters through
+       accessibleAthleteIds, so a second copy of the rule here would be a
+       second thing to forget to update -- and, worse, a filter that could
+       silently disagree with the one the module applies.
+
+       The corresponding "an unassigned coach sees nothing" proof lives in
+       athleteDevelopmentBlocks.pg.test.ts against real rows. */
     mockRequirePrincipal.mockResolvedValue(principal());
-    mockListAll.mockResolvedValue([
-      block({ block_id: 'blk-1', athlete_id: 'ath-1' }),
-      block({ block_id: 'blk-2', athlete_id: 'ath-2' }),
-    ]);
-    mockCoachIds.mockResolvedValue(['ath-1']);
+    mockListAll.mockResolvedValue([block({ block_id: 'blk-1', athlete_id: 'ath-1' })]);
 
     const payload = await (await GET(getRequest())).json();
 
+    expect(mockListAll).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'acct-coach-a', organizationId: 'org-1', role: 'coach' }),
+    );
+    expect(mockCoachIds).not.toHaveBeenCalled();
     expect(payload.blocks.map((row: { block_id: string }) => row.block_id)).toEqual(['blk-1']);
-    expect(JSON.stringify(payload)).not.toContain('ath-2');
   });
 
-  test('an organization admin reads the organization, without the coach filter', async () => {
+  test('an organization admin is handed down as an admin, not flattened to a coach', async () => {
+    // The module decides what an admin reaches. What this route owes is an
+    // honest identity: the role travels with it, unaltered.
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
     mockListAll.mockResolvedValue([
       block({ block_id: 'blk-1', athlete_id: 'ath-1' }),
@@ -222,7 +248,12 @@ describe('reading blocks', () => {
 
     const payload = await (await GET(getRequest())).json();
 
+    expect(mockListAll).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'organization_admin', organizationId: 'org-1' }),
+    );
     expect(mockCoachIds).not.toHaveBeenCalled();
+    // Returned as given: the route does not narrow what the module allowed,
+    // any more than it widens it.
     expect(payload.blocks).toHaveLength(2);
   });
 
@@ -233,7 +264,12 @@ describe('reading blocks', () => {
 
     await GET(getRequest('?athlete_id=ath-1&organization_id=org-theirs'));
 
-    expect(mockListForAthlete).toHaveBeenCalledWith('org-mine', 'ath-1');
+    expect(mockListForAthlete).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-mine' }),
+      'ath-1',
+    );
+    // The supplied organization reaches the module nowhere, in any argument.
+    expect(JSON.stringify(mockListForAthlete.mock.calls)).not.toContain('org-theirs');
   });
 });
 
@@ -254,9 +290,8 @@ describe('creating a block', () => {
 
     expect(response.status).toBe(201);
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
-      organizationId: 'org-1',
+      actor: expect.objectContaining({ organizationId: 'org-1', accountId: 'acct-coach-a' }),
       athleteId: 'ath-1',
-      createdByAccountId: 'acct-coach-a',
       title: 'Winter technical block',
       trainingEmphasis: 'Guard recovery off the jab.',
       startsOn: '2026-09-01',
@@ -281,9 +316,14 @@ describe('creating a block', () => {
       created_by_account_id: 'acct-somebody-else',
     }));
 
+    /* Attribution now rides the actor rather than a separate field, which is
+       the stronger shape: there is no createdByAccountId parameter left for a
+       caller-supplied author to be written into. The module reads
+       actor.accountId, and the actor is the session. */
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ createdByAccountId: 'acct-really-me' }),
+      expect.objectContaining({ actor: expect.objectContaining({ accountId: 'acct-really-me' }) }),
     );
+    expect(JSON.stringify(mockCreate.mock.calls)).not.toContain('acct-somebody-else');
   });
 
   test('the organization is the session, never a value the caller sent', async () => {
@@ -300,7 +340,10 @@ describe('creating a block', () => {
       ends_on: '2026-09-30',
     }));
 
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-mine' }));
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ actor: expect.objectContaining({ organizationId: 'org-mine' }) }),
+    );
+    expect(JSON.stringify(mockCreate.mock.calls)).not.toContain('org-theirs');
   });
 
   test('an athlete outside the coach\'s reach is refused, and nothing is written', async () => {
@@ -444,7 +487,11 @@ describe('editing a block', () => {
 
     await PATCH(patchRequest({ block_id: 'blk-1', ends_on: '2026-11-01' }));
 
-    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { endsOn: '2026-11-01' });
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-1', accountId: 'acct-coach-a' }),
+      'blk-1',
+      { endsOn: '2026-11-01' },
+    );
   });
 
   test('a block in another organization is not found, and is not distinguishable from a missing one', async () => {
@@ -454,7 +501,10 @@ describe('editing a block', () => {
     const response = await PATCH(patchRequest({ block_id: 'blk-elsewhere', title: 'T' }));
 
     expect(response.status).toBe(404);
-    expect(mockGet).toHaveBeenCalledWith('org-mine', 'blk-elsewhere');
+    expect(mockGet).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-mine' }),
+      'blk-elsewhere',
+    );
     expect(mockAssertAccess).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
   });
@@ -491,7 +541,11 @@ describe('editing a block', () => {
       const response = await PATCH(patchRequest({ block_id: 'blk-1', status }));
 
       expect(response.status).toBe(200);
-      expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { status });
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-1' }),
+        'blk-1',
+        { status },
+      );
     },
   );
 });
@@ -564,7 +618,13 @@ describe('naming what a block is preparing for', () => {
 
     expect(response.status).toBe(200);
     expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-1');
-    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'competition', id: 'comp-1' } });
+    /* The first argument is the principal now, not an organization id: #762
+       moved the athlete-access gate into the data layer, so the actor travels
+       with the write. What this still pins is what it always pinned -- the
+       organization reaching the module is the SESSION's, never one the caller
+       sent. objectContaining, so a later field on the principal does not turn
+       this into a failure about nothing. */
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }), 'blk-1', { target: { kind: 'competition', id: 'comp-1' } });
   });
 
   test('fields and target go in ONE write, so neither can land without the other', async () => {
@@ -583,7 +643,7 @@ describe('naming what a block is preparing for', () => {
     }));
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', {
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }), 'blk-1', {
       title: 'Renamed',
       target: { kind: 'competition', id: 'comp-1' },
     });
@@ -632,7 +692,7 @@ describe('naming what a block is preparing for', () => {
       target: { kind: 'wrestling_event', id: 'evt-1' },
     }));
 
-    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'wrestling_event', id: 'evt-1' } });
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }), 'blk-1', { target: { kind: 'wrestling_event', id: 'evt-1' } });
   });
 
   test('null clears the target, and is not confused with not mentioning it', async () => {
@@ -645,7 +705,7 @@ describe('naming what a block is preparing for', () => {
 
     await PATCH(patchRequest({ block_id: 'blk-1', target: null }));
 
-    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'none' } });
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }), 'blk-1', { target: { kind: 'none' } });
   });
 
   test('a patch that never mentions a target leaves it alone', async () => {
@@ -657,7 +717,7 @@ describe('naming what a block is preparing for', () => {
     await PATCH(patchRequest({ block_id: 'blk-1', title: 'Renamed' }));
 
     // No `target` key on the patch at all -- the block keeps what it names.
-    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { title: 'Renamed' });
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }), 'blk-1', { title: 'Renamed' });
   });
 
   test.each([

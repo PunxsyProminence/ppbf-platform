@@ -227,6 +227,18 @@ describe('setting and clearing a target', () => {
     updated_at: 'x',
   };
 
+  /* setDevelopmentBlockTarget takes an actor now, not an organization id --
+     #762 moved the athlete-access gate into the data layer. These cases are
+     about the target mapping and the one-statement property, so the actor is
+     a coach in the fixture's own organization: the gate is exercised for real
+     (nothing here mocks './access'), it simply passes. */
+  const COACH = {
+    accountId: 'acct-coach',
+    role: 'coach' as const,
+    organizationId: 'org-1',
+    athleteId: null,
+  };
+
   /** queryOne is called twice by the real update: the read-back, then the
    *  write. This returns the row for both. */
   function stubRow() {
@@ -241,7 +253,7 @@ describe('setting and clearing a target', () => {
   test('a competition writes one column and nulls the other, in one statement', async () => {
     stubRow();
 
-    await setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'competition', id: 'comp-1' });
+    await setDevelopmentBlockTarget(COACH, 'blk-1', { kind: 'competition', id: 'comp-1' });
 
     const write = writeCall();
     expect(write).toBeDefined();
@@ -257,7 +269,7 @@ describe('setting and clearing a target', () => {
   test('a wrestling event writes the other column', async () => {
     stubRow();
 
-    await setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'wrestling_event', id: 'evt-1' });
+    await setDevelopmentBlockTarget(COACH, 'blk-1', { kind: 'wrestling_event', id: 'evt-1' });
 
     const params = writeCall()?.[1] as unknown[];
     expect(params[7]).toBeNull();
@@ -267,7 +279,7 @@ describe('setting and clearing a target', () => {
   test("'none' clears both columns", async () => {
     stubRow();
 
-    await setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'none' });
+    await setDevelopmentBlockTarget(COACH, 'blk-1', { kind: 'none' });
 
     const params = writeCall()?.[1] as unknown[];
     expect(params[7]).toBeNull();
@@ -278,23 +290,31 @@ describe('setting and clearing a target', () => {
     // Refused before the UPDATE, so the block's own fields do not move either.
     mockQueryOne.mockResolvedValue({ ...blockRow });
 
-    await expect(setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'competition', id: '   ' }))
+    await expect(setDevelopmentBlockTarget(COACH, 'blk-1', { kind: 'competition', id: '   ' }))
       .rejects.toBeInstanceOf(ValidationError);
 
     expect(writeCall()).toBeUndefined();
   });
 
   test('a block in another organization is not found, and nothing is written', async () => {
-    mockQueryOne.mockResolvedValue(null);
+    /* Two stubs, in order, because updateDevelopmentBlock asks two questions
+       now: may this account write blocks in this organization, and does this
+       block exist within reach. Stubbing every queryOne to null would answer
+       the FIRST one -- and the test would pass on a ForbiddenError about
+       membership while claiming to be about a block in another gym. The
+       membership passes here so the not-found answer is the one under test. */
+    mockQueryOne
+      .mockResolvedValueOnce({ account_id: 'acct-coach' })
+      .mockResolvedValueOnce(null);
 
-    expect(await setDevelopmentBlockTarget('org-mine', 'blk-elsewhere', { kind: 'none' })).toBeNull();
+    expect(await setDevelopmentBlockTarget({ ...COACH, organizationId: 'org-mine' }, 'blk-elsewhere', { kind: 'none' })).toBeNull();
     expect(writeCall()).toBeUndefined();
   });
 
   test('the write touches neither the athlete nor the creator', async () => {
     stubRow();
 
-    await setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'competition', id: 'comp-1' });
+    await setDevelopmentBlockTarget(COACH, 'blk-1', { kind: 'competition', id: 'comp-1' });
 
     const sql = String(writeCall()?.[0]);
     const setClause = sql.slice(sql.indexOf('set'), sql.indexOf('where'));
