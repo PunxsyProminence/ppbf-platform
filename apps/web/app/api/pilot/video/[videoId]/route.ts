@@ -74,12 +74,35 @@ interface VideoSessionRow {
  * no. The escape hatch is the same one the photo-only case has: a new signed
  * consent, written by the guardian's own console, supersedes it immediately.
  *
- * WHAT WITHDRAWAL STILL CANNOT REACH: a SAS URL already minted. This route
- * hands out a 60-minute bearer credential, so a withdrawal lands on every
- * request made after it commits and on no request made before -- an
- * already-open tab keeps playing for up to an hour. Closing that would mean
- * short-lived SAS plus re-mint, or server-side proxying, and neither is in
- * this change's scope.
+ * WHAT WITHDRAWAL STILL CANNOT REACH, stated whole rather than in the
+ * comfortable half of it (review finding, PR #820):
+ *
+ *   1. A SAS URL ALREADY MINTED. This route hands out a 60-minute bearer
+ *      credential, so an already-open tab keeps playing for up to an hour
+ *      after the withdrawal commits. Closing that means short-lived SAS plus
+ *      re-mint, or server-side proxying.
+ *   2. A REQUEST ARRIVING IN THE SAME INSTANT. The consent read below is an
+ *      ordinary SELECT and nothing serializes it against the withdrawal, so a
+ *      withdrawal committing between that read and the mint still yields a
+ *      fresh credential. getPilotVideoSasUrl is synchronous (blob.ts:123-125)
+ *      and there is no round trip between the two, so the window is a few
+ *      statements rather than request-scale -- and it is contained by (1)
+ *      rather than separate from it, since even a perfectly serialized read
+ *      only establishes "no withdrawal as of now" for a credential that
+ *      outlives now by an hour.
+ *
+ * SERIALIZING IT IS A WRITE-PATH CHANGE, not one available here, and that is
+ * why this route does not simply open a transaction. The withdrawal takes no
+ * lock: POST /api/pilot/parent/consent calls withdrawMediaConsent, a bare
+ * upsertWaiver insert that commits on its own, and the guardian_links
+ * `for update` lock appears only afterwards in the separate suppression
+ * sweep. So a `for share` here -- the pattern
+ * assertGuardianMediaConsentWithClient uses -- would order this route against
+ * the SWEEP and not against the INSERT that actually revokes consent. It
+ * would look like a fix and serialize the wrong pair. The real fix is for
+ * withdrawMediaConsent to take that row lock before its insert; once it does,
+ * this read and the mint can hold `for share` across both and the window
+ * closes.
  *
  * WHAT THIS DELIBERATELY DOES NOT REFUSE: A MISSING CONSENT ROW.
  *
