@@ -264,15 +264,29 @@ them by building.
   executable SQL anywhere in this repository. Whatever is decided sets the
   precedent.
 
-  UNRESOLVED, and it changes what the CLEAN result is worth:
-  `docs/current/PRODUCTION_STATE.json` records (2026-08-15) that
-  `pilot.drill_library` and `pilot.disciplines` both hold 0 rows, while the
-  three migration headers record (2026-08-24) 119 / 3 / 6. Both cannot describe
-  the same database. Inference, not measurement: the census reported
-  "Organizations with NO discipline registry: 0", which could not hold if the
-  registry were empty AND any organization existed -- so either production has
-  no organizations, or the 2026-08-15 observation is stale. The census output
-  cannot distinguish those.
+  RESOLVED 2026-08-28, and it decides what the CLEAN result is worth.
+  `docs/current/PRODUCTION_STATE.json` states under `known_production_gaps`
+  that "seed-reference-data has never been run against production" and that
+  `pilot.drill_library` and `pilot.disciplines` "both count 0 rows",
+  re-observed 2026-08-15. The three migration headers record 119 / 3 / 6 rows
+  observed 2026-08-24, from seed-reference-data run 32788628209. Both cannot
+  describe one database.
+
+  The run's own job log settles it. Its "Record What Ran" step printed
+  `PPBF_EXPECTED_POSTGRES_HOSTNAME: ppbf-pg-195892.postgres.database.azure.com`
+  and `ORG_SOURCE: app-ppbf-production default org secret`, and
+  PRODUCTION_STATE.json names that same hostname as production. The job was
+  created 23:16:57Z and started 23:23:56Z -- a seven-minute wait consistent
+  with the production environment gate, where staging runs start in seconds.
+
+  So seed-reference-data DID run against production, on 2026-08-24, and
+  `PRODUCTION_STATE.json`'s gap entry is stale by nine days. The 119 / 3 / 6
+  figures are production figures. **The CLEAN census therefore scanned real
+  rows rather than empty tables**, which is what makes it evidence rather than
+  a tautology.
+
+  That stale entry is in a release-lane document a build lane may not edit
+  (`AGENT_KERNEL.md`, Lane model). It is reported here rather than corrected.
 
   The B2 ruling that preceded the FKs said PRECHECK and STOP; what merged
   substituted `NOT VALID`. That substitution has not been ratified, and no
