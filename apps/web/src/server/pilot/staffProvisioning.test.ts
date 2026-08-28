@@ -679,6 +679,11 @@ describe('guardian link provisioning', () => {
 function unlinkClient(options: {
   parentRows?: Array<{ parent_id: string }>;
   linkRows?: Array<{ parent_id: string; athlete_id: string }>;
+  // The guardian's CURRENT photo_media status for the athlete being
+  // unlinked. Undefined is the default and the honest one: no consent row on
+  // file is the state of nearly every roster-imported athlete, so every test
+  // that does not name a status runs under it.
+  consentStatus?: string;
 }) {
   return fakeClient((sql) => {
     if (sql.startsWith('delete from')) {
@@ -692,8 +697,16 @@ function unlinkClient(options: {
       const rows = options.linkRows ?? [];
       return { rows, rowCount: rows.length };
     }
+    if (sql.includes('from pilot.waivers')) {
+      const rows = options.consentStatus ? [{ status: options.consentStatus }] : [];
+      return { rows, rowCount: rows.length };
+    }
     return { rows: [], rowCount: 0 };
   });
+}
+
+function consentCalls() {
+  return currentClient.query.mock.calls.filter(([sql]) => String(sql).includes('from pilot.waivers'));
 }
 
 function deleteCalls() {
@@ -770,6 +783,142 @@ describe('removeGuardianLink', () => {
     ).rejects.toThrow('Missing organization_id, account_id, or athlete_id');
 
     expect(currentClient.query).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The unlink is the one action that can turn a guardian's standing NO into
+   * a YES with nobody signing anything, because checkGuardianMediaConsent
+   * resolves an athlete's guardians from pilot.guardian_links LIVE. Drop the
+   * row and the guardian who withdrew simply stops being asked.
+   */
+  test('refuses to unlink a guardian whose media consent for this athlete is withdrawn', async () => {
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [
+        { parent_id: 'par-1', athlete_id: 'ath-1' },
+        { parent_id: 'par-1', athlete_id: 'ath-2' },
+      ],
+      consentStatus: 'withdrawn',
+    });
+
+    await expect(
+      removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', athleteId: 'ath-2' }),
+    ).rejects.toThrow('Forbidden: this guardian has withdrawn media consent for this athlete');
+
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  test('the consent read is scoped to this guardian, this athlete, and photo_media', async () => {
+    // A read scoped only by athlete would refuse on some OTHER guardian's
+    // withdrawal, and one scoped only by guardian would refuse on a
+    // withdrawal for a different child. Both would be a refusal that looks
+    // right and fires on the wrong fact, so the parameters are asserted
+    // rather than trusted.
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [
+        { parent_id: 'par-1', athlete_id: 'ath-1' },
+        { parent_id: 'par-1', athlete_id: 'ath-2' },
+      ],
+    });
+
+    await removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', athleteId: 'ath-2' });
+
+    expect(consentCalls()).toHaveLength(1);
+    expect(consentCalls()[0][1]).toEqual(['org-1', 'ath-2', 'par-1', 'photo_media']);
+    // The parameters alone do not pin this: a predicate that binds $3
+    // somewhere harmless (`and $3 is not null`) passes an argument check
+    // while reading every guardian's row for the athlete. Caught in mutation
+    // testing, so the predicate itself is asserted. The behavioural half of
+    // the same claim is in guardianInviteLink.pg.test.ts, where a co-guardian
+    // unlinks normally past somebody else's withdrawal.
+    const consentSql = String(consentCalls()[0][0]);
+    expect(consentSql).toContain('parent_id = $3');
+    expect(consentSql).toContain('athlete_id = $2');
+    expect(consentSql).toContain('waiver_type = $4');
+  });
+
+  test('a signed consent does not block the unlink', async () => {
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [
+        { parent_id: 'par-1', athlete_id: 'ath-1' },
+        { parent_id: 'par-1', athlete_id: 'ath-2' },
+      ],
+      consentStatus: 'signed',
+    });
+
+    const result = await removeGuardianLink({
+      organizationId: 'org-1',
+      accountId: 'dana@example.com',
+      athleteId: 'ath-2',
+    });
+
+    expect(result).toEqual({ parentId: 'par-1', athleteId: 'ath-2' });
+    expect(deleteCalls()).toHaveLength(1);
+  });
+
+  test('no consent row on file does not block the unlink', async () => {
+    // The blast-radius control. Absence is the default state of a
+    // roster-imported athlete -- the only writer of a row this check can see
+    // is the guardian's own console -- so refusing on absence would take the
+    // unlink away from nearly every family at once. Only an affirmative
+    // withdrawal refuses.
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [
+        { parent_id: 'par-1', athlete_id: 'ath-1' },
+        { parent_id: 'par-1', athlete_id: 'ath-2' },
+      ],
+    });
+
+    const result = await removeGuardianLink({
+      organizationId: 'org-1',
+      accountId: 'dana@example.com',
+      athleteId: 'ath-2',
+    });
+
+    expect(result).toEqual({ parentId: 'par-1', athleteId: 'ath-2' });
+    expect(deleteCalls()).toHaveLength(1);
+  });
+
+  test('a withdrawal that is also the only link reports the WITHDRAWAL', async () => {
+    // Ordering, asserted. Both refusals are 403 with a message, so if the
+    // structural rule ran first this case would never mention the withdrawal
+    // and an admin would route around it -- link another athlete, come back,
+    // and only then find out. A safeguarding fact must not be masked by a
+    // housekeeping one.
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [{ parent_id: 'par-1', athlete_id: 'ath-1' }],
+      consentStatus: 'withdrawn',
+    });
+
+    await expect(
+      removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', athleteId: 'ath-1' }),
+    ).rejects.toThrow('Forbidden: this guardian has withdrawn media consent for this athlete');
+
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  test('an athlete this guardian is not linked to is still reported before any consent is read', async () => {
+    // The consent read takes target.parent_id, which does not exist until the
+    // link is found. Reading first would either throw on undefined or query
+    // on a guessed parent id.
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [
+        { parent_id: 'par-1', athlete_id: 'ath-1' },
+        { parent_id: 'par-1', athlete_id: 'ath-2' },
+      ],
+      consentStatus: 'withdrawn',
+    });
+
+    await expect(
+      removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', athleteId: 'ath-9' }),
+    ).rejects.toThrow('Not found: that athlete is not linked to this guardian');
+
+    expect(consentCalls()).toHaveLength(0);
   });
 });
 

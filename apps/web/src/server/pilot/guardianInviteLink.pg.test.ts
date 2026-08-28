@@ -67,6 +67,7 @@ let client: Client;
 let staffProvisioning: typeof import('./staffProvisioning');
 let guardianAccess: typeof import('./guardianAccess');
 let access: typeof import('./access');
+let guardianConsent: typeof import('./guardianConsent');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -203,6 +204,7 @@ beforeAll(async () => {
   staffProvisioning = await import('./staffProvisioning');
   guardianAccess = await import('./guardianAccess');
   access = await import('./access');
+  guardianConsent = await import('./guardianConsent');
 });
 
 afterAll(async () => {
@@ -442,5 +444,217 @@ describe('removeGuardianLink', () => {
     ).rejects.toThrow('Forbidden: this is the only athlete this guardian is linked to');
 
     await expect(resolvedChildren(ORG_A, DANA)).resolves.toEqual(['ath-a1']);
+  });
+});
+
+/*
+ * WHY A REAL DATABASE FOR THIS ONE.
+ *
+ * The claim being tested is not "removeGuardianLink throws on a status
+ * string" -- a mocked client proves that, and staffProvisioning.test.ts
+ * already does. The claim is that WITHOUT the refusal, deleting one row from
+ * pilot.guardian_links changes the answer checkGuardianMediaConsent gives
+ * about a child, because that function resolves an athlete's guardians from
+ * that table live on every call. Two modules, one table, and no error
+ * anywhere along the way -- exactly the silent shape the rest of this suite
+ * exists for.
+ *
+ * So the first test here proves the mechanism by deleting the row BY HAND,
+ * bypassing the guard entirely. If that test ever stops flipping the answer,
+ * the refusal it justifies has become dead weight and should be re-argued
+ * rather than kept out of habit.
+ */
+describe('an unlink cannot quietly clear a withdrawal', () => {
+  const CONSENT_ATH = 'ath-consent-1';
+  const SPARE_ATH = 'ath-consent-2';
+  const WITHDRAWER = 'withdrawer@example.com';
+  const CO_GUARDIAN = 'co-guardian@example.com';
+
+  let withdrawerParentId: string;
+  let coGuardianParentId: string;
+
+  beforeAll(async () => {
+    // Own athletes, not the shared ath-a1/ath-a2: those two accumulate
+    // guardians from every test above, and a consent answer about an athlete
+    // is a statement about ALL of their guardians. Borrowing them would make
+    // these assertions depend on the order this file happens to run in.
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values
+         ($1, $2, 'Consent Case', '2013-01-05', 'fly', 'active', 'contact', true, $4, now(), now()),
+         ($1, $3, 'Consent Sibling', '2014-03-09', 'fly', 'active', 'contact', true, $4, now(), now())`,
+      [ORG_A, CONSENT_ATH, SPARE_ATH, COACH_A],
+    );
+
+    // The withdrawing guardian holds TWO children, so the last-link rule is
+    // not what refuses the unlink below -- the withdrawal is.
+    for (const athleteId of [CONSENT_ATH, SPARE_ATH]) {
+      await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+        loginEmail: WITHDRAWER,
+        organizationId: ORG_A,
+        role: 'parent',
+        guardian: { athleteId, fullName: 'Withdrawing Guardian', relationshipToAthlete: 'mother' },
+      });
+    }
+
+    // A second guardian on the same child who HAS consented. This is what
+    // makes the flip visible: with both present the answer is blocked, with
+    // only this one present it is allowed.
+    // Two children for this one too, so the last-link rule is not what
+    // answers when their own link is removed below.
+    for (const athleteId of [CONSENT_ATH, SPARE_ATH]) {
+      await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+        loginEmail: CO_GUARDIAN,
+        organizationId: ORG_A,
+        role: 'parent',
+        guardian: { athleteId, fullName: 'Consenting Guardian', relationshipToAthlete: 'father' },
+      });
+    }
+
+    const withdrawer = await guardianConsent.resolveActingParent(ORG_A, WITHDRAWER, CONSENT_ATH);
+    const coGuardian = await guardianConsent.resolveActingParent(ORG_A, CO_GUARDIAN, CONSENT_ATH);
+    if (!withdrawer || !coGuardian) {
+      throw new Error('fixture: both guardians must resolve a parent row for this athlete');
+    }
+    withdrawerParentId = withdrawer.parentId;
+    coGuardianParentId = coGuardian.parentId;
+
+    await guardianConsent.grantMediaConsent({
+      organizationId: ORG_A,
+      athleteId: CONSENT_ATH,
+      parentId: coGuardianParentId,
+      signedByName: 'Consenting Guardian',
+      coversVideo: true,
+      publicUseAllowed: false,
+    });
+    await guardianConsent.withdrawMediaConsent({
+      organizationId: ORG_A,
+      athleteId: CONSENT_ATH,
+      parentId: withdrawerParentId,
+      signedByName: 'Withdrawing Guardian',
+    });
+  });
+
+  test('the mechanism: deleting the link by hand DOES clear the withdrawal from the answer', async () => {
+    const before = await guardianConsent.checkGuardianMediaConsent(ORG_A, CONSENT_ATH);
+    expect(before.ok).toBe(false);
+    expect(before.perGuardian.map((g) => g.status).sort()).toEqual(['signed', 'withdrawn']);
+
+    // Straight to the table, around removeGuardianLink and its refusal. This
+    // is the operation the refusal exists to prevent, performed here only to
+    // show what it costs.
+    await client.query(
+      'delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3',
+      [ORG_A, withdrawerParentId, CONSENT_ATH],
+    );
+
+    const after = await guardianConsent.checkGuardianMediaConsent(ORG_A, CONSENT_ATH);
+    // The withdrawal was not reversed. The guardian who made it simply
+    // stopped being asked -- and the athlete now reads as fully consented.
+    expect(after.ok).toBe(true);
+    expect(after.perGuardian.map((g) => g.status)).toEqual(['signed']);
+    expect(after.perGuardian.some((g) => g.status === 'withdrawn')).toBe(false);
+
+    // Put it back for the tests below.
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, $2, $3, 'mother')`,
+      [ORG_A, withdrawerParentId, CONSENT_ATH],
+    );
+    await expect(
+      guardianConsent.checkGuardianMediaConsent(ORG_A, CONSENT_ATH).then((c) => c.ok),
+    ).resolves.toBe(false);
+  });
+
+  test('removeGuardianLink refuses while the withdrawal stands, and the link survives the attempt', async () => {
+    await expect(
+      staffProvisioning.removeGuardianLink({
+        organizationId: ORG_A,
+        accountId: WITHDRAWER,
+        athleteId: CONSENT_ATH,
+      }),
+    ).rejects.toThrow('Forbidden: this guardian has withdrawn media consent for this athlete');
+
+    // The refusal is only worth anything if it rolls back. Both the link and
+    // the consent answer are unchanged.
+    await expect(
+      guardianAccess.isGuardianLinkedToAthlete(ORG_A, WITHDRAWER, CONSENT_ATH),
+    ).resolves.toBe(true);
+    const consent = await guardianConsent.checkGuardianMediaConsent(ORG_A, CONSENT_ATH);
+    expect(consent.ok).toBe(false);
+    expect(consent.perGuardian.some((g) => g.status === 'withdrawn')).toBe(true);
+  });
+
+  test("one guardian's withdrawal does not freeze the OTHER guardian's link", async () => {
+    /* The refusal has to read the row belonging to the guardian being
+       unlinked, not every row for the athlete. A check scoped by athlete
+       alone passes the test above and every parameter assertion in
+       staffProvisioning.test.ts -- it was written that way as a mutation and
+       survived both -- while refusing an unlink that clears nothing.
+
+       Nothing is cleared here: the withdrawing guardian keeps their link, so
+       the answer stays blocked before and after. */
+    const before = await guardianConsent.checkGuardianMediaConsent(ORG_A, CONSENT_ATH);
+    expect(before.ok).toBe(false);
+
+    await staffProvisioning.removeGuardianLink({
+      organizationId: ORG_A,
+      accountId: CO_GUARDIAN,
+      athleteId: CONSENT_ATH,
+    });
+
+    await expect(
+      guardianAccess.isGuardianLinkedToAthlete(ORG_A, CO_GUARDIAN, CONSENT_ATH),
+    ).resolves.toBe(false);
+    const after = await guardianConsent.checkGuardianMediaConsent(ORG_A, CONSENT_ATH);
+    expect(after.ok).toBe(false);
+    expect(after.perGuardian.map((g) => g.status)).toEqual(['withdrawn']);
+  });
+
+  test('the refusal is about THIS child -- the same guardian detaches from the sibling normally', async () => {
+    // Control. Without this, a refusal that fired on any withdrawal anywhere
+    // in the guardian's family would pass the test above and be wrong.
+    await staffProvisioning.removeGuardianLink({
+      organizationId: ORG_A,
+      accountId: WITHDRAWER,
+      athleteId: SPARE_ATH,
+    });
+
+    await expect(
+      guardianAccess.isGuardianLinkedToAthlete(ORG_A, WITHDRAWER, SPARE_ATH),
+    ).resolves.toBe(false);
+    await expect(
+      guardianAccess.isGuardianLinkedToAthlete(ORG_A, WITHDRAWER, CONSENT_ATH),
+    ).resolves.toBe(true);
+  });
+
+  test('a fresh signed consent clears the refusal, and only the guardian can write one', async () => {
+    // The way out, proven end to end. pilot.waivers is append-only, so the
+    // new row supersedes the withdrawal for every reader at once -- there is
+    // no separate "clear the withdrawal" step for an admin to reach for, and
+    // that absence is the point.
+    await guardianConsent.grantMediaConsent({
+      organizationId: ORG_A,
+      athleteId: CONSENT_ATH,
+      parentId: withdrawerParentId,
+      signedByName: 'Withdrawing Guardian',
+      coversVideo: true,
+      publicUseAllowed: false,
+    });
+
+    const consent = await guardianConsent.checkGuardianMediaConsent(ORG_A, CONSENT_ATH);
+    expect(consent.ok).toBe(true);
+
+    // SPARE_ATH is gone by now (the control above), so CONSENT_ATH is this
+    // guardian's last link and the structural rule takes over. That is the
+    // right refusal at this point and a different one -- the withdrawal is no
+    // longer what is standing in the way.
+    await expect(
+      staffProvisioning.removeGuardianLink({
+        organizationId: ORG_A,
+        accountId: WITHDRAWER,
+        athleteId: CONSENT_ATH,
+      }),
+    ).rejects.toThrow('Forbidden: this is the only athlete this guardian is linked to');
   });
 });

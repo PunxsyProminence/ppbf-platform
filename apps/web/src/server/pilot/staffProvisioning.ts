@@ -1,6 +1,10 @@
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+// The waiver_type string only, not the readers. Imported rather than
+// re-typed because a second copy of 'photo_media' is exactly how one of the
+// two later stops matching the other.
+import { MEDIA_CONSENT_WAIVER_TYPE } from './guardianConsent';
 import { createVolunteer } from './volunteers';
 
 // Roles that can be provisioned as a Microsoft-authenticated account through
@@ -586,6 +590,11 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
  * in, reads as healthy, and shows an empty list of children. Correcting a
  * mislinked guardian is therefore link-the-right-athlete-then-remove, in that
  * order, and never leaves a family with an account that shows them nothing.
+ *
+ * ALSO refuses while that guardian's media consent for that athlete stands
+ * WITHDRAWN, because this DELETE is the one action that can turn a standing
+ * NO into a YES without anybody signing anything. See the comment on the
+ * check itself for the mechanism. Owner decision, 2026-08-28.
  */
 export async function removeGuardianLink(params: {
   organizationId: string;
@@ -622,6 +631,61 @@ export async function removeGuardianLink(params: {
     const target = links.rows.find((row) => row.athlete_id === athleteId);
     if (!target) {
       throw new Error('Not found: that athlete is not linked to this guardian');
+    }
+
+    /*
+     * A withdrawal is a standing NO, and this DELETE is the one action that
+     * can silently turn it into a YES.
+     *
+     * checkGuardianMediaConsent (guardianConsent.ts) resolves an athlete's
+     * guardians from pilot.guardian_links LIVE on every call, then reads each
+     * one's current photo_media waiver. Removing this row does not reverse
+     * the withdrawal -- it removes the guardian who made it from the set
+     * being asked. For an athlete with a second, consenting guardian the
+     * answer flips from blocked to allowed. For an athlete whose only
+     * guardian this was, perGuardian goes EMPTY, and the video playback gate
+     * (api/pilot/video/[videoId]) reads an empty set as "no guardian excluded
+     * this" and serves the footage. Either way an administrative click, not a
+     * signature, is what restored the media.
+     *
+     * So the unlink is refused while the withdrawal stands. The way out is
+     * the same one that reverses a withdrawal anywhere else on this platform:
+     * that guardian signs a fresh consent through their own console
+     * (pilot.waivers is append-only and every reader takes the latest row per
+     * guardian), and then the link can be removed. An org admin cannot clear
+     * it on their behalf, which is the entire point -- if they could, the
+     * refusal would only be a speed bump.
+     *
+     * CHECKED BEFORE THE STRUCTURAL RULE BELOW, deliberately. If the
+     * last-link refusal ran first, the "withdrawn AND only link" case would
+     * never mention the withdrawal at all, and an admin would work around the
+     * structural rule (link another athlete, come back) without ever learning
+     * why the removal is actually refused. A safeguarding fact must not be
+     * masked by a housekeeping one.
+     *
+     * SCOPED TO photo_media on purpose, and that scope is a checked claim,
+     * not an assumption: it is the only waiver type whose evaluation joins
+     * guardian_links. getAthleteWaiverStatus (waiverCompliance.ts) reads by
+     * athlete_id alone, so unlinking a guardian moves no travel or
+     * medical_release answer. Those two readers were read; the rest of the
+     * codebase was not, so this says what was checked and no more.
+     */
+    const currentConsent = await client.query<{ status: string }>(
+      `select status
+         from pilot.waivers
+        where organization_id = $1 and athlete_id = $2 and parent_id = $3 and waiver_type = $4
+        order by created_at desc
+        limit 1`,
+      [organizationId, athleteId, target.parent_id, MEDIA_CONSENT_WAIVER_TYPE],
+    );
+
+    if (currentConsent.rows[0]?.status === 'withdrawn') {
+      throw new Error(
+        'Forbidden: this guardian has withdrawn media consent for this athlete. Removing the link would '
+        + 'drop that withdrawal out of the consent check rather than reverse it, so the athlete\'s media '
+        + 'would become usable again without anyone consenting. Only a new signed consent from that '
+        + 'guardian clears this, and the link can be removed after that.',
+      );
     }
 
     if (links.rowCount === 1) {
