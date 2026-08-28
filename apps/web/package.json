@@ -295,6 +295,7 @@
     "test:migrations:progression": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/progressionMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:publications": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/publicationsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:publication-retraction": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/publicationRetraction.pg.test.ts --testTimeout=180000",
+    "test:migrations:consent-withdrawal-race": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/consentWithdrawalRace.pg.test.ts --testTimeout=180000",
     "test:migrations:drills-persistence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillsPersistence.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-invite-link": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianInviteLink.pg.test.ts --testTimeout=180000",
     "test:migrations:volunteer-invite-link": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/volunteerInviteLink.pg.test.ts --testTimeout=180000",
