@@ -78,6 +78,58 @@ export async function listAthleteAttendanceDays(
   );
 }
 
+/** One athlete's mark for one day, as the roster read returns it. */
+export interface AthleteDayAttendance {
+  athlete_id: string;
+  status: ReconciledAttendanceStatus;
+  source: AttendanceSource;
+}
+
+/**
+ * One day's marks for a NAMED SET of athletes.
+ *
+ * The read a coach's roster does: every athlete they may see, one calendar
+ * day, one request. The per-athlete reads above answer a history question;
+ * this answers "who is on the floor today", which is a different shape and
+ * would otherwise be N round trips.
+ *
+ * THE ATHLETE IDS ARE REQUIRED AND THERE IS NO "ALL" MODE. A caller must have
+ * cleared them through the athlete-access contract first
+ * (athleteIdsForCoach, or the organization roster for an admin). An optional
+ * "omit to get everyone" argument is the shape that eventually gets called
+ * with an empty variable and quietly returns the whole gym -- a roster of
+ * children to somebody cleared for none of them -- so it does not exist here.
+ * An empty list is answered without touching the database, because the answer
+ * is knowable without one.
+ *
+ * WHAT AN ABSENT ROW MEANS, and it is the whole reason this returns rows
+ * rather than a status per athlete: an athlete with no row today has NO MARK
+ * on record, which before class is every athlete in the gym. That is not
+ * absence, and a caller that filled the gap with 'absent' would be reporting
+ * a child missed training because nobody had taken the register yet. The
+ * caller is left to name that state itself.
+ *
+ * Reads the reconciled view like everything else in this module: never a
+ * source table, never two summed. See CT-13.
+ */
+export async function attendanceOnDay(
+  organizationId: string,
+  athleteIds: readonly string[],
+  day: string,
+): Promise<AthleteDayAttendance[]> {
+  if (athleteIds.length === 0) return [];
+
+  return query<AthleteDayAttendance>(
+    `select athlete_id, status, source
+     from pilot.attendance_reconciled
+     where organization_id = $1
+       and athlete_id = any($2::text[])
+       and attendance_date = $3::date
+     order by athlete_id`,
+    [organizationId, [...athleteIds], day],
+  );
+}
+
 export interface AthleteAttendanceTotals {
   athlete_id: string;
   days_present: number;
