@@ -95,12 +95,12 @@ Read every `periodization_blocks` reference below as naming this table.
   output; it now hands the principal down and returns what the data layer
   answered. `updateDevelopmentBlock` gained the write gate the other two
   mutators carry.
-- Any read surface for an **athlete or a guardian**. The data layer serves
-  them; every route that exists serves staff, objectives included. That is the
-  right order — the boundary is enforced before anything is built on it — and
-  the slice that changes it owes its own safeguarding decisions first: what a
-  minor sees of a coach's raw words, and whether a body-composition objective
-  about them is part of it.
+- ~~Any read surface for an **athlete or a guardian**.~~ **Built**, after the
+  decision it owed was made — see Open Question 9. `/athlete/development-blocks`
+  and `/parent/development-blocks` over a read-only
+  `/api/pilot/athlete/development-blocks`. The boundary was enforced in the
+  data layer before either page existed, which is the order this module has
+  kept throughout.
 - ~~The optional competition/event target (Open Question 2), still open and
   still unbuilt.~~ **Answered (a) and built by #771**, as a name and a date
   only: naming a target derives no taper, no peak, no volume curve and no
@@ -687,3 +687,51 @@ that changes will name the decision.
 - (c) Something in between — e.g. read-only self access for a bounded
   retention window — which is more machinery than either of the above and
   should be justified before it is built.
+
+**9. [ANSWERED — 2026-08-28.] What does an athlete see of the plan their coach
+wrote about them?**
+
+Owed before any athlete- or guardian-facing read surface could ship, and named
+as owed by Open Question 7 when it decided the data layer's answer. Admitting
+`nutrition_body_composition` (Question 6) is what gave it teeth: an objective
+can hold a body-composition sentence about a minor, and this asks whether that
+minor reads it.
+
+**Jason: _"Everything, verbatim."_** Title, emphasis, window, status, and every
+objective including the tenth domain, exactly as the coach wrote them. A
+guardian reads precisely what their child reads and no more — that half needed
+no new decision, because `/parent/progression-visibility` already states the
+rule and this reuses it.
+
+**Why verbatim rather than a softened projection**, in the terms the decision
+was put in: a gentler second version of a coach's words would be a second
+version of the truth about a child, and this platform keeps one. The
+transparency is itself a safeguarding property — a plan about a minor that the
+minor and their guardian cannot read is a plan neither of them can question.
+Progression gaps and sparring notes already reach the family unaltered, so this
+is the existing posture rather than a new one.
+
+**The cost was named before the choice, not after.** A coach's blunt private
+phrasing is now athlete-facing, which will change how coaches write — possibly
+for the better, possibly by making the record less candid. And a
+body-composition sentence about a minor is visible to that minor. Both were on
+the table when the decision was made.
+
+**The two alternatives, and why each was worse:**
+
+- *The block but not the objectives.* The line is arbitrary —
+  `training_emphasis` is also free text a coach wrote and can be just as blunt.
+  It hides the most actionable part of the plan while showing the vaguest.
+- *All domains except body composition.* It encodes a content policy inside a
+  read path, which is the landmine the `goal-category-progress` deploy gate
+  already cost a release to remove. The withheld domain also becomes
+  conspicuous by absence, and it leaves a coach acting on an objective the
+  guardian cannot see.
+
+**What the surface refuses, and it is asserted rather than promised.** It is
+read-only with no write verb at all — not a gated one; there is no roll-up, no
+proportion and no progress element, because "three of five completed" shown to
+a child is a score about that child produced by arithmetic rather than by a
+coach; and no staff account identifier is printed, since `created_by_account_id`
+is an id, not a name, and printing it to a family is a leak dressed as
+attribution.

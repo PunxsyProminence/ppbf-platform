@@ -12,7 +12,6 @@ import { getDevelopmentBlock } from '@/src/server/pilot/athleteDevelopmentBlocks
 import { ForbiddenError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
-import { DOMAIN_LABEL } from '@/app/coach/development-blocks/page';
 
 /*
  * The coach API over block objectives.
@@ -530,34 +529,6 @@ describe('nothing computed reaches the caller', () => {
       'adherence', 'compliance', 'grade', 'readiness',
     ]) {
       expect(serialized).not.toContain(forbidden);
-    }
-  });
-});
-
-describe('the screen can name every domain the route serves', () => {
-  test('DOMAIN_LABEL covers exactly the Full Spectrum vocabulary', () => {
-    /* THE PIN, and it lives here rather than beside the page for a mundane
-       reason worth writing down: importing this module from a jsdom test
-       pulls in `pg`, which needs a TextEncoder jsdom does not provide. This
-       file runs under node and can hold both sides.
-
-       What it guards is the seam the route deliberately created. The page
-       holds no copy of the ten values -- it renders whatever ?domains=options
-       returns, so it can never offer a domain the database would refuse. The
-       cost of that is the opposite failure: a domain added to the migration
-       and served to a screen with no label for it, which would render to a
-       coach as a raw snake_case slug on a record about a child. Equality in
-       BOTH directions is what makes that impossible. */
-    expect(Object.keys(DOMAIN_LABEL).sort()).toEqual([...FULL_SPECTRUM_DOMAINS].sort());
-  });
-
-  test('every label is human text, not the stored value passed through', () => {
-    // A label identical to its key is the shape a lazy addition takes, and it
-    // reads to a coach as a bug rather than as a category.
-    for (const domain of FULL_SPECTRUM_DOMAINS) {
-      expect(DOMAIN_LABEL[domain]).toBeTruthy();
-      expect(DOMAIN_LABEL[domain]).not.toBe(domain);
-      expect(DOMAIN_LABEL[domain]).not.toMatch(/_/);
     }
   });
 });

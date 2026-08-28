@@ -4,6 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import {
+  BLOCK_STATUSES,
+  STATUS_BADGE,
+  domainLabel,
+  type DevelopmentBlockStatusValue,
+} from '@/components/developmentBlockDomains';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
 
@@ -66,20 +72,13 @@ interface AuthorizedAthlete {
   full_name: string;
 }
 
-const STATUSES = ['draft', 'active', 'completed', 'cancelled'] as const;
-type BlockStatus = (typeof STATUSES)[number];
-
-/* The design system's four-rung ladder. A block's status is a planning state,
-   not a safety state, so none of these wears a saturated safety rung:
-   'cancelled' is filed, not restricted -- a coach abandoning a plan is not a
-   participation block, and painting it like one is exactly the Law 2 confusion
-   the readiness bands were cleaned up over. */
-const STATUS_BADGE: Record<BlockStatus, { className: string; label: string }> = {
-  draft: { className: 'badge--filed', label: 'Draft' },
-  active: { className: 'badge--cleared', label: 'Active' },
-  completed: { className: 'badge--monitor', label: 'Completed' },
-  cancelled: { className: 'badge--filed', label: 'Cancelled' },
-};
+/* The lifecycle vocabulary and its badges are shared with the athlete's and
+   guardian's read-only view of the same block: a family and their coach must
+   not see one row wearing different colours or a different word. See
+   components/developmentBlockDomains.ts for why the ladder is the planning
+   one rather than a safety one. */
+const STATUSES = BLOCK_STATUSES;
+type BlockStatus = DevelopmentBlockStatusValue;
 
 /* An EVENT's status, which is a different vocabulary from a block's and gets
    its own map rather than sharing one. A cancelled event is the case this
@@ -117,40 +116,6 @@ interface BlockObjective {
   created_by_account_id: string;
   created_at: string;
   updated_at: string;
-}
-
-/*
- * HUMAN LABELS FOR THE TEN FULL SPECTRUM DOMAINS.
- *
- * The vocabulary itself is NOT duplicated here. The ten values are owned by
- * the migration's CHECK constraint and served by the route
- * (?domains=options), so this screen offers exactly what the database will
- * accept and cannot drift into offering a value the write would refuse --
- * the failure mode SMART_GOAL_CATEGORIES in AthleteWorkspace.tsx has to guard
- * against with a test, avoided here by not holding a copy at all.
- *
- * What IS local is presentation, which is where it belongs. The map is keyed
- * by the stored value, and coachDevelopmentBlockObjectives' own test asserts
- * its keys are exactly FULL_SPECTRUM_DOMAINS -- so a domain added to the
- * migration without a label here fails a test rather than rendering to a
- * coach as a raw snake_case slug.
- */
-export const DOMAIN_LABEL: Record<string, string> = {
-  technical: 'Technical',
-  physical: 'Physical',
-  conditioning: 'Conditioning',
-  mental: 'Mental',
-  recovery_load: 'Recovery & load',
-  sparring_live_progression: 'Sparring & live progression',
-  competition_preparation: 'Competition preparation',
-  tactical_film_study: 'Tactical & film study',
-  lifestyle_athlete_identity: 'Lifestyle & athlete identity',
-  nutrition_body_composition: 'Nutrition & body composition',
-};
-
-/** A domain with no label yet reads as itself rather than as nothing. */
-function domainLabel(domain: string): string {
-  return DOMAIN_LABEL[domain] ?? domain;
 }
 
 const EMPTY_OBJECTIVE_FORM = { domain: '', objective: '', status: 'draft' as BlockStatus };
