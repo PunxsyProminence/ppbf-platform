@@ -63,11 +63,9 @@ const getRequest = (query = '') =>
   new NextRequest(`http://localhost/api/pilot/drill-library${query ? `?${query}` : ''}`);
 
 /**
- * Every role in the vocabulary, partitioned. Listed in full rather than
- * derived from COACHING_CONTENT_READER_ROLES: a test that asks the policy what
- * the policy says cannot notice the policy changing. A tenth role added to
- * PilotRole fails the exhaustiveness case below rather than quietly landing on
- * whichever side of the gate the implementation happens to put it.
+ * The partition. Listed in full rather than derived from
+ * COACHING_CONTENT_READER_ROLES: a test that asks the policy what the policy
+ * says cannot notice the policy changing.
  */
 const ADMITTED_ROLES: PilotRole[] = [
   'platform_owner',
@@ -82,20 +80,41 @@ const ADMITTED_ROLES: PilotRole[] = [
 
 const DENIED_ROLES: PilotRole[] = ['board'];
 
-const ALL_ROLES: PilotRole[] = [
-  'platform_owner',
-  'organization_admin',
-  'admin',
-  'coach',
-  'athlete',
-  'parent',
-  'board',
-  'volunteer',
-  'staff',
-];
+/**
+ * The vocabulary, READ OUT OF contracts.ts rather than restated here.
+ *
+ * It was restated here, and that made the exhaustiveness case below a
+ * comparison of three literals sitting in one file, which agree with each
+ * other by construction. Measured: adding a tenth member to the PilotRole
+ * union left all 61 cases in the four affected suites green, so the case
+ * proved nothing about the vocabulary it named. Parsing the union is what
+ * makes it fail when the vocabulary grows, and `npx jest` is the command that
+ * enforces it -- jest does not typecheck, so nothing type-level would.
+ */
+function roleVocabulary(): PilotRole[] {
+  const contracts = fs.readFileSync(
+    path.resolve(__dirname, '../../../../src/server/pilot/contracts.ts'),
+    'utf8',
+  );
+  const union = /export type PilotRole =([\s\S]*?);/.exec(contracts);
+  if (!union) {
+    throw new Error('PilotRole union not found in contracts.ts -- this parser needs updating');
+  }
+
+  const roles = Array.from(union[1].matchAll(/'([a-z_]+)'/g), (match) => match[1] as PilotRole);
+  if (roles.length === 0) {
+    throw new Error('PilotRole union parsed to no roles -- this parser needs updating');
+  }
+
+  return roles;
+}
+
+const ALL_ROLES: PilotRole[] = roleVocabulary();
 
 describe('who may read the v3 drill library', () => {
   it('accounts for every role in the vocabulary, so a new one cannot default in', () => {
+    // ALL_ROLES comes from the PilotRole union itself, so a role added there
+    // lands on neither side of this partition and fails here.
     expect([...ADMITTED_ROLES, ...DENIED_ROLES].sort()).toEqual([...ALL_ROLES].sort());
   });
 
@@ -133,11 +152,30 @@ describe('who may read the v3 drill library', () => {
     expect(mockDetail).not.toHaveBeenCalled();
   });
 
-  it('admits the platform owner, which this route already did, and refuses the board, which it did not', () => {
+  it('admits the platform owner, which this route already did, and refuses the board, which it did not', async () => {
     // Stated as its own case because these two ARE the change. Before the
     // decision this route admitted both; /api/pilot/drills refused both. The
     // outcome is neither of those postures, so a reader who assumes it simply
     // adopted the sibling's list would be wrong.
+    //
+    // It used to assert only that this file's own ADMITTED_ROLES/DENIED_ROLES
+    // literals held those two strings, which is a fact about the test file and
+    // not about the route: measured, it stayed green both when the policy was
+    // mutated to admit board and when it was mutated to drop platform_owner --
+    // the two changes it is named after. It calls the route now.
+    mockRequirePrincipal.mockResolvedValue(principal('platform_owner'));
+    mockList.mockResolvedValue([]);
+    expect((await GET(getRequest())).status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+
+    jest.clearAllMocks();
+
+    mockRequirePrincipal.mockResolvedValue(principal('board'));
+    mockList.mockResolvedValue([]);
+    expect((await GET(getRequest())).status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
+
+    // And the partition above agrees, so the sweeps really do cover both sides.
     expect(ADMITTED_ROLES).toContain('platform_owner');
     expect(DENIED_ROLES).toContain('board');
   });

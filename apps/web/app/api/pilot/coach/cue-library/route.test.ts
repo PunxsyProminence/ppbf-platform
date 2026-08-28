@@ -101,20 +101,40 @@ const ADMITTED_ROLES: PilotRole[] = [
 
 const DENIED_ROLES: PilotRole[] = ['board'];
 
-const ALL_ROLES: PilotRole[] = [
-  'platform_owner',
-  'organization_admin',
-  'admin',
-  'coach',
-  'athlete',
-  'parent',
-  'board',
-  'volunteer',
-  'staff',
-];
+/**
+ * The vocabulary, READ OUT OF contracts.ts rather than restated here.
+ *
+ * It was restated, which made the exhaustiveness case below a comparison of
+ * three literals in one file -- they agree by construction. Measured: adding a
+ * tenth member to the PilotRole union left all 61 cases in the four affected
+ * suites green. Parsing the union is what makes the case fail when the
+ * vocabulary grows, under `npx jest`; jest does not typecheck, so nothing
+ * type-level would.
+ */
+function roleVocabulary(): PilotRole[] {
+  const contracts = fs.readFileSync(
+    path.resolve(__dirname, '../../../../../src/server/pilot/contracts.ts'),
+    'utf8',
+  );
+  const union = /export type PilotRole =([\s\S]*?);/.exec(contracts);
+  if (!union) {
+    throw new Error('PilotRole union not found in contracts.ts -- this parser needs updating');
+  }
+
+  const roles = Array.from(union[1].matchAll(/'([a-z_]+)'/g), (match) => match[1] as PilotRole);
+  if (roles.length === 0) {
+    throw new Error('PilotRole union parsed to no roles -- this parser needs updating');
+  }
+
+  return roles;
+}
+
+const ALL_ROLES: PilotRole[] = roleVocabulary();
 
 describe('who may read the cue library', () => {
   it('accounts for every role in the vocabulary, so a new one cannot default in', () => {
+    // ALL_ROLES comes from the PilotRole union itself, so a role added there
+    // lands on neither side of this partition and fails here.
     expect([...ADMITTED_ROLES, ...DENIED_ROLES].sort()).toEqual([...ALL_ROLES].sort());
   });
 

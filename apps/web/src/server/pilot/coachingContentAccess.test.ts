@@ -23,11 +23,23 @@ function routeSource(relative: string): string {
   return fs.readFileSync(path.join(ROUTES_DIR, relative), 'utf8');
 }
 
-const GATED_READ_ROUTES = [
-  'drills/route.ts',
-  'drill-library/route.ts',
-  'coach/cue-library/route.ts',
-];
+const READER_POLICY = 'COACHING_CONTENT_READER_ROLES';
+
+/**
+ * Every role constant these files are allowed to gate on, per file.
+ *
+ * drills/route.ts also WRITES, and writing is the author list's question
+ * rather than this policy's, so DRILL_AUTHOR_ROLES is permitted there and
+ * nowhere else. Anything not named here is a private role list, which is the
+ * defect this module was created to remove.
+ */
+const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
+  'drills/route.ts': [READER_POLICY, 'DRILL_AUTHOR_ROLES'],
+  'drill-library/route.ts': [READER_POLICY],
+  'coach/cue-library/route.ts': [READER_POLICY],
+};
+
+const GATED_READ_ROUTES = Object.keys(PERMITTED_GATE_CONSTANTS);
 
 describe('the coaching-content read policy', () => {
   it('admits the platform owner and refuses the board', () => {
@@ -80,13 +92,49 @@ describe('every surface serving this content reaches the one policy', () => {
     expect(source).toMatch(/requireRole\(principal, \[\.\.\.COACHING_CONTENT_READER_ROLES\]\)/);
   });
 
-  it('no route keeps a private reader list beside the shared one', () => {
+  it('gates only on the shared policy and, for authoring, the author list', () => {
     // The failure mode this whole module exists to prevent, asserted directly.
-    // A route could import the policy, apply it, and still carry its own
-    // DRILL_READER_ROLES used somewhere else in the file -- passing every case
-    // above while the drift is already back.
-    for (const relative of GATED_READ_ROUTES) {
-      expect(routeSource(relative)).not.toMatch(/DRILL_READER_ROLES/);
+    //
+    // This case used to read `expect(source).not.toMatch(/DRILL_READER_ROLES/)`
+    // -- one banned identifier, under the title below. Measured: giving
+    // drill-library a second role list called LIBRARY_BROWSE_ROLES and gating
+    // the detail path on it left all 61 cases in the four affected suites
+    // green. Renaming the constant was the whole of the escape.
+    //
+    // So every requireRole argument in these files is enumerated instead, and
+    // each one has to be a spread of a constant this file names.
+    for (const [relative, permitted] of Object.entries(PERMITTED_GATE_CONSTANTS)) {
+      const gateArguments = Array.from(
+        routeSource(relative).matchAll(/requireRole\(\s*principal\s*,\s*([^)]*)\)/g),
+        (match) => match[1].trim(),
+      );
+
+      expect(gateArguments.length).toBeGreaterThan(0);
+      for (const argument of gateArguments) {
+        expect(argument).toMatch(/^\[\.\.\.[A-Z_]+\]$/);
+        expect(permitted).toContain(argument.slice(4, -1));
+      }
+    }
+  });
+
+  it('carries no other array of role literals, whatever that array is called', () => {
+    // The gate sweep above covers requireRole. A private list can also be read
+    // some other way -- drills/route.ts already does exactly that with
+    // `DRILL_AUTHOR_ROLES.some(...)` for include_retired -- so array literals
+    // holding role names are enumerated too, by content rather than by name.
+    //
+    // DRILL_AUTHOR_ROLES is the one route-local role list the decision left in
+    // place, and it is a WRITE list. Anything else is a reader list returning
+    // under a new name.
+    const roleNames = [...COACHING_CONTENT_READER_ROLES, 'board'];
+    const arrayLiteral = /const\s+([A-Za-z_][A-Za-z0-9_]*)[^=\n]*=\s*\[([^\]]*)\]/g;
+
+    for (const [relative, permitted] of Object.entries(PERMITTED_GATE_CONSTANTS)) {
+      const declared = Array.from(routeSource(relative).matchAll(arrayLiteral))
+        .filter(([, , body]) => roleNames.some((role) => body.includes(`'${role}'`)))
+        .map(([, name]) => name);
+
+      expect(declared).toEqual(permitted.filter((name) => name !== READER_POLICY));
     }
   });
 
