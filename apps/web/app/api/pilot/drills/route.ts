@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import {
   DRILL_DIFFICULTIES,
   DrillNameTakenError,
@@ -16,19 +17,16 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-// A drill is gym-wide coaching content and holds no athlete data, so everyone
-// training in the organization may read the library. The board is excluded
-// because its access is organization-level aggregates, and the platform owner
-// because a gym's drills are the gym's.
-const DRILL_READER_ROLES = [
-  'coach',
-  'organization_admin',
-  'admin',
-  'athlete',
-  'parent',
-  'staff',
-  'volunteer',
-] as const;
+// Who may read is no longer decided here. A drill is gym-wide coaching content
+// and holds no athlete data; the same is true of the v3 drill library and the
+// cue library, which used to answer this question differently. One owner
+// decision now covers all three -- see coachingContentAccess.ts.
+//
+// What changed for THIS route: the board is still excluded, for the reason
+// this file already gave. The platform owner is no longer excluded. The
+// rationale that excluded it -- "a gym's drills are the gym's" -- was answered
+// rather than overruled: the read below is reached only through
+// principal.organizationId, so an Omega read IS the gym's, one gym at a time.
 
 // Coaches and admins are the people who know the drills, so they are the ones
 // who write them.
@@ -91,7 +89,7 @@ function nameTaken(error: DrillNameTakenError): NextResponse {
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, [...DRILL_READER_ROLES]);
+    requireRole(principal, [...COACHING_CONTENT_READER_ROLES]);
 
     // Only the authoring roles see what has been retired; to everyone else the
     // library is what the gym teaches now.

@@ -21,6 +21,61 @@ not replace it.
 
 ---
 
+## 2026-08-28 — release lane (correcting the entry below, per this file's stale-note rule)
+
+**Production is NOT four migrations behind. It received `MIGRATION: all` and
+the run succeeded.** apply-migrations run `33134522694`, job `98731402084`:
+dispatched 01:59:17Z, held at the environment gate, approved and started
+11:23:53Z, `Apply Migration` 11:24:30Z–11:25:31Z, conclusion `success`. Its
+`Record What Ran` block reads `TARGET: production`, `MIGRATION: all`,
+`CONTAINER_APP_NAME: app-ppbf-production`,
+`PPBF_EXPECTED_POSTGRES_HOSTNAME: ppbf-pg-195892.postgres.database.azure.com`
+— the production host, not `ppbf-pg-staging-7k4m2q`.
+
+So all three discipline FKs and `athlete-development-blocks` ARE on production.
+The entry below was written at 14:23Z, after that run had already completed.
+The gate delay is how it went wrong: the build lane dispatched to production,
+saw it sitting unapproved, stopped, and recorded "none applied" — accurate when
+they stopped, false by the time they wrote it. A dispatched production run that
+is merely *waiting* is not a run that did nothing; re-read the run before
+recording that it did.
+
+**This makes the entry below actively dangerous, not merely stale**: acting on
+it means re-applying migrations production already has, or holding a promotion
+because production is believed to lack schema it holds.
+
+**The pre-application measurement it asks for can no longer be taken before
+the fact** — the FKs are already live. It is still worth taking, and the
+harm it guards against did not occur:
+
+- The constraints are `NOT VALID`, so no deployed row was ever scanned.
+- Verified against production's own code (`8af06a60`): there is **no runtime
+  write path** to `session_scripts`, `drill_library` or `cohort_definitions`.
+  `/api/pilot/session-scripts` and `/api/pilot/drill-library` export `GET`
+  only; `drillLibraryV3.ts` and `competenceCohorts.ts` contain no writes at
+  all; `sessionScriptRuns.ts` writes only `session_script_runs`, which has no
+  `discipline` column. No dynamic or bare-table-name SQL either.
+- The only writers are the three seed scripts, run by deliberate workflow
+  dispatch. Their CSVs carry only `boxing` and `conditioning`, both in the
+  seeded registry, and `seed-reference-data.yml` loads `disciplines` first.
+
+So a `23503` on live traffic was not reachable. The measurement still matters
+for the next `seed-reference-data` run against production.
+
+**A gap the entry below did not name, and the sharper one:** `pilot.disciplines`
+has no seeding migration at all — it is an operator step seeding one
+organization per run. A gym created through the app therefore starts with an
+EMPTY registry, and once any runtime write path to those three tables exists,
+every such write fails for that gym. #760 (merged) makes organization creation
+seed the five disciplines. That is the fix; the census in #768 is the
+measurement.
+
+`validate constraint` remains run nowhere — that part of the entry below stands.
+
+— release lane. Evidence is the run logs cited above, not this session's memory:
+this lane's own prior record also said "staging and production", which was right
+about production and would have been believed for the wrong reason.
+
 ## 2026-08-28 — branch `claude/training-content-backend-6wymcp-*` (PRs #756, #757, #758)
 
 **Staging's database is four migrations ahead of production.** Applied to
