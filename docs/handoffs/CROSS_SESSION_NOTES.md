@@ -38,6 +38,16 @@ deviations/reason pair, same who-and-when. #829 adds no field #804 lacks;
 #804 adds `what_worked`, `what_did_not`, `next_adjustment`. Comparison table
 in https://github.com/PunxsyProminence/ppbf-platform/pull/829#issuecomment-5457671190.
 
+**Correcting myself before anyone costs it wrong:** I said #829's read
+(`getBlockPlanVsActual`) would sit on either table unchanged. Only half of it
+would. The four window counts, the closed-window state and the target never
+touch this table and are genuinely table-independent. The VERDICT half calls
+`getBlockExecution`, which is an unqualified `queryOne` with no `order by` --
+exact here only because the unique constraint guarantees one row, and on a
+many-row table it would return an arbitrary one. Porting it onto #804 needs a
+stated rule for which row is current (newest? a coach-marked final?), which
+is the same rule a family screen would need anyway. Small, but not free.
+
 **The real fork is cardinality, not columns.** One row upserted (#829, owner
 decision D1(a) of 036a) versus many appended (#804). Correcting a verdict in
 #829 overwrites the earlier one, so earlier judgments stop existing.
