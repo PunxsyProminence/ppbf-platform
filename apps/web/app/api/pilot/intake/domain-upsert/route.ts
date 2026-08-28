@@ -175,6 +175,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         organizationId: principal.organizationId,
         athleteId,
         coachAccountId: principal.accountId,
+        authorRole: principal.role,
         noteType: asString(body.payload.note_type, 'coach_observation'),
         noteText: asString(body.payload.note_text),
       });

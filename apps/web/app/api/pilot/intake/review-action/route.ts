@@ -583,6 +583,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         organizationId: principal.organizationId,
         athleteId: promotion.athlete.athlete_id,
         coachAccountId: principal.accountId,
+        authorRole: principal.role,
         noteType: promotion.coach_note.note_type ?? 'intake_observation',
         noteText: promotion.coach_note.note_text,
       });
