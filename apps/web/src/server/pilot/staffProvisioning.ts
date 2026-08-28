@@ -634,6 +634,50 @@ export async function removeGuardianLink(params: {
     }
 
     /*
+     * THE LOCK, AND WHY IT IS TAKEN BEFORE THE CONSENT READ BELOW.
+     *
+     * Round-review finding (Codex, PR #823): the consent read was an ordinary
+     * SELECT with nothing serializing it against a concurrent withdrawal, so
+     * an INSERT landing between the read and the DELETE was lost -- the
+     * withdrawal committed, the link vanished, and checkGuardianMediaConsent
+     * stopped asking that guardian. The exact bypass this refusal exists to
+     * prevent, arriving through timing instead of through a missing check.
+     *
+     * ONE ROW, NOT A SET, and that is deliberate. The withdrawal path's sweep
+     * (publication.ts suppressPublishedMediaForAthlete) locks
+     * `where organization_id = $1 and athlete_id = $2 for update` -- every
+     * guardian of one athlete. Locking every athlete of one guardian here
+     * would give two transactions overlapping sets acquired in opposite
+     * orders, which is a deadlock waiting for load. A transaction that takes
+     * exactly one row lock and waits on nothing else cannot be half of a
+     * deadlock cycle, so this locks precisely the row it is about to delete.
+     *
+     * WHAT THE LOCK CLOSES. Under READ COMMITTED each statement takes a fresh
+     * snapshot, so the consent read below -- issued AFTER this lock is held --
+     * sees every withdrawal committed up to that moment. And it orders this
+     * transaction against the sweep: either the sweep holds the row and this
+     * waits for it (then reads the withdrawal and refuses), or this holds the
+     * row and the sweep waits (and afterwards finds no link, because the
+     * unlink was decided before the withdrawal existed).
+     *
+     * WHAT IT DOES NOT CLOSE, stated rather than papered over: the withdrawal
+     * INSERT itself takes no lock -- withdrawMediaConsent is a bare autocommit
+     * insert into pilot.waivers and the sweep runs only afterwards, in its own
+     * transaction -- so an insert committing between the read below and the
+     * DELETE is still lost. That window now contains no other round trip of
+     * ours, but it is not zero. Closing it needs the WRITE path to take this
+     * same guardian_links lock before its insert, which changes the
+     * concurrency of the most safety-critical write in this domain and is
+     * proposed on the review thread rather than taken unilaterally here.
+     */
+    await client.query(
+      `select 1 from pilot.guardian_links
+        where organization_id = $1 and parent_id = $2 and athlete_id = $3
+        for update`,
+      [organizationId, target.parent_id, athleteId],
+    );
+
+    /*
      * A withdrawal is a standing NO, and this DELETE is the one action that
      * can silently turn it into a YES.
      *

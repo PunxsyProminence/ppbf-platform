@@ -709,6 +709,15 @@ function consentCalls() {
   return currentClient.query.mock.calls.filter(([sql]) => String(sql).includes('from pilot.waivers'));
 }
 
+function lockCalls() {
+  return currentClient.query.mock.calls.filter(([sql]) => String(sql).includes('for update'));
+}
+
+/** Index of the first call whose SQL matches, or -1. */
+function callIndex(match: (sql: string) => boolean): number {
+  return currentClient.query.mock.calls.findIndex(([sql]) => match(String(sql)));
+}
+
 function deleteCalls() {
   return currentClient.query.mock.calls.filter(([sql]) => sql.startsWith('delete from pilot.guardian_links'));
 }
@@ -899,6 +908,58 @@ describe('removeGuardianLink', () => {
     ).rejects.toThrow('Forbidden: this guardian has withdrawn media consent for this athlete');
 
     expect(deleteCalls()).toHaveLength(0);
+  });
+
+  /*
+   * Round-review finding (Codex, PR #823): the consent read was an ordinary
+   * SELECT with nothing serializing it against a concurrent withdrawal. The
+   * lock below is what makes the read see a withdrawal that committed a
+   * moment earlier, and what orders this transaction against the withdrawal
+   * path's own sweep.
+   */
+  test('the row being deleted is locked FOR UPDATE, and the lock is taken BEFORE the consent read', async () => {
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [
+        { parent_id: 'par-1', athlete_id: 'ath-1' },
+        { parent_id: 'par-1', athlete_id: 'ath-2' },
+      ],
+    });
+
+    await removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', athleteId: 'ath-2' });
+
+    expect(lockCalls()).toHaveLength(1);
+    // Exactly the row about to be deleted -- not every link this guardian
+    // holds. A transaction that takes one row lock and waits on nothing else
+    // cannot be half of a deadlock cycle with the withdrawal sweep, which
+    // locks every guardian of one athlete.
+    expect(lockCalls()[0][1]).toEqual(['org-1', 'par-1', 'ath-2']);
+    expect(String(lockCalls()[0][0])).toContain('from pilot.guardian_links');
+
+    // Ordering is the whole point: a lock taken after the read serializes
+    // nothing. Under READ COMMITTED the read below the lock takes a fresh
+    // snapshot and sees every withdrawal committed up to that moment.
+    const lockAt = callIndex((sql) => sql.includes('for update'));
+    const readAt = callIndex((sql) => sql.includes('from pilot.waivers'));
+    expect(lockAt).toBeGreaterThanOrEqual(0);
+    expect(readAt).toBeGreaterThanOrEqual(0);
+    expect(lockAt).toBeLessThan(readAt);
+  });
+
+  test('nothing is locked when the athlete is not linked to this guardian', async () => {
+    // target.parent_id does not exist until the link is found, so the lock
+    // cannot precede that check -- and locking a row on a request that is
+    // about to be refused would hold it for no reason.
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [{ parent_id: 'par-1', athlete_id: 'ath-1' }, { parent_id: 'par-1', athlete_id: 'ath-2' }],
+    });
+
+    await expect(
+      removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', athleteId: 'ath-9' }),
+    ).rejects.toThrow('Not found: that athlete is not linked to this guardian');
+
+    expect(lockCalls()).toHaveLength(0);
   });
 
   test('an athlete this guardian is not linked to is still reported before any consent is read', async () => {
