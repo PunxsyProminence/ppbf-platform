@@ -421,8 +421,23 @@ phase names?**
   must not be invented"), included here only so the owner can see it named
   and declined, not silently omitted.
 
-**5. [NEW, raised by the foundation slice.] Which staff roles may create and
-modify an athlete development block?**
+**5. [ANSWERED — (a), 2026-08-28.] Which staff roles may create and modify an
+athlete development block?**
+
+**Jason: _"Admin and coaches."_** Enforced as
+`DEVELOPMENT_BLOCK_WRITE_ROLES = ['coach', 'organization_admin', 'admin']` in
+`athleteDevelopmentBlocks.ts`, imported by the objectives module so one
+decision lives in one place. `platform_owner` is deliberately absent, matching
+`COMPETITION_WRITE_ROLES` and `LEAGUE_WRITE_ROLES`. `athlete`, `parent` and
+`volunteer` are not write roles here — a development block is a coach's plan
+*for* an athlete, and `pilot.goals` is where an athlete's own goals live.
+
+This closed a real gap rather than only unblocking the future API. The floor
+these modules shipped with accepted an ACTIVE membership of **any** role, and
+`pilot.organization_memberships.role` admits `athlete`, `parent` and
+`volunteer`. Nothing could reach it — there are still no routes — but a data
+layer that would let an athlete file their own development block is not a
+floor worth shipping. The question as it was put:
 
 The foundation slice does not answer this and does not need to: it ships no
 API route and no UI, so no role gate had to be invented to land the schema.
@@ -446,7 +461,8 @@ them may author a coach's training plan.
 
 Whichever is chosen, `athlete`, `parent` and `volunteer` are not write roles
 here, and read access for an athlete or their guardian is a separate
-safeguarding question this slice does not open.
+safeguarding question this slice does not open. **That read question is still
+open** — the decision above governs writing only.
 
 **6. [ANSWERED — (a), 2026-08-28.] May a coach file a nutrition /
 body-composition objective for a named minor?**

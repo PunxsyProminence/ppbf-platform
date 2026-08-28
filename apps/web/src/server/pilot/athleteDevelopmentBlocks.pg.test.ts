@@ -54,6 +54,7 @@ jest.mock('./db', () => ({
 }));
 
 import {
+  DEVELOPMENT_BLOCK_WRITE_ROLES,
   createDevelopmentBlock,
   getDevelopmentBlock,
   listDevelopmentBlocks,
@@ -96,6 +97,12 @@ const LAPSED_COACH_ID = 'acct-blocks-lapsed';
 const VISITING_COACH_ID = 'acct-blocks-visiting';
 // Home organization elsewhere, membership only there.
 const OTHER_COACH_ID = 'acct-blocks-other-coach';
+// Active memberships HERE, in roles that may not author (owner decision
+// 2026-08-28: "Admin and coaches"). These are the accounts the pre-decision
+// floor would have let through.
+const ATHLETE_ACCOUNT_ID = 'acct-blocks-athlete';
+const PARENT_ACCOUNT_ID = 'acct-blocks-parent';
+const VOLUNTEER_ACCOUNT_ID = 'acct-blocks-volunteer';
 const ATHLETE_ID = 'ath-blocks-1';
 const SECOND_ATHLETE_ID = 'ath-blocks-2';
 const OTHER_ATHLETE_ID = 'ath-blocks-other';
@@ -160,9 +167,13 @@ async function freshDatabase(name: string): Promise<Client> {
             ($2, 'coach', $5, 'microsoft'),
             ($3, 'coach', $5, 'microsoft'),
             ($4, 'coach', $6, 'microsoft'),
-            ($7, 'coach', $6, 'microsoft')
+            ($7, 'coach', $6, 'microsoft'),
+            ($8, 'athlete', $5, 'microsoft'),
+            ($9, 'parent', $5, 'microsoft'),
+            ($10, 'volunteer', $5, 'microsoft')
      on conflict do nothing`,
-    [ADMIN_ID, COACH_ID, LAPSED_COACH_ID, VISITING_COACH_ID, ORG_ID, OTHER_ORG_ID, OTHER_COACH_ID],
+    [ADMIN_ID, COACH_ID, LAPSED_COACH_ID, VISITING_COACH_ID, ORG_ID, OTHER_ORG_ID, OTHER_COACH_ID,
+     ATHLETE_ACCOUNT_ID, PARENT_ACCOUNT_ID, VOLUNTEER_ACCOUNT_ID],
   );
 
   await client.query(
@@ -172,9 +183,13 @@ async function freshDatabase(name: string): Promise<Client> {
             ($3, $5, 'coach', false),
             ($4, $5, 'coach', true),
             ($4, $6, 'coach', true),
-            ($7, $6, 'coach', true)
+            ($7, $6, 'coach', true),
+            ($8, $5, 'athlete', true),
+            ($9, $5, 'parent', true),
+            ($10, $5, 'volunteer', true)
      on conflict do nothing`,
-    [ADMIN_ID, COACH_ID, LAPSED_COACH_ID, VISITING_COACH_ID, ORG_ID, OTHER_ORG_ID, OTHER_COACH_ID],
+    [ADMIN_ID, COACH_ID, LAPSED_COACH_ID, VISITING_COACH_ID, ORG_ID, OTHER_ORG_ID, OTHER_COACH_ID,
+     ATHLETE_ACCOUNT_ID, PARENT_ACCOUNT_ID, VOLUNTEER_ACCOUNT_ID],
   );
 
   for (const [org, athleteId, coachId] of [
@@ -566,6 +581,52 @@ describe('the module writing and reading blocks', () => {
     } finally {
       await client.end();
     }
+  });
+
+  test('only admins and coaches may author (owner decision, 2026-08-28)', async () => {
+    // The decision, enforced. Each account below holds an ACTIVE membership
+    // in THIS organization -- the pre-decision floor accepted all three, and
+    // an athlete filing their own development block is exactly what a block
+    // is not. An athlete's own goals live in pilot.goals.
+    const client = await migratedDatabase('adb_write_roles');
+    try {
+      for (const accountId of [ATHLETE_ACCOUNT_ID, PARENT_ACCOUNT_ID, VOLUNTEER_ACCOUNT_ID]) {
+        await expect(createDevelopmentBlock({
+          organizationId: ORG_ID,
+          athleteId: ATHLETE_ID,
+          title: 'Not theirs to write',
+          trainingEmphasis: EMPHASIS,
+          startsOn: '2026-09-02',
+          endsOn: '2026-10-14',
+          createdByAccountId: accountId,
+        })).rejects.toBeInstanceOf(ForbiddenError);
+      }
+      expect((await client.query('select block_id from pilot.athlete_development_blocks')).rows)
+        .toEqual([]);
+
+      // And the two roles that may, both writing successfully.
+      for (const [index, accountId] of [COACH_ID, ADMIN_ID].entries()) {
+        const created = await createDevelopmentBlock({
+          organizationId: ORG_ID,
+          athleteId: ATHLETE_ID,
+          title: `Block ${index}`,
+          trainingEmphasis: EMPHASIS,
+          startsOn: '2026-09-02',
+          endsOn: '2026-10-14',
+          createdByAccountId: accountId,
+        });
+        expect(created?.created_by_account_id).toBe(accountId);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the write vocabulary is exactly admins and coaches', () => {
+    // Pinned so widening it is a deliberate edit rather than a drift, and so
+    // platform_owner staying out stays visible -- it is out on purpose, the
+    // same way COMPETITION_WRITE_ROLES and LEAGUE_WRITE_ROLES leave it out.
+    expect([...DEVELOPMENT_BLOCK_WRITE_ROLES]).toEqual(['coach', 'organization_admin', 'admin']);
   });
 
   test('a coach whose home organization is elsewhere may still author here, if their membership is active', async () => {

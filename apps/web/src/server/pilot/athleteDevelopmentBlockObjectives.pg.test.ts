@@ -83,6 +83,8 @@ const OTHER_ORG_ID = 'org-elsewhere';
 const COACH_ID = 'acct-obj-coach';
 const LAPSED_COACH_ID = 'acct-obj-lapsed';
 const OTHER_COACH_ID = 'acct-obj-other-coach';
+// Active membership HERE, in a role that may not author.
+const ATHLETE_ACCOUNT_ID = 'acct-obj-athlete-account';
 const ATHLETE_ID = 'ath-obj-1';
 const OTHER_ATHLETE_ID = 'ath-obj-other';
 const BLOCK_ID = 'block-obj-ours';
@@ -144,17 +146,19 @@ async function freshDatabase(name: string): Promise<Client> {
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
      values ($1, 'coach', $4, 'microsoft'),
             ($2, 'coach', $4, 'microsoft'),
-            ($3, 'coach', $5, 'microsoft')
+            ($3, 'coach', $5, 'microsoft'),
+            ($6, 'athlete', $4, 'microsoft')
      on conflict do nothing`,
-    [COACH_ID, LAPSED_COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID],
+    [COACH_ID, LAPSED_COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID, ATHLETE_ACCOUNT_ID],
   );
   await client.query(
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
      values ($1, $4, 'coach', true),
             ($2, $4, 'coach', false),
-            ($3, $5, 'coach', true)
+            ($3, $5, 'coach', true),
+            ($6, $4, 'athlete', true)
      on conflict do nothing`,
-    [COACH_ID, LAPSED_COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID],
+    [COACH_ID, LAPSED_COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID, ATHLETE_ACCOUNT_ID],
   );
   for (const [org, athleteId, coachId] of [
     [ORG_ID, ATHLETE_ID, COACH_ID],
@@ -542,10 +546,15 @@ describe('the module writing and reading objectives', () => {
     }
   });
 
-  test('the creator must hold an ACTIVE membership in the block\'s organization', async () => {
+  test('the creator must be an admin or coach with an ACTIVE membership here', async () => {
+    // Three denials, one message. OTHER_COACH_ID is a coach of another gym,
+    // LAPSED_COACH_ID a former coach of this one, ATHLETE_ACCOUNT_ID an
+    // active member in a role that may not author (owner decision
+    // 2026-08-28: "Admin and coaches"). The gate is the parent module's,
+    // imported rather than restated, so blocks and objectives cannot drift.
     const client = await migratedDatabase('adbo_mod_membership');
     try {
-      for (const accountId of [OTHER_COACH_ID, LAPSED_COACH_ID]) {
+      for (const accountId of [OTHER_COACH_ID, LAPSED_COACH_ID, ATHLETE_ACCOUNT_ID]) {
         await expect(addBlockObjective({
           organizationId: ORG_ID,
           blockId: BLOCK_ID,

@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import { getDevelopmentBlock, type DevelopmentBlockStatus } from './athleteDevelopmentBlocks';
+import {
+  getDevelopmentBlock,
+  hasBlockWriteMembership,
+  type DevelopmentBlockStatus,
+} from './athleteDevelopmentBlocks';
 import { query, queryOne } from './db';
 import { ForbiddenError, ValidationError } from './errors';
 
@@ -96,24 +100,15 @@ export function blockObjectiveShapeError(input: BlockObjectiveInput): string | n
   return null;
 }
 
-async function hasActiveMembership(accountId: string, organizationId: string): Promise<boolean> {
-  const membership = await queryOne<{ account_id: string }>(
-    `select om.account_id
-     from pilot.organization_memberships om
-     where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true`,
-    [accountId, organizationId],
-  );
-  return membership !== null;
-}
-
 /**
  * Adds one objective to a block.
  *
  * Returns null when the block is not in this organization -- a hidden
  * not-found, so this path cannot be used to discover that a block id is real
- * somewhere else. Throws ForbiddenError when the creator holds no active
- * membership here, checked FIRST so a caller with no standing learns nothing
- * about which blocks exist.
+ * somewhere else. Throws ForbiddenError when the creator may not
+ * author here -- no membership, an inactive one, or an active one in a role
+ * outside DEVELOPMENT_BLOCK_WRITE_ROLES -- checked FIRST so a caller with no
+ * standing learns nothing about which blocks exist.
  */
 export async function addBlockObjective(input: BlockObjectiveInput & {
   organizationId: string;
@@ -125,10 +120,15 @@ export async function addBlockObjective(input: BlockObjectiveInput & {
     throw new ValidationError(shapeError, 'BLOCK_OBJECTIVE_INVALID');
   }
 
-  if (!(await hasActiveMembership(input.createdByAccountId, input.organizationId))) {
+  // The SAME check the parent block uses, imported rather than restated:
+  // "Admin and coaches" (owner decision 2026-08-28) is one decision, and a
+  // second copy of an authorization list is a second thing to forget to
+  // update. An objective is part of a block, so it cannot be authored by
+  // anyone who could not have authored the block.
+  if (!(await hasBlockWriteMembership(input.createdByAccountId, input.organizationId))) {
     throw new ForbiddenError(
-      'This account holds no active membership in this organization.',
-      'BLOCK_OBJECTIVE_CREATOR_NOT_A_MEMBER',
+      'This account may not author development block objectives in this organization.',
+      'BLOCK_OBJECTIVE_CREATOR_NOT_PERMITTED',
     );
   }
 

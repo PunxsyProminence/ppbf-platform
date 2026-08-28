@@ -22,12 +22,14 @@ import { ForbiddenError, ValidationError } from './errors';
 // pilot.athletes means a block cannot name an athlete in another
 // organization even if a caller asks it to.
 //
-// No API route or UI exists yet, deliberately. Exactly which staff roles may
-// author a block is an owner decision that this slice does not make; what it
-// does do is refuse a creator with no ACTIVE membership in the block's
-// organization, which is the floor every write path in this codebase already
-// stands on (resolvePrincipal INNER JOINs pilot.organization_memberships for
-// the same reason).
+// No API route or UI exists yet. Who may author a block IS now decided --
+// owner decision 2026-08-28, "Admin and coaches" -- and it is enforced here
+// rather than left to a future route, because the floor this module shipped
+// with was too low: an ACTIVE membership of ANY role satisfied it, and
+// pilot.organization_memberships.role admits 'athlete', 'parent' and
+// 'volunteer'. Nothing could reach it (there is no route), but a data layer
+// that would let an athlete file their own development block is not a floor
+// worth shipping.
 
 export const DEVELOPMENT_BLOCK_STATUSES = ['draft', 'active', 'completed', 'cancelled'] as const;
 
@@ -109,21 +111,56 @@ export function developmentBlockShapeError(input: DevelopmentBlockInput): string
 }
 
 /**
- * Does this account hold an ACTIVE membership in this organization?
+ * Who may author a development block or its objectives (owner decision,
+ * 2026-08-28: "Admin and coaches").
  *
- * pilot.accounts.organization_id is the account's single denormalized home
- * organization and is the wrong question: a coach whose home organization is
- * elsewhere but who holds an active membership here may legitimately author
- * a block here, and an account whose membership was deactivated may not,
+ * Named and shaped like COMPETITION_WRITE_ROLES and LEAGUE_WRITE_ROLES, the
+ * two existing per-surface write vocabularies, and exported so the objectives
+ * module enforces the same list rather than a second copy of it.
+ *
+ * platform_owner is deliberately absent, matching both of those surfaces: a
+ * block is one gym's coaching record about one of its athletes, and the
+ * platform owner reads across organizations at strictly less depth
+ * (shadowRoleSets.ts). athlete, parent and volunteer are not write roles
+ * here -- a development block is a coach's plan FOR an athlete, not a thing
+ * the athlete files about themselves; pilot.goals is where an athlete's own
+ * goals live.
+ */
+export const DEVELOPMENT_BLOCK_WRITE_ROLES = ['coach', 'organization_admin', 'admin'] as const;
+
+export type DevelopmentBlockWriteRole = (typeof DEVELOPMENT_BLOCK_WRITE_ROLES)[number];
+
+/**
+ * Does this account hold an ACTIVE membership in this organization, in a role
+ * that may author blocks?
+ *
+ * Two things this deliberately does not ask:
+ *
+ * pilot.accounts.organization_id -- the account's single denormalized home
+ * organization -- is the wrong question. A coach whose home organization is
+ * elsewhere but who holds an active membership here may legitimately author a
+ * block here, and an account whose membership was deactivated may not,
  * however its home column reads. auth.ts asks the membership table for
  * exactly this reason.
+ *
+ * pilot.accounts.role is also the wrong question: it is the account's home
+ * role, and the same account can hold a different role in a different gym.
+ * The role that matters is the one on the membership row for THIS
+ * organization, which is what the query below reads.
+ *
+ * Exported for the objectives module, so one decision is enforced in one
+ * place for both tables.
  */
-async function hasActiveMembership(accountId: string, organizationId: string): Promise<boolean> {
+export async function hasBlockWriteMembership(
+  accountId: string,
+  organizationId: string,
+): Promise<boolean> {
   const membership = await queryOne<{ account_id: string }>(
     `select om.account_id
      from pilot.organization_memberships om
-     where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true`,
-    [accountId, organizationId],
+     where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true
+       and om.role = any($3::text[])`,
+    [accountId, organizationId, [...DEVELOPMENT_BLOCK_WRITE_ROLES]],
   );
   return membership !== null;
 }
@@ -147,10 +184,13 @@ export async function createDevelopmentBlock(input: DevelopmentBlockInput & {
     throw new ValidationError(shapeError, 'DEVELOPMENT_BLOCK_INVALID');
   }
 
-  if (!(await hasActiveMembership(input.createdByAccountId, input.organizationId))) {
+  if (!(await hasBlockWriteMembership(input.createdByAccountId, input.organizationId))) {
+    // One message for every denial reason -- no membership, an inactive one,
+    // or an active one in a role that may not author. A caller cannot tell
+    // which from the response.
     throw new ForbiddenError(
-      'This account holds no active membership in this organization.',
-      'DEVELOPMENT_BLOCK_CREATOR_NOT_A_MEMBER',
+      'This account may not author development blocks in this organization.',
+      'DEVELOPMENT_BLOCK_CREATOR_NOT_PERMITTED',
     );
   }
 
