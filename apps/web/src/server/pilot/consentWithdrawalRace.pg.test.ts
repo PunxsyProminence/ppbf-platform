@@ -371,3 +371,133 @@ describe('a publish cannot outlive a consent withdrawal', () => {
     expect(await publicationStatus(publicationId)).toBe('retracted');
   });
 });
+
+/**
+ * THE OTHER HALF OF THE LOCK PAIR. Owner decision D-2, 2026-08-28.
+ *
+ * The suite above proves the READ side: a publish holding FOR SHARE on
+ * pilot.guardian_links makes the withdrawal's sweep wait, so no publish
+ * outlives a withdrawal unsuppressed.
+ *
+ * It could not prove anything about the WRITE, because the write took no lock
+ * at all. withdrawMediaConsent was a bare pooled insert that committed on its
+ * own the moment it returned, so nothing any reader held could order itself
+ * against it -- and the readers are the ones making safety decisions. A
+ * withdrawal committing between a reader's check and its action was simply
+ * missed; on staffProvisioning.removeGuardianLink's path it was missed
+ * PERMANENTLY, the withdrawal recorded and the link deleted, leaving the
+ * guardian who withdrew out of the consent answer entirely.
+ *
+ * These prove the write now participates: it waits for a reader's lock, and
+ * it records the decision on the far side of that wait.
+ */
+describe('the consent write takes the lock the readers take', () => {
+  /** Holds FOR UPDATE on the guardian link row, as a reader would. */
+  async function holdingTheLink<T>(body: () => Promise<T>): Promise<T> {
+    const holder = new Client({ connectionString: connectionStringFor(PG_DATABASE) });
+    await holder.connect();
+    try {
+      await holder.query('begin');
+      await holder.query(
+        `select 1 from pilot.guardian_links
+          where organization_id = $1 and parent_id = $2 and athlete_id = $3
+          for update`,
+        [ORG_ID, PARENT_ID, ATHLETE_ID],
+      );
+      return await body();
+    } finally {
+      await holder.query('rollback').catch(() => {});
+      await holder.end().catch(() => {});
+    }
+  }
+
+  async function someBackendIsWaitingOnALock(): Promise<boolean> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const waiting = await client.query<{ pid: number }>(
+        `select pid from pg_stat_activity
+          where datname = current_database()
+            and pid <> pg_backend_pid()
+            and wait_event_type = 'Lock'`,
+      );
+      if ((waiting.rowCount ?? 0) > 0) return true;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return false;
+  }
+
+  async function currentStatus(): Promise<string | null> {
+    const row = await client.query<{ status: string }>(
+      `select status from pilot.waivers
+        where organization_id = $1 and athlete_id = $2 and parent_id = $3
+        order by created_at desc limit 1`,
+      [ORG_ID, ATHLETE_ID, PARENT_ID],
+    );
+    return row.rows[0]?.status ?? null;
+  }
+
+  test('a withdrawal waits for a reader holding the link, then records', async () => {
+    /* NOTHING IS ASSERTED INSIDE THE HELD BLOCK. The suite above records why
+       in its own words: an assertion that throws while the lock is held leaves
+       the blocked transaction holding its pool connection, and the run hangs
+       at teardown instead of failing. Both values are captured, the lock is
+       released in a finally, and the assertions run afterwards. */
+    let observedBlocked = false;
+    let withdrawing: Promise<string> | null = null;
+
+    await holdingTheLink(async () => {
+      withdrawing = consent.withdrawMediaConsent({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        parentId: PARENT_ID,
+        signedByName: 'Race Guardian',
+      });
+      observedBlocked = await someBackendIsWaitingOnALock();
+    });
+
+    await withdrawing;
+
+    // The negative control, and the assertion that actually distinguishes
+    // this change from the code it replaces: without the lock in the writer
+    // the insert would have committed immediately and this is false.
+    expect(observedBlocked).toBe(true);
+    expect(await currentStatus()).toBe('withdrawn');
+  });
+
+  test('a grant waits on the same lock -- both writers, or they drift', async () => {
+    let observedBlocked = false;
+    let granting: Promise<string> | null = null;
+
+    await holdingTheLink(async () => {
+      granting = consent.grantMediaConsent({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        parentId: PARENT_ID,
+        signedByName: 'Race Guardian',
+        coversVideo: true,
+        publicUseAllowed: false,
+      });
+      observedBlocked = await someBackendIsWaitingOnALock();
+    });
+
+    await granting;
+
+    expect(observedBlocked).toBe(true);
+    expect(await currentStatus()).toBe('signed');
+  });
+
+  test('with nobody holding the link, a withdrawal does not wait', async () => {
+    /* The control that keeps the two above from passing for the wrong reason.
+       If they were blocking on something incidental -- the pool, a connection
+       limit, an unrelated lock -- this would block too. It must not. */
+    const before = Date.now();
+    await consent.withdrawMediaConsent({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      parentId: PARENT_ID,
+      signedByName: 'Race Guardian',
+    });
+
+    expect(Date.now() - before).toBeLessThan(2000);
+    expect(await currentStatus()).toBe('withdrawn');
+  });
+});
