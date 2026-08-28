@@ -22,6 +22,18 @@ import type { ReactNode } from 'react';
 
 import CoachDevelopmentBlocksPage from './page';
 
+/* The ten domains, mirrored ONLY as stub data. The page holds no copy of the
+   vocabulary -- it renders what the route serves -- so this list exists to
+   make the stub realistic, not to pin anything. The real pin (that every
+   served domain has a human label) lives in the route's own test, which runs
+   under node and can import both the module and the page; importing the
+   server module here pulls in `pg` and jsdom has no TextEncoder for it. */
+const SERVED_DOMAINS = [
+  'technical', 'physical', 'conditioning', 'mental', 'recovery_load',
+  'sparring_live_progression', 'competition_preparation', 'tactical_film_study',
+  'lifestyle_athlete_identity', 'nutrition_body_composition',
+];
+
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
   default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
@@ -59,6 +71,20 @@ function blockRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function objectiveRow(overrides: Record<string, unknown> = {}) {
+  return {
+    objective_id: 'obj-1',
+    block_id: 'blk-1',
+    domain: 'technical',
+    objective: 'Jab off the back foot under pressure, not just off the front.',
+    status: 'draft',
+    created_by_account_id: 'acct-coach-a',
+    created_at: '2026-08-28T00:00:00.000Z',
+    updated_at: '2026-08-28T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
 interface Stubs {
   rosterOk?: boolean;
   roster?: typeof ROSTER;
@@ -68,6 +94,12 @@ interface Stubs {
   writeError?: string;
   targetOptionsOk?: boolean;
   targetOptions?: Array<Record<string, unknown>>;
+  domainsOk?: boolean;
+  domains?: string[];
+  objectivesOk?: boolean;
+  objectives?: Array<Record<string, unknown>>;
+  objectiveWriteOk?: boolean;
+  objectiveWriteError?: string;
   runOptionsOk?: boolean;
   runOptions?: Array<Record<string, unknown>>;
   linkedSessionsOk?: boolean;
@@ -121,6 +153,35 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
         ok: stubs.rosterOk ?? true,
         status: stubs.rosterOk === false ? 503 : 200,
         json: async () => ({ ok: true, items: stubs.roster ?? ROSTER }),
+      } as Response;
+    }
+    /* Matched BEFORE the blocks branch. The two paths are distinct --
+       'development-block-objectives' does not contain 'development-blocks' --
+       but ordering them this way keeps the file honest if either name ever
+       moves. */
+    if (url.includes('/api/pilot/coach/development-block-objectives')) {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET' && url.includes('domains=options')) {
+        return {
+          ok: stubs.domainsOk ?? true,
+          status: stubs.domainsOk === false ? 503 : 200,
+          json: async () => ({ ok: true, domains: stubs.domains ?? SERVED_DOMAINS }),
+        } as Response;
+      }
+      if (method === 'GET') {
+        return {
+          ok: stubs.objectivesOk ?? true,
+          status: stubs.objectivesOk === false ? 503 : 200,
+          json: async () => ({ ok: true, objectives: stubs.objectives ?? [] }),
+        } as Response;
+      }
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      return {
+        ok: stubs.objectiveWriteOk ?? true,
+        status: stubs.objectiveWriteOk === false ? 400 : 200,
+        json: async () => (stubs.objectiveWriteOk === false
+          ? { error: stubs.objectiveWriteError ?? 'refused' }
+          : { ok: true, objective: objectiveRow() }),
       } as Response;
     }
     if (url.includes('/api/pilot/coach/development-blocks')) {
@@ -826,6 +887,233 @@ describe('a block list never lands under the wrong athlete', () => {
 
     await act(async () => { release['ath-2']?.(); });
     expect(screen.getByText('Plan for ath-2')).toBeTruthy();
+  });
+});
+
+describe('objectives: what a block is trying to move', () => {
+  async function openObjectives(stubs: Stubs = {}) {
+    const fetchMock = await renderPage({ blocks: [blockRow()], ...stubs });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Objectives' }));
+    });
+    return fetchMock;
+  }
+
+  test('nothing is read until a coach opens the panel', async () => {
+    /* A dozen blocks on screen must not mean a dozen extra reads, and each
+       one is a separate authorization decision at the route. Only the opened
+       block is fetched. */
+    const fetchMock = await renderPage({ blocks: [blockRow()] });
+    await pickAthlete('ath-1');
+
+    const before = fetchMock.mock.calls.map((call) => String(call[0]));
+    /* Scoped to the OBJECTIVES endpoint, which is what this test is about.
+       It matched any url carrying `block_id=blk-1`, which was unambiguous
+       when objectives were the only per-block read; the session-block-link
+       panel added by the plan-to-session slice is a second one, and it loads
+       with the card rather than behind a button, so the broad matcher caught
+       an endpoint this test was never asserting about.
+
+       The property itself is unchanged and still holds: opening a block does
+       not read its objectives until a coach asks for them.
+
+       NOTE THE TENSION THIS EXPOSES, because it is real and is not resolved
+       here: the comment above says a dozen blocks must not mean a dozen extra
+       reads, and the sessions panel currently does exactly that -- one read
+       per block, eagerly, on every roster load. Objectives avoid it by
+       sitting behind a toggle; sessions render inline, so making them lazy is
+       a UI change rather than a loader change. Worth doing, and worth doing
+       deliberately rather than inside a merge. */
+    expect(before.some((url) => url.includes('development-block-objectives?block_id=blk-1'))).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Objectives' }));
+    });
+
+    const after = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(after.some((url) => url.includes('development-block-objectives?block_id=blk-1'))).toBe(true);
+  });
+
+  test('a failed read is not rendered as "this block has no objectives"', async () => {
+    await openObjectives({ objectivesOk: false });
+
+    expect(screen.getByText(/could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText(/Nothing recorded yet/i)).toBeNull();
+  });
+
+  test('a block with genuinely none is told that, distinctly', async () => {
+    await openObjectives({ objectives: [] });
+
+    expect(screen.getByText(/Nothing recorded yet/i)).toBeTruthy();
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+
+  test('the coach\'s sentence is read back exactly as written', async () => {
+    await openObjectives({
+      objectives: [objectiveRow({ objective: '  Keep the jab honest  in the third.' })],
+    });
+
+    /* Asserted on textContent rather than through getByText, which
+       normalizes runs of whitespace and so cannot express "exactly". The
+       double space is the point: the coach typed it and the screen does not
+       tidy it away. */
+    const paragraphs = Array.from(document.querySelectorAll('p'))
+      .map((node) => node.textContent ?? '');
+    expect(paragraphs).toContain('  Keep the jab honest  in the third.');
+  });
+
+  test('the domain picker offers what the ROUTE served, under human labels', async () => {
+    await openObjectives();
+
+    const picker = screen.getByLabelText('Domain') as HTMLSelectElement;
+    const values = Array.from(picker.options).map((option) => option.value).filter(Boolean);
+    expect(values).toEqual(SERVED_DOMAINS);
+    // Labelled, not passed through as stored slugs.
+    expect(Array.from(picker.options).map((option) => option.text))
+      .toContain('Nutrition & body composition');
+    expect(Array.from(picker.options).map((option) => option.text))
+      .not.toContain('nutrition_body_composition');
+  });
+
+  test('a failed domain read is not rendered as "there are no domains"', async () => {
+    await openObjectives({ domainsOk: false });
+
+    expect(screen.getByText(/domains could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByLabelText('Domain')).toBeNull();
+  });
+
+  test('adding one sends the block, the domain and the words, and nothing else', async () => {
+    await openObjectives();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Domain'), { target: { value: 'conditioning' } });
+      fireEvent.change(screen.getByLabelText('What this is trying to move'), {
+        target: { value: 'Three hard rounds without the pace dropping.' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add objective' }));
+    });
+
+    const write = writes.find((entry) => entry.method === 'POST');
+    expect(write?.body).toEqual({
+      block_id: 'blk-1',
+      domain: 'conditioning',
+      objective: 'Three hard rounds without the pace dropping.',
+      status: 'draft',
+    });
+    // No athlete id, no organization, no author: the route takes all three
+    // from the session and this screen has no business sending them.
+    expect(Object.keys(write?.body ?? {})).not.toContain('athlete_id');
+    expect(Object.keys(write?.body ?? {})).not.toContain('organization_id');
+    expect(Object.keys(write?.body ?? {})).not.toContain('created_by_account_id');
+  });
+
+  test('a refused objective shows the server\'s own words', async () => {
+    await openObjectives({
+      objectiveWriteOk: false,
+      objectiveWriteError: 'An objective needs to say what it is, in the coach\'s own words.',
+    });
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Domain'), { target: { value: 'technical' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add objective' }));
+    });
+
+    expect(screen.getByText(/needs to say what it is/i)).toBeTruthy();
+  });
+
+  test('moving one sends only the id and the new status', async () => {
+    await openObjectives({ objectives: [objectiveRow()] });
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Objective status'), { target: { value: 'completed' } });
+    });
+
+    const patch = writes.find((entry) => entry.method === 'PATCH');
+    expect(patch?.body).toEqual({ objective_id: 'obj-1', status: 'completed' });
+    // The domain and the sentence are not patchable, and the screen offers no
+    // control that would send them.
+    expect(Object.keys(patch?.body ?? {})).not.toContain('domain');
+    expect(Object.keys(patch?.body ?? {})).not.toContain('objective');
+  });
+
+  test('the panel invents no roll-up, no proportion and no grade', async () => {
+    /* THE REFUSAL THAT IS TEMPTING RATHER THAN OBVIOUS. Five objectives with
+       three completed is a count anyone could render, and rendering it turns
+       a coach's plan into a score about a child. Whether a block went well is
+       a coach's judgment; the count is not it. */
+    await openObjectives({
+      objectives: [
+        objectiveRow({ objective_id: 'obj-1', status: 'completed' }),
+        objectiveRow({ objective_id: 'obj-2', status: 'completed' }),
+        objectiveRow({ objective_id: 'obj-3', status: 'completed', domain: 'mental' }),
+        objectiveRow({ objective_id: 'obj-4', status: 'draft', domain: 'physical' }),
+        objectiveRow({ objective_id: 'obj-5', status: 'cancelled', domain: 'recovery_load' }),
+      ],
+    });
+
+    /* SCOPED TO THE PANEL, not to the document. The page header contains the
+       sentence "It does not score it, grade it, or move it along on its own"
+       -- its own promise not to do this -- so a body-wide substring check
+       fails on the disclaimer rather than on a defect. The claim under test
+       is about what the objectives panel renders. */
+    const panel = screen.getAllByLabelText('Objective status')[0]
+      .closest('ul') as HTMLElement;
+    const text = (panel.textContent ?? '').toLowerCase();
+
+    // No count of completed objectives, in any of the shapes one takes.
+    expect(text).not.toMatch(/\b3\s*(of|\/|out of)\s*5\b/);
+    expect(text).not.toMatch(/\d+\s*%/);
+    /* 'progress' is deliberately NOT in this list: 'sparring & live
+       progression' is a real Full Spectrum domain and a blunt substring check
+       would fail on the vocabulary itself. The progress INDICATOR is asserted
+       structurally below, which is the actual claim. */
+    for (const forbidden of [
+      'score', 'rating', 'grade', 'adherence', 'compliance', 'on track', 'behind',
+    ]) {
+      expect(text).not.toContain(forbidden);
+    }
+    expect(panel.querySelector('progress')).toBeNull();
+    expect(panel.querySelector('[role="progressbar"]')).toBeNull();
+    expect(panel.querySelector('meter')).toBeNull();
+  });
+
+  test('a body-composition objective renders like any other, with no extra apparatus', async () => {
+    /* Admitted by owner decision 2026-08-28. It is a domain label on a
+       sentence a coach wrote -- there is no weight field, no target number
+       and no chart, and this asserts the screen adds none. */
+    await openObjectives({
+      objectives: [objectiveRow({
+        domain: 'nutrition_body_composition',
+        objective: 'Eat a real breakfast before morning conditioning.',
+      })],
+    });
+
+    /* getAllByText, because the label legitimately appears twice: once
+       naming this objective's domain and once as an option in the picker
+       below it. */
+    expect(screen.getAllByText('Nutrition & body composition').length).toBeGreaterThan(0);
+    expect(screen.getByText('Eat a real breakfast before morning conditioning.')).toBeTruthy();
+    const body = (document.body.textContent ?? '').toLowerCase();
+    for (const forbidden of ['kg', 'lbs', 'weight class', 'body fat', 'bmi', 'target weight']) {
+      expect(body).not.toContain(forbidden);
+    }
+  });
+
+  test('closing the panel stops rendering the objectives', async () => {
+    await openObjectives({ objectives: [objectiveRow()] });
+
+    expect(screen.getByText(/Jab off the back foot/i)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide objectives' }));
+    });
+
+    expect(screen.queryByText(/Jab off the back foot/i)).toBeNull();
   });
 });
 
