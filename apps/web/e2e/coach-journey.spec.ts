@@ -489,4 +489,45 @@ test.describe('Coach journey', () => {
     const shredded = rows.filter((row) => row.height > 96);
     expect(shredded, 'catalog rows whose title is wrapping down a squeezed column').toEqual([]);
   });
+
+  /* The sparring log, opened by a coach rather than by the boxer.
+     -----------------------------------------------------------
+
+     /athlete/dashboard/sparring has admitted the coach role since it gained
+     its gate, and the observations route has accepted a coach submission for
+     an authorized athlete for just as long. The page could not do it: the
+     subject came from the session's athlete_id, a coach's session carries
+     none, and the submit button was disabled forever with nothing on screen
+     saying why. The jsdom suite pins the wiring; this pins that a coach in a
+     real browser, through the real role gate, actually gets the control. */
+  test('a coach opens the sparring log and is offered only their own athletes', async ({ page }) => {
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        // The access-contract read behind the picker. ROSA is this coach's;
+        // the gym's other athletes are deliberately not in this answer.
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        // The whole-gym roster read. If the picker is ever built on THIS
+        // instead, the extra name appears and this test says so.
+        '/api/pilot/athletes/list': {
+          ok: true,
+          items: [ROSA, { athlete_id: 'ath-not-mine', full_name: 'Not This Coach Athlete' }],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/athlete/dashboard/sparring');
+
+    const picker = page.getByLabel('Which athlete is this for');
+    await expect(picker).toBeVisible();
+    await expect(picker.locator('option')).toHaveText(['Choose an athlete', 'Rosa Delgado']);
+    await expect(page.getByText('Not This Coach Athlete')).toHaveCount(0);
+
+    // Nothing chosen yet, so there is nothing to file this against.
+    await expect(page.getByRole('button', { name: 'Log This Session' })).toBeDisabled();
+
+    await picker.selectOption(ROSA.athlete_id);
+    await expect(page.getByRole('button', { name: 'Log This Session' })).toBeEnabled();
+  });
 });

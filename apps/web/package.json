@@ -110,6 +110,7 @@
     "test:migrations:safety-escalations": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/escalationLadder.pg.test.ts --testTimeout=180000",
     "test:migrations:coach-coverage": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachCoverage.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-ids-for-coach": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteIdsForCoach.pg.test.ts --testTimeout=180000",
+    "test:migrations:coach-authorized-roster": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachAuthorizedRoster.pg.test.ts --testTimeout=180000",
     "test:migrations:soft-deleted-athlete-access": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/softDeletedAthleteAccess.pg.test.ts --testTimeout=180000",
     "test:migrations:platform-library-scope": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/platformLibraryScope.pg.test.ts --testTimeout=180000",
     "test:migrations:library-scope-check": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/libraryScopeCheck.pg.test.ts --testTimeout=180000",

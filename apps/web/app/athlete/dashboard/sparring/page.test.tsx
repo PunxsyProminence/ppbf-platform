@@ -45,9 +45,13 @@ function mockFetch(
   let index = 0;
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).endsWith(SESSION_PATH)) {
+      // `role` is what the real route sends (app/api/pilot/auth/session) and
+      // what the page now reads to decide whether the person filling this in
+      // IS the subject or has to name one. The stub omitted it while nothing
+      // looked at it, which made every test here silently an athlete.
       return {
         ok: true,
-        json: async () => ({ authenticated: true, athlete_id: 'athlete-001' }),
+        json: async () => ({ authenticated: true, role: 'athlete', account_id: 'acct-athlete-001', athlete_id: 'athlete-001' }),
       } as Response;
     }
 
@@ -206,5 +210,250 @@ describe('sparring log submission status', () => {
         expect(notes.length).toBeLessThanOrEqual(300);
       }
     }
+  });
+});
+
+
+/*
+ * THE COACH PATH, WHICH DID NOT WORK.
+ * -----------------------------------
+ *
+ * The page has admitted 'coach' and 'admin' since it gained its role gate, the
+ * observations route has accepted a coach submission for an authorized athlete
+ * for just as long, and the page's own comment calls a coach logging on a
+ * shared tablet "a real path, not a leftover". It was not one: the subject came
+ * from payload.athlete_id, a coach's session carries none, so the submit button
+ * was disabled forever with nothing on screen saying why.
+ *
+ * Reproduced before the fix (a coach session, button never enabled), which is
+ * what these now hold shut. The server side is unchanged and is NOT what these
+ * test: assertActorCanAccessAthlete was always correct, and the route tests in
+ * app/api/pilot/coach/athletes cover which athletes reach the picker at all.
+ * What is pinned here is that the page never composes an athlete id of its own.
+ */
+const COACH_ROSTER_PATH = '/api/pilot/coach/athletes';
+
+interface StaffMocks {
+  readonly role?: string;
+  readonly rosterOk?: boolean;
+  readonly roster?: Array<{ athlete_id: string; full_name: string }>;
+}
+
+function mockStaffFetch(options: StaffMocks = {}) {
+  const roster = options.roster ?? [{ athlete_id: 'ath-rosa', full_name: 'Rosa Delgado' }];
+  return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith(SESSION_PATH)) {
+      // Exactly what the real route sends a coach: authenticated, a role, and
+      // athlete_id null, because a coach is not an athlete.
+      return {
+        ok: true,
+        json: async () => ({
+          authenticated: true,
+          role: options.role ?? 'coach',
+          account_id: 'acct-coach-a',
+          athlete_id: null,
+        }),
+      } as Response;
+    }
+    if (url.includes(COACH_ROSTER_PATH)) {
+      return {
+        ok: options.rosterOk ?? true,
+        json: async () => ({ ok: true, items: roster }),
+      } as Response;
+    }
+    if (typeof init?.body === 'string') {
+      submittedObservations.push(JSON.parse(init.body) as Record<string, unknown>);
+    }
+    return { ok: true, json: async () => ({}) } as Response;
+  });
+}
+
+async function renderAsStaff(options: StaffMocks = {}) {
+  submittedObservations.length = 0;
+  const fetchMock = mockStaffFetch(options);
+  global.fetch = fetchMock as unknown as typeof fetch;
+  const view = render(<SparringTelemetryPage />);
+  // The picker is the signal that the staff branch resolved.
+  await screen.findByLabelText('Which athlete is this for');
+  return { ...view, fetchMock };
+}
+
+describe('a coach logging a session for an athlete', () => {
+  test('can open the log and is offered the athletes they are authorized for', async () => {
+    await renderAsStaff({
+      roster: [
+        { athlete_id: 'ath-rosa', full_name: 'Rosa Delgado' },
+        { athlete_id: 'ath-marcus', full_name: 'Marcus Webb' },
+      ],
+    });
+
+    const picker = screen.getByLabelText('Which athlete is this for') as HTMLSelectElement;
+    const options = Array.from(picker.options).map((option) => option.value).filter(Boolean);
+    expect(options).toEqual(['ath-rosa', 'ath-marcus']);
+  });
+
+  test('the picker is populated from the access contract, not from the whole-gym roster', async () => {
+    // /api/pilot/athletes/list answers a coach with EVERY athlete in the
+    // organization (a display projection with field redaction). If this page
+    // ever reads it for the picker, the coach is offered children the server
+    // will refuse and the refusal arrives after the session is typed in.
+    const { fetchMock } = await renderAsStaff();
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes(COACH_ROSTER_PATH))).toBe(true);
+    expect(urls.some((url) => url.includes('/api/pilot/athletes/list'))).toBe(false);
+  });
+
+  test('cannot submit until an athlete is chosen, and is told which is missing', async () => {
+    const { container } = await renderAsStaff();
+
+    const submit = screen.getByRole('button', { name: 'Log This Session' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+    await waitFor(() => expect(screen.getByRole('status').textContent)
+      .toMatch(/Choose which athlete this session is for/i));
+    // The old copy sent a coach who had simply not picked anybody to the login
+    // screen to fix a dropdown.
+    expect(screen.getByRole('status').textContent).not.toMatch(/not signed in/i);
+    expect(submittedObservations).toHaveLength(0);
+  });
+
+  test('submits for the chosen athlete, and for no other', async () => {
+    const { container } = await renderAsStaff({
+      roster: [
+        { athlete_id: 'ath-rosa', full_name: 'Rosa Delgado' },
+        { athlete_id: 'ath-marcus', full_name: 'Marcus Webb' },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Which athlete is this for'), { target: { value: 'ath-marcus' } });
+    const submit = screen.getByRole('button', { name: 'Log This Session' }) as HTMLButtonElement;
+    await waitFor(() => expect(submit.disabled).toBe(false));
+
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+    await waitFor(() => expect(submittedObservations.length).toBeGreaterThan(0));
+
+    const subjects = new Set(submittedObservations.map((observation) => observation.athleteId));
+    expect(subjects).toEqual(new Set(['ath-marcus']));
+  });
+
+  test('no athlete id the server did not offer can be submitted', async () => {
+    // The control is a <select> over server-returned options, so there is no
+    // free-text path for an arbitrary id. Setting a value that is not an
+    // option leaves the selection empty rather than adopting it.
+    const { container } = await renderAsStaff({ roster: [{ athlete_id: 'ath-rosa', full_name: 'Rosa Delgado' }] });
+
+    const picker = screen.getByLabelText('Which athlete is this for') as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: 'ath-not-mine' } });
+
+    expect(picker.value).not.toBe('ath-not-mine');
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+    await waitFor(() => expect(screen.getByRole('status').textContent)
+      .toMatch(/Choose which athlete this session is for/i));
+    expect(submittedObservations).toHaveLength(0);
+  });
+
+  test('no organization id is sent with the observation, ever', async () => {
+    // Organization scope is resolved server-side from the session. A client
+    // that offered one would be offering a scope to widen.
+    const { container } = await renderAsStaff();
+
+    fireEvent.change(screen.getByLabelText('Which athlete is this for'), { target: { value: 'ath-rosa' } });
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Log This Session' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+    await waitFor(() => expect(submittedObservations.length).toBeGreaterThan(0));
+
+    for (const observation of submittedObservations) {
+      expect(Object.keys(observation)).not.toContain('organizationId');
+      expect(Object.keys(observation)).not.toContain('organization_id');
+    }
+  });
+
+  test('a failed roster read is not rendered as "you have no athletes"', async () => {
+    await renderAsStaff({ rosterOk: false });
+
+    expect(screen.getByText(/could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText(/not the coach of record for any athlete/i)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Log This Session' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('a coach with genuinely no assigned athletes is told that, distinctly', async () => {
+    await renderAsStaff({ roster: [] });
+
+    expect(screen.getByText(/not the coach of record for any athlete/i)).toBeTruthy();
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+
+  test('the safety-review branch still reaches a coach, in the coach\'s own words', async () => {
+    // Contact logged for an athlete with no current medical clearance raises a
+    // review server-side. The record is kept deliberately; the person who
+    // typed it must be told, whoever they are.
+    submittedObservations.length = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'coach', account_id: 'acct-coach-a', athlete_id: null }) } as Response;
+      }
+      if (url.includes(COACH_ROSTER_PATH)) {
+        return { ok: true, json: async () => ({ ok: true, items: [{ athlete_id: 'ath-rosa', full_name: 'Rosa Delgado' }] }) } as Response;
+      }
+      if (typeof init?.body === 'string') {
+        submittedObservations.push(JSON.parse(init.body) as Record<string, unknown>);
+      }
+      return {
+        ok: true,
+        json: async () => ({ safetyReview: { raised: true, lesson: 'A current clearance is filed at the front desk.' } }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const { container } = render(<SparringTelemetryPage />);
+    await screen.findByLabelText('Which athlete is this for');
+    fireEvent.change(screen.getByLabelText('Which athlete is this for'), { target: { value: 'ath-rosa' } });
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Log This Session' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/no current medical clearance/i));
+    expect(screen.getByRole('status').textContent).toMatch(/A current clearance is filed at the front desk\./);
+  });
+
+  test('a saved session is not described to a coach as their own record', async () => {
+    const { container } = await renderAsStaff({ roster: [{ athlete_id: 'ath-rosa', full_name: 'Rosa Delgado' }] });
+
+    fireEvent.change(screen.getByLabelText('Which athlete is this for'), { target: { value: 'ath-rosa' } });
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Log This Session' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/Saved to Rosa Delgado's training record/i));
+    expect(screen.getByRole('status').textContent).not.toMatch(/Saved to your training record/i);
+  });
+
+  test('an organization admin gets the same picker', async () => {
+    // The role gate and the observations route both admit this role, and
+    // /api/pilot/coach/athletes answers it with the organization's athletes.
+    await renderAsStaff({ role: 'organization_admin' });
+
+    expect(screen.getByLabelText('Which athlete is this for')).toBeTruthy();
+  });
+
+  test('an athlete still logs their own session, with no picker at all', async () => {
+    global.fetch = mockFetch(() => true);
+    render(<SparringTelemetryPage />);
+
+    const submit = await screen.findByRole('button', { name: 'Log This Session' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByLabelText('Which athlete is this for')).toBeNull();
+  });
+
+  test('a session read that fails leaves the page inert rather than guessing a role', async () => {
+    // Neither an athlete's own log nor a coach's picker: nothing is known
+    // about who is holding the page, so nothing is offered.
+    global.fetch = jest.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+
+    const submit = await screen.findByRole('button', { name: 'Log This Session' });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByLabelText('Which athlete is this for')).toBeNull();
   });
 });

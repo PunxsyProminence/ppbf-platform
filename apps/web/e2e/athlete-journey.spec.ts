@@ -159,4 +159,20 @@ test.describe('Athlete journey', () => {
     await expect(refusal).toBeVisible();
     await expect(page).toHaveURL(/\/athlete\/sign-in$/);
   });
+
+  /* The sparring log gained a "which athlete is this for" picker so that a
+     coach could use a surface that already admitted them and could not
+     actually be used. The boxer's own path must be exactly as it was: they
+     are the subject, there is nothing to choose, and no control appears
+     asking them to choose it. */
+  test('logs their own sparring session with no athlete to choose', async ({ page }) => {
+    await installPilotApi(page, { session: { role: 'athlete', athleteId: ATHLETE_ID } });
+
+    await page.goto('/athlete/dashboard/sparring');
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Sparring Log' })).toBeVisible();
+    await expect(page.getByText('Your Corner')).toBeVisible();
+    await expect(page.getByLabel('Which athlete is this for')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Log This Session' })).toBeEnabled();
+  });
 });
