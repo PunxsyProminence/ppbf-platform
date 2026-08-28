@@ -59,6 +59,7 @@ import {
   listDevelopmentBlocks,
   listDevelopmentBlocksForAthlete,
   setDevelopmentBlockStatus,
+  updateDevelopmentBlock,
 } from './athleteDevelopmentBlocks';
 import { ForbiddenError, ValidationError } from './errors';
 
@@ -70,6 +71,36 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-athlete-dev-blocks-pg-test-${Date.
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_athlete_development_blocks_migration.sql';
+
+/* Every migration that has since widened THIS table, plus what those
+   migrations themselves depend on, applied in `all`-loop order on top of the
+   foundation by migratedDatabase below.
+
+   Why this list has to exist: the module under test reads and writes the whole
+   row through one shared FIELDS constant, so the moment a widening migration
+   adds a column the module names, a database built from the foundation alone
+   is a database the module cannot run against -- and this suite starts failing
+   on `column ... does not exist` for reasons that have nothing to do with what
+   it is asserting. That is exactly the failure scripts/lib/full-schema.mjs
+   documents: a suite hand-picking migrations is not testing a smaller
+   production, it is testing a database that has never existed.
+
+   Why the competition surfaces are here and not only the widening file: the
+   widening's two composite foreign keys REFERENCE pilot.external_competitions
+   and pilot.wrestling_league_events, so applying it alone dies on
+   `relation "pilot.external_competitions" does not exist`. A migration's
+   prerequisites travel with it -- the same ordering
+   migrationDispatchCoverage.test.ts asserts for the `all` loop.
+
+   applyFullSchema is not usable here: this suite must also build the
+   PRE-migration state its runner-readiness tests need, which by construction
+   applyFullSchema cannot produce. So the dependency is named instead, and a
+   future widening adds a line here. */
+const TABLE_WIDENING_FILES = [
+  'pilot_slice_postgres_external_competition_migration.sql',
+  'pilot_slice_postgres_wrestling_league_migration.sql',
+  'pilot_slice_postgres_athlete_development_block_competition_target_migration.sql',
+] as const;
 const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-athlete-development-blocks-migration.mjs',
@@ -107,6 +138,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let baseSchemaSql: string;
+let wideningSql: string[];
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -196,10 +228,19 @@ async function freshDatabase(name: string): Promise<Client> {
 }
 
 /** A migrated database, with `activeClient` pointed at it so the mocked
- * './db' routes the module's real SQL here. */
+ * './db' routes the module's real SQL here.
+ *
+ * The foundation AND every widening since (with each widening's own
+ * prerequisites): the module names columns from all of them, so anything less
+ * is a schema no environment runs. The migration's
+ * OWN tests deliberately do not use this -- they call freshDatabase and apply
+ * exactly the one file they are asserting about. */
 async function migratedDatabase(name: string): Promise<Client> {
   const client = await freshDatabase(name);
   await client.query(migrationSql);
+  for (const sql of wideningSql) {
+    await client.query(sql);
+  }
   activeClient = client;
   return client;
 }
@@ -264,6 +305,9 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  wideningSql = await Promise.all(
+    TABLE_WIDENING_FILES.map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')),
+  );
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -777,6 +821,200 @@ describe('athlete development blocks runner readiness assertion', () => {
       // The `all` chain re-runs every migration on every dispatch (#489), so
       // the second pass has to survive its own first pass.
       await applyMigrationTransaction(client, migrationSql);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+
+/*
+ * CORRECTING A BLOCK.
+ *
+ * updateDevelopmentBlock arrived with the coach API (the foundation shipped
+ * with status changes only), and it is the one write here that reads the row
+ * before writing it. Three properties need real rows to prove:
+ *
+ *   - the window is validated against the MERGED row, so moving only one end
+ *     past the other is refused. A patch-only check cannot see that, and it is
+ *     the edit most likely to be attempted.
+ *   - a patch omitting a field leaves it alone rather than blanking it -- the
+ *     failure a whole-row write has by construction, and the database's own
+ *     NOT NULL / CHECK constraints are what a blanking bug would collide with.
+ *   - the organization is part of the key, so a block in another gym is not
+ *     found and cannot be probed for.
+ */
+describe('the module correcting a block (real database)', () => {
+  async function seed(client: Client) {
+    const created = await createDevelopmentBlock({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      title: 'Fall strength block',
+      trainingEmphasis: EMPHASIS,
+      startsOn: '2026-09-02',
+      endsOn: '2026-10-14',
+      createdByAccountId: COACH_ID,
+    });
+    if (!created) throw new Error('test bug: seed block was not created');
+    void client;
+    return created;
+  }
+
+  test('a partial patch changes only what it names', async () => {
+    const client = await migratedDatabase('adb_upd_partial');
+    try {
+      const created = await seed(client);
+
+      const updated = await updateDevelopmentBlock(ORG_ID, created.block_id, {
+        endsOn: '2026-11-04',
+      });
+
+      expect(updated).toMatchObject({
+        block_id: created.block_id,
+        title: 'Fall strength block',
+        training_emphasis: EMPHASIS,
+        starts_on: '2026-09-02',
+        ends_on: '2026-11-04',
+        status: 'draft',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the window is validated against the merged row, not the patch', async () => {
+    // Moving ONLY the start past an untouched end. Nothing in the patch is
+    // wrong on its own; the row it would produce is.
+    const client = await migratedDatabase('adb_upd_window');
+    try {
+      const created = await seed(client);
+
+      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { startsOn: '2026-12-01' }))
+        .rejects.toBeInstanceOf(ValidationError);
+
+      // And the stored row is untouched.
+      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      expect(after).toMatchObject({ starts_on: '2026-09-02', ends_on: '2026-10-14' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an emphasis cannot be blanked, by patch or by whitespace', async () => {
+    const client = await migratedDatabase('adb_upd_blank');
+    try {
+      const created = await seed(client);
+
+      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { trainingEmphasis: '   ' }))
+        .rejects.toBeInstanceOf(ValidationError);
+      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { title: '\t\n' }))
+        .rejects.toBeInstanceOf(ValidationError);
+
+      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      expect(after?.training_emphasis).toBe(EMPHASIS);
+      expect(after?.title).toBe('Fall strength block');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the creator and the athlete survive every correction', async () => {
+    // Attribution is a fact about the past, and a block does not change which
+    // child it is about. Neither is reachable through this function's input
+    // type; this proves the row agrees.
+    const client = await migratedDatabase('adb_upd_attribution');
+    try {
+      const created = await seed(client);
+
+      await updateDevelopmentBlock(ORG_ID, created.block_id, {
+        title: 'Renamed',
+        trainingEmphasis: 'Different emphasis entirely.',
+        startsOn: '2026-09-10',
+        endsOn: '2026-11-20',
+        status: 'active',
+      });
+
+      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      expect(after).toMatchObject({
+        created_by_account_id: COACH_ID,
+        athlete_id: ATHLETE_ID,
+        organization_id: ORG_ID,
+        title: 'Renamed',
+        status: 'active',
+      });
+      // created_at comes back as a driver Date (FIELDS casts only the two
+      // calendar dates to text), so this compares the instant rather than the
+      // object -- toBe would be an identity check that can never hold.
+      expect(String(after?.created_at)).toBe(String(created.created_at));
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a block in another organization is not found, and is not written', async () => {
+    const client = await migratedDatabase('adb_upd_tenancy');
+    try {
+      const created = await seed(client);
+
+      expect(await updateDevelopmentBlock(OTHER_ORG_ID, created.block_id, { title: 'Reached across' }))
+        .toBeNull();
+
+      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      expect(after?.title).toBe('Fall strength block');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a block id that does not exist is not found either -- the two are indistinguishable', async () => {
+    const client = await migratedDatabase('adb_upd_missing');
+    try {
+      expect(await updateDevelopmentBlock(ORG_ID, 'blk-never-existed', { title: 'T' })).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an empty patch is a no-op that still returns the row', async () => {
+    const client = await migratedDatabase('adb_upd_empty');
+    try {
+      const created = await seed(client);
+
+      const updated = await updateDevelopmentBlock(ORG_ID, created.block_id, {});
+
+      expect(updated).toMatchObject({
+        title: 'Fall strength block',
+        training_emphasis: EMPHASIS,
+        starts_on: '2026-09-02',
+        ends_on: '2026-10-14',
+        status: 'draft',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('nothing advances a status on its own, however long ago the window closed', async () => {
+    // "The window has elapsed" and "the plan was carried out" are different
+    // claims, and only a coach makes the second one.
+    const client = await migratedDatabase('adb_upd_no_auto');
+    try {
+      const created = await createDevelopmentBlock({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        title: 'Long finished',
+        trainingEmphasis: EMPHASIS,
+        startsOn: '2020-01-01',
+        endsOn: '2020-02-01',
+        status: 'active',
+        createdByAccountId: COACH_ID,
+      });
+
+      const reread = await getDevelopmentBlock(ORG_ID, created!.block_id);
+      expect(reread?.status).toBe('active');
+
+      const touched = await updateDevelopmentBlock(ORG_ID, created!.block_id, { title: 'Long finished, renamed' });
+      expect(touched?.status).toBe('active');
     } finally {
       await client.end();
     }

@@ -152,15 +152,20 @@ export const GOAL_OPTIONAL_FIELDS = [
 // pilot_slice_postgres_goal_category_progress_migration.sql -- keep the two in
 // step or the API will accept a value the database then refuses.
 //
-// 'Weight Loss' and 'Weight Gain' are deliberately NOT here. The athlete-facing
-// dropdown offered them and the value was discarded, so nothing has ever been
-// stored under either. Admitting them now would file a minor's weight intent as
-// a queryable row ahead of the Privacy-Tier System (capability 200) that is
-// supposed to govern exactly that data, and ahead of Group J, which the
-// capability plan places in Phase 7 behind those tiers. The SQL header carries
-// the full argument; this is an owner decision to revisit once the tiers exist,
-// and reversing it is one line here, one in the migration, and one in
-// SMART_GOAL_CATEGORIES.
+// 'Weight Loss' and 'Weight Gain' were withheld until 2026-08-28 and are now
+// admitted by owner decision, the Privacy-Tier System (capability 200) that
+// the withholding waited on having shipped. The SQL header carries the full
+// record, including what the decision did NOT change: goals.category is still
+// athlete_record, shadowAuthority.ts still refuses 'weight_cut' in
+// conversation, and the form still points a weight goal at the athlete's
+// coach and guardian.
+//
+// This list, SMART_GOAL_CATEGORIES and the SQL CHECK are one vocabulary in
+// three places and athleteWorkspace.test.tsx asserts the first two are
+// identical. The old comment here estimated the reversal at three lines; it
+// was seven, because three test suites asserted the withholding. Correcting
+// the estimate rather than deleting it: a decision guarded by tests costs the
+// tests to reverse, and that is the tests working.
 export const GOAL_CATEGORIES = [
   'Boxing',
   'Fitness',
@@ -169,6 +174,8 @@ export const GOAL_CATEGORIES = [
   'Recovery',
   'Lifestyle',
   'Leadership',
+  'Weight Loss',
+  'Weight Gain',
 ] as const;
 
 export const SESSION_FIELDS = [

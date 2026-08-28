@@ -274,3 +274,127 @@ describe('the deny screen keeps this bar out of it', () => {
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
   });
 });
+
+
+/*
+ * THE SAFETY BADGE IS PART OF THE CHASSIS, NOT PART OF A PAGE.
+ *
+ * /api/pilot/escalations is a pull surface by construction, so an
+ * unacknowledged high or critical escalation about a child reached a coach
+ * only when the coach chose to open the right page. This bar is the one
+ * component mounted on every route, which is the only place that fixes.
+ *
+ * These pin the mounting and the two boundaries around it: which roles get it,
+ * and the surfaces that deliberately carry no controls at all.
+ */
+describe('the safety escalation badge rides the session bar', () => {
+  function stubEscalations(escalations: Array<Record<string, unknown>>) {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, escalations }),
+    } as unknown as Response));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  async function renderAsAsync(role: string | null) {
+    mockSnapshot.mockReturnValue(
+      role === null ? null : ({ role, expiresAt: Date.now() + 60_000 } as never),
+    );
+    await act(async () => {
+      render(<GlobalRoleHeader />);
+    });
+  }
+
+  test('a coach sees an open critical escalation from any surface the bar reaches', async () => {
+    stubEscalations([{ escalation_id: 'e1', severity: 'critical', status: 'open' }]);
+    mockUsePathname.mockReturnValue('/coach/drills');
+
+    await renderAsAsync('coach');
+
+    expect(screen.getByText(/Safety 1 critical/)).toBeTruthy();
+  });
+
+  test('the same coach on a completely unrelated surface still sees it', async () => {
+    // The point of putting this on the chassis rather than on the workspace.
+    stubEscalations([{ escalation_id: 'e1', severity: 'high', status: 'open' }]);
+    mockUsePathname.mockReturnValue('/schedule');
+
+    await renderAsAsync('coach');
+
+    expect(screen.getByText(/Safety 1 high/)).toBeTruthy();
+  });
+
+  test('an athlete never carries somebody else\'s safety count on their bar', async () => {
+    const fetchMock = stubEscalations([{ escalation_id: 'e1', severity: 'critical', status: 'open' }]);
+
+    await renderAsAsync('athlete');
+
+    expect(screen.queryByText(/Safety/)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a board member gets no count either -- the board reads aggregates only', async () => {
+    const fetchMock = stubEscalations([{ escalation_id: 'e1', severity: 'critical', status: 'open' }]);
+
+    await renderAsAsync('board');
+
+    expect(screen.queryByText(/Safety/)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a signed-out visitor gets nothing, and nothing is fetched', async () => {
+    const fetchMock = stubEscalations([{ escalation_id: 'e1', severity: 'critical', status: 'open' }]);
+
+    await renderAsAsync(null);
+
+    expect(screen.queryByText(/Safety/)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a refusal screen still carries no controls, badge included', async () => {
+    /* P0.2's rule is that a refusal is the whole screen -- "Title + body +
+       Dashboard + Logout only" -- and the badge gets no exemption from it:
+       it renders inside the full bar, below the early return, so a deny
+       screen drops it with everything else.
+
+       Measured rather than assumed, because the interaction is easy to get
+       backwards: /shadow is the ONLY surface carrying refusesInPlace, and it
+       admits the coach role (MEMBER_GATE). So no surface in this build denies
+       a coach in place, and a coach never loses this count to a deny screen.
+       The role that IS refused there is board, which never had the badge --
+       the board reads aggregates only. Both halves are asserted here so that
+       adding a coach-refusing surface later shows up as a decision rather
+       than as a coach quietly losing a safeguarding indicator. */
+    // The board is refused on /shadow, and gets the bare mark: no badge, and
+    // no other control either.
+    stubEscalations([{ escalation_id: 'e1', severity: 'critical', status: 'open' }]);
+    mockUsePathname.mockReturnValue('/shadow');
+
+    await renderAsAsync('board');
+
+    expect(screen.queryByText(/Safety/)).toBeNull();
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  test('the coach, whom that same surface admits, keeps the badge on it', async () => {
+    // The other half of the measurement above: /shadow denies in place only
+    // for roles outside MEMBER_GATE, and coach is inside it.
+    stubEscalations([{ escalation_id: 'e1', severity: 'critical', status: 'open' }]);
+    mockUsePathname.mockReturnValue('/shadow');
+
+    await renderAsAsync('coach');
+
+    expect(screen.getByText(/Safety 1 critical/)).toBeTruthy();
+  });
+
+  test('the wall display never shows it -- that screen faces the room', async () => {
+    stubEscalations([{ escalation_id: 'e1', severity: 'critical', status: 'open' }]);
+    mockUsePathname.mockReturnValue('/wall');
+
+    await renderAsAsync('coach');
+
+    expect(screen.queryByText(/Safety/)).toBeNull();
+  });
+});

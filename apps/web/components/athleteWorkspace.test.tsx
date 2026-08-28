@@ -864,14 +864,24 @@ describe('the category the athlete picks is the category that is sent', () => {
     expect([...SMART_GOAL_CATEGORIES]).toEqual([...GOAL_CATEGORIES]);
   });
 
-  test.each(['Weight Loss', 'Weight Gain'])('%s is not offered, and the form says where it goes instead', async (category) => {
+  // Withheld until 2026-08-28, then admitted by owner decision. This case used
+  // to assert the option was absent and the guidance present; it now asserts
+  // the option is present AND the guidance still appears when it is chosen.
+  // The guidance surviving the decision is the point: the 2026-08-03 owner
+  // principle is that the stop carries the lesson, and admitting the category
+  // removed the stop, not the lesson.
+  test.each(['Weight Loss', 'Weight Gain'])('%s is offered, and choosing it still points at the coach', async (category) => {
     await openGoals();
     fireEvent.click(screen.getByRole('button', { name: '+ New SMART Goal' }));
 
-    const options = Array.from(
-      (screen.getByLabelText('Goal category') as HTMLSelectElement).options,
-    ).map((option) => option.value);
-    expect(options).not.toContain(category);
+    const select = screen.getByLabelText('Goal category') as HTMLSelectElement;
+    expect(Array.from(select.options).map((option) => option.value)).toContain(category);
+
+    // Not shown for an ordinary goal -- unconditional, it would be noise on a
+    // jab goal.
+    expect(screen.queryByText(/plan you build with your coach/)).toBeNull();
+
+    fireEvent.change(select, { target: { value: category } });
     expect(screen.getByText(/plan you build with your coach/)).toBeTruthy();
   });
 });

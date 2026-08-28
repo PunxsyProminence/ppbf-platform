@@ -42,6 +42,13 @@ export interface AthleteDevelopmentBlockRow {
   starts_on: string;
   ends_on: string;
   status: DevelopmentBlockStatus;
+  /* What this block is preparing for, or null -- which is the ordinary case.
+     At most one of the two is ever set; the database holds that, not this
+     type. A target is a DATE AND A NAME: nothing in this module or anything
+     reading it derives a taper, a peak, a volume curve or a weight plan from
+     it, and neither competition surface carries anything one could. */
+  target_competition_id: string | null;
+  target_wrestling_event_id: string | null;
   created_by_account_id: string;
   created_at: string;
   updated_at: string;
@@ -52,6 +59,7 @@ export interface AthleteDevelopmentBlockRow {
 // re-interpret it in the server's timezone.
 const FIELDS = `organization_id, block_id, athlete_id, title, training_emphasis,
   starts_on::text as starts_on, ends_on::text as ends_on, status,
+  target_competition_id, target_wrestling_event_id,
   created_by_account_id, created_at, updated_at`;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -249,5 +257,144 @@ export async function setDevelopmentBlockStatus(
      where organization_id = $1 and block_id = $2
      returning ${FIELDS}`,
     [organizationId, blockId, status],
+  );
+}
+
+/**
+ * Corrects the plan a coach wrote: title, emphasis, window, status.
+ *
+ * WHAT THIS CANNOT MOVE, and why each one is left out rather than guarded:
+ *
+ *   organization_id  a block does not change gyms. The pair (organization,
+ *                    block) is the key, so accepting one here would turn a
+ *                    correction into a cross-tenant write.
+ *   athlete_id       a block is a plan FOR somebody. Re-pointing it at a
+ *                    different athlete silently reassigns a coach's authored
+ *                    intent to a child it was never about, and every
+ *                    authorization decision already made about the old row
+ *                    would have been made about the wrong person. Cancel one
+ *                    and write another.
+ *   created_by       who authored this is a fact about the past. The order
+ *                    this slice serves asks for creator attribution to be
+ *                    preserved; the way to preserve it is to have no path
+ *                    that writes it twice.
+ *
+ * It DOES move the competition/event target, because that lives on this row
+ * and a separate statement for it was a second chance to half-succeed.
+ *
+ * Every field is optional and an omitted one is left alone, so a caller
+ * correcting an end date cannot blank an emphasis by not mentioning it --
+ * the failure a whole-row PUT has by construction.
+ *
+ * The window is validated as a WHOLE, against the merged row rather than the
+ * patch: moving only starts_on past an untouched ends_on is exactly the edit
+ * that produces a block ending before it begins, and a patch-only check
+ * cannot see it.
+ *
+ * Returns null for a block in another organization -- or one that does not
+ * exist -- so this cannot be used to probe for either.
+ */
+export type DevelopmentBlockTargetKind = 'competition' | 'wrestling_event';
+
+/**
+ * What a block is preparing for, as a caller states it.
+ *
+ * Declared here rather than beside the resolver so that this module -- which
+ * owns the row and therefore the write -- can accept it without importing
+ * from a module that already imports from this one. `{ kind: 'none' }` is an
+ * explicit clear, which is why it is a value rather than a null: on a patch,
+ * null and absent cannot both be distinguishable.
+ */
+export type DevelopmentBlockTargetInput =
+  | { kind: 'none' }
+  | { kind: DevelopmentBlockTargetKind; id: string };
+
+export interface DevelopmentBlockPatch {
+  title?: string;
+  trainingEmphasis?: string;
+  startsOn?: string;
+  endsOn?: string;
+  status?: DevelopmentBlockStatus;
+  /**
+   * Omitted leaves the block's target alone; `{ kind: 'none' }` clears it.
+   *
+   * Carried on the patch, and therefore written by the SAME single UPDATE as
+   * the fields, because two statements are two chances to half-succeed. A
+   * caller told "that failed" while the title, dates and updated_at already
+   * moved will retry, and the retry is not idempotent against a plan a coach
+   * wrote. Found by review on #771, where this was two calls.
+   */
+  target?: DevelopmentBlockTargetInput;
+}
+
+export async function updateDevelopmentBlock(
+  organizationId: string,
+  blockId: string,
+  patch: DevelopmentBlockPatch,
+): Promise<AthleteDevelopmentBlockRow | null> {
+  const existing = await getDevelopmentBlock(organizationId, blockId);
+  if (!existing) return null;
+
+  const merged: DevelopmentBlockInput = {
+    title: patch.title ?? existing.title,
+    trainingEmphasis: patch.trainingEmphasis ?? existing.training_emphasis,
+    startsOn: patch.startsOn ?? existing.starts_on,
+    endsOn: patch.endsOn ?? existing.ends_on,
+    status: patch.status ?? existing.status,
+  };
+
+  // The same rules the create path runs, applied to what the row will BE.
+  // Every refusal happens BEFORE the statement below, so a rejected patch
+  // leaves the stored row untouched rather than half-applied.
+  const shapeError = developmentBlockShapeError(merged);
+  if (shapeError) {
+    throw new ValidationError(shapeError, 'DEVELOPMENT_BLOCK_INVALID');
+  }
+
+  if (patch.target && patch.target.kind !== 'none' && !patch.target.id?.trim()) {
+    throw new ValidationError(
+      'A development block target needs the id of the competition or event it names.',
+      'DEVELOPMENT_BLOCK_TARGET_INVALID',
+    );
+  }
+
+  /* An omitted target keeps whatever the row already names; a stated one
+     replaces it. Computed here rather than in the SQL so the two columns are
+     always written as a pair -- the database's single-target check is the
+     backstop, not the mechanism. */
+  const competitionId = patch.target
+    ? (patch.target.kind === 'competition' ? patch.target.id.trim() : null)
+    : existing.target_competition_id;
+  const wrestlingEventId = patch.target
+    ? (patch.target.kind === 'wrestling_event' ? patch.target.id.trim() : null)
+    : existing.target_wrestling_event_id;
+
+  /* ONE statement for the fields and the target together. They used to be two
+     calls in the route, and a target that failed its foreign key left the
+     title, dates, status and updated_at already committed -- a caller told the
+     request failed, looking at a row that had moved. */
+  return queryOne<AthleteDevelopmentBlockRow>(
+    `update pilot.athlete_development_blocks
+     set title = $3,
+         training_emphasis = $4,
+         starts_on = $5::date,
+         ends_on = $6::date,
+         status = $7,
+         target_competition_id = $8,
+         target_wrestling_event_id = $9,
+         updated_at = now()
+     where organization_id = $1 and block_id = $2
+     returning ${FIELDS}`,
+    [
+      organizationId,
+      blockId,
+      merged.title.trim(),
+      merged.trainingEmphasis.trim(),
+      merged.startsOn,
+      merged.endsOn,
+      merged.status ?? existing.status,
+      competitionId,
+      wrestlingEventId,
+    ],
   );
 }
