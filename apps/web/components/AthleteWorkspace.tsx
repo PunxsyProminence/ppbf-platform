@@ -97,12 +97,17 @@ type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
  * offered here that the API rejects would fail goal creation outright, and this
  * component cannot import the server contract to find that out at build time.
  *
- * 'Weight Loss' and 'Weight Gain' were offered here until 2026-08-03 and were
- * never stored: the category was dropped before the request was built. They are
- * withheld rather than persisted, because filing a minor's weight intent as a
- * queryable row belongs behind the Privacy-Tier System that does not exist yet.
- * See the migration header. The replacement is not a blank space -- the form
- * says where a weight goal does belong, which is a conversation with a coach.
+ * 'Weight Loss' and 'Weight Gain' have a history worth knowing before touching
+ * them: offered here until 2026-08-03 but never stored (the category was
+ * dropped before the request was built), then deliberately withheld, then
+ * admitted by owner decision 2026-08-28 once the Privacy-Tier System the
+ * withholding waited on had shipped. See the migration header.
+ *
+ * Choosing one is now a real, stored choice -- and the guidance that replaced
+ * them is kept rather than deleted, shown when one of the two is selected. The
+ * 2026-08-03 owner principle is that the stop carries the lesson; the lesson
+ * outlived the stop. Making weight is still a plan built with a coach and a
+ * guardian, and the form still says so.
  */
 export const SMART_GOAL_CATEGORIES = [
   'Boxing',
@@ -112,7 +117,12 @@ export const SMART_GOAL_CATEGORIES = [
   'Recovery',
   'Lifestyle',
   'Leadership',
+  'Weight Loss',
+  'Weight Gain',
 ] as const;
+
+/** The two categories whose selection surfaces the coach-and-guardian note. */
+export const WEIGHT_GOAL_CATEGORIES: readonly string[] = ['Weight Loss', 'Weight Gain'];
 
 type SMARTCategory = (typeof SMART_GOAL_CATEGORIES)[number];
 type GoalStatus = 'Not Started' | 'Active' | 'Completed' | 'Paused';
@@ -2451,14 +2461,21 @@ export default function AthleteWorkspace() {
                       className="input input--kiosk"
                     />
                   </div>
-                  {/* The two weight categories this list used to offer are not
-                      here, and this says where that goal goes instead. A stop
-                      that explains itself is the point -- see the migration
-                      header and the owner principle recorded 2026-08-03. */}
-                  <p className="t-muted">
-                    Making weight is a plan you build with your coach, not a goal you set alone —
-                    bring it to them and they will set it up with your guardian.
-                  </p>
+                  {/* Kept from when these two categories were withheld, and now
+                      shown only when one is chosen. The categories are real
+                      choices since 2026-08-28; the guidance beside them is not
+                      deleted, because the owner principle recorded 2026-08-03
+                      is that the stop carries the lesson -- and the lesson
+                      (a weight goal is built with a coach and a guardian, not
+                      set alone) outlived the stop. Unconditional, it would be
+                      noise on a jab goal; absent, a minor would file a weight
+                      goal with no route to the people who should be in it. */}
+                  {WEIGHT_GOAL_CATEGORIES.includes(newGoalCategory) && (
+                    <p className="t-muted">
+                      Making weight is a plan you build with your coach — bring this to them and
+                      they will set it up with your guardian.
+                    </p>
+                  )}
                   <div className="flex gap-[var(--s3)]">
                     <button
                       onClick={handleCreateGoal}
