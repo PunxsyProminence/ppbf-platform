@@ -1,6 +1,10 @@
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+// The waiver_type string only, not the readers. Imported rather than
+// re-typed because a second copy of 'photo_media' is exactly how one of the
+// two later stops matching the other.
+import { MEDIA_CONSENT_WAIVER_TYPE } from './guardianConsent';
 import { createVolunteer } from './volunteers';
 
 // Roles that can be provisioned as a Microsoft-authenticated account through
@@ -586,6 +590,11 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
  * in, reads as healthy, and shows an empty list of children. Correcting a
  * mislinked guardian is therefore link-the-right-athlete-then-remove, in that
  * order, and never leaves a family with an account that shows them nothing.
+ *
+ * ALSO refuses while that guardian's media consent for that athlete stands
+ * WITHDRAWN, because this DELETE is the one action that can turn a standing
+ * NO into a YES without anybody signing anything. See the comment on the
+ * check itself for the mechanism. Owner decision, 2026-08-28.
  */
 export async function removeGuardianLink(params: {
   organizationId: string;
@@ -622,6 +631,105 @@ export async function removeGuardianLink(params: {
     const target = links.rows.find((row) => row.athlete_id === athleteId);
     if (!target) {
       throw new Error('Not found: that athlete is not linked to this guardian');
+    }
+
+    /*
+     * THE LOCK, AND WHY IT IS TAKEN BEFORE THE CONSENT READ BELOW.
+     *
+     * Round-review finding (Codex, PR #823): the consent read was an ordinary
+     * SELECT with nothing serializing it against a concurrent withdrawal, so
+     * an INSERT landing between the read and the DELETE was lost -- the
+     * withdrawal committed, the link vanished, and checkGuardianMediaConsent
+     * stopped asking that guardian. The exact bypass this refusal exists to
+     * prevent, arriving through timing instead of through a missing check.
+     *
+     * ONE ROW, NOT A SET, and that is deliberate. The withdrawal path's sweep
+     * (publication.ts suppressPublishedMediaForAthlete) locks
+     * `where organization_id = $1 and athlete_id = $2 for update` -- every
+     * guardian of one athlete. Locking every athlete of one guardian here
+     * would give two transactions overlapping sets acquired in opposite
+     * orders, which is a deadlock waiting for load. A transaction that takes
+     * exactly one row lock and waits on nothing else cannot be half of a
+     * deadlock cycle, so this locks precisely the row it is about to delete.
+     *
+     * WHAT THE LOCK CLOSES. Under READ COMMITTED each statement takes a fresh
+     * snapshot, so the consent read below -- issued AFTER this lock is held --
+     * sees every withdrawal committed up to that moment. And it orders this
+     * transaction against the sweep: either the sweep holds the row and this
+     * waits for it (then reads the withdrawal and refuses), or this holds the
+     * row and the sweep waits (and afterwards finds no link, because the
+     * unlink was decided before the withdrawal existed).
+     *
+     * WHAT IT DOES NOT CLOSE, stated rather than papered over: the withdrawal
+     * INSERT itself takes no lock -- withdrawMediaConsent is a bare autocommit
+     * insert into pilot.waivers and the sweep runs only afterwards, in its own
+     * transaction -- so an insert committing between the read below and the
+     * DELETE is still lost. That window now contains no other round trip of
+     * ours, but it is not zero. Closing it needs the WRITE path to take this
+     * same guardian_links lock before its insert, which changes the
+     * concurrency of the most safety-critical write in this domain and is
+     * proposed on the review thread rather than taken unilaterally here.
+     */
+    await client.query(
+      `select 1 from pilot.guardian_links
+        where organization_id = $1 and parent_id = $2 and athlete_id = $3
+        for update`,
+      [organizationId, target.parent_id, athleteId],
+    );
+
+    /*
+     * A withdrawal is a standing NO, and this DELETE is the one action that
+     * can silently turn it into a YES.
+     *
+     * checkGuardianMediaConsent (guardianConsent.ts) resolves an athlete's
+     * guardians from pilot.guardian_links LIVE on every call, then reads each
+     * one's current photo_media waiver. Removing this row does not reverse
+     * the withdrawal -- it removes the guardian who made it from the set
+     * being asked. For an athlete with a second, consenting guardian the
+     * answer flips from blocked to allowed. For an athlete whose only
+     * guardian this was, perGuardian goes EMPTY, and the video playback gate
+     * (api/pilot/video/[videoId]) reads an empty set as "no guardian excluded
+     * this" and serves the footage. Either way an administrative click, not a
+     * signature, is what restored the media.
+     *
+     * So the unlink is refused while the withdrawal stands. The way out is
+     * the same one that reverses a withdrawal anywhere else on this platform:
+     * that guardian signs a fresh consent through their own console
+     * (pilot.waivers is append-only and every reader takes the latest row per
+     * guardian), and then the link can be removed. An org admin cannot clear
+     * it on their behalf, which is the entire point -- if they could, the
+     * refusal would only be a speed bump.
+     *
+     * CHECKED BEFORE THE STRUCTURAL RULE BELOW, deliberately. If the
+     * last-link refusal ran first, the "withdrawn AND only link" case would
+     * never mention the withdrawal at all, and an admin would work around the
+     * structural rule (link another athlete, come back) without ever learning
+     * why the removal is actually refused. A safeguarding fact must not be
+     * masked by a housekeeping one.
+     *
+     * SCOPED TO photo_media on purpose, and that scope is a checked claim,
+     * not an assumption: it is the only waiver type whose evaluation joins
+     * guardian_links. getAthleteWaiverStatus (waiverCompliance.ts) reads by
+     * athlete_id alone, so unlinking a guardian moves no travel or
+     * medical_release answer. Those two readers were read; the rest of the
+     * codebase was not, so this says what was checked and no more.
+     */
+    const currentConsent = await client.query<{ status: string }>(
+      `select status
+         from pilot.waivers
+        where organization_id = $1 and athlete_id = $2 and parent_id = $3 and waiver_type = $4
+        order by created_at desc
+        limit 1`,
+      [organizationId, athleteId, target.parent_id, MEDIA_CONSENT_WAIVER_TYPE],
+    );
+
+    if (currentConsent.rows[0]?.status === 'withdrawn') {
+      throw new Error(
+        'Forbidden: this guardian has withdrawn media consent for this athlete. Removing the link would '
+        + 'drop that withdrawal out of the consent check rather than reverse it, so the athlete\'s media '
+        + 'would become usable again without anyone consenting. Only a new signed consent from that '
+        + 'guardian clears this, and the link can be removed after that.',
+      );
     }
 
     if (links.rowCount === 1) {
