@@ -21,6 +21,34 @@ not replace it.
 
 ---
 
+## 2026-08-28 18:31Z — release lane: the entry below is STALE, do not act on it
+
+**`athlete-check-in-measures` IS applied to staging.** The entry immediately
+below says the migration is "applied NOWHERE" and that the columns "do not
+exist in staging or production". That was true when it was written and was
+already false when it merged: `apply-migrations` run
+[33199537359](https://github.com/PunxsyProminence/ppbf-platform/actions/runs/33199537359)
+applied it to staging at 18:31Z, and #815 merged at 18:54Z. Verified from that
+run's own log, not inferred: `MIGRATION: all`, `TARGET: staging`, commit
+`98eb3ae1`, and `PILOT ATHLETE CHECK IN MEASURES MIGRATION PASS`.
+
+**Production: NOT applied.** Run
+[33201379330](https://github.com/PunxsyProminence/ppbf-platform/actions/runs/33201379330)
+(`target=production`, `migration=all`, commit `98eb3ae1`) is sitting at
+`waiting` on the `production` environment's required-reviewer rule. Until the
+owner approves it, the below entry's warning still holds **for production
+only** — do not deploy code carrying `98eb3ae1` there first.
+
+**Applying it to production ahead of the code deploy is safe, and that is the
+prescribed order** (`deploy-production.yml` header, step 1). Checked against
+the DDL rather than the migration's prose: all six columns are added `null`
+with no default, every constraint is `check (<col> is null or ...)` so NULL
+always passes, and there are no drops, no destructive alters and no
+`UPDATE`/`DELETE`. Production's current code (`cc07529c`) never writes these
+columns, so it cannot be broken by the columns existing.
+
+---
+
 ## 2026-08-28 — training-content build lane (#802, #809, #810 merged)
 
 **A migration is merged and applied NOWHERE. `athlete-check-in-measures`**
