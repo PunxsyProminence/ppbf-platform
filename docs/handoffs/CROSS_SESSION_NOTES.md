@@ -21,6 +21,87 @@ not replace it.
 
 ---
 
+## 2026-08-28 — training-content build lane (correcting the entry below, per this file's stale-note rule)
+
+**"Applied NOWHERE" is stale for staging.** It was true when written and stopped
+being true about a minute later. `athlete-check-in-measures` IS applied to
+staging:
+
+- run `33199537359`, 18:29Z, `MIGRATION: all` / `TARGET: staging`, head
+  `98eb3ae1` — the release lane's own `all` dispatch, which carried this
+  migration along with everything else. Succeeded.
+- run `33201656557`, 18:58Z, `MIGRATION: athlete-check-in-measures` /
+  `TARGET: staging`, head `ee5ca8a7` — this lane, re-applying at the owner's
+  direction before the overlap was noticed. Also succeeded; its Apply step took
+  **one second**, which is what convergence over an already-migrated database
+  looks like rather than a create.
+
+**Production is still believed unapplied, and that is an inference, not a read.**
+The most recent `all` against production this lane can point to is run
+`33089360578` (2026-08-27), which predates this migration. Nobody has queried
+production's schema. Treat it as unapplied until someone does.
+
+**Two things this accidentally proved, worth keeping.** The `all` chain ran
+against real staging Postgres and passed WITH the repaired
+`pilot-apply-athlete-check-ins-migration.mjs` readiness gate in it — the defect
+described below reproduced and fixed in the environment where it would actually
+have blocked a dispatch, which is stronger than the local embedded-Postgres
+evidence the fix originally shipped with. And idempotency here is now
+demonstrated rather than assumed.
+
+— training-content build lane.
+
+---
+
+## 2026-08-28 — training-content build lane (#802, #809, #810 merged)
+
+**A migration is merged and applied NOWHERE. `athlete-check-in-measures`**
+(#802, main `52991b08`) adds six columns to `pilot.athlete_check_ins`:
+`sleep_hours`, `hydration`, `motivation`, `mental_clarity`, `stress`,
+`nutrition_compliance`. It is registered on every surface and sits after
+`athlete-check-ins` in the `all` chain, but no `apply-migrations` dispatch has
+run since it merged, so those columns do not exist in staging or production.
+
+**#810 (main `98eb3ae1`) is the UI that writes them.** Merging it to main was
+safe; it reaching a deployed environment ahead of the migration is not — the
+athlete Wellness tab would POST fields the table cannot accept. Sequence the
+migration before the next deploy that carries `98eb3ae1`.
+
+**A defect this lane fixed, worth knowing if you touch that table.** Adding
+those columns broke the PREVIOUS migration's runner:
+`pilot-apply-athlete-check-ins-migration.mjs` counted every single-column 1-5
+CHECK on the table and demanded exactly three, which silently also meant "and
+no other column here is bounded 1-5". Eight constraints made it throw
+`ATHLETE_CHECK_INS_NOT_READY` against a correct schema, inside the `all` chain
+— a blocked dispatch, not just a red suite. The gate now names its three
+columns. The owner's growth model for this table is one migration per measure
+decided, so **the next measure migration will not re-trip it, but check the
+readiness query of anything else that counts constraints on a table you widen.**
+
+**Deferred by owner decision, not forgotten:** resting heart rate, HRV and
+blood pressure. They are biometric readings on minors — a different data class
+from a wellness self-report — and were parked pending consent and retention
+answers. `docs/design/CHECKIN_API_CONTRACT.md` records this.
+
+**Two findings raised to the owner, unactioned, needing a decision:**
+- `/api/pilot/floor-hours/public` is UNAUTHENTICATED and applies no cohort
+  floor, returning `distinct_participants` alongside first/last dates.
+  Authenticated board members get everything below
+  `BOARD_MINIMUM_COHORT_SIZE = 5` suppressed. The public path is more exposed
+  than the governance one.
+- `/api/pilot/shadow/data` (self-service export/delete) is built and gated but
+  reachable from no UI.
+
+**Scoping result available:** 48 of 248 routes under `app/api/pilot/` have no
+UI consumer; 13 are referenced by nothing at all, not even a test. #809 closed
+three of them (the board aggregates). Triage of the rest — several look like
+drift to delete rather than gaps to fill, including three surplus role-scoped
+chat endpoints and four by-id/CRUD splits — was in progress at time of writing.
+
+— training-content build lane.
+
+---
+
 ## 2026-08-28 — release lane (correcting the entry below, per this file's stale-note rule)
 
 **Production is NOT four migrations behind. It received `MIGRATION: all` and
