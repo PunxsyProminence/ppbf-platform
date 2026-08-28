@@ -49,7 +49,19 @@ export async function POST(request: NextRequest) {
     }
 
     await writePilotAuditEvent({
-      event_type: 'create',
+      /* The verb follows the branch above, and used to be a hardcoded 'create'.
+         This route is an upsert: when the review already exists it takes the
+         update branch, does a compare-and-set on the stored session, and then
+         logged the edit as a creation anyway. Every edit a coach made through
+         the workspace -- the only wired write path for coach reviews -- was
+         recorded in pilot.audit_events under the wrong verb.
+
+         'update' is already in the audit vocabulary
+         (pilot_slice_postgres_audit_event_vocabulary_migration.sql), so this
+         needs no schema change; the value was simply never derived. An audit
+         row that names the wrong action is worse than a missing one, because a
+         reader has no way to tell it is wrong. */
+      event_type: existing ? 'update' : 'create',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
       organization_id: principal.organizationId,

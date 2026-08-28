@@ -769,13 +769,32 @@ describe('an unlink that meets a held lock waits for it', () => {
         if (!observedBlocked) await new Promise((resolve) => setTimeout(resolve, 25));
       }
 
-      // The withdrawal lands while the unlink is parked on the lock.
-      await guardianConsent.withdrawMediaConsent({
-        organizationId: ORG_A,
-        athleteId: RACE_ATH_A,
-        parentId: racerParentId,
-        signedByName: 'Race Guardian',
-      });
+      /* The withdrawal lands while the unlink is parked on the lock -- written
+         as raw SQL rather than through withdrawMediaConsent, and that
+         substitution is itself a statement about the system.
+
+         Owner decision D-2 gave the consent WRITERS the same guardian_links
+         lock the readers take. So withdrawMediaConsent can no longer commit
+         while this row is held: it would queue behind the same lock, inside a
+         block that cannot release it until this function returns, and the run
+         would DEADLOCK rather than fail. The interleaving this test describes
+         is no longer reachable through the API, which is exactly what that
+         decision bought.
+
+         The insert is kept, and kept raw, because this test is about the READ
+         side: that removeGuardianLink waits for the lock and then re-reads.
+         That guarantee has to hold against a withdrawal arriving by any route
+         -- a direct SQL write, a future writer, a restore -- not only against
+         the one writer that now cooperates. A lock on the writer is not a
+         substitute for the read being correct after it. */
+      await client.query(
+        `insert into pilot.waivers
+           (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+            signed_by_role, signed_at, consent_version, status, covers_video, public_use_allowed)
+         values ($1, gen_random_uuid(), $2, $3, 'photo_media', 'Race Guardian',
+                 'parent', now(), 'v1', 'withdrawn', false, false)`,
+        [ORG_A, RACE_ATH_A, racerParentId],
+      );
     } finally {
       await holder.query('rollback').catch(() => {});
       await holder.end().catch(() => {});

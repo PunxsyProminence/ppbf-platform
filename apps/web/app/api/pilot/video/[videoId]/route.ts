@@ -6,6 +6,11 @@ import { queryOne } from '@/src/server/pilot/db';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { checkGuardianMediaConsent } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+// The same trim-and-lowercase the consent readers use. Imported rather than
+// kept as a local copy: this route and guardianConsent.ts read the SAME
+// column, and a private duplicate is how two readings of one value start
+// again -- which is the defect the shared helper was extracted to end.
+import { normalizeWaiverStatusText } from '@/src/server/pilot/waiverCompliance';
 
 export const runtime = 'nodejs';
 
@@ -163,10 +168,6 @@ interface VideoSessionRow {
  * a leading space, sitting beside checkGuardianMediaConsent's own
  * `status !== 'signed'`, which fails closed on the same data.
  */
-function normalizeStatus(value: string | null | undefined): string {
-  return (value ?? '').trim().toLowerCase();
-}
-
 const CONSENT_STATUSES_THIS_GATE_UNDERSTANDS = new Set(['signed', 'withdrawn']);
 
 async function assertConsentCoversVideo(organizationId: string, athleteId: string): Promise<void> {
@@ -187,7 +188,7 @@ async function assertConsentCoversVideo(organizationId: string, athleteId: strin
   // regardless, and the ordering decides which message a MIXED set of
   // guardians produces. Withdrawal wins because it is the stronger statement.
   const withdrawn = consent.perGuardian.filter(
-    (guardian) => normalizeStatus(guardian.status) === 'withdrawn',
+    (guardian) => normalizeWaiverStatusText(guardian.status) === 'withdrawn',
   );
 
   if (withdrawn.length > 0) {
@@ -201,7 +202,7 @@ async function assertConsentCoversVideo(organizationId: string, athleteId: strin
   }
 
   const videoExcluded = consent.perGuardian.filter(
-    (guardian) => normalizeStatus(guardian.status) === 'signed' && guardian.coversVideo === false,
+    (guardian) => normalizeWaiverStatusText(guardian.status) === 'signed' && guardian.coversVideo === false,
   );
 
   if (videoExcluded.length > 0) {
@@ -238,7 +239,7 @@ async function assertConsentCoversVideo(organizationId: string, athleteId: strin
    */
   const unreadable = consent.perGuardian.filter(
     (guardian) =>
-      guardian.status !== null && !CONSENT_STATUSES_THIS_GATE_UNDERSTANDS.has(normalizeStatus(guardian.status)),
+      guardian.status !== null && !CONSENT_STATUSES_THIS_GATE_UNDERSTANDS.has(normalizeWaiverStatusText(guardian.status)),
   );
 
   if (unreadable.length > 0) {
