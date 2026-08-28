@@ -386,11 +386,33 @@ inside an extension of the existing `intervention_protocols` /
   inherits that field's lack of date range or cross-session linkage and
   would likely undercount or misgroup blocks.
 
-**2. [STILL OPEN — nothing built.]** The foundation slice ships NO
-competition or event foreign key, deliberately: both competition surfaces are
-skeletal by prior owner decision, and choosing among (a)/(b)/(c) is the
-owner's. Nothing is foreclosed — under (a) this is a later additive nullable
-column with a composite FK, one migration wide. The question as put:
+**2. [ANSWERED — (a), built.]** The owner directed the competition
+connection, and it shipped as
+`pilot_slice_postgres_athlete_development_block_competition_target_migration.sql`:
+two nullable columns, `target_competition_id` and `target_wrestling_event_id`,
+each with a composite foreign key into its own surface, plus a check that a
+block names at most one. Two columns rather than the "one migration wide"
+single column the foundation anticipated, because the option names targets in
+two different tables and one polymorphic id column could not carry a real
+foreign key — and the composite-FK tenancy proof is worth more than the
+column count.
+
+Every bound the option set is held: a target is a name and a date, both
+competition tables are untouched and remain exactly as skeletal as the prior
+owner decision left them, and nothing derives a taper, a peak, a volume curve,
+a countdown or a weight plan from the link. `sanctioning_body` is shown only
+where it is stored, which means never for a wrestling league event, whose
+table has no such column.
+
+Two things the option did not specify and this build decided, recorded here so
+they are visible rather than inferred: `ON DELETE` is the default (no action)
+rather than cascade or set null — cascade would delete a coach's whole plan
+because somebody removed a fixture, set null would silently erase what it was
+aiming at — and a block stays pointed at an event whose status becomes
+`cancelled`, because the coach WAS preparing for it and a dropped link is
+indistinguishable from a target never chosen.
+
+The question as put:
 
 **Should a block be allowed to target a competition/event at all,
 given both competition surfaces are deliberately skeletal by prior owner

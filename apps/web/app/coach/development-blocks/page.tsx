@@ -23,6 +23,26 @@ import { formatGymDay } from '@/src/lib/gymTime';
  * carried out" are different claims and only the second one is coaching.
  */
 
+/**
+ * What a block is preparing for, resolved by the route.
+ *
+ * A NAME AND A DATE. Both competition surfaces are skeletal by owner decision
+ * -- no brackets, no weight classes, no qualification rules -- so there is
+ * nothing here to build a taper, a peak or a weight plan from, and this page
+ * builds none. `sanctioning_body` is null for a wrestling league event because
+ * that table HAS NO SUCH COLUMN; the panel says nothing rather than inventing
+ * a body, which is exactly what "where stored" means.
+ */
+interface BlockTarget {
+  kind: 'competition' | 'wrestling_event';
+  id: string;
+  name: string;
+  date: string;
+  location: string;
+  sanctioning_body: string | null;
+  status: 'planned' | 'completed' | 'cancelled';
+}
+
 /** Mirrors AthleteDevelopmentBlockRow, which is what the route returns. */
 interface DevelopmentBlock {
   block_id: string;
@@ -32,6 +52,9 @@ interface DevelopmentBlock {
   starts_on: string;
   ends_on: string;
   status: 'draft' | 'active' | 'completed' | 'cancelled';
+  target_competition_id: string | null;
+  target_wrestling_event_id: string | null;
+  target: BlockTarget | null;
   created_by_account_id: string;
   created_at: string;
   updated_at: string;
@@ -56,6 +79,24 @@ const STATUS_BADGE: Record<BlockStatus, { className: string; label: string }> = 
   active: { className: 'badge--cleared', label: 'Active' },
   completed: { className: 'badge--monitor', label: 'Completed' },
   cancelled: { className: 'badge--filed', label: 'Cancelled' },
+};
+
+/* An EVENT's status, which is a different vocabulary from a block's and gets
+   its own map rather than sharing one. A cancelled event is the case this
+   whole panel has to get right: the block stays pointed at it and the
+   cancellation is stated, because a coach who cannot tell a cancelled target
+   from one that was never chosen will plan around a show that is not
+   happening. 'restricted' rather than the safeguarding red -- a called-off
+   fixture is not a participation block. */
+const EVENT_STATUS_BADGE: Record<BlockTarget['status'], { className: string; label: string }> = {
+  planned: { className: 'badge--cleared', label: 'Planned' },
+  completed: { className: 'badge--monitor', label: 'Completed' },
+  cancelled: { className: 'badge--restricted', label: 'Cancelled' },
+};
+
+const TARGET_KIND_LABEL: Record<BlockTarget['kind'], string> = {
+  competition: 'Competition',
+  wrestling_event: 'Wrestling event',
 };
 
 const EMPTY_FORM = {
@@ -94,6 +135,13 @@ export default function CoachDevelopmentBlocksPage() {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
+  /* The events a coach may aim a block at. Organization fixtures, so this is
+     loaded once rather than per athlete. Three states for the usual reason:
+     an empty picker must not be the rendering of a failed read. */
+  const [targetOptions, setTargetOptions] = useState<BlockTarget[]>([]);
+  const [targetOptionsState, setTargetOptionsState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [targetBusyId, setTargetBusyId] = useState<string | null>(null);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [editBusy, setEditBusy] = useState(false);
@@ -117,6 +165,30 @@ export default function CoachDevelopmentBlocksPage() {
         // read did not establish.
         setAthletes([]);
         setRosterState('unavailable');
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/coach/development-blocks?targets=options`, {
+          method: 'GET',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('targets');
+        const payload = (await response.json()) as { options?: BlockTarget[] };
+        setTargetOptions(payload.options ?? []);
+        setTargetOptionsState('loaded');
+      } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') return;
+        // Not "your gym has no competitions on the calendar" -- this read did
+        // not establish that, and a coach reading it would stop looking.
+        setTargetOptions([]);
+        setTargetOptionsState('unavailable');
       }
     })();
     return () => controller.abort();
@@ -255,6 +327,42 @@ export default function CoachDevelopmentBlocksPage() {
       setErrorMessage('That change could not be saved. The block is unchanged.');
     } finally {
       setEditBusy(false);
+    }
+  }
+
+  /* Setting or clearing what a block is preparing for. Its own request rather
+     than a field on the edit form: clearing a target and leaving it alone are
+     different intentions, and the route distinguishes them by whether the
+     `target` key is present at all. */
+  async function setTarget(blockId: string, choice: string) {
+    if (targetBusyId) return;
+    setTargetBusyId(blockId);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const option = targetOptions.find((item) => `${item.kind}:${item.id}` === choice);
+      const response = await fetch(`${apiBase()}/api/pilot/coach/development-blocks`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          block_id: blockId,
+          // null clears it. An option the server did not offer cannot be
+          // composed here: the value is looked up in the list it came from.
+          target: option ? { kind: option.kind, id: option.id } : null,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setErrorMessage(payload.error ?? 'That target could not be saved.');
+        return;
+      }
+      setMessage(option ? 'Target saved.' : 'Target cleared.');
+      await loadBlocks(athleteId);
+    } catch {
+      setErrorMessage('That target could not be saved. The block is unchanged.');
+    } finally {
+      setTargetBusyId(null);
     }
   }
 
@@ -432,6 +540,94 @@ export default function CoachDevelopmentBlocksPage() {
                       {formatGymDay(block.ends_on) ?? block.ends_on}
                     </p>
                     <p className="t-body text-[color:var(--bone-300)]">{block.training_emphasis}</p>
+
+                    {/* WHAT THIS BLOCK IS PREPARING FOR.
+
+                        A name, a date, where it is, who sanctions it if
+                        anyone recorded that, and whether it is still
+                        happening. Nothing else, and nothing derived: no
+                        countdown driving a taper, no "weeks out" figure, no
+                        peak week. Both competition surfaces are skeletal by
+                        owner decision and carry nothing such a number could
+                        honestly be built from. */}
+                    <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
+                      <p className="t-label m-0">Preparing for</p>
+
+                      {block.target ? (
+                        <>
+                          <div className="flex flex-wrap items-center justify-between gap-[var(--s2)]">
+                            <p className="t-body m-0 font-semibold">{block.target.name}</p>
+                            <span className={`badge ${EVENT_STATUS_BADGE[block.target.status].className}`}>
+                              {EVENT_STATUS_BADGE[block.target.status].label}
+                            </span>
+                          </div>
+                          <p className="t-muted m-0">
+                            {TARGET_KIND_LABEL[block.target.kind]}
+                            {' · '}
+                            {formatGymDay(block.target.date) ?? block.target.date}
+                            {/* Location and sanctioning body are shown ONLY
+                                where they are stored. A wrestling league event
+                                has no sanctioning_body column at all, and both
+                                tables default location to an empty string, so
+                                a blank is an absence and renders as nothing
+                                rather than as an empty field. */}
+                            {block.target.location ? ` · ${block.target.location}` : ''}
+                            {block.target.sanctioning_body ? ` · ${block.target.sanctioning_body}` : ''}
+                          </p>
+                          {block.target.status === 'cancelled' && (
+                            <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                              This event was cancelled. The block is still pointed at it — change or clear the
+                              target if the plan has moved.
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="t-muted m-0">No event named. This block is a date range of its own.</p>
+                      )}
+
+                      {targetOptionsState === 'unavailable' && (
+                        <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                          The gym&apos;s competitions and events could not be loaded, so there is nothing to
+                          choose from. This is not a statement that none are scheduled.
+                        </p>
+                      )}
+
+                      {targetOptionsState === 'loaded' && targetOptions.length === 0 && (
+                        <p className="t-muted m-0">
+                          No competition or league event has been recorded for this gym yet, so there is
+                          nothing to aim a block at.
+                        </p>
+                      )}
+
+                      {targetOptionsState === 'loaded' && targetOptions.length > 0 && (
+                        <div className="field">
+                          <label htmlFor={`target-${block.block_id}`} className="t-label">
+                            Change what this block is preparing for
+                          </label>
+                          <select
+                            id={`target-${block.block_id}`}
+                            value={block.target ? `${block.target.kind}:${block.target.id}` : ''}
+                            onChange={(event) => void setTarget(block.block_id, event.target.value)}
+                            disabled={targetBusyId !== null}
+                            className="select"
+                          >
+                            <option value="">No event</option>
+                            {targetOptions.map((option) => (
+                              <option key={`${option.kind}:${option.id}`} value={`${option.kind}:${option.id}`}>
+                                {option.name}
+                                {' — '}
+                                {formatGymDay(option.date) ?? option.date}
+                                {/* A cancelled fixture stays selectable and
+                                    says so: a coach retargeting away from one
+                                    has to be able to see which it was. */}
+                                {option.status === 'cancelled' ? ' (cancelled)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Attribution, plainly. Who wrote this plan is a fact
                         about the past and no edit path can rewrite it. */}
                     <p className="t-muted">Written by {block.created_by_account_id}</p>

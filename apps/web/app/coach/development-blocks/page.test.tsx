@@ -48,6 +48,9 @@ function blockRow(overrides: Record<string, unknown> = {}) {
     starts_on: '2026-09-01',
     ends_on: '2026-10-13',
     status: 'draft',
+    target_competition_id: null,
+    target_wrestling_event_id: null,
+    target: null,
     created_by_account_id: 'acct-coach-a',
     created_at: '2026-08-28T00:00:00.000Z',
     updated_at: '2026-08-28T00:00:00.000Z',
@@ -62,6 +65,8 @@ interface Stubs {
   blocks?: Array<Record<string, unknown>>;
   writeOk?: boolean;
   writeError?: string;
+  targetOptionsOk?: boolean;
+  targetOptions?: Array<Record<string, unknown>>;
   /** Delays the write response, so a second click lands while the first is in
       flight. Without this a double-submit test proves nothing. */
   holdWrite?: () => Promise<void>;
@@ -82,6 +87,16 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/coach/development-blocks')) {
       const method = init?.method ?? 'GET';
+      // The picker branch, matched before the block reads: both live on the
+      // same path and are told apart by ?targets=options, exactly as the route
+      // tells them apart.
+      if (method === 'GET' && url.includes('targets=options')) {
+        return {
+          ok: stubs.targetOptionsOk ?? true,
+          status: stubs.targetOptionsOk === false ? 503 : 200,
+          json: async () => ({ ok: true, options: stubs.targetOptions ?? [] }),
+        } as Response;
+      }
       if (method === 'GET') {
         return {
           ok: stubs.blocksOk ?? true,
@@ -408,6 +423,210 @@ describe('the page invents no training science', () => {
 
     expect(document.body.querySelector('.badge.badge--cleared')?.textContent).toBe('Active');
     expect(document.body.querySelector('.badge.badge--monitor')).toBeNull();
+  });
+});
+
+
+/*
+ * WHAT A BLOCK IS PREPARING FOR.
+ *
+ * Open Question 2 of module 036's engine-unlock proposal, answered (a): an
+ * optional link to an existing competition or league event, "as a target date
+ * only (name and date, nothing else)".
+ *
+ * The two things worth a test here are the two ways this could quietly go
+ * wrong: a countdown or a taper appearing because a date is now on screen,
+ * and a cancelled event being dropped instead of marked -- which would leave a
+ * coach planning around a show that is not happening.
+ */
+function targetOption(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: 'competition',
+    id: 'comp-1',
+    name: 'Keystone Open',
+    date: '2026-11-14',
+    location: 'Altoona, PA',
+    sanctioning_body: 'USA Boxing',
+    status: 'planned',
+    ...overrides,
+  };
+}
+
+describe('the competition target on a block', () => {
+  test('a named target shows its date, location and sanctioning body', async () => {
+    await renderPage({ blocks: [blockRow({ target: targetOption() })] });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText('Keystone Open')).toBeTruthy();
+    expect(screen.getByText(/November 14, 2026/)).toBeTruthy();
+    expect(screen.getByText(/Altoona, PA/)).toBeTruthy();
+    expect(screen.getByText(/USA Boxing/)).toBeTruthy();
+  });
+
+  test('a wrestling event shows no sanctioning body, because that table has no such column', async () => {
+    // "Where stored" is the rule. Inventing a body would be the failure.
+    await renderPage({
+      blocks: [blockRow({
+        target: targetOption({
+          kind: 'wrestling_event',
+          id: 'evt-1',
+          name: 'Punxsutawney Duals',
+          sanctioning_body: null,
+        }),
+      })],
+    });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText('Punxsutawney Duals')).toBeTruthy();
+    expect(screen.getByText(/Wrestling event/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/USA Boxing|sanction/i);
+  });
+
+  test('a block with no target says so, rather than showing an empty event', async () => {
+    await renderPage({ blocks: [blockRow()] });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/No event named/i)).toBeTruthy();
+  });
+
+  test('a cancelled event stays on the block and is called cancelled', async () => {
+    await renderPage({
+      blocks: [blockRow({ target: targetOption({ status: 'cancelled' }) })],
+    });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText('Keystone Open')).toBeTruthy();
+    expect(screen.getByText(/This event was cancelled/i)).toBeTruthy();
+  });
+
+  test('choosing a target sends the kind and id the server offered', async () => {
+    await renderPage({ blocks: [blockRow()], targetOptions: [targetOption()] });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Change what this block is preparing for'), {
+        target: { value: 'competition:comp-1' },
+      });
+    });
+
+    const patch = writes.find((write) => write.method === 'PATCH');
+    expect(patch?.body).toEqual({ block_id: 'blk-1', target: { kind: 'competition', id: 'comp-1' } });
+  });
+
+  test('choosing "No event" clears the target explicitly', async () => {
+    await renderPage({
+      blocks: [blockRow({ target: targetOption() })],
+      targetOptions: [targetOption()],
+    });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Change what this block is preparing for'), {
+        target: { value: '' },
+      });
+    });
+
+    const patch = writes.find((write) => write.method === 'PATCH');
+    expect(patch?.body).toEqual({ block_id: 'blk-1', target: null });
+  });
+
+  test('the submitted target is looked up, not parsed out of the select value', async () => {
+    /* The option value is `kind:id`, and an id may itself contain a colon --
+       nothing constrains these ids to avoid one. Splitting the string would
+       send the id truncated at the first colon, filing the plan against a
+       different fixture or none. The page resolves the value against the list
+       the server sent instead, which is also what stops a client-composed id
+       ever reaching the route.
+
+       Written with a colon-bearing id on purpose: a test using a plain id
+       passes against a naive split and proves nothing. */
+    const awkward = targetOption({ id: 'comp:2026:keystone', name: 'Keystone Open' });
+    await renderPage({ blocks: [blockRow()], targetOptions: [awkward] });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Change what this block is preparing for'), {
+        target: { value: 'competition:comp:2026:keystone' },
+      });
+    });
+
+    const patch = writes.find((write) => write.method === 'PATCH');
+    expect(patch?.body.target).toEqual({ kind: 'competition', id: 'comp:2026:keystone' });
+  });
+
+  test('a selection the picker never offered sends no invented id', async () => {
+    await renderPage({ blocks: [blockRow()], targetOptions: [targetOption()] });
+    await pickAthlete('ath-1');
+
+    const picker = screen.getByLabelText('Change what this block is preparing for') as HTMLSelectElement;
+    await act(async () => {
+      fireEvent.change(picker, { target: { value: 'competition:comp-not-offered' } });
+    });
+
+    const patch = writes.find((write) => write.method === 'PATCH');
+    expect(patch?.body.target).not.toEqual({ kind: 'competition', id: 'comp-not-offered' });
+  });
+
+  test('an unrecorded location and body leave no empty fields behind', async () => {
+    /* Both tables default location to '' and external_competitions defaults
+       sanctioning_body to '', so a blank is an ABSENCE. Rendering it anyway
+       leaves a dangling separator and an empty slot that reads as data the
+       gym has and did not show. */
+    await renderPage({
+      blocks: [blockRow({
+        target: targetOption({ name: 'Club Show', location: '', sanctioning_body: null }),
+      })],
+    });
+    await pickAthlete('ath-1');
+
+    const line = screen.getByText(/Competition ·/).textContent ?? '';
+    expect(line).toMatch(/Competition · November 14, 2026$/);
+    expect(line).not.toMatch(/·\s*$/);
+    expect(line).not.toMatch(/·\s+·/);
+  });
+
+  test('a cancelled fixture stays selectable, marked, so a coach can retarget away from it', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      targetOptions: [targetOption({ status: 'cancelled' })],
+    });
+    await pickAthlete('ath-1');
+
+    const picker = screen.getByLabelText('Change what this block is preparing for') as HTMLSelectElement;
+    expect(Array.from(picker.options).map((option) => option.textContent).join(' ')).toMatch(/cancelled/);
+  });
+
+  test('a failed picker read is not rendered as "no competitions scheduled"', async () => {
+    await renderPage({ blocks: [blockRow()], targetOptionsOk: false });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/could not be loaded, so there is nothing to choose/i)).toBeTruthy();
+    expect(screen.queryByText(/No competition or league event has been recorded/i)).toBeNull();
+  });
+
+  test('a gym with genuinely nothing on the calendar is told that, distinctly', async () => {
+    await renderPage({ blocks: [blockRow()], targetOptions: [] });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/No competition or league event has been recorded/i)).toBeTruthy();
+    expect(screen.queryByText(/could not be loaded, so there is nothing to choose/i)).toBeNull();
+  });
+
+  test('naming a target still invents no training science', async () => {
+    /* The risk this whole slice carries: a date on screen invites a countdown,
+       and a countdown invites a taper. Neither competition table holds
+       anything either could honestly be built from. */
+    await renderPage({
+      blocks: [blockRow({ target: targetOption() })],
+      targetOptions: [targetOption()],
+    });
+    await pickAthlete('ath-1');
+
+    const text = document.body.textContent ?? '';
+    expect(text).not.toMatch(/\d+%/);
+    expect(text).not.toMatch(/weeks out|peak week|taper|workload|ACWR|fatigue|injury risk/i);
+    expect(document.body.querySelector('progress')).toBeNull();
+    expect(document.body.querySelector('[role="progressbar"]')).toBeNull();
   });
 });
 

@@ -82,6 +82,30 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-athlete-dev-blocks-pg-test-${Date.
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_athlete_development_blocks_migration.sql';
+
+/* This suite used to hand-pick the migrations that widen THIS table -- the
+   foundation, then external-competition, wrestling-league and the
+   competition-target widening -- and applied them in `all`-loop order. That
+   list is gone, and with it the reason it existed.
+
+   The reason it existed was real: the module reads and writes the whole row
+   through one shared FIELDS constant, so a database built from the foundation
+   alone is one the module cannot run against, and the suite would fail on
+   `column ... does not exist` for reasons unrelated to what it asserts. The
+   list solved that by naming each widening, at the cost of a line every future
+   widening has to remember to add.
+
+   applyFullSchema solves it without the list, and the objection recorded here
+   against using it -- that this suite also needs a PRE-migration state its
+   runner-readiness cases watch the table get created from, which applying
+   every migration cannot produce -- turned out to have a better answer than a
+   hand-built schema: build the full schema, then drop this slice's two tables
+   back off. freshDatabase's `preMigration` does exactly that, and every
+   migration-contract case here runs on it.
+
+   The reads also need it. Since access.ts became the gate every read passes
+   through, this suite exercises access.ts's own SQL as well as the module's,
+   against tables no hand-picked list named. */
 const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-athlete-development-blocks-migration.mjs',
@@ -393,7 +417,6 @@ beforeAll(async () => {
   });
 
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
-
   const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
   applyFullSchema = fullSchema.applyFullSchema as typeof applyFullSchema;
 
