@@ -15,7 +15,12 @@
 //     guard what that decision did NOT change;
 //   * an objective cannot hang off a block in another organization, and
 //     cannot outlive its block or its athlete (cascade through two levels);
-//   * tenancy holds on every read this slice adds;
+//   * tenancy holds on every read this slice adds, AND athlete scoping does
+//     on top of it: objectives carry no athlete_id, so every read resolves
+//     its parent through getDevelopmentBlock and inherits that block's
+//     access answer. Only a real database can show that the inheritance is
+//     real rather than intended -- an unassigned coach of the same gym has
+//     to come back empty through the objective, not just through the block;
 //   * a creator with no ACTIVE membership here is refused;
 //   * the runner's readiness assertion refuses a database the migration
 //     never reached, and does NOT encode the withheld domain (a deploy gate
@@ -50,6 +55,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import type { ActorIdentity } from './access';
 import {
   FULL_SPECTRUM_DOMAINS,
   addBlockObjective,
@@ -57,6 +63,7 @@ import {
   listObjectivesForBlock,
   setBlockObjectiveStatus,
 } from './athleteDevelopmentBlockObjectives';
+import type { PilotRole } from './contracts';
 import { ForbiddenError, ValidationError } from './errors';
 
 jest.setTimeout(180_000);
@@ -66,13 +73,12 @@ const PG_PASSWORD = 'postgres';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-adb-objectives-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
-// The parent must exist first: this table's composite FK points at it.
-const PARENT_MIGRATION_FILE = 'pilot_slice_postgres_athlete_development_blocks_migration.sql';
 const MIGRATION_FILE = 'pilot_slice_postgres_athlete_development_block_objectives_migration.sql';
 const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-athlete-development-block-objectives-migration.mjs',
 );
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
@@ -80,24 +86,61 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 
 const ORG_ID = 'org-objectives';
 const OTHER_ORG_ID = 'org-elsewhere';
+const ADMIN_ID = 'acct-obj-admin';
+const OTHER_ADMIN_ID = 'acct-obj-other-admin';
+// Coach of record for both athletes in ORG_ID.
 const COACH_ID = 'acct-obj-coach';
 const LAPSED_COACH_ID = 'acct-obj-lapsed';
+// Active coach membership here, coach of record for nobody, no coverage.
+const UNASSIGNED_COACH_ID = 'acct-obj-unassigned';
 const OTHER_COACH_ID = 'acct-obj-other-coach';
-// Active membership HERE, in a role that may not author.
+// Active memberships HERE, in roles that may not author.
 const ATHLETE_ACCOUNT_ID = 'acct-obj-athlete-account';
+const SECOND_ATHLETE_ACCOUNT_ID = 'acct-obj-athlete-account-2';
+const PARENT_ACCOUNT_ID = 'acct-obj-parent';
+const UNLINKED_PARENT_ACCOUNT_ID = 'acct-obj-parent-unlinked';
+const PARENT_ROW_ID = 'parent-obj-1';
+const UNLINKED_PARENT_ROW_ID = 'parent-obj-2';
 const ATHLETE_ID = 'ath-obj-1';
+const SECOND_ATHLETE_ID = 'ath-obj-2';
 const OTHER_ATHLETE_ID = 'ath-obj-other';
 const BLOCK_ID = 'block-obj-ours';
+const SECOND_BLOCK_ID = 'block-obj-sibling';
 const OTHER_BLOCK_ID = 'block-obj-theirs';
+
+/* One actor per arm of assertActorCanAccessAthlete, plus the near-miss for
+   each. Access to an objective is not decided here -- it is decided on the
+   parent block -- so these exist to prove the inheritance actually happens
+   rather than being asserted in a comment. */
+function actorFor(
+  accountId: string,
+  role: PilotRole,
+  organizationId: string = ORG_ID,
+  athleteId: string | null = null,
+): ActorIdentity {
+  return { accountId, role, organizationId, athleteId };
+}
+
+const ADMIN = actorFor(ADMIN_ID, 'organization_admin');
+const OTHER_ADMIN = actorFor(OTHER_ADMIN_ID, 'organization_admin', OTHER_ORG_ID);
+const COACH = actorFor(COACH_ID, 'coach');
+const LAPSED_COACH = actorFor(LAPSED_COACH_ID, 'coach');
+const UNASSIGNED_COACH = actorFor(UNASSIGNED_COACH_ID, 'coach');
+const ATHLETE = actorFor(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ATHLETE_ID);
+const SECOND_ATHLETE = actorFor(SECOND_ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, SECOND_ATHLETE_ID);
+const GUARDIAN = actorFor(PARENT_ACCOUNT_ID, 'parent');
+const UNLINKED_GUARDIAN = actorFor(UNLINKED_PARENT_ACCOUNT_ID, 'parent');
+// Refused unconditionally by the chokepoint, so they need no account row.
+const PLATFORM_OWNER = actorFor('acct-obj-owner', 'platform_owner');
+const BOARD = actorFor('acct-obj-board', 'board');
 
 const OBJECTIVE_TEXT = 'Jab off the back foot under pressure, not just off the front.';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
-let parentMigrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
-let baseSchemaSql: string;
+let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -120,11 +163,25 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-/** Base schema + the PARENT migration + a block in each of two gyms. The
- * objectives migration is deliberately NOT applied here, so each case
- * chooses whether to apply it and the runner's refusal case has a database
- * that is correctly set up in every respect except this one table. */
-async function freshDatabase(name: string): Promise<Client> {
+/**
+ * THE WHOLE SCHEMA, then this slice's own table dropped back off when a case
+ * needs to watch it get created.
+ *
+ * Why the whole schema: this suite drives feature code that resolves access
+ * through the parent block, and that path reads pilot.athletes.deleted_at --
+ * a column belonging to the data-retention migration, which the hand-picked
+ * hand-picked migration list would never have named. A suite that picks its
+ * own migrations is testing a database that has never existed anywhere. See
+ * scripts/lib/full-schema.mjs and #706.
+ *
+ * `preMigration` leaves everything else standing -- two gyms, three blocks,
+ * every account and link -- so the runner's refusal case has a database that
+ * is correct in every respect except this one table.
+ */
+async function freshDatabase(
+  name: string,
+  { preMigration = false }: { preMigration?: boolean } = {},
+): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
   await admin.query(`drop database if exists ${name}`);
@@ -133,7 +190,7 @@ async function freshDatabase(name: string): Promise<Client> {
 
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
-  await client.query(baseSchemaSql);
+  await applyFullSchema(client, { infraDir: INFRA_DIR });
 
   for (const org of [ORG_ID, OTHER_ORG_ID]) {
     await client.query(
@@ -143,25 +200,42 @@ async function freshDatabase(name: string): Promise<Client> {
     );
   }
   await client.query(
-    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
-     values ($1, 'coach', $4, 'microsoft'),
-            ($2, 'coach', $4, 'microsoft'),
-            ($3, 'coach', $5, 'microsoft'),
-            ($6, 'athlete', $4, 'microsoft')
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id)
+     values ($1, 'organization_admin', $10, 'microsoft', null),
+            ($2, 'coach',              $10, 'microsoft', null),
+            ($3, 'coach',              $10, 'microsoft', null),
+            ($4, 'coach',              $10, 'microsoft', null),
+            ($5, 'coach',              $11, 'microsoft', null),
+            ($6, 'athlete',            $10, 'microsoft', $12),
+            ($7, 'athlete',            $10, 'microsoft', $13),
+            ($8, 'parent',             $10, 'microsoft', null),
+            ($9, 'parent',             $10, 'microsoft', null),
+            ($14, 'organization_admin', $11, 'microsoft', null)
      on conflict do nothing`,
-    [COACH_ID, LAPSED_COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID, ATHLETE_ACCOUNT_ID],
+    [ADMIN_ID, COACH_ID, LAPSED_COACH_ID, UNASSIGNED_COACH_ID, OTHER_COACH_ID,
+     ATHLETE_ACCOUNT_ID, SECOND_ATHLETE_ACCOUNT_ID, PARENT_ACCOUNT_ID, UNLINKED_PARENT_ACCOUNT_ID,
+     ORG_ID, OTHER_ORG_ID, ATHLETE_ID, SECOND_ATHLETE_ID, OTHER_ADMIN_ID],
   );
   await client.query(
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-     values ($1, $4, 'coach', true),
-            ($2, $4, 'coach', false),
-            ($3, $5, 'coach', true),
-            ($6, $4, 'athlete', true)
+     values ($1,  $11, 'organization_admin', true),
+            ($2,  $11, 'coach',              true),
+            ($3,  $11, 'coach',              false),
+            ($4,  $11, 'coach',              true),
+            ($5,  $12, 'coach',              true),
+            ($6,  $11, 'athlete',            true),
+            ($7,  $11, 'athlete',            true),
+            ($8,  $11, 'parent',             true),
+            ($9,  $11, 'parent',             true),
+            ($10, $12, 'organization_admin', true)
      on conflict do nothing`,
-    [COACH_ID, LAPSED_COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID, ATHLETE_ACCOUNT_ID],
+    [ADMIN_ID, COACH_ID, LAPSED_COACH_ID, UNASSIGNED_COACH_ID, OTHER_COACH_ID,
+     ATHLETE_ACCOUNT_ID, SECOND_ATHLETE_ACCOUNT_ID, PARENT_ACCOUNT_ID, UNLINKED_PARENT_ACCOUNT_ID,
+     OTHER_ADMIN_ID, ORG_ID, OTHER_ORG_ID],
   );
   for (const [org, athleteId, coachId] of [
     [ORG_ID, ATHLETE_ID, COACH_ID],
+    [ORG_ID, SECOND_ATHLETE_ID, COACH_ID],
     [OTHER_ORG_ID, OTHER_ATHLETE_ID, OTHER_COACH_ID],
   ] as const) {
     await client.query(
@@ -174,9 +248,24 @@ async function freshDatabase(name: string): Promise<Client> {
     );
   }
 
-  await client.query(parentMigrationSql);
+  // One parent LINKED to ATHLETE_ID, one parent of the same gym linked to
+  // nobody. Without the second, every guardian assertion below would also
+  // pass for an implementation that let any parent read any athlete.
+  await client.query(
+    `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+     values ($1, $2, $3, 'Linked Guardian'), ($1, $4, $5, 'Unlinked Guardian')
+     on conflict do nothing`,
+    [ORG_ID, PARENT_ROW_ID, PARENT_ACCOUNT_ID, UNLINKED_PARENT_ROW_ID, UNLINKED_PARENT_ACCOUNT_ID],
+  );
+  await client.query(
+    `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+     values ($1, $2, $3, 'parent') on conflict do nothing`,
+    [ORG_ID, PARENT_ROW_ID, ATHLETE_ID],
+  );
+
   for (const [org, blockId, athleteId, coachId] of [
     [ORG_ID, BLOCK_ID, ATHLETE_ID, COACH_ID],
+    [ORG_ID, SECOND_BLOCK_ID, SECOND_ATHLETE_ID, COACH_ID],
     [OTHER_ORG_ID, OTHER_BLOCK_ID, OTHER_ATHLETE_ID, OTHER_COACH_ID],
   ] as const) {
     await client.query(
@@ -184,16 +273,21 @@ async function freshDatabase(name: string): Promise<Client> {
          (organization_id, block_id, athlete_id, title, training_emphasis,
           starts_on, ends_on, created_by_account_id)
        values ($1, $2, $3, 'Fall strength block', 'Round-3 work rate',
-               '2026-09-02'::date, '2026-10-14'::date, $4)`,
+               '2026-09-02'::date, '2026-10-14'::date, $4)
+       on conflict do nothing`,
       [org, blockId, athleteId, coachId],
     );
   }
+
+  if (preMigration) {
+    await client.query('drop table if exists pilot.athlete_development_block_objectives cascade');
+  }
+
   return client;
 }
 
 async function migratedDatabase(name: string): Promise<Client> {
   const client = await freshDatabase(name);
-  await client.query(migrationSql);
   activeClient = client;
   return client;
 }
@@ -252,9 +346,10 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
-  parentMigrationSql = await fs.readFile(path.join(INFRA_DIR, PARENT_MIGRATION_FILE), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+
+  const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  applyFullSchema = fullSchema.applyFullSchema as typeof applyFullSchema;
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -286,7 +381,7 @@ afterAll(async () => {
 
 describe('block objectives migration', () => {
   test('creates the table from nothing and accepts an objective', async () => {
-    const client = await freshDatabase('adbo_fresh');
+    const client = await freshDatabase('adbo_fresh', { preMigration: true });
     try {
       const before = await client.query(
         `select to_regclass('pilot.athlete_development_block_objectives') as t`,
@@ -340,7 +435,7 @@ describe('block objectives migration', () => {
   });
 
   test('the domain vocabulary is exactly the ten that ship', async () => {
-    const client = await freshDatabase('adbo_domains');
+    const client = await freshDatabase('adbo_domains', { preMigration: true });
     try {
       await client.query(migrationSql);
 
@@ -363,7 +458,7 @@ describe('block objectives migration', () => {
     // What was admitted is one domain label: the free-form weight vocabulary
     // below was never a domain and still is not, and this is where a later
     // change that over-reads that decision would surface first.
-    const client = await freshDatabase('adbo_bodycomp');
+    const client = await freshDatabase('adbo_bodycomp', { preMigration: true });
     try {
       await client.query(migrationSql);
 
@@ -389,15 +484,12 @@ describe('block objectives migration', () => {
     // decision was about coach-authored objectives and did not reverse it.
     // Asserted here because "we decided body composition is fine" is exactly
     // the kind of summary that travels further than the decision did.
-    const client = await freshDatabase('adbo_goals_untouched');
+    const client = await freshDatabase('adbo_goals_untouched', { preMigration: true });
     try {
       await client.query(migrationSql);
-      await client.query(
-        await fs.readFile(
-          path.join(INFRA_DIR, 'pilot_slice_postgres_goal_category_progress_migration.sql'),
-          'utf8',
-        ),
-      );
+      // pilot.goals and its category constraint arrive with the full schema
+      // this fixture applies -- the whole repository's migrations, this
+      // slice's own excepted. Nothing here re-applies them.
 
       const insertGoal = (goalId: string, category: string) => client.query(
         `insert into pilot.goals
@@ -418,7 +510,7 @@ describe('block objectives migration', () => {
   });
 
   test('an invented domain, an invented status, and a blank objective are refused', async () => {
-    const client = await freshDatabase('adbo_content');
+    const client = await freshDatabase('adbo_content', { preMigration: true });
     try {
       await client.query(migrationSql);
 
@@ -439,7 +531,7 @@ describe('block objectives migration', () => {
   });
 
   test('the table stores no computed progress, score or weighting', async () => {
-    const client = await freshDatabase('adbo_columns');
+    const client = await freshDatabase('adbo_columns', { preMigration: true });
     try {
       await client.query(migrationSql);
       const columns = await client.query<{ column_name: string }>(
@@ -467,7 +559,7 @@ describe('block objectives migration', () => {
   });
 
   test('tenancy is composite: an objective cannot hang off another organization\'s block', async () => {
-    const client = await freshDatabase('adbo_tenancy');
+    const client = await freshDatabase('adbo_tenancy', { preMigration: true });
     try {
       await client.query(migrationSql);
 
@@ -489,7 +581,7 @@ describe('block objectives migration', () => {
   });
 
   test('an objective cannot outlive its block, or the athlete two levels up', async () => {
-    const client = await freshDatabase('adbo_cascade');
+    const client = await freshDatabase('adbo_cascade', { preMigration: true });
     try {
       await client.query(migrationSql);
       await insertObjective(client, 'obj-cascade-block');
@@ -527,11 +619,10 @@ describe('the module writing and reading objectives', () => {
     const client = await migratedDatabase('adbo_mod_add');
     try {
       const created = await addBlockObjective({
-        organizationId: ORG_ID,
+        actor: COACH,
         blockId: BLOCK_ID,
         domain: 'mental',
         objective: `  ${OBJECTIVE_TEXT}  `,
-        createdByAccountId: COACH_ID,
       });
       expect(created).toMatchObject({
         organization_id: ORG_ID,
@@ -539,6 +630,9 @@ describe('the module writing and reading objectives', () => {
         domain: 'mental',
         objective: OBJECTIVE_TEXT,
         status: 'draft',
+        // Provenance comes from the actor. There is no caller-supplied
+        // author field left to disagree with the identity that was
+        // authorized.
         created_by_account_id: COACH_ID,
       });
     } finally {
@@ -547,24 +641,37 @@ describe('the module writing and reading objectives', () => {
   });
 
   test('the creator must be an admin or coach with an ACTIVE membership here', async () => {
-    // Three denials, one message. OTHER_COACH_ID is a coach of another gym,
-    // LAPSED_COACH_ID a former coach of this one, ATHLETE_ACCOUNT_ID an
-    // active member in a role that may not author (owner decision
-    // 2026-08-28: "Admin and coaches"). The gate is the parent module's,
-    // imported rather than restated, so blocks and objectives cannot drift.
+    // Three denials, one message. The other gym's coach, a former coach of
+    // this one, and an active member in a role that may not author (owner
+    // decision 2026-08-28: "Admin and coaches"). The gate is the parent
+    // module's, imported rather than restated, so blocks and objectives
+    // cannot drift apart.
     const client = await migratedDatabase('adbo_mod_membership');
     try {
-      for (const accountId of [OTHER_COACH_ID, LAPSED_COACH_ID, ATHLETE_ACCOUNT_ID]) {
+      for (const actor of [
+        actorFor(OTHER_COACH_ID, 'coach', ORG_ID),
+        LAPSED_COACH,
+        ATHLETE,
+        GUARDIAN,
+      ]) {
         await expect(addBlockObjective({
-          organizationId: ORG_ID,
+          actor,
           blockId: BLOCK_ID,
           domain: 'technical',
           objective: OBJECTIVE_TEXT,
-          createdByAccountId: accountId,
         })).rejects.toBeInstanceOf(ForbiddenError);
       }
       expect((await client.query('select objective_id from pilot.athlete_development_block_objectives')).rows)
         .toEqual([]);
+
+      // The control: an admin of this gym, who may.
+      const created = await addBlockObjective({
+        actor: ADMIN,
+        blockId: BLOCK_ID,
+        domain: 'technical',
+        objective: OBJECTIVE_TEXT,
+      });
+      expect(created?.created_by_account_id).toBe(ADMIN_ID);
     } finally {
       await client.end();
     }
@@ -574,18 +681,16 @@ describe('the module writing and reading objectives', () => {
     const client = await migratedDatabase('adbo_mod_block');
     try {
       await expect(addBlockObjective({
-        organizationId: ORG_ID,
+        actor: COACH,
         blockId: OTHER_BLOCK_ID,
         domain: 'technical',
         objective: OBJECTIVE_TEXT,
-        createdByAccountId: COACH_ID,
       })).resolves.toBeNull();
       await expect(addBlockObjective({
-        organizationId: ORG_ID,
+        actor: COACH,
         blockId: 'block-never-existed',
         domain: 'technical',
         objective: OBJECTIVE_TEXT,
-        createdByAccountId: COACH_ID,
       })).resolves.toBeNull();
 
       expect((await client.query('select objective_id from pilot.athlete_development_block_objectives')).rows)
@@ -595,31 +700,64 @@ describe('the module writing and reading objectives', () => {
     }
   });
 
+  test('a coach of this gym who cannot open the block cannot add to it', async () => {
+    /* The read decision reaching this table. The objective has no
+       athlete_id, so this is not a rule the module states -- it resolves the
+       parent through getDevelopmentBlock, which is athlete-scoped, and
+       inherits the answer. A coach with an active membership here, coach of
+       record for nobody, gets the same null a stranger's block gives. */
+    const client = await migratedDatabase('adbo_mod_unassigned');
+    try {
+      await expect(addBlockObjective({
+        actor: UNASSIGNED_COACH,
+        blockId: BLOCK_ID,
+        domain: 'technical',
+        objective: OBJECTIVE_TEXT,
+      })).resolves.toBeNull();
+      expect((await client.query('select objective_id from pilot.athlete_development_block_objectives')).rows)
+        .toEqual([]);
+
+      // The control: make them the athlete's coach and the identical call
+      // succeeds, so the null above means "not your athlete" rather than
+      // "not a writer".
+      await client.query(
+        'update pilot.athletes set coach_id = $1 where organization_id = $2 and athlete_id = $3',
+        [UNASSIGNED_COACH_ID, ORG_ID, ATHLETE_ID],
+      );
+      const created = await addBlockObjective({
+        actor: UNASSIGNED_COACH,
+        blockId: BLOCK_ID,
+        domain: 'technical',
+        objective: OBJECTIVE_TEXT,
+      });
+      expect(created?.block_id).toBe(BLOCK_ID);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a body-composition objective is accepted, and an unsound one is still refused', async () => {
     const client = await migratedDatabase('adbo_mod_shape');
     try {
       const created = await addBlockObjective({
-        organizationId: ORG_ID,
+        actor: COACH,
         blockId: BLOCK_ID,
         domain: 'nutrition_body_composition',
         objective: 'Eat a real breakfast before morning conditioning.',
-        createdByAccountId: COACH_ID,
       });
       expect(created?.domain).toBe('nutrition_body_composition');
 
       await expect(addBlockObjective({
-        organizationId: ORG_ID,
+        actor: COACH,
         blockId: BLOCK_ID,
         domain: 'technical',
         objective: '   ',
-        createdByAccountId: COACH_ID,
       })).rejects.toBeInstanceOf(ValidationError);
       await expect(addBlockObjective({
-        organizationId: ORG_ID,
+        actor: COACH,
         blockId: BLOCK_ID,
         domain: 'weight_cut' as never,
         objective: 'Cut to 132 by the October show.',
-        createdByAccountId: COACH_ID,
       })).rejects.toBeInstanceOf(ValidationError);
 
       const written = await client.query(
@@ -639,7 +777,7 @@ describe('the module writing and reading objectives', () => {
       await insertObjective(client, 'obj-technical', { domain: 'technical' });
       await insertObjective(client, 'obj-conditioning', { domain: 'conditioning' });
 
-      const listed = await listObjectivesForBlock(ORG_ID, BLOCK_ID);
+      const listed = await listObjectivesForBlock(COACH, BLOCK_ID);
       expect(listed.map((row) => row.domain)).toEqual([
         'technical', 'conditioning', 'lifestyle_athlete_identity',
       ]);
@@ -654,12 +792,12 @@ describe('the module writing and reading objectives', () => {
       await insertObjective(client, 'obj-a', { domain: 'technical' });
       await insertObjective(client, 'obj-b', { domain: 'mental' });
 
-      expect((await setBlockObjectiveStatus(ORG_ID, 'obj-a', 'cancelled'))?.status).toBe('cancelled');
-      await expect(setBlockObjectiveStatus(ORG_ID, 'obj-a', 'archived' as never))
+      expect((await setBlockObjectiveStatus(COACH, 'obj-a', 'cancelled'))?.status).toBe('cancelled');
+      await expect(setBlockObjectiveStatus(COACH, 'obj-a', 'archived' as never))
         .rejects.toBeInstanceOf(ValidationError);
 
       // The sibling is untouched: nothing cascades a status sideways.
-      expect((await getBlockObjective(ORG_ID, 'obj-b'))?.status).toBe('draft');
+      expect((await getBlockObjective(COACH, 'obj-b'))?.status).toBe('draft');
       // And the parent block is untouched: a cancelled objective inside a
       // running block is an honest state, not a contradiction to resolve.
       const block = await client.query(
@@ -667,6 +805,178 @@ describe('the module writing and reading objectives', () => {
         [ORG_ID, BLOCK_ID],
       );
       expect(block.rows).toEqual([{ status: 'draft' }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('reading an objective does not confer moving it', async () => {
+    /* An athlete and their guardian can now read these rows. Whether an
+       objective was met is the coach's judgment this table exists to record
+       rather than compute, so the status setter carries the same write gate
+       the author does. Each refusal below is preceded by the read that
+       proves the actor could see the row -- otherwise a failure could be
+       dismissed as "they never had access". */
+    const client = await migratedDatabase('adbo_mod_status_gate');
+    try {
+      await insertObjective(client, 'obj-gated', { domain: 'technical' });
+
+      for (const actor of [ATHLETE, GUARDIAN]) {
+        expect((await getBlockObjective(actor, 'obj-gated'))?.objective_id).toBe('obj-gated');
+        await expect(setBlockObjectiveStatus(actor, 'obj-gated', 'completed'))
+          .rejects.toBeInstanceOf(ForbiddenError);
+      }
+
+      const untouched = await client.query(
+        'select status from pilot.athlete_development_block_objectives where objective_id = $1',
+        ['obj-gated'],
+      );
+      expect(untouched.rows).toEqual([{ status: 'draft' }]);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('access is inherited from the block, arm by arm', () => {
+  /* The owner decision of 2026-08-28 -- "Admin, Coach, Athlete, Guardian" --
+     observed through a table that stores no athlete_id at all.
+
+     Every case pairs the arm that must PASS with the near-miss that must
+     FAIL. Both reads are exercised in each, because a rule enforced in
+     getBlockObjective and forgotten in listObjectivesForBlock is not
+     enforced. */
+
+  async function seeded(name: string): Promise<Client> {
+    const client = await migratedDatabase(name);
+    await insertObjective(client, 'obj-mine', { domain: 'technical' });
+    await insertObjective(client, 'obj-sibling', {
+      domain: 'technical', block_id: SECOND_BLOCK_ID,
+    });
+    return client;
+  }
+
+  test('an organization admin reads the gym; an admin of the other gym reads none of it', async () => {
+    const client = await seeded('adbo_read_admin');
+    try {
+      expect((await getBlockObjective(ADMIN, 'obj-mine'))?.objective_id).toBe('obj-mine');
+      expect((await listObjectivesForBlock(ADMIN, BLOCK_ID)).map((r) => r.objective_id))
+        .toEqual(['obj-mine']);
+
+      expect(await getBlockObjective(OTHER_ADMIN, 'obj-mine')).toBeNull();
+      expect(await listObjectivesForBlock(OTHER_ADMIN, BLOCK_ID)).toEqual([]);
+      expect(await setBlockObjectiveStatus(OTHER_ADMIN, 'obj-mine', 'cancelled')).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a coach reads their own athletes\' objectives, and an unassigned coach of the same gym reads none', async () => {
+    const client = await seeded('adbo_read_coach');
+    try {
+      expect((await getBlockObjective(COACH, 'obj-mine'))?.objective_id).toBe('obj-mine');
+      expect((await listObjectivesForBlock(COACH, SECOND_BLOCK_ID)).map((r) => r.objective_id))
+        .toEqual(['obj-sibling']);
+
+      expect(await getBlockObjective(UNASSIGNED_COACH, 'obj-mine')).toBeNull();
+      expect(await listObjectivesForBlock(UNASSIGNED_COACH, BLOCK_ID)).toEqual([]);
+      // A writer here by role, and still not for this athlete: the status
+      // setter answers null rather than moving a row they cannot read.
+      expect(await setBlockObjectiveStatus(UNASSIGNED_COACH, 'obj-mine', 'cancelled')).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an athlete reads their own block\'s objectives and not the next athlete\'s', async () => {
+    const client = await seeded('adbo_read_athlete');
+    try {
+      expect((await getBlockObjective(ATHLETE, 'obj-mine'))?.objective_id).toBe('obj-mine');
+      expect((await listObjectivesForBlock(ATHLETE, BLOCK_ID)).map((r) => r.objective_id))
+        .toEqual(['obj-mine']);
+
+      // Same gym, same role, same membership -- a different athlete.
+      expect(await getBlockObjective(ATHLETE, 'obj-sibling')).toBeNull();
+      expect(await listObjectivesForBlock(ATHLETE, SECOND_BLOCK_ID)).toEqual([]);
+      expect((await getBlockObjective(SECOND_ATHLETE, 'obj-sibling'))?.objective_id)
+        .toBe('obj-sibling');
+      expect(await getBlockObjective(SECOND_ATHLETE, 'obj-mine')).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a linked guardian reads their child\'s objectives; an unlinked parent of the same gym reads none', async () => {
+    const client = await seeded('adbo_read_guardian');
+    try {
+      expect((await getBlockObjective(GUARDIAN, 'obj-mine'))?.objective_id).toBe('obj-mine');
+      expect((await listObjectivesForBlock(GUARDIAN, BLOCK_ID)).map((r) => r.objective_id))
+        .toEqual(['obj-mine']);
+      // Linked to one athlete, so the gym's other athlete is not theirs.
+      expect(await getBlockObjective(GUARDIAN, 'obj-sibling')).toBeNull();
+
+      expect(await getBlockObjective(UNLINKED_GUARDIAN, 'obj-mine')).toBeNull();
+      expect(await listObjectivesForBlock(UNLINKED_GUARDIAN, BLOCK_ID)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('platform_owner and board are refused, as they are everywhere else', async () => {
+    const client = await seeded('adbo_read_refused');
+    try {
+      for (const actor of [PLATFORM_OWNER, BOARD]) {
+        expect(await getBlockObjective(actor, 'obj-mine')).toBeNull();
+        expect(await listObjectivesForBlock(actor, BLOCK_ID)).toEqual([]);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a soft-deleted athlete takes their objectives out of staff and guardian reach, two levels up', async () => {
+    /* The nutrition_body_composition domain is why this case is here rather
+       than only on the parent. An objective may now hold a body-composition
+       sentence naming a minor; when the gym deletes that athlete, the
+       sentence has to stop being readable through the objective as well as
+       through the block. Each refusal is preceded by the read that proves
+       the actor had access a moment earlier.
+
+       THE ATHLETE ARM IS EXEMPT, AND THAT IS A FINDING RATHER THAN A
+       DESIGN. assertActorCanAccessAthlete answers the athlete-self question
+       in memory -- actor.athleteId compared to the requested id -- without
+       ever asking whether the athlete row is live, so a withdrawn athlete
+       keeps reading their own objectives. That is access.ts's behavior for
+       every one of its callers, not something this slice introduced. See
+       the parent suite's copy of this case for why it is asserted here and
+       decided elsewhere: whether a withdrawn athlete keeps reading their own
+       record is an owner question, and it is open on module 036. */
+    const client = await seeded('adbo_read_deleted');
+    try {
+      for (const actor of [ADMIN, COACH, ATHLETE, GUARDIAN]) {
+        expect((await getBlockObjective(actor, 'obj-mine'))?.objective_id).toBe('obj-mine');
+      }
+
+      await client.query(
+        'update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2',
+        [ORG_ID, ATHLETE_ID],
+      );
+
+      for (const actor of [ADMIN, COACH, GUARDIAN]) {
+        expect(await getBlockObjective(actor, 'obj-mine')).toBeNull();
+        expect(await listObjectivesForBlock(actor, BLOCK_ID)).toEqual([]);
+      }
+
+      // The gap, stated as behavior. If access.ts's athlete arm gains the
+      // deleted_at predicate, this fails and names the decision that moved.
+      expect((await getBlockObjective(ATHLETE, 'obj-mine'))?.objective_id).toBe('obj-mine');
+
+      // The row is untouched: an access rule, not a delete.
+      const stored = await client.query(
+        'select objective_id from pilot.athlete_development_block_objectives where objective_id = $1',
+        ['obj-mine'],
+      );
+      expect(stored.rows).toEqual([{ objective_id: 'obj-mine' }]);
     } finally {
       await client.end();
     }
@@ -684,16 +994,16 @@ describe('one gym cannot reach another gym through any read this slice adds', ()
         created_by_account_id: OTHER_COACH_ID,
       });
 
-      expect(await getBlockObjective(ORG_ID, 'obj-theirs')).toBeNull();
-      expect(await getBlockObjective(OTHER_ORG_ID, 'obj-ours')).toBeNull();
-      expect((await getBlockObjective(ORG_ID, 'obj-ours'))?.objective_id).toBe('obj-ours');
+      expect(await getBlockObjective(ADMIN, 'obj-theirs')).toBeNull();
+      expect(await getBlockObjective(OTHER_ADMIN, 'obj-ours')).toBeNull();
+      expect((await getBlockObjective(ADMIN, 'obj-ours'))?.objective_id).toBe('obj-ours');
 
       // A block id alone is not a key into this table -- only the pair is.
-      expect(await listObjectivesForBlock(ORG_ID, OTHER_BLOCK_ID)).toEqual([]);
-      expect(await listObjectivesForBlock(OTHER_ORG_ID, BLOCK_ID)).toEqual([]);
+      expect(await listObjectivesForBlock(ADMIN, OTHER_BLOCK_ID)).toEqual([]);
+      expect(await listObjectivesForBlock(OTHER_ADMIN, BLOCK_ID)).toEqual([]);
 
       // The update cannot probe for, or touch, another gym's objective.
-      expect(await setBlockObjectiveStatus(ORG_ID, 'obj-theirs', 'cancelled')).toBeNull();
+      expect(await setBlockObjectiveStatus(ADMIN, 'obj-theirs', 'cancelled')).toBeNull();
       const theirs = await client.query(
         'select status from pilot.athlete_development_block_objectives where objective_id = $1',
         ['obj-theirs'],
@@ -713,7 +1023,7 @@ describe('block objectives runner readiness assertion', () => {
     // Note what this database HAS: base schema, the parent blocks migration,
     // two gyms, two blocks. It is correct in every respect except this one
     // table, so the refusal below is specific rather than incidental.
-    const client = await freshDatabase('adbo_rdy_no');
+    const client = await freshDatabase('adbo_rdy_no', { preMigration: true });
     try {
       await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
         /ATHLETE_DEVELOPMENT_BLOCK_OBJECTIVES_NOT_READY/,
@@ -724,7 +1034,7 @@ describe('block objectives runner readiness assertion', () => {
   });
 
   test('the real runner ACCEPTS a correctly migrated database, and a re-apply stays a no-op', async () => {
-    const client = await freshDatabase('adbo_rdy_ok');
+    const client = await freshDatabase('adbo_rdy_ok', { preMigration: true });
     try {
       await applyMigrationTransaction(client, migrationSql);
       await applyMigrationTransaction(client, migrationSql);

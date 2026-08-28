@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { ActorIdentity } from './access';
 import {
   getDevelopmentBlock,
   hasBlockWriteMembership,
@@ -21,10 +22,14 @@ import { ForbiddenError, ValidationError } from './errors';
 // to summarize them has to say so itself, in a later slice, authored by a
 // human the way intervention_outcome_reviews already requires.
 //
-// TENANCY ARRIVES THROUGH THE BLOCK. Objectives carry no athlete_id: an
-// objective reaches its athlete via its parent, by composite FK, so there is
-// exactly one place the answer lives. Every function here is organization-
-// scoped by its first argument, in the WHERE clause of every statement.
+// TENANCY AND ACCESS BOTH ARRIVE THROUGH THE BLOCK. Objectives carry no
+// athlete_id: an objective reaches its athlete via its parent, by composite
+// FK, so there is exactly one place the answer lives -- and exactly one
+// place to ask whether this actor may see it. Every read here resolves its
+// parent through getDevelopmentBlock, which is athlete-scoped since the
+// 2026-08-28 read decision ("Admin, Coach, Athlete, Guardian"), so an
+// objective is reachable by precisely the people who can reach its block.
+// Restating the access rule here instead would be a second copy of it.
 
 // All ten Full Spectrum domains. 'nutrition_body_composition' shipped
 // withheld and was admitted by owner decision 2026-08-28, once module 200
@@ -111,9 +116,8 @@ export function blockObjectiveShapeError(input: BlockObjectiveInput): string | n
  * standing learns nothing about which blocks exist.
  */
 export async function addBlockObjective(input: BlockObjectiveInput & {
-  organizationId: string;
+  actor: ActorIdentity;
   blockId: string;
-  createdByAccountId: string;
 }): Promise<BlockObjectiveRow | null> {
   const shapeError = blockObjectiveShapeError(input);
   if (shapeError) {
@@ -125,16 +129,18 @@ export async function addBlockObjective(input: BlockObjectiveInput & {
   // second copy of an authorization list is a second thing to forget to
   // update. An objective is part of a block, so it cannot be authored by
   // anyone who could not have authored the block.
-  if (!(await hasBlockWriteMembership(input.createdByAccountId, input.organizationId))) {
+  if (!(await hasBlockWriteMembership(input.actor.accountId, input.actor.organizationId))) {
     throw new ForbiddenError(
       'This account may not author development block objectives in this organization.',
       'BLOCK_OBJECTIVE_CREATOR_NOT_PERMITTED',
     );
   }
 
-  // Reuses the parent module's own org-scoped read rather than querying the
-  // blocks table again here: one definition of "is this block mine".
-  const block = await getDevelopmentBlock(input.organizationId, input.blockId);
+  // Reuses the parent module's own read rather than querying the blocks table
+  // again: one definition of "is this block mine", and since that read is now
+  // athlete-scoped, a coach cannot add an objective to a block for an athlete
+  // they could not open.
+  const block = await getDevelopmentBlock(input.actor, input.blockId);
   if (!block) return null;
 
   const objectiveId = randomUUID();
@@ -144,47 +150,56 @@ export async function addBlockObjective(input: BlockObjectiveInput & {
      values ($1, $2, $3, $4, $5, $6, $7)
      returning objective_id`,
     [
-      input.organizationId,
+      input.actor.organizationId,
       objectiveId,
       input.blockId,
       input.domain,
       input.objective.trim(),
       input.status ?? 'draft',
-      input.createdByAccountId,
+      input.actor.accountId,
     ],
   );
 
-  return getBlockObjective(input.organizationId, objectiveId);
+  return getBlockObjective(input.actor, objectiveId);
 }
 
-/** Null for an objective in any other organization. */
+/**
+ * Null for an objective in another organization, and null for one whose block
+ * this actor cannot open. Both answer the same way as an objective id that
+ * does not exist.
+ */
 export async function getBlockObjective(
-  organizationId: string,
+  actor: ActorIdentity,
   objectiveId: string,
 ): Promise<BlockObjectiveRow | null> {
-  return queryOne<BlockObjectiveRow>(
+  const objective = await queryOne<BlockObjectiveRow>(
     `select ${FIELDS} from pilot.athlete_development_block_objectives
      where organization_id = $1 and objective_id = $2`,
-    [organizationId, objectiveId],
+    [actor.organizationId, objectiveId],
   );
+  if (!objective) return null;
+  // Access lives on the parent, so ask the parent.
+  return (await getDevelopmentBlock(actor, objective.block_id)) ? objective : null;
 }
 
 /**
  * One block's objectives, grouped by domain in the order the Full Spectrum
  * list declares them, then oldest first inside a domain.
  *
- * Empty for a block in another organization: a block id is not a key into
- * this table on its own, only the pair is.
+ * Empty for a block in another organization -- a block id is not a key into
+ * this table on its own, only the pair is -- and empty for a block this actor
+ * cannot open.
  */
 export async function listObjectivesForBlock(
-  organizationId: string,
+  actor: ActorIdentity,
   blockId: string,
 ): Promise<BlockObjectiveRow[]> {
+  if (!(await getDevelopmentBlock(actor, blockId))) return [];
   return query<BlockObjectiveRow>(
     `select ${FIELDS} from pilot.athlete_development_block_objectives
      where organization_id = $1 and block_id = $2
      order by array_position($3::text[], domain), created_at asc, objective_id asc`,
-    [organizationId, blockId, [...FULL_SPECTRUM_DOMAINS]],
+    [actor.organizationId, blockId, [...FULL_SPECTRUM_DOMAINS]],
   );
 }
 
@@ -198,18 +213,32 @@ export async function listObjectivesForBlock(
  * Returns null for an objective in another organization.
  */
 export async function setBlockObjectiveStatus(
-  organizationId: string,
+  actor: ActorIdentity,
   objectiveId: string,
   status: ObjectiveStatus,
 ): Promise<BlockObjectiveRow | null> {
   if (!(OBJECTIVE_STATUSES as readonly string[]).includes(status)) {
     throw new ValidationError(`Unknown objective status '${status}'.`, 'BLOCK_OBJECTIVE_INVALID');
   }
+
+  // Same reason as the parent's status setter: moving an objective is
+  // authoring it, and reads now reach an athlete and their guardian. Whether
+  // an objective was met is a coach's judgment, so it stays a coach's write.
+  if (!(await hasBlockWriteMembership(actor.accountId, actor.organizationId))) {
+    throw new ForbiddenError(
+      'This account may not modify development block objectives in this organization.',
+      'BLOCK_OBJECTIVE_WRITER_NOT_PERMITTED',
+    );
+  }
+
+  // Resolves access through the parent before writing.
+  if (!(await getBlockObjective(actor, objectiveId))) return null;
+
   return queryOne<BlockObjectiveRow>(
     `update pilot.athlete_development_block_objectives
      set status = $3, updated_at = now()
      where organization_id = $1 and objective_id = $2
      returning ${FIELDS}`,
-    [organizationId, objectiveId, status],
+    [actor.organizationId, objectiveId, status],
   );
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { type ActorIdentity, accessibleAthleteIds, assertActorCanAccessAthlete } from './access';
 import { query, queryOne } from './db';
 import { ForbiddenError, ValidationError } from './errors';
 
@@ -16,9 +17,23 @@ import { ForbiddenError, ValidationError } from './errors';
 // interventionExecutions makes when it keeps adherence an enumerated human
 // state instead of a percentage.
 //
-// EVERY FUNCTION HERE IS ORGANIZATION-SCOPED BY ITS FIRST ARGUMENT, and the
-// scoping is in the WHERE clause of every statement rather than in a caller's
-// discipline. The database enforces the other half: the composite FK into
+// READS ARE ATHLETE-SCOPED, NOT MERELY ORGANIZATION-SCOPED (owner decision,
+// 2026-08-28: reads are for "Admin, Coach, Athlete, Guardian"). Every read
+// takes an ActorIdentity and goes through assertActorCanAccessAthlete --
+// access.ts's chokepoint, which already implements exactly those four and
+// refuses platform_owner and board. Reusing it rather than writing a role
+// list here means a block is reachable by precisely the people who can
+// already reach the athlete it is about: an org admin anywhere in their gym,
+// the athlete's coach of record or an active coverage holder, the athlete
+// themselves, and their linked guardian.
+//
+// That matters more since the objectives table admitted its
+// nutrition_body_composition domain: an objective can now hold a
+// body-composition target naming a minor, and org-wide staff reads were
+// broader than that athlete's own date of birth.
+//
+// Organization scoping stays underneath all of it -- actor.organizationId is
+// in the WHERE clause of every statement, and the composite FK into
 // pilot.athletes means a block cannot name an athlete in another
 // organization even if a caller asks it to.
 //
@@ -131,6 +146,24 @@ export const DEVELOPMENT_BLOCK_WRITE_ROLES = ['coach', 'organization_admin', 'ad
 export type DevelopmentBlockWriteRole = (typeof DEVELOPMENT_BLOCK_WRITE_ROLES)[number];
 
 /**
+ * Read access, as a boolean rather than a throw.
+ *
+ * assertActorCanAccessAthlete throws a plain Error, which is right for a
+ * route guard and wrong here: these reads answer "not found" rather than
+ * "forbidden" so a caller cannot use them to discover that a block exists
+ * for someone else's athlete. Same reason the org-scoped reads already
+ * returned null rather than raising.
+ */
+async function canActorReachAthlete(actor: ActorIdentity, athleteId: string): Promise<boolean> {
+  try {
+    await assertActorCanAccessAthlete(actor, athleteId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Does this account hold an ACTIVE membership in this organization, in a role
  * that may author blocks?
  *
@@ -175,16 +208,15 @@ export async function hasBlockWriteMembership(
  * that a caller with no standing here learns nothing about the roster.
  */
 export async function createDevelopmentBlock(input: DevelopmentBlockInput & {
-  organizationId: string;
+  actor: ActorIdentity;
   athleteId: string;
-  createdByAccountId: string;
 }): Promise<AthleteDevelopmentBlockRow | null> {
   const shapeError = developmentBlockShapeError(input);
   if (shapeError) {
     throw new ValidationError(shapeError, 'DEVELOPMENT_BLOCK_INVALID');
   }
 
-  if (!(await hasBlockWriteMembership(input.createdByAccountId, input.organizationId))) {
+  if (!(await hasBlockWriteMembership(input.actor.accountId, input.actor.organizationId))) {
     // One message for every denial reason -- no membership, an inactive one,
     // or an active one in a role that may not author. A caller cannot tell
     // which from the response.
@@ -194,12 +226,17 @@ export async function createDevelopmentBlock(input: DevelopmentBlockInput & {
     );
   }
 
-  const athlete = await queryOne<{ athlete_id: string }>(
-    `select athlete_id from pilot.athletes
-     where organization_id = $1 and athlete_id = $2`,
-    [input.organizationId, input.athleteId],
-  );
-  if (!athlete) return null;
+  // The athlete must exist in this organization AND be one this actor can
+  // reach. The second half follows from the read decision rather than
+  // extending it: a coach who could author a block they then could not open
+  // would be an incoherent model, and every other athlete-scoped write in
+  // this codebase goes through the same chokepoint. For an org admin this is
+  // "anyone in my gym"; for a coach it is their own athletes and anyone they
+  // are currently covering.
+  //
+  // Null for both cases, so a caller cannot separate "no such athlete" from
+  // "not yours".
+  if (!(await canActorReachAthlete(input.actor, input.athleteId))) return null;
 
   const blockId = randomUUID();
   await queryOne(
@@ -209,7 +246,7 @@ export async function createDevelopmentBlock(input: DevelopmentBlockInput & {
      values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9)
      returning block_id`,
     [
-      input.organizationId,
+      input.actor.organizationId,
       blockId,
       input.athleteId,
       input.title.trim(),
@@ -217,53 +254,77 @@ export async function createDevelopmentBlock(input: DevelopmentBlockInput & {
       input.startsOn,
       input.endsOn,
       input.status ?? 'draft',
-      input.createdByAccountId,
+      input.actor.accountId,
     ],
   );
 
-  return getDevelopmentBlock(input.organizationId, blockId);
+  return getDevelopmentBlock(input.actor, blockId);
 }
 
-/** Null for a block in any other organization -- the caller cannot tell that
- * from a block id that does not exist at all. */
+/**
+ * Null for a block in another organization, AND null for a block about an
+ * athlete this actor cannot reach. The caller cannot tell either from a
+ * block id that does not exist at all -- one answer for three different
+ * reasons is the point.
+ */
 export async function getDevelopmentBlock(
-  organizationId: string,
+  actor: ActorIdentity,
   blockId: string,
 ): Promise<AthleteDevelopmentBlockRow | null> {
-  return queryOne<AthleteDevelopmentBlockRow>(
+  const block = await queryOne<AthleteDevelopmentBlockRow>(
     `select ${FIELDS} from pilot.athlete_development_blocks
      where organization_id = $1 and block_id = $2`,
-    [organizationId, blockId],
+    [actor.organizationId, blockId],
   );
+  if (!block) return null;
+  return (await canActorReachAthlete(actor, block.athlete_id)) ? block : null;
 }
 
-/** One athlete's blocks, newest window first. Empty for an athlete in
- * another organization: the athlete id is not a key into this table on its
- * own, only the pair is. */
+/**
+ * One athlete's blocks, newest window first.
+ *
+ * Empty for an athlete in another organization -- the athlete id is not a key
+ * into this table on its own, only the pair is -- and empty for an athlete
+ * this actor cannot reach. An athlete asking for their own history gets it;
+ * an athlete asking for someone else's gets nothing, not an error.
+ */
 export async function listDevelopmentBlocksForAthlete(
-  organizationId: string,
+  actor: ActorIdentity,
   athleteId: string,
 ): Promise<AthleteDevelopmentBlockRow[]> {
+  if (!(await canActorReachAthlete(actor, athleteId))) return [];
   return query<AthleteDevelopmentBlockRow>(
     `select ${FIELDS} from pilot.athlete_development_blocks
      where organization_id = $1 and athlete_id = $2
      order by starts_on desc, block_id asc`,
-    [organizationId, athleteId],
+    [actor.organizationId, athleteId],
   );
 }
 
-/** Every block in one gym: running ones first, then drafts, then the
- * finished and abandoned ones. */
+/**
+ * The blocks in one gym that THIS actor may see: running ones first, then
+ * drafts, then the finished and abandoned ones.
+ *
+ * Filtered through accessibleAthleteIds -- assertActorCanAccessAthlete's
+ * batched counterpart -- rather than by asking per row, so an org admin gets
+ * the whole gym, a coach gets their own athletes and anyone they are
+ * currently covering, an athlete gets their own, and a guardian gets their
+ * linked children's. The list is the union of what the caller could have
+ * asked for one at a time; it is never a gym-wide read wearing a filter.
+ */
 export async function listDevelopmentBlocks(
-  organizationId: string,
+  actor: ActorIdentity,
 ): Promise<AthleteDevelopmentBlockRow[]> {
-  return query<AthleteDevelopmentBlockRow>(
+  const rows = await query<AthleteDevelopmentBlockRow>(
     `select ${FIELDS} from pilot.athlete_development_blocks
      where organization_id = $1
      order by array_position(array['active','draft','completed','cancelled'], status),
               starts_on desc, block_id asc`,
-    [organizationId],
+    [actor.organizationId],
   );
+  if (rows.length === 0) return rows;
+  const reachable = await accessibleAthleteIds(actor, rows.map((row) => row.athlete_id));
+  return rows.filter((row) => reachable.has(row.athlete_id));
 }
 
 /**
@@ -276,18 +337,37 @@ export async function listDevelopmentBlocks(
  * used to probe for one.
  */
 export async function setDevelopmentBlockStatus(
-  organizationId: string,
+  actor: ActorIdentity,
   blockId: string,
   status: DevelopmentBlockStatus,
 ): Promise<AthleteDevelopmentBlockRow | null> {
   if (!(DEVELOPMENT_BLOCK_STATUSES as readonly string[]).includes(status)) {
     throw new ValidationError(`Unknown block status '${status}'.`, 'DEVELOPMENT_BLOCK_INVALID');
   }
+
+  // MOVING A BLOCK IS AUTHORING IT. This check did not exist before reads
+  // opened up, and its absence was survivable only because nothing could
+  // call it: the function was organization-scoped and nothing else. Now that
+  // an athlete and a guardian can READ their own blocks, an ungated status
+  // mutator is a real hole -- an athlete marking their own block 'completed'
+  // is precisely the coach judgment this table refuses to compute.
+  // "Admin and coaches" (owner decision 2026-08-28) governs every write, not
+  // only the first one.
+  if (!(await hasBlockWriteMembership(actor.accountId, actor.organizationId))) {
+    throw new ForbiddenError(
+      'This account may not modify development blocks in this organization.',
+      'DEVELOPMENT_BLOCK_WRITER_NOT_PERMITTED',
+    );
+  }
+
+  const block = await getDevelopmentBlock(actor, blockId);
+  if (!block) return null;
+
   return queryOne<AthleteDevelopmentBlockRow>(
     `update pilot.athlete_development_blocks
      set status = $3, updated_at = now()
      where organization_id = $1 and block_id = $2
      returning ${FIELDS}`,
-    [organizationId, blockId, status],
+    [actor.organizationId, blockId, status],
   );
 }
