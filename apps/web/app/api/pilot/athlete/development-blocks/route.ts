@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import {
   listObjectivesForBlock,
   type BlockObjectiveRow,
@@ -98,6 +99,22 @@ export interface FamilyDevelopmentBlock {
   starts_on: AthleteDevelopmentBlockRow['starts_on'];
   ends_on: AthleteDevelopmentBlockRow['ends_on'];
   status: AthleteDevelopmentBlockRow['status'];
+  /**
+   * WHO WROTE IT, as something to call them -- owner decision, 2026-08-28.
+   *
+   * The family screens said "if something reads wrong, that is a conversation
+   * with the coach" while naming no coach, which is a gap on the very screen
+   * that sends a parent to have that conversation. So the NAME travels.
+   *
+   * The ID still does not, and the difference is the whole point of the
+   * projection above: `getCoachDisplayName` is the platform's one answer here
+   * (recognitions and the One Percent Club already use it), and its floor is
+   * the phrase "Your coach" -- never an account id, never an empty string. So
+   * unlike the coach's own surface, which falls back to the id because an ugly
+   * true string beats a blank byline for staff, a family cannot be shown an
+   * identifier by any path through this route.
+   */
+  created_by_name: string;
   objectives: FamilyBlockObjective[];
 }
 
@@ -175,6 +192,22 @@ export async function GET(request: NextRequest) {
        parallel: this is a handful of blocks for one athlete, and each call is
        another authorization decision in the data layer -- fanning them out
        buys milliseconds on a page nobody refreshes in a loop. */
+    /* Once per distinct author, not once per block. A family reading a run of
+       blocks is usually reading one coach over and over; the naive per-row
+       lookup issues the same query a dozen times for one answer. Same shape as
+       withAuthorNames on the coach route, and asserted the same way. */
+    const authorNames = new Map<string, string>();
+    await Promise.all(
+      Array.from(new Set(blocks.map((block) => block.created_by_account_id))).map(
+        async (accountId) => {
+          authorNames.set(
+            accountId,
+            await getCoachDisplayName(principal.organizationId, accountId),
+          );
+        },
+      ),
+    );
+
     const withObjectives: FamilyDevelopmentBlock[] = [];
     for (const block of blocks) {
       const objectives = await listObjectivesForBlock(principal, block.block_id);
@@ -188,6 +221,9 @@ export async function GET(request: NextRequest) {
         starts_on: block.starts_on,
         ends_on: block.ends_on,
         status: block.status,
+        /* 'Your coach' rather than the id if a name will not resolve: the id
+           is the thing this projection exists to keep away from a family. */
+        created_by_name: authorNames.get(block.created_by_account_id) ?? 'Your coach',
         objectives: objectives.map((row) => ({
           objective_id: row.objective_id,
           domain: row.domain,

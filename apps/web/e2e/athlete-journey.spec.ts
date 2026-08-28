@@ -200,6 +200,7 @@ test.describe('Athlete journey', () => {
               starts_on: '2026-09-01',
               ends_on: '2026-10-13',
               status: 'active',
+              created_by_name: 'Coach J Rivera',
               objectives: [
                 {
                   objective_id: 'obj-1',
@@ -239,6 +240,13 @@ test.describe('Athlete journey', () => {
     await expect(page.getByText(/\b1\s*(of|\/)\s*2\b/)).toHaveCount(0);
     await expect(page.getByText(/\d+\s*%/)).toHaveCount(0);
     await expect(page.locator('progress, meter, [role="progressbar"]')).toHaveCount(0);
+
+    /* WHO TO GO AND ASK. Owner decision 2026-08-28: the coach is named to the
+       family. A NAME, though -- the route sends no account id at all, and a
+       raw staff identifier on a minor's screen is what that projection
+       exists to prevent. */
+    await expect(page.getByText('Written by Coach J Rivera')).toBeVisible();
+    await expect(page.getByText(/acct-/)).toHaveCount(0);
 
     // And no control: reading is not writing, on a page with no write verb
     // behind it.

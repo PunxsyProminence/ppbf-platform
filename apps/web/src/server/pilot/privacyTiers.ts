@@ -244,8 +244,17 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + '/parent/development-blocks -- and it is read-only by construction rather than by convention: '
       + 'that route file declares no POST and no PATCH, so there is no write verb for a page to call. '
       + 'Its athlete arm takes the subject from the session and ignores any athlete_id in the query, '
-      + 'and its parent arm requires one and puts it through the same gate. Note also that '
-      + 'pilot.goals.category is a '
+      + 'and its parent arm requires one and puts it through the same gate. That route answers with an '
+      + 'ENUMERATED PROJECTION, not the stored row: it began as a spread, which sent '
+      + 'created_by_account_id, organization_id, created_at and updated_at to an athlete or a parent '
+      + 'in JSON that neither screen rendered -- a page not rendering a field is not the same as a '
+      + 'family not receiving it. It now names each field, and its test pins the exact key set of a '
+      + 'block AND of an objective. Since the owner decision of 2026-08-28 it also carries '
+      + 'created_by_name: the coach as a NAME, resolved through achievements.ts#getCoachDisplayName '
+      + 'in the PRINCIPAL\'s organization and floored at the phrase "Your coach", never the account '
+      + 'id -- which is the one read on that route reaching a table other than these two, and it '
+      + 'reaches pilot.accounts for staff identity rather than anything about the athlete. Note also '
+      + 'that pilot.goals.category is a '
       + 'SEPARATE surface and still withholds Weight Loss / Weight Gain; the domain decision was about '
       + 'coach-authored objectives and did not reverse that one.',
   },
@@ -264,11 +273,15 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + '/api/pilot/coach/development-block-objectives for staff, and GET '
       + '/api/pilot/athlete/development-blocks for an athlete or their guardian. They sit behind '
       + '/coach/development-blocks, /athlete/development-blocks and /parent/development-blocks. Not '
-      + 'one of them imports a database handle, so every one of them arrives through this module; '
-      + 'that is what makes the enforcedBy above the whole story rather than one path of four, and '
-      + 'privacyTiers.test.ts fails if a fourth route is added that does otherwise. The family route '
-      + 'carries no write verb at all, which is why the audience widening of 2026-08-28 did not widen '
-      + 'the author set the sentence above records.',
+      + 'one of them imports a database handle, so every DEVELOPMENT-BLOCK ROW they answer with '
+      + 'arrives through this module; that is what makes the enforcedBy above the whole story rather '
+      + 'than one path of four, and privacyTiers.test.ts fails if a fourth route is added that does '
+      + 'otherwise. (The family route also resolves a coach display name through '
+      + 'achievements.ts#getCoachDisplayName, which reads pilot.accounts in the principal\'s '
+      + 'organization. That is staff identity, not a block row, and it is named here so the sentence '
+      + 'above is not read as claiming more than it does.) The family route carries no write verb at '
+      + 'all, which is why the audience widening of 2026-08-28 did not widen the author set the '
+      + 'sentence above records.',
   },
   'goals.category': {
     tier: 'athlete_record',

@@ -151,6 +151,7 @@ test.describe('Guardian journey', () => {
               starts_on: '2026-09-01',
               ends_on: '2026-10-13',
               status: 'active',
+              created_by_name: 'Coach J Rivera',
               objectives: [{
                 objective_id: 'obj-1',
                 domain: 'nutrition_body_composition',
@@ -176,6 +177,12 @@ test.describe('Guardian journey', () => {
     await expect(page.getByText('Winter technical block')).toBeVisible();
     await expect(page.getByText('Stop backing straight up when the pressure comes.')).toBeVisible();
     await expect(page.getByText('Eat a real breakfast before morning conditioning.')).toBeVisible();
+
+    /* THE COACH IS NAMED. The page tells a parent that a plan reading wrong
+       "is a conversation with the coach"; owner decision 2026-08-28 gives that
+       sentence someone to be about. A name, never the account id. */
+    await expect(page.getByText('Written by Coach J Rivera')).toBeVisible();
+    await expect(page.getByText(/acct-/)).toHaveCount(0);
 
     /* Read-only, and the page says so to the parent in words as well as by
        carrying no control that could change anything. */

@@ -70,7 +70,17 @@ Read every `periodization_blocks` reference below as naming this table.
 
 - Every comparison / plan-vs-actual surface in sections (a)–(d). Nothing
   reads a block yet. No block carries an adherence state, because the
-  execution/comparison row that would hold one does not exist.
+  execution/comparison row that would hold one does not exist. **The design is
+  done and the forks are answered** — see `036a-plan-vs-actual-execution-design.md`
+  and the owner decisions of 2026-08-28: **D1(a)** the adherence judgment sits
+  on the **block**, not per objective; **D3(a)** the family sees the coach's
+  verdict **verbatim, including the deviation text**, on the same reasoning
+  that gave them the plan verbatim; D2(a) `DEVELOPMENT_BLOCK_WRITE_ROLES`
+  records it and D4(a) no evidence links in the first slice, both taken as the
+  design document's own stated defaults. D5 stands as written: no count on
+  that surface may be combined into a figure, percentage, grade or index, and
+  no cross-athlete comparison or cohort average may exist at any tier. None of
+  it is built.
 - ~~Any surface that reads an objective.~~ **Built.**
   `/api/pilot/coach/development-block-objectives` and an objectives panel on
   `/coach/development-blocks`: a coach attaches an objective per Full Spectrum
@@ -109,7 +119,14 @@ Read every `periodization_blocks` reference below as naming this table.
   route now names each field and its test pins the exact key set of both a
   block and an objective. This narrows no part of the owner decision of
   2026-08-28 — the coach's words are all there, verbatim, body-composition
-  domain included. Staff bookkeeping is not the coach's words.
+  domain included. Staff bookkeeping is not the coach's words. Since a further
+  owner decision the same day the projection also carries `created_by_name`:
+  the coach as a **name**, resolved through `getCoachDisplayName` in the
+  principal's organization and floored at the phrase "Your coach". Both family
+  screens tell a reader that a plan reading wrong "is a conversation with the
+  coach"; naming no coach made that a dead end. The account id still does not
+  travel, and unlike the coach's own surface there is no id fallback on this
+  path — a family is exactly who must never be shown an identifier.
 - ~~The optional competition/event target (Open Question 2), still open and
   still unbuilt.~~ **Answered (a) and built by #771**, as a name and a date
   only: naming a target derives no taper, no peak, no volume curve and no

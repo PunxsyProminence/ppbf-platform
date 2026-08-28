@@ -32,10 +32,17 @@ import {
  *     their own block 'completed' is the coach judgment this table refuses to
  *     compute, and a guardian editing a coach's plan is not in the gym's
  *     authority model. The route this reads has no write verb at all.
- *   - no coach identity. `created_by_account_id` is an account id, not a
- *     name, and printing a raw staff identifier to a family is a leak dressed
- *     as attribution. The coach's WORDS are what the family is owed; a later
- *     slice can add a real name if there is a reason to.
+ *   - no account id. `created_by_account_id` is an identifier, not a name, and
+ *     printing a raw staff identifier to a family is a leak dressed as
+ *     attribution. The route does not send it at all, so this component
+ *     cannot render it even by accident.
+ *
+ * WHAT IT DOES NAME, since the owner decision of 2026-08-28: the coach, by
+ * name. Both screens tell a family that a plan reading wrong "is a
+ * conversation with the coach", and naming no coach made that sentence a
+ * dead end. `created_by_name` arrives already resolved and already floored at
+ * "Your coach" -- there is no id fallback on this path, unlike the coach's own
+ * surface where an ugly true string beats a blank byline.
  */
 
 export interface PlanObjective {
@@ -52,6 +59,8 @@ export interface PlanBlock {
   starts_on: string;
   ends_on: string;
   status: DevelopmentBlockStatusValue;
+  /** Already a name, never an id. See the header. */
+  created_by_name?: string;
   objectives: PlanObjective[];
 }
 
@@ -114,6 +123,14 @@ export default function DevelopmentBlockPlanView({
             {' to '}
             {formatGymDay(block.ends_on) ?? block.ends_on}
           </p>
+
+          {/* Who to go and talk to. Rendered only when the route actually sent
+              a name -- an absent one prints nothing rather than a placeholder
+              byline, because "Written by" over an empty space reads as a
+              missing person rather than an unresolved lookup. */}
+          {block.created_by_name && (
+            <p className="t-muted m-0">Written by {block.created_by_name}</p>
+          )}
 
           {/* The coach's own words, verbatim. Not trimmed, not reflowed, not
               summarised, and not softened for the reader -- owner decision

@@ -56,6 +56,7 @@ function planBlock(overrides: Record<string, unknown> = {}) {
     starts_on: '2026-09-01',
     ends_on: '2026-10-13',
     status: 'draft',
+    created_by_name: 'Coach J Rivera',
     objectives: [objective()],
     ...overrides,
   };
@@ -187,12 +188,32 @@ describe('reading your own plan', () => {
     expect(document.querySelectorAll('button')).toHaveLength(0);
   });
 
+  test('the coach is named, so "talk to your coach" has someone in it', async () => {
+    /* Owner decision 2026-08-28. The page already tells an athlete that a plan
+       reading wrong is a conversation with their coach; naming no coach made
+       that a dead end. */
+    await renderPage();
+
+    expect(screen.getByText(/Written by Coach J Rivera/)).toBeTruthy();
+  });
+
   test('no staff account identifier is printed to the athlete', async () => {
-    // created_by_account_id is an id, not a name. Printing it to a family is
-    // a leak dressed as attribution; the coach's WORDS are what is owed.
+    /* The NAME travels; the id does not, and naming the coach did not quietly
+       reverse that. The route sends no created_by_account_id at all, so this
+       is belt and braces with the route's own key-set guard. */
     await renderPage();
 
     expect(document.body.textContent ?? '').not.toContain('acct-');
+  });
+
+  test('a block whose author did not resolve prints no empty byline', async () => {
+    /* "Written by" over a blank space reads as a missing person rather than an
+       unresolved lookup, so an absent name renders nothing at all. */
+    await renderPage({ blocks: [planBlock({ created_by_name: undefined })] });
+
+    expect(screen.queryByText(/Written by/)).toBeNull();
+    // The plan itself is still fully shown.
+    expect(screen.getByText('Winter technical block')).toBeTruthy();
   });
 
   test('a failed read is not rendered as "you have no plan"', async () => {

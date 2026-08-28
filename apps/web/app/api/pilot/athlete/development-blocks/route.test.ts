@@ -4,6 +4,7 @@ import { GET } from './route';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { listObjectivesForBlock } from '@/src/server/pilot/athleteDevelopmentBlockObjectives';
 import { listDevelopmentBlocksForAthlete } from '@/src/server/pilot/athleteDevelopmentBlocks';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -50,10 +51,23 @@ jest.mock('@/src/server/pilot/athleteDevelopmentBlockObjectives', () => {
   return { ...actual, listObjectivesForBlock: jest.fn() };
 });
 
+/* Mocked for the same reason the coach route's test mocks it: the real one
+   reaches pilot.accounts, and this file has no database. What it resolves FROM
+   is achievements.ts's decision and is tested there. */
+jest.mock('@/src/server/pilot/achievements', () => {
+  const actual = jest.requireActual('@/src/server/pilot/achievements');
+  return { ...actual, getCoachDisplayName: jest.fn() };
+});
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockCoachName = getCoachDisplayName as jest.Mock;
 const mockAssertAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockListBlocks = listDevelopmentBlocksForAthlete as jest.Mock;
 const mockListObjectives = listObjectivesForBlock as jest.Mock;
+
+beforeEach(() => {
+  mockCoachName.mockResolvedValue('Coach J Rivera');
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -327,8 +341,8 @@ describe('what the family actually sees', () => {
     const payload = await (await GET(getRequest())).json();
 
     expect(Object.keys(payload.blocks[0]).sort()).toEqual([
-      'block_id', 'ends_on', 'objectives', 'starts_on', 'status', 'title',
-      'training_emphasis',
+      'block_id', 'created_by_name', 'ends_on', 'objectives', 'starts_on',
+      'status', 'title', 'training_emphasis',
     ]);
     expect(Object.keys(payload.blocks[0].objectives[0]).sort()).toEqual([
       'domain', 'objective', 'objective_id', 'status',
@@ -365,5 +379,92 @@ describe('what the family actually sees', () => {
     // owner decision of 2026-08-28 was about these, and they are all here.
     expect(serialized).toContain('Guard recovery off the jab.');
     expect(serialized).toContain('Jab off the back foot under pressure');
+  });
+});
+
+/*
+ * NAMING THE COACH TO A FAMILY -- owner decision, 2026-08-28.
+ *
+ * Both family screens already told a reader that a plan reading wrong "is a
+ * conversation with the coach". Naming no coach made that a dead end, so the
+ * name now travels. The id still does not, and these hold that line: the
+ * decision was to name a person, not to undo the projection above.
+ */
+describe('who wrote the plan', () => {
+  test('a family is given the coach by name', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([block()]);
+    mockListObjectives.mockResolvedValue([]);
+
+    const payload = await (await GET(getRequest())).json();
+
+    expect(payload.blocks[0].created_by_name).toBe('Coach J Rivera');
+  });
+
+  test('the name is resolved in the principal\'s organization, never a supplied one', async () => {
+    /* A guardian names WHICH CHILD in the query string. Nothing in that string
+       may choose which gym a name is looked up in. */
+    mockRequirePrincipal.mockResolvedValue(
+      principal({ role: 'parent', athleteId: undefined, organizationId: 'org-1' }),
+    );
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([block()]);
+    mockListObjectives.mockResolvedValue([]);
+
+    await GET(getRequest('?athlete_id=ath-9&organization_id=org-evil'));
+
+    expect(mockCoachName).toHaveBeenCalledWith('org-1', 'acct-coach-a');
+  });
+
+  test('the name is resolved once per distinct author, not once per block', async () => {
+    /* A family reading a run of blocks is usually reading one coach over and
+       over. The naive per-row lookup issues the same query a dozen times for
+       one answer; dropping the dedupe reds this case alone. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([
+      block({ block_id: 'blk-1', created_by_account_id: 'acct-coach-a' }),
+      block({ block_id: 'blk-2', created_by_account_id: 'acct-coach-a' }),
+      block({ block_id: 'blk-3', created_by_account_id: 'acct-coach-b' }),
+    ]);
+    mockListObjectives.mockResolvedValue([]);
+
+    await GET(getRequest());
+
+    expect(mockCoachName).toHaveBeenCalledTimes(2);
+  });
+
+  test('an unresolved name falls back to a phrase, never to an account id', async () => {
+    /* THE DIFFERENCE FROM THE COACH'S OWN SURFACE, and it is deliberate. That
+       one falls back to the id, because for staff an ugly true string beats a
+       blank byline. A family is exactly who must not be shown an identifier,
+       so the floor here is a phrase. getCoachDisplayName's own floor is
+       already 'Your coach'; this covers the case where the map lookup itself
+       misses, which is the path that could have reached for the id. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([block()]);
+    mockListObjectives.mockResolvedValue([]);
+    mockCoachName.mockResolvedValue('Your coach');
+
+    const payload = await (await GET(getRequest())).json();
+    const serialized = JSON.stringify(payload);
+
+    expect(payload.blocks[0].created_by_name).toBe('Your coach');
+    expect(serialized).not.toContain('acct-');
+  });
+
+  test('naming the coach did not put the account id back in the payload', async () => {
+    // The one regression this slice could cause, asserted directly.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([block()]);
+    mockListObjectives.mockResolvedValue([objective()]);
+
+    const serialized = JSON.stringify(await (await GET(getRequest())).json());
+
+    expect(serialized).not.toContain('acct-coach-a');
+    expect(serialized).not.toContain('created_by_account_id');
   });
 });
