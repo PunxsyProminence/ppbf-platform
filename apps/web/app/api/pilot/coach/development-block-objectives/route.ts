@@ -58,9 +58,12 @@ export const dynamic = 'force-dynamic';
  * ever since; until now nothing displayed it. Two things make showing it
  * defensible rather than a widening: FIELD_TIERS records
  * athlete_development_block_objectives.objective at `athlete_record` with the
- * module as its real enforcer, and this route serves staff only. An athlete
- * or guardian read surface is a separate slice with its own safeguarding
- * decisions, and it does not exist yet.
+ * module as its real enforcer, and this route serves staff only. The athlete
+ * and guardian read surface was a separate slice with its own safeguarding
+ * decisions, and it shipped: GET /api/pilot/athlete/development-blocks, which
+ * shows a family the same domain under the same label and offers no verb that
+ * could change it. This route remains the staff half and gains nothing from
+ * that: no family role was added to AUTHOR_ROLES below.
  *
  * NO ROLL-UP, HERE OR ANYWHERE. This returns the rows. It does not count how
  * many reached 'completed', does not express that count as a proportion, and

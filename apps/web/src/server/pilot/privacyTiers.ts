@@ -232,9 +232,20 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'order this registry exists to insist on. Every read now resolves its parent block through '
       + 'getDevelopmentBlock, which calls assertActorCanAccessAthlete, so an org admin reaches their '
       + 'gym, a coach reaches their own and actively covered athletes, an athlete reaches themselves, a '
-      + 'guardian reaches their linked child, and platform_owner and board reach none of it. There is '
-      + 'still no API route or UI: this is the data layer\'s claim, and the route that ships first must '
-      + 'pass a real ActorIdentity rather than reconstruct one. Note also that pilot.goals.category is a '
+      + 'guardian reaches their linked child, and platform_owner and board reach none of it. The first '
+      + 'read surface has now shipped, and it is staff-only: GET/POST/PATCH '
+      + '/api/pilot/coach/development-block-objectives, rendered by /coach/development-blocks. It does '
+      + 'the thing this entry demanded of whichever route shipped first -- it passes the real '
+      + 'ActorIdentity from requirePrincipal into getDevelopmentBlock rather than reconstructing one, '
+      + 'and it imports no database handle of its own, so the module\'s gate is the only thing between '
+      + 'a caller and these rows. privacyTiers.test.ts pins both facts rather than leaving them to this '
+      + 'prose. A family read surface followed in the same branch -- GET '
+      + '/api/pilot/athlete/development-blocks, behind /athlete/development-blocks and '
+      + '/parent/development-blocks -- and it is read-only by construction rather than by convention: '
+      + 'that route file declares no POST and no PATCH, so there is no write verb for a page to call. '
+      + 'Its athlete arm takes the subject from the session and ignores any athlete_id in the query, '
+      + 'and its parent arm requires one and puts it through the same gate. Note also that '
+      + 'pilot.goals.category is a '
       + 'SEPARATE surface and still withholds Weight Loss / Weight Gain; the domain decision was about '
       + 'coach-authored objectives and did not reverse that one.',
   },
@@ -248,8 +259,16 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'in this slice resolves through it, so if this entry\'s claim is wrong the objectives entry is '
       + 'wrong too. Reads go through assertActorCanAccessAthlete (owner decision 2026-08-28, "Admin, '
       + 'Coach, Athlete, Guardian"); writes additionally require an active organization_memberships row '
-      + 'in a DEVELOPMENT_BLOCK_WRITE_ROLES role ("Admin and coaches", same day). No API route or UI '
-      + 'exists yet.',
+      + 'in a DEVELOPMENT_BLOCK_WRITE_ROLES role ("Admin and coaches", same day). Three routes now '
+      + 'reach these rows: /api/pilot/coach/development-blocks and '
+      + '/api/pilot/coach/development-block-objectives for staff, and GET '
+      + '/api/pilot/athlete/development-blocks for an athlete or their guardian. They sit behind '
+      + '/coach/development-blocks, /athlete/development-blocks and /parent/development-blocks. Not '
+      + 'one of them imports a database handle, so every one of them arrives through this module; '
+      + 'that is what makes the enforcedBy above the whole story rather than one path of four, and '
+      + 'privacyTiers.test.ts fails if a fourth route is added that does otherwise. The family route '
+      + 'carries no write verb at all, which is why the audience widening of 2026-08-28 did not widen '
+      + 'the author set the sentence above records.',
   },
   'goals.category': {
     tier: 'athlete_record',
