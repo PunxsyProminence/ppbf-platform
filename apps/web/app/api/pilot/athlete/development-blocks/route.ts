@@ -1,0 +1,243 @@
+import { NextResponse, type NextRequest } from 'next/server';
+
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
+import {
+  listObjectivesForBlock,
+  type BlockObjectiveRow,
+} from '@/src/server/pilot/athleteDevelopmentBlockObjectives';
+import {
+  listDevelopmentBlocksForAthlete,
+  type AthleteDevelopmentBlockRow,
+} from '@/src/server/pilot/athleteDevelopmentBlocks';
+import { ValidationError } from '@/src/server/pilot/errors';
+import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+/**
+ * The plan, to the person it is about and the adult responsible for them.
+ *
+ * OWNER DECISION, 2026-08-28: an athlete sees their development blocks and
+ * every objective on them, INCLUDING nutrition_body_composition, exactly as
+ * the coach wrote them. A guardian reads precisely what their child reads and
+ * no more. Asked as "what does the athlete see of the plan their coach wrote
+ * about them", answered "everything, verbatim".
+ *
+ * WHY VERBATIM RATHER THAN A SOFTENED PROJECTION. A second, gentler version
+ * of a coach's words would be a second version of the truth about a child,
+ * and this platform has one. The transparency is itself a safeguarding
+ * property: a plan about a minor that the minor and their guardian cannot
+ * read is a plan neither of them can question. The same reasoning already
+ * governs progression gaps and sparring notes, which reach the family
+ * unaltered.
+ *
+ * The cost is named rather than hidden: a coach's blunt private phrasing is
+ * now athlete-facing, and a body-composition sentence about a minor is
+ * visible to that minor. That was the decision, made with the alternative in
+ * front of it.
+ *
+ * WHAT THIS ROUTE REFUSES TO BE.
+ *
+ * It is READ-ONLY -- there is no POST and no PATCH, not a gated one. Reading
+ * is not writing: an athlete marking their own block 'completed' is the coach
+ * judgment this table exists to refuse to compute, and a guardian editing a
+ * coach's plan is not a thing the gym's authority model contains. The data
+ * layer would refuse both anyway (DEVELOPMENT_BLOCK_WRITE_ROLES); the route
+ * offers no verb to refuse.
+ *
+ * It carries NO ROLL-UP, for the same reason the coach's own surface does
+ * not, and more sharply here. "Three of five objectives completed" shown to a
+ * child is a score about that child, produced by arithmetic rather than by a
+ * coach. Whether a block went well is a human judgment, and this returns rows
+ * so that a later summary has to be authored rather than derived.
+ *
+ * SEPARATE FROM THE COACH ROUTE ON PURPOSE, not duplicated. Both are thin
+ * over the same data layer, which is where the one access rule lives. They
+ * differ in audience, in verbs (this has one), and in shape: this returns
+ * each block with its objectives already attached, because a family view is
+ * small, read-once, and has no reason to make a screen fetch per block the
+ * way an authoring panel does. Same relationship as /api/pilot/coach/athletes
+ * and /api/pilot/athletes/list.
+ */
+
+/** The two roles this serves. Staff read the coach route; this is the family. */
+const FAMILY_ROLES = ['athlete', 'parent'] as const;
+
+/**
+ * What a family receives -- ENUMERATED, not the stored row with a field
+ * appended.
+ *
+ * This started as `extends AthleteDevelopmentBlockRow`, which spread every
+ * column of the record into the response: `organization_id`,
+ * `created_by_account_id`, `created_at`, `updated_at`. The two screens render
+ * none of them, and DevelopmentBlockPlanView's own header says why -- "an
+ * account id, not a name, and printing a raw staff identifier to a family is
+ * a leak dressed as attribution". But a page not rendering a field is not the
+ * same as a family not receiving it: the id was in the JSON, one devtools
+ * panel away, on the surface that serves minors.
+ *
+ * So the shape is stated here rather than inherited. `PlanBlock` in
+ * DevelopmentBlockPlanView already declared exactly these fields as what the
+ * view needs; this is the server finally agreeing with it.
+ *
+ * The owner decision of 2026-08-28 is untouched by this. "Everything,
+ * verbatim" was about the coach's WORDS -- the emphasis, the objectives, the
+ * body-composition domain, all of which are here in full and unaltered. Staff
+ * bookkeeping is not the coach's words about the athlete; FIELD_TIERS puts
+ * the closest analogue (scheduler_attendance.checked_in_by_account_id) at
+ * `organization`, which is a tier a family sits outside of.
+ *
+ * ADDING A FIELD HERE IS DELIBERATE, and the route test pins the exact key
+ * set of both a block and an objective so it cannot happen by accident.
+ */
+export interface FamilyDevelopmentBlock {
+  block_id: string;
+  title: string;
+  training_emphasis: string;
+  starts_on: AthleteDevelopmentBlockRow['starts_on'];
+  ends_on: AthleteDevelopmentBlockRow['ends_on'];
+  status: AthleteDevelopmentBlockRow['status'];
+  /**
+   * WHO WROTE IT, as something to call them -- owner decision, 2026-08-28.
+   *
+   * The family screens said "if something reads wrong, that is a conversation
+   * with the coach" while naming no coach, which is a gap on the very screen
+   * that sends a parent to have that conversation. So the NAME travels.
+   *
+   * The ID still does not, and the difference is the whole point of the
+   * projection above: `getCoachDisplayName` is the platform's one answer here
+   * (recognitions and the One Percent Club already use it), and its floor is
+   * the phrase "Your coach" -- never an account id, never an empty string. So
+   * unlike the coach's own surface, which falls back to the id because an ugly
+   * true string beats a blank byline for staff, a family cannot be shown an
+   * identifier by any path through this route.
+   */
+  created_by_name: string;
+  objectives: FamilyBlockObjective[];
+}
+
+/** The same enumeration one level down, and for the same reason. */
+export interface FamilyBlockObjective {
+  objective_id: string;
+  domain: BlockObjectiveRow['domain'];
+  objective: string;
+  status: BlockObjectiveRow['status'];
+}
+
+/**
+ * Whose plan this request is for.
+ *
+ * An athlete never names a subject: they are the subject, and the id comes
+ * from their own session rather than from the query string. A parent must
+ * name which child, because they may hold links to several -- and that id is
+ * then put through assertActorCanAccessAthlete, so naming a child they are
+ * not linked to reaches nothing.
+ *
+ * Written as one function because the alternative -- trusting `athlete_id`
+ * whenever it is present -- would let an athlete read a sibling's plan by
+ * adding a query parameter. The athlete arm ignores the parameter entirely
+ * rather than validating it, which is the difference between a check that can
+ * be got wrong and a value that is never read.
+ */
+function subjectAthleteId(
+  role: string,
+  sessionAthleteId: string | null | undefined,
+  requested: string | null,
+): string {
+  if (role === 'athlete') {
+    if (!sessionAthleteId) {
+      // An athlete-role account with no athlete_id is a provisioning fault,
+      // not a request fault: there is no record to show and no id to guess.
+      throw new ValidationError(
+        'This account is not linked to an athlete record.',
+        'ATHLETE_RECORD_NOT_LINKED',
+      );
+    }
+    return sessionAthleteId;
+  }
+
+  const athleteId = requested?.trim();
+  if (!athleteId) {
+    throw new ValidationError(
+      'Naming which child this is for is required.',
+      'ATHLETE_ID_REQUIRED',
+    );
+  }
+  return athleteId;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...FAMILY_ROLES]);
+
+    const athleteId = subjectAthleteId(
+      principal.role,
+      principal.athleteId,
+      request.nextUrl.searchParams.get('athlete_id'),
+    );
+
+    /* The gate, before the read, and it does the work for both arms: an
+       athlete passes only for themselves, a parent only for a linked child,
+       and a soft-deleted athlete fails for the parent. A 403 rather than an
+       empty list, because a guardian who may not reach this child is owed
+       that answer rather than one that reads as "your child has no plan". */
+    await assertActorCanAccessAthlete(principal, athleteId);
+
+    const blocks = await listDevelopmentBlocksForAthlete(principal, athleteId);
+
+    /* Objectives attached per block, in one response. Sequential rather than
+       parallel: this is a handful of blocks for one athlete, and each call is
+       another authorization decision in the data layer -- fanning them out
+       buys milliseconds on a page nobody refreshes in a loop. */
+    /* Once per distinct author, not once per block. A family reading a run of
+       blocks is usually reading one coach over and over; the naive per-row
+       lookup issues the same query a dozen times for one answer. Same shape as
+       withAuthorNames on the coach route, and asserted the same way. */
+    const authorNames = new Map<string, string>();
+    await Promise.all(
+      Array.from(new Set(blocks.map((block) => block.created_by_account_id))).map(
+        async (accountId) => {
+          authorNames.set(
+            accountId,
+            await getCoachDisplayName(principal.organizationId, accountId),
+          );
+        },
+      ),
+    );
+
+    const withObjectives: FamilyDevelopmentBlock[] = [];
+    for (const block of blocks) {
+      const objectives = await listObjectivesForBlock(principal, block.block_id);
+      /* Named field by field, never spread. A spread here is what put a staff
+         account id in a minor's API response in the first place, and it would
+         put the next column there too, silently, on the day it is added. */
+      withObjectives.push({
+        block_id: block.block_id,
+        title: block.title,
+        training_emphasis: block.training_emphasis,
+        starts_on: block.starts_on,
+        ends_on: block.ends_on,
+        status: block.status,
+        /* 'Your coach' rather than the id if a name will not resolve: the id
+           is the thing this projection exists to keep away from a family. */
+        created_by_name: authorNames.get(block.created_by_account_id) ?? 'Your coach',
+        objectives: objectives.map((row) => ({
+          objective_id: row.objective_id,
+          domain: row.domain,
+          objective: row.objective,
+          status: row.status,
+        })),
+      });
+    }
+
+    return NextResponse.json(
+      { ok: true, blocks: withObjectives },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (error) {
+    return jsonError(error);
+  }
+}

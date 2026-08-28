@@ -20,12 +20,21 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/shadowReadiness', () => ({ assertShadowRuntimeReadiness: jest.fn() }));
 jest.mock('@/src/server/pilot/guardianAccess', () => ({ guardianAthleteIds: jest.fn() }));
-jest.mock('@/src/server/pilot/shadowResearch', () => ({
-  createShadowResearchRequirement: jest.fn(),
-  getShadowResearchRequirementById: jest.fn(),
-  listShadowResearchRequirements: jest.fn(),
-  resolveShadowResearchRequirement: jest.fn(),
-}));
+// requireActual for the rest: subjectAthleteIdOf, namedAthleteIdsOf,
+// namedAthleteId and SUBJECT_NAMING_METADATA_KEYS moved into this module from
+// this route file, so a bare-object mock leaves them undefined and every test
+// here dies in a TypeError rather than exercising the subject logic. Only the
+// four database-reaching functions are stubbed.
+jest.mock('@/src/server/pilot/shadowResearch', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowResearch');
+  return {
+    ...actual,
+    createShadowResearchRequirement: jest.fn(),
+    getShadowResearchRequirementById: jest.fn(),
+    listShadowResearchRequirements: jest.fn(),
+    resolveShadowResearchRequirement: jest.fn(),
+  };
+});
 
 // requireRole stays real so the role sets are exercised; only the per-athlete
 // check is mocked, because its real implementation reaches the database for

@@ -236,6 +236,9 @@ export const BUILDING: readonly Door[] = [
     hint: 'See whether your child’s training is paused and their safety-check status.' },
   { href: '/parent/progression-visibility', label: 'Progress Visibility', room: 'office',
     roles: ['parent'], keywords: 'child progress attendance visibility' },
+  { href: '/parent/development-blocks', label: 'Development Plan', room: 'office', roles: ['parent'],
+    keywords: 'development block plan multi week coach plan objectives child training emphasis',
+    hint: 'The plan your child\u2019s coach wrote for them, in the coach\u2019s own words. Exactly what your child sees.' },
   { href: '/public', label: 'Public Page', room: 'office', roles: OPEN,
     keywords: 'enrollment join intake public onboarding' },
   { href: '/help', label: 'Help', room: 'office', roles: OPEN, keywords: 'support docs how-to faq' },
@@ -371,6 +374,10 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/development-blocks', label: 'Development Blocks', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'development block multi week plan periodization athlete plan training emphasis window macrocycle',
     hint: 'What you intend for one athlete over the next several weeks, in your own words.' },
+  { href: '/athlete/development-blocks', label: 'My Development Plan', room: 'floor',
+    roles: ['athlete'],
+    keywords: 'development block plan my plan coach plan objectives training emphasis weeks',
+    hint: 'What your coach is working on with you over the next several weeks, in their words.' },
   { href: '/coach/behavior-standards', label: 'Standards', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'behavior standards conduct recognition expectations concern safeguarding discipline',
     hint: 'What the gym expects \u2014 recognition when met, safeguarding when not.' },
@@ -428,6 +435,18 @@ export const BUILDING: readonly Door[] = [
     roles: ['board'], keywords: 'compliance register hand-filed monitoring governance' },
   { href: '/board/escalation-monitoring', label: 'Escalation Ladder', room: 'board',
     roles: ['board'], keywords: 'escalation ladder safety open severity counts' },
+  /* Board for the same reason as the two above: aggregate counts, a cohort
+     floor, no name and no record, headed "Board Workspace". `roles` is
+     'board' alone and NOT BOARD_GATE, which is narrower than the room's other
+     doors on purpose -- the three routes behind this page gate on ['board']
+     only, and volunteer-summary/route.test.ts pins that a platform_owner is
+     refused. Advertising it to the platform owner would be a door onto a page
+     whose every figure is a 403, which is the exact defect the header note
+     warns this list can create. */
+  { href: '/board/aggregates', label: 'Program Aggregates', room: 'board',
+    roles: ['board'],
+    keywords: 'volunteers external competition wrestling league seasons entries counts aggregate',
+    hint: 'Volunteer, external competition and wrestling league counts.' },
 
   // ------------------------------------------------------------------ file --
   /* Stage 4 of the knowledge pipeline, so it stands where the other stages

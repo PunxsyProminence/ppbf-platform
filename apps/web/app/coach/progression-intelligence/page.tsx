@@ -125,7 +125,15 @@ export default function CoachProgressionIntelligencePage() {
   // -- no banner says "this page knows of no hold", which is exactly true --
   // so the previous athlete's banner comes down the instant the selection
   // changes rather than lingering over the new name.
-  const [activeHold, setActiveHold] = useState<{ athleteId: string; hold: ActiveHoldSummary | null }>({
+  /* THREE STATES, NOT TWO. `hold: null` means the platform looked and this
+     athlete is not held. `hold: 'unreadable'` means nobody could look. On
+     this page the banner's ABSENCE is the claim "not held", so collapsing
+     those two renders a failed read as a clearance -- which is the exact harm
+     the read's own comment below names. */
+  const [activeHold, setActiveHold] = useState<{
+    athleteId: string;
+    hold: ActiveHoldSummary | null | 'unreadable';
+  }>({
     athleteId: '',
     hold: null,
   });
@@ -350,21 +358,25 @@ export default function CoachProgressionIntelligencePage() {
         );
         if (controller.signal.aborted) return;
         if (!response.ok) {
-          setActiveHold({ athleteId: selectedAthlete, hold: null });
+          setActiveHold({ athleteId: selectedAthlete, hold: 'unreadable' });
           return;
         }
         const payload = (await response.json().catch(() => ({}))) as { holds?: ActiveHoldSummary[] };
         if (controller.signal.aborted) return;
         setActiveHold({ athleteId: selectedAthlete, hold: payload.holds?.[0] ?? null });
       } catch (error) {
-        // Best-effort: no hold banner is a smaller loss than a broken page.
-        // But an ABORT must not clear anything -- this read was superseded by
-        // the next athlete's, and writing null here would be the previous
-        // athlete's answer erasing the current athlete's hold. That is the
-        // specific failure this guard exists for: a coach who cannot see an
+        // An ABORT must not write anything -- this read was superseded by the
+        // next athlete's, and writing here would be the previous athlete's
+        // answer landing on the current athlete.
+        //
+        // ANY OTHER FAILURE IS SAID OUT LOUD. This used to write `hold: null`,
+        // which renders as no banner, which on this page reads as "this
+        // athlete is not held" -- the precise failure the previous version of
+        // this comment named and then performed: a coach who cannot see an
         // active hold puts a child who is not cleared back into contact work.
+        // A silent absence and a real absence must not look the same here.
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
-        setActiveHold({ athleteId: selectedAthlete, hold: null });
+        setActiveHold({ athleteId: selectedAthlete, hold: 'unreadable' });
       }
     })();
     return () => controller.abort();
@@ -481,6 +493,7 @@ export default function CoachProgressionIntelligencePage() {
   // activeHold state for why this is matched at render rather than cleared on
   // switch.
   const shownHold = activeHold.athleteId === selectedAthlete ? activeHold.hold : null;
+  const holdUnreadable = shownHold === 'unreadable';
 
   const onLibraryPick = (drillId: string) => {
     const d = drills.find((x) => x.drill_id === drillId);
@@ -589,7 +602,27 @@ export default function CoachProgressionIntelligencePage() {
 
         {selectedAthlete && (
           <>
-            {shownHold && (
+            {holdUnreadable && (
+              /* Not a hold, and not the absence of one. The restricted rung
+                 rather than the safeguarding red: this is "do not read this
+                 screen as a clearance", not "this person may not
+                 participate". */
+              <section
+                role="status"
+                className="mat-paper rounded-[var(--r-md)] border-2 border-[var(--restricted)] p-[var(--s4)]"
+              >
+                <p className="t-eyebrow text-[var(--restricted-ink)]">Training hold: could not be read</p>
+                <p className="t-body mt-[var(--s2)] font-semibold">
+                  Whether this athlete is under a training hold is UNKNOWN — nobody could look.
+                </p>
+                <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                  Do not read this as &quot;no hold&quot;. Check the training holds record before
+                  assigning or verifying anything that contact work depends on.
+                </p>
+              </section>
+            )}
+
+            {shownHold && shownHold !== 'unreadable' && (
               <section
                 role="status"
                 className="mat-paper rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]"

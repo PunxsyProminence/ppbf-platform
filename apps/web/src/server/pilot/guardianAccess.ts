@@ -118,11 +118,26 @@ export async function guardianParentIdForAthlete(
   accountId: string,
   athleteId: string,
 ): Promise<{ parentId: string; fullName: string } | null> {
+  /* The join onto pilot.athletes is the same deletion filter
+     isGuardianLinkedToAthlete and guardianAthleteIds carry, and it is here for
+     the same reason: guardian_links has no deleted_at of its own, so a link to
+     a withdrawn child stays true forever and only this join can close it.
+
+     This function was the third athlete-scoped read in the module and the one
+     without it. That was not reachable -- its one caller chain
+     (resolveActingParent -> POST /api/pilot/parent/consent) checks
+     guardianAthleteIds first, which already excludes a deleted athlete -- but
+     "safe because the caller happens to check" is a property that lasts until
+     the next caller. The other two are safe on their own; now so is this. */
   const row = await queryOne<{ parent_id: string; full_name: string }>(
     `select p.parent_id, p.full_name
      from pilot.parents p
      join pilot.guardian_links gl
        on gl.organization_id = p.organization_id and gl.parent_id = p.parent_id
+     join pilot.athletes a
+       on a.organization_id = gl.organization_id
+      and a.athlete_id = gl.athlete_id
+      and a.deleted_at is null
      where p.organization_id = $1 and p.account_id = $2 and gl.athlete_id = $3
      limit 1`,
     [organizationId, accountId, athleteId],

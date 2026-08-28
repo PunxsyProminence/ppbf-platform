@@ -393,6 +393,26 @@ export default function SportsMedicinePage() {
             <div className="flex justify-center py-[var(--s7)]">
               <span className="working">Loading clearance board...</span>
             </div>
+          ) : errorMessage ? (
+            /* THE BOARD COULD NOT BE READ, WHICH IS NOT THE SAME AS AN EMPTY
+               BOARD. This screen answers "who is medically cleared", so an
+               empty roster here reads as "nothing to check" -- which on this
+               one screen means "everyone may train". The per-row failure was
+               already fail-closed (CLEARANCE_BADGE.unavailable); only the
+               whole-board failure escaped, and it escaped into the most
+               reassuring sentence on the page. */
+            <div className="mat-leather rounded-[var(--r-lg)] border-2 border-[var(--restricted)]">
+              <div className="empty">
+                <div className="empty-title text-[var(--restricted-ink)]">
+                  The clearance board could not be read
+                </div>
+                <p className="empty-msg mx-auto">
+                  This is not a statement that you have no athletes, and not a statement that
+                  anyone is cleared. Nobody could look. Reload, and if it persists, say so before
+                  making a clearance decision from this screen.
+                </p>
+              </div>
+            </div>
           ) : rows.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
