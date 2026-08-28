@@ -177,6 +177,46 @@ read as a verdict-in-progress.
 
 ## 5. Decisions needed before this can be built
 
+> **ANSWERED, 2026-08-28, and the data layer is built.** The forks below are
+> left standing as the reasoning that produced the answers. What was decided:
+>
+> - **D1 → (a) the block.** One judgment per block, enforced by a unique
+>   constraint on `(organization_id, block_id)`. The cost named in (a) is
+>   accepted: a block that went well technically and badly on conditioning
+>   gets one word for both.
+> - **D2 → (a) `DEVELOPMENT_BLOCK_WRITE_ROLES`** — the design's own stated
+>   default, taken because no reason to depart from it was identified.
+> - **D3 → (a) yes, verbatim, including the deviation text.** The reasoning
+>   that gave a family the plan verbatim applies unchanged to the verdict: a
+>   judgment about a child that the child cannot see is one they cannot
+>   question. The cost named in (a) is accepted with it.
+> - **D4 → (a) no evidence links in the first slice** — the design's own
+>   stated default.
+> - **D5** stands as written and is now asserted by a test rather than
+>   promised: `the comparison returns no combined figure of any kind`.
+>
+> **Built:** the migration in §3 (with `unique (organization_id, block_id)`
+> added per D1(a)), its runner and four registration points, and
+> `athleteDevelopmentBlockExecutions.ts` — record/correct a verdict, read one,
+> and `getBlockPlanVsActual`, which computes every count fresh and stores
+> none. 26 real-Postgres cases cover the six UNKNOWN states.
+>
+> **Two corrections the build made to this document.** First, §2's
+> "how many `activity_log` minutes by domain" is **not** what shipped: CT-13
+> (`attendancePrecedence.test.ts`) forbids a new reader counting a raw
+> attendance table, because an athlete who trains twice in a day has several
+> rows and counting them doubles a participation figure about a child. The
+> module reads `pilot.attendance_reconciled` — the athlete-day system of
+> record — and reports **training days present**. Minutes were dropped rather
+> than grandfathered: they are a second grain only the raw table can express.
+> Second, the runner's "stores no tally" gate first matched column names as
+> substrings, which reads `recorded_by_account_id` as containing "count" and
+> refused every correct database; it now matches whole underscore-separated
+> words. Both were caught by tests before either could reach a deploy.
+>
+> **Not built:** every surface. The coach and family screens are a following
+> slice, and D3(a) governs the second of them.
+
 Each is a real fork. None can be settled from the code.
 
 ### D1 — Does the adherence judgment sit on the block, or on each objective?
