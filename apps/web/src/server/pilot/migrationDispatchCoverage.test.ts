@@ -157,5 +157,14 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['multidiscipline', 'session-scripts']) {
       expect(at('session-scripts-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }
+    // drill-library-discipline-fk is the same shape and the ordering is LESS
+    // obvious, which is exactly why it is asserted: drill-library-v3 creates
+    // the table at 49, and the registry it must now reference is not created
+    // until 62. Anyone grouping this migration next to the table it constrains
+    // would place it thirteen entries too early, and a rebuild would die on
+    // ALTER against a pilot.disciplines that does not exist yet.
+    for (const prerequisite of ['multidiscipline', 'drill-library-v3']) {
+      expect(at('drill-library-discipline-fk')).toBeGreaterThan(at(prerequisite));
+    }
   });
 });
