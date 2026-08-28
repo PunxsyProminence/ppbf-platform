@@ -2,7 +2,7 @@ jest.mock('./db', () => ({
   query: jest.fn(),
 }));
 
-import { getAthleteWaiverStatus, getOrganizationWaiverStatus, TRACKED_WAIVER_TYPES } from './waiverCompliance';
+import { getAthleteWaiverStatus, getOrganizationWaiverStatus, TRACKED_WAIVER_TYPES, WAIVER_STATUSES } from './waiverCompliance';
 import { query } from './db';
 
 const mockQuery = jest.mocked(query);
@@ -47,6 +47,66 @@ describe('getOrganizationWaiverStatus', () => {
       photo_media: 'withdrawn',
       travel: 'missing',
     });
+  });
+
+  /* THE ROLLUP AND THE GATE READ THE SAME COLUMN AND MUST AGREE ABOUT IT.
+
+     getAthleteWaiverStatus has had both of these cases covered since it was
+     written (see the two tests of the same names below). getOrganizationWaiverStatus
+     had neither, and did not normalise -- so the worklist and the gate could
+     disagree about the same row. The asymmetry in this file was the asymmetry
+     in the module. */
+  test('a recognised status survives case and padding, as it does at the gate', async () => {
+    // normalizeWaiverStatus's own reasoning: "' Signed ' is a guardian who
+    // signed; refusing to take a child to a competition over whitespace
+    // punishes the family for a data-entry artifact." The gate honours that.
+    // Before this change the rollup did not, so the SAME waiver was valid for
+    // competition and reported Missing on the compliance worklist -- and staff
+    // would chase a family for a document that is on file and working.
+    mockQuery.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'general', status: ' Signed ' },
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'travel', status: 'WITHDRAWN' },
+    ]);
+
+    const result = await getOrganizationWaiverStatus('org-1');
+
+    expect(result[0].waivers.general).toBe('signed');
+    expect(result[0].waivers.travel).toBe('withdrawn');
+  });
+
+  test('an unrecognised status is missing here too, never passed through raw', async () => {
+    // pilot.waivers.status has no CHECK constraint and domain-upsert accepts
+    // any client-supplied string, so this is reachable rather than theoretical.
+    // 'pending' is a started release, not a given one.
+    mockQuery.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'general', status: 'pending' },
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'medical_release', status: 'signd' },
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'travel', status: '' },
+    ]);
+
+    const result = await getOrganizationWaiverStatus('org-1');
+
+    expect(result[0].waivers.general).toBe('missing');
+    expect(result[0].waivers.medical_release).toBe('missing');
+    expect(result[0].waivers.travel).toBe('missing');
+  });
+
+  /* The rollup's answer must be one of the four the type promises, for every
+     row. The admin page switches on exactly these and renders anything else
+     as 'Missing', so a raw value reaching it is a status rendered by
+     accident rather than by decision. */
+  test('every value it returns is in the declared vocabulary', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'general', status: 'Approved' },
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'photo_media', status: ' declined' },
+    ]);
+
+    const result = await getOrganizationWaiverStatus('org-1');
+
+    for (const value of Object.values(result[0].waivers)) {
+      expect(WAIVER_STATUSES).toContain(value);
+    }
+    expect(result[0].waivers.photo_media).toBe('declined');
   });
 
   test('a declined waiver reads as declined, not missing -- a decision was made, and it was no', async () => {

@@ -28,17 +28,18 @@
 // use. It NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
-import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
+import { pathToFileURL } from 'node:url';
 import type { Readable } from 'node:stream';
 
 import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
 import { requirePrincipal } from './http';
+import { WAIVER_IDENTITY_COLUMNS, WAIVER_STAFF_COLUMNS } from './intake';
 import type { PilotPrincipal } from './auth';
 
 jest.mock('./http', () => {
@@ -53,6 +54,15 @@ const PG_PASSWORD = 'postgres';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-guardian-contact-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
+
+/* ts-jest compiles a plain `await import()` down to require(), which cannot
+   load an ES module here. Building it through Function keeps a real dynamic
+   import in the emitted code, honored under --experimental-vm-modules. */
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
+
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 const TEST_DB_NAME = 'ppbf_test_guardian_contact';
 
 const ORG = 'org-1';
@@ -79,6 +89,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let db: Client;
 let domainGet: typeof import('@/app/api/pilot/intake/domain-get/route').POST;
 let getIntakeCaseAggregate: typeof import('./intake').getIntakeCaseAggregate;
+let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -124,6 +135,7 @@ const AS = {
 interface DomainGetBody {
   guardians?: Record<string, unknown>[];
   emergency_contacts?: Record<string, unknown>[];
+  waivers?: Record<string, unknown>[];
   coach_observations?: Record<string, unknown>[];
   error?: string;
 }
@@ -202,17 +214,21 @@ beforeAll(async () => {
 
   db = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await db.connect();
-  await db.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
-/* PRODUCTION HAS THIS MIGRATION, so the fixture does too. It adds
-   pilot.athletes.deleted_at, which the authorization queries in access.ts now
-   require. deploy-production's schema check asserts every migration's
-   `add column` exists in the live database and it passed on the 2026-08-27
-   release, so a fixture without it is not a smaller production -- it is a
-   schema nobody runs. Concatenated onto the base schema rather than applied
-   separately so that every site which applies baseSchemaSql gets it. */
-  await db.query(await fs.readFile(
-    path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8',
-  ));
+  /* THE WHOLE SCHEMA, not the base file plus a hand-picked migration.
+     The principle the previous version stated is right and is why this
+     changed: "a fixture without it is not a smaller production -- it is a
+     schema nobody runs." A hand-maintained list only holds that line for the
+     migrations somebody remembered. This suite named the data-retention
+     migration (for pilot.athletes.deleted_at) and not the guardian-media-
+     consent one, so pilot.waivers here was missing parent_id, covers_video
+     and public_use_allowed -- three columns production has. A projection over
+     that table cannot be tested against a shape production does not run.
+
+     applyFullSchema resolves and applies every migration in dependency order,
+     which is the same thing without the list to forget. */
+  const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  applyFullSchema = helper.applyFullSchema as typeof applyFullSchema;
+  await applyFullSchema(db, { infraDir: INFRA_DIR });
 
   await db.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
@@ -274,6 +290,27 @@ beforeAll(async () => {
      values ($1, '99999999-8888-4777-8666-555555555555', $2, 'Guardian B', 'father',
              '555-0200', 'guardian.b@example.test', true, $3)`,
     [ORG, ATHLETE, 'Do not call this contact without speaking to the welfare lead first.'],
+  );
+
+  // A waiver signed by Guardian B, carrying a staff note about Guardian B.
+  //
+  // pilot.waivers was absent from this fixture, which is why the end-to-end
+  // sweeps below passed: `select * from pilot.waivers` returned no rows, so
+  // there was nothing for them to find. The table was never narrowed, only
+  // never populated here.
+  //
+  // The row is shaped the way a real one is. signed_by_name is byte-identical
+  // to the pilot.parents row for the same reason the emergency contact above
+  // is, and parent_id names Guardian B outright -- so a note on this row is
+  // already keyed to the guardian it concerns without a reader having to join
+  // anything.
+  await db.query(
+    `insert into pilot.waivers
+       (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role,
+        signed_at, consent_version, status, notes, parent_id)
+     values ($1, '77777777-6666-4555-8444-333333333333', $2, 'photo_media', 'Guardian B', 'parent',
+             now(), 'v1', 'active', $3, 'par-b')`,
+    [ORG, ATHLETE, 'Countersigned after a call to 555-0200; welfare lead aware of the household situation.'],
   );
 
   // The shared coach_observations bus, with one row of each audience: a
@@ -509,6 +546,73 @@ describe('the whole domain-get body', () => {
     expect(body.emergency_contacts?.[0].phone).toBe('555-0200');
     expect(body.emergency_contacts?.[0].email).toBe('guardian.b@example.test');
   });
+
+  /* THE WAIVER, which is the third table of this body carrying a free-text
+     staff note beside a guardian's name -- and the one the narrowing missed.
+     The two sweeps above are what caught it, once this fixture carried a
+     waiver at all. These say the same thing directly, so the property does
+     not depend on a secret happening to be spelled into a note. */
+  it('gives a guardian the waiver itself without the staff note on it', async () => {
+    const body = await readDomainGet(AS.guardianA());
+    const waiver = body.waivers?.[0];
+
+    // Everything a waiver IS, which a guardian is entitled to: what was
+    // signed, by whom, when, under which version, and the media flags a
+    // parent checks their child's permissions against.
+    expect(waiver).toMatchObject({
+      waiver_type: 'photo_media',
+      signed_by_name: 'Guardian B',
+      signed_by_role: 'parent',
+      consent_version: 'v1',
+      status: 'active',
+      parent_id: 'par-b',
+      covers_video: true,
+      public_use_allowed: false,
+    });
+    expect(Object.keys(waiver ?? {})).not.toContain('notes');
+  });
+
+  it('gives the athlete the same waiver without the note', async () => {
+    const body = await readDomainGet(AS.athlete());
+
+    expect(body.waivers).toHaveLength(1);
+    expect(Object.keys(body.waivers?.[0] ?? {})).not.toContain('notes');
+  });
+
+  it('keeps the waiver note for the coach and the organization admin', async () => {
+    const asCoach = await readDomainGet(AS.coach());
+    const asAdmin = await readDomainGet(AS.admin());
+
+    expect(asCoach.waivers?.[0].notes).toContain('555-0200');
+    expect(asAdmin.waivers?.[0].notes).toContain('555-0200');
+  });
+});
+
+/* THE ALLOWLIST AGAINST THE REAL TABLE.
+   waiverColumnsForReader is an allowlist, which fails closed on a column a
+   later migration adds: the column simply stops reaching a guardian. That is
+   the right direction and the wrong way to find out. This pins the two column
+   sets against pilot.waivers as the database actually has it, so adding a
+   column to that table fails HERE -- with a message naming it -- instead of
+   silently dropping a field from every guardian and athlete response. */
+describe('the waiver allowlist covers the whole table', () => {
+  it('names every column of pilot.waivers exactly once, and no column twice', async () => {
+    const live = await db.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'pilot' and table_name = 'waivers'`,
+    );
+    const liveColumns = live.rows.map((row) => row.column_name).sort();
+
+    const declared = [...WAIVER_IDENTITY_COLUMNS, ...WAIVER_STAFF_COLUMNS].sort();
+
+    expect(new Set(declared).size).toBe(declared.length);
+    expect(declared).toEqual(liveColumns);
+  });
+
+  it('keeps the staff note out of the identity set', () => {
+    expect(WAIVER_IDENTITY_COLUMNS).not.toContain('notes');
+    expect(WAIVER_STAFF_COLUMNS).toContain('notes');
+  });
 });
 
 /* The second read of pilot.parents, on the same rows. It takes its reader as an
@@ -556,6 +660,43 @@ describe('getIntakeCaseAggregate', () => {
 
   /* The same three scopings the route applies, on the same rows. This function
      had one of the three. */
+  /* THE WHOLE AGGREGATE, NOT ONE KEY OF IT.
+     domain-get has had an end-to-end sweep since this file was written; this
+     function never did, and only its guardian list and emergency contacts
+     were ever asserted. That is exactly how pilot.waivers stayed on `select *`
+     here after the route was narrowed: no test read the rest of the body. A
+     sweep costs one assertion and covers every table the aggregate grows. */
+  it('contains no trace of the co-guardian anywhere, for Guardian A', async () => {
+    const body = JSON.stringify(await readAggregate(AS.guardianA()));
+
+    for (const secret of GUARDIAN_B_SECRETS) {
+      expect(body).not.toContain(secret);
+    }
+  });
+
+  it('contains no trace of either guardian, for the athlete', async () => {
+    const body = JSON.stringify(await readAggregate(AS.athlete()));
+
+    for (const secret of [...GUARDIAN_A_SECRETS, ...GUARDIAN_B_SECRETS]) {
+      expect(body).not.toContain(secret);
+    }
+  });
+
+  it('narrows the waiver for a guardian and an athlete, and keeps the note for a coach', async () => {
+    const asGuardian = await readAggregate(AS.guardianA());
+    const asAthlete = await readAggregate(AS.athlete());
+    const asCoach = await readAggregate(AS.coach());
+
+    const waiverOf = (aggregate: Awaited<ReturnType<typeof readAggregate>>) =>
+      ((aggregate?.waivers ?? []) as Record<string, unknown>[])[0] ?? {};
+
+    expect(Object.keys(waiverOf(asGuardian))).not.toContain('notes');
+    expect(Object.keys(waiverOf(asAthlete))).not.toContain('notes');
+    // Still a real waiver, not an empty object.
+    expect(waiverOf(asGuardian).waiver_type).toBe('photo_media');
+    expect(waiverOf(asCoach).notes).toContain('555-0200');
+  });
+
   it('narrows the emergency contact for a guardian and keeps it for a coach', async () => {
     const asGuardian = await readAggregate(AS.guardianA());
     const asCoach = await readAggregate(AS.coach());
