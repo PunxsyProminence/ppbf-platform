@@ -42,6 +42,13 @@ export interface AthleteDevelopmentBlockRow {
   starts_on: string;
   ends_on: string;
   status: DevelopmentBlockStatus;
+  /* What this block is preparing for, or null -- which is the ordinary case.
+     At most one of the two is ever set; the database holds that, not this
+     type. A target is a DATE AND A NAME: nothing in this module or anything
+     reading it derives a taper, a peak, a volume curve or a weight plan from
+     it, and neither competition surface carries anything one could. */
+  target_competition_id: string | null;
+  target_wrestling_event_id: string | null;
   created_by_account_id: string;
   created_at: string;
   updated_at: string;
@@ -52,6 +59,7 @@ export interface AthleteDevelopmentBlockRow {
 // re-interpret it in the server's timezone.
 const FIELDS = `organization_id, block_id, athlete_id, title, training_emphasis,
   starts_on::text as starts_on, ends_on::text as ends_on, status,
+  target_competition_id, target_wrestling_event_id,
   created_by_account_id, created_at, updated_at`;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;

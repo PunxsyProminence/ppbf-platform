@@ -17,6 +17,13 @@ import {
   DEVELOPMENT_BLOCK_STATUSES,
 } from '@/src/server/pilot/athleteDevelopmentBlocks';
 import type { PilotRole } from '@/src/server/pilot/contracts';
+import {
+  listDevelopmentBlockTargetOptions,
+  resolveDevelopmentBlockTarget,
+  setDevelopmentBlockTarget,
+  type DevelopmentBlockTargetInput,
+  type ResolvedDevelopmentBlockTarget,
+} from '@/src/server/pilot/athleteDevelopmentBlockTargets';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -55,12 +62,61 @@ export const dynamic = 'force-dynamic';
  * classification, and no status that advances itself because a date passed.
  * A block records human planning intent; a derived recommendation would need
  * its own evidence and its own safety contract.
+ *
+ * THE COMPETITION TARGET DOES NOT CHANGE THAT. A block may name the event it
+ * is preparing for -- Open Question 2 of module 036's engine-unlock proposal,
+ * answered (a) -- and the answer's own words bound it: "as a target date only
+ * (name and date, nothing else), leaving both competition tables exactly as
+ * skeletal as they are today". Naming a target here derives no taper, no
+ * peak, no volume curve and no weight plan, and nothing reads the target back
+ * as a training input. It says when the coach is aiming.
  */
 
 const AUTHOR_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
 function trimmedString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * The `target` key on a PATCH body, validated into the module's own input
+ * type.
+ *
+ * `null` clears the target. An object names one: `{ kind, id }`. Anything
+ * else is refused rather than coerced -- a malformed target on a plan about
+ * a child should fail loudly, not quietly become "no target", which a coach
+ * would read as having cleared something they were trying to set.
+ *
+ * The two kinds are named explicitly rather than passed through, so a body
+ * carrying an unknown kind cannot reach the data layer at all.
+ */
+function parseTargetInput(value: unknown): DevelopmentBlockTargetInput {
+  if (value === null) {
+    return { kind: 'none' };
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError(
+      'A development block target must be an object naming a kind and an id, or null to clear it.',
+      'DEVELOPMENT_BLOCK_TARGET_INVALID',
+    );
+  }
+  const candidate = value as { kind?: unknown; id?: unknown };
+  if (candidate.kind === 'none') {
+    return { kind: 'none' };
+  }
+  if (candidate.kind !== 'competition' && candidate.kind !== 'wrestling_event') {
+    throw new ValidationError(
+      "A development block target's kind must be 'competition', 'wrestling_event', or 'none'.",
+      'DEVELOPMENT_BLOCK_TARGET_INVALID',
+    );
+  }
+  if (typeof candidate.id !== 'string' || !candidate.id.trim()) {
+    throw new ValidationError(
+      'A development block target needs the id of the competition or event it names.',
+      'DEVELOPMENT_BLOCK_TARGET_INVALID',
+    );
+  }
+  return { kind: candidate.kind, id: candidate.id };
 }
 
 /**
@@ -84,10 +140,38 @@ async function blocksInScope(
   return all.filter((block) => reachable.has(block.athlete_id));
 }
 
+/**
+ * Each block with its target resolved, or `target: null` when it names none.
+ *
+ * Resolved here rather than by the client so no surface has to know which of
+ * two skeletal competition tables a block happens to point at, and so the
+ * "sanctioning body where stored" rule -- null for a wrestling event, whose
+ * table has no such column -- has one answer instead of one per reader.
+ */
+async function withTargets<T extends { target_competition_id: string | null; target_wrestling_event_id: string | null }>(
+  organizationId: string,
+  blocks: readonly T[],
+): Promise<Array<T & { target: ResolvedDevelopmentBlockTarget | null }>> {
+  return Promise.all(blocks.map(async (block) => ({
+    ...block,
+    target: await resolveDevelopmentBlockTarget(organizationId, block),
+  })));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...AUTHOR_ROLES]);
+
+    /* The picker. Competitions and league events are organization fixtures
+       carrying no athlete data, so this branch is organization-scoped and
+       deliberately not athlete-gated -- which BLOCK a target may be attached
+       to is the athlete question, and PATCH answers it against that block's
+       own athlete. */
+    if (request.nextUrl.searchParams.get('targets') === 'options') {
+      const options = await listDevelopmentBlockTargetOptions(principal.organizationId);
+      return NextResponse.json({ ok: true, options }, { headers: { 'Cache-Control': 'no-store' } });
+    }
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id')?.trim();
 
@@ -95,15 +179,17 @@ export async function GET(request: NextRequest) {
       // The gate, before the read. A caller who may not reach this athlete
       // learns nothing about whether they have blocks -- or exist.
       await assertActorCanAccessAthlete(principal, athleteId);
-      const blocks = await listDevelopmentBlocksForAthlete(principal.organizationId, athleteId);
+      const rows = await listDevelopmentBlocksForAthlete(principal.organizationId, athleteId);
+      const blocks = await withTargets(principal.organizationId, rows);
       return NextResponse.json({ ok: true, blocks }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const blocks = await blocksInScope(
+    const rows = await blocksInScope(
       principal.organizationId,
       principal.role,
       principal.accountId,
     );
+    const blocks = await withTargets(principal.organizationId, rows);
     return NextResponse.json({ ok: true, blocks }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return jsonError(error);
@@ -198,12 +284,38 @@ export async function PATCH(request: NextRequest) {
       ...(status ? { status: status as DevelopmentBlockStatus } : {}),
     };
 
-    const block = await updateDevelopmentBlock(principal.organizationId, blockId, patch);
+    let block = await updateDevelopmentBlock(principal.organizationId, blockId, patch);
     if (!block) {
       return NextResponse.json({ error: 'Development block not found.' }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, block });
+    /* The competition/event target, set or cleared only when the caller
+       actually said something about it. An absent `target` key leaves the
+       block's target exactly as it was -- the same omitted-means-unchanged
+       rule the field patch above follows, and the reason target is its own
+       key rather than two nullable columns in the patch: `null` has to be
+       able to mean "clear this", which it cannot when null is also how a
+       field says "I did not mention it". */
+    if (Object.prototype.hasOwnProperty.call(body, 'target')) {
+      const target = parseTargetInput(body.target);
+      const retargeted = await setDevelopmentBlockTarget(
+        principal.organizationId,
+        blockId,
+        target,
+      );
+      if (!retargeted) {
+        return NextResponse.json({ error: 'Development block not found.' }, { status: 404 });
+      }
+      block = retargeted;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      block: {
+        ...block,
+        target: await resolveDevelopmentBlockTarget(principal.organizationId, block),
+      },
+    });
   } catch (error) {
     return jsonError(error);
   }
