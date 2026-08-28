@@ -8,6 +8,28 @@ import { validateCoachReviewPayload } from '@/src/server/pilot/validation';
 
 export const runtime = 'nodejs';
 
+/**
+ * Create or update a coach review. One route, deliberately.
+ *
+ * A second route, coach-reviews/update, carried its own copy of the sequence
+ * below -- role gate, stored-row resolution, athlete access on BOTH the stored
+ * session and the payload session, coach_id ownership, compare-and-set upsert.
+ * It was removed on 2026-08-28 with no caller anywhere in the repository, and
+ * for an existing review it produced the same outcome, the same audit row and
+ * the same refusals as this handler.
+ *
+ * TWO COPIES OF THIS IS THE HAZARD, not the duplication itself. The sequence
+ * here has been repaired twice -- once for the overwrite hole described below,
+ * once for an audit verb that recorded every edit as a creation -- and each
+ * time a reviewer had to remember there was a second file. That is the shape
+ * of defect this repository keeps finding by hand.
+ *
+ * WHAT WENT AWAY WITH IT, stated rather than quietly dropped: that route
+ * REFUSED to create. A review_id it could not find was an error, not a new
+ * record. This handler creates instead. No caller wanted the guarantee, but a
+ * future one that does must ask for it -- an `expect_existing` flag or its own
+ * route -- rather than assuming this path already refuses.
+ */
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
