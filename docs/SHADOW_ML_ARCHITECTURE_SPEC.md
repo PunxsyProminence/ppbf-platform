@@ -1473,7 +1473,35 @@ SHADOW_ENABLE_MULTIMODAL=false       # Phase 4
 
 ### 9.3 CI/CD Pipeline
 
-**GitHub Actions workflow** (`.github/workflows/deploy-shadow.yml`):
+> **CORRECTION 2026-08-28 — THE WORKFLOW BELOW DOES NOT EXIST, AND ITS SHAPE IS
+> THE OPPOSITE OF HOW THIS PLATFORM DEPLOYS.** There is no
+> `.github/workflows/deploy-shadow.yml`; the repository has 19 workflows and
+> none is named that. More importantly the YAML below is `on: push: branches:
+> [main]` — a merge-triggered auto-deploy. Nothing in this platform deploys on
+> push. Both real deploy workflows are `workflow_dispatch:` only,
+> `deploy-production.yml`'s guard job refuses any ref that is not
+> `refs/heads/main` AND requires `confirm_sha` to equal the checked-out commit,
+> and production additionally sits behind a GitHub environment approval that a
+> human must click. `docs/shadow-ui/PRODUCTION-FAST-TRACK.md` says it in one
+> line: **"Merging to `main` deploys nothing."**
+>
+> A push-triggered auto-deploy is the single most dangerous shape a stale
+> release document can take, and this one is rendered as literal, copyable YAML.
+> It is kept rather than deleted so that anyone who acted on it can recognise
+> what they read — but do not build from it. The real path is
+> `docs/AI_DELIVERY_PIPELINE.md` and the two dispatch workflows.
+>
+> Same section, §9.2: `SHADOW_ENABLE_PERSONALIZATION` and
+> `SHADOW_ENABLE_MULTIMODAL` appear zero times in `apps/web`. The real
+> vocabulary is `PPBF_SHADOW_*`, e.g. `PPBF_SHADOW_WORKER_ENABLED`,
+> `PPBF_SHADOW_RATE_LIMIT_CHAT`.
+>
+> This document's header says "where this document and the code disagree, the
+> code is authoritative", and lists §1, §2.1, §4.2, §5 and §7 as verified. §9
+> was never in that list. Treat the rest of §9 with the same suspicion.
+
+**GitHub Actions workflow** (`.github/workflows/deploy-shadow.yml`) — SEE THE
+CORRECTION ABOVE; THIS FILE DOES NOT EXIST:
 
 ```yaml
 name: Deploy SHADOW

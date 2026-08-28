@@ -371,3 +371,86 @@ export async function setDevelopmentBlockStatus(
     [actor.organizationId, blockId, status],
   );
 }
+
+/**
+ * Corrects the plan a coach wrote: title, emphasis, window, status.
+ *
+ * WHAT THIS CANNOT MOVE, and why each one is left out rather than guarded:
+ *
+ *   organization_id  a block does not change gyms. The pair (organization,
+ *                    block) is the key, so accepting one here would turn a
+ *                    correction into a cross-tenant write.
+ *   athlete_id       a block is a plan FOR somebody. Re-pointing it at a
+ *                    different athlete silently reassigns a coach's authored
+ *                    intent to a child it was never about, and every
+ *                    authorization decision already made about the old row
+ *                    would have been made about the wrong person. Cancel one
+ *                    and write another.
+ *   created_by       who authored this is a fact about the past. The order
+ *                    this slice serves asks for creator attribution to be
+ *                    preserved; the way to preserve it is to have no path
+ *                    that writes it twice.
+ *
+ * Every field is optional and an omitted one is left alone, so a caller
+ * correcting an end date cannot blank an emphasis by not mentioning it --
+ * the failure a whole-row PUT has by construction.
+ *
+ * The window is validated as a WHOLE, against the merged row rather than the
+ * patch: moving only starts_on past an untouched ends_on is exactly the edit
+ * that produces a block ending before it begins, and a patch-only check
+ * cannot see it.
+ *
+ * Returns null for a block in another organization -- or one that does not
+ * exist -- so this cannot be used to probe for either.
+ */
+export interface DevelopmentBlockPatch {
+  title?: string;
+  trainingEmphasis?: string;
+  startsOn?: string;
+  endsOn?: string;
+  status?: DevelopmentBlockStatus;
+}
+
+export async function updateDevelopmentBlock(
+  organizationId: string,
+  blockId: string,
+  patch: DevelopmentBlockPatch,
+): Promise<AthleteDevelopmentBlockRow | null> {
+  const existing = await getDevelopmentBlock(organizationId, blockId);
+  if (!existing) return null;
+
+  const merged: DevelopmentBlockInput = {
+    title: patch.title ?? existing.title,
+    trainingEmphasis: patch.trainingEmphasis ?? existing.training_emphasis,
+    startsOn: patch.startsOn ?? existing.starts_on,
+    endsOn: patch.endsOn ?? existing.ends_on,
+    status: patch.status ?? existing.status,
+  };
+
+  // The same rules the create path runs, applied to what the row will BE.
+  const shapeError = developmentBlockShapeError(merged);
+  if (shapeError) {
+    throw new ValidationError(shapeError, 'DEVELOPMENT_BLOCK_INVALID');
+  }
+
+  return queryOne<AthleteDevelopmentBlockRow>(
+    `update pilot.athlete_development_blocks
+     set title = $3,
+         training_emphasis = $4,
+         starts_on = $5::date,
+         ends_on = $6::date,
+         status = $7,
+         updated_at = now()
+     where organization_id = $1 and block_id = $2
+     returning ${FIELDS}`,
+    [
+      organizationId,
+      blockId,
+      merged.title.trim(),
+      merged.trainingEmphasis.trim(),
+      merged.startsOn,
+      merged.endsOn,
+      merged.status ?? existing.status,
+    ],
+  );
+}

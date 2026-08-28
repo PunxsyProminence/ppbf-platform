@@ -69,6 +69,7 @@ import {
   listDevelopmentBlocks,
   listDevelopmentBlocksForAthlete,
   setDevelopmentBlockStatus,
+  updateDevelopmentBlock,
 } from './athleteDevelopmentBlocks';
 import type { PilotRole } from './contracts';
 import { ForbiddenError, ValidationError } from './errors';
@@ -1250,6 +1251,200 @@ describe('athlete development blocks runner readiness assertion', () => {
       // The `all` chain re-runs every migration on every dispatch (#489), so
       // the second pass has to survive its own first pass.
       await applyMigrationTransaction(client, migrationSql);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+
+/*
+ * CORRECTING A BLOCK.
+ *
+ * updateDevelopmentBlock arrived with the coach API (the foundation shipped
+ * with status changes only), and it is the one write here that reads the row
+ * before writing it. Three properties need real rows to prove:
+ *
+ *   - the window is validated against the MERGED row, so moving only one end
+ *     past the other is refused. A patch-only check cannot see that, and it is
+ *     the edit most likely to be attempted.
+ *   - a patch omitting a field leaves it alone rather than blanking it -- the
+ *     failure a whole-row write has by construction, and the database's own
+ *     NOT NULL / CHECK constraints are what a blanking bug would collide with.
+ *   - the organization is part of the key, so a block in another gym is not
+ *     found and cannot be probed for.
+ */
+describe('the module correcting a block (real database)', () => {
+  async function seed(client: Client) {
+    const created = await createDevelopmentBlock({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      title: 'Fall strength block',
+      trainingEmphasis: EMPHASIS,
+      startsOn: '2026-09-02',
+      endsOn: '2026-10-14',
+      createdByAccountId: COACH_ID,
+    });
+    if (!created) throw new Error('test bug: seed block was not created');
+    void client;
+    return created;
+  }
+
+  test('a partial patch changes only what it names', async () => {
+    const client = await migratedDatabase('adb_upd_partial');
+    try {
+      const created = await seed(client);
+
+      const updated = await updateDevelopmentBlock(ORG_ID, created.block_id, {
+        endsOn: '2026-11-04',
+      });
+
+      expect(updated).toMatchObject({
+        block_id: created.block_id,
+        title: 'Fall strength block',
+        training_emphasis: EMPHASIS,
+        starts_on: '2026-09-02',
+        ends_on: '2026-11-04',
+        status: 'draft',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the window is validated against the merged row, not the patch', async () => {
+    // Moving ONLY the start past an untouched end. Nothing in the patch is
+    // wrong on its own; the row it would produce is.
+    const client = await migratedDatabase('adb_upd_window');
+    try {
+      const created = await seed(client);
+
+      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { startsOn: '2026-12-01' }))
+        .rejects.toBeInstanceOf(ValidationError);
+
+      // And the stored row is untouched.
+      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      expect(after).toMatchObject({ starts_on: '2026-09-02', ends_on: '2026-10-14' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an emphasis cannot be blanked, by patch or by whitespace', async () => {
+    const client = await migratedDatabase('adb_upd_blank');
+    try {
+      const created = await seed(client);
+
+      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { trainingEmphasis: '   ' }))
+        .rejects.toBeInstanceOf(ValidationError);
+      await expect(updateDevelopmentBlock(ORG_ID, created.block_id, { title: '\t\n' }))
+        .rejects.toBeInstanceOf(ValidationError);
+
+      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      expect(after?.training_emphasis).toBe(EMPHASIS);
+      expect(after?.title).toBe('Fall strength block');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the creator and the athlete survive every correction', async () => {
+    // Attribution is a fact about the past, and a block does not change which
+    // child it is about. Neither is reachable through this function's input
+    // type; this proves the row agrees.
+    const client = await migratedDatabase('adb_upd_attribution');
+    try {
+      const created = await seed(client);
+
+      await updateDevelopmentBlock(ORG_ID, created.block_id, {
+        title: 'Renamed',
+        trainingEmphasis: 'Different emphasis entirely.',
+        startsOn: '2026-09-10',
+        endsOn: '2026-11-20',
+        status: 'active',
+      });
+
+      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      expect(after).toMatchObject({
+        created_by_account_id: COACH_ID,
+        athlete_id: ATHLETE_ID,
+        organization_id: ORG_ID,
+        title: 'Renamed',
+        status: 'active',
+      });
+      // created_at comes back as a driver Date (FIELDS casts only the two
+      // calendar dates to text), so this compares the instant rather than the
+      // object -- toBe would be an identity check that can never hold.
+      expect(String(after?.created_at)).toBe(String(created.created_at));
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a block in another organization is not found, and is not written', async () => {
+    const client = await migratedDatabase('adb_upd_tenancy');
+    try {
+      const created = await seed(client);
+
+      expect(await updateDevelopmentBlock(OTHER_ORG_ID, created.block_id, { title: 'Reached across' }))
+        .toBeNull();
+
+      const after = await getDevelopmentBlock(ORG_ID, created.block_id);
+      expect(after?.title).toBe('Fall strength block');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a block id that does not exist is not found either -- the two are indistinguishable', async () => {
+    const client = await migratedDatabase('adb_upd_missing');
+    try {
+      expect(await updateDevelopmentBlock(ORG_ID, 'blk-never-existed', { title: 'T' })).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an empty patch is a no-op that still returns the row', async () => {
+    const client = await migratedDatabase('adb_upd_empty');
+    try {
+      const created = await seed(client);
+
+      const updated = await updateDevelopmentBlock(ORG_ID, created.block_id, {});
+
+      expect(updated).toMatchObject({
+        title: 'Fall strength block',
+        training_emphasis: EMPHASIS,
+        starts_on: '2026-09-02',
+        ends_on: '2026-10-14',
+        status: 'draft',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('nothing advances a status on its own, however long ago the window closed', async () => {
+    // "The window has elapsed" and "the plan was carried out" are different
+    // claims, and only a coach makes the second one.
+    const client = await migratedDatabase('adb_upd_no_auto');
+    try {
+      const created = await createDevelopmentBlock({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        title: 'Long finished',
+        trainingEmphasis: EMPHASIS,
+        startsOn: '2020-01-01',
+        endsOn: '2020-02-01',
+        status: 'active',
+        createdByAccountId: COACH_ID,
+      });
+
+      const reread = await getDevelopmentBlock(ORG_ID, created!.block_id);
+      expect(reread?.status).toBe('active');
+
+      const touched = await updateDevelopmentBlock(ORG_ID, created!.block_id, { title: 'Long finished, renamed' });
+      expect(touched?.status).toBe('active');
     } finally {
       await client.end();
     }

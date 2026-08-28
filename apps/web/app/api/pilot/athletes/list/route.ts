@@ -21,13 +21,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ items: athlete ? [athlete] : [] });
     }
 
+    // `a.deleted_at is null` is the same filter guardianAccess.ts carries on
+    // its own join, and it has to be restated here because this branch is on
+    // that module's allowlist and keeps its join inline. guardian_links has no
+    // deleted_at of its own, so a link to a withdrawn athlete stays true
+    // forever and only the join onto pilot.athletes can close it.
+    //
+    // Without it this route was the one guardian path that still listed a
+    // withdrawn child: isGuardianLinkedToAthlete, guardianAthleteIds and
+    // assertActorCanAccessAthlete all refuse them, so the child appeared in
+    // the picker and then had no data behind them anywhere. It is the list
+    // every parent surface builds its child selector from, which is why it
+    // was the one worth missing.
     if (principal.role === 'parent') {
       const linkedAthletes = await query(
         `select a.*
          from pilot.athletes a
          join pilot.guardian_links gl on gl.organization_id = a.organization_id and gl.athlete_id = a.athlete_id
          join pilot.parents p on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
-         where a.organization_id = $1 and p.account_id = $2
+         where a.organization_id = $1 and p.account_id = $2 and a.deleted_at is null
          order by a.created_at desc`,
         [principal.organizationId, principal.accountId],
       );

@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { athleteIdsForCoach, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
-import { getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
+import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { coachAuthorizedRoster } from '@/src/server/pilot/coachAthleteRoster';
+import { getAthletesByOrganization } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getGapSuggestions } from '@/src/server/pilot/progressionSuggestions';
 
@@ -17,13 +18,11 @@ export const runtime = 'nodejs';
 // Nothing here writes; confirmation happens through the ordinary POST
 // /api/pilot/progression/gaps by the coach's own hand.
 
-// The whole-org roster read supplies display names; the access contract
-// decides which athletes are computed over at all.
-async function coachScopedRoster(organizationId: string, coachAccountId: string) {
-  const accessible = new Set(await athleteIdsForCoach(organizationId, coachAccountId));
-  const roster = await getAthletesForCoach(organizationId, coachAccountId);
-  return roster.filter((athlete) => accessible.has(athlete.athlete_id));
-}
+// The pairing this route used to hold inline -- the access contract decides
+// membership, the whole-org roster read supplies display names -- now lives in
+// coachAuthorizedRoster so that the sparring log's athlete picker and this
+// route cannot drift into two different answers to "which athletes is this
+// coach allowed to reach".
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     const roster =
       principal.role === 'coach'
-        ? await coachScopedRoster(principal.organizationId, principal.accountId)
+        ? await coachAuthorizedRoster(principal.organizationId, principal.accountId)
         : isOrganizationAdminRole(principal.role) || principal.role === 'admin'
           ? await getAthletesByOrganization(principal.organizationId)
           : [];

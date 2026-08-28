@@ -122,10 +122,17 @@ Nothing about per-PR review or per-PR CI can catch that. The project rule that
 lets any session merge its own green PR is not wrong, but it has no *ordering*,
 and read literally by several sessions at once it is exactly how this happened.
 
-So: **one agent owns the merge queue, and nobody else merges.** That agent
+So: **one release-control lane owns `main`, and nobody else merges.** That lane
 rebases onto current `main`, waits for CI on the *rebased* head, merges, then
-takes the next one. If you are not that agent, get your PR green and leave it —
+takes the next one. If you are not that lane, get your PR green and leave it —
 say it is ready and stop.
+
+Note what changed here, because the earlier wording is still quoted in places:
+merge authority is a property of the NAMED release-control lane, not of whoever
+happens to be acting as integrator this hour. `AGENT_KERNEL.md`'s Lane model is
+authoritative — "One release-control lane owns `main`, migrations, staging and
+production. It is the only lane that merges or deploys." That lane also owns
+deploys and migrations, which the merge-queue framing never mentioned.
 
 Two habits that follow from the same incident, for everyone:
 
@@ -232,10 +239,14 @@ project.
 is read-only and collision-free: you can read any lane, and findings go into
 `docs/capabilities/NETWORK_STATUS.md` — record the **shape** of what you found,
 not just that you fixed it, because the worst problems here were only catchable
-because someone wrote down the shape. *Integration* is the merge queue, and you
-are the only one who merges: rebase onto current `main`, wait for CI on the
-rebased head, merge, take the next. Never merge two PRs in parallel, even when
-both are green — that is the exact failure described above. If you find
+because someone wrote down the shape.
+
+AUDITING DOES NOT CARRY MERGE RIGHTS, and this file used to fuse the two. An
+audit lane is read-only on this repository: no branches, commits, pushes,
+merges, deploys or migrations. Integration — rebase onto current `main`, wait
+for CI on the rebased head, merge, take the next, never two in parallel even
+when both are green — belongs to the release-control lane, which is a separate
+lane. See `AGENT_KERNEL.md`'s Lane model. If you find
 something broken outside the lane you are reading, write it up and route it; do
 not fix it in passing.
 

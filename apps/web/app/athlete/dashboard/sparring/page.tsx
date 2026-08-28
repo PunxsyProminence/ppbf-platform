@@ -134,8 +134,45 @@ async function submitDeepTrackObservations(input: {
   };
 }
 
+/**
+ * Who is filling this in. The page behaves differently for the two, and the
+ * difference is not cosmetic: an athlete IS the subject of the record, a coach
+ * has to say which athlete the record is about.
+ *
+ * 'unknown' is the state before the session read answers, and the state it
+ * lands in if that read fails -- never a default of 'athlete', which would put
+ * an athlete's voice on a coach's screen and leave a coach with no picker.
+ */
+type LogActor = 'unknown' | 'athlete' | 'staff';
+
+/** An option on the staff athlete picker, as GET /api/pilot/coach/athletes returns it. */
+interface AuthorizedAthlete {
+  athlete_id: string;
+  full_name: string;
+}
+
 export default function SparringTelemetryPage() {
+  /* The athlete this log is ABOUT.
+     For an athlete it is themselves and cannot be anything else. For staff it
+     is whatever they pick, and it starts empty -- there is no sensible default
+     subject for a coach, and defaulting to the first name on a list is how a
+     session gets filed against the wrong child. */
   const [athleteId, setAthleteId] = useState<string | null>(null);
+  const [actor, setActor] = useState<LogActor>('unknown');
+  /* The picker's options, from the CENTRAL access contract by way of
+     /api/pilot/coach/athletes -- coach of record UNION active coverage, the
+     same union the observations route's assertActorCanAccessAthlete applies.
+     Deliberately NOT /api/pilot/athletes/list: for a coach that route returns
+     every athlete in the gym (a display projection with field redaction), so a
+     picker built on it would offer children this coach cannot log for and the
+     refusal would arrive only after the session had been typed in.
+
+     'loaded' and 'unavailable' are distinct because an empty picker must never
+     be the rendering of a failed read: "you are assigned no athletes" and "we
+     could not find out who you are assigned" are different things to tell a
+     coach standing on the floor. */
+  const [authorizedAthletes, setAuthorizedAthletes] = useState<AuthorizedAthlete[]>([]);
+  const [rosterState, setRosterState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
   const [totalRoundsCompleted, setTotalRoundsCompleted] = useState(6);
   const [opponentStance, setOpponentStance] = useState<OpponentStance>('Orthodox');
   const [contactLevel, setContactLevel] = useState(1);
@@ -154,12 +191,52 @@ export default function SparringTelemetryPage() {
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
-        const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
-        if (response.ok && payload.authenticated && payload.athlete_id) {
-          setAthleteId(payload.athlete_id);
+        const payload = (await response.json()) as {
+          authenticated?: boolean;
+          role?: string;
+          athlete_id?: string | null;
+        };
+        if (!response.ok || !payload.authenticated) {
+          return;
+        }
+
+        /* An athlete is only ever allowed to be themselves, so their subject
+           comes off the session and no picker is drawn. Anyone else who may
+           be on this page -- the role gate and the observations route agree on
+           coach, organization_admin and admin -- picks. */
+        if (payload.role === 'athlete') {
+          if (payload.athlete_id) {
+            setAthleteId(payload.athlete_id);
+            setActor('athlete');
+          }
+          return;
+        }
+
+        setActor('staff');
+        setRosterState('loading');
+        try {
+          const rosterResponse = await fetch(`${apiBase()}/api/pilot/coach/athletes`, {
+            method: 'GET',
+            credentials: 'include',
+          });
+          if (!rosterResponse.ok) {
+            throw new Error('roster');
+          }
+          const rosterPayload = (await rosterResponse.json()) as { items?: AuthorizedAthlete[] };
+          setAuthorizedAthletes(
+            (rosterPayload.items ?? []).filter(
+              (item) => typeof item?.athlete_id === 'string' && item.athlete_id.trim().length > 0,
+            ),
+          );
+          setRosterState('loaded');
+        } catch {
+          // An empty picker here would read as "you have no athletes", which
+          // this read did not establish.
+          setAuthorizedAthletes([]);
+          setRosterState('unavailable');
         }
       } catch {
-        // Session lookup failure just disables submission below.
+        // actor stays 'unknown' and submission stays disabled below.
       }
     })();
   }, []);
@@ -168,7 +245,13 @@ export default function SparringTelemetryPage() {
     event.preventDefault();
 
     if (!athleteId) {
-      setStatusMessage('You are not signed in any more. Sign in again and this will save.');
+      /* Two different reasons the subject can be missing, and they need two
+         different sentences. Telling a coach who has simply not chosen anybody
+         yet that they have been signed out sends them to the login screen to
+         fix a dropdown. */
+      setStatusMessage(actor === 'staff'
+        ? 'Choose which athlete this session is for before saving it.'
+        : 'You are not signed in any more. Sign in again and this will save.');
       return;
     }
     if (punchesLanded > punchesAttempted) {
@@ -216,7 +299,9 @@ export default function SparringTelemetryPage() {
         ? 'Saved. There is no current medical clearance on file for this athlete, so '
           + 'your coach has been asked to look at it. What you wrote is kept -- do not put it in again.'
           + (safetyReviewLesson ? ` ${safetyReviewLesson}` : '')
-        : 'Saved to your training record.';
+        : actor === 'staff'
+          ? `Saved to ${subjectName ?? 'this athlete'}'s training record.`
+          : 'Saved to your training record.';
 
       setStatusMessage(ok
         ? savedMessage
@@ -227,6 +312,10 @@ export default function SparringTelemetryPage() {
   }
 
   const contactLevelLabel = ['None', 'Light', 'Moderate', 'Heavy'][contactLevel] ?? 'Unknown';
+  /* The chosen athlete's name, from the option the server returned -- never
+     from anything the client composed. Undefined until a choice is made, and
+     for an athlete logging their own session, where there is no picker. */
+  const subjectName = authorizedAthletes.find((item) => item.athlete_id === athleteId)?.full_name;
 
   return (
     /* This page had no role gate at all -- every sibling athlete route wraps in
@@ -269,10 +358,16 @@ export default function SparringTelemetryPage() {
           to do that. */}
       <header className="flex flex-wrap items-center justify-between gap-[var(--s4)] border-b-[3px] border-[color:var(--brass-500)] px-[var(--s5)] py-[var(--s4)]">
         <div>
-          <p className="t-eyebrow">Your Corner</p>
+          {/* The page's voice follows who is holding it. "Your Corner" over
+              "Your training record" is written to the boxer whose record it
+              is; a coach filling this in for a child is not that reader, and
+              copy that tells them it is their own record is the same kind of
+              small untruth this file's tests already police in the save
+              messages. */}
+          <p className="t-eyebrow">{actor === 'staff' ? 'Coach Entry' : 'Your Corner'}</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Sparring Log</h1>
         </div>
-        <span className="plaque">Your training record</span>
+        <span className="plaque">{actor === 'staff' ? 'Athlete training record' : 'Your training record'}</span>
       </header>
 
       <form onSubmit={onSubmit} className="px-[var(--s5)] py-[var(--s6)]">
@@ -281,10 +376,66 @@ export default function SparringTelemetryPage() {
             <div className="grid gap-[var(--s2)]">
               <h2 className="t-command m-0" style={{ fontSize: 'var(--t-lg)' }}>What happened today</h2>
               <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                Rounds, contact, what you threw, what landed, what you took, and how you felt after. It takes a
-                couple of minutes and it is the most complete record of your own work you can keep.
+                {actor === 'staff'
+                  ? 'Rounds, contact, what they threw, what landed, what they took, and how they came out of it.'
+                  : 'Rounds, contact, what you threw, what landed, what you took, and how you felt after. It takes a couple of minutes and it is the most complete record of your own work you can keep.'}
               </p>
             </div>
+
+            {/* WHO THIS SESSION IS ABOUT -- staff only.
+
+                This page has admitted coach and admin since it gained its role
+                gate, the observations route has accepted a coach submission for
+                an authorized athlete for just as long, and the page's own
+                comment calls a coach logging on a shared tablet "a real path".
+                It was not one. The subject came from payload.athlete_id on the
+                session read, a coach's session carries none, and the submit
+                button was therefore disabled forever with nothing on screen
+                saying why. Reproduced before it was changed.
+
+                The options come from /api/pilot/coach/athletes -- the central
+                access contract -- and the submitted id is always one of them.
+                This narrows the control; it does not authorize anything. The
+                observations route's assertActorCanAccessAthlete is still the
+                boundary and is untouched. */}
+            {actor === 'staff' && (
+              <div className="grid gap-[var(--s3)]">
+                <div className="field">
+                  <label htmlFor="subjectAthlete" className="t-label">Which athlete is this for</label>
+                  <select
+                    id="subjectAthlete"
+                    value={athleteId ?? ''}
+                    onChange={(event) => setAthleteId(event.target.value || null)}
+                    disabled={rosterState !== 'loaded' || authorizedAthletes.length === 0}
+                    className="select input--kiosk"
+                  >
+                    <option value="">
+                      {rosterState === 'loading' ? 'Loading your athletes...' : 'Choose an athlete'}
+                    </option>
+                    {authorizedAthletes.map((item) => (
+                      <option key={item.athlete_id} value={item.athlete_id}>{item.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {rosterState === 'unavailable' && (
+                  <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                    <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                      Your athletes could not be loaded, so there is nobody to choose. This is not a
+                      statement that you have none assigned -- reload and try again. Write the session down
+                      on paper in the meantime; do not guess an athlete here.
+                    </p>
+                  </div>
+                )}
+
+                {rosterState === 'loaded' && authorizedAthletes.length === 0 && (
+                  <p className="m-0 text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                    You are not the coach of record for any athlete and hold no active coverage, so there is
+                    nobody you can log a session for. An administrator assigns athletes and grants coverage.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="grid gap-[var(--s5)] sm:grid-cols-2">
               <div className="field">
@@ -457,8 +608,9 @@ export default function SparringTelemetryPage() {
             </div>
 
             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-200)]">
-              Nothing here is graded and nothing here is shared with the other kids. It stays on your
-              record, and over time it is how you can see what is actually changing instead of guessing.
+              {actor === 'staff'
+                ? 'This is filed against the athlete you chose. Contact logged without a current medical clearance, or during a training hold, raises a safety review -- the record is still kept.'
+                : 'Nothing here is graded and nothing here is shared with the other kids. It stays on your record, and over time it is how you can see what is actually changing instead of guessing.'}
             </div>
           </aside>
         </div>
