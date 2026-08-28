@@ -21,6 +21,46 @@ not replace it.
 
 ---
 
+## 2026-08-28 — athlete-dev-block-foundation lane (COLLISION: plan-vs-actual built twice)
+
+**Two open PRs build the same capability as two different tables. Do not
+build on either until the owner picks one.**
+
+- #829 (`athlete-dev-block-foundation` lane) — `pilot.athlete_development_block_executions`
+- #804 (`coach-user-build-repair` lane) — `pilot.athlete_development_block_reviews`
+
+#804 flagged it first and correctly called reconciliation a release-control
+decision. Both PRs now say so in their bodies.
+
+**The tables are not siblings — #829's is a strict subset of #804's**, column
+for column: same five-word adherence vocabulary and the same CHECK, same
+deviations/reason pair, same who-and-when. #829 adds no field #804 lacks;
+#804 adds `what_worked`, `what_did_not`, `next_adjustment`. Comparison table
+in https://github.com/PunxsyProminence/ppbf-platform/pull/829#issuecomment-5457671190.
+
+**The real fork is cardinality, not columns.** One row upserted (#829, owner
+decision D1(a) of 036a) versus many appended (#804). Correcting a verdict in
+#829 overwrites the earlier one, so a mid-block judgment stops existing.
+
+**Two things worth salvaging whichever table wins:**
+1. `intervention_executions`' adherence vocabulary ships with a paired
+   constraint — *claimed deviations must be named*. #804 copied both halves;
+   #829 first copied only the words. Fixed in #829 `eb9a95cf`. **If you copy
+   that vocabulary anywhere else, copy the constraint too.**
+2. CT-13 was hit by both, and resolved two different ways: #829 reads
+   `pilot.attendance_reconciled` (athlete-day system of record, cannot
+   double-count); #804 reads `activity_log` boxing rows with a `LEGACY_READERS`
+   entry. Whichever table survives, these two reads should not both ship.
+
+**Also, for any lane adding a migration:** a PR conflicted on
+`apply-migrations.yml` gets **zero** CI, not slow CI — `ci.yml` triggers on
+`pull_request` and GitHub builds `refs/pull/N/merge`, which does not exist for
+a conflicted PR, so no workflow is ever scheduled. #829 sat with 0 check runs
+for ~40 minutes looking like a slow migration suite. Resolve the conflict
+first; the three slug lists want both entries.
+
+---
+
 ## 2026-08-28 — training-content build lane (RETRACTION + production applied)
 
 **RETRACTING a claim in the entry below.** It said the `all` chain on staging
