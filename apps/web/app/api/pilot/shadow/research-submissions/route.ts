@@ -1,8 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import type { PilotRole } from '@/src/server/pilot/contracts';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import {
+  getShadowResearchRequirementById,
+  subjectAthleteIdOf,
+} from '@/src/server/pilot/shadowResearch';
 import {
   SHADOW_LIBRARY_CURATOR_ROLES,
   SHADOW_PROJECTION_READ_ROLES,
@@ -34,6 +39,47 @@ export const runtime = 'nodejs';
 // Nothing in this route can resolve a requirement: there is no code path
 // from here to shadow_research_requirements.status.
 
+/**
+ * MAY THIS ACTOR READ THE SUBMISSIONS ON THIS REQUIREMENT?
+ *
+ * A requirement row can NAME a child -- subject_id, or metadata.athlete_id --
+ * and the submissions hanging off it carry `submission_note` and
+ * `review_note`, which are a reviewer's free text about that child's intake
+ * case. The sibling route (research-requirements) has scoped its reads to
+ * reachable subjects since #623; this one scoped on organization_id alone.
+ *
+ * So a guardian could name any research_requirement_id -- a bigserial, and
+ * the batch parameter below accepts 200 at a time -- and read staff notes on
+ * a requirement about somebody else's child. That is the gap this closes.
+ *
+ * Same rule as the sibling: a row naming an athlete is readable only by an
+ * actor who can reach that athlete through the one central relationship gate;
+ * a row naming nobody is org-wide operational data and stays readable.
+ * Organization admins administer the whole gym, so the organization predicate
+ * the queries already carry is their reach.
+ */
+async function mayReadRequirement(
+  actor: { accountId: string; role: PilotRole; organizationId: string; athleteId: string | null },
+  requirementId: number,
+): Promise<boolean> {
+  if (isOrganizationAdminRole(actor.role)) {
+    return true;
+  }
+
+  const requirement = await getShadowResearchRequirementById(actor.organizationId, requirementId);
+  if (!requirement) {
+    return false;
+  }
+
+  const subjectAthleteId = subjectAthleteIdOf(requirement);
+  if (subjectAthleteId === null) {
+    return true;
+  }
+
+  const reachable = await accessibleAthleteIds(actor, [subjectAthleteId]);
+  return reachable.has(subjectAthleteId);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -49,7 +95,17 @@ export async function GET(request: NextRequest) {
       if (ids.length === 0 || ids.length > 200 || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
         throw new ValidationError('research_requirement_ids must be 1-200 comma-separated positive integers.');
       }
-      const statuses = await getRequirementStatusesInOrg(principal.organizationId, ids);
+      /* Scoped BEFORE the status read, so an unreachable id is simply absent
+         from the answer rather than confirmed to exist. The batch shape is
+         what made this urgent: 200 ids per request is an enumeration oracle
+         if existence leaks. */
+      const readable: number[] = [];
+      for (const id of ids) {
+        if (await mayReadRequirement(principal, id)) {
+          readable.push(id);
+        }
+      }
+      const statuses = await getRequirementStatusesInOrg(principal.organizationId, readable);
       const states = await getAnswerStates(principal.organizationId, statuses);
       return NextResponse.json({
         answer_states: Object.fromEntries([...states.entries()].map(([id, state]) => [String(id), state])),
@@ -61,6 +117,11 @@ export async function GET(request: NextRequest) {
     if (!rawId || !Number.isInteger(requirementId) || requirementId <= 0) {
       throw new ValidationError('research_requirement_id must be a positive integer.');
     }
+
+    /* One refusal for "does not exist", "another organization" and "a child
+       you may not reach". research_requirement_id is a bigserial, so telling
+       those apart is exactly what an enumerating caller wants. */
+    if (!(await mayReadRequirement(principal, requirementId))) return hiddenNotFound();
 
     const status = await getRequirementStatusInOrg(principal.organizationId, requirementId);
     if (status === null) return hiddenNotFound();
