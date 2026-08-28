@@ -219,6 +219,16 @@ describe('grading a record', () => {
     },
   );
 
+  it('accepts a GitHub Actions runner as the environment a runtime rung ran on', () => {
+    // The vocabulary was written without it and rejected this repository's own
+    // first record for a workflow run. In this repo a workflow run carries most
+    // of the runtime evidence there is, so it names an environment.
+    expect(gradeWith({
+      'EVIDENCE LEVEL': 'LOCAL_RUNTIME',
+      SUBJECT: 'commit 43b89d266345dd8e62a56f3a7fed1824468d8191, GitHub Actions ubuntu runner',
+    })).toEqual([]);
+  });
+
   it('does not demand an environment for a browser run', () => {
     // Playwright against a local dev server is a real browser instrument and
     // names no deployed environment.

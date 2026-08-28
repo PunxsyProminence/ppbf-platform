@@ -79,6 +79,12 @@ load a deployed page (`docs/CHATGPT-AUDIT-LANE.md`, and the kernel's known
 gap). Every visual claim here is unverified by construction until a person
 opens the page, and must be written that way without being asked.
 
+`LOCAL_RUNTIME` covers a real execution somewhere that is not a deployed
+environment: a container, a sandbox, or a **GitHub Actions runner**. In this
+repository that last one carries most of the runtime evidence there is -- a
+migration runner, a gate, the path classifier and a deploy all report from a
+workflow run rather than from anyone's laptop.
+
 The three runtime rungs -- `LOCAL_RUNTIME`, `STAGING` and `PRODUCTION` -- mean
 nothing without the state they ran against, so a record at those levels must
 name the environment in SUBJECT. That is the field Case A below was missing.
