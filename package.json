@@ -25,6 +25,7 @@
     "seed:data:dry": "tsx scripts/seed-data.ts --dry-run"
   },
   "devDependencies": {
+    "@types/node": "^22",
     "csv-parse": "^7.0.2",
     "tsx": "^4.23.12",
     "typescript": "^5"

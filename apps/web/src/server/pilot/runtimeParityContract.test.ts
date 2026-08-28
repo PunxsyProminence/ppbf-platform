@@ -62,7 +62,7 @@ type ParityResult = {
     id: string;
     label: string;
     contract: { major: number; source: string } | null;
-    coverage: { manifests: string[]; workflows: string[]; dockerfiles: string[] };
+    coverage: { manifests: string[]; workflows: string[]; dockerfiles: string[]; types: string[] };
   }[];
 };
 
@@ -85,6 +85,9 @@ function fixtureFiles(): string[] {
     'package.json',
     'apps/web/package.json',
     'apps/research-bridge/package.json',
+    // The lockfile decides which @types/node each workspace's compiler sees,
+    // so a fixture without it cannot exercise the resolution check at all.
+    'package-lock.json',
     ...dockerfiles,
     ...workflows,
   ];
@@ -125,6 +128,56 @@ function mutate(root: string, relativePath: string, from: string | RegExp, to: s
   expect(after).not.toBe(before);
 
   fs.writeFileSync(file, after);
+}
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type JsonObject = { [key: string]: JsonValue };
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Edit one key of a fixture JSON, addressed by its path. Every step of that
+ * path is asserted to exist first, for the same reason `mutate()` asserts the
+ * text actually changed: a mutation aimed at a key that has been renamed does
+ * nothing, and a test that mutates nothing quietly becomes a second copy of
+ * the clean-tree test.
+ */
+function editJson(
+  root: string,
+  relativePath: string,
+  keys: string[],
+  apply: (parent: JsonObject, last: string) => void,
+): void {
+  const file = path.join(root, relativePath);
+  const document = JSON.parse(fs.readFileSync(file, 'utf8')) as JsonObject;
+
+  let node: JsonObject = document;
+
+  for (const key of keys.slice(0, -1)) {
+    const next = node[key];
+    expect(isJsonObject(next)).toBe(true);
+    node = next as JsonObject;
+  }
+
+  const last = keys[keys.length - 1];
+  expect(last in node).toBe(true);
+  apply(node, last);
+
+  fs.writeFileSync(file, `${JSON.stringify(document, null, 2)}\n`);
+}
+
+function setJson(root: string, relativePath: string, keys: string[], value: JsonValue): void {
+  editJson(root, relativePath, keys, (parent, last) => {
+    parent[last] = value;
+  });
+}
+
+function deleteJson(root: string, relativePath: string, keys: string[]): void {
+  editJson(root, relativePath, keys, (parent, last) => {
+    delete parent[last];
+  });
 }
 
 function write(root: string, relativePath: string, contents: string): void {
@@ -175,6 +228,35 @@ describe('reading a Node major out of a declaration', () => {
     expect(
       evaluate<(number | null)[]>(`${JSON.stringify(references)}.map(m.nodeMajorFromImage)`),
     ).toEqual([22, 24, 22, 22, 24, 22, null, null, null, null, null]);
+  });
+});
+
+describe('reading the type surface a workspace compiles against', () => {
+  it('reads the major of a concrete installed version, and only of one', () => {
+    const versions = ['22.20.1', '24.13.3', '20.19.43', '^22', '22', '', 'next'];
+
+    expect(
+      evaluate<(number | null)[]>(`${JSON.stringify(versions)}.map(m.majorOfVersion)`),
+    ).toEqual([22, 24, 20, null, null, null, null]);
+
+    // A range is not an installed version; parseEnginesMajor owns those.
+    expect(evaluate<number | null>('m.majorOfVersion(undefined)')).toBeNull();
+  });
+
+  it("walks npm's own resolution order, own node_modules first and root last", () => {
+    // This ordering is the whole finding: a workspace that declares nothing
+    // still resolves something, from a parent directory it never chose.
+    expect(
+      evaluate<string[]>(`m.lockResolutionCandidates('apps/research-bridge')`),
+    ).toEqual([
+      'apps/research-bridge/node_modules/@types/node',
+      'apps/node_modules/@types/node',
+      'node_modules/@types/node',
+    ]);
+
+    expect(evaluate<string[]>(`m.lockResolutionCandidates('')`)).toEqual([
+      'node_modules/@types/node',
+    ]);
   });
 });
 
@@ -304,6 +386,32 @@ describe('the repository as committed', () => {
     expect(result.problems).toEqual([]);
     expect(bridge.coverage.dockerfiles).toEqual(['Dockerfile.research-bridge']);
     expect(bridge.coverage.workflows).toEqual(['research-bridge-ci.yml']);
+  });
+
+  it('every deployable compiles against the Node major it runs', () => {
+    // Read from the result rather than written here: the majors live in the
+    // repository, and a test that repeats them becomes another place they
+    // drift from.
+    for (const deployable of result.deployables) {
+      expect(deployable.coverage.types.length).toBeGreaterThan(0);
+
+      for (const line of deployable.coverage.types) {
+        const resolved = /@ (\d+)\./.exec(line);
+        expect(resolved).not.toBeNull();
+        expect(Number(resolved![1])).toBe(deployable.contract!.major);
+      }
+    }
+  });
+
+  it('the two deployables resolve their types from different places, on purpose', () => {
+    const web = result.deployables.find((deployable) => deployable.id === 'web')!;
+    const bridge = result.deployables.find((deployable) => deployable.id === 'research-bridge')!;
+
+    // Research Bridge cannot share the hoisted copy, because its major differs.
+    // If these ever collapse onto one entry, one of them is compiling against
+    // the other's runtime -- which is exactly the state this slice corrected.
+    expect(bridge.coverage.types.join()).toContain('apps/research-bridge/node_modules/');
+    expect(web.coverage.types.join()).not.toContain('apps/research-bridge/node_modules/');
   });
 
   it('runs from verify-package-integrity.mjs, which CI runs above its fast path', () => {
@@ -446,6 +554,109 @@ describe('mutations the guard must catch', () => {
     expect(
       matching(problems, /assigns Dockerfile\.migration to a deployable, but the file does not exist/),
     ).toHaveLength(1);
+  });
+});
+
+describe('mutations of the type surface the guard must catch', () => {
+  const TYPES_KEY = ['devDependencies', '@types/node'];
+  const LOCK_ROOT = 'node_modules/@types/node';
+  const LOCK_BRIDGE = 'apps/research-bridge/node_modules/@types/node';
+
+  it('a workspace declaring types for a Node major it does not run', () => {
+    const root = makeFixture();
+    setJson(root, 'apps/research-bridge/package.json', TYPES_KEY, '^20.19.33');
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /research-bridge\/package\.json declares @types\/node "\^20\.19\.33" \(Node 20 types\)/),
+    ).toHaveLength(1);
+    expect(problems.join('\n')).toMatch(/would check this workspace against a runtime it does not run/);
+  });
+
+  it('a types range that pins no single major', () => {
+    const root = makeFixture();
+    setJson(root, 'package.json', TYPES_KEY, '>=22');
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /package\.json declares @types\/node ">=22", which does not pin a single major/),
+    ).toHaveLength(1);
+  });
+
+  it('the lockfile installing a major the manifest did not ask for', () => {
+    // The range and the installed version can disagree -- a hand-edited lock,
+    // a bad merge resolution. `npm ci` installs the lock, so the lock wins.
+    const root = makeFixture();
+    setJson(root, 'package-lock.json', ['packages', LOCK_ROOT, 'version'], '20.19.43');
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /resolves @types\/node 20\.19\.43 \(Node 20 types\) from node_modules\/@types\/node/),
+    ).not.toHaveLength(0);
+  });
+
+  it('THE SHAPE THIS SLICE FIXED: declaring nothing, and inheriting a hoist', () => {
+    // Reconstructed exactly: the root workspace declares no @types/node, and
+    // the hoisted copy is another workspace's Node 20. Before this slice that
+    // was the live state of the repository, and nothing reported it.
+    const root = makeFixture();
+    deleteJson(root, 'package.json', TYPES_KEY);
+    deleteJson(root, 'apps/web/package.json', TYPES_KEY);
+    setJson(root, 'package-lock.json', ['packages', LOCK_ROOT, 'version'], '20.19.43');
+
+    const { problems } = check(root);
+
+    // The resolution finding, naming the inheritance rather than only the number.
+    expect(
+      matching(problems, /declares no @types\/node of its own, so it inherits whatever another workspace hoists/),
+    ).not.toHaveLength(0);
+
+    // ...and the deployable-level finding: nothing it owns pins a type surface.
+    expect(
+      matching(problems, /PPBF web: no manifest it owns declares @types\/node/),
+    ).toHaveLength(1);
+  });
+
+  it('a deployable whose types are pinned nowhere it owns', () => {
+    const root = makeFixture();
+    deleteJson(root, 'apps/research-bridge/package.json', TYPES_KEY);
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /Research Bridge: no manifest it owns declares @types\/node/),
+    ).toHaveLength(1);
+  });
+
+  it('a workspace that resolves no types at all', () => {
+    const root = makeFixture();
+    deleteJson(root, 'package-lock.json', ['packages', LOCK_ROOT]);
+    deleteJson(root, 'package-lock.json', ['packages', LOCK_BRIDGE]);
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /resolves no @types\/node at all in package-lock\.json/),
+    ).not.toHaveLength(0);
+  });
+
+  it('a missing lockfile is a finding, not a silent skip', () => {
+    const root = makeFixture();
+    fs.rmSync(path.join(root, 'package-lock.json'));
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /package-lock\.json is missing, so no workspace's resolved @types\/node can be read/),
+    ).toHaveLength(1);
+  });
+
+  it('the runtime and the types are independent findings, not one', () => {
+    // A guard that only ever reported them together would hide whichever
+    // half moved on its own.
+    const root = makeFixture();
+    mutate(root, '.github/workflows/ci.yml', /node-version: 22/, 'node-version: 20');
+
+    const { problems } = check(root);
+    expect(matching(problems, /ci\.yml:\d+ sets "node-version: 20"/)).toHaveLength(1);
+    expect(matching(problems, /@types\/node/)).toHaveLength(0);
   });
 });
 
