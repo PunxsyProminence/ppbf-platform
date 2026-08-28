@@ -2093,9 +2093,16 @@ export default function CoachWorkspace() {
                     <p className="t-muted">Checking for a session in progress...</p>
                   )}
 
+                  {/* --restricted, not --locked, on this and the other two
+                      "could not be read" boxes added here. The safeguarding
+                      red is reserved for the top of the safety ladder -- a
+                      person who may not participate (owner decision
+                      2026-08-19) -- and a fetch that failed is not that.
+                      src/design/safeguardingRedReservation.test.ts enforces
+                      it and names the substitution. */}
                   {liveRunState === 'unavailable' && (
-                    <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
                         Whether you have a session in progress could not be checked. A live session may be
                         running that is not shown here.
                       </p>
@@ -2141,8 +2148,8 @@ export default function CoachWorkspace() {
                     )}
 
                     {todayClassesState === 'unavailable' && (
-                      <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                        <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                      <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                        <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
                           Today&apos;s schedule could not be loaded. This is not a statement that nothing is
                           scheduled -- open the scheduler to see what is on.
                         </p>
@@ -2478,8 +2485,8 @@ export default function CoachWorkspace() {
                   )}
 
                   {credentialsState === 'unavailable' && (
-                    <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
                         Your credential record could not be read. This does not mean nothing is on file --
                         nobody could look. Open the credentials page to check.
                       </p>
