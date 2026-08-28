@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { checkIn } from '@/src/server/pilot/athleteCheckIns';
+import { WELLNESS_COLUMNS, checkIn } from '@/src/server/pilot/athleteCheckIns';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -88,6 +88,65 @@ test('wellness self-reports are optional; present values must be whole 1-5', asy
   // Skipped fields go through as absent, never defaulted.
   expect(mockCheckIn).toHaveBeenCalledWith(expect.objectContaining({ energy: 4, soreness: undefined, focus: undefined }));
   expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ entity_type: 'athlete_check_in' }));
+});
+
+test('EVERY wellness column is validated, not just the three that shipped first', async () => {
+  // Swept from WELLNESS_COLUMNS rather than listed by hand, because a list
+  // written by hand here is exactly what the route used to have: the next
+  // measure migration adds a column, the route forgets to validate it, and
+  // the only thing that refuses a hydration of 47 is the database -- which
+  // returns a Postgres error instead of the stated reason the contract
+  // promises. This case fails the moment a column is added without validation.
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+
+  for (const column of WELLNESS_COLUMNS) {
+    for (const bad of [0, 6, 2.5, 'lots']) {
+      const response = await POST(postRequest({ [column]: bad }));
+      expect({ column, bad, status: response.status }).toEqual({ column, bad, status: 400 });
+    }
+  }
+  expect(mockCheckIn).not.toHaveBeenCalled();
+});
+
+test('sleep is hours, so it takes half hours and refuses impossible days', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+
+  expect((await POST(postRequest({ sleep_hours: -1 }))).status).toBe(400);
+  expect((await POST(postRequest({ sleep_hours: 25 }))).status).toBe(400);
+  expect((await POST(postRequest({ sleep_hours: 'eight' }))).status).toBe(400);
+  expect(mockCheckIn).not.toHaveBeenCalled();
+
+  // 7.5 is the case the 1-5 wellness rule would have rejected: sleep is a
+  // quantity and must not inherit the rating validator.
+  mockCheckIn.mockResolvedValue({ row: { check_in_id: 'ci-1', checked_in_on: '2026-08-16' }, created: true });
+  expect((await POST(postRequest({ sleep_hours: 7.5 }))).status).toBe(200);
+  expect(mockCheckIn).toHaveBeenCalledWith(expect.objectContaining({ sleepHours: 7.5 }));
+});
+
+test('the extended measures reach the data layer under their own names', async () => {
+  // The API speaks snake_case and the module speaks camelCase, so every one of
+  // these crosses a rename. A field dropped in that crossing is stored as null
+  // while the athlete is told it was saved -- silent, and indistinguishable
+  // from having skipped the question.
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockCheckIn.mockResolvedValue({ row: { check_in_id: 'ci-1', checked_in_on: '2026-08-16' }, created: true });
+
+  await POST(postRequest({
+    energy: 4, soreness: 2, focus: 3, sleep_hours: 8,
+    hydration: 5, motivation: 4, mental_clarity: 3, stress: 1, nutrition_compliance: 2,
+  }));
+
+  expect(mockCheckIn).toHaveBeenCalledWith(expect.objectContaining({
+    energy: 4,
+    soreness: 2,
+    focus: 3,
+    sleepHours: 8,
+    hydration: 5,
+    motivation: 4,
+    mentalClarity: 3,
+    stress: 1,
+    nutritionCompliance: 2,
+  }));
 });
 
 test('a repeat check-in is idempotent: acknowledged, not double-counted, not re-audited', async () => {
