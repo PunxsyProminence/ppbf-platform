@@ -200,16 +200,20 @@ those four PRs against it"), but the wording is a lane's transcription.
 (commit `de99a1ab`, quoting the decision as made). That bracket is derived from
 two artifacts' timestamps, not read from any record.
 
-**What it cost.** #754 merged as `81e27e72` carrying pre-ratification
-expectations -- `it('admits board and platform_owner, ...')` and assertions
-that the routes hold no role gate at all. Both `/api/pilot/drill-library` and
-`/api/pilot/coach/cue-library` on `main` import only `requirePrincipal`, so
-`board` can read gym-wide coaching content today, contrary to this decision.
-The content carries no athlete data, so this is a ratified access decision not
-in force rather than a data exposure.
+**What it cost.** #754 merged as `81e27e72` at 2026-08-28T13:53:00Z carrying
+pre-ratification expectations -- `it('admits board and platform_owner, ...')`
+and assertions that the routes held no role gate at all. For that window both
+`/api/pilot/drill-library` and `/api/pilot/coach/cue-library` on `main`
+imported only `requirePrincipal`, so `board` could read gym-wide coaching
+content contrary to this decision. The content carries no athlete data, so it
+was a ratified access decision not in force rather than a data exposure.
 
-**Implemented in:** PR #755, which puts the policy into force and is the
-correction to `main`.
+**Status: IN FORCE.** #755 merged as `61b20e9d` at 2026-08-28T15:08:21Z and
+closed that window. Verified on `origin/main`: both routes now call
+`requireRole(principal, [...COACHING_CONTENT_READER_ROLES])` on the line
+immediately after `requirePrincipal`, before any query parsing -- read from the
+files, not inferred from the merge. The contradiction stood for roughly 75
+minutes.
 
 ---
 
