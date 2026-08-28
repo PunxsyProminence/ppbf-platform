@@ -179,21 +179,36 @@ export function parseCalibrationBootstrapArgv(
   };
 }
 
-/** Refuses a creator account that is not in the organization being written to.
+/** Refuses a creator account that is not a LIVE member of the organization
+ * being written to.
  *
- * MEMBERSHIP ONLY, AND DELIBERATELY NOT ROLE. Who may set up a calibration
- * study is an open owner question, so this takes no view on it: any account
- * in the organization is accepted, exactly as before. What it will not accept
- * is an account from ANOTHER organization, because the schema cannot refuse
- * one -- created_by_account_id references pilot.accounts(account_id) alone
- * (a single-column foreign key), so the database proves only that the account
- * exists somewhere on the platform.
+ * MEMBERSHIP AND LIVENESS, AND DELIBERATELY NOT ROLE. Who may set up a
+ * calibration study is an open owner question, so this still takes no view on
+ * it: any live account in the organization is accepted, whatever its role.
+ * What it will not accept is:
  *
- * That matters because calibration writes no audit event: created_by_account_id
- * is the only record of who chose these clips, and a study in org A stamped
- * with a coach from org B is a provenance claim no later reader can correct.
- * assertActor in scripts/import-shadow-research.mjs makes the same check for
- * the same reason.
+ *   * an account from ANOTHER organization, because the schema cannot refuse
+ *     one -- created_by_account_id references pilot.accounts(account_id)
+ *     alone (a single-column foreign key), so the database proves only that
+ *     the account exists somewhere on the platform;
+ *   * an account that is INACTIVE or SOFT-DELETED, because the same foreign
+ *     key is equally blind to those. active_flag and deleted_at are the two
+ *     ways an account stops being someone the platform lets act, and neither
+ *     is checked by anything between the operator and this INSERT.
+ *
+ * All of it matters for one reason: calibration writes no audit event, so
+ * created_by_account_id is the only record of who chose these clips. A study
+ * in org A stamped with a coach from org B, or with an account retired a year
+ * ago, is a provenance claim no later reader can correct.
+ *
+ * Both prior operator-identity mechanisms in this repository read liveness,
+ * and this follows them rather than inventing a third rule. assertActor in
+ * scripts/import-shadow-research.mjs selects active_flag and refuses
+ * SEED_ACCOUNT_INACTIVE (~:501-519). resolveApprover in
+ * scripts/pilot-approve-library-baseline.mjs filters
+ * `active_flag = true and deleted_at is null`, under the rule that "an
+ * attestation by an account that cannot sign in is not an attestation"
+ * (~:136-167). Signing a study is the same kind of act.
  */
 async function assertCreatorInOrganization(
   organizationId: string,
@@ -202,14 +217,32 @@ async function assertCreatorInOrganization(
   const account = await queryOne<{ account_id: string }>(
     `select account_id
      from pilot.accounts
-     where account_id = $1 and organization_id = $2`,
+     where account_id = $1
+       and organization_id = $2
+       and active_flag = true
+       and deleted_at is null`,
     [createdByAccountId, organizationId],
   );
 
   if (!account) {
+    // ONE MESSAGE FOR ALL FOUR REFUSALS -- no such account, an account in
+    // another organization, an inactive one, a soft-deleted one -- and that
+    // is a choice, not a side effect of adding two predicates.
+    //
     // Same shape as the source video's refusal: no existence oracle. An
     // operator learns nothing about whether an account exists in some other
-    // organization.
+    // organization. A distinct "that account is inactive" would be more
+    // useful to whoever typed the id, but it confirms the account exists in
+    // THIS organization, and this is a server module a route could later
+    // call rather than only the CLI it has today. The two precedents above
+    // do distinguish their reasons -- SEED_ACCOUNT_INACTIVE,
+    // NO_ACTIVE_PLATFORM_OWNER -- and both are scripts run by someone who
+    // already holds the connection string, so they have no oracle to give
+    // away. This does not have that.
+    //
+    // The liveness predicate therefore lives in the WHERE clause rather than
+    // in a second branch out here: there is exactly one refusal path, so a
+    // later edit cannot add a second message without deciding to.
     throw new Error('Not found: no such account in this organization');
   }
 }
