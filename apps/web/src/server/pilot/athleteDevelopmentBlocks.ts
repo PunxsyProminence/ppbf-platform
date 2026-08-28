@@ -37,14 +37,20 @@ import { ForbiddenError, ValidationError } from './errors';
 // pilot.athletes means a block cannot name an athlete in another
 // organization even if a caller asks it to.
 //
-// No API route or UI exists yet. Who may author a block IS now decided --
-// owner decision 2026-08-28, "Admin and coaches" -- and it is enforced here
-// rather than left to a future route, because the floor this module shipped
-// with was too low: an ACTIVE membership of ANY role satisfied it, and
-// pilot.organization_memberships.role admits 'athlete', 'parent' and
-// 'volunteer'. Nothing could reach it (there is no route), but a data layer
-// that would let an athlete file their own development block is not a floor
-// worth shipping.
+// Routes and screens now exist -- staff at /api/pilot/coach/development-blocks
+// and /api/pilot/coach/development-block-objectives, a family at GET
+// /api/pilot/athlete/development-blocks -- and none of them holds a database
+// handle, so this module is the only way to these rows rather than one way of
+// several. privacyTiers.test.ts is what keeps that true.
+//
+// Who may author a block IS decided -- owner decision 2026-08-28, "Admin and
+// coaches" -- and it is enforced here rather than left to the routes, because
+// the floor this module shipped with was too low: an ACTIVE membership of ANY
+// role satisfied it, and pilot.organization_memberships.role admits 'athlete',
+// 'parent' and 'volunteer'. That mattered before anything could reach it and
+// matters more now that a family route can: the family route carries no write
+// verb, but a data layer that would let an athlete file their own development
+// block is not a floor worth shipping in either world.
 
 export const DEVELOPMENT_BLOCK_STATUSES = ['draft', 'active', 'completed', 'cancelled'] as const;
 

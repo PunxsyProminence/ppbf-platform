@@ -175,4 +175,81 @@ test.describe('Athlete journey', () => {
     await expect(page.getByLabel('Which athlete is this for')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Log This Session' })).toBeEnabled();
   });
+
+  /* THE PLAN THEIR COACH WROTE, READ IN A REAL BROWSER.
+     Owner decision 2026-08-28: everything, verbatim, including the
+     nutrition_body_composition domain. The route test proves the payload and
+     the page test proves the rendering; neither can catch what a boxer at a
+     tablet actually hits -- so this drives the real app and checks the two
+     things that would matter to them: their coach's words are there, and
+     nothing on the screen grades them for it. */
+  test('reads the plan their coach wrote, whole, with nothing scoring them', async ({ page }) => {
+    await installPilotApi(page, {
+      session: { role: 'athlete', athleteId: ATHLETE_ID },
+      routes: {
+        '/api/pilot/athlete/development-blocks': (url) => {
+          // The athlete never names a subject: the route takes it from the
+          // session, and this page must not be sending one.
+          expect(url.searchParams.get('athlete_id')).toBeNull();
+          return {
+            ok: true,
+            blocks: [{
+              block_id: 'blk-1',
+              title: 'Winter technical block',
+              training_emphasis: 'Stop backing straight up when the pressure comes.',
+              starts_on: '2026-09-01',
+              ends_on: '2026-10-13',
+              status: 'active',
+              created_by_name: 'Coach J Rivera',
+              objectives: [
+                {
+                  objective_id: 'obj-1',
+                  domain: 'technical',
+                  objective: 'Jab off the back foot, not just off the front.',
+                  status: 'active',
+                },
+                {
+                  objective_id: 'obj-2',
+                  domain: 'nutrition_body_composition',
+                  objective: 'Eat a real breakfast before morning conditioning.',
+                  status: 'completed',
+                },
+              ],
+            }],
+          };
+        },
+      },
+    });
+
+    await page.goto('/athlete/development-blocks');
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Your Plan' })).toBeVisible();
+    await expect(page.getByText('Winter technical block')).toBeVisible();
+    await expect(page.getByText('Stop backing straight up when the pressure comes.')).toBeVisible();
+
+    // Both domains, under human labels rather than stored slugs. The tenth is
+    // shown like any other -- that was the decision.
+    await expect(page.getByText('Jab off the back foot, not just off the front.')).toBeVisible();
+    await expect(page.getByText('Eat a real breakfast before morning conditioning.')).toBeVisible();
+    await expect(page.getByText('Nutrition & body composition')).toBeVisible();
+    await expect(page.getByText('nutrition_body_composition')).toHaveCount(0);
+
+    /* NOTHING GRADES THEM. One objective of two is 'completed', which is
+       exactly the state a roll-up would render as "1 of 2" or "50%". Neither
+       appears, and no progress element exists to carry one. */
+    await expect(page.getByText(/\b1\s*(of|\/)\s*2\b/)).toHaveCount(0);
+    await expect(page.getByText(/\d+\s*%/)).toHaveCount(0);
+    await expect(page.locator('progress, meter, [role="progressbar"]')).toHaveCount(0);
+
+    /* WHO TO GO AND ASK. Owner decision 2026-08-28: the coach is named to the
+       family. A NAME, though -- the route sends no account id at all, and a
+       raw staff identifier on a minor's screen is what that projection
+       exists to prevent. */
+    await expect(page.getByText('Written by Coach J Rivera')).toBeVisible();
+    await expect(page.getByText(/acct-/)).toHaveCount(0);
+
+    // And no control: reading is not writing, on a page with no write verb
+    // behind it.
+    await expect(page.locator('form, select, textarea')).toHaveCount(0);
+  });
 });
