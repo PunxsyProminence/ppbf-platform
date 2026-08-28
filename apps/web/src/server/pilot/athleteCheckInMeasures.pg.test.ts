@@ -419,6 +419,48 @@ describe('the runner readiness assertion', () => {
   });
 });
 
+describe('the migration this one builds on still passes its own gate', () => {
+  test("athlete-check-ins' readiness assertion survives these five new 1-5 columns", async () => {
+    // THE REGRESSION THIS MIGRATION ACTUALLY CAUSED, pinned where it belongs.
+    //
+    // pilot-apply-athlete-check-ins-migration.mjs asked pg_constraint for every
+    // single-column 1-5 CHECK on pilot.athlete_check_ins and demanded exactly
+    // three. That is not "energy, soreness and focus are bounded" -- it also
+    // silently meant "and nothing else on this table is". Adding hydration,
+    // motivation, mental_clarity, stress and nutrition_compliance took the
+    // count to eight and threw ATHLETE_CHECK_INS_NOT_READY against a schema
+    // that was completely correct.
+    //
+    // It failed inside the `all` chain (migrationReadinessGates.pg.test.ts),
+    // which is exactly what a rebuild and a real apply-migrations dispatch
+    // run -- so this would have broken a deploy, not just a test.
+    //
+    // The gate now names its three columns. This case runs the SHIPPED query,
+    // read out of the runner, against a database carrying BOTH migrations --
+    // the state every environment will be in from now on.
+    const client = await freshDatabase('measures_predecessor_gate');
+    try {
+      await applyBoth(client);
+
+      const runnerSource = await fs.readFile(
+        path.resolve(__dirname, '../../../scripts/pilot-apply-athlete-check-ins-migration.mjs'),
+        'utf8',
+      );
+      const match = runnerSource.match(/const READINESS_QUERY = `([\s\S]*?)`;/);
+      expect(match).not.toBeNull();
+
+      const readiness = await client.query(match![1]);
+      expect(readiness.rows[0]).toEqual({
+        check_ins_ready: true,
+        one_per_day_ready: true,
+        wellness_bounds_ready: true,
+      });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('the module round-trips every measure', () => {
   test('stores and reads back all nine wellness values, with sleep_hours as a NUMBER', async () => {
     const client = await freshDatabase('measures_roundtrip');
