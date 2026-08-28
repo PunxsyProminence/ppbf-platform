@@ -4,6 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import {
+  BLOCK_STATUSES,
+  STATUS_BADGE,
+  domainLabel,
+  type DevelopmentBlockStatusValue,
+} from '@/components/developmentBlockDomains';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
 
@@ -105,13 +111,12 @@ interface LinkedSession {
  * it would be indistinguishable from one a join dropped -- and a domain
  * showing nothing is not evidence that the domain was neglected.
  */
-interface BlockObjective {
-  objective_id: string;
-  block_id: string;
-  domain: string;
-  objective: string;
-  status: string;
-}
+/* BlockObjective is declared once, below, in main's richer form: it carries
+   the authorship and timestamps this lane's copy lacked, and types `status`
+   as BlockStatus rather than a bare string. Both lanes added an interface of
+   this name and the merge kept both with no conflict marker -- only tsc
+   caught it. The narrower `status: string` copy is gone; nothing assigned to
+   it needed the looser type. */
 
 interface ObjectiveLink {
   run_id: string;
@@ -166,20 +171,13 @@ interface SelectableRun {
   run_state: string | null;
 }
 
-const STATUSES = ['draft', 'active', 'completed', 'cancelled'] as const;
-type BlockStatus = (typeof STATUSES)[number];
-
-/* The design system's four-rung ladder. A block's status is a planning state,
-   not a safety state, so none of these wears a saturated safety rung:
-   'cancelled' is filed, not restricted -- a coach abandoning a plan is not a
-   participation block, and painting it like one is exactly the Law 2 confusion
-   the readiness bands were cleaned up over. */
-const STATUS_BADGE: Record<BlockStatus, { className: string; label: string }> = {
-  draft: { className: 'badge--filed', label: 'Draft' },
-  active: { className: 'badge--cleared', label: 'Active' },
-  completed: { className: 'badge--monitor', label: 'Completed' },
-  cancelled: { className: 'badge--filed', label: 'Cancelled' },
-};
+/* The lifecycle vocabulary and its badges are shared with the athlete's and
+   guardian's read-only view of the same block: a family and their coach must
+   not see one row wearing different colours or a different word. See
+   components/developmentBlockDomains.ts for why the ladder is the planning
+   one rather than a safety one. */
+const STATUSES = BLOCK_STATUSES;
+type BlockStatus = DevelopmentBlockStatusValue;
 
 /* An EVENT's status, which is a different vocabulary from a block's and gets
    its own map rather than sharing one. A cancelled event is the case this
@@ -232,6 +230,20 @@ const EMPTY_FORM = {
   ends_on: '',
   status: 'draft' as BlockStatus,
 };
+
+/** One row of pilot.athlete_development_block_objectives, as the route returns it. */
+interface BlockObjective {
+  objective_id: string;
+  block_id: string;
+  domain: string;
+  objective: string;
+  status: BlockStatus;
+  created_by_account_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const EMPTY_OBJECTIVE_FORM = { domain: '', objective: '', status: 'draft' as BlockStatus };
 
 export default function CoachDevelopmentBlocksPage() {
   const [athletes, setAthletes] = useState<AuthorizedAthlete[]>([]);
@@ -305,6 +317,34 @@ export default function CoachDevelopmentBlocksPage() {
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [editBusy, setEditBusy] = useState(false);
 
+  /* OBJECTIVES ARE LOADED PER BLOCK, ON DEMAND.
+     A coach with a dozen blocks on screen has no use for a dozen extra reads,
+     and each one is a separate authorization decision at the route. Only the
+     opened block is fetched.
+
+     Keyed by block id rather than held as one list, because two blocks can be
+     open in sequence and an answer for the first must never render under the
+     second -- the same failure blocksAthleteRef exists to prevent one level
+     up. Here the block id IS the key, so a late answer lands in its own slot
+     and is simply not the one being rendered. */
+  const [openObjectivesId, setOpenObjectivesId] = useState<string | null>(null);
+  // objectivesByBlock is declared above, with the link state it is read
+  // beside. Identical declaration, duplicated by the same silent merge.
+  const [objectivesState, setObjectivesState] = useState<
+    Record<string, 'loading' | 'loaded' | 'unavailable'>
+  >({});
+  const [objectiveForm, setObjectiveForm] = useState(EMPTY_OBJECTIVE_FORM);
+  const [objectiveBusy, setObjectiveBusy] = useState(false);
+  const [objectiveMovingId, setObjectiveMovingId] = useState<string | null>(null);
+
+  /* The domain vocabulary, from the server. Not a local constant: the ten
+     values belong to the migration's CHECK, and a screen offering an eleventh
+     would fail the write with a database error a coach cannot act on. Three
+     states for the usual reason -- an empty picker must not be the rendering
+     of a failed read. */
+  const [domains, setDomains] = useState<string[]>([]);
+  const [domainsState, setDomainsState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
@@ -348,6 +388,27 @@ export default function CoachDevelopmentBlocksPage() {
         // not establish that, and a coach reading it would stop looking.
         setTargetOptions([]);
         setTargetOptionsState('unavailable');
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/coach/development-block-objectives?domains=options`,
+          { method: 'GET', credentials: 'include', signal: controller.signal },
+        );
+        if (!response.ok) throw new Error('domains');
+        const payload = (await response.json()) as { domains?: string[] };
+        setDomains(payload.domains ?? []);
+        setDomainsState('loaded');
+      } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') return;
+        setDomains([]);
+        setDomainsState('unavailable');
       }
     })();
     return () => controller.abort();
@@ -559,6 +620,104 @@ export default function CoachDevelopmentBlocksPage() {
       setErrorMessage('That link could not be removed. Nothing changed.');
     } finally {
       setLinkBusyBlockId(null);
+    }
+  }
+
+  const loadObjectives = useCallback(async (blockId: string) => {
+    setObjectivesState((prev) => ({ ...prev, [blockId]: 'loading' }));
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach/development-block-objectives?block_id=${encodeURIComponent(blockId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('objectives');
+      const payload = (await response.json()) as { objectives?: BlockObjective[] };
+      setObjectivesByBlock((prev) => ({ ...prev, [blockId]: payload.objectives ?? [] }));
+      setObjectivesState((prev) => ({ ...prev, [blockId]: 'loaded' }));
+    } catch {
+      /* Not an empty list. "This block has no objectives yet" and "the read
+         failed" are different facts, and a coach shown the first when the
+         second happened would write a second copy of a plan that is already
+         there. */
+      setObjectivesState((prev) => ({ ...prev, [blockId]: 'unavailable' }));
+    }
+  }, []);
+
+  function toggleObjectives(blockId: string) {
+    if (openObjectivesId === blockId) {
+      setOpenObjectivesId(null);
+      return;
+    }
+    setOpenObjectivesId(blockId);
+    setObjectiveForm(EMPTY_OBJECTIVE_FORM);
+    setMessage('');
+    setErrorMessage('');
+    // Re-read on every open rather than trusting a cached list: another coach
+    // may have added one, and this panel is where a coach decides what is
+    // still missing.
+    void loadObjectives(blockId);
+  }
+
+  async function submitObjective(event: React.FormEvent<HTMLFormElement>, blockId: string) {
+    event.preventDefault();
+    if (objectiveBusy) return;
+
+    setObjectiveBusy(true);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/development-block-objectives`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          block_id: blockId,
+          domain: objectiveForm.domain,
+          objective: objectiveForm.objective,
+          status: objectiveForm.status,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        // The server's own words again. An objective refused for a blank
+        // sentence must say so rather than "something went wrong".
+        setErrorMessage(payload.error ?? 'That objective could not be saved.');
+        return;
+      }
+      setObjectiveForm(EMPTY_OBJECTIVE_FORM);
+      setMessage('Objective saved.');
+      await loadObjectives(blockId);
+    } catch {
+      setErrorMessage('That objective could not be saved. Nothing was stored.');
+    } finally {
+      setObjectiveBusy(false);
+    }
+  }
+
+  async function moveObjective(blockId: string, objectiveId: string, status: BlockStatus) {
+    if (objectiveMovingId) return;
+
+    setObjectiveMovingId(objectiveId);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/development-block-objectives`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objective_id: objectiveId, status }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setErrorMessage(payload.error ?? 'That objective could not be moved.');
+        return;
+      }
+      setMessage('Objective updated.');
+      await loadObjectives(blockId);
+    } catch {
+      setErrorMessage('That objective could not be moved. Nothing was stored.');
+    } finally {
+      setObjectiveMovingId(null);
     }
   }
 
@@ -1549,6 +1708,151 @@ export default function CoachDevelopmentBlocksPage() {
                         Edit block
                       </button>
                     )}
+
+                    {/* WHAT THIS BLOCK IS TRYING TO MOVE.
+                        One row per Full Spectrum domain, in the coach's own
+                        words. Deliberately NOT summarised: there is no "3 of 5
+                        complete", no proportion and no grade anywhere in this
+                        panel, because whether a block went well is a coach's
+                        judgment and a count is not it. */}
+                    <div className="space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
+                      <button
+                        type="button"
+                        onClick={() => toggleObjectives(block.block_id)}
+                        aria-expanded={openObjectivesId === block.block_id}
+                        className="btn btn--ghost"
+                      >
+                        {openObjectivesId === block.block_id ? 'Hide objectives' : 'Objectives'}
+                      </button>
+
+                      {openObjectivesId === block.block_id && (
+                        <div className="space-y-[var(--s4)]">
+                          {objectivesState[block.block_id] === 'loading' && (
+                            <p className="t-muted m-0">Loading objectives...</p>
+                          )}
+
+                          {objectivesState[block.block_id] === 'unavailable' && (
+                            <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                              This block&apos;s objectives could not be loaded. This is not a statement that
+                              it has none — reload and try again before writing new ones.
+                            </p>
+                          )}
+
+                          {objectivesState[block.block_id] === 'loaded'
+                            && (objectivesByBlock[block.block_id] ?? []).length === 0 && (
+                            <p className="t-muted m-0">
+                              Nothing recorded yet. This block says what it is for; an objective says what
+                              it is trying to move, one domain at a time.
+                            </p>
+                          )}
+
+                          {objectivesState[block.block_id] === 'loaded'
+                            && (objectivesByBlock[block.block_id] ?? []).length > 0 && (
+                            <ul className="space-y-[var(--s3)] list-none p-0 m-0">
+                              {(objectivesByBlock[block.block_id] ?? []).map((item) => (
+                                <li
+                                  key={item.objective_id}
+                                  className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s3)] space-y-[var(--s2)]"
+                                >
+                                  <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                                    <span className="t-label">{domainLabel(item.domain)}</span>
+                                    <span className={`badge ${STATUS_BADGE[item.status].className}`}>
+                                      {STATUS_BADGE[item.status].label}
+                                    </span>
+                                  </div>
+                                  {/* The coach's sentence, read back exactly as
+                                      written. Nothing parses it, classifies it
+                                      or shortens it. */}
+                                  <p className="t-body m-0 whitespace-pre-wrap">{item.objective}</p>
+                                  <div className="field">
+                                    {/* "Objective status", not "Status": the
+                                        new-block form above carries a Status
+                                        field of its own, and several
+                                        objectives can be on screen at once.
+                                        A screen reader announcing four
+                                        identical "Status" labels names none
+                                        of them. */}
+                                    <label htmlFor={`obj-status-${item.objective_id}`} className="t-label">
+                                      Objective status
+                                    </label>
+                                    <select
+                                      id={`obj-status-${item.objective_id}`}
+                                      value={item.status}
+                                      onChange={(event) => void moveObjective(
+                                        block.block_id,
+                                        item.objective_id,
+                                        event.target.value as BlockStatus,
+                                      )}
+                                      disabled={objectiveMovingId !== null}
+                                      className="select"
+                                    >
+                                      {STATUSES.map((status) => (
+                                        <option key={status} value={status}>{STATUS_BADGE[status].label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {domainsState === 'unavailable' && (
+                            <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                              The development domains could not be loaded, so there is nothing to choose
+                              from. Reload before writing an objective.
+                            </p>
+                          )}
+
+                          {domainsState === 'loaded' && domains.length > 0 && (
+                            <form
+                              onSubmit={(event) => void submitObjective(event, block.block_id)}
+                              className="space-y-[var(--s3)]"
+                            >
+                              <div className="field">
+                                <label htmlFor={`obj-domain-${block.block_id}`} className="t-label">
+                                  Domain
+                                </label>
+                                <select
+                                  id={`obj-domain-${block.block_id}`}
+                                  value={objectiveForm.domain}
+                                  onChange={(event) => setObjectiveForm({
+                                    ...objectiveForm, domain: event.target.value,
+                                  })}
+                                  className="select"
+                                >
+                                  <option value="">Choose a domain</option>
+                                  {domains.map((domain) => (
+                                    <option key={domain} value={domain}>{domainLabel(domain)}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="field">
+                                <label htmlFor={`obj-text-${block.block_id}`} className="t-label">
+                                  What this is trying to move
+                                </label>
+                                <textarea
+                                  id={`obj-text-${block.block_id}`}
+                                  value={objectiveForm.objective}
+                                  onChange={(event) => setObjectiveForm({
+                                    ...objectiveForm, objective: event.target.value,
+                                  })}
+                                  rows={2}
+                                  className="textarea"
+                                  placeholder="In your own words."
+                                />
+                              </div>
+                              <button
+                                type="submit"
+                                disabled={objectiveBusy}
+                                className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {objectiveBusy ? 'Saving...' : 'Add objective'}
+                              </button>
+                            </form>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
