@@ -394,7 +394,15 @@ export default function CoachDevelopmentPage() {
           )}
 
           {state === 'loaded' && goals.map((item) => {
-            const badge = STATUS_BADGE[item.status];
+            /* Unguarded, this took the whole surface down rather than one row:
+       an unrecognised status yields undefined and the next property
+       read throws during render. The status union here is a private
+       copy of the server's vocabulary, so a fifth state added
+       server-side compiles clean and fails only at runtime. An
+       unknown state is shown as unknown -- which is also the honest
+       rendering of a value this page does not understand. */
+    const badge = STATUS_BADGE[item.status]
+      ?? { className: 'badge--filed', label: item.status || 'Unknown' };
             return (
               <article
                 key={item.goal_id}
