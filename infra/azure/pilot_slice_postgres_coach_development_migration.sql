@@ -78,10 +78,16 @@
 -- so that FK would refuse a coach whose home gym is elsewhere but who holds
 -- an active membership here. That is not a hypothetical: it is the case
 -- auth.ts's resolvePrincipal INNER JOINs the membership table to handle, and
--- the case athleteDevelopmentBlocks.hasActiveMembership was written for,
+-- the case athleteDevelopmentBlocks.hasBlockWriteMembership was written for,
 -- with a passing test ("a coach whose home organization is elsewhere may
 -- still author here, if their membership is active"). The membership table
 -- is where belonging actually lives, so it is what these rows hang off.
+--
+-- AND BELONGING IS NOT THE WHOLE QUESTION. The FK proves a membership row
+-- exists; it says nothing about the ROLE on it, and this table's role admits
+-- 'athlete', 'parent' and 'volunteer'. The module enforces the role
+-- separately, because a foreign key cannot: see COACH_DEVELOPMENT_WRITE_ROLES
+-- in coachDevelopment.ts.
 --
 -- MEMBERSHIP EXISTING IS NOT MEMBERSHIP BEING ACTIVE. The FK proves the
 -- coach belongs to this gym; it says nothing about active_flag, and it is
