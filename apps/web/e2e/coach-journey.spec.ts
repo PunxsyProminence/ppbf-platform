@@ -418,6 +418,82 @@ test.describe('Coach journey', () => {
     }
   });
 
+  /* A coach's multi-week plan for one athlete, written in a real browser.
+     -----------------------------------------------------------------
+
+     The persistence foundation shipped with no route and no UI, and its own
+     header said so: which staff roles may author a block was left as an owner
+     decision. The API answers that with the platform's existing answer
+     (assertActorCanAccessAthlete) and this is the surface over it.
+
+     What this asserts beyond the unit suites: the page reaches a coach through
+     the real role gate, the picker is the access-contract one, and the plan
+     that comes back carries no score, no percentage and no progress bar --
+     which is the part a mocked render cannot see going wrong in CSS. */
+  test('a coach writes a development block, and it comes back as words rather than numbers', async ({ page }) => {
+    const written: Array<Record<string, unknown>> = [];
+    const stored: Array<Record<string, unknown>> = [];
+
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': (_url, route) => {
+          if (route.request().method() === 'POST') {
+            const body = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>;
+            written.push(body);
+            stored.push({
+              block_id: 'blk-1',
+              athlete_id: body.athlete_id,
+              title: body.title,
+              training_emphasis: body.training_emphasis,
+              starts_on: body.starts_on,
+              ends_on: body.ends_on,
+              status: body.status,
+              created_by_account_id: 'acct-coach',
+              created_at: '2026-08-28T00:00:00.000Z',
+              updated_at: '2026-08-28T00:00:00.000Z',
+            });
+            return { ok: true, block: stored[0] };
+          }
+          return { ok: true, blocks: stored };
+        },
+      },
+    });
+
+    await page.goto('/coach/development-blocks');
+
+    await expect(page.getByRole('heading', { level: 1, name: 'The Next Several Weeks' })).toBeVisible();
+
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+    await page.getByLabel('Title').fill('Winter technical block');
+    await page.getByLabel('Training emphasis').fill('Guard recovery off the jab.');
+    await page.getByLabel('Starts on').fill('2026-09-01');
+    await page.getByLabel('Ends on').fill('2026-10-13');
+    await page.getByRole('button', { name: 'Save block' }).click();
+
+    // Filed against the athlete the coach chose, attributed by the server.
+    await expect.poll(() => written).toHaveLength(1);
+    expect(written[0]).toMatchObject({
+      athlete_id: ROSA.athlete_id,
+      title: 'Winter technical block',
+      training_emphasis: 'Guard recovery off the jab.',
+    });
+    expect(written[0]).not.toHaveProperty('organization_id');
+    expect(written[0]).not.toHaveProperty('created_by_account_id');
+
+    // And read back from the server, in the coach's own words.
+    await expect(page.getByText('Guard recovery off the jab.')).toBeVisible();
+
+    /* NO INVENTED TRAINING SCIENCE ON THE PAGE. Each of these is named in the
+       build order as something this slice must not produce. */
+    await expect(page.locator('progress')).toHaveCount(0);
+    await expect(page.locator('[role="progressbar"]')).toHaveCount(0);
+    const body = (await page.locator('body').textContent()) ?? '';
+    expect(body).not.toMatch(/\d+%/);
+    expect(body).not.toMatch(/workload|ACWR|fatigue|taper|injury risk/i);
+  });
+
   test('a guardian who opens a coach route is sent to their own hub, not to a login form', async ({ page }) => {
     /* Signed in, just not to this surface. Sending them to /login is the
        defect requirePageRole and BoardRoleGate were both written to end: the
