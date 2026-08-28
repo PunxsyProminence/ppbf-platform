@@ -89,6 +89,38 @@ and should not try to.
 
 ---
 
+## OD-2026-08-28-009 -- `active` stays a browse filter; the write path is not narrowed to match
+
+**Provenance:** PRIMARY. Owner's words: **"go with your recommendation"**,
+against a recommendation to leave the asymmetry and document it.
+
+**What was asked.** Whether `pilot.disciplines.active` should block writes, so
+the write path agrees with the read path it already has.
+
+**What is true today, measured.** `active` already governs the READ, on
+purpose: `/api/pilot/multidiscipline` defaults `activeOnly: true`
+(`route.ts:50`) under a comment stating the intent -- "a retired discipline is
+one the gym no longer runs, and it should not sit in a browse list beside live
+ones". No write path consults it. A Postgres foreign key cannot carry a
+predicate, so enforcing it would mean a trigger or a service-layer check.
+
+**The decision: leave it.** `active` is a curation and browse-list signal, not
+an authorization. A gym may prepare material for a lane before switching it on,
+and that is a feature rather than a gap -- `bjj` is the live case: registered,
+inactive, hidden from the picker, and writable since OD-2026-08-28-002.
+
+**What this decision buys, stated so nobody re-opens it by accident.**
+Enforcement would have dragged a second ruling with it that nobody has made:
+what happens to content already written under a discipline someone later
+deactivates -- hidden, read-only, or untouched. Declining to enforce declines
+that question too.
+
+**What a lane must NOT infer.** This is not a finding that `active` is
+decorative. It governs the browse list deliberately. Do not remove the
+`activeOnly` default to make the two halves agree in the other direction.
+
+---
+
 ## OD-2026-08-28-008 -- Every route under `app/api` must declare its gate
 
 **Provenance:** PRIMARY. Owner's words: **"go with recommendation"**, against a
@@ -135,12 +167,27 @@ these clips", which is true in the worst way.
 that out of scope and it stays out. Liveness takes no view on role, which is
 why it is inside the ruling.
 
-**Sequencing.** The liveness half needs no migration and is being built now.
-The audit half needs a migration widening the `event_type` CHECK, and is
-sequenced behind PR #788 because every migration PR currently contends with it
-on `apply-migrations.yml` and `apps/web/package.json`.
+**Sequencing, and a correction.** This entry originally said the audit half
+needed a migration widening the `event_type` CHECK, and was therefore sequenced
+behind PR #788. **That was wrong, and it was wrong when written.** It was
+reasoned from the fact that `event_type` is a closed vocabulary rather than
+checked against what the audit write actually needs. Established since, by
+reading:
 
-**Implemented in:** the liveness half, PR to follow. The audit half, deferred.
+- `event_type` IS closed -- declared in `apps/web/src/server/pilot/auditEventTypes.ts`
+  and again as a CHECK in `infra/azure/pilot_slice_postgres.sql:140`, held
+  together by `auditEventVocabulary.test.ts`. But **`create` is already in it.**
+- `entity_type` is `text not null` (`pilot_slice_postgres.sql:144`) with no
+  CHECK, no enum and no foreign key. The only `entity_type` CHECK in the tree
+  is on `pilot.shadow_audit_entries`, a different table.
+
+So calibration carries its meaning in `entity_type`, which is the convention
+`annotatorGate.ts` (lines 73-95) already documents and uses for
+`calibration_annotation_set` and `calibration_annotation_event`. No migration,
+no registration, no contention with #788.
+
+**Implemented in:** the liveness half, PR #822, merged as `fe5fee79`. The audit
+half, PR #844, `MIGRATIONS:  NONE`.
 
 ---
 
@@ -441,35 +488,6 @@ minutes.
 A lane that needs one of these answered must say so and stop. Do not resolve
 them by building.
 
-- **Whether `pilot.disciplines.active` should block writes.** Three of the five
-  seeded disciplines ship `active = false` (wrestling, bjj, combatives) --
-  including `bjj`, which OD-2026-08-28-002 just made writable.
-
-  The question is NOT whether `active` means anything. It already governs the
-  READ, deliberately: `/api/pilot/multidiscipline` defaults `activeOnly: true`,
-  under a comment that says "a retired discipline is one the gym no longer
-  runs, and it should not sit in a browse list beside live ones"
-  (`apps/web/app/api/pilot/multidiscipline/route.ts:50`). The question is
-  whether the WRITE path should agree with the read path it already has. Today
-  it does not: a discipline filtered out of the picker is still writable by a
-  direct API call, because the foreign key checks registration and a Postgres
-  foreign key cannot carry a predicate.
-
-  OD-2026-08-28-002 sharpened this. With the literal CHECK gone, registering a
-  discipline is now SUFFICIENT to write under it, so `active` is the only
-  remaining distinction between "this gym registered it" and "this gym runs
-  it" -- and it applies on one side only.
-
-  Scope of that check, stated so it can be re-run: every non-test reference to
-  `pilot.disciplines` in `apps/web` app code is three files --
-  `multidiscipline.ts:45` (the only SELECT), `disciplineSeeds.ts:143` (the
-  seeder's INSERT), and the read-only census script. No write path for
-  `drill_library`, `session_scripts` or `cohort_definitions` consults it.
-
-  Enforcing it means a trigger or a service-layer check, and it drags a second
-  ruling with it: what happens to content already written under a discipline
-  that is later deactivated. Leaving it is also a defensible answer -- a gym
-  may want to prepare material for a lane before switching it on.
 - **A real `general` row, should one ever appear.** None exists in production
   or in any seed or fixture today. `general` is refused by the foreign key, so
   one could only arrive by a write that predates the key.
