@@ -821,4 +821,74 @@ test.describe('Coach journey', () => {
     expect(body).toContain('self-entered');
     await expect(page.getByRole('link', { name: 'Your credentials' })).toBeVisible();
   });
+
+  /* Plan -> session, in a real browser.
+     ---------------------------------
+
+     The jsdom suite pins the wiring and the route tests pin the two different
+     authorization questions. What a browser adds is what the coach actually
+     reads next to a plan -- and the thing that must NOT be there is a count.
+     The fixture is deliberately the tempting one: two linked sessions against
+     a six-week block, which is exactly the shape somebody would render as
+     "2 of 12 delivered" or a coverage bar. */
+  test('a coach sees which sessions worked a block, and no count of them', async ({ page }) => {
+    const BLOCK = {
+      block_id: 'blk-1',
+      athlete_id: ROSA.athlete_id,
+      title: 'Late summer block',
+      training_emphasis: 'Round-three work rate.',
+      starts_on: '2026-08-01',
+      ends_on: '2026-09-30',
+      status: 'active',
+      target_competition_id: null,
+      target_wrestling_event_id: null,
+      target: null,
+      created_by_account_id: 'acct-coach-a',
+      created_at: '2026-08-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+    };
+
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': { ok: true, blocks: [BLOCK], options: [] },
+        '/api/pilot/coach/session-block-links': {
+          ok: true,
+          runs: [
+            { run_id: 'run-1', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-08', run_state: 'completed' },
+            { run_id: 'run-2', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-15', run_state: 'completed' },
+          ],
+          sessions: [
+            { run_id: 'run-1', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-08', delivered_by_account_id: 'acct-coach-a', run_state: 'completed', athletes_present: 9, blocks_completed: 4, deviation_note: '', what_worked: 'Guard held up in round three.', what_did_not: '', linked_by_account_id: 'acct-coach-a', linked_at: '2026-09-08T20:00:00.000Z' },
+            { run_id: 'run-2', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-15', delivered_by_account_id: 'acct-coach-a', run_state: 'completed', athletes_present: 11, blocks_completed: 5, deviation_note: 'Cut the last round short.', what_worked: '', what_did_not: '', linked_by_account_id: 'acct-coach-a', linked_at: '2026-09-15T20:00:00.000Z' },
+          ],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+
+    await expect(page.getByText('Sessions that worked this block')).toBeVisible();
+    // The run's own words about itself, carried through rather than summarised.
+    await expect(page.getByText('What worked: Guard held up in round three.')).toBeVisible();
+    await expect(page.getByText('Cut the last round short.')).toBeVisible();
+    // A blank field renders no heading at all, rather than a label over nothing.
+    await expect(page.getByText('What did not:')).toHaveCount(0);
+
+    const body = (await page.locator('body').innerText()).toLowerCase();
+
+    // NO COUNT AND NO COVERAGE. Plan-versus-actual is the next slice; a
+    // figure here would be a judgement about a coach's work with a child
+    // assembled out of links nobody validated.
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/coverage|adherence|compliance|on track|behind schedule/);
+    expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
+
+    // And a coach can attach another one.
+    await expect(page.getByLabel('Link a session')).toBeVisible();
+  });
 });

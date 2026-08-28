@@ -67,12 +67,49 @@ interface Stubs {
   writeError?: string;
   targetOptionsOk?: boolean;
   targetOptions?: Array<Record<string, unknown>>;
+  runOptionsOk?: boolean;
+  runOptions?: Array<Record<string, unknown>>;
+  linkedSessionsOk?: boolean;
+  linkedSessions?: Array<Record<string, unknown>>;
+  linkOk?: boolean;
+  linkError?: string;
+  linkCreated?: boolean;
   /** Delays the write response, so a second click lands while the first is in
       flight. Without this a double-submit test proves nothing. */
   holdWrite?: () => Promise<void>;
 }
 
-const writes: Array<{ method: string; body: Record<string, unknown> }> = [];
+function sessionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    run_id: 'run-1',
+    script_id: 'scr-1',
+    script_name: 'Tuesday Technical',
+    delivered_on: '2026-09-08',
+    delivered_by_account_id: 'acct-coach-a',
+    run_state: 'completed',
+    athletes_present: 9,
+    blocks_completed: 4,
+    deviation_note: '',
+    what_worked: '',
+    what_did_not: '',
+    linked_by_account_id: 'acct-coach-a',
+    linked_at: '2026-09-08T20:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function runOptionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    run_id: 'run-1',
+    script_id: 'scr-1',
+    script_name: 'Tuesday Technical',
+    delivered_on: '2026-09-08',
+    run_state: 'completed',
+    ...overrides,
+  };
+}
+
+const writes: Array<{ method: string; url: string; body: Record<string, unknown> }> = [];
 
 function installFetch(stubs: Stubs = {}): jest.Mock {
   writes.length = 0;
@@ -104,7 +141,7 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
           json: async () => ({ ok: true, blocks: stubs.blocks ?? [] }),
         } as Response;
       }
-      writes.push({ method, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
       if (stubs.holdWrite) {
         await stubs.holdWrite();
       }
@@ -114,6 +151,36 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
         json: async () => (stubs.writeOk === false
           ? { error: stubs.writeError ?? 'refused' }
           : { ok: true, block: blockRow() }),
+      } as Response;
+    }
+    if (url.includes('/api/pilot/coach/session-block-links')) {
+      const method = init?.method ?? 'GET';
+      // The picker branch, matched before the per-block read exactly as the
+      // route tells them apart.
+      if (method === 'GET' && url.includes('runs=options')) {
+        return {
+          ok: stubs.runOptionsOk ?? true,
+          status: stubs.runOptionsOk === false ? 503 : 200,
+          json: async () => ({ ok: true, runs: stubs.runOptions ?? [runOptionRow()] }),
+        } as Response;
+      }
+      if (method === 'GET') {
+        return {
+          ok: stubs.linkedSessionsOk ?? true,
+          status: stubs.linkedSessionsOk === false ? 503 : 200,
+          json: async () => ({ ok: true, sessions: stubs.linkedSessions ?? [] }),
+        } as Response;
+      }
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      if (stubs.holdWrite) {
+        await stubs.holdWrite();
+      }
+      return {
+        ok: stubs.linkOk ?? true,
+        status: stubs.linkOk === false ? 400 : 200,
+        json: async () => (stubs.linkOk === false
+          ? { error: stubs.linkError ?? 'refused' }
+          : { ok: true, created: stubs.linkCreated ?? true }),
       } as Response;
     }
     throw new Error(`Unexpected fetch: ${url}`);
@@ -671,7 +738,7 @@ describe('a block list never lands under the wrong athlete', () => {
           } as Response);
         });
       }
-      writes.push({ method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      writes.push({ method: init?.method ?? 'GET', url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
       return { ok: true, status: 200, json: async () => ({ ok: true, block: blockRow() }) } as Response;
     });
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -754,5 +821,169 @@ describe('a block list never lands under the wrong athlete', () => {
 
     await act(async () => { release['ath-2']?.(); });
     expect(screen.getByText('Plan for ath-2')).toBeTruthy();
+  });
+});
+
+/*
+ * PLAN -> SESSION: which delivered sessions a coach says worked this block.
+ *
+ * Two properties are worth a test here and the rest belongs to the route:
+ *
+ *   1. nothing is counted. The build order's NEXT slice is plan-versus-actual,
+ *      and the moment sessions are countable against a plan a "4 of 12" or a
+ *      coverage bar is one aggregate away -- a figure about a coach's work
+ *      with a child, assembled out of links nobody validated. Asserting its
+ *      absence is how it stays absent.
+ *   2. a failed read is never rendered as "no session worked this block". A
+ *      coach who believes that re-links sessions that are already linked, or
+ *      concludes the plan was never delivered against.
+ */
+describe('the sessions panel counts nothing', () => {
+  test('linked sessions show what the run recorded, and no total or coverage figure', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [
+        sessionRow({ run_id: 'run-1', what_worked: 'Guard held up in round three.' }),
+        sessionRow({ run_id: 'run-2', delivered_on: '2026-09-15', what_did_not: 'Body work faded.' }),
+      ],
+    });
+    await pickAthlete('ath-1');
+
+    // Both sessions render, with the run's own words carried through.
+    expect(screen.getByText('What worked: Guard held up in round three.')).toBeTruthy();
+    expect(screen.getByText('What did not: Body work faded.')).toBeTruthy();
+
+    const body = document.body.textContent ?? '';
+    // No count of them, and no figure derived from them.
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/coverage|adherence|compliance|on track|behind/i);
+    expect(document.querySelectorAll('progress')).toHaveLength(0);
+    expect(document.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+  });
+
+  test('a run field the coach left blank shows no heading at all', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ what_worked: '', what_did_not: '', deviation_note: '' })],
+    });
+    await pickAthlete('ath-1');
+
+    // The session is there...
+    expect(screen.getByText('Tuesday Technical')).toBeTruthy();
+    // ...and an empty heading over nothing would suggest the session had no
+    // account of itself rather than that the field was left blank.
+    const body = document.body.textContent ?? '';
+    expect(body).not.toContain('What worked:');
+    expect(body).not.toContain('What did not:');
+    expect(body).not.toContain('Deviation:');
+    expect(body).not.toContain('null');
+    expect(body).not.toContain('undefined');
+  });
+
+  test('a failed session read is not rendered as "no session worked this block"', async () => {
+    await renderPage({ blocks: [blockRow()], linkedSessionsOk: false });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/linked sessions could not be read/i)).toBeTruthy();
+    expect(screen.queryByText(/No session has been linked to this block yet/i)).toBeNull();
+  });
+
+  test('a genuinely empty list says so, and is not the same message', async () => {
+    await renderPage({ blocks: [blockRow()], linkedSessions: [] });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/No session has been linked to this block yet/i)).toBeTruthy();
+    expect(screen.queryByText(/linked sessions could not be read/i)).toBeNull();
+  });
+
+  test('a failed picker read is not rendered as "no sessions have been delivered"', async () => {
+    await renderPage({ blocks: [blockRow()], runOptionsOk: false });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/list of delivered sessions could not be read/i)).toBeTruthy();
+    expect(screen.queryByText(/No session has been delivered and finished/i)).toBeNull();
+  });
+});
+
+describe('linking a session to a block', () => {
+  test('the submitted run is looked up, not parsed out of the select value', async () => {
+    // A run id containing the separator the label uses. A build that split the
+    // option's text would send a truncated id, and this is the fixture that
+    // catches it.
+    await renderPage({
+      blocks: [blockRow()],
+      runOptions: [runOptionRow({ run_id: 'run — with — dashes' })],
+    });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Link a session'), {
+        target: { value: 'run — with — dashes' },
+      });
+    });
+
+    const link = writes.find((entry) => entry.method === 'POST' && 'run_id' in entry.body);
+    expect(link?.body).toEqual({ run_id: 'run — with — dashes', block_id: 'blk-1' });
+  });
+
+  test('the block id comes from the card, and no athlete or organization is sent', async () => {
+    await renderPage({ blocks: [blockRow({ block_id: 'blk-9' })] });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Link a session'), { target: { value: 'run-1' } });
+    });
+
+    const link = writes.find((entry) => entry.method === 'POST' && 'run_id' in entry.body);
+    expect(link?.body.block_id).toBe('blk-9');
+    // The session decides both, and the route reads neither from the body.
+    expect(link?.body).not.toHaveProperty('athlete_id');
+    expect(link?.body).not.toHaveProperty('organization_id');
+  });
+
+  test('linking something already linked says so rather than claiming a new link', async () => {
+    await renderPage({ blocks: [blockRow()], linkCreated: false });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Link a session'), { target: { value: 'run-1' } });
+    });
+
+    expect(screen.getByText('Already linked.')).toBeTruthy();
+    expect(screen.queryByText('Session linked.')).toBeNull();
+  });
+
+  test('a refused link shows the server\'s own reason', async () => {
+    await renderPage({
+      blocks: [blockRow()], linkOk: false, linkError: 'Session not found.',
+    });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Link a session'), { target: { value: 'run-1' } });
+    });
+
+    expect(screen.getByText('Session not found.')).toBeTruthy();
+  });
+
+  test('unlinking sends both ids and removes the statement, not the session', async () => {
+    await renderPage({ blocks: [blockRow()], linkedSessions: [sessionRow()] });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
+    });
+
+    /* Both ids, asserted from the URL rather than from "a DELETE happened":
+       an unlink that sent the wrong run, or dropped the block id, would pass
+       the weaker check while removing somebody else's link. */
+    const removal = writes.find((entry) => entry.method === 'DELETE');
+    expect(removal?.url).toContain('run_id=run-1');
+    expect(removal?.url).toContain('block_id=blk-1');
+
+    // The session record itself is never touched -- only the claim that it
+    // belonged to this plan.
+    expect(writes.some((entry) => entry.url.includes('/session-scripts'))).toBe(false);
   });
 });

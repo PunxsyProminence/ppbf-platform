@@ -168,6 +168,13 @@ describe('every migration is dispatchable and in the rebuild path', () => {
        base schema, and multiorg is where that table's current shape comes
        from. */
     expect(at('coach-development')).toBeGreaterThan(at('multiorg'));
+    /* session-block-link joins pilot.session_script_runs to
+       pilot.athlete_development_blocks with a composite FK into each, so both
+       have to exist first. The session-scripts dependency is the one a reader
+       is likeliest to miss: this migration's name says "block", and nothing in
+       it mentions scripts. */
+    expect(at('session-block-link')).toBeGreaterThan(at('session-scripts'));
+    expect(at('session-block-link')).toBeGreaterThan(at('athlete-development-blocks'));
     // session-scripts-discipline-fk points pilot.session_scripts at
     // pilot.disciplines. It needs BOTH: multidiscipline creates the registry it
     // references, session-scripts creates the table it constrains. Applied

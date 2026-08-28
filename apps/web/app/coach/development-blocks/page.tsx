@@ -66,6 +66,43 @@ interface AuthorizedAthlete {
   full_name: string;
 }
 
+/**
+ * A delivered session a coach says supported this block, with the run's OWN
+ * recorded account of itself.
+ *
+ * WHAT THE RUN WROTE, VERBATIM. deviation_note, what_worked and what_did_not
+ * are the coach's own words about that session, already stored on the run;
+ * this panel shows them and computes nothing from them. There is no session
+ * count, no "sessions delivered against plan", no coverage bar and no
+ * adherence figure -- plan-versus-actual is a separate slice, and the moment
+ * sessions are counted against a plan the next step is a percentage about a
+ * coach's work with a child, assembled out of links nobody validated.
+ */
+interface LinkedSession {
+  run_id: string;
+  script_id: string;
+  script_name: string;
+  delivered_on: string;
+  delivered_by_account_id: string;
+  run_state: string | null;
+  athletes_present: number | null;
+  blocks_completed: number | null;
+  deviation_note: string;
+  what_worked: string;
+  what_did_not: string;
+  linked_by_account_id: string;
+  linked_at: string;
+}
+
+/** A settled session offered by the picker. */
+interface SelectableRun {
+  run_id: string;
+  script_id: string;
+  script_name: string;
+  delivered_on: string;
+  run_state: string | null;
+}
+
 const STATUSES = ['draft', 'active', 'completed', 'cancelled'] as const;
 type BlockStatus = (typeof STATUSES)[number];
 
@@ -142,6 +179,20 @@ export default function CoachDevelopmentBlocksPage() {
   const [targetOptionsState, setTargetOptionsState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [targetBusyId, setTargetBusyId] = useState<string | null>(null);
 
+  /* The sessions each block was worked in, keyed by block id, with a state
+     per block rather than one for the panel as a whole: these are separate
+     reads and one failing must not make the others render as "no sessions".
+     A block missing from the state map has not been read yet. */
+  const [sessionsByBlock, setSessionsByBlock] = useState<Record<string, LinkedSession[]>>({});
+  const [sessionsStateByBlock, setSessionsStateByBlock] =
+    useState<Record<string, 'loading' | 'loaded' | 'unavailable'>>({});
+  /* The sessions a coach may attach. Organization fixtures carrying no
+     athlete id, so this is loaded once rather than per block or per athlete --
+     the same reasoning the competition picker records. */
+  const [runOptions, setRunOptions] = useState<SelectableRun[]>([]);
+  const [runOptionsState, setRunOptionsState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [linkBusyBlockId, setLinkBusyBlockId] = useState<string | null>(null);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [editBusy, setEditBusy] = useState(false);
@@ -194,6 +245,57 @@ export default function CoachDevelopmentBlocksPage() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/coach/session-block-links?runs=options`, {
+          method: 'GET',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('runs');
+        const payload = (await response.json()) as { runs?: SelectableRun[] };
+        setRunOptions(payload.runs ?? []);
+        setRunOptionsState('loaded');
+      } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') return;
+        // Not "no sessions have been delivered here" -- this read did not
+        // establish that, and a coach reading it would stop looking.
+        setRunOptions([]);
+        setRunOptionsState('unavailable');
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  /* The sessions one block was worked in.
+   *
+   * Read per block rather than in one sweep because the route gates each
+   * block on its own athlete: one call per block is what the authorization
+   * boundary actually is, and batching would mean inventing a bulk endpoint
+   * whose gate is a different shape. A failure marks THAT block unavailable
+   * and leaves the others alone. */
+  const loadSessionsForBlock = useCallback(async (blockId: string) => {
+    setSessionsStateByBlock((prior) => ({ ...prior, [blockId]: 'loading' }));
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach/session-block-links?block_id=${encodeURIComponent(blockId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('sessions');
+      const payload = (await response.json()) as { sessions?: LinkedSession[] };
+      setSessionsByBlock((prior) => ({ ...prior, [blockId]: payload.sessions ?? [] }));
+      setSessionsStateByBlock((prior) => ({ ...prior, [blockId]: 'loaded' }));
+    } catch {
+      // An empty list here would read as "no session has worked this plan",
+      // which is a claim about the coach's own delivery that this failed read
+      // did not establish.
+      setSessionsByBlock((prior) => ({ ...prior, [blockId]: [] }));
+      setSessionsStateByBlock((prior) => ({ ...prior, [blockId]: 'unavailable' }));
+    }
+  }, []);
+
   const loadBlocks = useCallback(async (forAthleteId: string) => {
     if (!forAthleteId) {
       setBlocks([]);
@@ -212,8 +314,15 @@ export default function CoachDevelopmentBlocksPage() {
       // stale answer is right even though it means the panel keeps waiting:
       // the request for the CURRENT athlete is still coming.
       if (blocksAthleteRef.current !== forAthleteId) return;
-      setBlocks(payload.blocks ?? []);
+      const loaded = payload.blocks ?? [];
+      setBlocks(loaded);
       setBlocksState('loaded');
+      // The sessions each of these blocks was worked in. Started after the
+      // staleness check, so a read for an athlete nobody is looking at any
+      // more does not fire a second wave of requests behind it.
+      for (const item of loaded) {
+        void loadSessionsForBlock(item.block_id);
+      }
     } catch {
       // A failure for an athlete nobody is looking at any more must not blank
       // the panel belonging to the one they are.
@@ -221,7 +330,71 @@ export default function CoachDevelopmentBlocksPage() {
       setBlocks([]);
       setBlocksState('unavailable');
     }
-  }, []);
+  }, [loadSessionsForBlock]);
+
+  /* Recording that a session supported this block, and taking it back.
+
+     A statement, not a measurement. Linking says a coach believes that class
+     moved this plan; nothing infers it from overlapping dates or from the
+     athlete having been present, and unlinking removes the claim while
+     leaving both the session and the block exactly as they were. */
+  async function linkSession(blockId: string, runId: string) {
+    // One link at a time, and the select is disabled while it is in flight:
+    // a second choice landing mid-write would attach a session the coach has
+    // already moved on from.
+    if (linkBusyBlockId || !runId) return;
+
+    setLinkBusyBlockId(blockId);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/session-block-links`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_id: runId, block_id: blockId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; created?: boolean };
+      if (!response.ok) {
+        setErrorMessage(payload.error ?? 'That session could not be linked.');
+        return;
+      }
+      // "Already linked" is not a failure and does not pretend to be a fresh
+      // one either.
+      setMessage(payload.created === false ? 'Already linked.' : 'Session linked.');
+      await loadSessionsForBlock(blockId);
+    } catch {
+      setErrorMessage('That session could not be linked. Nothing was stored.');
+    } finally {
+      setLinkBusyBlockId(null);
+    }
+  }
+
+  async function unlinkSession(blockId: string, runId: string) {
+    if (linkBusyBlockId) return;
+
+    setLinkBusyBlockId(blockId);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach/session-block-links`
+        + `?run_id=${encodeURIComponent(runId)}&block_id=${encodeURIComponent(blockId)}`,
+        { method: 'DELETE', credentials: 'include' },
+      );
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setErrorMessage(payload.error ?? 'That link could not be removed.');
+        return;
+      }
+      setMessage('Link removed.');
+      await loadSessionsForBlock(blockId);
+    } catch {
+      setErrorMessage('That link could not be removed. Nothing changed.');
+    } finally {
+      setLinkBusyBlockId(null);
+    }
+  }
 
   function selectAthlete(nextId: string) {
     // Set BEFORE the read starts, so an answer for the previous athlete that
@@ -621,6 +794,141 @@ export default function CoachDevelopmentBlocksPage() {
                                     says so: a coach retargeting away from one
                                     has to be able to see which it was. */}
                                 {option.status === 'cancelled' ? ' (cancelled)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* WHICH SESSIONS WORKED THIS BLOCK.
+
+                        The build order's "which athlete development block a
+                        session supports" and "which actual activities
+                        occurred", from the two records that already hold
+                        them: the link a coach made, and the run's own account
+                        of itself.
+
+                        NOTHING IS COUNTED. No "4 of 12 sessions", no coverage
+                        bar, no adherence figure and no "on track" judgement.
+                        Plan-versus-actual is the next slice; the moment
+                        sessions are counted against a plan, a percentage
+                        about a coach's work with a child is one aggregate
+                        away, and it would be built out of links nobody
+                        validated.
+
+                        NOTHING IS INFERRED EITHER. A session appears here
+                        because a coach said it belonged, never because its
+                        date fell inside the window or because the athlete was
+                        present. */}
+                    <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
+                      <p className="t-label m-0">Sessions that worked this block</p>
+
+                      {sessionsStateByBlock[block.block_id] === 'loading' && (
+                        <p className="t-muted m-0">Loading linked sessions...</p>
+                      )}
+
+                      {sessionsStateByBlock[block.block_id] === 'unavailable' && (
+                        <div className="rounded-[var(--r-sm)] border-2 border-[var(--restricted)] p-[var(--s2)]">
+                          <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                            The linked sessions could not be read. This is not a statement that none
+                            are linked — nobody could look.
+                          </p>
+                        </div>
+                      )}
+
+                      {sessionsStateByBlock[block.block_id] === 'loaded'
+                        && (sessionsByBlock[block.block_id] ?? []).length === 0 && (
+                        <p className="t-muted m-0">
+                          No session has been linked to this block yet.
+                        </p>
+                      )}
+
+                      {sessionsStateByBlock[block.block_id] === 'loaded'
+                        && (sessionsByBlock[block.block_id] ?? []).map((session) => (
+                        <div
+                          key={session.run_id}
+                          className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.16)] p-[var(--s2)] space-y-[var(--s2)]"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-[var(--s2)]">
+                            <p className="t-body m-0 font-semibold">{session.script_name}</p>
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              disabled={linkBusyBlockId !== null}
+                              onClick={() => void unlinkSession(block.block_id, session.run_id)}
+                            >
+                              Unlink
+                            </button>
+                          </div>
+                          <p className="t-muted m-0">
+                            {formatGymDay(session.delivered_on) ?? session.delivered_on}
+                          </p>
+                          {/* The run's own words, verbatim, and each only when
+                              the coach actually wrote one. An empty heading
+                              over nothing would suggest the session had no
+                              account of itself rather than that this field was
+                              left blank. */}
+                          {session.what_worked ? (
+                            <p className="t-body m-0 text-[color:var(--bone-300)]">
+                              What worked: {session.what_worked}
+                            </p>
+                          ) : null}
+                          {session.what_did_not ? (
+                            <p className="t-body m-0 text-[color:var(--bone-300)]">
+                              What did not: {session.what_did_not}
+                            </p>
+                          ) : null}
+                          {session.deviation_note ? (
+                            <p className="t-body m-0 text-[color:var(--bone-300)]">
+                              Deviation: {session.deviation_note}
+                            </p>
+                          ) : null}
+                          <p className="t-muted m-0">Linked by {session.linked_by_account_id}</p>
+                        </div>
+                      ))}
+
+                      {runOptionsState === 'unavailable' && (
+                        <div className="rounded-[var(--r-sm)] border-2 border-[var(--restricted)] p-[var(--s2)]">
+                          <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                            The list of delivered sessions could not be read, so there is nothing to
+                            choose from. This is not a statement that none have been delivered.
+                          </p>
+                        </div>
+                      )}
+
+                      {runOptionsState === 'loaded' && runOptions.length === 0 && (
+                        <p className="t-muted m-0">
+                          No session has been delivered and finished in this gym yet, so there is
+                          nothing to link.
+                        </p>
+                      )}
+
+                      {runOptionsState === 'loaded' && runOptions.length > 0 && (
+                        <div className="field">
+                          <label htmlFor={`link-session-${block.block_id}`} className="t-label">
+                            Link a session
+                          </label>
+                          <select
+                            id={`link-session-${block.block_id}`}
+                            value=""
+                            disabled={linkBusyBlockId !== null}
+                            onChange={(event) => {
+                              /* The submitted id is LOOKED UP, never parsed
+                                 out of the raw select value: a run id
+                                 containing the separator would otherwise be
+                                 truncated on its way to the server. */
+                              const chosen = runOptions.find((run) => run.run_id === event.target.value);
+                              if (chosen) void linkSession(block.block_id, chosen.run_id);
+                            }}
+                            className="select"
+                          >
+                            <option value="">Choose a delivered session</option>
+                            {runOptions.map((run) => (
+                              <option key={run.run_id} value={run.run_id}>
+                                {run.script_name}
+                                {' — '}
+                                {formatGymDay(run.delivered_on) ?? run.delivered_on}
                               </option>
                             ))}
                           </select>
