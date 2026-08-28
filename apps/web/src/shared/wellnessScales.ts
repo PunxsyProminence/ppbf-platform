@@ -106,6 +106,22 @@ export const WELLNESS_SCALES: readonly WellnessScale[] = [
 
 export const WELLNESS_SCALE_KEYS: readonly WellnessScaleKey[] = WELLNESS_SCALES.map((scale) => scale.key);
 
+/**
+ * The short check-in: the questions asked before "add more detail".
+ *
+ * The owner asked for "minimal bios for check in and an extended version
+ * allowed for full data collection". WHICH questions are minimal is a product
+ * judgement rather than a data one -- every scale is stored identically -- so
+ * it is one editable list rather than a shape baked into the panel. Moving a
+ * measure between the short form and the long one is this line, and nothing
+ * else.
+ *
+ * These three are the ones that answer "how am I today" on their own: what I
+ * have in the tank, what my body is saying, and whether I want to be here.
+ * Everything else is detail on top of that.
+ */
+export const MINIMAL_CHECK_IN_KEYS: readonly WellnessScaleKey[] = ['energy', 'soreness', 'motivation'];
+
 /** The anchor text for a stored value, or null when the value is absent or
  * out of range. Absent stays absent -- this never invents a middle. */
 export function wellnessAnchor(key: WellnessScaleKey, value: number | null | undefined): string | null {

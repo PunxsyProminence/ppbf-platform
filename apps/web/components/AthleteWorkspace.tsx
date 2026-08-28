@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
+import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
 import WorkAxis from './WorkAxis';
@@ -41,12 +42,9 @@ type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'sh
  * could reach carried nothing behind them, and a tab is a promise that there
  * is something behind it:
  *
- * - Bio Check-In: every field was local React state. Nothing in this app calls
+ * - Bio Check-In: every field was local React state. Nothing in this app called
  *   /api/pilot/athlete/check-in, so a "Daily Biological Check-In" screen told a
- *   child they had checked in and wrote nothing down. openingTabFor's comment
- *   below already said Today must not open there; it opened there anyway,
- *   because this list made it the first tab. The real check-in is the Session
- *   Log's button on the Dashboard, which writes pilot.sessions.
+ *   child they had checked in and wrote nothing down.
  * - Tracks: every field read "Nobody has written this down yet". Honest, and
  *   still a tab an athlete opens to find nothing.
  * - Assessments: labelled "NOT BUILT YET" over a disabled Start button.
@@ -54,12 +52,36 @@ type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'sh
  * The panels themselves are left in place further down, unreachable rather
  * than deleted -- the work stands, and each comes back by adding its entry
  * here once something stores what it collects.
+ *
+ * BIO CHECK-IN CAME BACK (2026-08-28), on exactly that condition. Something
+ * stores what it collects: /api/pilot/athlete/check-in is built, tested and
+ * live, and the panel is now AthleteCheckInPanel writing to it rather than to
+ * local state. The old sliders could not have come back as they were -- an
+ * HTML range always has a position, so they recorded four opinions the child
+ * never expressed -- so the questions are described choices that start
+ * unanswered and stay absent when skipped.
+ *
+ * IT IS LABELLED "Wellness", NOT "Check In". The Session Log's button on the
+ * Dashboard is already called Check In and opens a TRAINING SESSION -- a
+ * different record with a different meaning. Two controls sharing that name
+ * one screen apart is the confusion this workspace has been carrying since
+ * the two check-ins diverged, and naming this one after what it collects
+ * ends it. (It also stopped six tests dead on an ambiguous accessible name,
+ * which is the cheap version of the same lesson.)
+ *
+ * It is FIRST in Today by owner decision: "wellness and bios should be the
+ * first screen that opens, to encourage use". openingTabFor's comment below
+ * described the opposite and has been corrected rather than left to rot; this
+ * list is what actually decides, which is the lesson from last time.
+ *
+ * Tracks and Assessments stay unlisted. Nothing has changed for them.
  */
 const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string }[] }[] = [
   {
     id: 'today',
     label: 'Today',
     tabs: [
+      { id: 'bio-checkin', label: 'Wellness' },
       { id: 'my-dashboard', label: 'Dashboard' },
       { id: 'athlete-floor', label: 'Floor' },
     ],
@@ -596,18 +618,27 @@ export default function AthleteWorkspace() {
   const [athleteIdentityState, setAthleteIdentityState] = useState<AthleteIdentityState>('loading');
   const [backendSyncMessage, setBackendSyncMessage] = useState('');
 
-  // Bio Check-In State
-  const [sleepHours, setSleepHours] = useState(8);
-  const [motivation, setMotivation] = useState(7);
-  const [soreness, setSoreness] = useState(2);
+  // Check-In State.
+  //
+  // The five sliders that used to sit here (sleepHours, motivation, soreness,
+  // hydrationStatus, expandedCheckIn) are gone: they were local state bound to
+  // controls that persisted nothing, and their replacements live in
+  // AthleteCheckInPanel writing to /api/pilot/athlete/check-in.
+  //
+  // The RECORD is owned here rather than in the panel on purpose. The Floor tab
+  // is gated on having checked in, and that gate has to be right whether or not
+  // the athlete has ever opened the check-in tab -- a panel that fetches its own
+  // state would leave the gate guessing until it mounted.
+  const [todayCheckIn, setTodayCheckIn] = useState<AthleteCheckInRecord | null>(null);
+  const [recentCheckIns, setRecentCheckIns] = useState<AthleteCheckInRecord[]>([]);
+  const [checkInLoading, setCheckInLoading] = useState(true);
+  const [checkInLoadError, setCheckInLoadError] = useState<string | null>(null);
   /* Set by the pain report below, never by the athlete directly. It is a
      display of "a pain report was filed this session", which is why it is
      rendered as a status line and not as a tickbox: the tickbox let an athlete
      set it by hand, and that hand-set value went nowhere. */
   const [injuryFlag, setInjuryFlag] = useState(false);
-  const [hydrationStatus, setHydrationStatus] = useState(8);
   const [readinessToTrain, setReadinessToTrain] = useState(8);
-  const [expandedCheckIn, setExpandedCheckIn] = useState(false);
   const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
   const [showPainModal, setShowPainModal] = useState(false);
   const [currentPainType, setCurrentPainType] = useState<PainType>('Dull');
@@ -710,22 +741,38 @@ export default function AthleteWorkspace() {
      dashboard, because the useful surface changes once that fact is recorded.
      Every other group opens on its first surface. */
   const openingTabFor = (group: GroupID): TabID => {
-    /* Today always opens on the dashboard, checked in or not, because that is
-       where the real check-in lives: the Session Log's button calls
-       handleCheckIn, which opens the session AND generates the day's floor
-       plan. This said so before Today's first tab was the dashboard, and was
-       wrong about its own behaviour: tabs[0] was Bio Check-In, whose fields
-       are local state only -- nothing in this app calls
-       /api/pilot/athlete/check-in -- so pressing Today put an athlete in front
-       of controls that recorded nothing and told them they had checked in.
-       That surface is no longer listed (see TAB_GROUPS), so this is now a
-       description rather than an intention. */
+    /* Today opens on Check In, because that is the first thing a visit is
+       (owner decision 2026-08-28: "wellness and bios should be the first
+       screen that opens, to encourage use").
+
+       This comment used to claim Today always opened on the dashboard. It was
+       false the whole time it stood: tabs[0] was Bio Check-In, and this
+       function returns tabs[0]. The intention lived here while the behaviour
+       lived in TAB_GROUPS, and only one of them decided anything. So this is
+       deliberately a DESCRIPTION of what the list does, not a second opinion
+       about what it should do -- change the list, not this. */
     return TAB_GROUPS.find((entry) => entry.id === group)?.tabs[0]?.id ?? 'my-dashboard';
   };
   const notesDraft = checkInNotes.trim();
   const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
   const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);
   const tasksDue = floorTasks.filter(t => !t.completed).length;
+  /* The day's workout and tasks open once the athlete has checked in (owner
+     decision 2026-08-28: they have to do it to see that day's workout and
+     tasks, and it must not block any other tool or capability).
+
+     So this gates the FLOOR AND NOTHING ELSE. Dashboard, Goals, Drills,
+     Rabbit Holes, Schedule, Messages and SHADOW stay open all day, checked in
+     or not -- including the pain report, which a child must be able to reach
+     without first filling in a form.
+
+     IT FAILS OPEN, deliberately. While the record is still loading, and if it
+     could not be read at all, the gate lifts. A child who checked in this
+     morning must never be told to do it again because a fetch failed, and a
+     floor locked by an error is worse than an ungated one. This is an
+     encouragement, not a security boundary: it protects no data, and the
+     server decides what it will serve regardless of what this renders. */
+  const floorLockedPendingCheckIn = !checkInLoading && checkInLoadError === null && todayCheckIn === null;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length;
 
   useEffect(() => {
@@ -897,6 +944,49 @@ export default function AthleteWorkspace() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadAssignedWork();
   }, [loadAssignedWork]);
+
+  /**
+   * Today's check-in, and the athlete's own recent history.
+   *
+   * SELF-SCOPED WITH NO PARAMETER, unlike every other loader here: the route
+   * takes the athlete id from the session principal and there is no
+   * athlete_id to send. backendAthleteId is still awaited, because an account
+   * not yet linked to an athlete record would only earn a 400.
+   *
+   * Failure is NOT silent, and does not fall back to "not checked in". The
+   * Floor tab is gated on todayCheckIn, so a swallowed error would lock a
+   * child out of their own workout and tell them to do something they had
+   * already done. checkInLoadError opens the gate instead -- see the Floor
+   * panel.
+   */
+  const loadCheckIn = useCallback(async () => {
+    if (!backendAthleteId) return;
+    try {
+      setCheckInLoading(true);
+      setCheckInLoadError(null);
+      const response = await fetch(`${apiBase()}/api/pilot/athlete/check-in`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Your check-in did not load.');
+
+      const data = (await response.json()) as {
+        today?: AthleteCheckInRecord | null;
+        recent?: AthleteCheckInRecord[];
+      };
+      setTodayCheckIn(data.today ?? null);
+      setRecentCheckIns(data.recent ?? []);
+    } catch (error) {
+      setCheckInLoadError(error instanceof Error ? error.message : 'Your check-in did not load.');
+    } finally {
+      setCheckInLoading(false);
+    }
+  }, [backendAthleteId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadCheckIn();
+  }, [loadCheckIn]);
 
   /**
    * The training card's rows. Read-only and honest: one stamp per session row,
@@ -1662,7 +1752,18 @@ export default function AthleteWorkspace() {
 
       setPainLog((current) => [newPainLogEntry, ...current]);
       setInjuryFlag(true);
-      setSoreness((current) => Math.max(current, currentPainSeverity));
+      /* `setSoreness((current) => Math.max(current, currentPainSeverity))`
+         stood here and is deliberately NOT carried forward.
+
+         It raised the Bio Check-In soreness slider to match a pain report.
+         That was harmless while the slider persisted nothing. It is not
+         harmless now: soreness is a stored 1-5 SELF-report, and this would
+         write a number the athlete never chose into their own account of how
+         they feel -- from a 1-10 severity scale into a 1-5 one, on a record
+         the check-in API deliberately makes one-per-day and does not update.
+         A pain report and a wellness self-report are different claims by
+         different rules; the pain report already has its own escalating path
+         above, which is where that severity belongs. */
 
       setPainSaveMessage(payload.painReport?.coachNotified
         ? 'Logged, and flagged for a coach to look at.'
@@ -2245,8 +2346,31 @@ export default function AthleteWorkspace() {
             </div>
           )}
 
-          {/* ATHLETE FLOOR */}
-          {activeTab === 'athlete-floor' && (
+          {/* ATHLETE FLOOR -- gated on today's check-in, and only this. */}
+          {activeTab === 'athlete-floor' && floorLockedPendingCheckIn && (
+            <div className="space-y-6 panel-settle">
+              <div className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
+                <h3 className="t-label">Check in first</h3>
+                <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+                  Your work for today opens once you have checked in. It takes a few
+                  seconds, and every question is optional.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('bio-checkin')}
+                  className="btn btn--kiosk"
+                >
+                  Go to check in
+                </button>
+                <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                  Everything else stays open — goals, drills, messages, and telling a
+                  coach about pain.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'athlete-floor' && !floorLockedPendingCheckIn && (
             <div className="space-y-6 panel-settle">
               {lastWorkoutBuildNote && (
                 <div className={PANEL}>
@@ -2659,73 +2783,30 @@ export default function AthleteWorkspace() {
             </div>
           )}
 
-          {/* BIO CHECK-IN */}
+          {/* CHECK IN -- the athlete's own arrival record.
+
+              The ~70 lines of sliders that stood here wrote to local React
+              state and persisted nothing; that is why the tab was pulled on
+              2026-08-21. The panel now writes to /api/pilot/athlete/check-in.
+              It lives in its own file because a surface a child uses every day
+              should be readable without scrolling through three thousand lines
+              of everything else. */}
           {activeTab === 'bio-checkin' && (
-            <div className="space-y-6 panel-settle">
-              <HelpPanel
-                title="Bio Check-In"
-                description="Daily biological assessment covering sleep, vitals, recovery, mental state, and training readiness."
-                usage={[
-                  'Complete check-in every morning before training',
-                  'Answer honestly for accurate coaching guidance',
-                  'Expand for detailed metrics if you have time',
-                  'Flag injuries immediately'
-                ]}
-                mistakes={[
-                  'Minimizing pain reports',
-                  'Skipping check-in to save time',
-                  'Not expanding when RED flags present'
-                ]}
-              />
-
-              <div className={`${PANEL_RAISED} space-y-[var(--s5)]`}>
-                <h3 className="t-label">Daily Biological Check-In</h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
-                  <div>
-                    <label className="t-label block mb-[var(--s3)]" htmlFor="bio-sleep-hours">Sleep (4-12 hours)</label>
-                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="range--kiosk cursor-pointer" />
-                    <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{sleepHours} hours</p>
-                  </div>
-                  <div>
-                    <label className="t-label block mb-[var(--s3)]" htmlFor="bio-hydration">Hydration (1-10)</label>
-                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                    <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{hydrationStatus}/10</p>
-                  </div>
-                  <div>
-                    <label className="t-label block mb-[var(--s3)]" htmlFor="bio-motivation">Motivation (1-10)</label>
-                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                    <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{motivation}/10</p>
-                  </div>
-                  <div>
-                    <label className="t-label block mb-[var(--s3)]" htmlFor="bio-soreness">Soreness (0-10)</label>
-                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                    <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setExpandedCheckIn(!expandedCheckIn)}
-                  className="btn btn--kiosk btn--ghost"
-                >
-                  {expandedCheckIn ? '− Collapse' : '+ Expand to Maximum Check-In'}
-                </button>
-
-                {expandedCheckIn && (
-                  <div className="space-y-[var(--s4)] pt-[var(--s4)] border-t-2 border-[color:var(--brass-700)]">
-                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">None of this is built yet. Here is what is coming:</p>
-                    <div className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-400)]">
-                      <p>• Resting Heart Rate, HRV, Blood Pressure</p>
-                      <p>• Upper/Lower Body Soreness by location</p>
-                      <p>• Mental clarity, focus, stress levels</p>
-                      <p>• Nutrition and hydration compliance</p>
-                      <p>• Training load and RPE recommendations</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+            <AthleteCheckInPanel
+              today={todayCheckIn}
+              recent={recentCheckIns}
+              loading={checkInLoading}
+              loadError={checkInLoadError}
+              onSaved={(row) => {
+                setTodayCheckIn(row);
+                setRecentCheckIns((current) =>
+                  current.some((entry) => entry.check_in_id === row.check_in_id)
+                    ? current
+                    : [row, ...current]);
+              }}
+            />
           )}
+
 
           {/* DRILL LIBRARY */}
           {activeTab === 'drill-library' && (
