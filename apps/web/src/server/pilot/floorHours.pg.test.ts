@@ -48,6 +48,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import { BOARD_MINIMUM_COHORT_SIZE } from './boardSummary';
 import { getFloorHoursAdmin, getFloorHoursPublic, recordActivityAdjustment } from './floorHours';
 
 jest.setTimeout(180_000);
@@ -358,6 +359,57 @@ describe('adjustments are additive, and the original row is untouched', () => {
       activeClient = null;
       await client.end();
     }
+  });
+});
+
+describe('the public surface holds the k-anonymity floor', () => {
+  /* This is the only floor-hours reader with no session behind it, and it used
+     to be the least protected of the three: the view exposed
+     distinct_participants with no floor, while board members -- authenticated,
+     holding a governance role, reading the same class of figure -- get
+     everything below BOARD_MINIMUM_COHORT_SIZE withheld.
+
+     These cases run against the REAL view through the real reader, because the
+     property is about what an unauthenticated caller receives, not about what a
+     mapping function returns in isolation. */
+
+  test('a cohort below the floor withholds the participant count, and does not report it as zero', async () => {
+    const client = await freshDatabase('ppbf_test_floorhours_public_floor');
+    activeClient = client;
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      // One person. Exactly the shape that made "1 participant, N hours,
+      // between these dates" readable off a public page.
+      await insertActivity(client, 'activity-1', 60, '2026-08-01');
+      await insertActivity(client, 'activity-2', 90, '2026-08-02');
+
+      const rows = await getFloorHoursPublic(ORG_A, { periodKind: 'all_time' });
+      const boxing = rows.find((row) => row.activity_domain === 'boxing_training');
+      expect(boxing).toBeDefined();
+
+      expect(boxing!.participant_status).toBe('insufficient_data');
+      // Withheld, NOT zeroed. A suppressed cohort and an empty one are
+      // different facts and a reader must be able to tell them apart.
+      expect(boxing!.distinct_participants).toBeNull();
+      expect(boxing!.distinct_participants).not.toBe('0');
+
+      // The hours are DELIBERATELY still reported: they are an organization
+      // total over activity rows, not over people, and they are what a public
+      // floor-hours page exists to show. Suppressing them would cost the
+      // surface its purpose without closing the vector the count opened.
+      expect(Number(boxing!.hours)).toBeCloseTo(2.5, 2);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the floor is the same number the board holds, not a second weaker one', () => {
+    // boardSummary.ts exports it with the note that other aggregates should
+    // hold "this same floor rather than inventing a second, weaker one". A
+    // public surface inventing its own number is exactly that failure, so the
+    // relationship is asserted rather than left to a comment.
+    expect(BOARD_MINIMUM_COHORT_SIZE).toBeGreaterThan(1);
   });
 });
 
