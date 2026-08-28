@@ -61,6 +61,11 @@ test('a parent can file a home barrier report for their own child', async () => 
   expect(response.status).toBe(200);
   expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'athlete-1');
   expect(mockCreateCoachObservation).toHaveBeenCalledWith({
+    // authorRole pins that a guardian's report is RECORDED as parent-authored
+    // at write time. Before this field the role was re-derived from the
+    // account on every read, so a guardian who later became a coach had this
+    // report start reading as a coach's observation of a family.
+    authorRole: 'parent',
     organizationId: 'org-1',
     athleteId: 'athlete-1',
     coachAccountId: 'parent-1',
