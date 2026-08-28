@@ -375,17 +375,38 @@ describe('PATCH: correcting a goal', () => {
     expect('targetOn' in patch).toBe(false);
   });
 
-  test('an explicit null target_on clears the date, and a blank string means the same', async () => {
+  test('an explicit null or empty target_on clears the date', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockUpdateGoal.mockResolvedValue(goal({ target_on: null }));
 
-    for (const value of [null, '', '   ']) {
+    for (const value of [null, '']) {
       mockUpdateGoal.mockClear();
       await PATCH(patchRequest({ goal_id: 'goal-1', target_on: value }));
       // Present-and-null, not absent: the module distinguishes "clear it"
       // from "leave it alone", and a coach has to be able to say the first.
       expect(mockUpdateGoal.mock.calls[0][3]).toEqual({ targetOn: null });
     }
+  });
+
+  test('a whitespace-only target_on is refused rather than read as "clear it"', async () => {
+    /* THIS REVERSES A DECISION THIS TEST USED TO ENCODE. It looped
+       [null, '', '   '] and expected all three to clear the date. A review
+       pointed out the asymmetry that made that wrong: POST refuses '   '
+       with a 400 ("target_on must be a calendar date written as
+       YYYY-MM-DD"), so the identical value meant "that is not a date" on one
+       verb and "delete the date you have" on the other -- and the
+       destructive reading was the silent one.
+
+       Whitespace is not reachable from the date input, which yields '' when
+       emptied, so it can only arrive from a client that is already confused.
+       Refusing ambiguity on the destructive path is the safer half of the
+       choice, and '' still clears, which is what the UI actually sends. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+
+    const response = await PATCH(patchRequest({ goal_id: 'goal-1', target_on: '   ' }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdateGoal).not.toHaveBeenCalled();
   });
 
   test('an unknown status is refused and nothing is written', async () => {
