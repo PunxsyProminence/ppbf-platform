@@ -66,6 +66,27 @@ function reviewStateLine(state: ShadowObservationItem['review_state']): string {
   }
 }
 
+/**
+ * "Try it again" is the right thing to say about a hiccup and the WRONG thing
+ * to say about a guardian consent refusal, which will refuse every retry until
+ * a guardian signs. A 409 from GET /api/pilot/video/[videoId] is a stated
+ * refusal the route authored a specific message for; it reaches the athlete
+ * verbatim rather than being flattened into a retry prompt they could sit on
+ * forever. Every other status keeps the retry text: 404 is deliberately
+ * indistinguishable between "not there" and "not yours", and a 500 body is a
+ * fixed "Internal server error" -- both genuinely are worth another try.
+ */
+async function openVideoRefusal(response: Response): Promise<string> {
+  const retry = 'That round would not open. Try it again.';
+  if (response.status !== 409) return retry;
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    return typeof payload.error === 'string' && payload.error ? payload.error : retry;
+  } catch {
+    return retry;
+  }
+}
+
 export default function AthleteVideoAnalysisPage() {
   const [videos, setVideos] = useState<VideoSession[]>([]);
   const [videoError, setVideoError] = useState('');
@@ -106,7 +127,7 @@ export default function AthleteVideoAnalysisPage() {
     setLoadingVideoId(videoId);
     try {
       const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`, { credentials: 'include' });
-      if (!res.ok) throw new Error('That round would not open. Try it again.');
+      if (!res.ok) throw new Error(await openVideoRefusal(res));
       const data = (await res.json()) as { stream_url: string; title: string };
       setActiveVideo({ url: data.stream_url, title: data.title });
     } catch (err) {
