@@ -891,4 +891,75 @@ test.describe('Coach journey', () => {
     // And a coach can attach another one.
     await expect(page.getByLabel('Link a session')).toBeVisible();
   });
+
+  /* Objectives marked against a session, in a real browser.
+     -----------------------------------------------------
+
+     The last bullet of PR F, and the surface where a count would do the most
+     damage: objectives carry a DOMAIN, so a tally is one step from a
+     per-domain coverage chart about a child's training. The fixture is built
+     to tempt exactly that -- three objectives across three domains, one
+     marked, and one of the unmarked ones in the nutrition domain, which is
+     the reading a coach would most wrongly treat as a finding. */
+  test('a coach marks what a session worked on, and sees no tally of it', async ({ page }) => {
+    const BLOCK = {
+      block_id: 'blk-1',
+      athlete_id: ROSA.athlete_id,
+      title: 'Late summer block',
+      training_emphasis: 'Round-three work rate.',
+      starts_on: '2026-08-01',
+      ends_on: '2026-09-30',
+      status: 'active',
+      target_competition_id: null,
+      target_wrestling_event_id: null,
+      target: null,
+      created_by_account_id: 'acct-coach-a',
+      created_at: '2026-08-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+    };
+
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': { ok: true, blocks: [BLOCK], options: [] },
+        '/api/pilot/coach/session-block-links': {
+          ok: true,
+          runs: [],
+          sessions: [
+            { run_id: 'run-1', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-08', delivered_by_account_id: 'acct-coach-a', run_state: 'completed', athletes_present: 9, blocks_completed: 4, deviation_note: '', what_worked: '', what_did_not: '', linked_by_account_id: 'acct-coach-a', linked_at: '2026-09-08T20:00:00.000Z' },
+          ],
+        },
+        '/api/pilot/coach/session-objective-links': {
+          ok: true,
+          objectives: [
+            { objective_id: 'obj-a', block_id: 'blk-1', domain: 'technical', objective: 'Stop drifting to the ropes.', status: 'active' },
+            { objective_id: 'obj-b', block_id: 'blk-1', domain: 'mental', objective: 'Settle after a clean shot.', status: 'active' },
+            { objective_id: 'obj-c', block_id: 'blk-1', domain: 'nutrition_body_composition', objective: 'Eat before the session.', status: 'active' },
+          ],
+          links: [{ run_id: 'run-1', objective_id: 'obj-a', linked_by_account_id: 'acct-coach-a' }],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+
+    await expect(page.getByText('Objectives this session addressed')).toBeVisible();
+    // The marked one, and the unmarked ones -- a coach has to see what the
+    // class did not touch in order to mark it.
+    await expect(page.getByRole('button', { name: 'Addressed: Stop drifting to the ropes.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Not marked: Settle after a clean shot.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Not marked: Eat before the session.' })).toBeVisible();
+
+    const body = (await page.locator('body').innerText()).toLowerCase();
+
+    // NO TALLY. "1 of 3" is the shape, and a nutrition domain reading zero is
+    // the reading -- neither of which this platform has earned.
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/coverage|adherence|neglect|gap|missing/);
+    expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
+  });
 });

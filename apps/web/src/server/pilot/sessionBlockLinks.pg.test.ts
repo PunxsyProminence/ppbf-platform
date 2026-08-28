@@ -802,6 +802,14 @@ describe('session block link runner readiness assertion', () => {
        NO ACTION keys and the gate must refuse it. */
     const client = await seededDatabase('sbl_rdy_cascade');
     try {
+      /* session-objective-link now hangs a composite foreign key off this
+         table -- an objective link cannot exist without the block link it
+         implies -- so the table cannot be dropped while that one references
+         it. Dropped explicitly rather than with CASCADE, so this test says
+         out loud that a dependent exists instead of silently taking it with
+         them. It is not recreated: what is under test here is the block-link
+         gate, and the objective-link migration has its own. */
+      await client.query('drop table pilot.session_run_block_objective_links');
       await client.query('drop table pilot.session_run_development_block_links');
       await client.query(
         `create table pilot.session_run_development_block_links (

@@ -74,6 +74,11 @@ interface Stubs {
   linkOk?: boolean;
   linkError?: string;
   linkCreated?: boolean;
+  objectivesOk?: boolean;
+  objectives?: Array<Record<string, unknown>>;
+  objectiveLinks?: Array<Record<string, unknown>>;
+  objectiveWriteOk?: boolean;
+  objectiveWriteError?: string;
   /** Delays the write response, so a second click lands while the first is in
       flight. Without this a double-submit test proves nothing. */
   holdWrite?: () => Promise<void>;
@@ -94,6 +99,17 @@ function sessionRow(overrides: Record<string, unknown> = {}) {
     what_did_not: '',
     linked_by_account_id: 'acct-coach-a',
     linked_at: '2026-09-08T20:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function objectiveRow(overrides: Record<string, unknown> = {}) {
+  return {
+    objective_id: 'obj-a',
+    block_id: 'blk-1',
+    domain: 'technical',
+    objective: 'Stop drifting to the ropes.',
+    status: 'active',
     ...overrides,
   };
 }
@@ -151,6 +167,28 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
         json: async () => (stubs.writeOk === false
           ? { error: stubs.writeError ?? 'refused' }
           : { ok: true, block: blockRow() }),
+      } as Response;
+    }
+    if (url.includes('/api/pilot/coach/session-objective-links')) {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        return {
+          ok: stubs.objectivesOk ?? true,
+          status: stubs.objectivesOk === false ? 503 : 200,
+          json: async () => ({
+            ok: true,
+            objectives: stubs.objectives ?? [],
+            links: stubs.objectiveLinks ?? [],
+          }),
+        } as Response;
+      }
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      return {
+        ok: stubs.objectiveWriteOk ?? true,
+        status: stubs.objectiveWriteOk === false ? 400 : 200,
+        json: async () => (stubs.objectiveWriteOk === false
+          ? { error: stubs.objectiveWriteError ?? 'refused' }
+          : { ok: true, created: true }),
       } as Response;
     }
     if (url.includes('/api/pilot/coach/session-block-links')) {
@@ -985,5 +1023,152 @@ describe('linking a session to a block', () => {
     // The session record itself is never touched -- only the claim that it
     // belonged to this plan.
     expect(writes.some((entry) => entry.url.includes('/session-scripts'))).toBe(false);
+  });
+});
+
+/*
+ * WHICH OBJECTIVES A SESSION ADDRESSED — the build order's second bullet, and
+ * the last piece of PR F.
+ *
+ * Two properties, and the first is the one this whole slice is shaped around:
+ *
+ *   1. nothing is counted. Objectives carry a DOMAIN, so a tally here is one
+ *      step from a per-domain coverage chart about a child's training, and a
+ *      step further from an objective completed because enough sessions
+ *      pointed at it. An objective with no mark means nobody recorded one --
+ *      never that the domain was neglected.
+ *   2. an unmarked objective is still shown. A coach has to see what the class
+ *      did NOT touch in order to mark it, and a list of only the marked ones
+ *      would be a summary of itself.
+ */
+describe('marking the objectives a session addressed', () => {
+  test('every objective is listed, marked and unmarked alike, with no count', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [
+        objectiveRow({ objective_id: 'obj-a', objective: 'Stop drifting to the ropes.' }),
+        objectiveRow({ objective_id: 'obj-b', domain: 'mental', objective: 'Settle after a clean shot.' }),
+        objectiveRow({ objective_id: 'obj-c', domain: 'nutrition_body_composition', objective: 'Eat before the session.' }),
+      ],
+      objectiveLinks: [{ run_id: 'run-1', objective_id: 'obj-a', linked_by_account_id: 'acct-coach-a' }],
+    });
+    await pickAthlete('ath-1');
+
+    // The marked one and the two unmarked ones all render.
+    expect(screen.getByRole('button', { name: 'Addressed: Stop drifting to the ropes.' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Not marked: Settle after a clean shot.' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Not marked: Eat before the session.' })).toBeTruthy();
+
+    const body = document.body.textContent ?? '';
+    // No tally of any kind. "1 of 3" and a nutrition domain reading zero are
+    // the two shapes this refuses.
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/coverage|adherence|tally|neglect/i);
+    expect(document.querySelectorAll('progress')).toHaveLength(0);
+  });
+
+  test('the marked state is the stored link, not a local guess', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' }), sessionRow({ run_id: 'run-2', delivered_on: '2026-09-15' })],
+      objectives: [objectiveRow({ objective_id: 'obj-a' })],
+      // Marked on run-1 only.
+      objectiveLinks: [{ run_id: 'run-1', objective_id: 'obj-a', linked_by_account_id: 'acct-coach-a' }],
+    });
+    await pickAthlete('ath-1');
+
+    // The same objective under two sessions: addressed in one, not the other.
+    // A build that keyed the mark by objective alone would show both.
+    const pressed = screen.getAllByRole('button', { name: /Stop drifting to the ropes\./ });
+    expect(pressed).toHaveLength(2);
+    const states = pressed.map((node) => node.getAttribute('aria-pressed'));
+    expect(states.sort()).toEqual(['false', 'true']);
+  });
+
+  test('marking one sends the run, the objective AND the block', async () => {
+    await renderPage({
+      blocks: [blockRow({ block_id: 'blk-9' })],
+      linkedSessions: [sessionRow({ run_id: 'run-7' })],
+      objectives: [objectiveRow({ objective_id: 'obj-a', block_id: 'blk-9' })],
+      objectiveLinks: [],
+    });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Not marked: Stop drifting/ }));
+    });
+
+    const write = writes.find((entry) => entry.method === 'POST' && 'objective_id' in entry.body);
+    /* The block id travels with every write because the route gates on it: a
+       group session serves several children's blocks, and a run-wide write
+       would be a write about a child this coach may not have. */
+    expect(write?.body).toEqual({
+      run_id: 'run-7', objective_id: 'obj-a', block_id: 'blk-9',
+    });
+  });
+
+  test('unmarking sends all three ids on the query string', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [objectiveRow({ objective_id: 'obj-a' })],
+      objectiveLinks: [{ run_id: 'run-1', objective_id: 'obj-a', linked_by_account_id: 'acct-coach-a' }],
+    });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Addressed: Stop drifting/ }));
+    });
+
+    const removal = writes.find((entry) => entry.method === 'DELETE' && entry.url.includes('objective_id'));
+    expect(removal?.url).toContain('run_id=run-1');
+    expect(removal?.url).toContain('objective_id=obj-a');
+    expect(removal?.url).toContain('block_id=blk-1');
+  });
+
+  test('a refused mark shows the server\'s own reason', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [objectiveRow()],
+      objectiveWriteOk: false,
+      objectiveWriteError: 'That objective is not on a block this session supports.',
+    });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Not marked: Stop drifting/ }));
+    });
+
+    expect(screen.getByText('That objective is not on a block this session supports.')).toBeTruthy();
+  });
+
+  test('a failed objective read is not rendered as "this block has no objectives"', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectivesOk: false,
+    });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/objectives could not be read/i)).toBeTruthy();
+    // And no control offering to mark something the page could not read.
+    expect(screen.queryByText('Objectives this session addressed')).toBeNull();
+  });
+
+  test('a block with no objectives shows no marking controls, and says nothing about domains', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [],
+    });
+    await pickAthlete('ath-1');
+
+    expect(screen.queryByText('Objectives this session addressed')).toBeNull();
+    // Silence, not a finding. A block with no objectives recorded is not a
+    // block whose domains were neglected.
+    expect(document.body.textContent ?? '').not.toMatch(/no objectives|missing|gap|neglect/i);
   });
 });

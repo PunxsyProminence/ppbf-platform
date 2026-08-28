@@ -175,6 +175,13 @@ describe('every migration is dispatchable and in the rebuild path', () => {
        it mentions scripts. */
     expect(at('session-block-link')).toBeGreaterThan(at('session-scripts'));
     expect(at('session-block-link')).toBeGreaterThan(at('athlete-development-blocks'));
+    /* session-objective-link's two composite FKs point at the objectives table
+       and at session-block-link's own table, so BOTH have to exist first. It
+       also adds a unique index to pilot.athlete_development_block_objectives,
+       which is a second reason that migration cannot come later. */
+    expect(at('session-objective-link'))
+      .toBeGreaterThan(at('athlete-development-block-objectives'));
+    expect(at('session-objective-link')).toBeGreaterThan(at('session-block-link'));
     // session-scripts-discipline-fk points pilot.session_scripts at
     // pilot.disciplines. It needs BOTH: multidiscipline creates the registry it
     // references, session-scripts creates the table it constrains. Applied

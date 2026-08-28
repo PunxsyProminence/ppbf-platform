@@ -94,6 +94,28 @@ interface LinkedSession {
   linked_at: string;
 }
 
+/**
+ * One of the block's Full Spectrum objectives, and one link saying a session
+ * addressed it. Kept as two flat lists rather than a nested structure,
+ * matching what the route returns and for the same reason: an objective with
+ * no links must stay visibly an objective with no RECORDED links. Nested,
+ * it would be indistinguishable from one a join dropped -- and a domain
+ * showing nothing is not evidence that the domain was neglected.
+ */
+interface BlockObjective {
+  objective_id: string;
+  block_id: string;
+  domain: string;
+  objective: string;
+  status: string;
+}
+
+interface ObjectiveLink {
+  run_id: string;
+  objective_id: string;
+  linked_by_account_id: string;
+}
+
 /** A settled session offered by the picker. */
 interface SelectableRun {
   run_id: string;
@@ -192,6 +214,14 @@ export default function CoachDevelopmentBlocksPage() {
   const [runOptions, setRunOptions] = useState<SelectableRun[]>([]);
   const [runOptionsState, setRunOptionsState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [linkBusyBlockId, setLinkBusyBlockId] = useState<string | null>(null);
+  /* The block's objectives and the links against them, per block and with
+     their own state, for the same reason the sessions have one: one block's
+     failed read must not make another's render as "nothing recorded". */
+  const [objectivesByBlock, setObjectivesByBlock] = useState<Record<string, BlockObjective[]>>({});
+  const [objectiveLinksByBlock, setObjectiveLinksByBlock] = useState<Record<string, ObjectiveLink[]>>({});
+  const [objectivesStateByBlock, setObjectivesStateByBlock] =
+    useState<Record<string, 'loading' | 'loaded' | 'unavailable'>>({});
+  const [objectiveBusyKey, setObjectiveBusyKey] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
@@ -296,6 +326,33 @@ export default function CoachDevelopmentBlocksPage() {
     }
   }, []);
 
+  /* One read per block gives both halves: what the block is trying to move,
+     and which sessions a coach says worked on each. The route gates on the
+     block, so one call per block is what the authorization boundary is. */
+  const loadObjectivesForBlock = useCallback(async (blockId: string) => {
+    setObjectivesStateByBlock((prior) => ({ ...prior, [blockId]: 'loading' }));
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach/session-objective-links?block_id=${encodeURIComponent(blockId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('objectives');
+      const payload = (await response.json()) as {
+        objectives?: BlockObjective[];
+        links?: ObjectiveLink[];
+      };
+      setObjectivesByBlock((prior) => ({ ...prior, [blockId]: payload.objectives ?? [] }));
+      setObjectiveLinksByBlock((prior) => ({ ...prior, [blockId]: payload.links ?? [] }));
+      setObjectivesStateByBlock((prior) => ({ ...prior, [blockId]: 'loaded' }));
+    } catch {
+      // Not "this block has no objectives" -- that is a statement about the
+      // plan which this failed read did not establish.
+      setObjectivesByBlock((prior) => ({ ...prior, [blockId]: [] }));
+      setObjectiveLinksByBlock((prior) => ({ ...prior, [blockId]: [] }));
+      setObjectivesStateByBlock((prior) => ({ ...prior, [blockId]: 'unavailable' }));
+    }
+  }, []);
+
   const loadBlocks = useCallback(async (forAthleteId: string) => {
     if (!forAthleteId) {
       setBlocks([]);
@@ -322,6 +379,7 @@ export default function CoachDevelopmentBlocksPage() {
       // more does not fire a second wave of requests behind it.
       for (const item of loaded) {
         void loadSessionsForBlock(item.block_id);
+        void loadObjectivesForBlock(item.block_id);
       }
     } catch {
       // A failure for an athlete nobody is looking at any more must not blank
@@ -330,7 +388,7 @@ export default function CoachDevelopmentBlocksPage() {
       setBlocks([]);
       setBlocksState('unavailable');
     }
-  }, [loadSessionsForBlock]);
+  }, [loadSessionsForBlock, loadObjectivesForBlock]);
 
   /* Recording that a session supported this block, and taking it back.
 
@@ -393,6 +451,62 @@ export default function CoachDevelopmentBlocksPage() {
       setErrorMessage('That link could not be removed. Nothing changed.');
     } finally {
       setLinkBusyBlockId(null);
+    }
+  }
+
+  /* Marking an objective a session addressed, and taking the mark back.
+
+     A STATEMENT, NOT A MEASUREMENT, and the same refusal the session link
+     makes one level up: nothing infers that a class worked an objective
+     because its date fell in the window or because the domain sounds like the
+     drills. A coach says so.
+
+     The block id travels with every call because the route gates on it -- a
+     group session serves several children's blocks, and a run-wide write
+     would be a write about a child this coach may not have. */
+  async function toggleObjective(
+    blockId: string,
+    runId: string,
+    objectiveId: string,
+    currentlyLinked: boolean,
+  ) {
+    // One at a time. The controls are disabled while any is in flight, so a
+    // second click cannot race the reload that follows the first.
+    if (objectiveBusyKey) return;
+
+    setObjectiveBusyKey(`${runId}:${objectiveId}`);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const response = currentlyLinked
+        ? await fetch(
+          `${apiBase()}/api/pilot/coach/session-objective-links`
+          + `?run_id=${encodeURIComponent(runId)}`
+          + `&objective_id=${encodeURIComponent(objectiveId)}`
+          + `&block_id=${encodeURIComponent(blockId)}`,
+          { method: 'DELETE', credentials: 'include' },
+        )
+        : await fetch(`${apiBase()}/api/pilot/coach/session-objective-links`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ run_id: runId, objective_id: objectiveId, block_id: blockId }),
+        });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        // The server's own words. An objective refused because the session
+        // does not support its block must say that.
+        setErrorMessage(payload.error ?? 'That objective could not be changed.');
+        return;
+      }
+      setMessage(currentlyLinked ? 'Objective unmarked.' : 'Objective marked.');
+      // Read it back rather than toggling the local copy: what is on screen
+      // should be what was stored.
+      await loadObjectivesForBlock(blockId);
+    } catch {
+      setErrorMessage('That objective could not be changed. Nothing was stored.');
+    } finally {
+      setObjectiveBusyKey(null);
     }
   }
 
@@ -885,6 +999,58 @@ export default function CoachDevelopmentBlocksPage() {
                             </p>
                           ) : null}
                           <p className="t-muted m-0">Linked by {session.linked_by_account_id}</p>
+
+                          {/* WHICH OBJECTIVES THIS SESSION ADDRESSED.
+
+                              The build order's second bullet, and the last
+                              piece of PR F. Every objective the block carries
+                              is listed, marked or not, because the unmarked
+                              ones are the point: a coach has to see what this
+                              class did NOT touch in order to mark it, and
+                              hiding them would make the list a summary of
+                              itself.
+
+                              NOTHING IS COUNTED. No "2 of 5", no per-domain
+                              tally, no coverage bar. An objective with no mark
+                              means nobody recorded one -- not that the domain
+                              was neglected -- and rendering the second from
+                              the first is exactly the honesty failure this
+                              lane keeps refusing. */}
+                          {objectivesStateByBlock[block.block_id] === 'unavailable' && (
+                            <p className="t-muted m-0 text-[var(--restricted-ink)]">
+                              This block&apos;s objectives could not be read, so there is nothing to
+                              mark. This is not a statement that it has none.
+                            </p>
+                          )}
+
+                          {objectivesStateByBlock[block.block_id] === 'loaded'
+                            && (objectivesByBlock[block.block_id] ?? []).length > 0 && (
+                            <div className="space-y-[var(--s2)]">
+                              <p className="t-label m-0">Objectives this session addressed</p>
+                              {(objectivesByBlock[block.block_id] ?? []).map((item) => {
+                                const linked = (objectiveLinksByBlock[block.block_id] ?? []).some(
+                                  (link) => link.run_id === session.run_id
+                                    && link.objective_id === item.objective_id,
+                                );
+                                return (
+                                  <button
+                                    key={item.objective_id}
+                                    type="button"
+                                    className={`btn ${linked ? '' : 'btn--ghost'}`}
+                                    disabled={objectiveBusyKey !== null}
+                                    aria-pressed={linked}
+                                    onClick={() => void toggleObjective(
+                                      block.block_id, session.run_id, item.objective_id, linked,
+                                    )}
+                                  >
+                                    {linked ? 'Addressed' : 'Not marked'}
+                                    {': '}
+                                    {item.objective}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       ))}
 
