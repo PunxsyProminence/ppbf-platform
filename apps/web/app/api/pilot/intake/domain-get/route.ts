@@ -7,6 +7,7 @@ import {
   coachObservationNoteTypesForReader,
   emergencyContactColumnsForReader,
   guardianColumnsForReader,
+  waiverColumnsForReader,
 } from '@/src/server/pilot/intake';
 
 export const runtime = 'nodejs';
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
     const readableNoteTypes = coachObservationNoteTypesForReader(principal.role);
     const guardianColumns = guardianColumnsForReader(principal.role);
     const emergencyContactColumns = emergencyContactColumnsForReader(principal.role);
+    const waiverColumns = waiverColumnsForReader(principal.role);
 
     const [emergencyContacts, medicalIntake, waivers, assessments, attendance, readiness, coachObservations, guardians] = await Promise.all([
       // The other half of the guardian narrowing below, and it has to be here
@@ -55,7 +57,16 @@ export async function POST(request: NextRequest) {
         [principal.organizationId, athleteId],
       ),
       query('select * from pilot.medical_intake where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
-      query('select * from pilot.waivers where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
+      // The third table of this body with a free-text staff note beside a
+      // guardian's name. pilot.waivers carries signed_by_name and, since the
+      // guardian-media-consent migration, parent_id -- so a note on the other
+      // parent's waiver arrived already keyed to them. See
+      // waiverColumnsForReader for what each role keeps.
+      query(
+        `select ${waiverColumns.join(', ')} from pilot.waivers
+         where organization_id = $1 and athlete_id = $2 order by created_at desc`,
+        [principal.organizationId, athleteId],
+      ),
       query('select * from pilot.assessments where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
       query('select * from pilot.attendance where organization_id = $1 and athlete_id = $2 order by attendance_date desc', [principal.organizationId, athleteId]),
       query('select * from pilot.readiness where organization_id = $1 and athlete_id = $2 order by measured_at desc', [principal.organizationId, athleteId]),
