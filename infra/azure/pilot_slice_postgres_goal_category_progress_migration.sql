@@ -44,32 +44,53 @@
 -- acceptable state here; fabrication is not (standing owner instruction,
 -- 2026-07-31).
 --
--- THE CATEGORY VOCABULARY OMITS THE TWO WEIGHT OPTIONS. THIS IS DELIBERATE
+-- THE TWO WEIGHT OPTIONS ARE NOW ADMITTED (owner decision, 2026-08-28)
 --
--- The dropdown today offers nine categories, two of which are 'Weight Loss'
--- and 'Weight Gain'. Seven are admitted below; those two are not, and the
--- dropdown drops them in the same change so that no athlete can choose a value
--- the database will refuse.
+-- This migration shipped with seven categories. 'Weight Loss' and 'Weight
+-- Gain' were withheld, and the reason was a WAIT on a named gate rather than
+-- a permanent refusal:
 --
--- The reasoning is sequencing, not squeamishness. Body composition is Group J
--- of the capability plan, and the plan places it in Phase 7 explicitly behind
--- the Privacy-Tier System (capability 200), which is Phase 1 work that has not
--- been built. Admitting these two values here would create a stored, queryable
--- record of a minor's weight-loss intent -- readable by every role the goals
--- list is readable by -- ahead of the tier system whose entire job is to decide
--- who may see exactly that. SHADOW already refuses weight-cutting guidance, and
--- the plan names repeated weight questions as a red-flag escalation signal; it
--- would be strange for the doctrine layer to refuse the conversation while the
--- goals table quietly filed the goal.
+--   "Admitting these two values here would create a stored, queryable record
+--    of a minor's weight-loss intent -- readable by every role the goals list
+--    is readable by -- ahead of the tier system whose entire job is to decide
+--    who may see exactly that."
 --
--- Nothing is lost by waiting: the category has never been persisted, so
--- choosing 'Weight Loss' has never had an effect. What replaces it on screen is
--- a line pointing the athlete at their coach, per the owner principle recorded
--- 2026-08-03 -- the stop carries the lesson, it is not just a wall.
+-- That gate is built. Module 200, the Privacy-Tier System
+-- (apps/web/src/server/pilot/privacyTiers.ts), ships FIELD_TIERS, whose own
+-- entry for goals.category said the withholding "waits on an explicit owner
+-- decision, which this registry makes possible and deliberately does not
+-- make." The owner has now made it, for this surface and for the
+-- coach-authored one in the same breath, so the two stop disagreeing about
+-- the same subject: pilot.athlete_development_block_objectives admitted its
+-- nutrition_body_composition domain on the same day.
 --
--- This is an owner decision, and it is a one-line reversal in each of two
--- places (the check below and SMART_GOAL_CATEGORIES in AthleteWorkspace.tsx)
--- once the privacy tiers exist.
+-- WHAT DID NOT CHANGE, because a widened vocabulary is not a widened
+-- audience:
+--   * goals.category's tier is still athlete_record, and nothing about who
+--     may READ a goal moved. This admits VALUES, not readers.
+--   * shadowAuthority.ts still refuses 'weight_cut' in conversation. An
+--     athlete may file their own goal; the model still gives no
+--     weight-cutting guidance, and the plan itself is still built with a
+--     coach.
+--   * The form still says so. The line pointing a weight goal at the coach
+--     and guardian is not deleted -- it is kept and shown when one of these
+--     two categories is chosen, because the 2026-08-03 owner principle is
+--     that the stop carries the lesson. What changes is that it is now
+--     guidance beside a real choice rather than a wall in front of a missing
+--     one.
+--
+-- REVERSING THIS COST MORE THAN THE OLD COMMENT PROMISED, and the promise is
+-- corrected rather than left standing. This header said the reversal was "a
+-- one-line reversal in each of two places", and contracts.ts said "one line
+-- here, one in the migration, and one in SMART_GOAL_CATEGORIES". It was
+-- SEVEN: this CHECK, contracts.ts#GOAL_CATEGORIES,
+-- AthleteWorkspace.tsx#SMART_GOAL_CATEGORIES and the guidance line beside it,
+-- validation.test.ts, goalCategoryProgress.pg.test.ts, athleteWorkspace.test.tsx,
+-- and FIELD_TIERS' own note. Every one of those tests asserted the
+-- WITHHOLDING, which is correct practice and is exactly why the count grew:
+-- a decision guarded by tests costs the tests to reverse. Nobody was wrong to
+-- write them; the estimate was wrong, and an estimate in a comment is a claim
+-- like any other.
 --
 -- THE CHECK RECONCILES RATHER THAN GUARDS, for the reason the rabbit-holes
 -- migration gives: this vocabulary is expected to grow, and a catalog-guarded
@@ -90,10 +111,11 @@ alter table pilot.goals add column if not exists progress_percent integer;
 
 do $pilot_goals_category_progress$
 begin
-  -- The seven categories an athlete may file a goal under. See the header for
-  -- why 'Weight Loss' and 'Weight Gain' are not among them yet. NULL stays
-  -- admissible: it is what every goal written before this migration carries,
-  -- and it means "no category was chosen", which is true of all of them.
+  -- The nine categories an athlete may file a goal under. 'Weight Loss' and
+  -- 'Weight Gain' were withheld at first ship and admitted by owner decision
+  -- 2026-08-28; see the header. NULL stays admissible: it is what every goal
+  -- written before this migration carries, and it means "no category was
+  -- chosen", which is true of all of them.
   alter table pilot.goals
     drop constraint if exists pilot_goals_category_check;
   alter table pilot.goals
@@ -105,7 +127,9 @@ begin
       'Attendance',
       'Recovery',
       'Lifestyle',
-      'Leadership'
+      'Leadership',
+      'Weight Loss',
+      'Weight Gain'
     ));
 
   -- A percentage or nothing. NULL is untracked progress and renders as such;

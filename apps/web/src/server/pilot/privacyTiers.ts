@@ -255,9 +255,14 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'athlete_record',
     enforcedBy: 'contracts.ts#GOAL_CATEGORIES',
     note:
-      'Weight Loss / Weight Gain are withheld from the vocabulary entirely: filing a minor\'s weight '
-      + 'intent as a queryable row waits on an explicit owner decision, which this registry makes '
-      + 'possible and deliberately does not make.',
+      'Weight Loss / Weight Gain were withheld from the vocabulary until 2026-08-28 and are now '
+      + 'admitted: the explicit owner decision this note said the registry "makes possible and '
+      + 'deliberately does not make" was made, this registry having shipped. The tier did NOT move. '
+      + 'A widened vocabulary is not a widened audience -- goals.category stays athlete_record, and '
+      + 'the same decision admitted the coach-authored counterpart '
+      + '(athlete_development_block_objectives.objective) so the two surfaces stop disagreeing about '
+      + 'the same subject. shadowAuthority.ts still refuses weight_cut in conversation, and the goal '
+      + 'form still routes a weight goal to the athlete\'s coach and guardian.',
   },
   'feedback_submissions.body': {
     tier: 'organization',

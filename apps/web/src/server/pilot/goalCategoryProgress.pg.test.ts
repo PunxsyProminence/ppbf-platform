@@ -58,11 +58,12 @@ const ORG_ID = 'org-goals';
 const COACH_ID = 'acct-goals-coach';
 const ATHLETE_ID = 'ATH-GOALS-1';
 
-// The two values deliberately held out of the vocabulary. Named here rather
-// than inlined so the reason travels with the assertion: body-composition
-// intent must not become a queryable row about a minor before the Privacy-Tier
-// System exists to govern who can read it. See the migration header.
-const WITHHELD_CATEGORIES = ['Weight Loss', 'Weight Gain'];
+// Withheld until 2026-08-28, then admitted by owner decision once the
+// Privacy-Tier System they waited on had shipped. Named here rather than
+// inlined so the history travels with the assertion: these two are the reason
+// this migration's CHECK reconciles rather than guards, and they are now
+// expected to be ACCEPTED by a migrated database.
+const ADMITTED_WEIGHT_CATEGORIES = ['Weight Loss', 'Weight Gain'];
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -291,16 +292,26 @@ describe('goal category/progress migration against real Postgres', () => {
     }
   });
 
-  test('the database refuses a category outside the vocabulary, including the two withheld ones', async () => {
+  test('the database refuses a category outside the vocabulary, and accepts the two admitted in 2026-08-28', async () => {
     const client = await freshDatabase('ppbf_test_goalcat_refuses');
     try {
       await client.query(migrationSql);
       await insertLegacyGoal(client, 'goal-refuse');
 
-      for (const category of [...WITHHELD_CATEGORIES, 'Underwater Basket Weaving']) {
+      for (const category of ['Underwater Basket Weaving', 'weight loss', 'Weight Cut']) {
         await expect(
           client.query('update pilot.goals set category = $2 where goal_id = $1', ['goal-refuse', category]),
         ).rejects.toThrow(/pilot_goals_category_check/);
+      }
+
+      // And the two the owner admitted on 2026-08-28 are accepted by the same
+      // constraint. The DO block drops and re-adds it on every run, so this
+      // also proves the widened vocabulary survives a re-apply rather than
+      // only existing on a fresh install.
+      for (const category of ADMITTED_WEIGHT_CATEGORIES) {
+        await client.query(
+          'update pilot.goals set category = $2 where goal_id = $1', ['goal-refuse', category],
+        );
       }
     } finally {
       await client.end();
@@ -411,6 +422,28 @@ describe('goal category progress runner readiness assertion', () => {
     } finally {
       await client.end();
     }
+  });
+
+  test('the readiness gate does not encode the category policy, in either direction', async () => {
+    // This gate DID encode it, and that is why this case exists. It asserted
+    // 'Weight Loss' and 'Weight Gain' were ABSENT from the constraint, so the
+    // moment the owner admitted them (2026-08-28) the runner refused a
+    // correctly migrated database -- meaning pilot:apply-goal-category-progress,
+    // and the `all` chain that runs it, could not be dispatched to ANY
+    // environment. A vocabulary decision had been wired into the release path,
+    // and the reversal was blocked by the deploy gate rather than by anything
+    // about the schema.
+    //
+    // Scoped to the executable query, not the file: the runner's header
+    // necessarily quotes the removed clauses to explain them, and a file-wide
+    // search would match that prose and pass over a real regression.
+    const source = await fs.readFile(MIGRATION_RUNNER_PATH, 'utf8');
+    const query = source.slice(
+      source.indexOf('const READINESS_QUERY'),
+      source.indexOf('function assertReadiness'),
+    );
+    expect(query).toContain('category_vocabulary_ready');
+    expect(query).not.toMatch(/Weight Loss|Weight Gain/);
   });
 
   test('the real runner ACCEPTS a correctly migrated database, and a re-apply stays a no-op', async () => {
