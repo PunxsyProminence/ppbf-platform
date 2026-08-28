@@ -49,57 +49,55 @@ function resolveSslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Deliberately does NOT assert that the constraint is still un-validated.
+// This is the only migration in this repository that REMOVES a constraint, so
+// its readiness query has to assert an absence as well as a presence -- and the
+// two are inseparable.
 //
-// The `all` chain re-runs every migration on every dispatch, so this query runs
-// again after any future `validate constraint`. Asserting `not convalidated`
-// would turn a correctly validated environment into a failing dispatch -- the
-// readiness check would start refusing the very state it is meant to reach.
-// That the constraint is created NOT VALID is a property of the migration, and
-// is asserted where it belongs: drillLibraryDisciplineFk.pg.test.ts.
+// `discipline_fk_still_governing` is first because it is the whole safety
+// property. A database where the CHECK is gone AND the foreign key is gone has
+// an ungoverned discipline column, and that state must never be reported as a
+// successful dispatch. The migration SQL raises rather than dropping when the
+// key is absent, so in practice this cannot be reached through the migration
+// itself; it is asserted here anyway, because the runner's job is to describe
+// the database it is leaving behind rather than to trust the file it just ran.
 //
-// `contype = 'f'` is checked rather than the name alone, because a CHECK
-// constraint that happened to carry this name would satisfy a name-only lookup
-// while enforcing something else entirely.
+// `contype = 'f'` and `confrelid` are checked rather than the name alone, for
+// the same reason the drill-library-discipline-fk runner checks them: a
+// constraint of another kind carrying this name would satisfy a name-only
+// lookup while enforcing something else entirely.
 //
-// `pre_existing_check_intact` USED TO BE HERE, AND THE OWNER HAS RETIRED IT.
+// Deliberately does NOT assert that the foreign key is still `not valid`. The
+// `all` chain re-runs every migration on every dispatch, so this query runs
+// again after any future, deliberate `validate constraint` -- and asserting
+// `not convalidated` would turn a correctly validated environment into a
+// failing dispatch. That is the same trap the FK runner recorded, and it is
+// avoided here for the same reason.
 //
-// It asserted that pilot_drill_library_discipline_check was still installed,
-// because this migration's promise was to be ADDITIVE: it added a foreign key
-// and left the CHECK exactly as it found it, reporting the two constraints'
-// disagreement about 'general' and 'bjj' as an open question rather than
-// resolving it. Its stated purpose was that "a future edit that DID drop the
-// CHECK should not be able to reach a live environment through a dispatch that
-// still reports PASS."
-//
-// That tripwire has now fired and been answered. The open question it was
-// holding open went to the owner, who decided it on 2026-08-28, verbatim:
-// "drop the check and let the registry govern." The drill-library-check-drop
-// migration drops the CHECK, and it runs AFTER this one in the `all` list --
-// so leaving this clause would have made the first dispatch after that drop
-// fail here, refusing the very state the owner ratified.
-//
-// It is removed rather than inverted: this migration must be correct both
-// before and after the drop, and it has no business asserting anything about a
-// constraint another migration owns. What actually protects the column now is
-// stated where it belongs -- the drop migration raises unless this foreign key
-// is present, and its runner asserts the key is still governing afterwards.
+// `discipline_check_dropped` is the migration's own effect, stated as an
+// absence. It is the assertion that would catch the drop silently not
+// happening -- a `drop constraint` inside a guard that never matched, or a
+// migration file that was edited into a no-op.
 const READINESS_QUERY = `
   select
-    to_regclass('pilot.disciplines') is not null as registry_ready,
     to_regclass('pilot.drill_library') is not null as library_table_ready,
+    to_regclass('pilot.disciplines') is not null as registry_ready,
     exists (
       select 1 from pg_constraint
       where conname = 'pilot_drill_library_discipline_fk'
         and conrelid = to_regclass('pilot.drill_library')
         and contype = 'f'
         and confrelid = to_regclass('pilot.disciplines')
-    ) as discipline_fk_ready
+    ) as discipline_fk_still_governing,
+    not exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_drill_library_discipline_check'
+        and conrelid = to_regclass('pilot.drill_library')
+    ) as discipline_check_dropped
 `;
 
 function assertReadiness(row) {
   if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('DRILL_LIBRARY_DISCIPLINE_FK_NOT_READY');
+    throw new Error('DRILL_LIBRARY_CHECK_DROP_NOT_READY');
   }
 }
 
@@ -128,7 +126,7 @@ export async function run() {
   const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
     __dirname,
-    '../../../infra/azure/pilot_slice_postgres_drill_library_discipline_fk_migration.sql',
+    '../../../infra/azure/pilot_slice_postgres_drill_library_check_drop_migration.sql',
   );
 
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -147,8 +145,8 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied drill library discipline FK migration: ${migrationPath}`);
-  console.log('PILOT DRILL LIBRARY DISCIPLINE FK MIGRATION PASS');
+  console.log(`Applied drill library discipline CHECK drop migration: ${migrationPath}`);
+  console.log('PILOT DRILL LIBRARY CHECK DROP MIGRATION PASS');
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
@@ -156,7 +154,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT DRILL LIBRARY DISCIPLINE FK MIGRATION FAIL');
+    console.error('PILOT DRILL LIBRARY CHECK DROP MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }
