@@ -75,6 +75,7 @@ Owner decisions 2026-08-16 (asked as a batch, answered individually):
 | `BACKLOG-open-route-gates` | Route visibility and authorization are not the same thing; changing `buildingMap.ts` alone protects nothing. | A route is shown to expose a real unintended surface, then fix that route's own guard directly. |
 | `BACKLOG-video-skill-scoring` | Owner decision 2026-08-15: per-skill AI video scoring (punch detection, footwork, etc.) is parked for Phase 2+. Human Film Study IS the analysis pathway; shipping machine scores about minors' athletic ability without proven accuracy is the risk being refused. | Phase 1 is complete AND a scoring approach with explicit evidence standards has been selected by the owner. |
 | `BACKLOG-publication-automation` | Queue item 9, assessed 2026-08-15 under the owner's standing approval for recommendations: the internal publication machinery that exists (video compliance console + consent gating, research evidence review, retraction surveillance) is human-gated on purpose — there is no automatable step left that does not cross a gate deliberately. What automation would add is outward publication to a "destination registry", and no destination, content set, or disclosure rules exist. Automating external disclosure of content about or derived from minors ahead of those decisions is the same risk `BACKLOG-grant-packet` refuses. | The owner names a real destination and content type (e.g. "approved research summaries to the public site") with an explicit disclosure set. Automation then means moving already-approved items — never approving them. |
+| `BACKLOG-safety-alert-transport` | An unacknowledged high/critical safety escalation now reaches a coach IN THE APP, on every surface, via the persistent count on the session bar (`components/SafetyAttentionBadge.tsx`, reading the existing `/api/pilot/escalations` — no second queue). What is deliberately NOT built is an EXTERNAL transport: push notification, email, or SMS. That is a separate decision, and the blocking part is not the plumbing. It is content and privacy: an external message about a minor leaves the platform's access controls entirely, lands on a lock screen or in an inbox somebody else may read, and cannot be scoped the way a page can. Nobody has decided what such a message may say — whether it may name an athlete, name a severity, name a source, or only say "open the platform" — nor who may receive one, nor what happens when a coach's assignment or coverage lapses between sending and reading. Sending a safeguarding notification about a child before those are answered is the same risk `BACKLOG-grant-packet` refuses, arriving by a different door. | The owner selects a transport AND records the content rules for it: exactly what an external message may contain about a minor, which recipients may receive one, and the retention/revocation posture for messages already sent. Implementation then means delivering an already-decided payload — never deciding it. |
 | `BACKLOG-wearables` | Owner "add all" decision 2026-08-16 deliberately EXCLUDED wearables/HR streams: biometric hardware for minors needs a consent, privacy, and device-ownership decision no code can make. | The owner selects a device approach and records the consent/privacy posture for minors' biometric data; integration then reads into the attempts/readiness spine. |
 | `BACKLOG-quickbooks-sync` | Owner request 2026-08-15 ("Treasurer also needs the QuickBooks login"): the treasurer's QuickBooks access itself is an Intuit-side action (invite as accountant user), not platform work. The platform half — pushing the payment mirror ledger into QuickBooks so nobody keys in donations by hand — is the Revenue Center's "QuickBooks Placeholder | Future Integration" row and stays parked until money actually flows. | The payment lanes are live (CAP-012 flipped) and real transactions exist in `pilot.payment_transactions` to sync; the integration then gets its own compliance review per the placeholder's own label. |
 | `BACKLOG-design-visuals-lane` | Owner decision 2026-08-17: the whole Design/visuals lane (`docs/VISUAL_BUILD_MAP.md` layers L1–L5) is parked while the owner squares away the three outstanding inputs — real gym photos + one committed staff photo (`apps/web/src/shared/gymPhotos.ts`), real coach sayings (`apps/web/components/gymSayings.ts` — **corrected 2026-08-22: this said "ships empty on purpose — no invented lines", and it no longer ships empty.** The file holds 12 real entries the owner confirmed 2026-08-19, recorded in the file's own header against Drive doc `2026-08-19_EGGS-LOAD-FIRST-12.md`. The "no invented lines" rule stands and is why the file waited; the waiting is over. Whether that discharges this input, and whether the lane un-parks on it, is the owner's call — the other two inputs, real gym photos and the Canva pick, are still outstanding: `gymPhotos.ts` still carries placeholder SVGs and a staff card with `photo: null`), and a Canva social-card pick. This is a blanket park, not just the 🔒 rows — some layers (L1–L3, L5 template work, L4a/L4b) are technically 🔓 unblocked, but the owner asked to hold the whole lane rather than have sessions work the unblocked layers piecemeal while assets are being gathered. **Scoped exception, owner instruction 2026-08-19:** the Grok/Claude "SHADOW-UI" design package's P0 set — Bell/login three-method + refusal stamps, `/shadow` deny/allowed states, role-landing routing, Training Hold banner — is explicitly resumed. None of that set depends on the three outstanding inputs (it's token/class conversion against already-real states, not gym photography or coach sayings), so it is out from under the park; the rest of the lane (L4c sayings, L4e photos, L5 Canva) stays parked on the three inputs as before. | Owner delivers the three inputs and un-parks the rest of the lane, or explicitly asks to resume further layers before that. |
@@ -83,21 +84,38 @@ Owner decisions 2026-08-16 (asked as a batch, answered individually):
 
 Historical runtime-verification gaps (including T-001/T-002 and the PR-238 bulk deployment) are evidence debt, not a blanket blocker on new development. Run the relevant runtime probe when touching or releasing the affected surface; do not force every unrelated builder to reconstruct the entire deployment history.
 
-## Deploy status (re-measured 2026-08-22)
+## Deploy status — read PRODUCTION_STATE.json, not this file
 
-**Corrected 2026-08-22. The previous note, dated 2026-08-19, put both environments on `1da832e9` (PR #391, 2026-08-16) and sized the undeployed batch at roughly 120 commits from PR #412 onward. Every part of that is stale, and the size was the expensive part** — an audit reading it sized this release at 25 migrations and 62 commits. Both environments have deployed since.
+**This section used to restate the deployed SHAs, the undeployed commit count
+and the pending migration count. It is now a pointer, deliberately, because
+that duplication is what kept going wrong.**
 
-Confirmed directly against the GitHub Actions API during this docs-only pass (no application code touched), workflow-run listings only:
+The numbers here were re-measured on 2026-08-22 and were correct that day. By
+2026-08-28 they said production ran `a11ea7c1` with 22 commits and 2 migrations
+undeployed. The real gap at that point was 205 commits. A release lane sizing
+from this block would have been out by an order of magnitude — which is the
+exact failure the block's own predecessor note describes ("an audit reading it
+sized this release at 25 migrations and 62 commits").
 
-- Most recent **successful** `deploy-production.yml` run: **32418590207** (#150), `head_sha` `a11ea7c166f7659e4c5bb63337d44323069febaa`, dispatched 2026-08-20T21:16:51Z.
-- Most recent **successful** `deploy-staging.yml` run: **32526743194** (#215), `head_sha` `247bf977513c7b08ceb7d5adefce34d74cfeab50`, dispatched 2026-08-21T21:04:33Z. Staging is one run ahead of production and one commit behind `main`'s tip.
+It drifted for a structural reason, not a careless one: two files recorded one
+fact. `docs/current/PRODUCTION_STATE.json` is updated by the session that runs
+a release, minutes after it lands, and carries the instrument used for every
+field. This file was updated when someone remembered. So the fix is not another
+correction — it is to stop keeping a second copy.
 
-Measured with `git` against `main` at `c88e80a3`:
+**Single source of truth: `docs/current/PRODUCTION_STATE.json`.** It records,
+per environment, the deployed SHA, the image digest, the deployment run, the
+revision, the timestamp, and what was actually observed to establish each one.
+Superseded records are carried rather than overwritten, so the trail of what was
+true when survives.
 
-- Undeployed to **production**, `a11ea7c1..c88e80a3`: **22 commits** and **2 new migration files** — `infra/azure/pilot_slice_postgres_programs_migration.sql` (#547) and `infra/azure/pilot_slice_postgres_coach_cards_migration.sql` (#553). Not ~120 commits, and not 25 migrations.
-- Undeployed to **staging**, `247bf977..c88e80a3`: **3 commits** (#555, #557, #560), no new migration.
+To size an undeployed batch, read the deployed SHA out of that file and measure
+against it directly:
 
-What this note does NOT claim: nothing here was read back from a live environment. These are workflow-run listings and a local `git` count, which is what the dispatch pointed at, not proof of what either container is serving now. Deploying remains an owner action — `workflow_dispatch` with `confirm_sha` / `release_digest` / `migrations_complete`, and Jason's approval on the protected `production` environment — and is out of scope for any agent to trigger.
+    git rev-list --count <deployed_sha>..origin/main
+    git diff --name-only <deployed_sha>..origin/main -- 'infra/azure/*.sql'
+
+That is two commands against live git, and it cannot go stale.
 
 ## Historical ledger
 

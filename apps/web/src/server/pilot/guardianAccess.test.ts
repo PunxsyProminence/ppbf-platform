@@ -149,7 +149,12 @@ describe('consolidation holds: no new hand-written viewer-scoped guardian join a
     'profileDb.ts',
     // athletes/list projects full athlete rows through the link in one
     // statement; splitting it into ids-then-fetch would change its shape
-    // for no privacy gain. The join is organization-scoped on both levels.
+    // for no privacy gain. The join is organization-scoped on both levels
+    // AND filters a.deleted_at -- this entry once said only the former, and
+    // the missing soft-delete filter rode in under it: an exemption granted
+    // for one property reads as an exemption from all of them. The route's
+    // real statement is executed against a withdrawn athlete by
+    // softDeletedAthleteAccess.pg.test.ts rather than trusted to this note.
     'app/api/pilot/athletes/list/route.ts',
   ]);
 

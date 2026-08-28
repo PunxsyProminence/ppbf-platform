@@ -46,6 +46,27 @@ Unstaged on main as of this entry: none. main, staging and production are all
 bc82d41a. #698 (clearance compare-and-swap) is open and green but deliberately
 unmerged until this record lands, so that main did not move again mid-promotion.
 
+    SUPERSEDED 2026-08-28. Every sentence in this block is now false, and the
+    "READ THIS FIELD WITH SUSPICION" warning above was attached only to
+    CURRENT_MAIN -- not to MODE, and not to the "all bc82d41a" sentence, which
+    is the one that actually misleads. Both environments now run 8af06a60
+    (production revision app-ppbf-production--0000143, run 33127424246,
+    2026-08-28T00:46:09Z); main is 59 commits past bc82d41a.
+
+    HOW IT DRIFTED, because the mechanism matters more than the correction: the
+    session that shipped 8af06a60 updated PRODUCTION_STATE.json and nothing
+    else. One release, two records, one of them updated. That has now happened
+    often enough that PRODUCTION_STATE.json's own superseded_record_2026-08-27
+    says "FOUR production releases succeeded between this record and that one,
+    and none of them was recorded here."
+
+    SO STOP READING ENVIRONMENT STATE OUT OF THIS FILE. It is a record of
+    release DECISIONS -- what was frozen, what was refused, why a candidate was
+    abandoned -- and that history is worth keeping. It is not a record of what
+    is deployed. For that there is exactly one source:
+    docs/current/PRODUCTION_STATE.json, written by the session that runs the
+    release, carrying the instrument used to establish each field.
+
 RELEASE_CANDIDATE_SHA:
 a830eae24fdec92ebdf325235716aeb9d54482f4  <-- FROZEN, SHIPPED 2026-08-25
 25 commits past the previous production SHA 26519efd. This is the
