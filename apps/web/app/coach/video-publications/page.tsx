@@ -105,12 +105,24 @@ export default function CoachVideoPublicationsPage() {
     tags: '',
   });
 
+  /* Whether the publications READ failed. Not errorMessage, which also
+     carries submit-path validation -- a rejected form must not make the list
+     claim it could not be read. */
+  const [publicationsUnreadable, setPublicationsUnreadable] = useState(false);
+
   const loadPublications = async () => {
     const res = await fetch(`${apiBase()}/api/pilot/publications/create`, { credentials: 'include' });
-    if (res.ok) {
-      const data = (await res.json()) as { items?: VideoPublication[] };
-      setPublications(data.items ?? []);
+    if (!res.ok) {
+      // A non-ok response used to fall through this `if` silently, leaving the
+      // list empty and saying nothing. On this page that reads as "you have
+      // published nothing", and the natural response is to publish a minor's
+      // footage that may already be published.
+      setPublicationsUnreadable(true);
+      return;
     }
+    const data = (await res.json()) as { items?: VideoPublication[] };
+    setPublications(data.items ?? []);
+    setPublicationsUnreadable(false);
   };
 
   // Load publications and videos
@@ -125,6 +137,9 @@ export default function CoachVideoPublicationsPage() {
         if (pubRes.ok) {
           const pubData = (await pubRes.json()) as { items?: VideoPublication[] };
           setPublications(pubData.items ?? []);
+          setPublicationsUnreadable(false);
+        } else {
+          setPublicationsUnreadable(true);
         }
 
         if (vidRes.ok) {
@@ -132,8 +147,14 @@ export default function CoachVideoPublicationsPage() {
           setVideos(vidData.items ?? []);
         }
 
+        /* Left unconditional deliberately. The read-failure signal now lives
+           in publicationsUnreadable, which this load sets on its own; making
+           the clear conditional as well would only preserve a stale error
+           from an earlier WRITE across an unrelated reload, and no test could
+           red it -- so it is not carried. */
         setErrorMessage('');
       } catch (error) {
+        setPublicationsUnreadable(true);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load data.');
       }
     })();
@@ -351,9 +372,23 @@ export default function CoachVideoPublicationsPage() {
 
         {/* Publications List */}
         <section>
-          <h2 className="t-command mb-[var(--s4)] text-[length:var(--t-lg)]">Publications ({publications.length})</h2>
+          <h2 className="t-command mb-[var(--s4)] text-[length:var(--t-lg)]">
+            {/* A count of a list that failed to load is not a count. */}
+            Publications ({publicationsUnreadable ? 'unavailable' : publications.length})
+          </h2>
           <div className="space-y-[var(--s3)]">
-            {publications.length === 0 ? (
+            {/* Said whether the list is empty or not. A failed RELOAD leaves the
+                previous answer on screen, which after a write is worse than an
+                empty list: the page has just reported the write succeeded, so
+                a stale row reads as confirmation of it. */}
+            {publicationsUnreadable && (
+              <p className="t-body text-[var(--restricted-ink)]">
+                Your publications could not be read. Anything shown below may be out of date, and
+                this is not a statement that you have published none — check before publishing
+                again.
+              </p>
+            )}
+            {publications.length === 0 && !publicationsUnreadable ? (
               <p className="t-body text-[color:var(--bone-300)]">No publications yet.</p>
             ) : (
               publications.map((pub) => {

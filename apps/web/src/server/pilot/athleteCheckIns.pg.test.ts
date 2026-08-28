@@ -55,6 +55,7 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-athlete-check-ins-pg-test-${Date.n
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_athlete_check_ins_migration.sql';
+const MEASURES_MIGRATION_FILE = 'pilot_slice_postgres_athlete_check_in_measures_migration.sql';
 
 const ORG_ID = 'org-checkins';
 const OTHER_ORG_ID = 'org-elsewhere';
@@ -65,6 +66,7 @@ const ATHLETE_ID = 'ath-checkins-1';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let measuresMigrationSql: string;
 let baseSchemaSql: string;
 
 function connectionStringFor(database: string): string {
@@ -157,6 +159,7 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  measuresMigrationSql = await fs.readFile(path.join(INFRA_DIR, MEASURES_MIGRATION_FILE), 'utf8');
 });
 
 afterAll(async () => {
@@ -289,6 +292,17 @@ describe('wellnessValueError', () => {
   });
 });
 
+// checkIn writes every column the extended-check-in measures migration adds,
+// so the module tests need BOTH migrations applied. The schema tests above
+// deliberately keep applying only the first: what that one migration does on
+// its own -- create from nothing, re-apply as a no-op, enforce its own bounds
+// -- is precisely what they exist to prove, and stacking a second migration
+// into them would stop them proving it.
+async function applyModuleSchema(client: Client): Promise<void> {
+  await client.query(migrationSql);
+  await client.query(measuresMigrationSql);
+}
+
 // The tests above prove the migration's schema. These prove the module:
 // checkIn's hidden-not-found for a cross-org athlete, and its
 // idempotent-by-day behavior (including the concurrent double-tap race) --
@@ -299,7 +313,7 @@ describe('the real check-in lifecycle against real rows', () => {
     const client = await freshDatabase('checkins_create');
     activeClient = client;
     try {
-      await client.query(migrationSql);
+      await applyModuleSchema(client);
 
       const result = await checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 4, soreness: 2 });
       expect(result).toMatchObject({ created: true, row: { energy: 4, soreness: 2, focus: null } });
@@ -315,7 +329,7 @@ describe('the real check-in lifecycle against real rows', () => {
     const client = await freshDatabase('checkins_idempotent');
     activeClient = client;
     try {
-      await client.query(migrationSql);
+      await applyModuleSchema(client);
 
       const first = await checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 3 });
       const second = await checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 5 });
@@ -339,7 +353,7 @@ describe('the real check-in lifecycle against real rows', () => {
     const client = await freshDatabase('checkins_race');
     activeClient = client;
     try {
-      await client.query(migrationSql);
+      await applyModuleSchema(client);
 
       const [a, b] = await Promise.all([
         checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 3 }),
@@ -363,7 +377,7 @@ describe('the real check-in lifecycle against real rows', () => {
     const client = await freshDatabase('checkins_history');
     activeClient = client;
     try {
-      await client.query(migrationSql);
+      await applyModuleSchema(client);
       await insertCheckIn(client, 'ci-old', { checked_in_on: '2026-01-01', energy: 1 });
       await insertCheckIn(client, 'ci-mid', { checked_in_on: '2026-01-02', energy: 2 });
       await insertCheckIn(client, 'ci-new', { checked_in_on: '2026-01-03', energy: 3 });
@@ -391,7 +405,7 @@ describe('the real check-in lifecycle against real rows', () => {
     const client = await freshDatabase('checkins_today_empty');
     activeClient = client;
     try {
-      await client.query(migrationSql);
+      await applyModuleSchema(client);
       await expect(getTodayCheckIn(ORG_ID, ATHLETE_ID)).resolves.toBeNull();
     } finally {
       await client.end();

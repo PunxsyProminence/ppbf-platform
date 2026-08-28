@@ -461,3 +461,57 @@ test('a refused lift keeps the hold on screen — a child stays held until the s
   expect(screen.getByText(/cannot be lifted/)).toBeTruthy();
   expect(screen.getByText(/Active Training Hold — sparring/)).toBeTruthy();
 });
+
+/* ---------------------------------------------------------------------------
+   A board nobody could read is not an empty board.
+   ------------------------------------------------------------------------- */
+
+/*
+ * This screen answers one question -- "who is medically cleared" -- and its
+ * empty state answers it with "No athletes on your roster", which on this page
+ * a coach reads as "nothing to check, everyone may train". A whole-board read
+ * failure used to render exactly that sentence. The per-row failure was
+ * already fail-closed (the 'unavailable' badge two tests above); only the
+ * failure that takes out the whole board escaped, and it escaped into the most
+ * reassuring sentence on the page.
+ */
+describe('a clearance board nobody could read never reads as a clear roster', () => {
+  test('a roster the server refused says the board could not be read, and does not say the roster is empty', async () => {
+    global.fetch = mockFetch({ '/athletes/list': () => ({ ok: false, json: async () => ({}) }) as Response });
+
+    render(<SportsMedicinePage />);
+
+    expect(await screen.findByText('The clearance board could not be read')).toBeTruthy();
+    // This half is the defect itself. A page that adds the honest banner and
+    // keeps the reassuring sentence underneath has fixed nothing -- the coach
+    // still reads "no athletes to check" and walks onto the floor.
+    expect(screen.queryByText('No athletes on your roster')).toBeNull();
+  });
+
+  test('a roster read that throws is treated the same as one the server refused', async () => {
+    // A dropped connection reaches this page as a rejection rather than a
+    // status, and lands in the same catch. A coach must not learn a different
+    // fact from a dead network than from a 503.
+    global.fetch = mockFetch({
+      '/athletes/list': () => Promise.reject(new Error('Network request failed')),
+    });
+
+    render(<SportsMedicinePage />);
+
+    expect(await screen.findByText('The clearance board could not be read')).toBeTruthy();
+    expect(screen.queryByText('No athletes on your roster')).toBeNull();
+  });
+
+  test('a coach who genuinely has nobody is told that, and is not told a read failed', async () => {
+    // The other direction, and it is not decoration: without it the tests
+    // above pass just as well against a board that claims failure every time
+    // it loads, which teaches a coach to read past the one banner that means
+    // something.
+    global.fetch = mockFetch({ '/athletes/list': () => ({ ok: true, json: async () => ({ items: [] }) }) as Response });
+
+    render(<SportsMedicinePage />);
+
+    expect(await screen.findByText('No athletes on your roster')).toBeTruthy();
+    expect(screen.queryByText('The clearance board could not be read')).toBeNull();
+  });
+});
