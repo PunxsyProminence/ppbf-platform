@@ -264,7 +264,19 @@ export default function CoachDevelopmentPage() {
     <RoleStandaloneView
       roleLabel="Coach Workspace"
       routeLabel="/coach/development"
-      allowedRoles={['coach', 'admin']}
+      /* MATCHES THE ROUTE, which gates on STAFF_CREDENTIAL_ROLES. The page
+         admitted only coach and admin, so staff, volunteers and organization
+         admins could call the API that serves this feature and were redirected
+         away from its only UI. This record is self-scoped -- the route takes
+         no account id and answers about the caller -- so there is no reason
+         for anyone with staff standing to be shut out of their own.
+
+         'organization_admin' is absent because ClubRole, the client-side role
+         vocabulary, has no such member -- the same reason /coach/credentials
+         lists these exact four. An org admin can still reach the API. Closing
+         that last gap means widening ClubRole, which is a change to a shared
+         type this slice has no business making on the way past. */
+      allowedRoles={['coach', 'admin', 'staff', 'volunteer']}
       room="office"
       showShellHeader={false}
     >
