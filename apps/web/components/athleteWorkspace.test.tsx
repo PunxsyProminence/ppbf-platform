@@ -7,7 +7,7 @@
 // tab that states something the backend never said, and a control that looks
 // like it did something it did not.
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import React from 'react';
 
 jest.mock('next/link', () => ({
@@ -42,6 +42,8 @@ let storedFloorPlans: Array<Record<string, unknown>> = [];
 let floorPlanPatchFails = false;
 let floorPlanPostFails = false;
 let storedAssignments: Array<Record<string, unknown>> = [];
+let storedCheckIn: Record<string, unknown> | null;
+let checkInReadFails: boolean;
 let assignmentsFail = false;
 
 // pilot.sessions stores date as `date` and rpe as `numeric`, so node-postgres
@@ -109,6 +111,27 @@ function patchedTo(path: string): FetchCall[] {
   return fetchCalls.filter((call) => call.method === 'PATCH' && call.url.endsWith(path));
 }
 
+/** A stored check-in for today, in the shape GET /api/pilot/athlete/check-in
+ * returns it. Every wellness value is null on purpose: absent is the normal
+ * state, and a fixture full of numbers would let a component that renders
+ * null as 0 or 3 pass anyway. */
+function checkedInRecord(): Record<string, unknown> {
+  return {
+    check_in_id: 'ci_test',
+    checked_in_on: '2026-08-28',
+    energy: null,
+    soreness: null,
+    focus: null,
+    sleep_hours: null,
+    hydration: null,
+    motivation: null,
+    mental_clarity: null,
+    stress: null,
+    nutrition_compliance: null,
+    note: '',
+  };
+}
+
 beforeEach(() => {
   fetchCalls.length = 0;
   authenticated = true;
@@ -128,6 +151,12 @@ beforeEach(() => {
   floorPlanPostFails = false;
   storedAssignments = [];
   assignmentsFail = false;
+  // Checked in by default. The Floor is gated on today's check-in (owner
+  // decision 2026-08-28), so a workspace that had NOT checked in would hide
+  // the day's work from every test below that is about the floor rather than
+  // about the gate. The gate's own cases set this to null explicitly.
+  storedCheckIn = checkedInRecord();
+  checkInReadFails = false;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -135,6 +164,17 @@ beforeEach(() => {
 
     if (url.includes('/api/pilot/shadow/formulas/observations') && painObservationResponse) {
       return painObservationResponse;
+    }
+    if (url.includes('/api/pilot/athlete/check-in')) {
+      if (checkInReadFails) throw new Error('check-in offline');
+      if ((init?.method ?? 'GET') === 'POST') {
+        storedCheckIn = { ...checkedInRecord(), ...parseBody(init) };
+        return jsonResponse({ item: storedCheckIn, already_checked_in: false });
+      }
+      return jsonResponse({
+        today: storedCheckIn,
+        recent: storedCheckIn ? [storedCheckIn] : [],
+      });
     }
     if (url.includes('/api/pilot/rabbit-holes/get')) {
       if (rabbitHolesFail) {
@@ -1221,11 +1261,18 @@ describe('Today shows the work a coach assigned', () => {
 // they are no longer offered; the panels stay in the file for when they earn
 // their entry back.
 describe('tabs with nothing behind them are not offered', () => {
-  test('Bio Check-In, Tracks and Assessments are gone from the nav', async () => {
+  test('Tracks and Assessments are still gone from the nav', async () => {
+    // This case used to also assert `queryByRole('button', { name: 'Bio
+    // Check-In' })` was null, under a title that named all three.
+    //
+    // That assertion was a PROXY and it stopped meaning anything the moment
+    // the surface came back: the tab returned on 2026-08-28 labelled
+    // "Wellness", so a check for the literal string 'Bio Check-In' kept
+    // passing while asserting nothing about the property in its title. It is
+    // removed rather than renamed, because the surface it guarded now HAS
+    // something behind it -- see the check-in cases below, which assert that
+    // directly instead.
     await renderWorkspace();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
-    expect(screen.queryByRole('button', { name: 'Bio Check-In' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Development' }));
     expect(screen.queryByRole('button', { name: 'Tracks' })).toBeNull();
@@ -1707,5 +1754,154 @@ describe('the check-in slider presents as a self-report, not a clearance', () =>
     // The old authority vocabulary is gone with it.
     expect(screen.queryByText('Current Readiness')).toBeNull();
     expect(screen.queryByLabelText('Readiness to Train (1-10)')).toBeNull();
+  });
+});
+
+// The wellness check-in: the surface that came back because something now
+// stores what it collects.
+//
+// These cases are deliberately about the two things that would make it a
+// promise it does not keep -- a skipped question recorded as an opinion, and
+// a gate that locks a child out of their own work.
+describe('the wellness check-in', () => {
+  test('is the first thing Today opens on', async () => {
+    // Owner decision 2026-08-28: "wellness and bios should be the first screen
+    // that opens, to encourage use". The tab list decides this, not
+    // openingTabFor's comment -- which claimed the opposite for months while
+    // the list said otherwise.
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByRole('button', { name: 'Check in' })).toBeTruthy();
+  });
+
+  test('a skipped question is ABSENT from the request, never defaulted into it', async () => {
+    // THE RULE THE OLD PANEL COULD NOT KEEP. Its sliders were range inputs, so
+    // they always had a position -- 8, 7, 2 and 8 -- whether or not the child
+    // touched them. Any save would have recorded four opinions nobody held.
+    //
+    // Asserted on the REQUEST BODY rather than on the controls: the contract's
+    // rule is about what gets stored, and a UI that merely looked unanswered
+    // while sending a middle value would satisfy any assertion about pixels.
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Check in' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/athlete/check-in').length).toBe(1));
+    const body = postedTo('/api/pilot/athlete/check-in')[0].body as Record<string, unknown>;
+
+    // A bare check-in is a real check-in: "I'm here" on its own is valid.
+    expect(body).toEqual({});
+    for (const key of ['energy', 'soreness', 'focus', 'motivation', 'sleep_hours']) {
+      expect(Object.hasOwn(body, key)).toBe(false);
+    }
+  });
+
+  test('an answered question is sent as the number the athlete actually chose', async () => {
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    // Chosen by its DESCRIPTION, not by a bare number -- which is the owner's
+    // requirement ("they need a description on what each number represents")
+    // asserted as behaviour rather than as the presence of some text.
+    fireEvent.click(await screen.findByRole('button', { name: /How much energy do you have\? 4: Good/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check in' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/athlete/check-in').length).toBe(1));
+    expect(postedTo('/api/pilot/athlete/check-in')[0].body).toEqual({ energy: 4 });
+  });
+
+  test('the day’s work is locked until the athlete checks in, and nothing else is', async () => {
+    // Owner decision: they have to check in to see that day's workout and
+    // tasks, and it must not block any other tool or capability.
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    openTab('Floor');
+    expect(await screen.findByRole('button', { name: 'Go to check in' })).toBeTruthy();
+
+    // ...and the rest of the workspace is untouched. Drills and Goals are the
+    // cheap half of this; Messages matters most, because a child who needs to
+    // tell someone something must never have to fill in a form first.
+    openTab('Drills');
+    expect(await screen.findByText(/have not added any drills yet/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+  });
+
+  test('a check-in that could not be READ opens the floor instead of locking it', async () => {
+    // FAILS OPEN, deliberately. A child who checked in this morning must never
+    // be told to do it again because a fetch failed -- and a floor locked by an
+    // error is worse than an ungated one. The gate is an encouragement, not a
+    // security boundary: it protects no data, and the server decides what it
+    // serves regardless of what this renders.
+    checkInReadFails = true;
+    await renderWorkspace();
+
+    openTab('Floor');
+
+    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+  });
+
+  test('once checked in, the floor is open and the form is not offered again', async () => {
+    await renderWorkspace();
+
+    openTab('Floor');
+    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(await screen.findByText(/Already checked in today/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull();
+  });
+
+  test('an account with no athlete record is told so, not left loading forever', async () => {
+    // A DEFECT FOUND BY RE-READING THE DIFF, not by a failing test.
+    //
+    // loadCheckIn returned early when there was no athlete id -- which is what
+    // every sibling loader in this component does -- but this one's loading
+    // flag is RENDERED. The Wellness tab would have sat on "Loading your
+    // check-in..." for the whole session, describing a request that was never
+    // going to be made.
+    //
+    // The floor must also open in this state: nothing here knows whether this
+    // person checked in, and a floor locked on an unknown is exactly what the
+    // gate's fail-open rule exists to prevent.
+    authenticated = false;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(await screen.findByText(/not linked to an athlete record/)).toBeTruthy();
+    expect(screen.queryByText(/Loading your check-in/)).toBeNull();
+
+    openTab('Floor');
+    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+  });
+
+  test('a stored null reads as not reported, never as a zero or a middle', async () => {
+    // The fixture stores a check-in with every wellness value null, which is
+    // the normal state. A component that rendered null as 0 or 3 would show a
+    // child an opinion they never gave.
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    const line = await screen.findByText(/checked in without answering the questions/);
+    // Scoped to the check-in panel. An earlier draft asserted no '0' anywhere
+    // on the page and failed on a stat tile showing a REAL measured zero --
+    // which is the distinction this whole case is about, so asserting it
+    // page-wide was testing the opposite of the property.
+    const panel = line.closest('div');
+    expect(panel).not.toBeNull();
+    expect(within(panel!).queryByText('0')).toBeNull();
+    expect(within(panel!).queryByText('3')).toBeNull();
   });
 });
