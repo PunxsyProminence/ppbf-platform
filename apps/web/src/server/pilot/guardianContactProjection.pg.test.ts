@@ -39,7 +39,14 @@ import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
 import { requirePrincipal } from './http';
-import { WAIVER_IDENTITY_COLUMNS, WAIVER_STAFF_COLUMNS } from './intake';
+import {
+  ASSESSMENT_IDENTITY_COLUMNS,
+  ASSESSMENT_STAFF_COLUMNS,
+  READINESS_IDENTITY_COLUMNS,
+  READINESS_STAFF_COLUMNS,
+  WAIVER_IDENTITY_COLUMNS,
+  WAIVER_STAFF_COLUMNS,
+} from './intake';
 import type { PilotPrincipal } from './auth';
 
 jest.mock('./http', () => {
@@ -138,6 +145,8 @@ interface DomainGetBody {
   waivers?: Record<string, unknown>[];
   medical_intake?: Record<string, unknown>[];
   attendance?: Record<string, unknown>[];
+  assessments?: Record<string, unknown>[];
+  readiness?: Record<string, unknown>[];
   coach_observations?: Record<string, unknown>[];
   error?: string;
 }
@@ -311,6 +320,28 @@ beforeAll(async () => {
        (organization_id, attendance_id, athlete_id, attendance_date, status, notes)
      values ($1, '66666666-5555-4444-8333-222222222222', $2, current_date, 'present', $3)`,
     [ORG, ATHLETE, 'Arrived upset; welfare lead spoke to them.'],
+  );
+
+  /* An assessment and a readiness row, each carrying the staff-internal
+     columns their migrations added AFTER both reads of the table were
+     written. The assessment names a second rater and their independent score
+     -- an unreconciled disagreement between two staff about this child -- and
+     a free-text note in the same shape as the three above. Both tables sit in
+     the same response body, under the same gate. */
+  await db.query(
+    `insert into pilot.assessments
+       (organization_id, assessment_id, athlete_id, assessor_account_id, assessment_type, result,
+        assessor_role, second_rater_account_id, second_rater_result, conditions_note)
+     values ($1, '55555555-4444-4333-8222-111111111111', $2, $3, 'intake_assessment', '{"score": 4}'::jsonb,
+             'coach', $4, 'rated 2 - disagrees with the first rater', $5)`,
+    [ORG, ATHLETE, 'acct-coach', 'acct-admin', 'Ran late; welfare lead was in the room. Call 555-0200 first.'],
+  );
+
+  await db.query(
+    `insert into pilot.readiness
+       (organization_id, readiness_id, athlete_id, score, category, measured_at, method, recorded_by_account_id)
+     values ($1, '44444444-3333-4222-8111-000000000000', $2, 7, 'green', now(), 'staff_entered_intake', $3)`,
+    [ORG, ATHLETE, 'acct-coach'],
   );
 
   // A waiver signed by Guardian B, carrying a staff note about Guardian B.
@@ -649,6 +680,66 @@ describe('the whole domain-get body', () => {
     expect(asCoach.attendance?.[0].notes).toContain('welfare lead');
   });
 
+  /* THE SECOND RATER, which is not a note and is the reason this table needed
+     more than a notes column moved. The row records that one staff member
+     scored this child 4 and another scored them 2. It exists so the
+     reliability study collects itself from live use; it was never a result
+     issued to anyone, and it reached the family and the child. */
+  it('gives a guardian and an athlete the assessment without the raters or the second rating', async () => {
+    const asGuardian = await readDomainGet(AS.guardianA());
+    const asAthlete = await readDomainGet(AS.athlete());
+
+    for (const body of [asGuardian, asAthlete]) {
+      const assessment = body.assessments?.[0];
+      // Still a real assessment: the result and what it was.
+      expect(assessment).toMatchObject({ assessment_type: 'intake_assessment', assessor_role: 'coach' });
+      expect(assessment?.result).toEqual({ score: 4 });
+
+      const keys = Object.keys(assessment ?? {});
+      expect(keys).not.toContain('conditions_note');
+      expect(keys).not.toContain('second_rater_result');
+      expect(keys).not.toContain('second_rater_account_id');
+      expect(keys).not.toContain('assessor_account_id');
+    }
+
+    // Said as values too, because that is how these actually escape: the
+    // note carries a phone number and the second rating carries a
+    // contradiction of the score the family is reading.
+    expect(JSON.stringify(asGuardian.assessments)).not.toContain('555-0200');
+    expect(JSON.stringify(asGuardian.assessments)).not.toContain('disagrees');
+    expect(JSON.stringify(asAthlete.assessments)).not.toContain('555-0200');
+    expect(JSON.stringify(asAthlete.assessments)).not.toContain('disagrees');
+  });
+
+  it('keeps the whole assessment for the coach and the organization admin', async () => {
+    const asCoach = await readDomainGet(AS.coach());
+    const asAdmin = await readDomainGet(AS.admin());
+
+    expect(asCoach.assessments?.[0].conditions_note).toContain('welfare lead');
+    expect(asCoach.assessments?.[0].second_rater_result).toContain('disagrees');
+    expect(asAdmin.assessments?.[0].second_rater_result).toContain('disagrees');
+  });
+
+  it('gives a guardian and an athlete readiness without the staff account that entered it', async () => {
+    const asGuardian = await readDomainGet(AS.guardianA());
+    const asAthlete = await readDomainGet(AS.athlete());
+
+    for (const body of [asGuardian, asAthlete]) {
+      const readiness = body.readiness?.[0];
+      // Still a real readiness row: the score and the category.
+      expect(readiness).toMatchObject({ category: 'green' });
+      expect(Object.keys(readiness ?? {})).not.toContain('recorded_by_account_id');
+    }
+
+    expect(JSON.stringify(asGuardian.readiness)).not.toContain('acct-coach');
+    expect(JSON.stringify(asAthlete.readiness)).not.toContain('acct-coach');
+  });
+
+  it('keeps recorded_by_account_id for the coach', async () => {
+    const asCoach = await readDomainGet(AS.coach());
+    expect(asCoach.readiness?.[0].recorded_by_account_id).toBe('acct-coach');
+  });
+
   it('keeps the waiver note for the coach and the organization admin', async () => {
     const asCoach = await readDomainGet(AS.coach());
     const asAdmin = await readDomainGet(AS.admin());
@@ -682,6 +773,53 @@ describe('the waiver allowlist covers the whole table', () => {
   it('keeps the staff note out of the identity set', () => {
     expect(WAIVER_IDENTITY_COLUMNS).not.toContain('notes');
     expect(WAIVER_STAFF_COLUMNS).toContain('notes');
+  });
+});
+
+/* The same guard for the two tables whose migrations outgrew their reads.
+   These two are the reason the guard matters: pilot.assessments went from
+   seven columns to eighteen and pilot.readiness from seven to twelve, all
+   after both reads of each were written, and every added column reached a
+   family the day its migration applied. A list checked against the live table
+   turns the NEXT such migration into a red test with the column named in it,
+   instead of a silent disclosure or a silently dropped field. */
+describe('the assessment and readiness allowlists cover their whole tables', () => {
+  it('names every column of pilot.assessments exactly once, and no column twice', async () => {
+    const live = await db.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'pilot' and table_name = 'assessments'`,
+    );
+    const liveColumns = live.rows.map((row) => row.column_name).sort();
+    const declared = [...ASSESSMENT_IDENTITY_COLUMNS, ...ASSESSMENT_STAFF_COLUMNS].sort();
+
+    expect(new Set(declared).size).toBe(declared.length);
+    expect(declared).toEqual(liveColumns);
+  });
+
+  it('names every column of pilot.readiness exactly once, and no column twice', async () => {
+    const live = await db.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'pilot' and table_name = 'readiness'`,
+    );
+    const liveColumns = live.rows.map((row) => row.column_name).sort();
+    const declared = [...READINESS_IDENTITY_COLUMNS, ...READINESS_STAFF_COLUMNS].sort();
+
+    expect(new Set(declared).size).toBe(declared.length);
+    expect(declared).toEqual(liveColumns);
+  });
+
+  it('keeps the rater identities and the second rating out of the identity set', () => {
+    for (const column of [
+      'assessor_account_id',
+      'second_rater_account_id',
+      'second_rater_result',
+      'conditions_note',
+    ]) {
+      expect(ASSESSMENT_IDENTITY_COLUMNS).not.toContain(column);
+      expect(ASSESSMENT_STAFF_COLUMNS).toContain(column);
+    }
+    expect(READINESS_IDENTITY_COLUMNS).not.toContain('recorded_by_account_id');
+    expect(READINESS_STAFF_COLUMNS).toContain('recorded_by_account_id');
   });
 });
 

@@ -153,6 +153,28 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * A 409 from GET /api/pilot/video/[videoId] is a STATED refusal -- a guardian
+ * consent condition the route authored a specific, safe-to-show message for
+ * (photo-only consent, or a standing withdrawal). Those must reach the coach
+ * verbatim: "Could not load video" for a consent refusal tells them nothing
+ * they can act on and reads as a fault to retry, when the actual answer is
+ * that a guardian has to sign. Every other status keeps the generic text --
+ * 404 is deliberately indistinguishable between "not there" and "not yours"
+ * (the route's own 403-vs-404 rule), and a 500 body is a fixed
+ * "Internal server error" with nothing useful in it. Same shape the
+ * calibration console's readError already uses against this same route.
+ */
+async function openVideoRefusal(response: Response): Promise<string> {
+  if (response.status !== 409) return 'Could not load video';
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    return typeof payload.error === 'string' && payload.error ? payload.error : 'Could not load video';
+  } catch {
+    return 'Could not load video';
+  }
+}
+
 export default function CoachVideoAnalysisPage() {
   const session = usePilotSession();
   const [videos, setVideos] = useState<VideoSession[]>([]);
@@ -596,7 +618,7 @@ export default function CoachVideoAnalysisPage() {
     setLoadingVideoId(videoId);
     try {
       const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`, { credentials: 'include' });
-      if (!res.ok) throw new Error('Could not load video');
+      if (!res.ok) throw new Error(await openVideoRefusal(res));
       const data = (await res.json()) as { stream_url: string; title: string };
       setActiveVideo({ url: data.stream_url, title: data.title });
     } catch (err) {

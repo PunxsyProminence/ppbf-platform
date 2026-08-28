@@ -237,9 +237,19 @@ export default function ParentHub() {
   }, []);
 
   /* SLICE 8. The scheduler already answers this and the hub was not asking.
-     GET /api/pilot/scheduler's parent branch filters classes, registrations
-     and attendance to the guardian's linked athletes server-side, so ONE read
-     covers every child and the per-child split happens in render below.
+     GET /api/pilot/scheduler's parent branch filters registrations, coaching
+     requests and attendance to the guardian's linked athletes server-side, so
+     ONE read covers every child and the per-child split happens in render
+     below.
+
+     NOT classes, and that correction is deliberate rather than pedantic: this
+     comment used to say "filters classes, registrations and attendance", and
+     the classes half was never true. route.ts binds `const classes =
+     store.classes` and returns it verbatim on every branch, because a family
+     browses the whole catalogue to register against it. A comment that
+     asserts a filter nobody wrote is worse than no comment -- the next reader
+     leans on it. What the route DOES narrow on the class rows is their
+     fields: no *_account_id reaches a parent or an athlete. 
 
      That is also why this effect has no activeChildId dependency: switching
      children re-filters data already in hand rather than firing a request
