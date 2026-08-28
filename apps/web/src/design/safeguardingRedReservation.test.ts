@@ -814,7 +814,6 @@ const ALLOW_LIST: readonly AllowListEntry[] = [
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'incomplete', sites: 1, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'unable-to', sites: 1, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'unavailable', sites: 1, reason: DEFECT },
-  { file: 'components/ParentDigest.tsx', channel: '.alert--critical', identifier: 'fail', sites: 1, reason: DEFECT },
   { file: 'components/ParentHub.tsx', channel: '--locked', identifier: 'error', sites: 1, reason: DEFECT },
   { file: 'components/ParentHub.tsx', channel: '.alert--critical', identifier: 'error', sites: 1, reason: DEFECT },
   { file: 'components/ProfileSettings.tsx', channel: '--locked-ink', identifier: 'error', sites: 3, reason: DEFECT },

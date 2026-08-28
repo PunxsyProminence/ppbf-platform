@@ -171,9 +171,22 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
 
       {loading && <p className="working mt-[var(--s3)]">Reading the corner</p>}
 
+      {/* alert--warning, not alert--critical. The safeguarding red (#A81E22) is
+          reserved for MEDICALLY_NOT_ALLOWED -- the top of the safety ladder, a
+          person who may not participate (owner decision 2026-08-19). A digest
+          that could not be fetched is not that, and this card's own text says
+          so in as many words: "Nothing is wrong with the record." The colour
+          was contradicting the sentence inside it.
+
+          Spending the gate's red on a load failure is what teaches an eye that
+          the red is furniture, which is the training effect the reservation
+          exists to prevent. Same substitution as PR #576 and the one CI forced
+          in #778. The glyph moves with it -- the guard's own remediation names
+          the pair (alert--critical -> alert--warning, glyph ✕ -> ▲), and a
+          warning card still wearing the refusal's ✕ keeps half the alarm. */}
       {failed && !loading && (
-        <div className="alert alert--critical alert--tight" role="alert">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <div className="alert alert--warning alert--tight" role="alert">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <div className="alert-body">
             <p className="alert-msg">
               The corner could not be read just now. Nothing is wrong with the record — try again in a moment.

@@ -45,6 +45,10 @@ export default function StaffCredentialsUploadPage() {
   const [loading, setLoading] = useState(true);
   const [busyTypeId, setBusyTypeId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /* Whether the credential READ failed. Separate from errorMessage, which
+     also carries upload validation ("Choose a file...") -- a rejected upload
+     must not make the list claim it could not be read. */
+  const [credentialsUnreadable, setCredentialsUnreadable] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -53,6 +57,7 @@ export default function StaffCredentialsUploadPage() {
     if (!response.ok) throw new Error('Unable to load your credentials.');
     const payload = (await response.json()) as { items?: CredentialItem[] };
     setItems(payload.items ?? []);
+    setCredentialsUnreadable(false);
   }, []);
 
   useEffect(() => {
@@ -63,6 +68,7 @@ export default function StaffCredentialsUploadPage() {
         if (!controller.signal.aborted) setLoading(false);
       } catch (error) {
         if (controller.signal.aborted) return;
+        setCredentialsUnreadable(true);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load your credentials.');
         setLoading(false);
       }
@@ -147,6 +153,16 @@ export default function StaffCredentialsUploadPage() {
             <div className="flex justify-center py-[var(--s6)]">
               <span className="working">Loading your credentials...</span>
             </div>
+          ) : credentialsUnreadable ? (
+            /* A failed read of YOUR OWN credential record is not a fact about
+               the ORGANISATION'S configuration. Ungated, this sent a coach to
+               chase a non-existent admin task instead of retrying -- while
+               their SafeSport, CPR and background-check state stayed
+               unknown. */
+            <p className="t-body text-[var(--restricted-ink)]">
+              Your credentials could not be read. This is not a statement that none are set up,
+              and not a statement that yours are current.
+            </p>
           ) : items.length === 0 ? (
             <p className="t-body">
               No clearance types are set up for this organization yet. Ask an administrator.

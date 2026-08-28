@@ -73,7 +73,7 @@ import {
   athleteIdsForCoach,
   type ActorIdentity,
 } from './access';
-import { guardianAthleteIds, isGuardianLinkedToAthlete } from './guardianAccess';
+import { guardianAthleteIds, guardianParentIdForAthlete, isGuardianLinkedToAthlete } from './guardianAccess';
 
 jest.setTimeout(180_000);
 
@@ -384,6 +384,34 @@ describe('a deleted athlete is unreachable through the guardian path', () => {
   test('guardianAthleteIds drops the deleted athlete from the guardian scope', async () => {
     await withDatabase('sda_guardian_scope', async () => {
       await expect(guardianAthleteIds(ORG_ID, GUARDIAN_ACCOUNT)).resolves.toEqual([LIVE_ATHLETE]);
+    });
+  });
+
+  /* THE THIRD ATHLETE-SCOPED FUNCTION IN THIS MODULE, which carried no such
+     join. isGuardianLinkedToAthlete and guardianAthleteIds both join
+     pilot.athletes for the reason the first records: guardian_links has no
+     deleted_at of its own, so a link to a withdrawn child stays true forever
+     and only the join can close it. guardianParentIdForAthlete takes an
+     athlete_id and answers a guardian question about it, and joined
+     pilot.parents to guardian_links and stopped.
+
+     NOT REACHABLE TODAY, and this test says so rather than implying a hole
+     that is not there: its one caller chain
+     (resolveActingParent -> POST /api/pilot/parent/consent) checks
+     guardianAthleteIds first, and that check already excludes a deleted
+     athlete. What this pins is that the function is safe on its own, so the
+     next caller does not have to know to pre-check -- which is the property
+     the other two already have and the reason they have it. */
+  test('guardianParentIdForAthlete answers nothing for a deleted athlete', async () => {
+    await withDatabase('sda_guardian_parent_row', async () => {
+      // The control: the same account, the same guardian_links shape, a live
+      // child. Without this the assertion below would pass just as well
+      // against a function that had stopped working entirely.
+      await expect(guardianParentIdForAthlete(ORG_ID, GUARDIAN_ACCOUNT, LIVE_ATHLETE))
+        .resolves.toMatchObject({ parentId: PARENT_ID });
+
+      await expect(guardianParentIdForAthlete(ORG_ID, GUARDIAN_ACCOUNT, DELETED_ATHLETE))
+        .resolves.toBeNull();
     });
   });
 

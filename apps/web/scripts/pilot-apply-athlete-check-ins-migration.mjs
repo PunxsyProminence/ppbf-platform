@@ -73,13 +73,35 @@ const READINESS_QUERY = `
     -- also the more durable check: it holds whether the SQL is written with
     -- BETWEEN or with explicit comparisons. Counting 3 rather than using
     -- exists() keeps it honest if a column silently loses its bound.
+    --
+    -- IT NOW COUNTS THE THREE NAMED COLUMNS, NOT EVERY 1-5 CONSTRAINT ON THE
+    -- TABLE. The previous form asked pg_constraint for all single-column 1-5
+    -- checks and demanded exactly 3, which quietly also meant "and no other
+    -- column on this table is bounded 1 to 5". That held only while these
+    -- were the only wellness measures. The owner's growth model for this
+    -- table is one migration per measure decided, and the first of those
+    -- (athlete-check-in-measures) adds five more 1-5 columns -- taking the
+    -- count to 8 and failing this gate against a schema that is entirely
+    -- correct. It failed inside the all chain, which is what a rebuild and
+    -- a real dispatch both run.
+    --
+    -- Joining to the column and naming the three keeps the assertion aimed at
+    -- what THIS runner installed, and leaves later measures free to add their
+    -- own bounds without renegotiating this gate. array_length(conkey, 1) = 1
+    -- restricts it to single-column checks, so a future multi-column
+    -- constraint cannot be miscounted as one of these three.
     (
       select count(*) = 3
-      from pg_constraint
-      where conrelid = to_regclass('pilot.athlete_check_ins')
-        and contype = 'c'
-        and pg_get_constraintdef(oid) like '%>= 1%'
-        and pg_get_constraintdef(oid) like '%<= 5%'
+      from pg_constraint c
+      join pg_attribute a
+        on a.attrelid = c.conrelid
+       and a.attnum = c.conkey[1]
+      where c.conrelid = to_regclass('pilot.athlete_check_ins')
+        and c.contype = 'c'
+        and array_length(c.conkey, 1) = 1
+        and a.attname in ('energy', 'soreness', 'focus')
+        and pg_get_constraintdef(c.oid) like '%>= 1%'
+        and pg_get_constraintdef(c.oid) like '%<= 5%'
     ) as wellness_bounds_ready
 `;
 
