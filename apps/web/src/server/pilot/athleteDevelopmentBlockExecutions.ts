@@ -156,7 +156,44 @@ export async function recordBlockExecution(input: BlockExecutionInput & {
   }
 
   // One definition of "is this block mine", reused rather than re-queried.
-  if (!(await getDevelopmentBlock(input.actor, input.blockId))) return null;
+  const block = await getDevelopmentBlock(input.actor, input.blockId);
+  if (!block) return null;
+
+  /* A VERDICT ON A BLOCK THAT IS STILL RUNNING IS A PREDICTION, NOT A RECORD.
+     This module said so in its header and then let one be written anyway --
+     and because getBlockExecution returns the row without the window state
+     beside it, a later reader could not tell the two apart. Codex caught it
+     on #829.
+     
+     TERMINAL STATUS IS THE ESCAPE HATCH, and it is not a loophole. A block a
+     coach has marked 'completed' or 'cancelled' is over whatever its dates
+     say -- a cancelled block's ends_on is routinely still in the future, and
+     refusing to record "not_delivered" on it would be refusing the truest
+     verdict this table can hold.
+     
+     Compared in the database's clock, not the node process's, so a block does
+     not close an hour early for a server in another timezone.
+     
+     NOTE FOR THE #804 RECONCILIATION: this refusal is a consequence of D1(a),
+     where the single row IS the historical verdict. #804's many-row model
+     deliberately allows a mid-block entry, because there an entry is an
+     interim review rather than the record. If that model wins, this gate goes
+     with the table -- it is not a rule about coaching, it is a rule about
+     what one mutable row can honestly mean. */
+  const TERMINAL_STATUSES: readonly string[] = ['completed', 'cancelled'];
+  if (!TERMINAL_STATUSES.includes(block.status)) {
+    const window = await queryOne<{ closed: boolean }>(
+      `select ($1::date < current_date) as closed`,
+      [block.ends_on],
+    );
+    if (window?.closed !== true) {
+      throw new ValidationError(
+        'This block has not finished yet. Record how it went once its window '
+        + 'closes, or mark the block completed or cancelled first.',
+        'BLOCK_EXECUTION_WINDOW_OPEN',
+      );
+    }
+  }
 
   /* recorded_by_account_id and recorded_at are re-stamped on a correction:
      the row records WHO CONCLUDED THIS, and after a correction that is the
@@ -251,6 +288,16 @@ export interface BlockWindowCounts {
    * place it in a window with. That is neither "none in this window" nor
    * evidence the window contains, and collapsing it into either would make
    * this surface lie in a small, plausible way.
+   *
+   * SCOPED BY due_on, WHICH THE FIRST VERSION DID NOT DO. It carried no date
+   * predicate at all, so every block for this athlete reported the same
+   * number, an assessment due next month counted against a block that closed
+   * last year, and the figure moved whenever unrelated work was scheduled. A
+   * per-athlete total wearing a per-block label. Codex caught it on #829.
+   *
+   * A row with BOTH dates null is excluded rather than counted here: it
+   * cannot be placed in any window, so attributing it to this one would be
+   * the same defect in a smaller costume.
    */
   assessments_without_administered_date: number;
 }
@@ -329,7 +376,8 @@ export async function getBlockPlanVsActual(
          as assessments_administered,
        (select count(*) from pilot.assessments a
          where a.organization_id = $1 and a.athlete_id = $2
-           and a.administered_on is null)
+           and a.administered_on is null
+           and a.due_on between $3::date and $4::date)
          as assessments_without_administered_date`,
     [block.organization_id, block.athlete_id, block.starts_on, block.ends_on],
   );

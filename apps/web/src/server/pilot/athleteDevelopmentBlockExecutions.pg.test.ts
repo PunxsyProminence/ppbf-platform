@@ -344,13 +344,19 @@ function insertActivity(
  * `date null` and indexes the null rows as the not-yet-administered case, so
  * this state is real and reachable, not hypothetical.
  */
-function insertAssessment(client: Client, assessmentId: string, daysAgo: number | null) {
+function insertAssessment(
+  client: Client, assessmentId: string, daysAgo: number | null, dueDaysAgo: number | null = null,
+) {
+  /* dueDaysAgo places an UNDATED assessment in a window. administered_on null
+     with due_on null is a row no window can claim, and the query excludes it
+     rather than counting it against every block. */
   return client.query(
     `insert into pilot.assessments
-       (organization_id, assessment_id, athlete_id, assessment_type, administered_on)
+       (organization_id, assessment_id, athlete_id, assessment_type, administered_on, due_on)
      values ($1, $2::uuid, $3, 'movement_screen',
-             case when $4::int is null then null else current_date - ($4::int) end)`,
-    [ORG_ID, assessmentId, ATHLETE_ID, daysAgo],
+             case when $4::int is null then null else current_date - ($4::int) end,
+             case when $5::int is null then null else current_date - ($5::int) end)`,
+    [ORG_ID, assessmentId, ATHLETE_ID, daysAgo, dueDaysAgo],
   );
 }
 
@@ -756,6 +762,41 @@ describe('the module recording and reading a verdict', () => {
     expect(written?.adherence).toBe('delivered_with_deviations');
   });
 
+  test('a verdict on a block still running is refused -- it would be a prediction', async () => {
+    /* CODEX FINDING, #829. The header said an adherence judgment on an open
+       window is "a prediction, not a record", and the write did not enforce
+       it -- and getBlockExecution returns the row with no window state beside
+       it, so a later reader could not tell the two apart. */
+    await expect(recordBlockExecution({
+      actor: COACH, blockId: OPEN_BLOCK_ID, adherence: 'delivered_as_planned',
+    })).rejects.toBeInstanceOf(ValidationError);
+
+    const { rows } = await client.query(
+      'select count(*)::int as n from pilot.athlete_development_block_executions',
+    );
+    expect(rows[0].n).toBe(0);
+  });
+
+  test('a cancelled block can be judged immediately, whatever its dates say', async () => {
+    /* THE ESCAPE HATCH, and it is not a loophole. A cancelled block's ends_on
+       is routinely still in the future; refusing "not_delivered" on it would
+       be refusing the truest verdict this table can hold. A gate written as
+       "ends_on < today" alone -- which is what the finding literally proposed
+       -- would have got this wrong. */
+    for (const terminal of ['cancelled', 'completed']) {
+      await client.query(
+        `update pilot.athlete_development_blocks set status = $3
+         where organization_id = $1 and block_id = $2`,
+        [ORG_ID, OPEN_BLOCK_ID, terminal],
+      );
+
+      const written = await recordBlockExecution({
+        actor: COACH, blockId: OPEN_BLOCK_ID, adherence: 'not_delivered',
+      });
+      expect(written?.adherence).toBe('not_delivered');
+    }
+  });
+
   test('a coach of this gym who cannot open the block cannot judge it', async () => {
     // Not a ForbiddenError: a hidden not-found, so an unassigned coach cannot
     // use this path to learn that a block id exists.
@@ -883,7 +924,8 @@ describe('the six UNKNOWN states stay distinguishable', () => {
        would make this surface lie in a small, plausible way. */
     await insertAssessment(client, '11111111-1111-4111-8111-111111111111', 45);  // inside
     await insertAssessment(client, '22222222-2222-4222-8222-222222222222', 400); // outside
-    await insertAssessment(client, '33333333-3333-4333-8333-333333333333', null); // no date
+    // Not administered, but DUE inside this window -- placeable, so counted.
+    await insertAssessment(client, '33333333-3333-4333-8333-333333333333', null, 45);
 
     const view = await getBlockPlanVsActual(COACH, BLOCK_ID);
 
@@ -897,6 +939,26 @@ describe('the six UNKNOWN states stay distinguishable', () => {
     const dateless = await getBlockPlanVsActual(COACH, BLOCK_ID);
     expect(dateless?.counts.assessments_without_administered_date).toBe(1);
     expect(dateless?.has_recorded_activity).toBe(false);
+  });
+
+  test('an undated assessment outside the window is not counted against this block', async () => {
+    /* CODEX FINDING, #829. The undated subquery carried no date predicate at
+       all, so every block for this athlete reported the same number: an
+       assessment due next month counted against a block that closed last
+       year, and the figure moved whenever unrelated work was scheduled. A
+       per-athlete total wearing a per-block label. */
+    // Due inside the window: placeable here, counted here.
+    await insertAssessment(client, '44444444-4444-4444-8444-444444444444', null, 45);
+    // Due long after this block closed: not this block's.
+    await insertAssessment(client, '55555555-5555-4555-8555-555555555555', null, -400);
+    // Neither administered nor due: no window can claim it, so none does.
+    await insertAssessment(client, '66666666-6666-4666-8666-666666666666', null, null);
+
+    const view = await getBlockPlanVsActual(COACH, BLOCK_ID);
+
+    expect(view?.counts.assessments_without_administered_date).toBe(1);
+    // And it is still not evidence the window contains.
+    expect(view?.has_recorded_activity).toBe(false);
   });
 
   test('STATE 4 -- the target the block named comes back with its status', async () => {
