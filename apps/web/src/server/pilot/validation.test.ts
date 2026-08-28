@@ -192,11 +192,23 @@ describe('the goal validator refuses what the column would refuse', () => {
     expect(statusOf(() => validateGoalPayload(goalPayload({ category: 'Underwater Basket Weaving' })))).toBe(400);
   });
 
-  // Held to the same standard as any other value outside the list. These two
-  // are withheld pending the Privacy-Tier System rather than dropped forever,
-  // so the test records the intent: while they are out of GOAL_CATEGORIES, the
-  // API must refuse them rather than write a row the CHECK will reject.
-  test.each(['Weight Loss', 'Weight Gain'])('%s is refused while it is out of the vocabulary', (category) => {
+  // Withheld until 2026-08-28, admitted by owner decision once the
+  // Privacy-Tier System they waited on had shipped. This case used to assert
+  // the refusal; it now asserts the acceptance, which is the same guard
+  // pointed the other way -- the API and the SQL CHECK must agree about these
+  // two, whichever way the decision goes.
+  test.each(['Weight Loss', 'Weight Gain'])('%s is accepted, and is in the vocabulary', (category) => {
+    expect(GOAL_CATEGORIES as readonly string[]).toContain(category);
+    // Asserted the way every other acceptance case here is: the validator
+    // returns the value. statusOf() is a rejection helper and throws when a
+    // payload is accepted, which is the wrong instrument for this direction.
+    expect(validateGoalPayload(goalPayload({ category })).category).toBe(category);
+  });
+
+  // Admitting two values did not open the field. A near miss of a weight
+  // category is still refused, so "weight goals are allowed now" cannot drift
+  // into free text.
+  test.each(['weight loss', 'Weight', 'Weight Cut', 'Cutting'])('%s is still refused', (category) => {
     expect(GOAL_CATEGORIES as readonly string[]).not.toContain(category);
     expect(statusOf(() => validateGoalPayload(goalPayload({ category })))).toBe(400);
   });

@@ -21,6 +21,9 @@ interface RouteResponses {
   coachReviewsList?: (sessionId: string) => Promise<Response> | Response;
   escalationsGet?: () => Promise<Response> | Response;
   escalationsPost?: (body: { action?: string; escalation_id?: string }) => Promise<Response> | Response;
+  liveRun?: () => Promise<Response> | Response;
+  scheduler?: () => Promise<Response> | Response;
+  credentials?: () => Promise<Response> | Response;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -56,6 +59,19 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/athletes/list')) {
       return routes.athletesList ? routes.athletesList() : jsonResponse({ items: [] });
+    }
+    // { run: null } is the route's own success shape for "you have nothing
+    // running" -- not a 404 -- so the default here is a HEALTHY read of an
+    // idle coach, which is what makes an 'unavailable' rendering in these
+    // tests a real signal rather than a mock artefact.
+    if (url.includes('/api/pilot/session-scripts/runs')) {
+      return routes.liveRun ? routes.liveRun() : jsonResponse({ run: null });
+    }
+    if (url.includes('/api/pilot/scheduler')) {
+      return routes.scheduler ? routes.scheduler() : jsonResponse({ ok: true, classes: [] });
+    }
+    if (url.includes('/api/pilot/coach/credentials')) {
+      return routes.credentials ? routes.credentials() : jsonResponse({ ok: true, items: [] });
     }
     if (url.includes('/api/pilot/coach/readiness-board')) {
       // Default: a healthy feed with no fresh check-ins -- everyone UNKNOWN.
@@ -154,17 +170,273 @@ async function pickReviewAthlete(athleteId: string): Promise<void> {
   });
 }
 
-describe('coach workspace does not fabricate the coach\'s own records', () => {
-  test('Development shows no certification or expiry date, because none are stored', async () => {
-    // Hardcoded credentials with expiry dates read as this coach's real
-    // licensing status; an unexpired date is a safety claim, not decoration.
+/**
+ * A staff credential row as GET /api/pilot/coach/credentials returns it.
+ * `band` is the SERVER's derivation (deriveCredentialBand), which is why these
+ * fixtures set it explicitly rather than letting the component infer one --
+ * a second derivation on the client is the thing these tests exist to keep out.
+ */
+function credentialRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    clearance_type_id: 'clr_safesport',
+    name: 'SafeSport Training',
+    issuing_authority: 'U.S. Center for SafeSport',
+    validity_months: 12,
+    status: 'current',
+    band: 'current',
+    issued_on: '2026-02-01',
+    expires_on: '2027-02-01',
+    verification_note: null,
+    has_document: true,
+    ...overrides,
+  };
+}
+
+/** A live run as GET /api/pilot/session-scripts/runs returns it in `run`. */
+function liveRunRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    run_id: 'run_1',
+    script_id: 'scr_1',
+    script_version: 3,
+    activity_id: null,
+    delivered_by_account_id: 'acct_coach_1',
+    delivered_on: '2026-08-28',
+    athletes_present: 11,
+    run_state: 'in_progress',
+    started_at: '2026-08-28T22:00:00.000Z',
+    ended_at: null,
+    current_block_id: 'blk_2',
+    paused_at: null,
+    paused_seconds: 0,
+    elapsed_seconds: 1530,
+    is_paused: false,
+    ...overrides,
+  };
+}
+
+/**
+ * A scheduled class starting `hour`:00 on TODAY at the gym, as
+ * GET /api/pilot/scheduler returns it in `classes`.
+ *
+ * Built from the current instant rather than a frozen literal because the
+ * dashboard filters to the gym's own calendar day; a fixed date would make
+ * this suite pass on one day and fail on the next.
+ */
+function classToday(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const now = new Date();
+  const start = new Date(now.getTime() + 60 * 60 * 1000);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return {
+    class_id: 'cls_1',
+    title: 'Foundations Boxing',
+    start_at: start.toISOString(),
+    end_at: end.toISOString(),
+    location: 'Main Floor',
+    capacity: 20,
+    scheduled_by_account_id: 'acct_coach_1',
+    coach_account_id: 'acct_coach_1',
+    status: 'open',
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
+    registered_count: 4,
+    ...overrides,
+  };
+}
+
+/*
+ * THE HUB USED TO DENY CAPABILITIES THIS PLATFORM ALREADY HAS.
+ *
+ * Three claims sat on the Coach Workspace against three shipped backends:
+ *
+ *   "Live session tracking is not built yet."   pilot.session_script_runs +
+ *                                               /api/pilot/session-scripts/runs
+ *   "There is no backend feed for coach         pilot.person_clearances +
+ *    certifications yet"                        /api/pilot/coach/credentials
+ *   "Video Upload: FRONT-END PLACEHOLDER"       /api/pilot/video/* +
+ *                                               /coach/video-analysis
+ *
+ * A denial is the same defect as a fabrication, pointed the other way. The
+ * coach acts on the sentence either way: told the platform cannot hold a
+ * SafeSport certificate, they do not upload one -- on a safeguarding record
+ * about work with minors. These tests pin the direction the copy may not drift
+ * back in, by naming the exact words that were on the screen.
+ */
+describe('the hub does not deny a capability the platform has', () => {
+  test('the dashboard does not say live session tracking is unbuilt, while the run route answers', async () => {
     await renderWorkspace();
+
+    expect(screen.queryByText(/Live session tracking is not built/i)).toBeNull();
+    expect(screen.queryByText(/There is no scheduling backend feed/i)).toBeNull();
+    expect(screen.queryByText(/not yet tracked/i)).toBeNull();
+  });
+
+  test('the dashboard actually reads the live-run route rather than assuming an answer', async () => {
+    const fetchMock = await renderWorkspace();
+
+    const runCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes('/api/pilot/session-scripts/runs'),
+    );
+    expect(runCalls.length).toBeGreaterThan(0);
+  });
+
+  test('a session in progress is shown with the server\'s own clock, not a local count', async () => {
+    await renderWorkspace({ liveRun: () => jsonResponse({ run: liveRunRow() }) });
+
+    // 1530s from the server -> 25m 30s. The component must never derive this
+    // from started_at and the browser's clock: that is the reading a phone
+    // that slept through half the class would get wrong.
+    expect(screen.queryByText('25m 30s')).not.toBeNull();
+    // The head count the coach entered when they started this delivery --
+    // shown as the number, never as the roster-derived guess the old panel used.
+    expect(screen.queryByText('11')).not.toBeNull();
+    expect(screen.queryByText('Not recorded for this run')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Return to live delivery' }).getAttribute('href'))
+      .toBe('/coach/session-scripts');
+  });
+
+  test('a paused run says paused rather than showing a clock that looks like it is running', async () => {
+    await renderWorkspace({
+      liveRun: () => jsonResponse({ run: liveRunRow({ is_paused: true, paused_at: '2026-08-28T22:20:00.000Z' }) }),
+    });
+
+    expect(screen.queryByText('Paused')).not.toBeNull();
+  });
+
+  test('a failed live-run read is UNKNOWN, never "no session in progress"', async () => {
+    // The distinction is operational, not cosmetic: /coach/session-scripts
+    // disables its start button while this check is failing, precisely so a
+    // coach cannot open a second delivery over a live one. A hub that answered
+    // "nothing is running" here would undo that.
+    await renderWorkspace({ liveRun: () => jsonResponse({}, { ok: false, status: 503 }) });
+
+    // Twice on purpose: the KPI summary line and the Today's Session panel
+    // both say it, and a coach who reads either one must not be told the
+    // opposite by the other.
+    expect(screen.queryAllByText(/could not be checked/i).length).toBe(2);
+    expect(screen.queryByText('No session in progress.')).toBeNull();
+  });
+
+  test('a healthy read with nothing running says so plainly', async () => {
+    await renderWorkspace();
+
+    expect(screen.queryByText('No session in progress.')).not.toBeNull();
+    expect(screen.queryAllByText(/could not be checked/i)).toHaveLength(0);
+  });
+});
+
+describe("today's schedule comes from the scheduler, and a failed read is not an empty evening", () => {
+  test("a class scheduled today is named with its real title and time", async () => {
+    await renderWorkspace({ scheduler: () => jsonResponse({ ok: true, classes: [classToday()] }) });
+
+    expect(screen.queryByText('Foundations Boxing')).not.toBeNull();
+    expect(screen.queryByText(/No class is scheduled for you today/i)).toBeNull();
+  });
+
+  test('a cancelled class stays listed and is marked cancelled', async () => {
+    // Dropping it would leave a coach who remembers it on the calendar unable
+    // to tell a cancellation from a class the read never returned.
+    await renderWorkspace({
+      scheduler: () => jsonResponse({ ok: true, classes: [classToday({ status: 'cancelled' })] }),
+    });
+
+    expect(screen.queryByText('Foundations Boxing')).not.toBeNull();
+    expect(screen.queryByText('Cancelled')).not.toBeNull();
+  });
+
+  test("a class on another day is not drawn under today's heading", async () => {
+    const start = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    await renderWorkspace({
+      scheduler: () => jsonResponse({
+        ok: true,
+        classes: [classToday({
+          title: 'Thursday Sparring',
+          start_at: start.toISOString(),
+          end_at: new Date(start.getTime() + 3600000).toISOString(),
+        })],
+      }),
+    });
+
+    expect(screen.queryByText('Thursday Sparring')).toBeNull();
+    expect(screen.queryByText(/No class is scheduled for you today/i)).not.toBeNull();
+  });
+
+  test('a failed schedule read never renders as "nothing is on tonight"', async () => {
+    await renderWorkspace({ scheduler: () => jsonResponse({}, { ok: false, status: 500 }) });
+
+    expect(screen.queryByText(/schedule could not be loaded/i)).not.toBeNull();
+    expect(screen.queryByText(/No class is scheduled for you today/i)).toBeNull();
+  });
+});
+
+describe("the Development tab shows the coach's real credential record", () => {
+  test('the certification panel no longer denies that a credential backend exists', async () => {
+    await renderWorkspace({ credentials: () => jsonResponse({ ok: true, items: [credentialRow()] }) });
     openTab('Development');
 
-    expect(screen.queryByText(/Bronze Certification/i)).toBeNull();
-    expect(screen.queryByText(/USA Boxing Coach License/i)).toBeNull();
-    expect(screen.queryByText(/Expires:/i)).toBeNull();
-    expect(screen.getAllByText(/Planned — Not Yet Implemented/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/no backend feed for coach certifications/i)).toBeNull();
+    expect(screen.queryByText('SafeSport Training')).not.toBeNull();
+    expect(screen.queryByText('Current')).not.toBeNull();
+    expect(screen.queryByText(/Expires 2027-02-01/)).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Manage your credentials' }).getAttribute('href'))
+      .toBe('/coach/credentials');
+  });
+
+  test("the server's band is displayed, not recomputed -- an expired row reads expired", async () => {
+    await renderWorkspace({
+      credentials: () => jsonResponse({
+        ok: true,
+        items: [credentialRow({ status: 'expired', band: 'expired', expires_on: '2025-01-01' })],
+      }),
+    });
+    openTab('Development');
+
+    expect(screen.queryByText('Expired')).not.toBeNull();
+    expect(screen.queryByText(/Expired 2025-01-01/)).not.toBeNull();
+  });
+
+  test('a submitted credential is not dated, because nobody has confirmed the dates yet', async () => {
+    await renderWorkspace({
+      credentials: () => jsonResponse({
+        ok: true,
+        items: [credentialRow({ status: 'submitted', band: 'submitted', issued_on: null, expires_on: '2027-02-01' })],
+      }),
+    });
+    openTab('Development');
+
+    expect(screen.queryByText('Awaiting review')).not.toBeNull();
+    expect(screen.queryByText(/Expires 2027-02-01/)).toBeNull();
+  });
+
+  test('an unrecognised band falls to "Not on file", never to "Current"', async () => {
+    await renderWorkspace({
+      credentials: () => jsonResponse({ ok: true, items: [credentialRow({ band: 'some_future_band' })] }),
+    });
+    openTab('Development');
+
+    expect(screen.queryByText('Not on file')).not.toBeNull();
+    expect(screen.queryByText('Current')).toBeNull();
+  });
+
+  test('a failed credential read is UNAVAILABLE, not "nothing on file"', async () => {
+    await renderWorkspace({ credentials: () => jsonResponse({}, { ok: false, status: 503 }) });
+    openTab('Development');
+
+    expect(screen.queryByText(/could not be read/i)).not.toBeNull();
+    expect(screen.queryByText(/no active clearance types/i)).toBeNull();
+  });
+
+  test('no document reference reaches this hub, even for the document\'s own owner', async () => {
+    // The list response withholds document_ref on purpose;
+    // /api/pilot/credentials/document is the single path to the bytes. If this
+    // panel ever starts rendering a link to a file, that decision gets made
+    // deliberately rather than by a spread of the row.
+    await renderWorkspace({ credentials: () => jsonResponse({ ok: true, items: [credentialRow()] }) });
+    openTab('Development');
+
+    const documentLinks = screen.queryAllByRole('link').filter((node) =>
+      (node.getAttribute('href') ?? '').includes('/credentials/document'),
+    );
+    expect(documentLinks).toHaveLength(0);
   });
 
   test('Development topics are a reference list, not controls that save nothing', async () => {
@@ -173,6 +445,42 @@ describe('coach workspace does not fabricate the coach\'s own records', () => {
 
     expect(screen.queryByText('Injury Prevention Basics')).not.toBeNull();
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+  });
+});
+
+describe('Film Study names the human workflow that exists and the machine one that does not', () => {
+  test('the tab no longer calls video upload a front-end placeholder', async () => {
+    await renderWorkspace();
+    openTab('Film Study');
+
+    expect(screen.queryByText(/FRONT-END PLACEHOLDER/i)).toBeNull();
+    expect(screen.queryByText(/Coming soon: Video upload/i)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Video Analysis Surface' }).getAttribute('href'))
+      .toBe('/coach/video-analysis');
+  });
+
+  test('automatic technique scoring is still refused, and is not promised as coming soon', async () => {
+    // BACKLOG-video-skill-scoring is parked by owner decision, not queued.
+    // "Coming soon" would be a schedule nobody agreed to for machine
+    // judgements about a child's athletic ability.
+    await renderWorkspace();
+    openTab('Film Study');
+
+    expect(screen.queryByText(/parked, not scheduled/i)).not.toBeNull();
+    expect(screen.queryByText(/Per-skill machine scoring/i)).not.toBeNull();
+  });
+});
+
+describe('the Athlete Reviews tab does not call progression intelligence a placeholder', () => {
+  test('the surface is described as real, and coach confirmation is still stated', async () => {
+    await renderWorkspace();
+    openTab('Athlete Reviews');
+
+    expect(screen.queryByText(/PLACEHOLDER/)).toBeNull();
+    expect(screen.queryByText(/Closed-Loop Progression Intelligence - Planned/i)).toBeNull();
+    expect(screen.queryByText(/until a coach confirms or dismisses/i)).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Progression Intelligence Surface' }).getAttribute('href'))
+      .toBe('/coach/progression-intelligence');
   });
 });
 
@@ -189,6 +497,23 @@ describe('floor tab presents a plan template, not a running session', () => {
     expect(screen.queryByText('Not Started')).toBeNull();
     expect(screen.queryByText('In Progress')).toBeNull();
     expect(screen.queryByText('Completed')).toBeNull();
+  });
+
+  test('the template says THIS panel tracks nothing, not that the platform tracks nothing', async () => {
+    await renderWorkspace();
+    openTab('Floor');
+
+    expect(screen.queryByText(/completion and session progress are not tracked yet/i)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Session Scripts' }).getAttribute('href'))
+      .toBe('/coach/session-scripts');
+  });
+
+  test('with a run live, the floor tab points back at it instead of offering a fresh start', async () => {
+    await renderWorkspace({ liveRun: () => jsonResponse({ run: liveRunRow() }) });
+    openTab('Floor');
+
+    expect(screen.queryByRole('link', { name: 'Open Session Scripts' })).toBeNull();
+    expect(screen.queryAllByRole('link', { name: 'Return to live delivery' }).length).toBeGreaterThan(0);
   });
 });
 

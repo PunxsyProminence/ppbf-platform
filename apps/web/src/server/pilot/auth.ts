@@ -4,6 +4,7 @@ import type { PoolClient } from 'pg';
 import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 
 import { seedDefaultComplianceRules } from './complianceRuleSeeds';
+import { seedDefaultDisciplines } from './disciplineSeeds';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { usesPin } from './credentialPolicy';
@@ -940,13 +941,24 @@ export async function createOrganization(organizationId: string, organizationNam
     throw new Error('RESERVED_ORGANIZATION_ID');
   }
 
-  // Organization, compliance rules, and safety gates are created together, in
-  // one transaction. The seed migrations only reach organizations that
-  // existed when an operator ran them, so a gym created afterwards through
+  // Organization, compliance rules, safety gates, and disciplines are created
+  // together, in one transaction. The seed migrations only reach organizations
+  // that existed when an operator ran them, so a gym created afterwards through
   // this route started with an empty rule set and no safety gate to evaluate
   // contact observations against -- the same gap seedDefaultComplianceRules
   // was written to close, now closed for safety_gates too. The transaction
   // means the organization cannot half-exist either.
+  //
+  // DISCIPLINES ARE HERE FOR A SHARPER REASON THAN THE OTHER TWO. An empty
+  // compliance rule set means nothing is monitored; an empty discipline
+  // registry means the gym cannot hold a session script, a drill, or a cohort
+  // at all. Those three tables carry composite foreign keys to
+  // pilot.disciplines and default their discipline column to 'boxing', so
+  // every write fails 23503 -- including writes that never name a discipline,
+  // because the default is itself an unregistered reference. Unlike the other
+  // two registries there is no seeding migration to fall back on: the CSV path
+  // seeds one organization per operator run, and a gym created here is not
+  // that organization.
   await withTransaction(async (client) => {
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status, created_by_account_id)
@@ -960,6 +972,7 @@ export async function createOrganization(organizationId: string, organizationNam
 
     await seedDefaultComplianceRules(organizationId, client);
     await seedDefaultSafetyGates(organizationId, client);
+    await seedDefaultDisciplines(organizationId, client);
   });
 }
 

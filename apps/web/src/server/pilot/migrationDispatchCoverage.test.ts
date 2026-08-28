@@ -147,6 +147,17 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // origin, the reporter, the correction column and the 'corrected' verdict
     // -- against the table film-study-proposals creates.
     expect(at('film-study-coach-reported')).toBeGreaterThan(at('film-study-proposals'));
+    /* athlete-development-block-competition-target ALTERs
+       pilot.athlete_development_blocks and points it at
+       pilot.external_competitions and pilot.wrestling_league_events, so all
+       three have to exist first. Applied before any of them, a rebuild dies
+       on the ALTER or on the foreign key. */
+    expect(at('athlete-development-block-competition-target'))
+      .toBeGreaterThan(at('athlete-development-blocks'));
+    expect(at('athlete-development-block-competition-target'))
+      .toBeGreaterThan(at('external-competition'));
+    expect(at('athlete-development-block-competition-target'))
+      .toBeGreaterThan(at('wrestling-league'));
     // session-scripts-discipline-fk points pilot.session_scripts at
     // pilot.disciplines. It needs BOTH: multidiscipline creates the registry it
     // references, session-scripts creates the table it constrains. Applied

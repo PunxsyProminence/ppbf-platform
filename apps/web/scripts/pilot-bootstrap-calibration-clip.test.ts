@@ -50,6 +50,9 @@ function run(args: string[], env: Record<string, string> = {}): RunResult {
   try {
     const stdout = execFileSync(TSX_BIN, [SCRIPT, ...args], {
       encoding: 'utf8',
+      // One case below drives a connection to a host that cannot resolve. A
+      // hang there should fail the suite, not stall it.
+      timeout: 60_000,
       // PATH and NODE_ENV only: nothing from this machine's environment can
       // supply a connection string or an expected target by accident.
       env: { PATH: process.env.PATH ?? '', NODE_ENV: 'test', ...env },
@@ -118,6 +121,45 @@ describe('what it refuses, and in what order', () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/POSTGRES_TARGET_MISMATCH/);
+  });
+
+  test('prints the validated target BEFORE it writes anything', () => {
+    // THE ORDERING CASE, and the reason it is written this way.
+    //
+    // Asserting that the two target lines appear SOMEWHERE in stdout passes
+    // whether they are printed before the write or after it, which is exactly
+    // the defect this replaces: the operator learned which database they had
+    // reached only once the rows were already in it.
+    //
+    // So the target is declared correctly -- the guard passes -- and pointed
+    // at a host that cannot resolve. The write therefore cannot succeed. If
+    // the target output happens before the mutation, it is on stdout and the
+    // run still fails; if it happens after, stdout is empty. One is the fix
+    // and the other is the bug, and they are no longer the same test.
+    const result = run(VALID_ARGS, {
+      AZURE_POSTGRES_CONNECTION_STRING: UNREACHABLE,
+      PPBF_EXPECTED_POSTGRES_HOSTNAME: 'db.invalid',
+      PPBF_EXPECTED_POSTGRES_DATABASE: 'ppbf_nowhere',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toMatch(/^target_hostname: db\.invalid$/m);
+    expect(result.stdout).toMatch(/^target_database: ppbf_nowhere$/m);
+    // The write did not happen, so none of the result lines may appear.
+    expect(result.stdout).not.toMatch(/calibration_project_id:/);
+    expect(result.stdout).not.toMatch(/PILOT CALIBRATION BOOTSTRAP PASS/);
+    expect(result.stderr).toMatch(/PILOT CALIBRATION BOOTSTRAP FAIL/);
+  });
+
+  test('prints no target at all when the declaration is refused', () => {
+    // The line above must not be read as "always announce the target". A run
+    // refused by the write-target guard reached no database and must say
+    // nothing about one.
+    const result = run(VALID_ARGS, { AZURE_POSTGRES_CONNECTION_STRING: UNREACHABLE });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toMatch(/target_hostname:/);
+    expect(result.stdout).not.toMatch(/target_database:/);
   });
 
   test('never prints the connection string or its credentials', () => {

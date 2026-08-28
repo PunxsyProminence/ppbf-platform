@@ -17,6 +17,7 @@ import FeedbackBox from "./FeedbackBox";
 import Corridor from "./Corridor";
 import CardCatalog from "./CardCatalog";
 import CommandsOverlay from "./CommandsOverlay";
+import SafetyAttentionBadge from "./SafetyAttentionBadge";
 import SoundToggle from "./SoundToggle";
 import { CONTROL_EXIT, CONTROL_QUIET } from "./sessionBarControls";
 
@@ -197,6 +198,22 @@ export default function GlobalRoleHeader() {
         </div>
 
         <div className="flex flex-wrap items-center gap-[var(--s3)]">
+          {/* An unacknowledged high or critical safety escalation, on every
+              screen this bar reaches.
+
+              It sits FIRST in this group, ahead of the catalog and the
+              conveniences, because that is the whole point: /api/pilot/escalations
+              is a pull surface by construction -- its own header records that
+              this platform sends no email, ever -- so a red flag about a child
+              waited on somebody choosing to open the right page. This bar is
+              the one component mounted on every route, which makes it the
+              only place a coach cannot walk past.
+
+              It renders NOTHING for a role the escalations route does not
+              serve, and nothing on a confirmed-clear read. It carries a count
+              and a severity word and never an athlete, a reason or a source:
+              this bar is on whatever screen faces the room. */}
+          <SafetyAttentionBadge role={session.role} />
           {/* Keyed for the same reason as the corridor: a fresh, closed palette
               on every surface, with no effect writing state on navigation. */}
           <CardCatalog key={`catalog:${pathname}`} />
