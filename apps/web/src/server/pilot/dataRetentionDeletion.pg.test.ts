@@ -356,6 +356,201 @@ describe('the data retention migration applies and cascades', () => {
     expect(unlinked.rows[0].deleted_at).toBeNull();
   });
 
+
+  test('a co-guardianed athlete is not withdrawn when one of their guardians retires', async () => {
+    // The cascade's justification is that a child whose guardian is gone has
+    // nobody left to act for them. That reasoning does not reach a child who
+    // still has a second guardian: stamping deleted_at on them anyway withdraws
+    // a currently enrolled athlete because of an unrelated adult's account
+    // action, and takes the remaining guardian's access to their own child with
+    // it. Split households are the ordinary case, not the edge one.
+    const SHARED_ATHLETE_ID = 'ATH-RET-SHARED';
+    const SOLE_ATHLETE_ID = 'ATH-RET-SOLE';
+    const RETIRING_ACCOUNT_ID = 'acct-retention-guardian-a';
+    const REMAINING_ACCOUNT_ID = 'acct-retention-guardian-b';
+    const RETIRING_PARENT_ID = 'parent-retention-a';
+    const REMAINING_PARENT_ID = 'parent-retention-b';
+
+    await seedAthlete(SHARED_ATHLETE_ID, ORG_ID);
+    await seedAthlete(SOLE_ATHLETE_ID, ORG_ID);
+
+    for (const [accountId, parentId, name] of [
+      [RETIRING_ACCOUNT_ID, RETIRING_PARENT_ID, 'Retiring Guardian'],
+      [REMAINING_ACCOUNT_ID, REMAINING_PARENT_ID, 'Remaining Guardian'],
+    ] as const) {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, 'parent', $2, 'microsoft')`,
+        [accountId, ORG_ID],
+      );
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+         values ($1, $2, $3, $4)`,
+        [ORG_ID, parentId, accountId, name],
+      );
+    }
+
+    // Both guardians hold the shared child; only the retiring one holds the other.
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, $2, $3, 'mother'), ($1, $4, $3, 'father'), ($1, $2, $5, 'mother')`,
+      [ORG_ID, RETIRING_PARENT_ID, SHARED_ATHLETE_ID, REMAINING_PARENT_ID, SOLE_ATHLETE_ID],
+    );
+
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [
+      RETIRING_ACCOUNT_ID,
+    ]);
+
+    const shared = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, SHARED_ATHLETE_ID],
+    );
+    expect(shared.rows[0].deleted_at).toBeNull();
+
+    // The narrowing must not become a blanket refusal: the child this guardian
+    // held alone is still withdrawn, which is the behaviour the cascade exists
+    // for.
+    const sole = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, SOLE_ATHLETE_ID],
+    );
+    expect(sole.rows[0].deleted_at).not.toBeNull();
+  });
+
+  test('a co-guardian who has already retired does not keep the athlete enrolled', async () => {
+    // "Another guardian exists" is not the test -- "another guardian is still
+    // here" is. A guard that counted rows rather than live accounts would let
+    // the last remaining guardian's departure pass silently because a guardian
+    // who left months ago still has a link row.
+    const STALE_ATHLETE_ID = 'ATH-RET-STALE-CO';
+    const STALE_ACCOUNT_ID = 'acct-retention-guardian-stale';
+    const LAST_ACCOUNT_ID = 'acct-retention-guardian-last';
+    const STALE_PARENT_ID = 'parent-retention-stale';
+    const LAST_PARENT_ID = 'parent-retention-last';
+
+    await seedAthlete(STALE_ATHLETE_ID, ORG_ID);
+
+    for (const [accountId, parentId, name] of [
+      [STALE_ACCOUNT_ID, STALE_PARENT_ID, 'Already Retired Guardian'],
+      [LAST_ACCOUNT_ID, LAST_PARENT_ID, 'Last Guardian'],
+    ] as const) {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, 'parent', $2, 'microsoft')`,
+        [accountId, ORG_ID],
+      );
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+         values ($1, $2, $3, $4)`,
+        [ORG_ID, parentId, accountId, name],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, $2, $3, 'guardian')`,
+        [ORG_ID, parentId, STALE_ATHLETE_ID],
+      );
+    }
+
+    // The first guardian retires while the second still holds the child, so the
+    // child stays.
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [
+      STALE_ACCOUNT_ID,
+    ]);
+    const afterFirst = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, STALE_ATHLETE_ID],
+    );
+    expect(afterFirst.rows[0].deleted_at).toBeNull();
+
+    // The second retires and there is now nobody, so the cascade runs.
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [
+      LAST_ACCOUNT_ID,
+    ]);
+    const afterSecond = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, STALE_ATHLETE_ID],
+    );
+    expect(afterSecond.rows[0].deleted_at).not.toBeNull();
+  });
+
+  test('one account holding two parent records is still that athlete only guardian', async () => {
+    // guardianAccess.guardianParentIds already treats a single account as able
+    // to back several pilot.parents rows. A guard that counted parent records
+    // rather than accounts would read this account's own second record as "a
+    // second guardian" and cancel a cascade that has nobody left to justify it.
+    const TWO_ROW_ATHLETE_ID = 'ATH-RET-TWOROW';
+    const TWO_ROW_ACCOUNT_ID = 'acct-retention-guardian-tworow';
+
+    await seedAthlete(TWO_ROW_ATHLETE_ID, ORG_ID);
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'parent', $2, 'microsoft')`,
+      [TWO_ROW_ACCOUNT_ID, ORG_ID],
+    );
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+       values ($1, 'parent-retention-tworow-1', $2, 'Two Row Guardian'),
+              ($1, 'parent-retention-tworow-2', $2, 'Two Row Guardian')`,
+      [ORG_ID, TWO_ROW_ACCOUNT_ID],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'parent-retention-tworow-1', $2, 'mother'),
+              ($1, 'parent-retention-tworow-2', $2, 'guardian')`,
+      [ORG_ID, TWO_ROW_ATHLETE_ID],
+    );
+
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [
+      TWO_ROW_ACCOUNT_ID,
+    ]);
+
+    const athlete = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, TWO_ROW_ATHLETE_ID],
+    );
+    expect(athlete.rows[0].deleted_at).not.toBeNull();
+  });
+
+  test('a guardian record with no account at all still counts as a remaining guardian', async () => {
+    // pilot.parents.account_id is nullable: intake records a guardian before,
+    // or without, that adult ever holding a login. Such a record cannot itself
+    // be retired, so it can never be cleared out of the way -- and this suite
+    // states the resulting behaviour rather than leaving it to fall out of a
+    // null comparison. Retaining the athlete row is the recoverable direction;
+    // an explicit athlete withdrawal remains available either way.
+    const CONTACT_ATHLETE_ID = 'ATH-RET-CONTACT-CO';
+    const CONTACT_ACCOUNT_ID = 'acct-retention-guardian-contact';
+
+    await seedAthlete(CONTACT_ATHLETE_ID, ORG_ID);
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'parent', $2, 'microsoft')`,
+      [CONTACT_ACCOUNT_ID, ORG_ID],
+    );
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+       values ($1, 'parent-retention-contact-acct', $2, 'Signed In Guardian'),
+              ($1, 'parent-retention-contact-only', null, 'Contact Only Guardian')`,
+      [ORG_ID, CONTACT_ACCOUNT_ID],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'parent-retention-contact-acct', $2, 'mother'),
+              ($1, 'parent-retention-contact-only', $2, 'father')`,
+      [ORG_ID, CONTACT_ATHLETE_ID],
+    );
+
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [
+      CONTACT_ACCOUNT_ID,
+    ]);
+
+    const athlete = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, CONTACT_ATHLETE_ID],
+    );
+    expect(athlete.rows[0].deleted_at).toBeNull();
+  });
+
   test('an athlete deleted before their guardian keeps their earlier clock', async () => {
     const EARLY_ATHLETE_ID = 'ATH-RET-EARLY';
     const EARLY_GUARDIAN_ID = 'acct-retention-guardian-2';
