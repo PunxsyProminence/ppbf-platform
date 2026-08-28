@@ -762,10 +762,47 @@ export async function createReadiness(params: {
   return readinessId;
 }
 
+/**
+ * authorRole records what the writer WAS at the moment of writing, and it is
+ * required rather than optional.
+ *
+ * This table records who wrote a note (coach_account_id) and what kind it is
+ * (note_type), and until this column existed it recorded nothing about the
+ * author's role. The two readers that report one -- listParentMessages'
+ * sender_role and listBarrierReports' reporter_role -- recover it by joining
+ * pilot.accounts.role at READ time, and that column is mutable:
+ * upsertOrganizationMembership runs `set role = $3` whenever an organization
+ * admin changes a membership, and several activation paths set it to
+ * 'athlete'. Authorship was therefore recomputed on every read from a value
+ * that can change afterwards.
+ *
+ * Measured against real PostgreSQL before this column existed: a coach writes
+ * a parent_message; listParentMessages reports sender_role 'coach'; the
+ * account's role is changed to 'staff'; the same query, on the same untouched
+ * row, reports 'staff'. Nothing rewrote the note. The claim about who wrote
+ * it changed underneath it.
+ *
+ * It matters most in the direction this platform cares about. A guardian's
+ * barrier report is a parent's account of their own household; if that
+ * guardian is later given a coach role, the same row starts reading as a
+ * coach's professional observation of a family, which is a different kind of
+ * statement carrying different weight.
+ *
+ * REQUIRED, not optional: an optional parameter lets a caller omit it and go
+ * on writing rows with no provenance, which is the state this ends. Every
+ * call site has a principal in scope, so no caller legitimately cannot
+ * answer.
+ *
+ * Readers still report the joined account role for now. Switching them to
+ * prefer this column is deliberately a separate change -- with no rows yet
+ * carrying a recorded role, flipping the readers today would turn every
+ * existing message and barrier report into "unknown" at once.
+ */
 export async function createCoachObservation(params: {
   organizationId: string;
   athleteId: string;
   coachAccountId: string;
+  authorRole: PilotRole;
   noteType: string;
   noteText: string;
 }): Promise<string> {
@@ -773,9 +810,17 @@ export async function createCoachObservation(params: {
 
   await query(
     `insert into pilot.coach_observations
-     (organization_id, note_id, athlete_id, coach_account_id, note_type, note_text)
-     values ($1,$2,$3,$4,$5,$6)`,
-    [params.organizationId, noteId, params.athleteId, params.coachAccountId, params.noteType, params.noteText],
+     (organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text)
+     values ($1,$2,$3,$4,$5,$6,$7)`,
+    [
+      params.organizationId,
+      noteId,
+      params.athleteId,
+      params.coachAccountId,
+      params.authorRole,
+      params.noteType,
+      params.noteText,
+    ],
   );
 
   return noteId;
