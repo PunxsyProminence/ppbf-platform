@@ -410,3 +410,130 @@ describe('the page invents no training science', () => {
     expect(document.body.querySelector('.badge.badge--monitor')).toBeNull();
   });
 });
+
+/*
+ * A SLOW READ FOR THE WRONG CHILD.
+ *
+ * Review finding on #771 (P1), verified and confirmed. Nothing on a block
+ * card names its athlete, and the edit and target controls submit only a
+ * block id -- so a coach authorised for two children who switched athletes
+ * mid-read could have been editing A's plan while the picker said B, with
+ * nothing on screen disagreeing. The server would have accepted every one of
+ * those writes, because the coach IS authorised for A.
+ *
+ * CoachWorkspace already carries this guard (reviewAthleteRef) for the same
+ * reason on the same shape of read. This file should have copied it.
+ */
+describe('a block list never lands under the wrong athlete', () => {
+  /** A stub whose per-athlete reads resolve only when released, so the two
+   *  can be finished out of order -- which is the whole scenario. */
+  function installOrderedFetch(release: Record<string, () => void>) {
+    writes.length = 0;
+    const pending: Record<string, (value: Response) => void> = {};
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/coach/athletes')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, items: ROSTER }) } as Response;
+      }
+      if (url.includes('targets=options')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, options: [] }) } as Response;
+      }
+      if (url.includes('/api/pilot/coach/development-blocks') && (init?.method ?? 'GET') === 'GET') {
+        const athlete = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+        return new Promise<Response>((resolve) => {
+          pending[athlete] = resolve;
+          release[athlete] = () => resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ok: true,
+              blocks: [blockRow({ block_id: `blk-${athlete}`, athlete_id: athlete, title: `Plan for ${athlete}` })],
+            }),
+          } as Response);
+        });
+      }
+      writes.push({ method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      return { ok: true, status: 200, json: async () => ({ ok: true, block: blockRow() }) } as Response;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return { fetchMock, pending };
+  }
+
+  test("a late answer for the previous athlete never renders under the current one", async () => {
+    const release: Record<string, () => void> = {};
+    installOrderedFetch(release);
+    await act(async () => { render(<CoachDevelopmentBlocksPage />); });
+
+    // Ask for ath-1, then switch to ath-2 before ath-1 answers.
+    await pickAthlete('ath-1');
+    await pickAthlete('ath-2');
+
+    // ath-2 answers first, then the stale ath-1 answer arrives.
+    await act(async () => { release['ath-2']?.(); });
+    await act(async () => { release['ath-1']?.(); });
+
+    expect(screen.getByText('Plan for ath-2')).toBeTruthy();
+    expect(screen.queryByText('Plan for ath-1')).toBeNull();
+  });
+
+  test('a late FAILURE for the previous athlete does not blank the current one', async () => {
+    // The error path needs the same guard: an unrelated failure must not
+    // replace a panel that loaded correctly with "could not be read".
+    writes.length = 0;
+    let failPrevious: (() => void) | undefined;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/coach/athletes')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, items: ROSTER }) } as Response;
+      }
+      if (url.includes('targets=options')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, options: [] }) } as Response;
+      }
+      if (url.includes('/api/pilot/coach/development-blocks') && (init?.method ?? 'GET') === 'GET') {
+        const athlete = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+        if (athlete === 'ath-1') {
+          return new Promise<Response>((_resolve, reject) => { failPrevious = () => reject(new Error('slow')); });
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, blocks: [blockRow({ block_id: 'blk-2', title: 'Plan for ath-2' })] }),
+        } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => { render(<CoachDevelopmentBlocksPage />); });
+    await pickAthlete('ath-1');
+    await pickAthlete('ath-2');
+    await act(async () => { failPrevious?.(); });
+
+    expect(screen.getByText('Plan for ath-2')).toBeTruthy();
+    expect(screen.queryByText(/could not be read/i)).toBeNull();
+  });
+
+  test('the previous list is off screen for the whole flight of the new read', async () => {
+    /* The property that matters: while B's read is in flight, A's blocks are
+       not on screen under B's name. It is the 'loading' state that provides
+       this -- the list renders only in 'loaded' -- which a mutation test
+       established by deleting a redundant setBlocks([]) and breaking nothing.
+       So this asserts the state machine, not the belt-and-braces line that
+       used to sit beside it. */
+    const release: Record<string, () => void> = {};
+    installOrderedFetch(release);
+    await act(async () => { render(<CoachDevelopmentBlocksPage />); });
+
+    await pickAthlete('ath-1');
+    await act(async () => { release['ath-1']?.(); });
+    expect(screen.getByText('Plan for ath-1')).toBeTruthy();
+
+    await pickAthlete('ath-2');
+
+    // B's read has not answered yet, and A's plan is already gone.
+    expect(screen.queryByText('Plan for ath-1')).toBeNull();
+    expect(screen.getByText('Loading blocks...')).toBeTruthy();
+
+    await act(async () => { release['ath-2']?.(); });
+    expect(screen.getByText('Plan for ath-2')).toBeTruthy();
+  });
+});
