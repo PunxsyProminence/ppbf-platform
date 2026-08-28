@@ -14,7 +14,11 @@ import {
   createShadowResearchRequirement,
   getShadowResearchRequirementById,
   listShadowResearchRequirements,
+  namedAthleteId,
+  namedAthleteIdsOf,
   resolveShadowResearchRequirement,
+  subjectAthleteIdOf,
+  SUBJECT_NAMING_METADATA_KEYS,
   type ShadowResearchRequirementRow,
 } from '@/src/server/pilot/shadowResearch';
 import { ORGANIZATION_MEMBER_ROLES, SHADOW_PROJECTION_READ_ROLES } from '@/src/server/pilot/shadowRoleSets';
@@ -30,68 +34,11 @@ async function resolveParentAthleteScope(organizationId: string, accountId: stri
   return guardianAthleteIds(organizationId, accountId);
 }
 
-type SubjectBearingRow = Pick<ShadowResearchRequirementRow, 'subject_id' | 'metadata'>;
-
-// The metadata keys that name an athlete, in the same priority order the
-// subject resolution uses. Named once so the read scope, the create gate and
-// the resolve gate cannot end up disagreeing about which keys count.
-const SUBJECT_NAMING_METADATA_KEYS = ['subject_id', 'athlete_id'] as const;
-
-function namedAthleteId(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
-}
-
-/**
- * Every athlete id a row NAMES, in priority order, deduplicated.
- *
- * subjectAthleteIdOf below answers "who is this row about" and takes the first
- * of these. This one answers the different question the WRITE paths need:
- * "which athletes does this row touch at all". They differ when the fields
- * disagree -- subject_id says one child and metadata.athlete_id another -- and
- * on a write every one of them has to be authorized, because whichever the
- * reader later believes, the row will have been filed against a child.
- */
-function namedAthleteIdsOf(row: SubjectBearingRow): string[] {
-  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
-  const candidates = [
-    namedAthleteId(row.subject_id),
-    ...SUBJECT_NAMING_METADATA_KEYS.map((key) => namedAthleteId(metadata[key])),
-  ].filter((athleteId): athleteId is string => athleteId !== null);
-  return Array.from(new Set(candidates));
-}
-
-/**
- * The athlete a requirement row is ABOUT, or null when it is about no one.
- *
- * `subject_id` is the authority -- the dedicated column added by
- * pilot_slice_postgres_research_requirement_subject_migration.sql precisely so
- * that "which child is this row about" stops being guessed. The two metadata
- * fallbacks are NOT the discredited 3-field heuristic that migration replaced:
- * that heuristic also read `evidence_label` and `source_entity_id`, which at
- * almost every creation site hold something that is not an athlete id at all
- * (a capability key, an intake-case id, a learning-loop message id). These two
- * keys are different -- each is written by exactly one family of writers that
- * held the athlete id at write time and put it there:
- *
- *   metadata.subject_id  shadowLibrary.ts ensureClaimResearchRequirement
- *   metadata.athlete_id  the three intake review writers in
- *                        app/api/pilot/intake/review-action/route.ts
- *
- * metadata.athlete_id matters most, because the migration's backfill does not
- * read it (its candidate list is metadata.subject_id, evidence_label,
- * source_entity_id). Every intake-review row written before that migration's
- * application companion therefore carries the athlete only in metadata, with
- * subject_id NULL -- and those are the rows holding a reviewer's free-text
- * note on approving or rejecting a child's intake case. Scoping on the column
- * alone would leave exactly the most sensitive rows uncovered.
- *
- * Fails closed: anything non-string or blank reads as "names no athlete",
- * which keeps genuinely org-wide rows (capability-coverage gaps, upload
- * classifications, learning-loop gaps) visible to every role allowed here.
- */
-function subjectAthleteIdOf(row: SubjectBearingRow): string | null {
-  return namedAthleteIdsOf(row)[0] ?? null;
-}
+/* subjectAthleteIdOf / namedAthleteIdsOf now live in shadowResearch.ts.
+   They moved because the research-submissions route needed the same answer and
+   could not import it from here -- and, scoping on organization_id alone in
+   its absence, let a guardian read staff notes on another child's
+   requirement. One copy, two routes. */
 
 /**
  * The single refusal for "no such requirement for you".
