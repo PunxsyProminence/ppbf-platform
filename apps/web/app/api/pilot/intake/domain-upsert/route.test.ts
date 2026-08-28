@@ -91,6 +91,10 @@ test('a coach observation files under the calling coach in their own organizatio
   expect(response.status).toBe(200);
   expect(payload).toMatchObject({ ok: true, entity_type: 'coach_note', entity_id: 'note-1' });
   expect(mockCreate).toHaveBeenCalledWith({
+    // The author's role is recorded at write time rather than re-derived from
+    // the account on every read, so this note keeps reading as a coach's even
+    // if that account's role changes later.
+    authorRole: 'coach',
     organizationId: 'org-1',
     athleteId: 'ath-1',
     coachAccountId: 'acct-coach-1',

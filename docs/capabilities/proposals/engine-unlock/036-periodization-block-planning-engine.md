@@ -70,10 +70,29 @@ Read every `periodization_blocks` reference below as naming this table.
 
 - Every comparison / plan-vs-actual surface in sections (a)–(d). Nothing
   reads a block yet. No block carries an adherence state, because the
-  execution/comparison row that would hold one does not exist.
-- Any surface that reads an objective. The rows exist; nothing displays,
-  summarizes or rolls them up, and no count of completed objectives is
-  presented as a judgment about an athlete.
+  execution/comparison row that would hold one does not exist. **The design is
+  done and the forks are answered** — see `036a-plan-vs-actual-execution-design.md`
+  and the owner decisions of 2026-08-28: **D1(a)** the adherence judgment sits
+  on the **block**, not per objective; **D3(a)** the family sees the coach's
+  verdict **verbatim, including the deviation text**, on the same reasoning
+  that gave them the plan verbatim; D2(a) `DEVELOPMENT_BLOCK_WRITE_ROLES`
+  records it and D4(a) no evidence links in the first slice, both taken as the
+  design document's own stated defaults. D5 stands as written: no count on
+  that surface may be combined into a figure, percentage, grade or index, and
+  no cross-athlete comparison or cohort average may exist at any tier. None of
+  it is built.
+- ~~Any surface that reads an objective.~~ **Built.**
+  `/api/pilot/coach/development-block-objectives` and an objectives panel on
+  `/coach/development-blocks`: a coach attaches an objective per Full Spectrum
+  domain, reads them back in the coach's own words, and moves one through the
+  lifecycle. What is still NOT built is any roll-up — nothing counts how many
+  reached `completed`, expresses that count as a proportion, or presents
+  either as a judgment about a block or the athlete it names, and both the
+  route test and the page test assert the absence rather than trusting it.
+  The domain vocabulary is served by the route rather than copied into the
+  screen, so a screen can never offer a value the database would refuse; the
+  human labels are local and pinned to `FULL_SPECTRUM_DOMAINS` in both
+  directions.
 - ~~Any API route or UI.~~ **#767 shipped both** while this slice was in
   flight: `/api/pilot/coach/development-blocks` and
   `/coach/development-blocks`, plus `updateDevelopmentBlock`. That route had
@@ -86,11 +105,32 @@ Read every `periodization_blocks` reference below as naming this table.
   output; it now hands the principal down and returns what the data layer
   answered. `updateDevelopmentBlock` gained the write gate the other two
   mutators carry.
-- Any read surface for an **athlete or a guardian**. The data layer serves
-  them; the only route that exists serves staff. That is the right order —
-  the boundary is enforced before anything is built on it.
-- The optional competition/event target (Open Question 2), still open and
-  still unbuilt.
+- ~~Any read surface for an **athlete or a guardian**.~~ **Built**, after the
+  decision it owed was made — see Open Question 9. `/athlete/development-blocks`
+  and `/parent/development-blocks` over a read-only
+  `/api/pilot/athlete/development-blocks`. The boundary was enforced in the
+  data layer before either page existed, which is the order this module has
+  kept throughout. The family response is an **enumerated projection**, not
+  the stored row: it carries the block's title, emphasis, window, status and
+  its objectives' domain, sentence and status, and none of
+  `organization_id`, `created_by_account_id`, `created_at` or `updated_at`.
+  It began as a spread of the row, so a staff account id did travel to
+  athletes and guardians in the JSON while neither screen rendered it; the
+  route now names each field and its test pins the exact key set of both a
+  block and an objective. This narrows no part of the owner decision of
+  2026-08-28 — the coach's words are all there, verbatim, body-composition
+  domain included. Staff bookkeeping is not the coach's words. Since a further
+  owner decision the same day the projection also carries `created_by_name`:
+  the coach as a **name**, resolved through `getCoachDisplayName` in the
+  principal's organization and floored at the phrase "Your coach". Both family
+  screens tell a reader that a plan reading wrong "is a conversation with the
+  coach"; naming no coach made that a dead end. The account id still does not
+  travel, and unlike the coach's own surface there is no id fallback on this
+  path — a family is exactly who must never be shown an identifier.
+- ~~The optional competition/event target (Open Question 2), still open and
+  still unbuilt.~~ **Answered (a) and built by #771**, as a name and a date
+  only: naming a target derives no taper, no peak, no volume curve and no
+  weight plan, and nothing reads it back as a training input.
 
 Nothing about the unlock gates in this document is satisfied by the table
 existing. Layer 0 is now structurally possible, not met.
@@ -673,3 +713,51 @@ that changes will name the decision.
 - (c) Something in between — e.g. read-only self access for a bounded
   retention window — which is more machinery than either of the above and
   should be justified before it is built.
+
+**9. [ANSWERED — 2026-08-28.] What does an athlete see of the plan their coach
+wrote about them?**
+
+Owed before any athlete- or guardian-facing read surface could ship, and named
+as owed by Open Question 7 when it decided the data layer's answer. Admitting
+`nutrition_body_composition` (Question 6) is what gave it teeth: an objective
+can hold a body-composition sentence about a minor, and this asks whether that
+minor reads it.
+
+**Jason: _"Everything, verbatim."_** Title, emphasis, window, status, and every
+objective including the tenth domain, exactly as the coach wrote them. A
+guardian reads precisely what their child reads and no more — that half needed
+no new decision, because `/parent/progression-visibility` already states the
+rule and this reuses it.
+
+**Why verbatim rather than a softened projection**, in the terms the decision
+was put in: a gentler second version of a coach's words would be a second
+version of the truth about a child, and this platform keeps one. The
+transparency is itself a safeguarding property — a plan about a minor that the
+minor and their guardian cannot read is a plan neither of them can question.
+Progression gaps and sparring notes already reach the family unaltered, so this
+is the existing posture rather than a new one.
+
+**The cost was named before the choice, not after.** A coach's blunt private
+phrasing is now athlete-facing, which will change how coaches write — possibly
+for the better, possibly by making the record less candid. And a
+body-composition sentence about a minor is visible to that minor. Both were on
+the table when the decision was made.
+
+**The two alternatives, and why each was worse:**
+
+- *The block but not the objectives.* The line is arbitrary —
+  `training_emphasis` is also free text a coach wrote and can be just as blunt.
+  It hides the most actionable part of the plan while showing the vaguest.
+- *All domains except body composition.* It encodes a content policy inside a
+  read path, which is the landmine the `goal-category-progress` deploy gate
+  already cost a release to remove. The withheld domain also becomes
+  conspicuous by absence, and it leaves a coach acting on an objective the
+  guardian cannot see.
+
+**What the surface refuses, and it is asserted rather than promised.** It is
+read-only with no write verb at all — not a gated one; there is no roll-up, no
+proportion and no progress element, because "three of five completed" shown to
+a child is a score about that child produced by arithmetic rather than by a
+coach; and no staff account identifier is printed, since `created_by_account_id`
+is an id, not a name, and printing it to a family is a leak dressed as
+attribution.
