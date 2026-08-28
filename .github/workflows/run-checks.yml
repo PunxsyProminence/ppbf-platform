@@ -91,6 +91,7 @@ on:
           - shadow-filter-rate
           - medical-clearance-coverage
           - deletion-preflight
+          - discipline-values
 
 permissions:
   id-token: write
@@ -322,6 +323,7 @@ jobs:
               run_one shadow-filter-rate  pilot:check-shadow-filter-rate
               run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
               run_one deletion-preflight  pilot:check-deletion-preflight
+              run_one discipline-values   pilot:check-discipline-values
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
@@ -335,6 +337,7 @@ jobs:
             deletion-preflight) run_one deletion-preflight  pilot:check-deletion-preflight ;;
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
+            discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
             *)
               echo "::error::Unknown check '$CHECK'."
               exit 1

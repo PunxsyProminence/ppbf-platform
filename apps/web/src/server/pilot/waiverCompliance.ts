@@ -82,7 +82,23 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
       byAthlete.set(row.athlete_id, entry);
     }
     if (row.waiver_type && row.status) {
-      entry.waivers[row.waiver_type] = row.status as WaiverStatus;
+      /* NORMALISED, not cast. This used to be `row.status as WaiverStatus` --
+         the same unchecked assertion normalizeWaiverStatus was written to
+         replace, left behind in the rollup when the gate below was fixed.
+
+         The two read the same column, so they must agree about it. They did
+         not: a waiver stored as ' Signed ' passed the gate (which normalises,
+         deliberately, so a family is not punished for a data-entry artifact)
+         while this function handed the admin worklist the raw string, which
+         page.tsx renders as 'Missing'. The same waiver was simultaneously
+         valid for competition and reported absent on the worklist whose job
+         is to surface absent waivers -- so staff would chase a family for a
+         document already on file and working.
+
+         pilot.waivers.status carries no CHECK constraint and
+         /api/pilot/intake/domain-upsert accepts any client-supplied string
+         for it, so this is reachable rather than theoretical. */
+      entry.waivers[row.waiver_type] = normalizeWaiverStatus(row.status);
     }
   }
 
