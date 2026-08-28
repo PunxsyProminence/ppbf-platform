@@ -148,7 +148,12 @@ export default function GuardianMediaConsentPage() {
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               {items.map((item) => {
                 const myRow = item.per_guardian.find((g) => g.you);
-                const currentlySigned = myRow?.status === 'signed';
+                // Normalised the same way the server now compares it
+                // (guardianConsent.ts, owner decision 2026-08-28). The route
+                // passes the raw stored string through, so without this a
+                // guardian whose consent the server accepts would be told on
+                // their own screen that they had not signed.
+                const currentlySigned = (myRow?.status ?? '').trim().toLowerCase() === 'signed';
                 return (
                   <article
                     key={item.athlete_id}

@@ -33,6 +33,28 @@ jest.mock('./db', () => ({
     const result = await activeClient.query(text, params);
     return result.rows[0] ?? null;
   }),
+  /* Runs the callback on the embedded client inside a REAL transaction, so
+     the consent writers' lock-then-insert (owner decision D-2) executes as
+     one unit against the real database rather than being stubbed away.
+     Listed explicitly because a bare-object jest.mock silently drops whatever
+     it does not name -- without this the writers' import is undefined and
+     every test that grants or withdraws dies in a TypeError.
+
+     The rollback is best-effort for the same reason db.ts's is: if the
+     transaction is already broken, the original error is what the caller
+     needs to see, not a rollback failure on top of it. */
+  withTransaction: jest.fn(async (fn: (c: unknown) => Promise<unknown>) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    await activeClient.query('BEGIN');
+    try {
+      const result = await fn(activeClient);
+      await activeClient.query('COMMIT');
+      return result;
+    } catch (error) {
+      await activeClient.query('ROLLBACK').catch(() => {});
+      throw error;
+    }
+  }),
 }));
 
 import {

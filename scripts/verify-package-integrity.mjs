@@ -22,10 +22,23 @@
 // change; deleting one side is what this catches. It mirrors the `list-check`
 // mode in .github/workflows/apply-migrations.yml: report every discrepancy
 // with a `::error::` annotation, then exit non-zero.
+//
+// RUNTIME PARITY RIDES HERE TOO, and the reason is the wiring rather than the
+// subject. scripts/runtime-parity.mjs checks a different failure class -- a
+// deployable whose declared Node major and its executed Node major disagree --
+// but it needs exactly the same three properties this file already has: it
+// must run with no install, it must run ABOVE ci.yml's documentation-only fast
+// path, and it must run in a workflow whose verdict survives a cancelled
+// `validate`. Giving it its own workflow would have produced a check that is
+// not in branch protection's required set, which is a guard that cannot block
+// a merge. So the parity detector is a separate, separately tested module, and
+// this file is the place it is called from.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { checkRuntimeParity } from './runtime-parity.mjs';
 
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -370,6 +383,32 @@ if (!fs.existsSync(stylesheetAbsolute)) {
 }
 
 // ---------------------------------------------------------------------------
+// Runtime & toolchain parity -- see scripts/runtime-parity.mjs for the model.
+//
+// Every place that selects or executes a deployable's Node runtime must agree
+// with that deployable's own contract: its manifests, its workflows, its image
+// build stages, and above all the final stage the container actually runs.
+// Deployables are never compared with each other -- Research Bridge is Node 24
+// on purpose -- so what this reports is drift inside one deployable, which is
+// the only kind that is always a defect.
+// ---------------------------------------------------------------------------
+
+// A throw here would exit non-zero anyway, but as a stack trace that buries
+// every manifest finding above it. Reported as a failure instead, so one
+// broken read cannot hide the rest of this file's verdict.
+let runtimeParity = { problems: [], summary: [], deployables: [] };
+
+try {
+  runtimeParity = checkRuntimeParity(repositoryRoot);
+} catch (error) {
+  fail(`Runtime parity check could not run: ${error.message}`);
+}
+
+for (const problem of runtimeParity.problems) {
+  fail(problem);
+}
+
+// ---------------------------------------------------------------------------
 
 if (problems.length > 0) {
   console.error('');
@@ -400,5 +439,8 @@ console.log(
     `- ${rootManifestPath} delegates only to scripts that exist`,
     `- ${lockPath} agrees with both manifests`,
     `- ${stylesheetPath} is structurally intact`,
+    '',
+    'Runtime parity verified (declaration, CI, image build, final runtime):',
+    ...runtimeParity.summary,
   ].join('\n'),
 );

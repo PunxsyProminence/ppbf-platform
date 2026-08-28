@@ -41,6 +41,13 @@
  * just as happily against a database where the view was absent, which is the
  * exact failure this file was written to stop. Views are checked now.
  *
+ * ORDER MATTERS, AND IT IS NOT ALPHABETICAL. A migration may drop a constraint
+ * an earlier one added, so the expected set depends on the sequence the files
+ * are read in. That sequence comes from migration-apply-order.mjs, which reads
+ * the `all` list out of .github/workflows/apply-migrations.yml -- the list a
+ * rebuild actually executes. If it cannot be read, this refuses to run rather
+ * than verifying a smaller schema; see that module's docblock.
+ *
  * READ ONLY. It issues no DDL and writes no row.
  *
  * Usage:
@@ -48,13 +55,10 @@
  */
 
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const INFRA_DIR = path.resolve(HERE, '../../../infra/azure');
+import { migrationApplyOrder } from './migration-apply-order.mjs';
 
 /**
  * Strips line comments and splits into statements.
@@ -126,12 +130,21 @@ export function expectedObjectsFrom(sqlFiles) {
       // blocked every deploy after the next widening rather than catching
       // anything real.
       //
-      // Files are walked in the same sorted order the rebuild applies them, so
-      // add-then-drop resolves to dropped and drop-then-re-add resolves to
-      // present. A migration that drops a constraint whose FILENAME sorts
-      // after the one adding it back would still be misread; nothing in the
-      // tree does that today, and the alternative is teaching this script the
-      // workflow's dependency order, which would be a second copy of it.
+      // Files are walked in the order a rebuild APPLIES them -- see
+      // migration-apply-order.mjs, which reads the `all` list out of
+      // apply-migrations.yml -- so add-then-drop resolves to dropped and
+      // drop-then-re-add resolves to present.
+      //
+      // That order used to be inferred from filenames, and this comment used to
+      // argue that reading the workflow's list would be "a second copy" of it.
+      // It is the opposite: the `all` list is the authority on what a rebuild
+      // runs, so reading it removes the inference rather than duplicating it.
+      // The inference was already wrong. drill-library-check-drop drops
+      // pilot_drill_library_discipline_check, and its filename sorts BEFORE the
+      // drill-library-v3 file that adds it, so a filename walk saw the drop
+      // first as a no-op, then the add, and expected a constraint that a
+      // correctly migrated database does not have -- a false failure on a gate
+      // that runs before a deploy.
       for (const match of statement.matchAll(/drop constraint (?:if exists )?(\w+)/g)) {
         constraints.delete(match[1]);
       }
@@ -141,14 +154,6 @@ export function expectedObjectsFrom(sqlFiles) {
   return { tables, columns, indexes, constraints, views };
 }
 
-function migrationFiles() {
-  return fs
-    .readdirSync(INFRA_DIR)
-    .filter((name) => /^pilot_slice_postgres.*\.sql$/.test(name))
-    .sort()
-    .map((name) => path.join(INFRA_DIR, name));
-}
-
 async function main() {
   const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING;
   if (!connectionString) {
@@ -156,7 +161,25 @@ async function main() {
     process.exit(1);
   }
 
-  const expected = expectedObjectsFrom(migrationFiles());
+  // A gate that cannot establish the apply order REFUSES, and says so in the
+  // same shape as every other failure here. It does not fall back to a
+  // filename walk and it does not verify a subset: an expected set built from
+  // a partial order is smaller than the schema, so it would report green
+  // against a database missing everything it failed to read about. Silent
+  // shrinkage is the one failure worse than the false failure this replaced.
+  let files;
+  try {
+    files = migrationApplyOrder();
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'schema.verify.failed',
+      reason: 'MIGRATION_ORDER_UNREADABLE',
+      detail: error instanceof Error ? error.message : String(error),
+    }, null, 2));
+    process.exit(1);
+  }
+
+  const expected = expectedObjectsFrom(files);
   const client = new Client({
     connectionString,
     ssl: process.env.PPBF_POSTGRES_DISABLE_SSL === 'true' ? undefined : { rejectUnauthorized: false },
@@ -204,34 +227,32 @@ async function main() {
 
     const missingCount = Object.values(missing).reduce((total, list) => total + list.length, 0);
 
+    // `sqlFiles` is reported so the size of the run is visible, not just its
+    // verdict. Every count below is derived from that many files; if the order
+    // ever came back short, this is the number that says so, and
+    // schemaVerification.pg.test.ts asserts it against the files on disk.
+    const checked = {
+      sqlFiles: files.length,
+      tables: expected.tables.size,
+      columns: expected.columns.size,
+      indexes: expected.indexes.size,
+      constraints: expected.constraints.size,
+      views: expected.views.size,
+    };
+
     if (missingCount > 0) {
       // Names of schema objects only -- never a row, never a value.
       console.error(JSON.stringify({
         event: 'schema.verify.failed',
         reason: 'MIGRATIONS_NOT_APPLIED',
         missing,
-        checked: {
-          tables: expected.tables.size,
-          columns: expected.columns.size,
-          indexes: expected.indexes.size,
-          constraints: expected.constraints.size,
-          views: expected.views.size,
-        },
+        checked,
       }, null, 2));
       process.exitCode = 1;
       return;
     }
 
-    console.log(JSON.stringify({
-      event: 'schema.verify.ok',
-      checked: {
-        tables: expected.tables.size,
-        columns: expected.columns.size,
-        indexes: expected.indexes.size,
-        constraints: expected.constraints.size,
-        views: expected.views.size,
-      },
-    }));
+    console.log(JSON.stringify({ event: 'schema.verify.ok', checked }));
   } finally {
     await client.end();
   }
