@@ -64,6 +64,7 @@ import {
   updateCoachDevelopmentGoal,
 } from './coachDevelopment';
 import { ForbiddenError, ValidationError } from './errors';
+import { gymDayIso } from '../../lib/gymTime';
 
 jest.setTimeout(180_000);
 
@@ -677,6 +678,65 @@ describe('the module writing and reading a coach\'s own development', () => {
       const rows = await client.query(`select count(*)::int as n from pilot.coach_development_goals`);
       expect(rows.rows[0].n).toBe(0);
     } finally {
+      await client.end();
+    }
+  });
+
+  test('a development activity cannot be filed before it has happened', async () => {
+    /* THESE ROWS RENDER UNDER "What you have done". A future date there does
+       not read as a plan -- it reads as history that has not occurred, and a
+       coach who types next month's clinic while booking it would have filed
+       attending it. Found by a review bot on the pull request.
+
+       Planned development is a real thing to want and is deliberately not
+       modelled here: a goal carries target_on for that. */
+    const client = await migratedDatabase('cd_mod_future');
+    try {
+      const base = { organizationId: ORG_ID, coachAccountId: COACH_ID, title: 'Clinic' };
+
+      await expect(createCoachDevelopmentActivity({ ...base, occurredOn: '2099-01-01' }))
+        .rejects.toBeInstanceOf(ValidationError);
+
+      // The other direction: today itself is not the future, and yesterday is
+      // the ordinary case. A guard that refused either would stop a coach
+      // filing the session they have just finished.
+      const today = gymDayIso();
+      expect(today).not.toBeNull();
+      await expect(createCoachDevelopmentActivity({ ...base, occurredOn: today as string }))
+        .resolves.toMatchObject({ occurred_on: today });
+      await expect(createCoachDevelopmentActivity({ ...base, occurredOn: '2026-03-12' }))
+        .resolves.toMatchObject({ occurred_on: '2026-03-12' });
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the future boundary is the gym\'s midnight, not UTC\'s', async () => {
+    /* 01:30 UTC is 21:30 the previous evening at the gym -- the middle of a
+       training night. A coach filing that night's work would be filing a date
+       that is already "tomorrow" in UTC, and a UTC comparison would refuse
+       the record they just earned. */
+    const client = await migratedDatabase('cd_mod_future_tz');
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-29T01:30:00Z'));
+    try {
+      const base = { organizationId: ORG_ID, coachAccountId: COACH_ID, title: 'Evening clinic' };
+      await expect(createCoachDevelopmentActivity({ ...base, occurredOn: '2026-08-28' }))
+        .resolves.toMatchObject({ occurred_on: '2026-08-28' });
+
+      /* THE DATE THAT DISCRIMINATES, and without it this test proves nothing:
+         2026-08-29 is the gym's TOMORROW and UTC's TODAY. A gym-time guard
+         refuses it; a UTC guard compares it against itself, finds it not
+         greater, and files a clinic that has not happened. My first version
+         of this test used 08-30, which both guards refuse -- so the UTC
+         mutation survived it. */
+      await expect(createCoachDevelopmentActivity({ ...base, occurredOn: '2026-08-29' }))
+        .rejects.toBeInstanceOf(ValidationError);
+      await expect(createCoachDevelopmentActivity({ ...base, occurredOn: '2026-08-30' }))
+        .rejects.toBeInstanceOf(ValidationError);
+    } finally {
+      jest.useRealTimers();
+      activeClient = null;
       await client.end();
     }
   });
