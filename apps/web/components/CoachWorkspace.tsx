@@ -96,12 +96,16 @@ interface Athlete {
      which, before the register is taken, is everyone.
      'Unavailable' means nobody could look. A read that failed must never
      settle into 'Unknown' beside athletes who genuinely have no mark yet.
+     'NotCovered' means nobody asked. This roster lists every athlete in the
+     organization; the register is only read for the ones the access contract
+     clears this coach for, so the rest were never part of the question. A
+     third kind of not-knowing, and it must not wear the second's words.
 
      'Late' IS GONE, deliberately. pilot.attendance_reconciled normalises a
      late arrival to 'present' on the way out -- a late arrival is a day
      attended -- so nothing can ever produce it. A value in a union that no
      feed can emit is an invitation to make one emit it. */
-  attendance: 'Present' | 'Absent' | 'Excused' | 'Unknown' | 'Unavailable';
+  attendance: 'Present' | 'Absent' | 'Excused' | 'Unknown' | 'Unavailable' | 'NotCovered';
 
   /* Identity, from /api/pilot/profile/roster. Optional because the roster
      renders correctly without it -- the profile read is a second request and a
@@ -1066,18 +1070,26 @@ export default function CoachWorkspace() {
       });
       if (!response.ok) throw new Error('attendance');
       const payload = (await response.json()) as {
+        covered?: string[];
         marks?: Array<{ athlete_id: string; status: 'present' | 'absent' | 'excused' }>;
       };
       const byAthlete = new Map(
         (payload.marks ?? []).map((mark) => [mark.athlete_id, mark.status] as const),
       );
+      const covered = new Set(payload.covered ?? []);
       const LABEL = { present: 'Present', absent: 'Absent', excused: 'Excused' } as const;
       setAthletes((prior) => prior.map((athlete) => {
         const mark = byAthlete.get(athlete.id);
-        // No mark is 'Unknown', not 'Absent'. The register may simply not
-        // have been taken yet, and a child who did not train and a child
-        // nobody has ticked off look identical from here.
-        return { ...athlete, attendance: mark ? LABEL[mark] : 'Unknown' };
+        if (mark) return { ...athlete, attendance: LABEL[mark] };
+        /* An athlete the register did not cover was never asked about. This
+           roster lists the whole organization; the register is scoped to the
+           athletes this coach is cleared for, so for the others there is no
+           answer rather than an empty one. */
+        if (!covered.has(athlete.id)) return { ...athlete, attendance: 'NotCovered' as const };
+        // Covered and unmarked is 'Unknown', never 'Absent'. The register may
+        // simply not have been taken yet, and a child who did not train and a
+        // child nobody has ticked off look identical from here.
+        return { ...athlete, attendance: 'Unknown' as const };
       }));
     } catch {
       /* Everyone, not just the ones without a mark: the read that failed
@@ -2477,15 +2489,19 @@ export default function CoachWorkspace() {
                                 : 't-muted'}
                               title={athlete.attendance === 'Unavailable'
                                 ? 'Today\u2019s register could not be read \u2014 this is not a statement that they were absent'
-                                : athlete.attendance === 'Unknown'
-                                  ? 'No attendance mark recorded for today yet'
-                                  : `Marked ${athlete.attendance.toLowerCase()} today`}
+                                : athlete.attendance === 'NotCovered'
+                                  ? 'The register is only read for athletes you are cleared for, so nobody asked about this one -- not a statement about whether they trained'
+                                  : athlete.attendance === 'Unknown'
+                                    ? 'No attendance mark recorded for today yet'
+                                    : `Marked ${athlete.attendance.toLowerCase()} today`}
                             >
                               {athlete.attendance === 'Unknown'
                                 ? 'No mark yet'
                                 : athlete.attendance === 'Unavailable'
                                   ? 'Register unavailable'
-                                  : athlete.attendance}
+                                  : athlete.attendance === 'NotCovered'
+                                    ? 'Not your athlete'
+                                    : athlete.attendance}
                             </span>
                           </span>
                         </div>

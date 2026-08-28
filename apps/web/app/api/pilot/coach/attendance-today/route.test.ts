@@ -164,7 +164,29 @@ describe('marks are marks, and silence is not one', () => {
     expect(body.marks).toEqual([
       { athlete_id: 'ath-1', status: 'present', source: 'activity_log' },
     ]);
-    expect(JSON.stringify(body)).not.toContain('ath-2');
+    /* Scoped to `marks`. ath-2 legitimately appears in `covered` -- it WAS
+       asked about and has no mark, which is the whole distinction that field
+       exists to carry. What must not exist is a MARK for it. */
+    expect(body.marks.some((m: { athlete_id: string }) => m.athlete_id === 'ath-2')).toBe(false);
+    expect(body.covered).toContain('ath-2');
+  });
+
+  test('the response names which athletes it covered', async () => {
+    mockPrincipal.mockResolvedValue(principal());
+    mockAttendance.mockResolvedValue([
+      { athlete_id: 'ath-1', status: 'present', source: 'activity_log' },
+    ]);
+
+    const body = await (await GET(request())).json();
+
+    /* WITHOUT THIS THE CALLER CANNOT TELL TWO THINGS APART. The workspace
+       roster comes from a route that returns every athlete in the
+       organization; this one is scoped by the access contract and is
+       narrower. An athlete missing from `marks` is either covered-and-
+       unmarked or never asked about, and only `covered` distinguishes them --
+       the surface rendered both as "no mark yet" until it existed. */
+    expect(body.covered).toEqual(['ath-1', 'ath-2']);
+    expect(body.marks).toHaveLength(1);
   });
 
   test('a failed read is a failure, never an empty register', async () => {

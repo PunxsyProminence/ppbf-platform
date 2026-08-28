@@ -71,8 +71,20 @@ export async function GET(request: NextRequest) {
       day,
     );
 
+    /* `covered` is not decoration and it is not the same list as `marks`.
+       The workspace roster comes from /api/pilot/athletes/list, which returns
+       EVERY athlete in the organization to a coach and merely redacts dob and
+       emergency_contact for the ones they are unrelated to -- it is a display
+       projection and says so. This route asks the access contract instead, so
+       it is deliberately NARROWER.
+
+       Without saying which athletes it covered, a caller cannot tell "this
+       athlete has no mark today" from "nobody asked about this athlete", and
+       the workspace rendered both as "No mark yet" -- a claim that the
+       platform looked, about a child it never looked at. Naming the covered
+       set is what lets the surface keep those apart. */
     return NextResponse.json(
-      { ok: true, day, marks },
+      { ok: true, day, covered: roster.map((athlete) => athlete.athlete_id), marks },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
