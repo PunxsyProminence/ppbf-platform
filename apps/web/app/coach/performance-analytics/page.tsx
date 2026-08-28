@@ -230,6 +230,20 @@ export default function PerformanceAnalyticsPage() {
           <div className="flex justify-center py-[var(--s7)]">
             <span className="working">Loading performance rollup...</span>
           </div>
+        ) : errorMessage ? (
+          /* The error alert already renders above this. Without the guard the
+             screen showed a failure AND a contradicting assertion at once --
+             and this page exists to order athletes by who needs attention, so
+             "no athletes" reads as "nobody is asking for you". */
+          <div className="mat-leather rounded-[var(--r-lg)] border-2 border-[var(--restricted)]">
+            <div className="empty">
+              <div className="empty-title text-[var(--restricted-ink)]">The rollup could not be read</div>
+              <p className="empty-msg mx-auto">
+                This is not a statement that you have no athletes, or that none of them need
+                attention. Nobody could look.
+              </p>
+            </div>
+          </div>
         ) : items.length === 0 ? (
           <div className="mat-leather rounded-[var(--r-lg)]">
             <div className="empty">
