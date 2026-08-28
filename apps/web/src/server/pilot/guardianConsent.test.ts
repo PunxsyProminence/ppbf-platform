@@ -341,3 +341,111 @@ describe('listOrganizationConsentStatus', () => {
     expect(params).toEqual(['org-a', 50, 100]);
   });
 });
+
+/**
+ * OWNER DECISION, 2026-08-28: a recognised status survives case and padding.
+ *
+ * pilot.waivers.status is `text not null` with no CHECK constraint, and
+ * /api/pilot/intake/domain-upsert stores `asString(body.payload.status,
+ * 'signed')` -- any string a caller sends. waiverCompliance.ts records a
+ * waiver stored as ' Signed ' as something that ACTUALLY HAPPENED, and its own
+ * gate has trimmed and lowercased since it was written, on the stated ground
+ * that refusing over whitespace "punishes the family for a data-entry
+ * artifact".
+ *
+ * These functions read the same column and did not, so one signature was a
+ * signature to that gate and not-consent to this one. The asymmetry was the
+ * defect; this closes it on the side that was strict.
+ *
+ * This LOOSENS a consent gate, which is why it took a decision rather than a
+ * judgement call. The tests below therefore come in pairs: what now passes,
+ * and -- at more length -- what still does not.
+ */
+describe('a signature recorded untidily is still a signature', () => {
+  const signedAs = (status: string) => {
+    mockQuery
+      .mockResolvedValueOnce([{ parent_id: 'p1' }])
+      .mockResolvedValueOnce([
+        { parent_id: 'p1', status, covers_video: true, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' },
+      ]);
+  };
+
+  test.each([' Signed ', 'SIGNED', 'Signed', ' signed', 'signed  ', '\tsigned\n'])(
+    'a consent stored as %p counts as consent',
+    async (status) => {
+      signedAs(status);
+
+      const result = await checkGuardianMediaConsent('org-a', 'ath-1');
+
+      expect(result.ok).toBe(true);
+      expect(result.missingParentIds).toEqual([]);
+    },
+  );
+
+  test('the raw stored value still reaches the caller unchanged', async () => {
+    // Only the COMPARISON normalises. perGuardian is what the row actually
+    // says, and the parent console renders it -- a screen that quietly
+    // rewrote what was stored would be a different kind of dishonesty.
+    signedAs(' Signed ');
+
+    const result = await checkGuardianMediaConsent('org-a', 'ath-1');
+
+    expect(result.perGuardian[0].status).toBe(' Signed ');
+  });
+
+  test.each(['active', 'approved', 'accepted', 'current', 'pending', 'revoked', 'signd', 'yes', '', '   '])(
+    'a status of %p is still NOT consent',
+    async (status) => {
+      /* The blast radius, pinned. The shared helper trims and lowercases and
+         does nothing else -- it does not map an unrecognised value onto a
+         recognised one. So this decision loosened the gate for a real
+         signature recorded untidily and for nothing else.
+
+         'active' and 'approved' are in this list deliberately: wallDisplay.ts
+         treats both as affirmative consent for its own surface. That
+         divergence is real and is a separate owner decision; it is not
+         resolved by this change and must not be resolved by accident. */
+      signedAs(status);
+
+      const result = await checkGuardianMediaConsent('org-a', 'ath-1');
+
+      expect(result.ok).toBe(false);
+      expect(result.missingParentIds).toEqual(['p1']);
+    },
+  );
+
+  test('a withdrawal recorded untidily still withdraws', async () => {
+    // The safety direction of the same rule: normalisation must not let a
+    // withdrawal slip past by being stored as ' Withdrawn '.
+    signedAs(' Withdrawn ');
+
+    const result = await checkGuardianMediaConsent('org-a', 'ath-1');
+
+    expect(result.ok).toBe(false);
+  });
+
+  describe('the transactional variant answers identically', () => {
+    // These two are the same rule on the same rows. The re-check exists to run
+    // inside a transaction, not to apply a stricter test than the one that let
+    // the caller in, so a value accepted by one must be accepted by the other.
+    const clientWith = (status: string) => ({
+      query: jest.fn()
+        .mockResolvedValueOnce({ rows: [{ parent_id: 'p1' }] })
+        .mockResolvedValueOnce({
+          rows: [{ parent_id: 'p1', status, covers_video: true, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
+        }),
+    });
+
+    test.each([' Signed ', 'SIGNED', 'Signed'])('%p does not refuse', async (status) => {
+      await expect(
+        assertGuardianMediaConsentWithClient(clientWith(status), 'org-a', 'ath-1'),
+      ).resolves.toBeUndefined();
+    });
+
+    test.each(['active', 'approved', ' Withdrawn ', 'pending', ''])('%p still refuses', async (status) => {
+      await expect(
+        assertGuardianMediaConsentWithClient(clientWith(status), 'org-a', 'ath-1'),
+      ).rejects.toThrow(GuardianConsentMissingError);
+    });
+  });
+});

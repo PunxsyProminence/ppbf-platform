@@ -1,6 +1,7 @@
 import { query } from './db';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver } from './intake';
+import { normalizeWaiverStatusText } from './waiverCompliance';
 
 // Structural, not `import type { PoolClient } from 'pg'`: the only thing
 // callers inside a withTransaction() block actually have is something
@@ -123,7 +124,32 @@ export async function checkGuardianMediaConsent(
       signedAt: row?.created_at ?? null,
     };
   });
-  const missingParentIds = perGuardian.filter((g) => g.status !== 'signed').map((g) => g.parentId);
+  /*
+   * NORMALISED, not raw. Owner decision, 2026-08-28.
+   *
+   * pilot.waivers.status is `text not null` with no CHECK constraint, and
+   * /api/pilot/intake/domain-upsert stores `asString(body.payload.status,
+   * 'signed')` -- any string a caller sends. waiverCompliance.ts records a
+   * waiver stored as ' Signed ' as something that ACTUALLY HAPPENED, and its
+   * own gate has trimmed and lowercased since it was written, on the stated
+   * ground that "refusing to take a child to a competition over whitespace
+   * punishes the family for a data-entry artifact".
+   *
+   * This function read the same column and did NOT, so one guardian's
+   * signature was a signature to that gate and not-consent to this one. The
+   * asymmetry is the defect, not either half of it.
+   *
+   * ONLY CASE AND PADDING MOVE. 'active', 'approved', 'pending', a typo or an
+   * empty string still fail this test, exactly as before -- the shared helper
+   * does not map an unrecognised value onto anything. This loosens the gate
+   * for a real signature recorded untidily and for nothing else.
+   *
+   * perGuardian keeps the RAW value: it is what the row says, and the parent
+   * console renders it. Only the comparison normalises.
+   */
+  const missingParentIds = perGuardian
+    .filter((g) => normalizeWaiverStatusText(g.status) !== 'signed')
+    .map((g) => g.parentId);
 
   return { ok: missingParentIds.length === 0, guardianIds, missingParentIds, perGuardian };
 }
@@ -177,7 +203,13 @@ export async function assertGuardianMediaConsentWithClient(
     [organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE],
   );
   const current = new Map(consentResult.rows.map((row) => [row.parent_id, row]));
-  const missingParentIds = guardianIds.filter((id) => current.get(id)?.status !== 'signed');
+  // Normalised for the reason checkGuardianMediaConsent gives above. These
+  // two are the same rule on the same rows and must not answer differently:
+  // the transactional variant exists to re-check inside a transaction, not to
+  // apply a stricter test than the one that let the caller in.
+  const missingParentIds = guardianIds.filter(
+    (id) => normalizeWaiverStatusText(current.get(id)?.status) !== 'signed',
+  );
   if (missingParentIds.length > 0) {
     throw new GuardianConsentMissingError(athleteId, missingParentIds);
   }
