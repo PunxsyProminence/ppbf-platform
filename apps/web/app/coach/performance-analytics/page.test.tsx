@@ -186,3 +186,45 @@ test('the same payload always lands in the same order', async () => {
   await screen.findAllByText('Aaron Gaps');
   expect(cardNames(second.container)).toEqual(order);
 });
+
+/* ------------------------------------------------- a rollup nobody read --- */
+
+/**
+ * This page exists to put the athlete who needs a coach at the top, so its
+ * empty state does not read as "no data" -- it reads as "nobody is asking for
+ * you". A rollup that failed to load used to render that sentence underneath
+ * its own error alert: a screen showing a failure and a contradicting
+ * all-clear at the same time, with the all-clear in the larger type.
+ */
+describe('a rollup nobody could read never reads as "nobody needs you"', () => {
+  test('a refused rollup says it could not be read, and does not say the roster is empty', async () => {
+    global.fetch = mockFetch(() => ({ ok: false, status: 503, json: async () => ({}) }) as Response);
+
+    render(<PerformanceAnalyticsPage />);
+
+    expect(await screen.findByText('The rollup could not be read')).toBeTruthy();
+    // The half that was the defect: the reassuring sentence, gone.
+    expect(screen.queryByText('No athletes on your roster')).toBeNull();
+  });
+
+  test('a rollup read that throws is treated the same as one the server refused', async () => {
+    global.fetch = mockFetch(() => Promise.reject(new Error('Network request failed')));
+
+    render(<PerformanceAnalyticsPage />);
+
+    expect(await screen.findByText('The rollup could not be read')).toBeTruthy();
+    expect(screen.queryByText('No athletes on your roster')).toBeNull();
+  });
+
+  test('a window that genuinely holds nothing still says so, and does not claim a failure', async () => {
+    // Without this, the two tests above are equally satisfied by a page that
+    // says "could not be read" on every load -- and a coach who is told that
+    // every morning stops reading it.
+    global.fetch = mockFetch(() => okWith([]));
+
+    render(<PerformanceAnalyticsPage />);
+
+    expect(await screen.findByText('No athletes on your roster')).toBeTruthy();
+    expect(screen.queryByText('The rollup could not be read')).toBeNull();
+  });
+});

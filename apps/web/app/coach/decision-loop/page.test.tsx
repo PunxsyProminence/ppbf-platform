@@ -24,7 +24,13 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       return jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan T.' }] });
     }
     if (key.includes('/api/pilot/shadow/medical-status')) {
-      return jsonResponse({ status: null });
+      // Overridable in the same shape as domainUpsert/incidents below. All
+      // four shadow reads are awaited together and read through one
+      // readJsonOrThrow chain, so refusing this one is how a test makes the
+      // whole load fail -- which is the only state in which the four panels
+      // below are unreadable rather than empty.
+      const handler = overrides.medicalStatus as ((init?: RequestInit) => Response) | undefined;
+      return handler ? handler(init) : jsonResponse({ status: null });
     }
     if (key.includes('/api/pilot/shadow/recommendations')) {
       return jsonResponse({ recommendations: [] });
@@ -302,4 +308,56 @@ test('switching athletes clears a stale incident-filed confirmation', async () =
   fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-2' } });
 
   await waitFor(() => expect(screen.queryByText('Incident filed -- it is now in the escalation queue.')).toBeNull());
+});
+
+// ONE LOAD FEEDS FOUR PANELS, SO ONE FAILURE SILENCES FOUR PANELS.
+//
+// refreshAll reads medical status, recommendations, decisions and near-misses
+// together. When it throws, none of the four setters run, so all four keep
+// their initial empties -- and every one of those empties is a sentence
+// asserting a fact. The worst of them is "No medical administrative status
+// recorded yet", which is what a coach reads immediately before putting a
+// child into contact work; on a failed read the honest word is UNKNOWN, and
+// the error line in the picker header is not enough while four panels
+// underneath it independently say "clear".
+describe('a decision loop nobody could read never reads as a clear one', () => {
+  test('a failed load says all four panels are unreadable, and none of them asserts an all-clear', async () => {
+    installFetch({ medicalStatus: () => jsonResponse({ error: 'Forbidden' }, false) });
+    await selectAthlete();
+
+    // The one that decides whether a child trains today. UNKNOWN, in the
+    // page's own words, and explicitly not "no restriction on record".
+    expect(await screen.findByText(/medical administrative status could not be read/i)).toBeTruthy();
+    expect(screen.getByText(/UNKNOWN/)).toBeTruthy();
+    expect(screen.queryByText('No medical administrative status recorded yet.')).toBeNull();
+
+    // And the other three, each of which a coach reads as "nothing here".
+    expect(screen.getByText(/Recommendations could not be read/i)).toBeTruthy();
+    expect(screen.queryByText('No recommendations yet.')).toBeNull();
+
+    expect(screen.getByText(/Decisions could not be read/i)).toBeTruthy();
+    expect(screen.queryByText('No decisions recorded yet.')).toBeNull();
+
+    expect(screen.getByText(/Near-misses could not be read/i)).toBeTruthy();
+    expect(screen.queryByText('No near-misses flagged yet.')).toBeNull();
+  });
+
+  test('an athlete with a genuinely clean record still reads as clean, with no claim of failure', async () => {
+    // The other direction, and it carries real weight here: a page that says
+    // "could not be read" over four panels every time a coach opens an athlete
+    // with nothing on file would make the honest banner worthless within a
+    // week.
+    installFetch();
+    await selectAthlete();
+
+    expect(await screen.findByText('No medical administrative status recorded yet.')).toBeTruthy();
+    expect(screen.getByText('No recommendations yet.')).toBeTruthy();
+    expect(screen.getByText('No decisions recorded yet.')).toBeTruthy();
+    expect(screen.getByText('No near-misses flagged yet.')).toBeTruthy();
+
+    expect(screen.queryByText(/medical administrative status could not be read/i)).toBeNull();
+    expect(screen.queryByText(/Recommendations could not be read/i)).toBeNull();
+    expect(screen.queryByText(/Decisions could not be read/i)).toBeNull();
+    expect(screen.queryByText(/Near-misses could not be read/i)).toBeNull();
+  });
 });

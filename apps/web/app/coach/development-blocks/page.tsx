@@ -56,6 +56,8 @@ interface DevelopmentBlock {
   target_wrestling_event_id: string | null;
   target: BlockTarget | null;
   created_by_account_id: string;
+  /** Resolved server-side by the route. See withAuthorNames there. */
+  created_by_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -1459,8 +1461,18 @@ export default function CoachDevelopmentBlocksPage() {
                     </div>
 
                     {/* Attribution, plainly. Who wrote this plan is a fact
-                        about the past and no edit path can rewrite it. */}
-                    <p className="t-muted">Written by {block.created_by_account_id}</p>
+                        about the past and no edit path can rewrite it.
+
+                        A NAME, not an account id. This line used to render
+                        `Written by acct-coach-a`, which is not attribution --
+                        it is the absence of it, shown to a coach who then
+                        cannot tell which colleague planned the block. The
+                        fallback is the id rather than nothing: if the route
+                        ever stops resolving names, an ugly true string beats a
+                        line that quietly says "Written by". */}
+                    <p className="t-muted">
+                      Written by {block.created_by_name ?? block.created_by_account_id}
+                    </p>
 
                     {editingId === block.block_id ? (
                       <div className="space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
