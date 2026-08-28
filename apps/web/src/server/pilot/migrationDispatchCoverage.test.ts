@@ -147,5 +147,15 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // origin, the reporter, the correction column and the 'corrected' verdict
     // -- against the table film-study-proposals creates.
     expect(at('film-study-coach-reported')).toBeGreaterThan(at('film-study-proposals'));
+    // session-scripts-discipline-fk points pilot.session_scripts at
+    // pilot.disciplines. It needs BOTH: multidiscipline creates the registry it
+    // references, session-scripts creates the table it constrains. Applied
+    // before either, a rebuild dies on ALTER against a missing table -- and
+    // this is the ordering a fresh environment depends on, because
+    // multidiscipline sits at 62 while the table it constrains was created at
+    // 63 and the drill library it does NOT constrain at 49.
+    for (const prerequisite of ['multidiscipline', 'session-scripts']) {
+      expect(at('session-scripts-discipline-fk')).toBeGreaterThan(at(prerequisite));
+    }
   });
 });
