@@ -8,6 +8,7 @@ import {
   athleteIdsForCoach,
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
@@ -36,6 +37,14 @@ jest.mock('@/src/server/pilot/access', () => ({
 
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
+}));
+
+// The parent branch of GET resolves its children through this. Left real, it
+// runs against the mocked ./db and answers nothing, which is indistinguishable
+// from "this guardian has no children" -- a filter test that passes because
+// the fixture is empty proves nothing.
+jest.mock('@/src/server/pilot/guardianAccess', () => ({
+  guardianAthleteIds: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/schedulerDb', () => ({
@@ -804,5 +813,239 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
 
     expect(body.registrations).toHaveLength(1);
     expect(body.attendance).toHaveLength(1);
+  });
+});
+
+/**
+ * WHAT A FAMILY ACTUALLY RECEIVES FROM GET, which nothing in this file asked
+ * before.
+ *
+ * Every GET test above runs as a coach. The parent and athlete branches of
+ * filterStateForActor -- the ones a guardian and a child actually go through
+ * -- had no coverage at all, so nothing pinned which fields left the server
+ * for them.
+ *
+ * Two things were leaving that should not:
+ *
+ *   *_account_id, on every collection. staffProvisioning.ts:316 resolves an
+ *   account_id as `existing?.account_id || accountIdHint || loginEmail` and
+ *   the admin invite route passes the hint only when an admin typed one, so
+ *   an account_id IS a staff member's login email unless somebody chose
+ *   otherwise. app/schedule/page.tsx printed one under "Coach:" on every row
+ *   of the class list.
+ *
+ *   attendance.note, free text a coach typed about a child -- privacyTiers.ts
+ *   registers it at tier `organization` in those words and names only the
+ *   coach/admin-gated attendance-summary route as its enforcer. This route is
+ *   a second reader that entry does not name.
+ *
+ * The classes collection is the sharpest case because it is deliberately NOT
+ * row-filtered: a family browses the whole catalogue to register against it,
+ * so every class in the organization arrived carrying three staff
+ * identifiers.
+ */
+describe('GET /api/pilot/scheduler withholds staff fields from a family reader', () => {
+  const mockListStore = listSchedulerStore as jest.Mock;
+  const mockGuardianAthleteIds = guardianAthleteIds as jest.Mock;
+
+  const STAFF_EMAIL = 'coach@example.com';
+  const COVER_EMAIL = 'cover@example.com';
+  const SCHEDULER_EMAIL = 'admin@example.com';
+  const COACH_NOTE = 'Arrived upset; welfare lead spoke to them.';
+
+  function arrangeStore(): void {
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    (athleteIdsForCoach as jest.Mock).mockResolvedValue(['ath-mine']);
+    mockListStore.mockResolvedValue({
+      classes: [{
+        class_id: 'class-1',
+        title: 'Fundamentals',
+        start_at: '2026-08-01T18:00:00.000Z',
+        end_at: '2026-08-01T19:00:00.000Z',
+        location: 'Main Floor',
+        capacity: 20,
+        scheduled_by_account_id: SCHEDULER_EMAIL,
+        coach_account_id: STAFF_EMAIL,
+        covering_coach_account_id: COVER_EMAIL,
+        status: 'open',
+        created_at: 'now',
+        updated_at: 'now',
+      }],
+      registrations: [{
+        registration_id: 'reg-1',
+        class_id: 'class-1',
+        athlete_id: 'ath-mine',
+        requested_by_role: 'coach',
+        requested_by_account_id: STAFF_EMAIL,
+        parent_reviewed: true,
+        parent_reviewed_at: 'now',
+        parent_reviewer_account_id: 'parent@example.com',
+        status: 'registered',
+        created_at: 'now',
+        updated_at: 'now',
+      }],
+      coaching_requests: [{
+        request_id: 'cr-1',
+        athlete_id: 'ath-mine',
+        requested_by_role: 'parent',
+        requested_by_account_id: 'parent@example.com',
+        preferred_at: 'now',
+        goals: 'wants to work the jab',
+        status: 'approved',
+        assigned_coach_account_id: STAFF_EMAIL,
+        created_at: 'now',
+        updated_at: 'now',
+      }],
+      attendance: [{
+        attendance_id: 'att-1',
+        class_id: 'class-1',
+        athlete_id: 'ath-mine',
+        status: 'present',
+        method: 'coach_override',
+        checked_in_by_role: 'coach',
+        checked_in_by_account_id: STAFF_EMAIL,
+        note: COACH_NOTE,
+        checked_in_at: 'now',
+        updated_at: 'now',
+      }],
+    });
+  }
+
+  function schedulerGet() {
+    return GET(new NextRequest('http://localhost/api/pilot/scheduler'));
+  }
+
+  const FAMILY: Array<[string, PilotPrincipal]> = [
+    ['a linked guardian', principal('parent', { accountId: 'parent@example.com' })],
+    ['the athlete themself', principal('athlete', { accountId: 'athlete@example.com', athleteId: 'ath-mine' })],
+  ];
+
+  const STAFF: Array<[string, PilotPrincipal]> = [
+    ['a coach', principal('coach', { accountId: STAFF_EMAIL })],
+    ['an organization admin', principal('organization_admin')],
+    ['the legacy admin role', principal('admin')],
+  ];
+
+  test('the reader tables are not empty', () => {
+    expect(FAMILY.length).toBeGreaterThan(0);
+    expect(STAFF.length).toBeGreaterThan(0);
+  });
+
+  test.each(FAMILY)('%s receives no account identifier anywhere in the response', async (_label, actor) => {
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(actor);
+
+    const body = await (await schedulerGet()).json();
+
+    // The whole body, not four separate key checks: an account_id is a login
+    // email here, and one surviving path is the whole disclosure.
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(STAFF_EMAIL);
+    expect(serialized).not.toContain(COVER_EMAIL);
+    expect(serialized).not.toContain(SCHEDULER_EMAIL);
+  });
+
+  test.each(FAMILY)('%s receives the class catalogue without the three staff ids on it', async (_label, actor) => {
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(actor);
+
+    const body = await (await schedulerGet()).json();
+
+    // Still a usable catalogue -- this is what a family registers against, so
+    // the rows themselves must not disappear.
+    expect(body.classes).toHaveLength(1);
+    expect(body.classes[0]).toMatchObject({ class_id: 'class-1', title: 'Fundamentals', capacity: 20 });
+    const keys = Object.keys(body.classes[0]);
+    expect(keys).not.toContain('coach_account_id');
+    expect(keys).not.toContain('covering_coach_account_id');
+    expect(keys).not.toContain('scheduled_by_account_id');
+  });
+
+  test.each(FAMILY)("%s receives attendance without the coach's free-text note", async (_label, actor) => {
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(actor);
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.attendance).toHaveLength(1);
+    expect(body.attendance[0]).toMatchObject({ status: 'present', method: 'coach_override' });
+    expect(Object.keys(body.attendance[0])).not.toContain('note');
+    expect(JSON.stringify(body.attendance)).not.toContain('welfare lead');
+    // The role stays: it names no person, and a parent who checked their own
+    // child in needs to see that a parent did it.
+    expect(body.attendance[0].checked_in_by_role).toBe('coach');
+  });
+
+  test.each(FAMILY)('%s still receives their own registration and coaching request', async (_label, actor) => {
+    // The control against over-narrowing. Only the identifiers and the staff
+    // note move; the records themselves are the point of the screen.
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(actor);
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.registrations[0]).toMatchObject({
+      registration_id: 'reg-1',
+      status: 'registered',
+      requested_by_role: 'coach',
+      parent_reviewed: true,
+    });
+    expect(body.coaching_requests[0]).toMatchObject({
+      request_id: 'cr-1',
+      status: 'approved',
+      requested_by_role: 'parent',
+      // Free text, and deliberately kept: the REQUESTER writes it and a
+      // parent can be the requester. Withholding a family's own words from
+      // them would be inventing a rule rather than applying one.
+      goals: 'wants to work the jab',
+    });
+  });
+
+  test.each(STAFF)('%s keeps every field', async (_label, actor) => {
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(actor);
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.classes[0].coach_account_id).toBe(STAFF_EMAIL);
+    expect(body.classes[0].covering_coach_account_id).toBe(COVER_EMAIL);
+    expect(body.classes[0].scheduled_by_account_id).toBe(SCHEDULER_EMAIL);
+    expect(body.attendance[0].note).toBe(COACH_NOTE);
+    expect(body.attendance[0].checked_in_by_account_id).toBe(STAFF_EMAIL);
+    expect(body.registrations[0].requested_by_account_id).toBe(STAFF_EMAIL);
+    expect(body.coaching_requests[0].assigned_coach_account_id).toBe(STAFF_EMAIL);
+  });
+
+  test('the coach ownership test still sees the ids it needs', async () => {
+    /* The projection runs AFTER filterStateForActor on purpose. The coach
+       branch decides which classes it owns by comparing coach_account_id,
+       scheduled_by_account_id and covering_coach_account_id against its own
+       accountId, so narrowing earlier would have taken the coach's ownership
+       test away from it and silently emptied its registrations and
+       attendance. This is the test that fails if the projection is ever moved
+       up into the filter. */
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(principal('coach', { accountId: STAFF_EMAIL }));
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.registrations).toHaveLength(1);
+    expect(body.attendance).toHaveLength(1);
+  });
+
+  test('a parent whose guardian links resolve to nobody receives no athlete-linked row', async () => {
+    // Guards the fixture itself: if guardianAthleteIds answered nothing in
+    // the tests above, every filter assertion would pass vacuously.
+    arrangeStore();
+    mockGuardianAthleteIds.mockResolvedValue([]);
+    mockRequirePrincipal.mockResolvedValue(principal('parent', { accountId: 'stranger@example.com' }));
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.registrations).toEqual([]);
+    expect(body.attendance).toEqual([]);
+    expect(body.coaching_requests).toEqual([]);
+    // The catalogue is still there: it is not athlete-linked.
+    expect(body.classes).toHaveLength(1);
   });
 });
