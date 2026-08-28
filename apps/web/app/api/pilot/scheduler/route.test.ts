@@ -883,6 +883,33 @@ describe('GET /api/pilot/scheduler withholds staff fields from a family reader',
         status: 'registered',
         created_at: 'now',
         updated_at: 'now',
+      }, {
+        // Another family's child in the same class. The row itself must never
+        // reach this reader -- and the SEAT IT OCCUPIES must, or the count
+        // beside the capacity is a lie. Both are asserted below.
+        registration_id: 'reg-2',
+        class_id: 'class-1',
+        athlete_id: 'ath-someone-else',
+        requested_by_role: 'parent',
+        requested_by_account_id: 'other-parent@example.com',
+        parent_reviewed: true,
+        parent_reviewed_at: 'now',
+        parent_reviewer_account_id: 'other-parent@example.com',
+        status: 'registered',
+        created_at: 'now',
+        updated_at: 'now',
+      }, {
+        // Cancelled, so it holds no seat. Guards the status filter in
+        // classRegistrationCount surviving the change of argument.
+        registration_id: 'reg-3',
+        class_id: 'class-1',
+        athlete_id: 'ath-cancelled',
+        requested_by_role: 'parent',
+        requested_by_account_id: 'third-parent@example.com',
+        parent_reviewed: false,
+        status: 'cancelled',
+        created_at: 'now',
+        updated_at: 'now',
       }],
       coaching_requests: [{
         request_id: 'cr-1',
@@ -999,6 +1026,53 @@ describe('GET /api/pilot/scheduler withholds staff fields from a family reader',
       // them would be inventing a rule rather than applying one.
       goals: 'wants to work the jab',
     });
+  });
+
+  /*
+   * app/schedule/page.tsx renders `Seats: {registered_count}/{capacity}` and a
+   * family reads it to decide whether there is room. decorateClasses used to
+   * count the FILTERED registrations, so that number was the seats taken by
+   * the reader's own household -- 0 or 1 for nearly every family, on a class
+   * that might be full. A wrong number, not a narrower one, and it sends a
+   * parent into a registration the server then refuses.
+   */
+  test.each(FAMILY)('%s sees the seats taken in the CLASS, not the seats taken by their own child', async (_label, actor) => {
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(actor);
+
+    const body = await (await schedulerGet()).json();
+
+    // Two registered rows in this class, one of them another family's; the
+    // third is cancelled and holds no seat.
+    expect(body.classes[0].registered_count).toBe(2);
+  });
+
+  test.each(FAMILY)('%s still receives only their own registration row', async (_label, actor) => {
+    // The control that keeps the fix above from being a disclosure: the SEAT
+    // is counted, the ROW is not returned, and the other family's athlete id
+    // and their parent's email appear nowhere in the body.
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(actor);
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.registrations).toHaveLength(1);
+    expect(body.registrations[0].registration_id).toBe('reg-1');
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain('ath-someone-else');
+    expect(serialized).not.toContain('other-parent@example.com');
+    expect(serialized).not.toContain('reg-2');
+  });
+
+  test('a coach sees the same seat count, not the seats in their own scope', async () => {
+    // The coach branch filters registrations too (owned class AND reachable
+    // athlete), so it had the same wrong number. One count, one meaning.
+    arrangeStore();
+    mockRequirePrincipal.mockResolvedValue(principal('coach', { accountId: STAFF_EMAIL }));
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.classes[0].registered_count).toBe(2);
   });
 
   test.each(STAFF)('%s keeps every field', async (_label, actor) => {

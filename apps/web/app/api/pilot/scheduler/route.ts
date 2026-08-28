@@ -195,10 +195,45 @@ function classRegistrationCount(store: SchedulerStore, classId: string): number 
   return store.registrations.filter((entry) => entry.class_id === classId && entry.status === 'registered').length;
 }
 
-function decorateClasses(store: SchedulerStore): Array<SchedulerClass & { registered_count: number }> {
-  return store.classes.map((item) => ({
+/**
+ * SEATS TAKEN IN THE CLASS, not seats taken by people this reader can see.
+ *
+ * This used to be called as decorateClasses(filtered), counting the
+ * registrations that survived filterStateForActor. Those are scoped to the
+ * reader: a guardian keeps only their own children's rows, an athlete only
+ * their own, a coach only the owned-class-and-reachable-athlete intersection.
+ * So the number rendered as "Seats: 3/20" was the number of seats taken BY
+ * THAT READER'S OWN HOUSEHOLD -- 0 or 1 for nearly every family, on a class
+ * that might be full.
+ *
+ * The label is not ambiguous about what it promises. app/schedule/page.tsx
+ * prints it beside the capacity, and a family reads it to decide whether
+ * there is room. Answering "0/20" for a full class is not a narrower truth,
+ * it is a wrong one, and it sends a parent into a registration the server
+ * will then refuse.
+ *
+ * SO THE COUNT COMES FROM THE UNFILTERED STORE while the rows come from the
+ * filtered one -- two arguments, deliberately, so the asymmetry is visible at
+ * the call site instead of hiding inside one object that means two things.
+ *
+ * THIS DISCLOSES NOTHING NEW. It is an aggregate over a class every role
+ * already receives in full (the catalogue is not row-filtered for anyone),
+ * carrying no athlete id, no name and no per-person detail. What it stops
+ * doing is reflecting the reader's own household back at them as if it were
+ * the gym's.
+ *
+ * NOT A CAPACITY GATE, and it never was. Capacity is enforced server-side in
+ * registerForClassTransactionally (schedulerDb.ts), which locks the class row
+ * and counts against the database inside the same transaction. This number is
+ * for the screen; a wrong one misled a reader, it did not admit anyone.
+ */
+function decorateClasses(
+  classes: readonly SchedulerClass[],
+  countFrom: SchedulerStore,
+): Array<SchedulerClass & { registered_count: number }> {
+  return classes.map((item) => ({
     ...item,
-    registered_count: classRegistrationCount(store, item.class_id),
+    registered_count: classRegistrationCount(countFrom, item.class_id),
   }));
 }
 
@@ -445,7 +480,9 @@ export async function GET(request: NextRequest) {
       getCoachAthleteIds(actor),
     ]);
     const filtered = filterStateForActor(actor, store, parentAthleteIds, coachAthleteIds);
-    const classes = decorateClasses(filtered);
+    // Rows from the filtered store, seat counts from the unfiltered one --
+    // see decorateClasses for why those are two different questions.
+    const classes = decorateClasses(filtered.classes, store);
 
     // The field projection runs AFTER filterStateForActor, not inside it,
     // because the coach branch reads coach_account_id and
