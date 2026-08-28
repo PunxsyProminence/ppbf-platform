@@ -27,12 +27,13 @@
 // migration suites use. It NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
-import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
+
+import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
@@ -43,7 +44,14 @@ const PG_PASSWORD = 'postgres';
 const TEST_DB_NAME = 'ppbf_test_guardian_invite_link';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-guardian-invite-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
-const SCHEMA_SQL_PATH = path.resolve(__dirname, '../../../../../infra/azure/pilot_slice_postgres.sql');
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
+
+/* ts-jest compiles a plain `await import()` to require(), which cannot load an
+   ESM .mjs helper. Building it through Function keeps a real dynamic import in
+   the emitted code, honored under --experimental-vm-modules. */
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
 
 const ORG_A = 'org-guardian-a';
 const ORG_B = 'org-guardian-b';
@@ -53,20 +61,12 @@ const COACH_B = 'coach-b@example.com';
 // The exact shape of the parent branch in /api/pilot/athletes/list. Restated
 // here rather than imported so this suite fails if provisioning and that read
 // ever stop agreeing about how a child is resolved.
-const PARENT_RESOLVES_CHILDREN = `
-  select a.athlete_id
-  from pilot.athletes a
-  join pilot.guardian_links gl
-    on gl.organization_id = a.organization_id and gl.athlete_id = a.athlete_id
-  join pilot.parents p
-    on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
-  where a.organization_id = $1 and p.account_id = $2
-  order by a.athlete_id asc`;
-
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let client: Client;
 let staffProvisioning: typeof import('./staffProvisioning');
+let guardianAccess: typeof import('./guardianAccess');
+let access: typeof import('./access');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -89,12 +89,29 @@ async function findFreePort(): Promise<number> {
   });
 }
 
+/**
+ * The SHIPPED resolution, not a restatement of it.
+ *
+ * This helper used to run its own copy of the guardian join, and the copy
+ * could not have been the real thing: it omitted `a.deleted_at is null`,
+ * which guardianAccess's guardianAthleteIds carries, because this suite built
+ * its database from the BASE SCHEMA ALONE and athletes.deleted_at arrives in
+ * the data-retention migration. The column did not exist here, so the query
+ * that runs in production could not run in this suite at all.
+ *
+ * That is the reason the schema below is now the full one. A suite that
+ * proves guardian resolution against a database shape no environment has is
+ * proving it about a query nothing executes -- and the specific thing its
+ * copy could not see is whether a WITHDRAWN athlete still resolves, which is
+ * exactly the access question this file exists to answer.
+ *
+ * Sorted here because guardianAthleteIds returns `select distinct` with no
+ * ORDER BY -- the ordering was the copy's, not the contract's, and the
+ * existing assertions in this file depend on it.
+ */
 async function resolvedChildren(organizationId: string, accountId: string): Promise<string[]> {
-  const result = await client.query<{ athlete_id: string }>(PARENT_RESOLVES_CHILDREN, [
-    organizationId,
-    accountId,
-  ]);
-  return result.rows.map((row) => row.athlete_id);
+  const ids = await guardianAccess.guardianAthleteIds(organizationId, accountId);
+  return [...ids].sort();
 }
 
 async function accountExists(accountId: string): Promise<boolean> {
@@ -143,7 +160,13 @@ beforeAll(async () => {
 
   client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await client.connect();
-  await client.query(await fs.readFile(SCHEMA_SQL_PATH, 'utf8'));
+  // Base schema PLUS every migration, in dependency order -- the shape a
+  // migrated environment actually has. Hand-picking a subset is how a suite
+  // ends up unable to run the function it is testing.
+  const { applyFullSchema } = (await nativeDynamicImport(
+    pathToFileURL(FULL_SCHEMA_HELPER_PATH).href,
+  )) as { applyFullSchema: (c: Client) => Promise<void> };
+  await applyFullSchema(client);
 
   for (const orgId of [ORG_A, ORG_B]) {
     await client.query(
@@ -178,6 +201,8 @@ beforeAll(async () => {
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
 
   staffProvisioning = await import('./staffProvisioning');
+  guardianAccess = await import('./guardianAccess');
+  access = await import('./access');
 });
 
 afterAll(async () => {
@@ -317,6 +342,93 @@ describe('removeGuardianLink', () => {
     });
 
     await expect(resolvedChildren(ORG_A, DANA)).resolves.toEqual(['ath-a1']);
+  });
+
+  /* These two own their fixtures rather than inheriting the shared DANA
+     links, which the tests above deliberately mutate. Seeding a separate
+     guardian with two children keeps a destructive case from depending on
+     the order the file happens to run in. */
+  const REVOKED = 'revoked-guardian@example.com';
+
+  async function seedTwoChildGuardian(): Promise<void> {
+    for (const athleteId of ['ath-a1', 'ath-a2']) {
+      await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+        loginEmail: REVOKED,
+        organizationId: ORG_A,
+        role: 'parent',
+        guardian: { athleteId, fullName: 'Revoked Guardian', relationshipToAthlete: 'father' },
+      });
+    }
+  }
+
+  /* SLICE 1 required negative test: "unlinked guardian loses access".
+     Proven against the shipped resolution now that this suite runs the real
+     one -- detaching is not merely a row leaving a console read, it is the
+     guardian ceasing to reach the child. */
+  test('a detached child stops resolving through the real access path, immediately', async () => {
+    await seedTwoChildGuardian();
+    await expect(resolvedChildren(ORG_A, REVOKED)).resolves.toEqual(['ath-a1', 'ath-a2']);
+
+    await staffProvisioning.removeGuardianLink({
+      organizationId: ORG_A,
+      accountId: REVOKED,
+      athleteId: 'ath-a2',
+    });
+
+    await expect(resolvedChildren(ORG_A, REVOKED)).resolves.toEqual(['ath-a1']);
+    await expect(
+      guardianAccess.isGuardianLinkedToAthlete(ORG_A, REVOKED, 'ath-a2'),
+    ).resolves.toBe(false);
+    // Control: the child they still hold is unaffected, so the refusal above
+    // is the unlink and not a guardian who reaches nothing.
+    await expect(
+      guardianAccess.isGuardianLinkedToAthlete(ORG_A, REVOKED, 'ath-a1'),
+    ).resolves.toBe(true);
+  });
+
+  /* SLICE 1 required negative test: "old session cannot preserve access after
+     relationship removal".
+
+     The actor object is built ONCE and reused across the unlink -- it stands
+     for a guardian already signed in when an admin detaches them. It carries
+     accountId, role and organizationId and NO athlete scope, and that absence
+     is what makes revocation immediate: nothing about which children they
+     reach is held in the session, so every request re-derives it. If a future
+     change ever cached an athlete list on the principal, this is the test
+     that would catch it. */
+  test('a principal built before the unlink does not keep its access afterwards', async () => {
+    // Its own guardian: the case above already detached one of REVOKED's two
+    // children, and removeGuardianLink refuses to take the last one.
+    const SESSION_HELD = 'session-held-guardian@example.com';
+    for (const athleteId of ['ath-a1', 'ath-a2']) {
+      await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+        loginEmail: SESSION_HELD,
+        organizationId: ORG_A,
+        role: 'parent',
+        guardian: { athleteId, fullName: 'Session Held', relationshipToAthlete: 'mother' },
+      });
+    }
+
+    const actor = {
+      accountId: SESSION_HELD,
+      role: 'parent' as const,
+      organizationId: ORG_A,
+      athleteId: null,
+    };
+
+    await expect(access.assertActorCanAccessAthlete(actor, 'ath-a2')).resolves.toBeUndefined();
+
+    await staffProvisioning.removeGuardianLink({
+      organizationId: ORG_A,
+      accountId: SESSION_HELD,
+      athleteId: 'ath-a2',
+    });
+
+    // Same object, no re-authentication, no new session.
+    await expect(access.assertActorCanAccessAthlete(actor, 'ath-a2')).rejects.toThrow();
+    // Control: the actor is still a working principal for the child they keep,
+    // so the refusal above is the unlink rather than a broken actor.
+    await expect(access.assertActorCanAccessAthlete(actor, 'ath-a1')).resolves.toBeUndefined();
   });
 
   // The one action that could recreate the original bug.
