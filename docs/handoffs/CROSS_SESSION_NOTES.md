@@ -28,10 +28,12 @@ staging only: `session-scripts-discipline-fk`, `drill-library-discipline-fk`,
 `cohort-definitions-discipline-fk`, `athlete-development-blocks` (#759's).
 Production has none of them and is still on `8af06a60`.
 
-**A production run is parked at the environment gate:** actions run
-`33168197120` — `seed-reference-data`, production, `disciplines`, **dry-run**
-(writes nothing; inserts in a transaction and rolls back). Approve it or
-cancel it; don't leave it sitting. Staging deploy digest, if promoting:
+**Production has not been measured, and nothing is queued to measure it.** A
+`seed-reference-data` production `disciplines` dry-run was dispatched (run
+`33168197120`) and then **cancelled at the owner's direction** — it sat at the
+environment gate and never connected, so it read nothing. Whoever takes
+production will need to dispatch that measurement themselves. Staging deploy
+digest, if promoting:
 `sha256:83adbe8db0e7ff432a3e591ac0908bf743a78270a192ff242304d0925241bf51`
 (deploy-staging run 33167311808, `aceea64c`, SHADOW gate PASS).
 
