@@ -68,6 +68,30 @@ create index if not exists idx_accounts_active_org
 -- retaining the athlete row is the recoverable direction. Withdrawing an
 -- athlete outright remains available as its own explicit operation either way.
 --
+-- WHY THE ATHLETES ARE LOCKED BEFORE THE CHECK
+--
+-- Narrowing the cascade introduced a read the unconditional version never
+-- made, and a conditional read is a race. Under READ COMMITTED two guardians
+-- of the same athlete retiring concurrently each see the OTHER's deleted_at
+-- as still null -- neither transaction has committed -- so both answer "there
+-- is another live guardian", both skip, and the athlete is left enrolled with
+-- nobody holding them. That is the exact state the cascade exists to prevent,
+-- reached by making it conditional, and it is silent: no error, no audit row,
+-- both retirements report success.
+--
+-- Locking the candidate athletes FOR UPDATE first is what orders the two
+-- retirements. The second one blocks until the first commits, and because
+-- each statement in a plpgsql function takes its own snapshot under READ
+-- COMMITTED, the update that follows the lock sees the first guardian as
+-- retired and cascades. Whoever commits last is the one with nobody behind
+-- them, which is the correct answer either way round.
+--
+-- `order by a.athlete_id` is deadlock avoidance, not cosmetics: two guardians
+-- sharing several children must take those row locks in the same order. The
+-- sibling-liveness check itself stays an unlocked read -- locking those
+-- account rows too would have each transaction holding its own account and
+-- waiting on the other's, which is a cycle.
+--
 -- The join runs accounts -> parents -> guardian_links, and that indirection is
 -- the point. guardian_links.parent_id references pilot.parents(parent_id); it
 -- is NOT an account id. The first version matched gl.parent_id directly against
@@ -77,6 +101,24 @@ create or replace function pilot.cascade_parent_deletion()
 returns trigger as $fn$
 begin
   if new.deleted_at is not null and old.deleted_at is null then
+    -- Order the concurrent retirements on the children they share, before
+    -- reading who else is still live. See the note above.
+    perform 1
+       from pilot.athletes a
+      where a.organization_id = new.organization_id
+        and a.deleted_at is null
+        and a.athlete_id in (
+          select gl.athlete_id
+            from pilot.guardian_links gl
+            join pilot.parents p
+              on p.organization_id = gl.organization_id
+             and p.parent_id = gl.parent_id
+           where gl.organization_id = new.organization_id
+             and p.account_id = new.account_id
+        )
+      order by a.athlete_id
+        for update;
+
     update pilot.athletes a
        set deleted_at = new.deleted_at,
            updated_at = now()

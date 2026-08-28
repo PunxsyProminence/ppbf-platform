@@ -551,6 +551,102 @@ describe('the data retention migration applies and cascades', () => {
     expect(athlete.rows[0].deleted_at).toBeNull();
   });
 
+
+  test('two co-guardians retiring at the same instant do not both skip the cascade', async () => {
+    // The narrowing above introduced a read the old cascade never made, and a
+    // conditional read is a race. Under READ COMMITTED each transaction sees
+    // the other guardian's deleted_at as still null, so "another live guardian
+    // exists" can answer yes on BOTH sides. Both skip, both commit, and the
+    // athlete is left enrolled with nobody holding them -- precisely the state
+    // the cascade exists to prevent, reached by making the cascade conditional.
+    //
+    // Interleaved deliberately rather than by timing. The losing order is
+    // "both triggers evaluate before either commits", so this drives exactly
+    // that: A retires and stays open, B's retirement is issued while A is
+    // uncommitted, and A commits underneath it. B's statement is not awaited
+    // before A commits, because a correct trigger BLOCKS there -- awaiting it
+    // first would hang the test rather than fail it. Instead we wait until
+    // pg_stat_activity shows B either blocked on a lock or finished, so the
+    // interleaving is observed rather than assumed.
+    const RACE_ATHLETE_ID = 'ATH-RET-RACE';
+    const RACE_A_ACCOUNT = 'acct-retention-race-a';
+    const RACE_B_ACCOUNT = 'acct-retention-race-b';
+
+    await seedAthlete(RACE_ATHLETE_ID, ORG_ID);
+    for (const [accountId, parentId] of [
+      [RACE_A_ACCOUNT, 'parent-retention-race-a'],
+      [RACE_B_ACCOUNT, 'parent-retention-race-b'],
+    ] as const) {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, 'parent', $2, 'microsoft')`,
+        [accountId, ORG_ID],
+      );
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+         values ($1, $2, $3, 'Racing Guardian')`,
+        [ORG_ID, parentId, accountId],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, $2, $3, 'guardian')`,
+        [ORG_ID, parentId, RACE_ATHLETE_ID],
+      );
+    }
+
+    const sessionA = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    const sessionB = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await sessionA.connect();
+    await sessionB.connect();
+
+    try {
+      const backendB = await sessionB.query<{ pid: number }>('select pg_backend_pid() as pid');
+      const pidB = backendB.rows[0].pid;
+
+      await sessionA.query('begin');
+      await sessionB.query('begin');
+
+      // A retires and holds its transaction open.
+      await sessionA.query('update pilot.accounts set deleted_at = now() where account_id = $1', [
+        RACE_A_ACCOUNT,
+      ]);
+
+      let settled = false;
+      const bRetires = sessionB
+        .query('update pilot.accounts set deleted_at = now() where account_id = $1', [RACE_B_ACCOUNT])
+        .finally(() => {
+          settled = true;
+        });
+
+      // Wait for B to be observably blocked on a lock, or to have finished.
+      // A trigger that does not serialize finishes here; one that does blocks,
+      // and blocking is the behaviour that makes the assertion below reachable.
+      for (let attempt = 0; attempt < 200 && !settled; attempt += 1) {
+        const blocked = await client.query<{ waiting: boolean }>(
+          `select wait_event_type = 'Lock' as waiting from pg_stat_activity where pid = $1`,
+          [pidB],
+        );
+        if (blocked.rows[0]?.waiting) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+
+      await sessionA.query('commit');
+      await bRetires;
+      await sessionB.query('commit');
+    } finally {
+      await sessionA.end();
+      await sessionB.end();
+    }
+
+    // Whichever guardian commits last is the one with nobody behind them, so
+    // exactly one of the two retirements must have cascaded.
+    const athlete = await client.query<{ deleted_at: Date | null }>(
+      'select deleted_at from pilot.athletes where organization_id = $1 and athlete_id = $2',
+      [ORG_ID, RACE_ATHLETE_ID],
+    );
+    expect(athlete.rows[0].deleted_at).not.toBeNull();
+  });
+
   test('an athlete deleted before their guardian keeps their earlier clock', async () => {
     const EARLY_ATHLETE_ID = 'ATH-RET-EARLY';
     const EARLY_GUARDIAN_ID = 'acct-retention-guardian-2';
