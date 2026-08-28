@@ -40,17 +40,36 @@ in https://github.com/PunxsyProminence/ppbf-platform/pull/829#issuecomment-54576
 
 **The real fork is cardinality, not columns.** One row upserted (#829, owner
 decision D1(a) of 036a) versus many appended (#804). Correcting a verdict in
-#829 overwrites the earlier one, so a mid-block judgment stops existing.
+#829 overwrites the earlier one, so earlier judgments stop existing.
+
+Two things #804's extra rows could be, and they are not equally settled —
+weigh them separately:
+- **post-close revision history** (a verdict corrected after the window shut).
+  Unambiguously worth keeping, and #829 destroys it.
+- **mid-block judgments** (a verdict while the window is still open). 036a §4
+  calls that a prediction rather than a record, and #829 now REFUSES the write
+  (`ffda978f`, after a Codex finding). #804 deliberately allows it and says so
+  — its author flagged this as a genuine disagreement for the owner, not an
+  oversight. Per the kernel's source hierarchy a design doc does not bind
+  another lane's code, so treat this as open, not as #804 being in breach.
 
 **Two things worth salvaging whichever table wins:**
 1. `intervention_executions`' adherence vocabulary ships with a paired
    constraint — *claimed deviations must be named*. #804 copied both halves;
    #829 first copied only the words. Fixed in #829 `eb9a95cf`. **If you copy
    that vocabulary anywhere else, copy the constraint too.**
-2. CT-13 was hit by both, and resolved two different ways: #829 reads
+2. CT-13 was hit by both, and resolved two different ways — **and they are not
+   interchangeable, so do not pick one on tidiness.** #829 reads
    `pilot.attendance_reconciled` (athlete-day system of record, cannot
-   double-count); #804 reads `activity_log` boxing rows with a `LEGACY_READERS`
-   entry. Whichever table survives, these two reads should not both ship.
+   double-count) and reports training DAYS. #804 reads `activity_log` boxing
+   rows with a `LEGACY_READERS` entry, which that guard explicitly permits for
+   a justified reader. **The view exposes no duration and no domain**
+   (athlete-day, status, source, class-mark count only), so #829's read
+   structurally CANNOT produce 036a §2's "activity_log minutes by domain" —
+   it drops that metric rather than computing it differently. #829 records
+   that correction in 036a on its own branch; noting it here so the choice is
+   made with the cost visible. Whichever table survives, these two reads
+   should not both ship.
 
 **Also, for any lane adding a migration:** a PR conflicted on
 `apply-migrations.yml` gets **zero** CI, not slow CI — `ci.yml` triggers on
