@@ -4,11 +4,13 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  assessmentColumnsForReader,
   coachObservationNoteTypesForReader,
   emergencyContactColumnsForReader,
   attendanceColumnsForReader,
   guardianColumnsForReader,
   medicalIntakeColumnsForReader,
+  readinessColumnsForReader,
   waiverColumnsForReader,
 } from '@/src/server/pilot/intake';
 
@@ -46,6 +48,8 @@ export async function POST(request: NextRequest) {
     const waiverColumns = waiverColumnsForReader(principal.role);
     const medicalIntakeColumns = medicalIntakeColumnsForReader(principal.role);
     const attendanceColumns = attendanceColumnsForReader(principal.role);
+    const assessmentColumns = assessmentColumnsForReader(principal.role);
+    const readinessColumns = readinessColumnsForReader(principal.role);
 
     const [emergencyContacts, medicalIntake, waivers, assessments, attendance, readiness, coachObservations, guardians] = await Promise.all([
       // The other half of the guardian narrowing below, and it has to be here
@@ -79,13 +83,27 @@ export async function POST(request: NextRequest) {
          where organization_id = $1 and athlete_id = $2 order by created_at desc`,
         [principal.organizationId, athleteId],
       ),
-      query('select * from pilot.assessments where organization_id = $1 and athlete_id = $2 order by created_at desc', [principal.organizationId, athleteId]),
+      // The one table in this body whose column count more than doubled AFTER
+      // both of its reads were written -- seven columns became eighteen, and
+      // both reads were still `select *`. See assessmentColumnsForReader for
+      // the four that move to staff and the stated harm for each.
+      query(
+        `select ${assessmentColumns.join(', ')} from pilot.assessments
+         where organization_id = $1 and athlete_id = $2 order by created_at desc`,
+        [principal.organizationId, athleteId],
+      ),
       query(
         `select ${attendanceColumns.join(', ')} from pilot.attendance
          where organization_id = $1 and athlete_id = $2 order by attendance_date desc`,
         [principal.organizationId, athleteId],
       ),
-      query('select * from pilot.readiness where organization_id = $1 and athlete_id = $2 order by measured_at desc', [principal.organizationId, athleteId]),
+      // Same shape, a different migration. Only the staff account identifier
+      // moves; see readinessColumnsForReader for what is left open and why.
+      query(
+        `select ${readinessColumns.join(', ')} from pilot.readiness
+         where organization_id = $1 and athlete_id = $2 order by measured_at desc`,
+        [principal.organizationId, athleteId],
+      ),
       query(
         `select * from pilot.coach_observations
          where organization_id = $1
