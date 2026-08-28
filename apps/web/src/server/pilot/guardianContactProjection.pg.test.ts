@@ -136,6 +136,8 @@ interface DomainGetBody {
   guardians?: Record<string, unknown>[];
   emergency_contacts?: Record<string, unknown>[];
   waivers?: Record<string, unknown>[];
+  medical_intake?: Record<string, unknown>[];
+  attendance?: Record<string, unknown>[];
   coach_observations?: Record<string, unknown>[];
   error?: string;
 }
@@ -290,6 +292,25 @@ beforeAll(async () => {
      values ($1, '99999999-8888-4777-8666-555555555555', $2, 'Guardian B', 'father',
              '555-0200', 'guardian.b@example.test', true, $3)`,
     [ORG, ATHLETE, 'Do not call this contact without speaking to the welfare lead first.'],
+  );
+
+  // A medical intake and an attendance row, each carrying a staff free-text
+  // note. Both tables sit in the same response body as the guardians and the
+  // waiver, under the same gate, and both were still on `select *`.
+  await db.query(
+    `insert into pilot.medical_intake
+       (organization_id, medical_id, athlete_id, conditions, medications, allergies,
+        physician_name, physician_phone, clearance_status, notes)
+     values ($1, '88888888-7777-4666-8555-444444444444', $2, 'asthma', 'inhaler', 'none',
+             'Dr Reyes', '555-0300', 'cleared', $3)`,
+    [ORG, ATHLETE, 'Mother asked that the welfare lead call her, not 555-0200, about this.'],
+  );
+
+  await db.query(
+    `insert into pilot.attendance
+       (organization_id, attendance_id, athlete_id, attendance_date, status, notes)
+     values ($1, '66666666-5555-4444-8333-222222222222', $2, current_date, 'present', $3)`,
+    [ORG, ATHLETE, 'Arrived upset; welfare lead spoke to them.'],
   );
 
   // A waiver signed by Guardian B, carrying a staff note about Guardian B.
@@ -577,6 +598,55 @@ describe('the whole domain-get body', () => {
 
     expect(body.waivers).toHaveLength(1);
     expect(Object.keys(body.waivers?.[0] ?? {})).not.toContain('notes');
+  });
+
+  /* THE MEDICAL INTAKE, and the reader who makes it different: this route
+     admits 'athlete', and access.ts resolves that to a strict self-read. So
+     the staff note about a child reached the child. */
+  it('gives a guardian the medical record without the staff note on it', async () => {
+    const body = await readDomainGet(AS.guardianA());
+    const medical = body.medical_intake?.[0];
+
+    // The child's own medical facts and their clinician stay: that is what a
+    // guardian needs in order to act.
+    expect(medical).toMatchObject({
+      conditions: 'asthma',
+      medications: 'inhaler',
+      physician_name: 'Dr Reyes',
+      physician_phone: '555-0300',
+      clearance_status: 'cleared',
+    });
+    expect(Object.keys(medical ?? {})).not.toContain('notes');
+  });
+
+  it('gives the athlete their own record without the staff note either', async () => {
+    const body = await readDomainGet(AS.athlete());
+
+    expect(body.medical_intake).toHaveLength(1);
+    expect(Object.keys(body.medical_intake?.[0] ?? {})).not.toContain('notes');
+  });
+
+  it('keeps the medical note for the coach and the organization admin', async () => {
+    const asCoach = await readDomainGet(AS.coach());
+    const asAdmin = await readDomainGet(AS.admin());
+
+    expect(asCoach.medical_intake?.[0].notes).toContain('welfare lead');
+    expect(asAdmin.medical_intake?.[0].notes).toContain('welfare lead');
+  });
+
+  it('gives a guardian and an athlete attendance without the staff note', async () => {
+    const asGuardian = await readDomainGet(AS.guardianA());
+    const asAthlete = await readDomainGet(AS.athlete());
+
+    // Still a real attendance row: the date and whether they were there.
+    expect(asGuardian.attendance?.[0]).toMatchObject({ status: 'present' });
+    expect(Object.keys(asGuardian.attendance?.[0] ?? {})).not.toContain('notes');
+    expect(Object.keys(asAthlete.attendance?.[0] ?? {})).not.toContain('notes');
+  });
+
+  it('keeps the attendance note for the coach', async () => {
+    const asCoach = await readDomainGet(AS.coach());
+    expect(asCoach.attendance?.[0].notes).toContain('welfare lead');
   });
 
   it('keeps the waiver note for the coach and the organization admin', async () => {
