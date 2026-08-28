@@ -68,10 +68,32 @@ try {
 }
 
 const apply = process.env.PPBF_RETENTION_APPLY === 'true';
-const maxRows = Number.parseInt(process.env.PPBF_RETENTION_MAX_ROWS ?? '50', 10);
-if (!Number.isFinite(maxRows) || maxRows < 0) {
+// THE BLAST-RADIUS GUARD MUST NOT BE DEFEATABLE BY THE PERSON TRIGGERING THE
+// DELETION. This file's own header sells the cap as the thing that stops a
+// runaway sweep -- "the right response is to stop and let a human look" -- but
+// the threshold arrived as a free-text workflow input with no upper bound, from
+// the same dispatch box that types APPLY. `max_rows=999999` switched the guard
+// off entirely while still reading as a deliberate, guarded run in the log.
+//
+// A ceiling here rather than only in the workflow, because this script is also
+// runnable by hand. The input can now only ever NARROW the blast radius; it can
+// never widen it past what a human agreed to in review.
+const MAX_ROWS_CEILING = 200;
+const requestedMaxRows = Number.parseInt(process.env.PPBF_RETENTION_MAX_ROWS ?? '50', 10);
+if (!Number.isFinite(requestedMaxRows) || requestedMaxRows < 0) {
   console.error(JSON.stringify({ event: 'retention.cleanup.failed', reason: 'INVALID_MAX_ROWS' }));
   process.exit(1);
+}
+const maxRows = Math.min(requestedMaxRows, MAX_ROWS_CEILING);
+if (requestedMaxRows > MAX_ROWS_CEILING) {
+  console.error(
+    JSON.stringify({
+      event: 'retention.cleanup.max_rows_clamped',
+      requested: requestedMaxRows,
+      ceiling: MAX_ROWS_CEILING,
+      note: 'The dispatcher asked to widen the blast radius past the ceiling. Clamped, not honoured.',
+    }),
+  );
 }
 
 const pool = new Pool({ connectionString });
