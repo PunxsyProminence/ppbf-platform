@@ -728,7 +728,7 @@ describe('block objectives runner readiness assertion', () => {
     // This one paid for itself. The gate was deliberately written not to
     // assert 'nutrition_body_composition' was ABSENT, on the grounds that a
     // deploy gate encoding a policy is a landmine under the decision that
-    // changes it -- and eight hours later the owner changed it. The reversal
+    // changes it -- and within the hour the owner changed it. The reversal
     // was one line in the migration and one in the module, with no runner
     // edit and no blocked release. It stays policy-free in the other
     // direction too, for the same reason.
