@@ -30,6 +30,7 @@ import {
   type SchedulerAttendance,
   type SchedulerClass,
   type SchedulerCoachingRequest,
+  type SchedulerRegistration,
   type SchedulerRole,
   type SchedulerStore,
   upsertSchedulerAttendance,
@@ -201,6 +202,140 @@ function decorateClasses(store: SchedulerStore): Array<SchedulerClass & { regist
   }));
 }
 
+/*
+ * WHICH FIELDS OF A SCHEDULER ROW A FAMILY READER MAY SEE.
+ *
+ * filterStateForActor below answers which ROWS a reader gets, and answers it
+ * well -- a parent's registrations, coaching requests and attendance are all
+ * scoped to their own linked children. It has never answered which FIELDS,
+ * and the rows it hands a family carry two things that were never theirs.
+ *
+ * ACCOUNT IDENTIFIERS, on every collection. classes carries
+ * scheduled_by_account_id, coach_account_id and covering_coach_account_id --
+ * and classes is the ONE collection deliberately not row-filtered, because a
+ * family browses the whole catalogue to register against it. So every class
+ * in the organization arrived at a family carrying three staff identifiers.
+ * registrations adds requested_by_account_id and parent_reviewer_account_id;
+ * coaching_requests adds requested_by_account_id and
+ * assigned_coach_account_id; attendance adds checked_in_by_account_id.
+ *
+ * An account_id is not an opaque handle on this platform:
+ * staffProvisioning.ts:316 resolves it as `existing?.account_id ||
+ * accountIdHint || loginEmail`, and the admin invite route supplies the hint
+ * only when an admin typed one. So an account_id IS a staff member's login
+ * email unless somebody chose otherwise -- and app/schedule/page.tsx printed
+ * it under "Coach:" on the class list, to whoever was signed in. The guardian
+ * projection drops pilot.parents.account_id and the emergency-contact
+ * projection drops `email` on exactly this ground.
+ *
+ * THE ATTENDANCE NOTE. pilot.scheduler_attendance.note is free text a coach
+ * typed about a child; privacyTiers.ts registers it at tier `organization`
+ * with that description in as many words, and names
+ * attendanceReporting.ts#getClassAttendanceRoster as its enforcer -- a
+ * function behind the coach/admin-only attendance-summary route. This route
+ * is a second reader that entry does not name, and it shipped the column to
+ * the family. Its sibling column on the other attendance table
+ * (pilot.attendance.notes) has been staff-only on every one of ITS readers
+ * since attendanceColumnsForReader landed.
+ *
+ * THE RULE, stated so it is reviewable in one sentence: no *_account_id and
+ * no staff free-text note reaches a family reader. Everything else stays.
+ *
+ * WHAT DELIBERATELY STAYS, so each absence is a decision:
+ *   checked_in_by_role, requested_by_role  A role names no person, and a
+ *                       parent who checked their own child in needs to see
+ *                       that it was a parent who did it.
+ *   coaching_requests.goals  Free text, but the REQUESTER writes it, and a
+ *                       parent can be the requester (requested_by_role
+ *                       carries 'parent'). Withholding a family's own words
+ *                       from them would be inventing a rule, not applying
+ *                       one. The case where a coach wrote it is real and
+ *                       unresolved; flagged rather than guessed at.
+ *   the class catalogue itself  Not row-filtered, and not filtered here
+ *                       either. A family browses it to register against it;
+ *                       narrowing it is a product decision, not a privacy
+ *                       one.
+ */
+function isFamilyReader(actor: SchedulerActor): boolean {
+  return actor.role === 'parent' || actor.role === 'athlete';
+}
+
+type FamilyClass = Omit<
+  SchedulerClass,
+  'scheduled_by_account_id' | 'coach_account_id' | 'covering_coach_account_id'
+> & { registered_count: number };
+
+/* Built by naming what stays rather than by deleting what goes -- an
+   allowlist, for the reason intake.ts's waiver projection gives: a column a
+   later migration adds must not reach a family by default. Rest-destructuring
+   would make every future field family-visible on the day it is added. */
+function familyClass(item: SchedulerClass & { registered_count: number }): FamilyClass {
+  return {
+    class_id: item.class_id,
+    title: item.title,
+    start_at: item.start_at,
+    end_at: item.end_at,
+    location: item.location,
+    capacity: item.capacity,
+    status: item.status,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+    registered_count: item.registered_count,
+  };
+}
+
+type FamilyRegistration = Omit<
+  SchedulerRegistration,
+  'requested_by_account_id' | 'parent_reviewer_account_id'
+>;
+
+function familyRegistration(row: SchedulerRegistration): FamilyRegistration {
+  return {
+    registration_id: row.registration_id,
+    class_id: row.class_id,
+    athlete_id: row.athlete_id,
+    requested_by_role: row.requested_by_role,
+    parent_reviewed: row.parent_reviewed,
+    parent_reviewed_at: row.parent_reviewed_at,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+type FamilyCoachingRequest = Omit<
+  SchedulerCoachingRequest,
+  'requested_by_account_id' | 'assigned_coach_account_id'
+>;
+
+function familyCoachingRequest(row: SchedulerCoachingRequest): FamilyCoachingRequest {
+  return {
+    request_id: row.request_id,
+    athlete_id: row.athlete_id,
+    requested_by_role: row.requested_by_role,
+    preferred_at: row.preferred_at,
+    goals: row.goals,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+type FamilyAttendance = Omit<SchedulerAttendance, 'checked_in_by_account_id' | 'note'>;
+
+function familyAttendance(row: SchedulerAttendance): FamilyAttendance {
+  return {
+    attendance_id: row.attendance_id,
+    class_id: row.class_id,
+    athlete_id: row.athlete_id,
+    status: row.status,
+    method: row.method,
+    checked_in_by_role: row.checked_in_by_role,
+    checked_in_at: row.checked_in_at,
+    updated_at: row.updated_at,
+  };
+}
+
 function filterStateForActor(
   actor: SchedulerActor,
   store: SchedulerStore,
@@ -310,15 +445,24 @@ export async function GET(request: NextRequest) {
       getCoachAthleteIds(actor),
     ]);
     const filtered = filterStateForActor(actor, store, parentAthleteIds, coachAthleteIds);
+    const classes = decorateClasses(filtered);
+
+    // The field projection runs AFTER filterStateForActor, not inside it,
+    // because the coach branch reads coach_account_id and
+    // covering_coach_account_id to work out which classes it owns. Narrowing
+    // earlier would have taken the coach's own ownership test away from it.
+    const family = isFamilyReader(actor);
 
     return NextResponse.json({
       ok: true,
       role: actor.role,
       athlete_id: actor.athleteId,
-      classes: decorateClasses(filtered),
-      registrations: filtered.registrations,
-      coaching_requests: filtered.coaching_requests,
-      attendance: filtered.attendance,
+      classes: family ? classes.map(familyClass) : classes,
+      registrations: family ? filtered.registrations.map(familyRegistration) : filtered.registrations,
+      coaching_requests: family
+        ? filtered.coaching_requests.map(familyCoachingRequest)
+        : filtered.coaching_requests,
+      attendance: family ? filtered.attendance.map(familyAttendance) : filtered.attendance,
     });
   } catch (error) {
     return jsonError(error);

@@ -9,6 +9,9 @@
 //     when the footage is unattributed team footage
 //   * a source that is quarantined, missing, or in another organization is
 //     refused, and leaves NO study behind to be mistaken for a real one
+//   * a creator account that is in another organization, missing, inactive,
+//     or soft-deleted is refused -- active_flag and deleted_at are columns,
+//     so only a real database can say what the WHERE clause does with them
 //   * the source video row is not touched by being annotated against
 //   * the rows the bootstrap creates are the rows the existing read paths
 //     behind /coach/calibration return
@@ -39,6 +42,10 @@ const ORG_ID = 'org-boot';
 const OTHER_ORG_ID = 'org-boot-other';
 const COACH_ID = 'acct-boot-coach';
 const OTHER_ORG_COACH_ID = 'acct-boot-other-coach';
+/** In THIS organization, but switched off: active_flag = false. */
+const INACTIVE_COACH_ID = 'acct-boot-inactive-coach';
+/** In THIS organization, but soft-deleted: deleted_at set. */
+const DELETED_COACH_ID = 'acct-boot-deleted-coach';
 const ATHLETE_ID = 'ATH-BOOT-1';
 const OTHER_ORG_ATHLETE_ID = 'ATH-BOOT-OTHER';
 
@@ -52,6 +59,11 @@ const QUARANTINED_VIDEO_ID = 'vs-boot-quarantined';
 const OTHER_ORG_VIDEO_ID = 'vs-boot-other-org';
 
 const BASE_SQL = 'pilot_slice_postgres.sql';
+// pilot.accounts.active_flag ships in the base schema; deleted_at is added by
+// the retention migration, so the soft-delete half of the creator check cannot
+// be exercised without applying it. Same base-plus-retention pair
+// sourceRetractionChecks.pg.test.ts uses.
+const RETENTION_SQL = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 const VIDEO_SESSIONS_SQL = 'pilot_slice_postgres_video_sessions_migration.sql';
 const CALIBRATION_SQL = 'pilot_slice_postgres_calibration_projects_migration.sql';
 
@@ -104,6 +116,22 @@ async function seedTenancy(client: Client): Promise<void> {
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
      values ($1, 'coach', $2, 'microsoft') on conflict do nothing`,
     [OTHER_ORG_COACH_ID, OTHER_ORG_ID],
+  );
+
+  // Both of these are in ORG_ID, so organization membership alone accepts
+  // them. Only liveness does not.
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, active_flag)
+     values ($1, 'coach', $2, 'microsoft', false) on conflict do nothing`,
+    [INACTIVE_COACH_ID, ORG_ID],
+  );
+  // active_flag is left TRUE here on purpose. A soft-deleted account whose
+  // active_flag was also false would pass a check that read only one of the
+  // two columns, and the test would not notice.
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, active_flag, deleted_at)
+     values ($1, 'coach', $2, 'microsoft', true, now()) on conflict do nothing`,
+    [DELETED_COACH_ID, ORG_ID],
   );
 
   // pilot.athletes declares created_at/updated_at NOT NULL with no defaults.
@@ -207,6 +235,7 @@ beforeAll(async () => {
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
   await migrateClient.query(await readMigration(BASE_SQL));
+  await migrateClient.query(await readMigration(RETENTION_SQL));
   await migrateClient.query(await readMigration(VIDEO_SESSIONS_SQL));
   await migrateClient.query(await readMigration(CALIBRATION_SQL));
   await seedTenancy(migrateClient);
@@ -386,6 +415,37 @@ describe('a source the platform will not open is refused, and leaves nothing beh
 
     await expect(
       bootstrap.bootstrapCalibrationClip(request({ createdByAccountId: 'acct-nobody' })),
+    ).rejects.toThrow(/Not found: no such account in this organization/);
+
+    expect(await projectCount()).toBe(before);
+  });
+
+  test('REFUSES an INACTIVE creator account in the correct organization', async () => {
+    // Membership is satisfied: this account really is in ORG_ID, and the
+    // organization_id predicate alone accepts it. What it cannot do is sign
+    // in, and created_by_account_id is the only record calibration keeps of
+    // who chose these clips -- attributing that to somebody switched off
+    // attributes it to nobody. assertActor in import-shadow-research.mjs
+    // refuses SEED_ACCOUNT_INACTIVE for the same reason.
+    const before = await projectCount();
+
+    await expect(
+      bootstrap.bootstrapCalibrationClip(request({ createdByAccountId: INACTIVE_COACH_ID })),
+    ).rejects.toThrow(/Not found: no such account in this organization/);
+
+    expect(await projectCount()).toBe(before);
+  });
+
+  test('REFUSES a SOFT-DELETED creator account, with the same answer', async () => {
+    // Separate from the case above rather than folded into it: this row has
+    // active_flag TRUE and deleted_at set, so a check that read active_flag
+    // alone would accept it. The single message is deliberate -- distinguishing
+    // 'inactive' from 'no such account' would confirm to whoever typed the id
+    // that the account exists in THIS organization.
+    const before = await projectCount();
+
+    await expect(
+      bootstrap.bootstrapCalibrationClip(request({ createdByAccountId: DELETED_COACH_ID })),
     ).rejects.toThrow(/Not found: no such account in this organization/);
 
     expect(await projectCount()).toBe(before);
