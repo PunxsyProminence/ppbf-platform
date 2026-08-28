@@ -81,21 +81,38 @@ Owner decisions 2026-08-16 (asked as a batch, answered individually):
 
 Historical runtime-verification gaps (including T-001/T-002 and the PR-238 bulk deployment) are evidence debt, not a blanket blocker on new development. Run the relevant runtime probe when touching or releasing the affected surface; do not force every unrelated builder to reconstruct the entire deployment history.
 
-## Deploy status (re-measured 2026-08-22)
+## Deploy status — read PRODUCTION_STATE.json, not this file
 
-**Corrected 2026-08-22. The previous note, dated 2026-08-19, put both environments on `1da832e9` (PR #391, 2026-08-16) and sized the undeployed batch at roughly 120 commits from PR #412 onward. Every part of that is stale, and the size was the expensive part** — an audit reading it sized this release at 25 migrations and 62 commits. Both environments have deployed since.
+**This section used to restate the deployed SHAs, the undeployed commit count
+and the pending migration count. It is now a pointer, deliberately, because
+that duplication is what kept going wrong.**
 
-Confirmed directly against the GitHub Actions API during this docs-only pass (no application code touched), workflow-run listings only:
+The numbers here were re-measured on 2026-08-22 and were correct that day. By
+2026-08-28 they said production ran `a11ea7c1` with 22 commits and 2 migrations
+undeployed. The real gap at that point was 205 commits. A release lane sizing
+from this block would have been out by an order of magnitude — which is the
+exact failure the block's own predecessor note describes ("an audit reading it
+sized this release at 25 migrations and 62 commits").
 
-- Most recent **successful** `deploy-production.yml` run: **32418590207** (#150), `head_sha` `a11ea7c166f7659e4c5bb63337d44323069febaa`, dispatched 2026-08-20T21:16:51Z.
-- Most recent **successful** `deploy-staging.yml` run: **32526743194** (#215), `head_sha` `247bf977513c7b08ceb7d5adefce34d74cfeab50`, dispatched 2026-08-21T21:04:33Z. Staging is one run ahead of production and one commit behind `main`'s tip.
+It drifted for a structural reason, not a careless one: two files recorded one
+fact. `docs/current/PRODUCTION_STATE.json` is updated by the session that runs
+a release, minutes after it lands, and carries the instrument used for every
+field. This file was updated when someone remembered. So the fix is not another
+correction — it is to stop keeping a second copy.
 
-Measured with `git` against `main` at `c88e80a3`:
+**Single source of truth: `docs/current/PRODUCTION_STATE.json`.** It records,
+per environment, the deployed SHA, the image digest, the deployment run, the
+revision, the timestamp, and what was actually observed to establish each one.
+Superseded records are carried rather than overwritten, so the trail of what was
+true when survives.
 
-- Undeployed to **production**, `a11ea7c1..c88e80a3`: **22 commits** and **2 new migration files** — `infra/azure/pilot_slice_postgres_programs_migration.sql` (#547) and `infra/azure/pilot_slice_postgres_coach_cards_migration.sql` (#553). Not ~120 commits, and not 25 migrations.
-- Undeployed to **staging**, `247bf977..c88e80a3`: **3 commits** (#555, #557, #560), no new migration.
+To size an undeployed batch, read the deployed SHA out of that file and measure
+against it directly:
 
-What this note does NOT claim: nothing here was read back from a live environment. These are workflow-run listings and a local `git` count, which is what the dispatch pointed at, not proof of what either container is serving now. Deploying remains an owner action — `workflow_dispatch` with `confirm_sha` / `release_digest` / `migrations_complete`, and Jason's approval on the protected `production` environment — and is out of scope for any agent to trigger.
+    git rev-list --count <deployed_sha>..origin/main
+    git diff --name-only <deployed_sha>..origin/main -- 'infra/azure/*.sql'
+
+That is two commands against live git, and it cannot go stale.
 
 ## Historical ledger
 
