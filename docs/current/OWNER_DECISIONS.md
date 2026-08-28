@@ -225,12 +225,62 @@ them by building.
 - **Validating the three discipline foreign keys.** All three
   (`drill_library`, `session_scripts`, `cohort_definitions`) are installed
   `NOT VALID`, so they govern new writes and have never scanned existing rows.
-  The census (OD-2026-08-28-002) establishes that `validate constraint` would
-  currently succeed against both production and staging, so the risk that
-  deferred this is measured and gone -- but the decision to run it, and who
-  runs it, has not been made. The B2 ruling that preceded the FKs said
-  PRECHECK and STOP; what merged substituted `NOT VALID`. That substitution
-  has not been ratified.
+  Production carries all three in that state -- read from the census run's own
+  job log, which printed `NOT VALID -- installed, enforcing new writes` for
+  each.
+
+  The mechanics were measured on PostgreSQL 18.4 (the version the repository's
+  own `.pg.test.ts` suites run against) rather than reasoned about, because the
+  cost is the whole decision:
+
+  | property | measured |
+  |---|---|
+  | blocks reads on either table | NO |
+  | blocks writes on either table | NO |
+  | blocks | `ANALYZE`, `CREATE INDEX`, `ADD COLUMN`, a second validate -- on the content table only |
+  | duration at production size (119 rows) | 1 ms |
+  | duration at 5,000,000 rows | 1.48 s |
+  | interruptible | yes; cancels clean, `convalidated` stays false |
+  | on failure | clean rollback, no partial state, constraint stays enforcing |
+  | re-run on an already-validated constraint | 1 ms, no re-scan, no lock on the registry |
+
+  That last row is what makes it safe under the `all` chain, which re-runs every
+  migration on every dispatch: a repeat validate is a catalog no-op.
+
+  **A `NOT VALID` foreign key protects the REFERENCED side too, and this is
+  written down nowhere else.** Measured: deleting a registry row that a
+  never-scanned child row references is refused 23503; renaming a registry key
+  is refused; inserting or updating a child row to an unregistered discipline
+  is refused. So no legal SQL can create a violating row from either direction.
+  That makes the CLEAN census durable rather than perishable -- the only ways
+  past it are disabling triggers (zero occurrences in the tree), a
+  `pg_restore --disable-triggers`, or dropping the constraint.
+
+  What the safeguarding argument in the three migration headers cares about is
+  therefore ALREADY enforced, for everything except rows written before
+  2026-08-28 -- of which the census measured zero.
+
+  There is no precedent to follow: `validate constraint` appears in no
+  executable SQL anywhere in this repository. Whatever is decided sets the
+  precedent.
+
+  UNRESOLVED, and it changes what the CLEAN result is worth:
+  `docs/current/PRODUCTION_STATE.json` records (2026-08-15) that
+  `pilot.drill_library` and `pilot.disciplines` both hold 0 rows, while the
+  three migration headers record (2026-08-24) 119 / 3 / 6. Both cannot describe
+  the same database. Inference, not measurement: the census reported
+  "Organizations with NO discipline registry: 0", which could not hold if the
+  registry were empty AND any organization existed -- so either production has
+  no organizations, or the 2026-08-15 observation is stale. The census output
+  cannot distinguish those.
+
+  The B2 ruling that preceded the FKs said PRECHECK and STOP; what merged
+  substituted `NOT VALID`. That substitution has not been ratified, and no
+  primary record of B2 exists in this repository (searched: `git grep -i` for
+  `\bB2\b` and `precheck|pre-check` over all tracked files). Note the
+  substitution was MORE conservative than B2 asked for, not less: enforcement
+  began immediately on both sides, and the precheck B2 wanted was performed
+  afterwards and came back clean.
 - **Whether `pilot.disciplines.active` should block writes.** Three of the five
   seeded disciplines ship `active = false` (wrestling, bjj, combatives) --
   including `bjj`, which OD-2026-08-28-002 just made writable.
