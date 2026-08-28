@@ -76,6 +76,32 @@ function resolveSslConfig() {
 // to_regclass() rather than the ::regclass cast: the cast raises before any
 // column is evaluated when the table is absent, which would report an
 // unmigrated database as a SQL error instead of as unreadiness.
+// A DEPLOY GATE MUST NOT ENCODE A POLICY THAT CAN CHANGE.
+//
+// This assertion used to carry two more clauses:
+//
+//   and pg_get_constraintdef(oid) not like '%''Weight Loss''%'
+//   and pg_get_constraintdef(oid) not like '%''Weight Gain''%'
+//
+// They asserted that the two withheld categories were ABSENT, which was true
+// when written and became false on 2026-08-28 when the owner admitted them.
+// The effect was not a wrong comment: the runner REFUSED a correctly migrated
+// database, so `pilot:apply-goal-category-progress` -- and therefore the
+// `all` chain that runs it -- could not be dispatched to any environment
+// until this line was removed. A vocabulary decision had been wired into the
+// release path.
+//
+// Found by goalCategoryProgress.pg.test.ts failing on the reversal, which is
+// the cheap place to find it. The expensive place is a staging dispatch, and
+// #488 is what that costs.
+//
+// What stays: the SEVEN categories this vocabulary has always carried, as
+// positive assertions. What must never come back, in either direction: a
+// clause about 'Weight Loss' or 'Weight Gain'. Asserting they are present
+// would be the same landmine pointed the other way -- it would refuse every
+// dispatch if the owner ever withheld them again. The vocabulary's exact
+// membership is the migration's business and the migration test's; this gate
+// checks that the constraint exists and holds real values.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.goals') is not null as goals_ready,
@@ -115,8 +141,6 @@ const READINESS_QUERY = `
         and pg_get_constraintdef(oid) like '%''Recovery''%'
         and pg_get_constraintdef(oid) like '%''Lifestyle''%'
         and pg_get_constraintdef(oid) like '%''Leadership''%'
-        and pg_get_constraintdef(oid) not like '%''Weight Loss''%'
-        and pg_get_constraintdef(oid) not like '%''Weight Gain''%'
     ) as category_vocabulary_ready,
     exists (
       select 1

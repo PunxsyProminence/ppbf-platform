@@ -21,6 +21,37 @@ not replace it.
 
 ---
 
+## 2026-08-28 — branch `claude/training-content-backend-6wymcp-*` (PRs #756, #757, #758)
+
+**Staging's database is four migrations ahead of production.** Applied to
+staging only: `session-scripts-discipline-fk`, `drill-library-discipline-fk`,
+`cohort-definitions-discipline-fk`, `athlete-development-blocks` (#759's).
+Production has none of them and is still on `8af06a60`.
+
+**Production has not been measured, and nothing is queued to measure it.** A
+`seed-reference-data` production `disciplines` dry-run was dispatched (run
+`33168197120`) and then **cancelled at the owner's direction** — it sat at the
+environment gate and never connected, so it read nothing. Whoever takes
+production will need to dispatch that measurement themselves. Staging deploy
+digest, if promoting:
+`sha256:83adbe8db0e7ff432a3e591ac0908bf743a78270a192ff242304d0925241bf51`
+(deploy-staging run 33167311808, `aceea64c`, SHADOW gate PASS).
+
+**Measure `pilot.disciplines` on production before applying any of the three
+discipline FKs.** They are `NOT VALID`, so deployed rows are never scanned —
+but the constraint is live for NEW writes immediately. If production's registry
+lacks a discipline its rows use, new writes to `session_scripts`,
+`drill_library` and `cohort_definitions` start failing `23503`. Staging
+measured `5 already present` before anything was applied; production's only
+record is 2026-08-24 loader output, not a read of the table. That is what run
+`33168197120` exists to answer.
+
+**`validate constraint` has been run nowhere, deliberately.** It is in no
+migration, no runner and no workflow — only named in each migration header, for
+whoever measures the rows first. It is the statement that can fail on live data.
+
+— build lane, handing production to the release lane at owner's direction.
+
 ## 2026-08-17/18 — branch `claude/app-audit-ux-ui-report-78o4cm` (PR #456)
 
 Produced `docs/PLATFORM_AUDIT_2026-08-17_FULL_SPECTRUM.md`, a full-spectrum
