@@ -12,7 +12,12 @@ import {
   READINESS_UNVALIDATED_CAVEAT,
   isReadinessMethodValidated,
 } from '@/src/server/pilot/readinessProvenance';
-import { formatGymDateTimeShort, formatGymStamp } from '@/src/lib/gymTime';
+import {
+  formatGymDateNumeric,
+  formatGymDateTimeShort,
+  formatGymStamp,
+  formatGymTimeOfDay,
+} from '@/src/lib/gymTime';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -133,6 +138,103 @@ interface CoachGoal {
   category: string;
   progress: number;
   dueDate: string;
+}
+
+/**
+ * The coach's own session in progress, as GET /api/pilot/session-scripts/runs
+ * returns it. Mirrors LiveSessionScriptRun in
+ * src/server/pilot/sessionScriptRuns.ts, trimmed to the fields this hub shows.
+ *
+ * THE SERVER OWNS THE CLOCK: elapsed_seconds is computed there from
+ * started_at, paused_seconds and paused_at, so a coach whose tab reloaded sees
+ * the same reading as one whose did not. Nothing here counts time.
+ */
+interface CoachLiveRun {
+  run_id: string;
+  script_id: string;
+  script_version: number;
+  started_at: string;
+  elapsed_seconds: number;
+  is_paused: boolean;
+  athletes_present: number | null;
+  delivered_on: string;
+}
+
+/**
+ * A scheduled class, as GET /api/pilot/scheduler returns it in `classes`.
+ * Mirrors SchedulerClass in src/server/pilot/schedulerDb.ts, trimmed to the
+ * fields the dashboard names. The route already filters to the classes this
+ * coach teaches, scheduled, or covers -- this component does no scoping of
+ * its own and must not start.
+ */
+interface CoachScheduledClass {
+  class_id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  location: string;
+  status: 'open' | 'full' | 'cancelled';
+}
+
+/**
+ * One of this coach's own staff credentials, as GET /api/pilot/coach/credentials
+ * returns it. `band` is derived server-side by deriveCredentialBand, which
+ * re-checks expires_on against today on every read -- so a certificate that
+ * aged out since it was last written reads as expired here without a cron job.
+ *
+ * The band is displayed, never recomputed. A second derivation on the client
+ * is a second answer to "is this coach current", and the two would drift.
+ */
+interface CoachCredentialItem {
+  clearance_type_id: string;
+  name: string;
+  issuing_authority: string;
+  status: string;
+  band: string;
+  issued_on: string | null;
+  expires_on: string | null;
+  has_document: boolean;
+}
+
+/**
+ * The wording for each credential band. Same vocabulary as
+ * app/coach/credentials/page.tsx's BAND_BADGE, deliberately: the hub and the
+ * upload page describe one record, and two labels for one state is how a coach
+ * comes to believe they have two.
+ *
+ * An unrecognised band falls to 'missing' rather than rendering the raw token,
+ * because "Not on file" is the safe reading of a state this build does not
+ * know -- never "Current".
+ */
+const CREDENTIAL_BAND_LABEL: Record<string, { readonly tone: BadgeTone; readonly label: string }> = {
+  current: { tone: 'cleared', label: 'Current' },
+  expiring_soon: { tone: 'monitor', label: 'Expiring soon' },
+  expired: { tone: 'restricted', label: 'Expired' },
+  submitted: { tone: 'monitor', label: 'Awaiting review' },
+  revoked: { tone: 'restricted', label: 'Revoked' },
+  not_required: { tone: 'neutral', label: 'Not required' },
+  missing: { tone: 'locked', label: 'Not on file' },
+};
+
+function credentialBandBadge(band: string): { readonly tone: BadgeTone; readonly label: string } {
+  return CREDENTIAL_BAND_LABEL[band] ?? CREDENTIAL_BAND_LABEL.missing;
+}
+
+/**
+ * "1h 04m" / "12m 30s" from the server's own elapsed count. Whole seconds
+ * only, because that is what the server sends; this never interpolates
+ * between reads, which would show a clock that is running while the page is
+ * not being told anything.
+ */
+function formatElapsed(totalSeconds: number): string {
+  const safe = Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.floor(totalSeconds) : 0;
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  if (hours > 0) {
+    return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  }
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 }
 
 interface ShadowReviewQueueItem {
@@ -466,6 +568,31 @@ export default function CoachWorkspace() {
   const [painReportsLoading, setPainReportsLoading] = useState(true);
   const [painReportsError, setPainReportsError] = useState('');
 
+  /* The coach's session in progress, from /api/pilot/session-scripts/runs.
+     Four states, not two: 'loading' and 'unavailable' must never collapse into
+     the same rendering as 'loaded with no run'. "You have nothing running" and
+     "nobody could tell whether you have anything running" are opposite answers
+     to a coach deciding whether to start a second session over a live one --
+     which is exactly why /coach/session-scripts disables its own start button
+     while this read is failing. */
+  const [liveRun, setLiveRun] = useState<CoachLiveRun | null>(null);
+  const [liveRunState, setLiveRunState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+
+  /* Today's classes, from /api/pilot/scheduler. The route filters to the
+     classes this coach teaches, scheduled, or covers; nothing is re-scoped
+     here. Same three states and the same reason: an empty schedule and an
+     unreadable one are different facts about a coach's evening. */
+  const [todayClasses, setTodayClasses] = useState<CoachScheduledClass[]>([]);
+  const [todayClassesState, setTodayClassesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+
+  /* This coach's own staff credentials, from /api/pilot/coach/credentials.
+     Read-only here -- uploading is /coach/credentials' job and this hub does
+     not duplicate it. A failed read renders as UNAVAILABLE and never as "no
+     credentials on file", which a coach would read as "I have none recorded"
+     rather than "the platform could not look". */
+  const [credentials, setCredentials] = useState<CoachCredentialItem[]>([]);
+  const [credentialsState, setCredentialsState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+
   // Dashboard data - Real API
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [athletesLoading, setAthletesLoading] = useState(true);
@@ -611,19 +738,44 @@ export default function CoachWorkspace() {
   // as fake personal data.
   const [coachGoals] = useState<CoachGoal[]>([]);
 
-  // There is no backend session-status feed yet (see the "Today's Session"
-  // panel below, which shows the same honest state). Said as a sentence rather
-  // than as a KPI tile reading "Unavailable - not yet tracked": a tile is the
-  // shape of a measurement, and this is the absence of one. CoachSummaryPanel
-  // renders it as a line under the counts.
-  const sessionStatus = 'Live session tracking is not built yet.';
+  /* One sentence under the KPI row saying whether a session is running.
+     Said as a sentence rather than as a tile because a tile is the shape of a
+     measurement; this is a state.
+
+     This read used to say "Live session tracking is not built yet." It was
+     wrong: pilot.session_script_runs, /api/pilot/session-scripts/runs and
+     /coach/session-scripts have carried real server-clocked delivery since the
+     run-state migration. A hub telling a coach a capability does not exist is
+     the same class of defect as a hub inventing one -- the coach acts on the
+     claim either way, and here they would go on working around a feature they
+     already have. */
+  const sessionStatus = useMemo(() => {
+    if (liveRunState === 'loading') {
+      return 'Checking whether you have a session in progress...';
+    }
+    if (liveRunState === 'unavailable') {
+      return 'Whether you have a session in progress could not be checked. A live session may be running that is not shown here.';
+    }
+    if (liveRun) {
+      return liveRun.is_paused
+        ? `Session in progress, paused at ${formatElapsed(liveRun.elapsed_seconds)}.`
+        : `Session in progress -- running ${formatElapsed(liveRun.elapsed_seconds)}.`;
+    }
+    return 'No session in progress. Session Scripts is where a live delivery starts.';
+  }, [liveRun, liveRunState]);
 
   // Attendance/injury/readiness are currently always 'Unknown'/null/'UNKNOWN'
   // (see loadAthletes) -- these counts are real aggregations, but over data
   // that isn't tracked yet, so every stat derived from them below is
   // rendered with an explicit "not tracked" state instead of a bare number.
   // A bare 0 here would read as "confirmed zero injuries," which is false.
-  const trackedAttendanceCount = athletes.filter(a => a.attendance !== 'Unknown').length;
+  /* trackedAttendanceCount stood here and fed the old "Today's Session"
+     panel's Athletes Present row. That row now reads athletes_present off the
+     live run, which is a number a coach actually entered when they started the
+     delivery, so the roster-derived count has no reader left. It is not
+     re-added as an unused aggregate: the roster's attendance column is still
+     'Unknown' for everyone (see loadAthletes), and a second count over it
+     would only be another way to render nothing. */
   const activeAthletes = athletes.filter(a => a.attendance !== 'Absent' && a.attendance !== 'Unknown').length;
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
   const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
@@ -750,11 +902,95 @@ export default function CoachWorkspace() {
     }
   }, []);
 
+  /* Whether this coach has a session on the floor right now. Same contract as
+     /coach/session-scripts' own check -- { run: null } is a successful answer,
+     not a missing resource -- so a null run here means "checked, nothing
+     running" and only a thrown read means "unknown". */
+  const loadLiveRun = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('live-run');
+      }
+      const payload = (await response.json()) as { run?: CoachLiveRun | null };
+      setLiveRun(payload.run ?? null);
+      setLiveRunState('loaded');
+    } catch {
+      // Never fall through to "no session in progress": a coach reading that
+      // after a failed check could start a second delivery over a live one.
+      setLiveRun(null);
+      setLiveRunState('unavailable');
+    }
+  }, []);
+
+  /* Today's classes for this coach. The scheduler route returns the whole
+     visible set; the gym-day filter below is presentation, and the gym's zone
+     is the one the rest of this platform names dates in (see src/lib/gymTime).
+     Comparing with the viewer's local day would put a 7pm class on tomorrow
+     for anyone reading from further east. */
+  const loadTodayClasses = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/scheduler`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('scheduler');
+      }
+      const payload = (await response.json()) as { classes?: CoachScheduledClass[] };
+      const today = formatGymDateNumeric(new Date());
+      const items = (payload.classes ?? [])
+        .filter((item) => item && typeof item.start_at === 'string')
+        .filter((item) => formatGymDateNumeric(item.start_at) === today)
+        /* By instant, not by string: two classes on the same gym day can
+           arrive with different UTC offsets, and lexical order on those is
+           not chronological order. */
+        .sort((left, right) => new Date(left.start_at).getTime() - new Date(right.start_at).getTime());
+      setTodayClasses(items);
+      setTodayClassesState('loaded');
+    } catch {
+      // An empty list would read as "nothing is on tonight", which is a
+      // scheduling claim this read did not earn.
+      setTodayClasses([]);
+      setTodayClassesState('unavailable');
+    }
+  }, []);
+
+  /* This coach's own credential record. The route is self-scoped -- it takes
+     no account id and answers for the caller -- so nothing here can widen to
+     another person's documents, and no document bytes cross this boundary
+     (the list response deliberately withholds document_ref). */
+  const loadCredentials = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/credentials`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('credentials');
+      }
+      const payload = (await response.json()) as { items?: CoachCredentialItem[] };
+      setCredentials(payload.items ?? []);
+      setCredentialsState('loaded');
+    } catch {
+      // "Not on file" is a claim about the record; this is a failure to read
+      // it. A coach must not conclude either way from a broken request.
+      setCredentials([]);
+      setCredentialsState('unavailable');
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPainReports();
     void loadBarrierReports();
-  }, [loadPainReports, loadBarrierReports]);
+    void loadLiveRun();
+    void loadTodayClasses();
+    void loadCredentials();
+  }, [loadPainReports, loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials]);
 
   useEffect(() => {
     void (async () => {
@@ -1834,35 +2070,114 @@ export default function CoachWorkspace() {
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Session Status */}
+                {/* Session Status.
+
+                    Two real feeds, kept apart on purpose. The live run
+                    (/api/pilot/session-scripts/runs) is what is happening on
+                    the floor NOW, clocked by the server. The schedule
+                    (/api/pilot/scheduler) is what the gym intends today. A
+                    scheduled class is not evidence that anyone is in the room,
+                    and a live delivery is not evidence that it was the class
+                    on the calendar -- so neither is ever rendered as the
+                    other, and no third "session status" is synthesised from
+                    the pair.
+
+                    This panel used to carry a "Planned — Not Yet Implemented"
+                    stamp over three "Unavailable - not yet tracked" rows and
+                    the sentence "There is no scheduling backend feed yet".
+                    All four claims were false against this build. */}
                 <div className={ui.panelSpaced}>
                   <h3 className="t-eyebrow">Today&apos;s Session</h3>
-                  <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-                  <p className="t-muted">
-                    There is no scheduling backend feed yet -- session name, time, and status below are not
-                    real. Check your actual schedule directly until this is wired up.
-                  </p>
-                  <div className="space-y-[var(--s3)]">
-                    <div>
-                      <p className="t-label mb-[var(--s2)] block">Session Name</p>
-                      <p className="t-body font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
-                    </div>
-                    <div>
-                      <p className="t-label mb-[var(--s2)] block">Time</p>
-                      <p className="t-body font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
-                    </div>
-                    <div>
-                      <p className="t-label mb-[var(--s2)] block">Status</p>
-                      <p className="t-body font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
-                    </div>
-                    <div>
-                      <p className="t-label mb-[var(--s2)] block">Athletes Present</p>
-                      <p className="t-data text-[length:var(--t-sm)]">
-                        {trackedAttendanceCount > 0 ? `${activeAthletes}/${athletes.length}` : (
-                          <span className="text-[color:var(--bone-400)]">Not tracked</span>
-                        )}
+
+                  {liveRunState === 'loading' && (
+                    <p className="t-muted">Checking for a session in progress...</p>
+                  )}
+
+                  {liveRunState === 'unavailable' && (
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                        Whether you have a session in progress could not be checked. A live session may be
+                        running that is not shown here.
                       </p>
                     </div>
+                  )}
+
+                  {liveRunState === 'loaded' && liveRun && (
+                    <div className="space-y-[var(--s3)]">
+                      <p>
+                        <StatusBadge tone={liveRun.is_paused ? 'monitor' : 'cleared'} label={liveRun.is_paused ? 'Paused' : 'In progress'} />
+                      </p>
+                      <div>
+                        <p className="t-label mb-[var(--s2)] block">Started</p>
+                        <p className="t-body font-semibold">{formatGymDateTimeShort(liveRun.started_at) ?? liveRun.started_at}</p>
+                      </div>
+                      <div>
+                        <p className="t-label mb-[var(--s2)] block">Elapsed (server clock)</p>
+                        <p className="t-data text-[length:var(--t-sm)]">{formatElapsed(liveRun.elapsed_seconds)}</p>
+                      </div>
+                      <div>
+                        <p className="t-label mb-[var(--s2)] block">Athletes Present</p>
+                        <p className="t-data text-[length:var(--t-sm)]">
+                          {typeof liveRun.athletes_present === 'number' ? liveRun.athletes_present : (
+                            <span className="text-[color:var(--bone-400)]">Not recorded for this run</span>
+                          )}
+                        </p>
+                      </div>
+                      <Link href="/coach/session-scripts" className="btn">
+                        Return to live delivery
+                      </Link>
+                    </div>
+                  )}
+
+                  {liveRunState === 'loaded' && !liveRun && (
+                    <p className="t-muted">No session in progress.</p>
+                  )}
+
+                  <div className="space-y-[var(--s3)]">
+                    <p className="t-label mb-[var(--s2)] block">Scheduled today</p>
+
+                    {todayClassesState === 'loading' && (
+                      <p className="t-muted">Loading today&apos;s schedule...</p>
+                    )}
+
+                    {todayClassesState === 'unavailable' && (
+                      <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                        <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                          Today&apos;s schedule could not be loaded. This is not a statement that nothing is
+                          scheduled -- open the scheduler to see what is on.
+                        </p>
+                      </div>
+                    )}
+
+                    {todayClassesState === 'loaded' && todayClasses.length === 0 && (
+                      <p className="t-muted">No class is scheduled for you today.</p>
+                    )}
+
+                    {todayClassesState === 'loaded' && todayClasses.length > 0 && (
+                      <ul className="space-y-[var(--s2)]">
+                        {todayClasses.map((item) => (
+                          <li
+                            key={item.class_id}
+                            className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]"
+                          >
+                            <p className="t-body font-semibold">{item.title}</p>
+                            <p className="t-muted">
+                              {formatGymTimeOfDay(item.start_at) ?? item.start_at}
+                              {' - '}
+                              {formatGymTimeOfDay(item.end_at) ?? item.end_at}
+                              {item.location ? ` | ${item.location}` : ''}
+                            </p>
+                            {/* A cancelled class stays listed and says so.
+                                Dropping it would leave a coach who remembers
+                                it on the calendar unable to tell a
+                                cancellation from a failed read. */}
+                            {item.status === 'cancelled' && (
+                              <p className="mt-[var(--s2)]"><StatusBadge tone="restricted" label="Cancelled" /></p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
 
@@ -2049,12 +2364,32 @@ export default function CoachWorkspace() {
 
               <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                 <h3 className="t-eyebrow">Session Workout Plan</h3>
-                <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+                {/* The template is still a template -- these five blocks are a
+                    shape for a class, carry no run state, and must never grow
+                    a progress bar or a per-block status badge here.
+
+                    What changed is the second half of the old sentence. It
+                    said block completion and session progress "are not tracked
+                    yet", which stopped being true when pilot.session_script_runs
+                    shipped: a coach delivering an authored script at
+                    /coach/session-scripts has a server-clocked run with a block
+                    cursor, pause/resume, and a settled record at the end. The
+                    honest statement is that THIS panel does not track a
+                    session, not that the platform does not. */}
                 <p className="t-muted">
-                  This is the standard {sessionMode} block template, not a running session. Block
-                  completion and session progress are not tracked yet. Track the live session on the
-                  floor until this is wired up.
+                  This is the standard {sessionMode} block template, not a running session -- it has no
+                  run state, and nothing here records what was delivered.
                 </p>
+                <p className="t-muted">
+                  Live delivery of an authored session script is real and runs on its own surface: the
+                  server holds the clock, the block cursor, pauses, and the settled record of the night.
+                  {liveRunState === 'loaded' && liveRun
+                    ? ' You have a session in progress right now.'
+                    : ''}
+                </p>
+                <Link href="/coach/session-scripts" className="btn">
+                  {liveRunState === 'loaded' && liveRun ? 'Return to live delivery' : 'Open Session Scripts'}
+                </Link>
 
                 <div className="space-y-[var(--s3)]">
                   {workoutBlocks.map((block) => (
@@ -2112,14 +2447,86 @@ export default function CoachWorkspace() {
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* This coach's real credential record.
+
+                    The panel used to carry a "Planned — Not Yet Implemented"
+                    stamp and the sentence "There is no backend feed for coach
+                    certifications yet, so this platform holds no record of
+                    your credentials or their expiry dates and cannot tell you
+                    whether a license is current." Every clause was false:
+                    pilot.person_clearances, /api/pilot/coach/credentials
+                    (self-upload and self-read), /api/pilot/admin/credentials
+                    (verification) and /coach/credentials have been carrying
+                    exactly that since the clearance register shipped.
+
+                    The damage of the stale version was not cosmetic. A coach
+                    reading it would not go and upload a SafeSport certificate
+                    or a background check -- they would conclude the platform
+                    had no place for one, on a safeguarding record about work
+                    with minors.
+
+                    STATUS ONLY. No document bytes and no document reference
+                    reach this hub: the list response deliberately withholds
+                    document_ref, and /api/pilot/credentials/document is the
+                    single path to the file. The band is the server's own
+                    derivation, displayed, never recomputed here. */}
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                   <h3 className="t-eyebrow">Current Certifications</h3>
-                  <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-                  <p className="t-body text-[color:var(--bone-400)]">
-                    There is no backend feed for coach certifications yet, so this platform holds no record
-                    of your credentials or their expiry dates and cannot tell you whether a license is
-                    current. Check with your certifying body until this is wired up.
-                  </p>
+
+                  {credentialsState === 'loading' && (
+                    <p className="t-muted">Loading your credential record...</p>
+                  )}
+
+                  {credentialsState === 'unavailable' && (
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                        Your credential record could not be read. This does not mean nothing is on file --
+                        nobody could look. Open the credentials page to check.
+                      </p>
+                    </div>
+                  )}
+
+                  {credentialsState === 'loaded' && credentials.length === 0 && (
+                    <p className="t-body text-[color:var(--bone-400)]">
+                      Your organization has no active clearance types configured, so there is nothing to
+                      hold against your name yet.
+                    </p>
+                  )}
+
+                  {credentialsState === 'loaded' && credentials.length > 0 && (
+                    <ul className="space-y-[var(--s3)]">
+                      {credentials.map((item) => {
+                        const badge = credentialBandBadge(item.band);
+                        return (
+                          <li
+                            key={item.clearance_type_id}
+                            className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-[var(--s2)]">
+                              <p className="t-body font-semibold">{item.name}</p>
+                              <StatusBadge tone={badge.tone} label={badge.label} />
+                            </div>
+                            {item.issuing_authority ? (
+                              <p className="t-muted">{item.issuing_authority}</p>
+                            ) : null}
+                            {/* An expiry date is shown only for the bands that
+                                have one to mean. Printing expires_on next to
+                                "Awaiting review" would put a date on a document
+                                nobody has confirmed yet. */}
+                            {item.expires_on && (item.band === 'current' || item.band === 'expiring_soon' || item.band === 'expired') ? (
+                              <p className="t-muted">
+                                {item.band === 'expired' ? 'Expired' : 'Expires'} {item.expires_on}
+                              </p>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+
+                  <Link href="/coach/credentials" className="btn">
+                    Manage your credentials
+                  </Link>
                 </div>
 
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
@@ -2385,21 +2792,46 @@ export default function CoachWorkspace() {
           {/* FILM STUDY */}
           {activeTab === 'film-study' && (
             <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
+              {/* Human film study is BUILT. Per-skill machine scoring is not,
+                  and is parked by owner decision.
+
+                  This tab used to stamp the whole capability "Planned — Not
+                  Yet Implemented" and promise "Coming soon: Video upload,
+                  timestamp annotations, technical analysis tools", with the
+                  upload itself labelled FRONT-END PLACEHOLDER. That was wrong
+                  in the direction that costs a coach real work: uploads,
+                  malware scanning, guardian-consent-gated playback, film-study
+                  proposals and coach review all run today through
+                  /api/pilot/video/* and /coach/video-analysis. A coach
+                  reading the old copy would have gone on keeping clips
+                  somewhere else.
+
+                  The AI half stays honest and stays separate. Per-skill video
+                  scoring of minors' technique is PARKED by owner decision
+                  (BACKLOG-video-skill-scoring, docs/current/ACTIVE_WORK.md) --
+                  not "coming soon", which is a schedule nobody promised. */}
               <h3 className="t-eyebrow">Film Study</h3>
-              <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-              <p className="t-body text-[color:var(--bone-400)]">Record observations from training videos and self-evaluations.</p>
-              <div className="t-body text-[color:var(--bone-400)]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
+              <p className="t-body text-[color:var(--bone-400)]">
+                Coach-led film study is built and running: upload a clip, have it scanned, review it
+                against an athlete, and record what you saw. Playback stays behind the guardian consent
+                recorded for that athlete.
+              </p>
+              <div className="flex flex-wrap gap-[var(--s3)]">
+                <Link href="/coach/video-analysis" className="btn">
+                  Open Video Analysis Surface
+                </Link>
+                <Link href="/athlete/video-analysis" className="btn btn--ghost">
+                  Athlete Feedback Surface
+                </Link>
+              </div>
               <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                <p className="t-label">AI Video Analysis - Planned</p>
-                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
-                <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
-                  <Link href="/coach/video-analysis" className="btn">
-                    Open Video Analysis Surface
-                  </Link>
-                  <Link href="/athlete/video-analysis" className="btn btn--ghost">
-                    Athlete Feedback Surface
-                  </Link>
-                </div>
+                <p className="t-label">Automatic technique scoring - parked, not scheduled</p>
+                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                  Per-skill machine scoring -- punch detection, footwork grading, technique scores -- is
+                  deliberately not built. Publishing machine judgements about a child&apos;s athletic ability
+                  without proven accuracy is the risk being refused, not a queue position. Human film study
+                  above is the analysis pathway.
+                </p>
               </div>
             </div>
           )}
@@ -2548,9 +2980,25 @@ export default function CoachWorkspace() {
                 </button>
                 {reviewSyncMessage ? <p className="t-data text-[color:var(--brass-300)]">{reviewSyncMessage}</p> : null}
               </div>
+              {/* Progression intelligence is a real surface, not a planned
+                  one. It was labelled "Planned" with a "Development
+                  Recommendation: PLACEHOLDER" line while
+                  /api/pilot/progression/{gaps,suggestions,assignments,
+                  completions} and /coach/progression-intelligence were already
+                  carrying recorded gaps, drill assignments and completions.
+
+                  The "Coach Review Required" half of the old line was the one
+                  true clause and is kept, in words: a suggestion is
+                  deterministic and reaches nobody until a coach confirms or
+                  dismisses it. That is the authority boundary, and it is not a
+                  build state. */}
               <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                <p className="t-label">Closed-Loop Progression Intelligence - Planned</p>
-                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>
+                <p className="t-label">Progression Intelligence</p>
+                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                  Recorded progression gaps, the drills assigned against them, and what was completed.
+                  Suggestions are deterministic and reach no athlete until a coach confirms or dismisses
+                  them -- the platform never decides this for you.
+                </p>
                 <Link href="/coach/progression-intelligence" className="btn btn--ghost mt-[var(--s3)]">
                   Open Progression Intelligence Surface
                 </Link>
