@@ -118,10 +118,20 @@ has already been deleted does not count as remaining. A guardian recorded withou
 does count -- such a record cannot be deleted, so the child is retained rather than
 withdrawn, which is the recoverable direction.
 
+A cascade-withdrawn athlete also loses their own login, in the same transaction: the
+athlete's account is deactivated and marked deleted, and every live session token for it is
+revoked. This matches what explicit athlete withdrawal does, and for the same reason --
+`assertActorCanAccessAthlete` checks an athlete's self-access by comparing ids on the
+principal and never reads the athlete row, so marking the row alone would leave a withdrawn
+minor signed in to their own record for the whole retention window. An athlete the cascade
+deliberately leaves enrolled -- one with a remaining guardian -- keeps their login untouched.
+
 **Cascade:**
 ```
 Parent account deleted
   → Linked athlete records with no remaining guardian marked deleted
+    → That athlete's own account deactivated and marked deleted
+    → That athlete's live sessions revoked
     → All athlete photos marked deleted
     → All athlete videos marked deleted
     → All training notes marked deleted
