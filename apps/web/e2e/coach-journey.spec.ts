@@ -276,6 +276,145 @@ test.describe('Coach journey', () => {
     await expect(report.getByText(/Skipped/)).toBeVisible();
   });
 
+  /* WHAT THE BLOCK IS PREPARING FOR, IN A REAL BROWSER.
+     ------------------------------------------------
+
+     Module 036's Open Question 2, answered (a): a block may optionally name an
+     existing competition or league event, "as a target date only (name and
+     date, nothing else)".
+
+     The unit suites pin the wiring. What only a browser shows is the thing
+     this slice is most likely to get wrong: a date on screen invites a
+     countdown, and a countdown invites a taper. Neither competition table
+     holds anything either could honestly be built from, so the rendered page
+     must carry neither. */
+  test('a coach names the show a block is preparing for, and gets a date rather than a taper', async ({ page }) => {
+    const patched: Array<Record<string, unknown>> = [];
+    const KEYSTONE = {
+      kind: 'competition',
+      id: 'comp-1',
+      name: 'Keystone Open',
+      date: '2026-11-14',
+      location: 'Altoona, PA',
+      sanctioning_body: 'USA Boxing',
+      status: 'planned',
+    };
+    let target: Record<string, unknown> | null = null;
+
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': (url, route) => {
+          if (route.request().method() === 'PATCH') {
+            const body = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>;
+            patched.push(body);
+            target = body.target ? KEYSTONE : null;
+            return { ok: true, block: {} };
+          }
+          if (url.searchParams.get('targets') === 'options') {
+            return { ok: true, options: [KEYSTONE] };
+          }
+          return {
+            ok: true,
+            blocks: [{
+              block_id: 'blk-1',
+              athlete_id: ROSA.athlete_id,
+              title: 'Winter technical block',
+              training_emphasis: 'Guard recovery off the jab.',
+              starts_on: '2026-09-01',
+              ends_on: '2026-11-13',
+              status: 'active',
+              target_competition_id: target ? 'comp-1' : null,
+              target_wrestling_event_id: null,
+              target,
+              created_by_account_id: 'acct-coach',
+              created_at: '2026-08-28T00:00:00.000Z',
+              updated_at: '2026-08-28T00:00:00.000Z',
+            }],
+          };
+        },
+      },
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+
+    // Before: a block that is a date range of its own.
+    await expect(page.getByText('No event named. This block is a date range of its own.')).toBeVisible();
+
+    await page.getByLabel('Change what this block is preparing for').selectOption('competition:comp-1');
+
+    await expect.poll(() => patched).toHaveLength(1);
+    expect(patched[0]).toEqual({ block_id: 'blk-1', target: { kind: 'competition', id: 'comp-1' } });
+
+    /* After: the five things the order asks a coach to be shown. Scoped to
+       the "Preparing for" panel, because the picker below it carries the same
+       name and date in an <option> -- asserting on the page as a whole would
+       pass on the dropdown alone, which is not the block saying anything. */
+    await expect(page.getByText('Keystone Open', { exact: true })).toBeVisible();
+    // The detail line, whole: kind, date, place, body, in one string a coach
+    // reads at a glance. Asserted as one locator because the picker below
+    // carries the same name and date in an <option>, and a looser match would
+    // pass on the dropdown alone -- which is not the block saying anything.
+    await expect(page.getByText('Competition · November 14, 2026 · Altoona, PA · USA Boxing')).toBeVisible();
+
+    /* AND NOTHING INFERRED FROM IT. No countdown, no weeks-out figure, no
+       peak week, no taper. The block ends the day before the show and the
+       page still says nothing about what to do with that. */
+    const body = (await page.locator('body').textContent()) ?? '';
+    expect(body).not.toMatch(/\d+%/);
+    expect(body).not.toMatch(/weeks out|peak week|taper|workload|ACWR|fatigue|injury risk|weight cut/i);
+    await expect(page.locator('progress')).toHaveCount(0);
+    await expect(page.locator('[role="progressbar"]')).toHaveCount(0);
+  });
+
+  test('a cancelled show stays named on the block, and says it was cancelled', async ({ page }) => {
+    // A dropped link is indistinguishable from a target never chosen, and a
+    // coach who cannot tell will plan around a show that is not happening.
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': (url) => {
+          if (url.searchParams.get('targets') === 'options') return { ok: true, options: [] };
+          return {
+            ok: true,
+            blocks: [{
+              block_id: 'blk-1',
+              athlete_id: ROSA.athlete_id,
+              title: 'Winter technical block',
+              training_emphasis: 'Guard recovery off the jab.',
+              starts_on: '2026-09-01',
+              ends_on: '2026-11-13',
+              status: 'active',
+              target_competition_id: 'comp-1',
+              target_wrestling_event_id: null,
+              target: {
+                kind: 'competition',
+                id: 'comp-1',
+                name: 'Keystone Open',
+                date: '2026-11-14',
+                location: 'Altoona, PA',
+                sanctioning_body: 'USA Boxing',
+                status: 'cancelled',
+              },
+              created_by_account_id: 'acct-coach',
+              created_at: '2026-08-28T00:00:00.000Z',
+              updated_at: '2026-08-28T00:00:00.000Z',
+            }],
+          };
+        },
+      },
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+
+    await expect(page.getByText('Keystone Open', { exact: true })).toBeVisible();
+    await expect(page.getByText(/This event was cancelled/)).toBeVisible();
+  });
+
   /* A RED FLAG ABOUT A CHILD, ON WHATEVER SCREEN THE COACH IS ALREADY ON.
      -------------------------------------------------------------------
 

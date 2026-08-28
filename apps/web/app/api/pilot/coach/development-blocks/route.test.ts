@@ -9,6 +9,11 @@ import {
   listDevelopmentBlocksForAthlete,
   updateDevelopmentBlock,
 } from '@/src/server/pilot/athleteDevelopmentBlocks';
+import {
+  listDevelopmentBlockTargetOptions,
+  resolveDevelopmentBlockTarget,
+  setDevelopmentBlockTarget,
+} from '@/src/server/pilot/athleteDevelopmentBlockTargets';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -44,6 +49,12 @@ jest.mock('@/src/server/pilot/access', () => {
   };
 });
 
+jest.mock('@/src/server/pilot/athleteDevelopmentBlockTargets', () => ({
+  resolveDevelopmentBlockTarget: jest.fn(async () => null),
+  listDevelopmentBlockTargetOptions: jest.fn(async () => []),
+  setDevelopmentBlockTarget: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/athleteDevelopmentBlocks', () => {
   const actual = jest.requireActual('@/src/server/pilot/athleteDevelopmentBlocks');
   return {
@@ -64,9 +75,18 @@ const mockGet = getDevelopmentBlock as jest.Mock;
 const mockListAll = listDevelopmentBlocks as jest.Mock;
 const mockListForAthlete = listDevelopmentBlocksForAthlete as jest.Mock;
 const mockUpdate = updateDevelopmentBlock as jest.Mock;
+const mockResolveTarget = resolveDevelopmentBlockTarget as jest.Mock;
+const mockTargetOptions = listDevelopmentBlockTargetOptions as jest.Mock;
+const mockSetTarget = setDevelopmentBlockTarget as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
+});
+
+beforeEach(() => {
+  // The ordinary case: a block with no target. Tests that care set their own.
+  mockResolveTarget.mockResolvedValue(null);
+  mockTargetOptions.mockResolvedValue([]);
 });
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
@@ -91,6 +111,8 @@ function block(overrides: Record<string, unknown> = {}) {
     starts_on: '2026-09-01',
     ends_on: '2026-10-13',
     status: 'draft',
+    target_competition_id: null,
+    target_wrestling_event_id: null,
     created_by_account_id: 'acct-coach-a',
     created_at: '2026-08-28T00:00:00.000Z',
     updated_at: '2026-08-28T00:00:00.000Z',
@@ -380,6 +402,7 @@ describe('editing a block', () => {
     expect(response.status).toBe(403);
     expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-not-mine');
     expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockSetTarget).not.toHaveBeenCalled();
   });
 
   test('an athlete_id in the patch body never reaches the update', async () => {
@@ -482,12 +505,262 @@ describe('nothing computed reaches the caller', () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockAssertAccess.mockResolvedValue(undefined);
     mockListForAthlete.mockResolvedValue([block()]);
+    mockResolveTarget.mockResolvedValue(null);
 
     const payload = await (await GET(getRequest('?athlete_id=ath-1'))).json();
 
+    /* The exact key set, so a computed field cannot be added without this
+       failing. `target_competition_id`, `target_wrestling_event_id` and the
+       resolved `target` joined this list when the competition target shipped:
+       a stored id and a name/date/status read back off a skeletal fixture
+       table are not derived training science, and adding them here is a
+       deliberate widening rather than a hole. Anything ELSE appearing --
+       a load, a percentage, a taper, an adherence figure -- still reds. */
     expect(Object.keys(payload.blocks[0]).sort()).toEqual([
       'athlete_id', 'block_id', 'created_at', 'created_by_account_id', 'ends_on',
-      'organization_id', 'starts_on', 'status', 'title', 'training_emphasis', 'updated_at',
+      'organization_id', 'starts_on', 'status', 'target', 'target_competition_id',
+      'target_wrestling_event_id', 'title', 'training_emphasis', 'updated_at',
     ]);
   });
+});
+
+/*
+ * THE COMPETITION / EVENT TARGET.
+ *
+ * Open Question 2 of module 036's engine-unlock proposal, answered (a): a
+ * block may optionally name the event it is preparing for, "as a target date
+ * only (name and date, nothing else), leaving both competition tables exactly
+ * as skeletal as they are today."
+ *
+ * So these hold three things: that naming a target goes through the same
+ * athlete gate as every other write to a block, that a target is only ever a
+ * name and a date on the way out, and that clearing one is distinguishable
+ * from not mentioning it.
+ */
+function competitionTarget(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: 'competition',
+    id: 'comp-1',
+    name: 'Keystone Open',
+    date: '2026-11-14',
+    location: 'Altoona, PA',
+    sanctioning_body: 'USA Boxing',
+    status: 'planned',
+    ...overrides,
+  };
+}
+
+describe('naming what a block is preparing for', () => {
+  test('a target is set through the same athlete gate as every other block write', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block({ athlete_id: 'ath-1' }));
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockUpdate.mockResolvedValue(block({ target_competition_id: 'comp-1' }));
+
+    const response = await PATCH(patchRequest({
+      block_id: 'blk-1',
+      target: { kind: 'competition', id: 'comp-1' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-1');
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'competition', id: 'comp-1' } });
+  });
+
+  test('fields and target go in ONE write, so neither can land without the other', async () => {
+    /* They were two calls until review on #771. A target that failed its
+       foreign key left the field changes committed and the caller was told
+       the request failed -- then retried, against a row that had moved. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockUpdate.mockResolvedValue(block({ title: 'Renamed', target_competition_id: 'comp-1' }));
+
+    await PATCH(patchRequest({
+      block_id: 'blk-1',
+      title: 'Renamed',
+      target: { kind: 'competition', id: 'comp-1' },
+    }));
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', {
+      title: 'Renamed',
+      target: { kind: 'competition', id: 'comp-1' },
+    });
+    expect(mockSetTarget).not.toHaveBeenCalled();
+  });
+
+  test('a malformed target is refused BEFORE the field write, not after it', async () => {
+    // The exact reported defect: good fields plus a bad target used to commit
+    // the fields and then 400.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block());
+    mockAssertAccess.mockResolvedValue(undefined);
+
+    const response = await PATCH(patchRequest({
+      block_id: 'blk-1',
+      title: 'Renamed',
+      target: { kind: 'olympics', id: 'x' },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test('a coach who cannot reach the block\'s athlete cannot retarget it', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block({ athlete_id: 'ath-not-mine' }));
+    refuseAthlete('ath-not-mine');
+
+    const response = await PATCH(patchRequest({
+      block_id: 'blk-1',
+      target: { kind: 'competition', id: 'comp-1' },
+    }));
+
+    expect(response.status).toBe(403);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test('a wrestling event is an equally valid target', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockUpdate.mockResolvedValue(block({ target_wrestling_event_id: 'evt-1' }));
+
+    await PATCH(patchRequest({
+      block_id: 'blk-1',
+      target: { kind: 'wrestling_event', id: 'evt-1' },
+    }));
+
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'wrestling_event', id: 'evt-1' } });
+  });
+
+  test('null clears the target, and is not confused with not mentioning it', async () => {
+    // The reason `target` is one key rather than two nullable columns in the
+    // patch: null has to be able to mean "clear this".
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block({ target_competition_id: 'comp-1' }));
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockUpdate.mockResolvedValue(block());
+
+    await PATCH(patchRequest({ block_id: 'blk-1', target: null }));
+
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'none' } });
+  });
+
+  test('a patch that never mentions a target leaves it alone', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block({ target_competition_id: 'comp-1' }));
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockUpdate.mockResolvedValue(block({ title: 'Renamed', target_competition_id: 'comp-1' }));
+
+    await PATCH(patchRequest({ block_id: 'blk-1', title: 'Renamed' }));
+
+    // No `target` key on the patch at all -- the block keeps what it names.
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { title: 'Renamed' });
+  });
+
+  test.each([
+    ['a bare string', 'comp-1'],
+    ['an unknown kind', { kind: 'olympics', id: 'x' }],
+    ['a kind with no id', { kind: 'competition' }],
+    ['a blank id', { kind: 'competition', id: '   ' }],
+    ['an array', [{ kind: 'competition', id: 'comp-1' }]],
+  ])('%s is refused rather than quietly becoming "no target"', async (_label, value) => {
+    // Coercing a malformed target to "none" would read to a coach as having
+    // cleared something they were trying to set.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block());
+    mockAssertAccess.mockResolvedValue(undefined);
+
+    const response = await PATCH(patchRequest({ block_id: 'blk-1', target: value }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test('a resolved target rides back with the block, as a name and a date', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListForAthlete.mockResolvedValue([block({ target_competition_id: 'comp-1' })]);
+    mockResolveTarget.mockResolvedValue(competitionTarget());
+
+    const payload = await (await GET(getRequest('?athlete_id=ath-1'))).json();
+
+    expect(payload.blocks[0].target).toEqual(competitionTarget());
+  });
+
+  test('a block with no target reads as null, not as a missing key', async () => {
+    // A reader must be able to tell "no target" from "this response shape
+    // does not carry targets".
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListForAthlete.mockResolvedValue([block()]);
+    mockResolveTarget.mockResolvedValue(null);
+
+    const payload = await (await GET(getRequest('?athlete_id=ath-1'))).json();
+
+    expect(payload.blocks[0]).toHaveProperty('target', null);
+  });
+
+  test('a cancelled event stays linked and stays marked cancelled', async () => {
+    // The coach WAS preparing for it. Dropping the link would leave them
+    // unable to tell a cancelled target from one that was never chosen.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListForAthlete.mockResolvedValue([block({ target_competition_id: 'comp-1' })]);
+    mockResolveTarget.mockResolvedValue(competitionTarget({ status: 'cancelled' }));
+
+    const payload = await (await GET(getRequest('?athlete_id=ath-1'))).json();
+
+    expect(payload.blocks[0].target.status).toBe('cancelled');
+    expect(payload.blocks[0].target_competition_id).toBe('comp-1');
+  });
+});
+
+describe('the target picker', () => {
+  test('it lists the organization\'s competitions and events', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockTargetOptions.mockResolvedValue([competitionTarget()]);
+
+    const payload = await (await GET(getRequest('?targets=options'))).json();
+
+    expect(mockTargetOptions).toHaveBeenCalledWith('org-1');
+    expect(payload.options).toEqual([competitionTarget()]);
+  });
+
+  test('it is scoped to the principal\'s organization, never a supplied one', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-mine' }));
+    mockTargetOptions.mockResolvedValue([]);
+
+    await GET(getRequest('?targets=options&organization_id=org-theirs'));
+
+    expect(mockTargetOptions).toHaveBeenCalledWith('org-mine');
+    expect(mockTargetOptions).not.toHaveBeenCalledWith('org-theirs');
+  });
+
+  test('it reads no athlete data and applies no athlete gate', async () => {
+    /* A competition is a fixture, not a record about a child. Gating the
+       picker on an athlete would be theatre -- and would need an athlete id
+       this branch has no business asking for. Which BLOCK a target may be
+       attached to is the athlete question, and PATCH answers it. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockTargetOptions.mockResolvedValue([competitionTarget()]);
+
+    await GET(getRequest('?targets=options'));
+
+    expect(mockAssertAccess).not.toHaveBeenCalled();
+    expect(mockListForAthlete).not.toHaveBeenCalled();
+    expect(mockCoachIds).not.toHaveBeenCalled();
+  });
+
+  test.each(['athlete', 'parent', 'board', 'platform_owner'])(
+    'the %s role cannot read the picker either',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
+
+      expect((await GET(getRequest('?targets=options'))).status).toBe(403);
+      expect(mockTargetOptions).not.toHaveBeenCalled();
+    },
+  );
 });
