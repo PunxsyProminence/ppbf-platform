@@ -2,7 +2,9 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { athleteIdsForCoach } from '@/src/server/pilot/access';
-import { getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
+import { getAthletesForCoach } from '@/src/server/pilot/entities';
+import { getAthletesByOrganization } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -25,6 +27,11 @@ jest.mock('@/src/server/pilot/http', () => {
   return { ...actual, requirePrincipal: jest.fn() };
 });
 
+jest.mock('@/src/server/pilot/db', () => ({
+  query: jest.fn(),
+  queryOne: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
   return { ...actual, athleteIdsForCoach: jest.fn() };
@@ -35,10 +42,15 @@ jest.mock('@/src/server/pilot/entities', () => ({
   getAthletesByOrganization: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/coachAthleteRoster', () => {
+  const actual = jest.requireActual('@/src/server/pilot/coachAthleteRoster');
+  return { ...actual, organizationActionableRoster: jest.fn() };
+});
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockCoachIds = athleteIdsForCoach as jest.Mock;
 const mockForCoach = getAthletesForCoach as jest.Mock;
-const mockByOrg = getAthletesByOrganization as jest.Mock;
+const mockByOrg = organizationActionableRoster as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -123,7 +135,7 @@ test('a coach with no assigned athletes gets an empty list, not the roster', asy
   expect(payload.items).toEqual([]);
 });
 
-test('an organization admin reads the organization, through the organization read', async () => {
+test('an organization admin reads the organization, through the ACTIONABLE organization read', async () => {
   // Matches what assertActorCanAccessAthlete grants that role
   // (assertAthleteBelongsToOrganization) and what the sibling coach routes
   // already do. No role is broadened here.
@@ -197,4 +209,36 @@ test('nothing but an id and a name leaves this route', async () => {
   expect(body).not.toContain('Ana Delgado');
   expect(body).not.toContain('555-0101');
   expect(body).not.toContain('Foundations');
+});
+
+
+describe('an archived athlete is not offered to anybody', () => {
+  /* assertAthleteBelongsToOrganization refuses an athlete whose deleted_at is
+     set, so a picker that offers one hands the caller an option whose every
+     subsequent read and write is refused -- and the refusal arrives only after
+     they have typed a sparring session or a development block in.
+     Reported by review on #771; the coach half never had it. */
+  test('the admin branch reads the actionable roster, not the unfiltered one', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+    mockByOrg.mockResolvedValue([]);
+
+    await GET(getRequest());
+
+    expect(mockByOrg).toHaveBeenCalledWith('org-1');
+    expect(getAthletesByOrganization).not.toHaveBeenCalled();
+  });
+
+  test('the actionable read applies the same deletion predicate as the gate', async () => {
+    // Against real SQL rather than a mock: the predicate is the fix.
+    const actual = jest.requireActual('@/src/server/pilot/coachAthleteRoster') as {
+      organizationActionableRoster: (organizationId: string) => Promise<unknown>;
+    };
+    const db = jest.requireMock('@/src/server/pilot/db') as { query: jest.Mock };
+    db.query.mockResolvedValue([]);
+
+    await actual.organizationActionableRoster('org-1');
+
+    expect(String(db.query.mock.calls[0][0])).toMatch(/deleted_at is null/);
+    expect(db.query.mock.calls[0][1]).toEqual(['org-1']);
+  });
 });

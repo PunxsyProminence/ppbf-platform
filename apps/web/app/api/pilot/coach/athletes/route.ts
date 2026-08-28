@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
-import { coachAuthorizedRoster } from '@/src/server/pilot/coachAthleteRoster';
-import { getAthletesByOrganization } from '@/src/server/pilot/entities';
+import {
+  coachAuthorizedRoster,
+  organizationActionableRoster,
+} from '@/src/server/pilot/coachAthleteRoster';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -28,6 +30,12 @@ export const dynamic = 'force-dynamic';
  * and matching what /api/pilot/coach/intelligence and
  * /api/pilot/coach/readiness-board already do. No role is broadened here.
  *
+ * BOTH BRANCHES EXCLUDE SOFT-DELETED ATHLETES, because the gate does. The
+ * coach branch always did (athleteIdsForCoach carries `deleted_at is null` in
+ * both halves of its union); the admin branch reads
+ * organizationActionableRoster rather than getAthletesByOrganization for the
+ * same reason.
+ *
  * THIS IS A CONVENIENCE, NOT A GATE. Every write route keeps its own
  * assertActorCanAccessAthlete; a client that ignores this list and posts some
  * other athlete id is refused there, exactly as before. Narrowing a picker is
@@ -46,7 +54,12 @@ export async function GET(request: NextRequest) {
     const roster = principal.role === 'coach'
       ? await coachAuthorizedRoster(principal.organizationId, principal.accountId)
       : isOrganizationAdminRole(principal.role)
-        ? await getAthletesByOrganization(principal.organizationId)
+        /* NOT getAthletesByOrganization: that read carries no deletion
+           predicate, and assertAthleteBelongsToOrganization -- the gate the
+           writes then pass through -- refuses a soft-deleted athlete. A
+           picker built on the unfiltered read offers archived children whose
+           every write is then refused. */
+        ? await organizationActionableRoster(principal.organizationId)
         : [];
 
     return NextResponse.json({

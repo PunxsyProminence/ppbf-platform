@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -118,6 +118,17 @@ export default function CoachDevelopmentBlocksPage() {
      because an error rendered as an empty list reads as "this athlete has no
      plan", and a coach would write a second one over the top of the first. */
   const [blocksState, setBlocksState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
+  /* Which athlete the panel below is FOR, as opposed to which one was asked
+     about. A slow read for the athlete a coach just navigated away from must
+     never land under the one they navigated to: the block cards carry no
+     athlete name, and their edit and target controls submit only a block id,
+     so a coach authorised for both children would be editing A's plan while
+     the picker says B and nothing on screen would disagree.
+
+     Same guard and same reason as CoachWorkspace's reviewAthleteRef, which
+     this file should have copied in the first place. Found by review on
+     #771. */
+  const blocksAthleteRef = useRef('');
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
@@ -197,16 +208,32 @@ export default function CoachDevelopmentBlocksPage() {
       );
       if (!response.ok) throw new Error('blocks');
       const payload = (await response.json()) as { blocks?: DevelopmentBlock[] };
+      // The selection may have moved on while this was in flight. Dropping a
+      // stale answer is right even though it means the panel keeps waiting:
+      // the request for the CURRENT athlete is still coming.
+      if (blocksAthleteRef.current !== forAthleteId) return;
       setBlocks(payload.blocks ?? []);
       setBlocksState('loaded');
     } catch {
+      // A failure for an athlete nobody is looking at any more must not blank
+      // the panel belonging to the one they are.
+      if (blocksAthleteRef.current !== forAthleteId) return;
       setBlocks([]);
       setBlocksState('unavailable');
     }
   }, []);
 
   function selectAthlete(nextId: string) {
+    // Set BEFORE the read starts, so an answer for the previous athlete that
+    // arrives afterwards can recognise itself as stale.
+    blocksAthleteRef.current = nextId;
     setAthleteId(nextId);
+    /* No setBlocks([]) here, deliberately. loadBlocks moves the panel to
+       'loading' immediately and the list renders only in 'loaded', so the
+       previous athlete's blocks are already off screen for the whole flight
+       of the new read. A clear here would be a second mechanism for the same
+       property -- and a mutation test proved it redundant: removing it broke
+       nothing, because the state machine was doing the work. */
     setEditingId(null);
     setMessage('');
     setErrorMessage('');
