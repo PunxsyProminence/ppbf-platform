@@ -978,3 +978,241 @@ describe('the data retention migration applies and cascades', () => {
     expect(after.rows[0].deleted_at.toISOString()).toBe(before.rows[0].deleted_at.toISOString());
   });
 });
+
+/* THE BRANCH NOTHING EVER RAN.
+ *
+ * Every apply-path test above purges an ATHLETE. `accounts` is 0 in all of
+ * them and never asserted, so the account arm of this job -- the one the
+ * policy calls "one year for a guardian account" -- had never deleted a row
+ * in any test, and could not: pilot.parents.account_id is a restricting
+ * foreign key onto pilot.accounts, and a guardian who has been recorded as a
+ * parent always has that row. `delete from pilot.accounts ... role='parent'`
+ * raised 23503 for all of them.
+ *
+ * Because the deletes and the audit insert were one transaction, that raise
+ * took the athlete purge down with it: the sweep deleted NOTHING and reported
+ * `{"event":"retention.cleanup.failed","code":"23503"}`. And the nightly
+ * schedule could not see it, because a dry run only counted.
+ *
+ * Its own database, so the counts these tests assert are exact rather than
+ * whatever the describes above happen to have left behind.
+ */
+describe('a guardian who was actually recorded as one', () => {
+  const GUARDIAN_DB = 'ppbf_test_retention_guardian';
+  const G_ORG = 'org-guardian-purge';
+  const G_COACH = 'acct-guardian-purge-coach';
+  const PURGEABLE = 'acct-guardian-purgeable';
+  const BLOCKED = 'acct-guardian-blocked';
+  /* A THIRD GUARDIAN WHO IS STILL HERE, and the fixture does not work without
+     them. The data-retention migration installs
+     pilot_cascade_parent_deletion_trigger, which soft-deletes a guardian's
+     linked athletes -- copying the guardian's own deleted_at onto them -- but
+     only where no other live guardian remains. Without this account, expiring
+     the two guardians below would withdraw the athlete two years ago as well,
+     the athlete would be purged in the same sweep, and their waivers and
+     observations would cascade away with them. Both properties these tests
+     exist to measure would then hold for the wrong reason: nothing would
+     block, because nothing would be left to block. Measured, not reasoned
+     about -- the first version of this fixture omitted this guardian and
+     reported both accounts purgeable. */
+  const REMAINING = 'acct-guardian-remaining';
+  const G_ATHLETE = 'ATH-GUARDIAN-PURGE';
+  const WAIVER_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+
+  let guardianClient: Client;
+
+  const guardianEnv = {
+    AZURE_POSTGRES_CONNECTION_STRING: '',
+    PPBF_EXPECTED_POSTGRES_DATABASE: GUARDIAN_DB,
+  };
+
+  beforeAll(async () => {
+    const admin = new Client({ connectionString: connectionStringFor('postgres') });
+    await admin.connect();
+    await admin.query(`drop database if exists ${GUARDIAN_DB}`);
+    await admin.query(`create database ${GUARDIAN_DB}`);
+    await admin.end();
+
+    guardianClient = new Client({ connectionString: connectionStringFor(GUARDIAN_DB) });
+    await guardianClient.connect();
+    await guardianClient.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+    await guardianClient.query(await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8'));
+    // pilot.waivers.parent_id arrives with this one, and the waiver-survives
+    // assertion below is the safeguarding-critical half of the change.
+    await guardianClient.query(
+      await fs.readFile(
+        path.join(INFRA_DIR, 'pilot_slice_postgres_guardian_media_consent_migration.sql'), 'utf8',
+      ),
+    );
+    guardianEnv.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(GUARDIAN_DB);
+
+    await guardianClient.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ($1, $1, 'active')`,
+      [G_ORG],
+    );
+    await guardianClient.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'coach', $2, 'microsoft'), ($3, 'parent', $2, 'microsoft'),
+              ($4, 'parent', $2, 'microsoft'), ($5, 'parent', $2, 'microsoft')`,
+      [G_COACH, G_ORG, PURGEABLE, BLOCKED, REMAINING],
+    );
+    await guardianClient.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Guardian Purge Athlete', '2014-01-02', 'fly', 'active', 'contact', true, $3, now(), now())`,
+      [G_ORG, G_ATHLETE, G_COACH],
+    );
+
+    // Both guardians are real: a parents row with their contact details, and a
+    // link to the child. This is the shape the purge could not touch.
+    await guardianClient.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
+       values ($1, 'PAR-PURGEABLE', $2, 'Purgeable Guardian', '555-0100', 'purgeable@example.test'),
+              ($1, 'PAR-BLOCKED', $3, 'Blocked Guardian', '555-0101', 'blocked@example.test'),
+              ($1, 'PAR-REMAINING', $4, 'Remaining Guardian', '555-0102', 'remaining@example.test')`,
+      [G_ORG, PURGEABLE, BLOCKED, REMAINING],
+    );
+    await guardianClient.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'PAR-PURGEABLE', $2, 'mother'), ($1, 'PAR-BLOCKED', $2, 'father'),
+              ($1, 'PAR-REMAINING', $2, 'aunt')`,
+      [G_ORG, G_ATHLETE],
+    );
+    await guardianClient.query(
+      `insert into pilot.waivers
+         (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role,
+          signed_at, consent_version, status, parent_id)
+       values ($1, $2, $3, 'photo_media', 'Purgeable Guardian', 'parent', now(), 'v1', 'signed', 'PAR-PURGEABLE')`,
+      [G_ORG, WAIVER_ID, G_ATHLETE],
+    );
+
+    // The blocked guardian filed a barrier report. POST /api/pilot/parent/
+    // barrier-report writes pilot.coach_observations.coach_account_id with the
+    // PARENT's own account id, and that foreign key restricts.
+    await guardianClient.query(
+      `insert into pilot.coach_observations
+         (organization_id, note_id, athlete_id, coach_account_id, note_type, note_text)
+       values ($1, gen_random_uuid(), $2, $3, 'parent_barrier_transport', 'no ride on Thursdays')`,
+      [G_ORG, G_ATHLETE, BLOCKED],
+    );
+
+    await guardianClient.query(
+      `update pilot.accounts set deleted_at = now() - interval '2 years'
+        where account_id = any($1::text[])`,
+      [[PURGEABLE, BLOCKED]],
+    );
+  });
+
+  afterAll(async () => {
+    await guardianClient?.end();
+  });
+
+  test('the dry run still deletes nothing, though it now performs the delete', async () => {
+    /* THE MOST DANGEROUS PROPERTY OF THIS CHANGE. The dry run used to run
+       `select count(*)`; it now runs the real deletes and rolls them back, so
+       that the number it reports is one it has earned. If that rollback were
+       ever lost, the safest mode of the only permanently destructive job in
+       the platform would silently become the most destructive. Asserted before
+       anything else in this describe. */
+    const { event } = await runCleanup(guardianEnv);
+    expect(event.event).toBe('retention.cleanup.dry-run');
+    expect(event.accounts).toBe(2);
+    // It attempted, and reports what it found: one purgeable, one refused.
+    expect(event.would_delete_accounts).toBe(1);
+    expect(event.blocked).toBe(1);
+
+    const survived = await guardianClient.query(
+      `select account_id from pilot.accounts where account_id = any($1::text[])`,
+      [[PURGEABLE, BLOCKED]],
+    );
+    expect(survived.rowCount).toBe(2);
+    const parentsSurvived = await guardianClient.query(
+      `select parent_id from pilot.parents where organization_id = $1`,
+      [G_ORG],
+    );
+    expect(parentsSurvived.rowCount).toBe(3);
+  });
+
+  test('a dry run that found rows it cannot delete fails, so the schedule says so', async () => {
+    /* This is the monitor. Counting could not report this, and did not: the
+       nightly job reported a plausible number every night while the delete
+       those rows were counted for could not execute at all. */
+    const { code, event } = await runCleanup(guardianEnv);
+    expect(code).not.toBe(0);
+    expect(event.blocked_by).toEqual({ coach_observations_coach_account_id_fkey: 1 });
+  });
+
+  test('applying removes the guardian record with the account, and the waiver survives', async () => {
+    const { code, event } = await runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
+
+    // One guardian purged, one refused -- and the run is not green, because
+    // retention did not fully happen.
+    expect(event.event).toBe('retention.cleanup.incomplete');
+    expect(event.accounts).toBe(1);
+    expect(event.blocked).toBe(1);
+    expect(code).not.toBe(0);
+
+    // The account is gone, and so is the personal data that blocked it.
+    const account = await guardianClient.query(
+      `select 1 from pilot.accounts where account_id = $1`, [PURGEABLE],
+    );
+    expect(account.rowCount).toBe(0);
+    const parents = await guardianClient.query(
+      `select parent_id from pilot.parents where organization_id = $1 order by parent_id`,
+      [G_ORG],
+    );
+    expect(parents.rows.map((r: { parent_id: string }) => r.parent_id)).toEqual(['PAR-BLOCKED', 'PAR-REMAINING']);
+
+    // guardian_links cascades off pilot.parents, so the purged guardian's link
+    // to the child goes with them -- and the other guardian's does not.
+    const links = await guardianClient.query(
+      `select parent_id from pilot.guardian_links where organization_id = $1`, [G_ORG],
+    );
+    expect(links.rows.map((r: { parent_id: string }) => r.parent_id).sort()).toEqual(['PAR-BLOCKED', 'PAR-REMAINING']);
+
+    /* AND THE WAIVER SURVIVES. Purging a withdrawn family must never destroy
+       the document that authorised a minor's participation. parent_id is ON
+       DELETE SET NULL, so the row keeps its signer, type, status and dates and
+       loses only the pointer to a guardian record that no longer exists. */
+    const waiver = await guardianClient.query<{
+      signed_by_name: string; status: string; waiver_type: string; parent_id: string | null;
+    }>(
+      `select signed_by_name, status, waiver_type, parent_id from pilot.waivers
+        where organization_id = $1 and waiver_id = $2`,
+      [G_ORG, WAIVER_ID],
+    );
+    expect(waiver.rowCount).toBe(1);
+    expect(waiver.rows[0].parent_id).toBeNull();
+    expect(waiver.rows[0].signed_by_name).toBe('Purgeable Guardian');
+    expect(waiver.rows[0].status).toBe('signed');
+    expect(waiver.rows[0].waiver_type).toBe('photo_media');
+  });
+
+  test('the blocked guardian is left intact, not half-deleted', async () => {
+    /* The savepoint has to roll back the parents delete too. Without it the
+       guardian would lose their name, phone and email while their account
+       stayed -- the worst of both, and unrecoverable. */
+    const account = await guardianClient.query(
+      `select 1 from pilot.accounts where account_id = $1`, [BLOCKED],
+    );
+    expect(account.rowCount).toBe(1);
+    const parent = await guardianClient.query<{ full_name: string; email: string }>(
+      `select full_name, email from pilot.parents where organization_id = $1 and parent_id = 'PAR-BLOCKED'`,
+      [G_ORG],
+    );
+    expect(parent.rows[0].full_name).toBe('Blocked Guardian');
+    expect(parent.rows[0].email).toBe('blocked@example.test');
+  });
+
+  test('the audit row records what was blocked, not just what was deleted', async () => {
+    const audited = await guardianClient.query<{
+      details: { accounts_deleted: number; blocked: number; blocked_by: Record<string, number> };
+    }>(
+      `select details from pilot.audit_events
+        where event_type = 'data_purged' order by audit_id desc limit 1`,
+    );
+    expect(audited.rows[0].details.accounts_deleted).toBe(1);
+    expect(audited.rows[0].details.blocked).toBe(1);
+    expect(audited.rows[0].details.blocked_by).toEqual({ coach_observations_coach_account_id_fkey: 1 });
+  });
+});
