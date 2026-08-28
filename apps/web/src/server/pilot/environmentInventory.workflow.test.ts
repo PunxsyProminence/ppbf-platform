@@ -25,26 +25,46 @@
 //     no link was ever sent. Every guardian could be told a link was coming
 //     while none was.
 //
-// Those three produced three variable-specific guards. This one covers the
-// class rather than the instance: it fails when the SET of deployed variables
-// stops being represented locally, which is the drift the specific guards
-// cannot see because they only look at the variable they were written for.
+// Those three produced three variable-specific guards. This one covers a class
+// rather than an instance -- but exactly ONE class, and the boundary matters
+// enough to state before the code:
+//
+// WHAT THIS TEST COVERS: deployed => template.
+//
+// It fails when the SET of variables a deployment passes to the app stops being
+// represented locally. That is the drift the specific guards cannot see,
+// because each only looks at the one variable it was written for.
 //
 // WHAT THIS TEST DELIBERATELY DOES NOT DO
+//
+// It does NOT cover the PR #422 direction (application code => deployment or
+// template). A new `process.env.PPBF_NEW` read that reaches neither workflow
+// nor this template leaves every assertion here green. That gap is real and is
+// named rather than implied: the incident is cited above because it is the same
+// FAMILY of defect, not because this guard would have caught it.
+//
+// It is left to its own slice on purpose. A census at the time of writing found
+// 14 application-read variables that no deployment sets, and they do not share
+// one answer -- the three PAYMENT_* variables are blocked on the owner
+// registering a Stripe platform account, PPBF_WALL_DISPLAY_NAMES governs how
+// much of a minor's name a public display may print, and several resolve to
+// deliberate code defaults that are correct precisely because no deployment
+// states them. Asserting over that set needs a per-variable classification
+// first; a guard bolted on here would need an exception list longer than the
+// rule, which is the shape this file's own DEPLOYMENT_ONLY comment warns about.
 //
 // It checks NAMES, not VALUES. A name-presence check cannot prove a timeout or
 // a token budget is safe, and must never be treated as though it replaces the
 // two specialized tests above -- they remain authoritative for the questions
 // they answer.
 //
-// It also does not require the template's values to match a deployment's. The
-// three postures differ on purpose: a feature gate is off locally, on in
-// staging first, and on in production only once staging has proven it. Equal
-// values are not the goal. An unexplained difference is the finding.
+// It does not require the template's values to match a deployment's. The three
+// postures differ on purpose: a feature gate is off locally, on in staging
+// first, and on in production only once staging has proven it. Equal values are
+// not the goal. An unexplained difference is the finding.
 //
-// It does not assert the reverse direction either (template name => deployed
-// somewhere). The template legitimately documents local-only configuration
-// that no Container App is given.
+// It does not assert template => deployed either. The template legitimately
+// documents local-only configuration that no Container App is given.
 //
 // WHY IT DOES NOT SHARE A PARSER WITH THE TWO SPECIALIZED TESTS
 //
@@ -142,23 +162,43 @@ function templateNames(): string[] {
     .map((match) => match[1]);
 }
 
-/** Non-test application source, for checking that an exclusion is still unread. */
+/**
+ * Non-test source belonging to the running web application, for checking that
+ * an exclusion is still unread.
+ *
+ * Deliberately a DENY list rather than an allow list of runtime directories.
+ * The first version of this named `src` and `app` and silently missed
+ * `components/` (83 runtime files), `lib/`, and the top-level
+ * `instrumentation.ts` -- which is the very file deploy-staging.yml names as
+ * the SHADOW worker's entry point. An allow list of runtime roots goes stale
+ * the moment someone adds a directory, and it fails SILENTLY, which is the
+ * failure mode this whole test file exists to prevent.
+ *
+ * What is excluded, and why each is not the running application:
+ *   node_modules, .next  -- dependencies and build output
+ *   e2e                  -- Playwright specs, test code
+ *   scripts              -- build/deploy/migration tooling that runs in CI, not
+ *                           in the container; such a script may legitimately
+ *                           reference a deployment-only variable by name
+ *   *.test.ts / .tsx     -- unit tests, which set these variables on purpose
+ */
+const NON_APPLICATION_DIRS = new Set(['node_modules', '.next', 'e2e', 'scripts']);
+
 function applicationSourceFiles(): string[] {
-  const roots = [path.join(REPO_ROOT, 'apps/web/src'), path.join(REPO_ROOT, 'apps/web/app')];
+  const root = path.join(REPO_ROOT, 'apps/web');
   const found: string[] = [];
 
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name !== 'node_modules') walk(full);
+        if (!NON_APPLICATION_DIRS.has(entry.name)) walk(path.join(dir, entry.name));
       } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
-        found.push(full);
+        found.push(path.join(dir, entry.name));
       }
     }
   };
 
-  roots.filter((root) => fs.existsSync(root)).forEach(walk);
+  if (fs.existsSync(root)) walk(root);
   return found;
 }
 
@@ -238,6 +278,25 @@ describe('deployed environment variable inventory', () => {
     const stale = Object.keys(DEPLOYMENT_ONLY).filter((name) => !deployedNames.has(name));
 
     expect(stale).toEqual([]);
+  });
+
+  test('the application source scan reaches every runtime root', () => {
+    // Anti-vacuity for the exclusion check below, and a regression pin. The
+    // first version of applicationSourceFiles() named only src/ and app/, so a
+    // read from components/ passed the exclusion test green -- the scan was
+    // narrower than "application code" and said so nowhere. These four are the
+    // roots that were missed or are easiest to miss again; a scan that stops
+    // reaching one of them fails here rather than quietly approving.
+    const scanned = applicationSourceFiles().map((file) => path.relative(REPO_ROOT, file));
+
+    for (const root of ['apps/web/src/', 'apps/web/app/', 'apps/web/components/', 'apps/web/lib/']) {
+      expect({ root, reached: scanned.some((file) => file.startsWith(root)) })
+        .toEqual({ root, reached: true });
+    }
+
+    // Top-level runtime entry points sit in no directory at all, which is how
+    // instrumentation.ts -- the SHADOW worker's entry point -- got missed.
+    expect(scanned).toContain('apps/web/instrumentation.ts');
   });
 
   test('no deployment-only exclusion is read by application code', () => {
