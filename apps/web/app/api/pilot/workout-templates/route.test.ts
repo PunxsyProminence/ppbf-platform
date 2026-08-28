@@ -1,12 +1,14 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
+import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   getWorkoutTemplateWithItems,
   listWorkoutTemplates,
 } from '@/src/server/pilot/workoutTemplates';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import type { PilotRole } from '@/src/server/pilot/contracts';
 
 /**
  * THIS ROUTE HAD NO TEST. `workoutTemplates.pg.test.ts` proves the SQL against
@@ -64,6 +66,15 @@ const getRequest = (query = '') =>
   new NextRequest(`http://localhost/api/pilot/workout-templates${query ? `?${query}` : ''}`);
 
 const TEMPLATE = { template_id: 'tpl-1', template_name: 'Monday technical' };
+
+/**
+ * The role that sits OUTSIDE COACHING_CONTENT_READER_ROLES, named here so the
+ * `who may browse` cases below say why they picked it rather than looking
+ * like an arbitrary choice of role. The block's comment carries the reasoning;
+ * the assertion that it really is outside the policy sits in the case itself,
+ * so this is a label rather than a claim.
+ */
+const COACHING_CONTENT_OUTSIDER: PilotRole = 'board';
 
 describe('the list branch', () => {
   test('answers under the `templates` key the page actually reads', async () => {
@@ -161,18 +172,88 @@ describe('the organization boundary', () => {
 
 describe('who may browse', () => {
   /**
-   * The route calls `requirePrincipal` and deliberately NOT `requireRole`:
-   * its own comment says "Any authenticated role can browse; a template
-   * carries no athlete data." That is a real decision and it was asserted
-   * nowhere, so a `requireRole` added later would tighten the route silently.
-   * This pins the decision; if the decision changes, this test should be
-   * changed with it, deliberately.
+   * THE POSTURE THIS ROUTE HOLDS TODAY, pinned rather than endorsed.
+   *
+   * The route calls `requirePrincipal` and NOT `requireRole`: its own comment
+   * says "Any authenticated role can browse; a template carries no athlete
+   * data." So every authenticated role reaches it, including one that three
+   * sibling coaching-content surfaces refuse.
+   *
+   * Whether that is right is an OPEN OWNER QUESTION and it has not been put
+   * to him. /api/pilot/drills, /api/pilot/drill-library and
+   * /api/pilot/coach/cue-library were gated on COACHING_CONTENT_READER_ROLES
+   * by an owner decision on 2026-08-27; this route and its session-scripts
+   * sibling were not in that decision. Nothing here argues either way. These
+   * cases exist so that whichever way it is eventually answered, the answer
+   * arrives as a deliberate change to this file rather than silently.
+   *
+   * What this block used to say, and why it is being rewritten: it claimed
+   * "a `requireRole` added later would tighten the route silently. This pins
+   * the decision." It did not pin it. Its only role case was `athlete`, and
+   * `athlete` is a member of COACHING_CONTENT_READER_ROLES, so it passes
+   * unchanged against a route gated on that constant. Measured against
+   * 27ac8538, before the cases below existed: adding
+   * `requireRole(principal, [...COACHING_CONTENT_READER_ROLES])` immediately
+   * after `requirePrincipal` in route.ts left all 11 cases in this file and
+   * all 9 in `session-scripts/route.test.ts` green -- 20/20, no failures. A
+   * comment promising a tripwire, over an assertion compatible with the
+   * change it named.
+   *
+   * `board` is what supplies the difference. It is the one PilotRole that
+   * COACHING_CONTENT_READER_ROLES excludes -- nine roles in the union in
+   * contracts.ts, eight in the policy -- so a board principal reaching this
+   * route is the single observation that separates "ungated" from "gated like
+   * the siblings". That partition is owned and asserted by
+   * `coachingContentAccess.test.ts` and `drill-library/route.test.ts`, which
+   * read the union out of contracts.ts; what this file checks is narrower and
+   * stated as such below: that board is outside the policy, and that it
+   * reaches this route today.
+   *
+   * `session-scripts/route.test.ts` carries the same block, named the same
+   * way, for the same reason.
    */
   test('an athlete may browse the catalogue', async () => {
+    // True, and NOT a tripwire on its own: athlete is inside
+    // COACHING_CONTENT_READER_ROLES, so this case survives the gate. It is
+    // kept because it is the ordinary reader the route was written for, and
+    // the board case below is what makes the block bite.
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockList.mockResolvedValue([TEMPLATE]);
 
     expect((await GET(getRequest())).status).toBe(200);
+  });
+
+  test('a board principal, the role the coaching-content policy excludes, may browse today', async () => {
+    // The decisive case. It fails the moment anyone gates this route on
+    // COACHING_CONTENT_READER_ROLES, which is exactly the change the block
+    // above says must not happen quietly.
+    expect(COACHING_CONTENT_READER_ROLES).not.toContain(COACHING_CONTENT_OUTSIDER);
+
+    mockRequirePrincipal.mockResolvedValue(principal({ role: COACHING_CONTENT_OUTSIDER }));
+    mockList.mockResolvedValue([TEMPLATE]);
+
+    const response = await GET(getRequest());
+
+    // Status and body both: a gate that returned 200 with an empty list would
+    // be a narrowing this route reported as a catalogue with nothing in it.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ templates: [TEMPLATE] });
+    expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+  });
+
+  test('the same holds on the detail branch, which a gate placed there alone would narrow', async () => {
+    // Two reads sit behind one `requirePrincipal` here, and the case above
+    // only observes one of them. Measured: a `requireRole` written inside the
+    // `if (templateId)` branch instead of after `requirePrincipal` left the
+    // list case above GREEN and only this one red. So the two are not
+    // standing in for each other.
+    mockRequirePrincipal.mockResolvedValue(principal({ role: COACHING_CONTENT_OUTSIDER }));
+    mockDetail.mockResolvedValue({ template: TEMPLATE, items: [] });
+
+    const response = await GET(getRequest('template_id=tpl-1'));
+
+    expect(response.status).toBe(200);
+    expect(mockDetail).toHaveBeenCalledWith('org-1', 'tpl-1');
   });
 
   test('an unauthenticated caller is refused and nothing is read', async () => {
