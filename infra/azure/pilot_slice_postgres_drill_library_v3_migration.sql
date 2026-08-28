@@ -203,8 +203,41 @@ create table if not exists pilot.drill_cues (
 
 do $$
 begin
+  -- THE DISCIPLINE CHECK IS RETIRED, BUT ONLY ONCE THE REGISTRY HAS TAKEN OVER.
+  --
+  -- Owner decision, 2026-08-28, verbatim: "drop the check and let the registry
+  -- govern." pilot_drill_library_discipline_check is dropped by the
+  -- drill-library-check-drop migration, which runs at the end of the `all` list
+  -- and refuses to run unless pilot_drill_library_discipline_fk -- the
+  -- (organization_id, discipline) key into pilot.disciplines -- is installed.
+  --
+  -- The `all` chain re-runs EVERY migration on every dispatch, so an
+  -- unconditional `if not exists` here would put the constraint straight back
+  -- on the next dispatch. Two things follow, and the second is why this is not
+  -- a tidiness question:
+  --
+  --   * the drop would be undone and redone forever, so no environment's state
+  --     between migrations would mean what it says;
+  --   * `alter table ... add constraint ... check` VALIDATES the existing rows.
+  --     Once any gym files a drill under a discipline outside these five
+  --     literals -- a bjj drill, which is the entire point of the owner's
+  --     decision -- this statement fails with 23514 and takes the whole
+  --     dispatch down. Measured, not predicted: see the
+  --     'does not fail against a row the dropped CHECK would have refused'
+  --     case in drillLibraryCheckDrop.pg.test.ts, which was watched to fail
+  --     with exactly that error before this condition was added.
+  --
+  -- So the literal CHECK is installed only while the registry key is NOT yet
+  -- present. On a fresh rebuild that reproduces the historical sequence exactly
+  -- -- this migration sits at 49 and creates the CHECK, the registry arrives at
+  -- 62, the FK later still, and the drop migration last -- and on an
+  -- already-migrated environment it is a no-op. The column is never ungoverned
+  -- in either direction: whichever of the two constraints is not yet installed,
+  -- the other one is.
   if not exists (select 1 from pg_constraint where conname='pilot_drill_library_discipline_check'
-                 and conrelid='pilot.drill_library'::regclass) then
+                 and conrelid='pilot.drill_library'::regclass)
+     and not exists (select 1 from pg_constraint where conname='pilot_drill_library_discipline_fk'
+                     and conrelid='pilot.drill_library'::regclass and contype='f') then
     alter table pilot.drill_library add constraint pilot_drill_library_discipline_check
       check (discipline in ('boxing','wrestling','combatives','conditioning','general'));
   end if;

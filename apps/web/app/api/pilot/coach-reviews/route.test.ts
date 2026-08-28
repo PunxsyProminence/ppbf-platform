@@ -112,6 +112,9 @@ describe('coach-reviews create authorizes the STORED review owner before overwri
     expect(response.status).toBe(200);
     expect(mockUpsert).toHaveBeenCalledWith('org-a', PAYLOAD, { mode: 'create' });
     expect(writePilotAuditEvent).toHaveBeenCalledTimes(1);
+    expect(writePilotAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'create', entity_type: 'coach_review' }),
+    );
   });
 
   test('overwriting a review the coach CAN reach is a compare-and-set on the stored session', async () => {
@@ -131,5 +134,13 @@ describe('coach-reviews create authorizes the STORED review owner before overwri
 
     expect(response.status).toBe(200);
     expect(mockUpsert).toHaveBeenCalledWith('org-a', PAYLOAD, { mode: 'update', expectedSessionId: 'sess-A2' });
+    // The verb has to follow the branch. This route is an upsert and logged a
+    // hardcoded 'create' for both, so every edit made through CoachWorkspace --
+    // the only wired write path for coach reviews -- was recorded in
+    // pilot.audit_events as a creation. The count was asserted before; the verb
+    // was not, which is why nothing caught it.
+    expect(writePilotAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'update', entity_type: 'coach_review' }),
+    );
   });
 });
