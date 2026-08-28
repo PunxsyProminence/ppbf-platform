@@ -268,23 +268,35 @@ jobs:
       # --dry-run still performs every insert for real inside a transaction and
       # then rolls back, so it proves the data actually fits the live schema
       # rather than only that the files parse.
-      # The steps are ordered drill-library -> disciplines -> competence-cohorts
-      # -> session-scripts, which is the order the runbook requires, so `all`
-      # cannot run them wrong (session-scripts depends on nothing before it and
-      # runs last).
+      # The steps are ordered disciplines -> drill-library -> competence-cohorts
+      # -> session-scripts, so `all` cannot run them wrong.
+      #
+      # DISCIPLINES RUNS FIRST, AND THAT IS NOW A HARD REQUIREMENT RATHER THAN A
+      # PREFERENCE. It used to run second, behind drill-library, described as
+      # "the order the runbook requires" -- the runbook says only "in dependency
+      # order" and never named drill-library first, and the order was survivable
+      # because no dependency existed. drill-library and session-scripts now
+      # write a `discipline` that references pilot.disciplines, so the registry
+      # has to exist before either: seeding 119 drills into an empty registry
+      # fails on the foreign key, and a fresh environment never gets its
+      # catalogs.
+      #
+      # Ordering a loader before this one is therefore a schema question, not a
+      # formatting choice. competence-cohorts and session-scripts already ran
+      # after disciplines and still do.
       # Each loader still opens its own transaction, so `all` is a chain of
       # independent commits and not one giant one -- a later failure leaves the
       # earlier datasets loaded, and every loader is idempotent, so the fix is
       # to re-run rather than to unpick anything.
-      - name: Seed Drill Library
-        if: inputs.dataset == 'drill-library' || inputs.dataset == 'all'
-        working-directory: apps/web
-        run: npm run seed:drill-library ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
-
       - name: Seed Disciplines
         if: inputs.dataset == 'disciplines' || inputs.dataset == 'all'
         working-directory: apps/web
         run: npm run seed:disciplines ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
+
+      - name: Seed Drill Library
+        if: inputs.dataset == 'drill-library' || inputs.dataset == 'all'
+        working-directory: apps/web
+        run: npm run seed:drill-library ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
 
       - name: Seed Competence Cohorts
         if: inputs.dataset == 'competence-cohorts' || inputs.dataset == 'all'

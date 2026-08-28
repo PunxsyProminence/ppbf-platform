@@ -219,9 +219,21 @@ describe('seed-reference-data workflow contract', () => {
 
   it('"all" runs every single-dataset step, in the order the runbook requires', () => {
     // Not just that each step mentions `all`, but that the steps appear in
-    // dependency order -- the drill-library vocabulary widening has to land
-    // before anything reads the drill library.
-    const steps = ['Seed Drill Library', 'Seed Disciplines', 'Seed Competence Cohorts', 'Seed Session Scripts'];
+    // dependency order.
+    //
+    // DISCIPLINES MOVED TO THE FRONT, and this list is the record of why.
+    // It used to read Drill Library -> Disciplines, described as the runbook's
+    // order; the runbook says only "in dependency order" and never named
+    // drill-library first. That was survivable while no dependency existed.
+    // pilot.drill_library.discipline and pilot.session_scripts.discipline now
+    // carry organization-scoped foreign keys into pilot.disciplines, so the
+    // registry has to be filled before either loader runs -- seeding 119 drills
+    // into an empty registry fails on the key, and a fresh environment never
+    // gets its catalogs.
+    //
+    // Reordering these is therefore a schema question. If this assertion fails,
+    // the fix is not to re-sort the list.
+    const steps = ['Seed Disciplines', 'Seed Drill Library', 'Seed Competence Cohorts', 'Seed Session Scripts'];
     const positions = steps.map((s) => workflow.indexOf(`- name: ${s}`));
     expect(positions.every((p) => p > -1)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -230,6 +242,20 @@ describe('seed-reference-data workflow contract', () => {
       const body = workflow.slice(workflow.indexOf(`- name: ${step}`));
       const condition = body.slice(0, body.indexOf('run:'));
       expect(condition).toContain("inputs.dataset == 'all'");
+    }
+  });
+
+  it('fills the discipline registry before any loader that references it', () => {
+    // The pair above, asserted on its own and by name. The positional check is
+    // order-sensitive but not self-explaining: someone re-sorting that array to
+    // make a failure go away would satisfy it again and reintroduce the defect.
+    // This one cannot be satisfied that way -- it names the constraint's two
+    // referencing tables and the registry they point at.
+    const at = (step: string) => workflow.indexOf(`- name: ${step}`);
+
+    expect(at('Seed Disciplines')).toBeGreaterThan(-1);
+    for (const dependent of ['Seed Drill Library', 'Seed Session Scripts', 'Seed Competence Cohorts']) {
+      expect(at(dependent)).toBeGreaterThan(at('Seed Disciplines'));
     }
   });
 
