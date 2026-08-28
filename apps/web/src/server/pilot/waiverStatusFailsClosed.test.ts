@@ -60,23 +60,31 @@ import { getAthleteWaiverStatus } from './waiverCompliance';
 const mockQuery = query as jest.Mock;
 
 /**
- * Values a caller can actually put in the column, chosen to cover the three
- * ways a status goes wrong rather than to be exhaustive:
+ * Values a caller can actually put in the column that are OUTSIDE the
+ * vocabulary entirely -- a different word, or noise. Chosen to cover the two
+ * ways that happens rather than to be exhaustive:
  *
- *   - CASE AND WHITESPACE on a word the platform does know. The measured
- *     one: waiverCompliance.ts documents ' Signed ' as an observed value.
  *   - A DIFFERENT WORD that means yes somewhere else. 'active' and
  *     'approved' are affirmative to wallDisplay.ts and unknown to
  *     waiverCompliance.ts -- so they are exactly the values where two readers
  *     of one column disagree, and the ones a future writer is most likely to
  *     produce by accident.
  *   - NOISE. Typos and empties, which domain-upsert accepts unchanged.
+ *
+ * CASE AND WHITESPACE VARIANTS OF A KNOWN WORD ARE NOT HERE, and the reason
+ * is a ruling rather than an oversight. An earlier draft of this file listed
+ * ' Signed ' and 'SIGNED' among the values that must not read as consent.
+ * Owner decision D-1 (2026-08-28) went the other way: a recognised status
+ * survives case and padding, because refusing over whitespace punishes a
+ * family for a data-entry artifact -- which is the line waiverCompliance.ts's
+ * own gate had already taken about this same column. Those variants are now
+ * asserted as CONSENT, in guardianConsent.test.ts where that decision lives.
+ *
+ * They are removed here rather than inverted so this file holds in either
+ * merge order: every value below fails the vocabulary both before and after
+ * that change lands.
  */
-const UNRECOGNISED_BY_THE_CONSENT_VOCABULARY = [
-  ' Signed ',
-  'SIGNED',
-  'Signed',
-  ' signed',
+const OUTSIDE_THE_CONSENT_VOCABULARY = [
   'active',
   'approved',
   'accepted',
@@ -107,7 +115,7 @@ function arrangeOneGuardianWith(status: string): void {
 }
 
 describe('checkGuardianMediaConsent', () => {
-  test.each(UNRECOGNISED_BY_THE_CONSENT_VOCABULARY)(
+  test.each(OUTSIDE_THE_CONSENT_VOCABULARY)(
     'a status of %p is not consent',
     async (status) => {
       arrangeOneGuardianWith(status);
@@ -132,7 +140,7 @@ describe('checkGuardianMediaConsent', () => {
 });
 
 describe('assertGuardianMediaConsent', () => {
-  test.each(UNRECOGNISED_BY_THE_CONSENT_VOCABULARY)('a status of %p refuses', async (status) => {
+  test.each(OUTSIDE_THE_CONSENT_VOCABULARY)('a status of %p refuses', async (status) => {
     arrangeOneGuardianWith(status);
 
     await expect(assertGuardianMediaConsent('org-1', 'ath-1')).rejects.toThrow(
@@ -166,7 +174,7 @@ describe('assertGuardianMediaConsentWithClient', () => {
       }),
   });
 
-  test.each(UNRECOGNISED_BY_THE_CONSENT_VOCABULARY)('a status of %p refuses', async (status) => {
+  test.each(OUTSIDE_THE_CONSENT_VOCABULARY)('a status of %p refuses', async (status) => {
     await expect(
       assertGuardianMediaConsentWithClient(fakeClient(status), 'org-1', 'ath-1'),
     ).rejects.toThrow(/guardian media consent is missing or withdrawn/);
@@ -207,15 +215,25 @@ describe('getAthleteWaiverStatus', () => {
 });
 
 describe('the guard itself', () => {
-  test('the value table is not empty and carries all three kinds', () => {
+  test('the value table is not empty and carries both kinds', () => {
     // A table-driven guard over an empty list passes without running.
-    expect(UNRECOGNISED_BY_THE_CONSENT_VOCABULARY.length).toBeGreaterThan(0);
-    // case/whitespace on a known word
-    expect(UNRECOGNISED_BY_THE_CONSENT_VOCABULARY).toContain(' Signed ');
+    expect(OUTSIDE_THE_CONSENT_VOCABULARY.length).toBeGreaterThan(0);
     // a word that means yes to another reader of this same column
-    expect(UNRECOGNISED_BY_THE_CONSENT_VOCABULARY).toContain('active');
+    expect(OUTSIDE_THE_CONSENT_VOCABULARY).toContain('active');
     // noise
-    expect(UNRECOGNISED_BY_THE_CONSENT_VOCABULARY).toContain('');
+    expect(OUTSIDE_THE_CONSENT_VOCABULARY).toContain('');
+  });
+
+  test('no case-or-padding variant of a known word is in the table', () => {
+    /* The guard on the correction itself. Owner decision D-1 made those
+       variants COUNT as consent, so listing one here would make this file
+       assert the opposite of the decision -- and would fail the moment that
+       change merged. Anything that normalises onto a word the vocabulary
+       knows does not belong in a table of values that must never read as
+       consent. */
+    for (const value of OUTSIDE_THE_CONSENT_VOCABULARY) {
+      expect(['signed', 'withdrawn', 'declined']).not.toContain(value.trim().toLowerCase());
+    }
   });
 });
 
