@@ -142,11 +142,26 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
 
   const possessive = childName ? `${childName}’s` : 'Your child’s';
 
+  /* This heading read "since you last looked", and nothing anywhere backs
+     that claim. Neither fetch above sends a since/after cursor -- both ask
+     for the latest N every time -- and a search of apps/web and infra for
+     last-seen/last-viewed/digest-seen state finds none: no column, no
+     cookie, no local state. A parent who opened this panel twice in a row
+     saw the identical three items under a heading promising what was new
+     since last time.
+
+     "As it stands" is what the panel can actually support: the current
+     contents of the corner. It deliberately does not say "most recent" or
+     "newest first" either -- achievements.ts orders milestones
+     `reached_at is null desc, created_at desc`, so an unreached milestone
+     leads regardless of age, and a recency claim would be the same kind of
+     unbacked wording one line further along. */
+
   return (
     <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]" aria-label="From the corner">
       <p className="t-eyebrow">From the corner</p>
       <h3 className="mt-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[color:var(--card-ink)]">
-        {possessive} corner, since you last looked
+        {possessive} corner, as it stands
       </h3>
       {sessionCount !== null && (
         <p className="mt-[var(--s1)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] text-[color:var(--card-ink-muted)]">
