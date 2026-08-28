@@ -746,6 +746,88 @@ test.describe('Coach journey', () => {
     await expect(page.getByRole('button', { name: 'Log This Session' })).toBeEnabled();
   });
 
+  /* WHO WROTE THE PLAN, AS A PERSON.
+     This line rendered `Written by acct-coach` to a coach until now, which is
+     not attribution -- it is the absence of it, shown to someone who then
+     cannot tell which colleague planned the block. The route resolves the
+     name; this proves a coach actually sees it, and that the id does not leak
+     onto the screen beside it. */
+  test('sees who wrote a block by name, not by account id', async ({ page }) => {
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': (url) => {
+          if (url.searchParams.get('targets') === 'options') return { ok: true, options: [] };
+          return {
+            ok: true,
+            blocks: [{
+              block_id: 'blk-1',
+              athlete_id: ROSA.athlete_id,
+              title: 'Winter technical block',
+              training_emphasis: 'Guard recovery off the jab.',
+              starts_on: '2026-09-01',
+              ends_on: '2026-11-13',
+              status: 'active',
+              target_competition_id: null,
+              target_wrestling_event_id: null,
+              target: null,
+              created_by_account_id: 'acct-coach',
+              created_by_name: 'Coach Rivera',
+              created_at: '2026-08-28T00:00:00.000Z',
+              updated_at: '2026-08-28T00:00:00.000Z',
+            }],
+          };
+        },
+      },
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+
+    await expect(page.getByText('Written by Coach Rivera')).toBeVisible();
+    await expect(page.getByText('acct-coach')).toHaveCount(0);
+  });
+
+  /* The fallback, driven rather than asserted in a comment. If the route ever
+     stops resolving a name, a coach should see an ugly true string rather
+     than a line that quietly reads "Written by" and stops. */
+  test('falls back to the account id when no name resolves, rather than to nothing', async ({ page }) => {
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': (url) => {
+          if (url.searchParams.get('targets') === 'options') return { ok: true, options: [] };
+          return {
+            ok: true,
+            blocks: [{
+              block_id: 'blk-1',
+              athlete_id: ROSA.athlete_id,
+              title: 'Winter technical block',
+              training_emphasis: 'Guard recovery off the jab.',
+              starts_on: '2026-09-01',
+              ends_on: '2026-11-13',
+              status: 'active',
+              target_competition_id: null,
+              target_wrestling_event_id: null,
+              target: null,
+              created_by_account_id: 'acct-coach',
+              // created_by_name deliberately absent.
+              created_at: '2026-08-28T00:00:00.000Z',
+              updated_at: '2026-08-28T00:00:00.000Z',
+            }],
+          };
+        },
+      },
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+
+    await expect(page.getByText('Written by acct-coach')).toBeVisible();
+  });
+
   /* A coach's own development, in a real browser.
      -------------------------------------------
 

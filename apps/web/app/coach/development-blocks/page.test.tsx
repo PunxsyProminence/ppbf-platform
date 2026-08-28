@@ -52,6 +52,7 @@ function blockRow(overrides: Record<string, unknown> = {}) {
     target_wrestling_event_id: null,
     target: null,
     created_by_account_id: 'acct-coach-a',
+    created_by_name: 'Coach Rivera',
     created_at: '2026-08-28T00:00:00.000Z',
     updated_at: '2026-08-28T00:00:00.000Z',
     ...overrides,
@@ -320,7 +321,11 @@ describe('reading blocks back', () => {
     await renderPage({ blocks: [blockRow()] });
     await pickAthlete('ath-1');
 
-    expect(screen.getByText(/Written by acct-coach-a/)).toBeTruthy();
+    /* Asserts a NAME now: this line used to render the raw
+       created_by_account_id, which is the absence of attribution rather than
+       attribution. The point of this case is unchanged -- the creator is
+       shown, and no edit path can rewrite who wrote the plan. */
+    expect(screen.getByText(/Written by Coach Rivera/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Edit block' }));
     expect(screen.queryByLabelText(/written by/i)).toBeNull();
     expect(screen.queryByLabelText(/created by/i)).toBeNull();
@@ -859,6 +864,29 @@ describe('a block list never lands under the wrong athlete', () => {
 
     await act(async () => { release['ath-2']?.(); });
     expect(screen.getByText('Plan for ath-2')).toBeTruthy();
+  });
+});
+
+describe('attribution names a person', () => {
+  test('the resolved name is shown, not the account id', async () => {
+    await renderPage({ blocks: [blockRow()] });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/Written by Coach Rivera/)).toBeTruthy();
+    // The id was what this line used to print, and it is not attribution.
+    expect(document.body.textContent ?? '').not.toContain('acct-coach-a');
+  });
+
+  test('a block whose name did not resolve falls back to the id, not to nothing', async () => {
+    /* An ugly true string beats a line that quietly reads "Written by". If the
+       route ever stops resolving names, a coach should see that something is
+       wrong rather than see a blank where a colleague's name belongs. */
+    const withoutName: Record<string, unknown> = { ...blockRow() };
+    delete withoutName.created_by_name;
+    await renderPage({ blocks: [withoutName] });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/Written by acct-coach-a/)).toBeTruthy();
   });
 });
 

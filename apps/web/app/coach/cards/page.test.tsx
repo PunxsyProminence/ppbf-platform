@@ -86,7 +86,13 @@ interface FetchCall {
   init?: RequestInit;
 }
 
-function installFetch(options: { cardsPostResponse?: unknown } = {}) {
+function installFetch(options: {
+  cardsPostResponse?: unknown;
+  /** What the card LIST read answers. An array stands in for the groups the
+      server holds; `false` refuses the read, which is the difference between
+      "no cards were issued" and "nobody could look". */
+  cardsList?: unknown[] | false;
+} = {}) {
   const calls: FetchCall[] = [];
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -104,7 +110,10 @@ function installFetch(options: { cardsPostResponse?: unknown } = {}) {
       return { ok: true, status: 201, json: async () => options.cardsPostResponse ?? REPORT };
     }
     if (url.includes('/api/pilot/coach/cards')) {
-      return { ok: true, status: 200, json: async () => ({ items: [CARD_GROUP] }) };
+      if (options.cardsList === false) {
+        return { ok: false, status: 503, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => ({ items: options.cardsList ?? [CARD_GROUP] }) };
     }
     if (url.includes('/api/pilot/progression/completions')) {
       return { ok: true, status: 200, json: async () => ({}) };
@@ -265,4 +274,73 @@ test('unmounting mid-load aborts every request and writes no state after', async
   // state is written into an unmounted tree.
   expect(errorSpy).not.toHaveBeenCalled();
   errorSpy.mockRestore();
+});
+
+/*
+ * "NO CARDS ISSUED YET" IS A CLAIM ABOUT THE GYM.
+ *
+ * This file already says so, in the comment above the abort test: that
+ * sentence is "a claim about the gym rather than about the request". The abort
+ * case was guarded and the FAILURE case was not, so a read the server refused
+ * put the same sentence on screen -- and a coach who believes a child has no
+ * cards issues the card again, on top of the one already sitting in that
+ * child's list.
+ *
+ * The read failure is tracked apart from errorMessage deliberately, and the
+ * last test here is why: errorMessage also carries write-path validation
+ * ("Pick an athlete."), which says nothing whatsoever about whether the list
+ * could be read.
+ */
+describe('a card list nobody could read is not an empty card list', () => {
+  test('a refused list read says the cards could not be read, and does not say none were issued', async () => {
+    installFetch({ cardsList: false });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    expect(await screen.findByText(/Your cards could not be read/i)).toBeTruthy();
+    // The half that was the defect: the sentence a coach acts on by
+    // re-issuing work a child already has.
+    expect(screen.queryByText('No cards issued yet')).toBeNull();
+  });
+
+  test('a genuinely empty list still says no cards were issued, and claims no failure', async () => {
+    // The other direction. A page that says "could not be read" whenever it
+    // has nothing to show is lying in the opposite direction, and it hides the
+    // one case where the sentence is true.
+    installFetch({ cardsList: [] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    expect(await screen.findByText('No cards issued yet')).toBeTruthy();
+    expect(screen.queryByText(/Your cards could not be read/i)).toBeNull();
+  });
+
+  test('issuing a card without picking an athlete does not make the list claim it could not be read', async () => {
+    /* The regression a later "simplification" is most likely to reintroduce:
+       fold cardsUnreadable back into errorMessage, and a coach who hit Issue
+       one field too early is told their card list is unreadable. The list read
+       succeeded. It is genuinely empty. Only the click was wrong -- and the
+       two facts must not share a flag. */
+    installFetch({ cardsList: [] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    await screen.findByText('No cards issued yet');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Issue card' }));
+    });
+
+    // The validation really fired, so this is exercising the errorMessage
+    // path and not an inert page.
+    expect(screen.getByText('Pick an athlete.')).toBeTruthy();
+    expect(screen.queryByText(/Your cards could not be read/i)).toBeNull();
+    expect(screen.getByText('No cards issued yet')).toBeTruthy();
+  });
 });

@@ -1,9 +1,13 @@
 import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
+import { accessibleAthleteIds } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { getShadowResearchRequirementById } from '@/src/server/pilot/shadowResearch';
 import {
   createResearchSubmission,
+  getAnswerStates,
+  getRequirementStatusesInOrg,
   documentExistsInOrg,
   getRequirementStatusInOrg,
   listSubmissionsForRequirement,
@@ -15,6 +19,20 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+// The subject gate's two collaborators. accessibleAthleteIds is the ONE
+// central relationship gate; mocking it here keeps these tests about the
+// route's use of it rather than about guardian_links SQL, which
+// softDeletedAthleteAccess.pg.test.ts already covers against real Postgres.
+jest.mock('@/src/server/pilot/shadowResearch', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowResearch');
+  return { ...actual, getShadowResearchRequirementById: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, accessibleAthleteIds: jest.fn(async () => new Set<string>()) };
 });
 
 jest.mock('@/src/server/pilot/shadowResearchSubmissions', () => {
@@ -33,12 +51,25 @@ jest.mock('@/src/server/pilot/shadowResearchSubmissions', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockGetRequirement = getShadowResearchRequirementById as jest.Mock;
+const mockAccessibleAthleteIds = accessibleAthleteIds as jest.Mock;
 const mockCreate = createResearchSubmission as jest.Mock;
 const mockList = listSubmissionsForRequirement as jest.Mock;
 const mockReview = reviewResearchSubmission as jest.Mock;
 const mockRequirementStatus = getRequirementStatusInOrg as jest.Mock;
 const mockSourceExists = sourceExistsInOrg as jest.Mock;
 const mockDocumentExists = documentExistsInOrg as jest.Mock;
+
+beforeEach(() => {
+  /* Default: a requirement that names NO child, which is the org-wide
+     operational case and the shape every pre-existing test in this file was
+     written against. Tests about the subject gate override it. Without a
+     default the gate would 404 them all, which would look like the gate
+     working and would actually be the fixture missing. */
+  mockGetRequirement.mockResolvedValue({
+    research_requirement_id: 7, organization_id: 'org-1', subject_id: null, metadata: {},
+  });
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -225,5 +256,89 @@ describe('GET batch answer states', () => {
 
     expect((await GET(getRequest('research_requirement_ids=7,soon'))).status).toBeGreaterThanOrEqual(400);
     expect(getRequirementStatusesInOrg).not.toHaveBeenCalled();
+  });
+});
+
+/* ── THE SUBJECT GATE ─────────────────────────────────────────────────────
+   A requirement can NAME a child, and the submissions hanging off it carry
+   submission_note and review_note -- a reviewer's free text about that
+   child's intake case. This route scoped on organization_id alone, while its
+   sibling (research-requirements) has scoped reads to reachable subjects
+   since #623. A guardian could name any research_requirement_id and read
+   another family's staff notes. */
+describe('the subject gate on a requirement that names a child', () => {
+  const guardian = () => principal({ accountId: 'acct-parent', role: 'parent', athleteId: null });
+
+  function requirementAbout(athleteId: string | null) {
+    return { research_requirement_id: 7, organization_id: 'org-1', subject_id: athleteId, metadata: {} };
+  }
+
+  test('a guardian is refused a requirement about a child they do not hold', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(guardian());
+    mockGetRequirement.mockResolvedValueOnce(requirementAbout('ath-other'));
+    mockAccessibleAthleteIds.mockResolvedValueOnce(new Set<string>());
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+
+    expect(response.status).toBe(404);
+    // The staff notes are never read, not merely never returned.
+    expect(mockList).not.toHaveBeenCalled();
+    expect(mockRequirementStatus).not.toHaveBeenCalled();
+  });
+
+  test('a guardian reads a requirement about their own child', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(guardian());
+    mockGetRequirement.mockResolvedValueOnce(requirementAbout('ath-mine'));
+    mockAccessibleAthleteIds.mockResolvedValueOnce(new Set(['ath-mine']));
+    mockRequirementStatus.mockResolvedValueOnce('open');
+    mockList.mockResolvedValueOnce([]);
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+
+    expect(response.status).toBe(200);
+    expect(mockList).toHaveBeenCalled();
+  });
+
+  test('a requirement about nobody stays org-wide operational data', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(guardian());
+    mockGetRequirement.mockResolvedValueOnce(requirementAbout(null));
+    mockRequirementStatus.mockResolvedValueOnce('open');
+    mockList.mockResolvedValueOnce([]);
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+
+    expect(response.status).toBe(200);
+    expect(mockAccessibleAthleteIds).not.toHaveBeenCalled();
+  });
+
+  test('an organization admin is not narrowed, and costs no extra read', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockRequirementStatus.mockResolvedValueOnce('open');
+    mockList.mockResolvedValueOnce([]);
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+
+    expect(response.status).toBe(200);
+    expect(mockGetRequirement).not.toHaveBeenCalled();
+  });
+
+  /* THE ENUMERATION ORACLE. The batch parameter takes 200 ids per request, so
+     leaking mere existence here is worth more to a caller than the single-id
+     read. Unreachable ids must be absent from the answer, not reported. */
+  test('the batch read drops ids whose subject the guardian cannot reach', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(guardian());
+    mockGetRequirement
+      .mockResolvedValueOnce(requirementAbout('ath-mine'))
+      .mockResolvedValueOnce(requirementAbout('ath-other'));
+    mockAccessibleAthleteIds
+      .mockResolvedValueOnce(new Set(['ath-mine']))
+      .mockResolvedValueOnce(new Set<string>());
+    (getRequirementStatusesInOrg as jest.Mock).mockResolvedValueOnce(new Map());
+    (getAnswerStates as jest.Mock).mockResolvedValueOnce(new Map());
+
+    await GET(getRequest('research_requirement_ids=7,8'));
+
+    // Only the reachable id reaches the status read.
+    expect(getRequirementStatusesInOrg as jest.Mock).toHaveBeenCalledWith('org-1', [7]);
   });
 });

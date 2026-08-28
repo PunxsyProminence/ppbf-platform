@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import {
   createDevelopmentBlock,
   getDevelopmentBlock,
@@ -130,6 +131,46 @@ async function withTargets<T extends { target_competition_id: string | null; tar
   })));
 }
 
+/**
+ * Who wrote each block, as a person's name rather than as an account id.
+ *
+ * The surface used to print `created_by_account_id` straight to the screen --
+ * `Written by acct-coach-a`. That is not attribution; it is the absence of it
+ * shown to a coach who then cannot tell which colleague planned the block they
+ * are looking at.
+ *
+ * getCoachDisplayName is the platform's ONE answer to this and is reused
+ * rather than reimplemented. Its own header explains what it does and why:
+ * `pilot.accounts` carries no display-name column today, so the local part of
+ * the login address is the best true thing available, and when accounts grow a
+ * real name that function is the single place to change. A second derivation
+ * here would be a second place to forget.
+ *
+ * RESOLVED ONCE PER AUTHOR, not once per block. A coach looking at their own
+ * athlete's history is looking at blocks they mostly wrote themselves, so the
+ * naive per-row lookup would issue the same query a dozen times for one
+ * answer. The map is built from the distinct ids actually present.
+ */
+async function withAuthorNames<T extends { created_by_account_id: string }>(
+  organizationId: string,
+  blocks: readonly T[],
+): Promise<Array<T & { created_by_name: string }>> {
+  const distinctIds = Array.from(new Set(blocks.map((block) => block.created_by_account_id)));
+  const names = new Map<string, string>();
+  await Promise.all(distinctIds.map(async (accountId) => {
+    names.set(accountId, await getCoachDisplayName(organizationId, accountId));
+  }));
+
+  /* The id stays on the row beside the name. The name is derived and the id is
+     the fact -- a caller that needs to know WHICH ACCOUNT authored something,
+     rather than what to call them, must not be forced to reverse a display
+     string to get it. */
+  return blocks.map((block) => ({
+    ...block,
+    created_by_name: names.get(block.created_by_account_id) ?? 'Your coach',
+  }));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -158,7 +199,10 @@ export async function GET(request: NextRequest) {
          has no plan". Belt and braces, with the braces load-bearing. */
       await assertActorCanAccessAthlete(principal, athleteId);
       const rows = await listDevelopmentBlocksForAthlete(principal, athleteId);
-      const blocks = await withTargets(principal.organizationId, rows);
+      const blocks = await withAuthorNames(
+        principal.organizationId,
+        await withTargets(principal.organizationId, rows),
+      );
       return NextResponse.json({ ok: true, blocks }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
@@ -174,7 +218,10 @@ export async function GET(request: NextRequest) {
        access question, and resolving it here keeps every reader out of the
        business of knowing which of two competition tables to look in. */
     const rows = await listDevelopmentBlocks(principal);
-    const blocks = await withTargets(principal.organizationId, rows);
+    const blocks = await withAuthorNames(
+      principal.organizationId,
+      await withTargets(principal.organizationId, rows),
+    );
     return NextResponse.json({ ok: true, blocks }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return jsonError(error);
