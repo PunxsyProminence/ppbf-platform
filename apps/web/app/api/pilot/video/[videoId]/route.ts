@@ -37,13 +37,49 @@ interface VideoSessionRow {
  *
  * WHAT THIS REFUSES, AND WHY IT IS ONLY THIS
  *
- * Exactly one condition: a guardian whose CURRENT photo_media waiver is
- * status='signed' AND covers_video=false. That is a guardian who used the
- * parent console and deliberately unticked video -- parent/consent's grant
- * path reads `body.covers_video !== false`, so photo-only is an affirmative
- * act, never a default. The column itself defaults to true and every
- * intake-written row takes that default, so this can only ever fire on a
- * choice somebody actually made.
+ * Two conditions, and both are a decision a guardian actually made:
+ *
+ *   1. status='signed' AND covers_video=false -- a guardian who used the
+ *      parent console and deliberately unticked video. parent/consent's grant
+ *      path reads `body.covers_video !== false`, so photo-only is an
+ *      affirmative act, never a default. The column itself defaults to true
+ *      and every intake-written row takes that default, so this can only ever
+ *      fire on a choice somebody actually made.
+ *   2. status='withdrawn' -- a guardian who granted media consent and then
+ *      took it back. Owner decision 2026-08-28: withdrawal stops internal
+ *      playback, not only publication. Before that decision this route served
+ *      a withdrawn athlete's footage normally, and route.test.ts carried a
+ *      test saying so in as many words, with the note that it was the one to
+ *      change if the decision was ever taken. It was taken; that test now
+ *      asserts the refusal.
+ *
+ * Those two are the WHOLE gate-visible status population, not a subset of it.
+ * currentConsentByGuardian filters `parent_id is not null`, and the only two
+ * writers of a row with parent_id set are grantMediaConsent ('signed') and
+ * withdrawMediaConsent ('withdrawn') in guardianConsent.ts -- both reached
+ * only from POST /api/pilot/parent/consent. 'declined' is a status the schema
+ * and waiverCompliance.ts both admit, but no writer can put it on a row this
+ * gate can see, so it is not handled here rather than being handled
+ * speculatively. If an admin-side writer that passes parentId is ever added,
+ * this gate needs revisiting for that status -- checked 2026-08-28 across
+ * every upsertWaiver caller in apps/web.
+ *
+ * WHO THE REFUSAL APPLIES TO: everyone, the athlete and the guardian
+ * included. That is not new reach invented for withdrawal -- the photo-only
+ * refusal above has always applied to all three (route.test.ts has carried
+ * 'the athlete themself is subject to the same scope refusal' and 'the linked
+ * guardian is subject to the same scope refusal' since it shipped), and a
+ * withdrawal that stopped coaches but not the athlete's own console would
+ * leave the footage one login away from the person whose guardian just said
+ * no. The escape hatch is the same one the photo-only case has: a new signed
+ * consent, written by the guardian's own console, supersedes it immediately.
+ *
+ * WHAT WITHDRAWAL STILL CANNOT REACH: a SAS URL already minted. This route
+ * hands out a 60-minute bearer credential, so a withdrawal lands on every
+ * request made after it commits and on no request made before -- an
+ * already-open tab keeps playing for up to an hour. Closing that would mean
+ * short-lived SAS plus re-mint, or server-side proxying, and neither is in
+ * this change's scope.
  *
  * WHAT THIS DELIBERATELY DOES NOT REFUSE: A MISSING CONSENT ROW.
  *
@@ -92,6 +128,33 @@ interface VideoSessionRow {
  */
 async function assertConsentCoversVideo(organizationId: string, athleteId: string): Promise<void> {
   const consent = await checkGuardianMediaConsent(organizationId, athleteId);
+
+  // Withdrawal is checked first, and the two refusals stay separate rather
+  // than being folded into one "not signed for video" test, because they are
+  // different facts about a guardian and the reader has to act on them
+  // differently: a photo-only guardian consented and drew a line, a withdrawn
+  // guardian revoked. Merging them would hand an admin one message covering
+  // two situations, one of which ("ask them to consent to video") is the wrong
+  // thing to say to a parent who has already said no -- the same distinction
+  // competitionSafetyGates.ts's travelWaiverRefusal draws for the same reason.
+  //
+  // A withdrawn row also carries covers_video=false (withdrawMediaConsent
+  // writes it that way), so the ordering is not cosmetic in the one-guardian
+  // case; the status==='signed' test below keeps the two populations disjoint
+  // regardless, and the ordering decides which message a MIXED set of
+  // guardians produces. Withdrawal wins because it is the stronger statement.
+  const withdrawn = consent.perGuardian.filter((guardian) => guardian.status === 'withdrawn');
+
+  if (withdrawn.length > 0) {
+    throw new ConflictError(
+      `Blocked: ${withdrawn.length} of this athlete's guardians has withdrawn media consent. `
+      + 'Video of this athlete cannot be played back while a withdrawal stands. That is a decision '
+      + 'on file, not missing paperwork -- only a newly signed consent from that guardian restores '
+      + 'playback.',
+      'GUARDIAN_CONSENT_WITHDRAWN',
+    );
+  }
+
   const videoExcluded = consent.perGuardian.filter(
     (guardian) => guardian.status === 'signed' && guardian.coversVideo === false,
   );
