@@ -14,7 +14,9 @@ import {
   bulkUpsertSchedulerAttendance,
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
+  getSchedulerRegistrationById,
   listRegisteredAthleteIdsForClass,
+  markSchedulerRegistrationReviewed,
   listSchedulerStore,
   registerForClassTransactionally,
   resolveSchedulerCoachingRequest,
@@ -56,6 +58,12 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
   bulkUpsertSchedulerAttendance: jest.fn(),
   listRegisteredAthleteIdsForClass: jest.fn(),
   listSchedulerStore: jest.fn(),
+  // Both absent from this bare mock until now, so the route's imports were
+  // undefined and parent_review_registration could not be exercised at all --
+  // which is why it had no coverage. A bare-object jest.mock silently drops
+  // whatever it does not list.
+  getSchedulerRegistrationById: jest.fn(),
+  markSchedulerRegistrationReviewed: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/db', () => ({
@@ -1121,5 +1129,128 @@ describe('GET /api/pilot/scheduler withholds staff fields from a family reader',
     expect(body.coaching_requests).toEqual([]);
     // The catalogue is still there: it is not athlete-linked.
     expect(body.classes).toHaveLength(1);
+  });
+});
+
+/**
+ * "NOT THERE" AND "THERE BUT NOT YOURS" MUST ANSWER THE SAME THING.
+ *
+ * parent_review_registration had no coverage in this file at all -- and could
+ * not have had any, because getSchedulerRegistrationById and
+ * markSchedulerRegistrationReviewed were both missing from the bare-object
+ * schedulerDb mock, so the route's imports were undefined.
+ *
+ * The two refusals diverged: a registration id that does not exist threw
+ * 'Missing registration record' (400 via http.ts), while one that exists for
+ * another family's child came back 403. A guardian could therefore tell, for
+ * any id they hold, whether it names a real registration in this
+ * organization. Ids are randomUUID so this was never an enumerable roster
+ * leak -- it is the 403-vs-404 discipline this repository has a rule and a
+ * helper for, applied.
+ */
+describe('parent_review_registration does not distinguish missing from forbidden', () => {
+  const mockGetRegistration = getSchedulerRegistrationById as jest.Mock;
+  const mockMarkReviewed = markSchedulerRegistrationReviewed as jest.Mock;
+
+  const registration = (overrides: Record<string, unknown> = {}) => ({
+    registration_id: 'reg-1',
+    class_id: 'class-1',
+    athlete_id: 'ath-someone-else',
+    requested_by_role: 'coach',
+    requested_by_account_id: 'coach@example.com',
+    parent_reviewed: false,
+    status: 'registered',
+    created_at: 'now',
+    updated_at: 'now',
+    ...overrides,
+  });
+
+  const review = (registrationId = 'reg-1') =>
+    POST(jsonRequest({ action: 'parent_review_registration', registration_id: registrationId }));
+
+  test("a registration that does not exist and one that is not this guardian's read identically", async () => {
+    // Byte-for-byte, not merely both-4xx: the status AND the body. A caller
+    // that can see any difference has the oracle back.
+    mockRequirePrincipal.mockResolvedValue(principal('parent', { accountId: 'parent@example.com' }));
+
+    mockGetRegistration.mockResolvedValueOnce(null);
+    const missing = await review('reg-does-not-exist');
+    const missingBody = await missing.json();
+
+    mockGetRegistration.mockResolvedValueOnce(registration());
+    mockAssertCanAct.mockRejectedValueOnce(new Error('Forbidden: parent not linked to athlete'));
+    const forbidden = await review();
+    const forbiddenBody = await forbidden.json();
+
+    expect(missing.status).toBe(forbidden.status);
+    expect(missing.status).toBe(404);
+    expect(missingBody).toEqual(forbiddenBody);
+    expect(missingBody).toEqual({ error: 'Not found' });
+  });
+
+  test('neither refusal writes a review', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent', { accountId: 'parent@example.com' }));
+
+    mockGetRegistration.mockResolvedValueOnce(null);
+    await review('reg-does-not-exist');
+
+    mockGetRegistration.mockResolvedValueOnce(registration());
+    mockAssertCanAct.mockRejectedValueOnce(new Error('Forbidden: parent not linked to athlete'));
+    await review();
+
+    expect(mockMarkReviewed).not.toHaveBeenCalled();
+  });
+
+  test("a guardian reviewing their own child's registration still succeeds", async () => {
+    // The control. Closing an oracle by refusing everything is not a fix, and
+    // this is the test that fails if the refusal is widened by accident.
+    mockRequirePrincipal.mockResolvedValue(principal('parent', { accountId: 'parent@example.com' }));
+    mockGetRegistration.mockResolvedValueOnce(registration({ athlete_id: 'ath-mine' }));
+    mockAssertCanAct.mockResolvedValueOnce(undefined);
+
+    const res = await review();
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, registration_id: 'reg-1' });
+    expect(mockMarkReviewed).toHaveBeenCalledTimes(1);
+    expect(mockMarkReviewed).toHaveBeenCalledWith('org-1', 'reg-1', 'parent@example.com', expect.any(String));
+  });
+
+  test('an organization admin gets the same 404 on a bad id', async () => {
+    // The stated cost: an admin loses the more specific message. It cannot be
+    // shown to one role and hidden from another without becoming the oracle
+    // again, and the admin path never calls assertActorCanAccessAthlete, so
+    // there is nothing to distinguish anyway.
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+    mockGetRegistration.mockResolvedValueOnce(null);
+
+    const res = await review('reg-does-not-exist');
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(mockMarkReviewed).not.toHaveBeenCalled();
+  });
+
+  test('an admin reviewing a real registration is not gated on guardianship', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+    mockGetRegistration.mockResolvedValueOnce(registration());
+
+    const res = await review();
+
+    expect(res.status).toBe(200);
+    expect(mockAssertCanAct).not.toHaveBeenCalled();
+    expect(mockMarkReviewed).toHaveBeenCalledTimes(1);
+  });
+
+  test('a coach may not review a registration at all', async () => {
+    // Unchanged, and asserted here because this describe is now the only
+    // coverage this action has.
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const res = await review();
+
+    expect(res.status).toBe(403);
+    expect(mockGetRegistration).not.toHaveBeenCalled();
+    expect(mockMarkReviewed).not.toHaveBeenCalled();
   });
 });
