@@ -221,6 +221,7 @@ export default function DecisionLoopReviewPage() {
          what a coach reads before putting a child into contact work. The
          error line alone was not enough: it renders in the picker header
          while four sections below independently say "clear". */
+      setLoadFailed(true);
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision loop data.');
     } finally {
       setLoading(false);
