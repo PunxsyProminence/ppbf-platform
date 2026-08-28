@@ -162,6 +162,34 @@ export function formatGymDateNumeric(value: GymTimeInput): string | null {
   });
 }
 
+/**
+ * Today's calendar day AT THE GYM, as 'YYYY-MM-DD'.
+ *
+ * WHY THIS IS NOT `new Date().toISOString().slice(0, 10)`. That is the day in
+ * UTC, and the gym is four or five hours behind it. Every evening session
+ * after 8pm ET falls on the following UTC day, so "today" computed that way
+ * is tomorrow for the whole back half of a training night -- which would let
+ * a coach file tonight's work as future-dated, or block them from filing it
+ * at all.
+ *
+ * Assembled from formatToParts rather than a locale string: 'en-CA' happens
+ * to render ISO order today, and a date this load-bearing should not rest on
+ * that continuing to be true.
+ */
+export function gymDayIso(value: GymTimeInput = new Date()): string | null {
+  const parsed = parse(value);
+  if (!parsed) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: GYM_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsed);
+  const at = (type: string) => parts.find((part) => part.type === type)?.value;
+  const [year, month, day] = [at('year'), at('month'), at('day')];
+  return year && month && day ? `${year}-${month}-${day}` : null;
+}
+
 /** "7:15 PM" at the gym. */
 export function formatGymTimeOfDay(value: GymTimeInput): string | null {
   const parsed = parse(value);

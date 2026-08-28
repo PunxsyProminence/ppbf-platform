@@ -20,6 +20,8 @@
  *      coach who reads that writes down a goal they already had.
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
@@ -421,5 +423,40 @@ describe('what a row shows when a field was never recorded', () => {
     expect(screen.getByText(
       '2026-03-12 · USA Boxing · 3h 00m · Toward: Corner work under pressure',
     )).toBeTruthy();
+  });
+});
+
+/*
+ * THE PAGE MUST ADMIT WHOEVER THE ROUTE ADMITS.
+ *
+ * The route gates on STAFF_CREDENTIAL_ROLES; the page admitted only coach and
+ * admin, so staff and volunteers could call the API that serves this feature
+ * and were redirected away from its only UI. Found by a review bot on the
+ * pull request. This record is self-scoped -- the route takes no account id --
+ * so there is no safety reason to shut anyone with staff standing out of
+ * their own development record.
+ */
+describe('the role gate matches the route it fronts', () => {
+  test('staff and volunteers are admitted, alongside coaches and admins', () => {
+    const source = readFileSync(
+      resolve(__dirname, 'page.tsx'),
+      'utf8',
+    );
+    const allowed = /allowedRoles=\{\[([^\]]+)\]\}/.exec(source)?.[1] ?? '';
+    for (const role of ['coach', 'admin', 'staff', 'volunteer']) {
+      expect([role, allowed.includes(`'${role}'`)]).toEqual([role, true]);
+    }
+  });
+
+  test('the building map offers the room to the same roles', () => {
+    const map = readFileSync(
+      resolve(__dirname, '../../../components/buildingMap.ts'),
+      'utf8',
+    );
+    const entry = /\{ href: '\/coach\/development',[\s\S]*?\},/.exec(map)?.[0] ?? '';
+    expect(entry).not.toBe('');
+    for (const role of ['coach', 'admin', 'staff', 'volunteer']) {
+      expect([role, entry.includes(`'${role}'`)]).toEqual([role, true]);
+    }
   });
 });
