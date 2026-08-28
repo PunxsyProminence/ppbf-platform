@@ -75,14 +75,37 @@ const READINESS_QUERY = `
         and pg_get_constraintdef(oid) like '%''LITERATURE-GROUNDED DRAFT%'
         and pg_get_constraintdef(oid) like '%''COACHING-CRAFT DRAFT%'
     ) as drill_library_field_provenance_vocabulary_ready,
-    exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_drill_library_discipline_check'
-        and conrelid = to_regclass('pilot.drill_library')
-        and pg_get_constraintdef(oid) like '%''boxing''%'
-        and pg_get_constraintdef(oid) like '%''wrestling''%'
-        and pg_get_constraintdef(oid) like '%''combatives''%'
-    ) as drill_library_discipline_vocabulary_ready,
+    -- THE DISCIPLINE COLUMN IS GOVERNED BY SOMETHING. This used to assert the
+    -- literal CHECK and its vocabulary outright. It cannot any more: the owner
+    -- decided on 2026-08-28, verbatim, "drop the check and let the registry
+    -- govern", and the drill-library-check-drop migration removes
+    -- pilot_drill_library_discipline_check once
+    -- pilot_drill_library_discipline_fk is installed. Left as it was, this
+    -- clause would have turned every "all" dispatch after that drop red, in the
+    -- migration that creates half the drill schema.
+    --
+    -- What replaces it is the property the CHECK was standing in for, stated
+    -- once and for both eras: the column is governed by the registry key, or --
+    -- before that key exists -- by the five-literal CHECK. It is deliberately
+    -- an OR and not a weakening: if BOTH are absent the column is free text and
+    -- this returns false, which is the state no dispatch may report as ready.
+    (
+      exists (
+        select 1 from pg_constraint
+        where conname = 'pilot_drill_library_discipline_fk'
+          and conrelid = to_regclass('pilot.drill_library')
+          and contype = 'f'
+          and confrelid = to_regclass('pilot.disciplines')
+      )
+      or exists (
+        select 1 from pg_constraint
+        where conname = 'pilot_drill_library_discipline_check'
+          and conrelid = to_regclass('pilot.drill_library')
+          and pg_get_constraintdef(oid) like '%''boxing''%'
+          and pg_get_constraintdef(oid) like '%''wrestling''%'
+          and pg_get_constraintdef(oid) like '%''combatives''%'
+      )
+    ) as drill_library_discipline_governed,
     exists (
       select 1 from pg_constraint
       where conname = 'pilot_drill_library_difficulty_check'
