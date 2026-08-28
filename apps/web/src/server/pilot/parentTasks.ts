@@ -98,6 +98,9 @@ export async function parentTaskStateForNotes(
 export async function setParentTaskDueDate(params: {
   organizationId: string;
   noteId: string;
+  /** The athlete the CALLER was authorised for. Required, and matched against
+   *  the note -- see the lookup below for why it cannot be inferred. */
+  athleteId: string;
   dueDate: string | null;
   actorAccountId: string;
   actorRole: PilotRole;
@@ -106,14 +109,28 @@ export async function setParentTaskDueDate(params: {
     throw new Error('Forbidden: role may not set a parent task');
   }
 
+  /* THE NOTE MUST BE ABOUT THE ATHLETE THE CALLER WAS AUTHORISED FOR, and
+     that is why athleteId is a parameter rather than something read off the
+     note.
+
+     The route authorises a caller-supplied athlete_id
+     (assertActorCanAccessAthlete) and then hands this a caller-supplied
+     note_id. Those are two different objects. Checking the note's existence
+     and type but not its athlete left them unbound: a coach assigned to child
+     A could put a due date on a parent_message about child B, and read B's
+     completed_at back out of the returning clause below. Binding them here,
+     inside the module, means no future caller has to remember to do it.
+
+     Deliberately the SAME "not found" as a missing note. A distinct error
+     would confirm that a note exists for a child this coach may not reach. */
   const note = await queryOne<{ note_type: string }>(
     `select note_type from pilot.coach_observations
-      where organization_id = $1 and note_id = $2::uuid`,
-    [params.organizationId, params.noteId],
+      where organization_id = $1 and note_id = $2::uuid and athlete_id = $3`,
+    [params.organizationId, params.noteId, params.athleteId],
   );
 
   if (!note) {
-    throw new Error('Not found: no such note in this organization');
+    throw new Error('Not found: no such note for that athlete in this organization');
   }
   if (note.note_type !== 'parent_message') {
     throw new Error('Forbidden: only a parent message can carry a task');

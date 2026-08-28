@@ -58,9 +58,25 @@ test('a coach may set a due date on a message about a child they can reach', asy
 
   expect(res.status).toBe(200);
   expect(mockAssertAccess).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'acct-1' }), 'ath-1');
+  // athleteId is passed THROUGH to the module, which matches the note against
+  // it. Without that the route would authorise one object (the athlete) and
+  // act on another (the note), which is exactly the hole this asserts closed.
   expect(mockSetDue).toHaveBeenCalledWith(expect.objectContaining({
-    organizationId: 'org-a', noteId: 'note-1', dueDate: '2026-09-10', actorAccountId: 'acct-1',
+    organizationId: 'org-a', noteId: 'note-1', athleteId: 'ath-1',
+    dueDate: '2026-09-10', actorAccountId: 'acct-1',
   }));
+});
+
+test('the authorised athlete is the one handed to the module, not one the body could swap', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+  await post({ note_id: 'note-1', athlete_id: 'ath-7', due_date: '2026-09-10' });
+
+  // The SAME id is gated and then acted on. A route that checked one and
+  // passed another would satisfy the gate assertion alone, so both are pinned
+  // against the same value.
+  expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-7');
+  expect(mockSetDue).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ath-7', noteId: 'note-1' }));
 });
 
 test('a guardian may not, and is stopped before any athlete lookup', async () => {

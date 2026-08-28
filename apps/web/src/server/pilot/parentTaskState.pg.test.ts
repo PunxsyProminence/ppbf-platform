@@ -373,6 +373,7 @@ describe('who may put a due date on a message', () => {
     const task = await parentTasks.setParentTaskDueDate({
       organizationId: ORG_ID,
       noteId: MESSAGE_NOTE,
+      athleteId: ATHLETE,
       dueDate: '2026-09-10',
       actorAccountId: COACH,
       actorRole: 'coach',
@@ -386,6 +387,7 @@ describe('who may put a due date on a message', () => {
     const task = await parentTasks.setParentTaskDueDate({
       organizationId: ORG_ID,
       noteId: MESSAGE_NOTE,
+      athleteId: ATHLETE,
       dueDate: '2026-09-10',
       actorAccountId: ADMIN_ACCOUNT,
       actorRole: 'organization_admin',
@@ -398,6 +400,7 @@ describe('who may put a due date on a message', () => {
     await expect(parentTasks.setParentTaskDueDate({
       organizationId: ORG_ID,
       noteId: MESSAGE_NOTE,
+      athleteId: ATHLETE,
       dueDate: '2026-09-10',
       actorAccountId: GUARDIAN_ACCOUNT,
       actorRole: 'parent',
@@ -411,16 +414,43 @@ describe('who may put a due date on a message', () => {
     await expect(parentTasks.setParentTaskDueDate({
       organizationId: ORG_ID,
       noteId: BARRIER_NOTE,
+      athleteId: ATHLETE,
       dueDate: '2026-09-10',
       actorAccountId: COACH,
       actorRole: 'coach',
     })).rejects.toThrow(/only a parent message/);
   });
 
+  /* THE NOTE AND THE ATHLETE MUST BE THE SAME CHILD.
+
+     The route authorises a caller-supplied athlete_id with
+     assertActorCanAccessAthlete and then passes a caller-supplied note_id
+     here. Those are two different objects, and nothing bound them: a coach
+     assigned to child A could put a due date on a parent_message about child
+     B, and read B's completed_at back out of the returning clause. The route
+     comment claimed the two checks together prevented that. They did not. */
+  test('refuses a note about a different child than the one authorised', async () => {
+    await expect(parentTasks.setParentTaskDueDate({
+      organizationId: ORG_ID,
+      noteId: OTHER_CHILD_NOTE,
+      athleteId: ATHLETE,
+      dueDate: '2026-09-10',
+      actorAccountId: COACH,
+      actorRole: 'coach',
+    })).rejects.toThrow(/Not found/);
+
+    const untouched = await activeClient!.query(
+      `select 1 from pilot.parent_task_state where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, OTHER_CHILD_NOTE],
+    );
+    expect(untouched.rows).toHaveLength(0);
+  });
+
   test('a note in another organization is not found', async () => {
     await expect(parentTasks.setParentTaskDueDate({
       organizationId: OTHER_ORG_ID,
       noteId: MESSAGE_NOTE,
+      athleteId: ATHLETE,
       dueDate: '2026-09-10',
       actorAccountId: COACH,
       actorRole: 'coach',
@@ -429,12 +459,12 @@ describe('who may put a due date on a message', () => {
 
   test('clearing the date leaves the task rather than deleting the record', async () => {
     await parentTasks.setParentTaskDueDate({
-      organizationId: ORG_ID, noteId: MESSAGE_NOTE, dueDate: '2026-09-10',
+      organizationId: ORG_ID, noteId: MESSAGE_NOTE, athleteId: ATHLETE, dueDate: '2026-09-10',
       actorAccountId: COACH, actorRole: 'coach',
     });
 
     const cleared = await parentTasks.setParentTaskDueDate({
-      organizationId: ORG_ID, noteId: MESSAGE_NOTE, dueDate: null,
+      organizationId: ORG_ID, noteId: MESSAGE_NOTE, athleteId: ATHLETE, dueDate: null,
       actorAccountId: COACH, actorRole: 'coach',
     });
 
@@ -445,11 +475,11 @@ describe('who may put a due date on a message', () => {
 describe('who may tick one off', () => {
   beforeEach(async () => {
     await parentTasks.setParentTaskDueDate({
-      organizationId: ORG_ID, noteId: MESSAGE_NOTE, dueDate: '2026-09-10',
+      organizationId: ORG_ID, noteId: MESSAGE_NOTE, athleteId: ATHLETE, dueDate: '2026-09-10',
       actorAccountId: COACH, actorRole: 'coach',
     });
     await parentTasks.setParentTaskDueDate({
-      organizationId: ORG_ID, noteId: OTHER_CHILD_NOTE, dueDate: '2026-09-11',
+      organizationId: ORG_ID, noteId: OTHER_CHILD_NOTE, athleteId: OTHER_ATHLETE, dueDate: '2026-09-11',
       actorAccountId: COACH, actorRole: 'coach',
     });
   });
@@ -530,7 +560,7 @@ describe('reading task state back onto messages', () => {
 
   test('returns due and done keyed by note', async () => {
     await parentTasks.setParentTaskDueDate({
-      organizationId: ORG_ID, noteId: MESSAGE_NOTE, dueDate: '2026-09-10',
+      organizationId: ORG_ID, noteId: MESSAGE_NOTE, athleteId: ATHLETE, dueDate: '2026-09-10',
       actorAccountId: COACH, actorRole: 'coach',
     });
     await parentTasks.setParentTaskCompletion({
@@ -547,7 +577,7 @@ describe('reading task state back onto messages', () => {
 
   test('does not reach another organization task state', async () => {
     await parentTasks.setParentTaskDueDate({
-      organizationId: ORG_ID, noteId: MESSAGE_NOTE, dueDate: '2026-09-10',
+      organizationId: ORG_ID, noteId: MESSAGE_NOTE, athleteId: ATHLETE, dueDate: '2026-09-10',
       actorAccountId: COACH, actorRole: 'coach',
     });
 

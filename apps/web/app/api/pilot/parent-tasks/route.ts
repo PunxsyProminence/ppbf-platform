@@ -50,16 +50,21 @@ export async function POST(request: NextRequest) {
     }
 
     /* The athlete gate BEFORE the note lookup, so a coach off this child's
-       roster is refused without learning whether the note exists. The module
-       then re-checks that the note is really this organization's and really a
-       parent message; between them a coach can only put a deadline on a
-       message to a family they already work with. */
+       roster is refused without learning whether the note exists.
+
+       An earlier version of this comment claimed that this check and the
+       module's note lookup together confined a coach to families they work
+       with. They did not: they were checks on two different objects, and
+       nothing tied the note to the athlete. setParentTaskDueDate now takes
+       the authorised athleteId and matches the note against it, so the
+       binding is in the module rather than in a claim made here. */
     await assertActorCanAccessAthlete(principal, athleteId);
 
     const dueDate = body?.due_date ?? null;
     const task = await setParentTaskDueDate({
       organizationId: principal.organizationId,
       noteId,
+      athleteId,
       dueDate,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
