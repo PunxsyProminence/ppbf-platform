@@ -530,15 +530,6 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'rather than reusing this route\'s shape.',
   ],
   [
-    'app/api/pilot/session-scripts/route.ts#GET',
-    'OPEN BY DESIGN to any authenticated role: a session script is the gym\'s '
-      + 'own teaching plan and carries no athlete data. What happened on a '
-      + 'given night DOES carry athlete data, and lives in '
-      + 'pilot.session_script_runs, which this route does not touch. '
-      + 'Organization from the session. If this route ever starts joining to '
-      + 'runs, this entry is the thing that has to be revisited.',
-  ],
-  [
     'app/api/pilot/shadow/data/route.ts#GET',
     'SELF-SCOPED. exportOwnShadowData(principal) lists only conversations '
       + 'where organization_id and account_id both match the caller, filters '
@@ -600,13 +591,6 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'hashed so it cannot be scraped for a roster, and there is no '
       + 'per-person number on it at all. Organization from the session, never '
       + 'the request.',
-  ],
-  [
-    'app/api/pilot/workout-templates/route.ts#GET',
-    'OPEN BY DESIGN to any authenticated role: a workout template carries no '
-      + 'athlete data. Organization from the session. Same reasoning as '
-      + 'session-scripts above, and the same thing to revisit if the payload '
-      + 'ever grows a join to an athlete.',
   ],
 ]);
 
