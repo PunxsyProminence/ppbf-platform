@@ -125,16 +125,10 @@ const MANIFEST_OWNERSHIP_PREFIXES = [
 
 const WORKFLOW_DIRECTORY = '.github/workflows';
 const LOCKFILE = 'package-lock.json';
+const ROOT_MANIFEST = 'package.json';
 
 /** The package that carries the Node API surface the compiler checks against. */
 const TYPES_PACKAGE = '@types/node';
-
-/** Manifests this module reads, if they exist. `packages/*` declares none. */
-const CANDIDATE_MANIFESTS = [
-  'package.json',
-  'apps/web/package.json',
-  'apps/research-bridge/package.json',
-];
 
 // ---------------------------------------------------------------------------
 // Parsing primitives. Exported so the contract test can drive them directly.
@@ -189,6 +183,55 @@ export function lockResolutionCandidates(workspaceDirectory) {
   }
 
   return candidates;
+}
+
+/**
+ * Every workspace manifest in the repository: the root, plus each directory a
+ * `workspaces` entry resolves to that actually contains a package.json.
+ *
+ * DISCOVERED, not listed. This used to be three hardcoded paths, which made
+ * manifests the one fail-OPEN leg of this module: Dockerfiles and workflows are
+ * read off disk and a new one that is not registered fails, but a new workspace
+ * declaring `engines.node` or `@types/node` for a major nothing runs was simply
+ * not looked at. A guard whose coverage depends on somebody remembering to add
+ * a path is a list, not a detector -- the same argument this module already
+ * makes about workflow ownership.
+ *
+ * Only the trailing-`*` form npm actually supports is expanded; an exact path
+ * is taken as written. Directories without a package.json are skipped, which is
+ * why `packages/*` contributes nothing today.
+ */
+export function discoverWorkspaceManifests(repositoryRoot, workspaces) {
+  const found = [ROOT_MANIFEST];
+  const patterns = Array.isArray(workspaces) ? workspaces : [];
+
+  for (const pattern of patterns) {
+    if (typeof pattern !== 'string' || pattern.includes('..')) continue;
+
+    const directories = [];
+
+    if (pattern.endsWith('/*')) {
+      const parent = pattern.slice(0, -2);
+      const absolute = path.join(repositoryRoot, parent);
+
+      if (fs.existsSync(absolute)) {
+        for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+          if (entry.isDirectory()) directories.push(path.posix.join(parent, entry.name));
+        }
+      }
+    } else if (!pattern.includes('*')) {
+      directories.push(pattern);
+    }
+
+    for (const directory of directories.sort()) {
+      const manifest = path.posix.join(directory, 'package.json');
+      if (fs.existsSync(path.join(repositoryRoot, manifest)) && !found.includes(manifest)) {
+        found.push(manifest);
+      }
+    }
+  }
+
+  return found;
 }
 
 /**
@@ -397,7 +440,26 @@ export function checkRuntimeParity(repositoryRoot) {
   const typesDeclarations = new Map();
   const workspaceManifests = [];
 
-  for (const relativePath of CANDIDATE_MANIFESTS) {
+  let rootWorkspaces = null;
+
+  if (exists(ROOT_MANIFEST)) {
+    try {
+      rootWorkspaces = JSON.parse(readText(ROOT_MANIFEST)).workspaces;
+    } catch {
+      // Reported below, when the same file fails to parse as a manifest.
+    }
+  }
+
+  const discoveredManifests = discoverWorkspaceManifests(repositoryRoot, rootWorkspaces);
+
+  if (!Array.isArray(rootWorkspaces)) {
+    fail(
+      `${ROOT_MANIFEST} declares no "workspaces" array, so no workspace manifest beyond `
+      + 'the root can be discovered and any of them could drift unmeasured.',
+    );
+  }
+
+  for (const relativePath of discoveredManifests) {
     if (!exists(relativePath)) continue;
 
     let manifest;

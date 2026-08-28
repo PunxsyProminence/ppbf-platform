@@ -81,10 +81,28 @@ function fixtureFiles(): string[] {
     .filter((file) => file.endsWith('.yml') || file.endsWith('.yaml'))
     .map((file) => path.posix.join('.github/workflows', file));
 
+  // Discovered the same way the module discovers them, so a new workspace in
+  // the real repository lands in the fixture without this list being edited.
+  const workspaces: string[] = JSON.parse(
+    fs.readFileSync(path.join(REPOSITORY_ROOT, 'package.json'), 'utf8'),
+  ).workspaces ?? [];
+
+  const manifests = ['package.json'];
+
+  for (const pattern of workspaces) {
+    if (!pattern.endsWith('/*')) continue;
+    const parent = path.join(REPOSITORY_ROOT, pattern.slice(0, -2));
+    if (!fs.existsSync(parent)) continue;
+
+    for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const manifest = path.posix.join(pattern.slice(0, -2), entry.name, 'package.json');
+      if (fs.existsSync(path.join(REPOSITORY_ROOT, manifest))) manifests.push(manifest);
+    }
+  }
+
   return [
-    'package.json',
-    'apps/web/package.json',
-    'apps/research-bridge/package.json',
+    ...manifests,
     // The lockfile decides which @types/node each workspace's compiler sees,
     // so a fixture without it cannot exercise the resolution check at all.
     'package-lock.json',
@@ -228,6 +246,52 @@ describe('reading a Node major out of a declaration', () => {
     expect(
       evaluate<(number | null)[]>(`${JSON.stringify(references)}.map(m.nodeMajorFromImage)`),
     ).toEqual([22, 24, 22, 22, 24, 22, null, null, null, null, null]);
+  });
+});
+
+describe('discovering which manifests exist at all', () => {
+  it('finds the root plus every workspace directory that has a manifest', () => {
+    const discovered = evaluate<string[]>(
+      `m.discoverWorkspaceManifests(${JSON.stringify(REPOSITORY_ROOT)}, ${JSON.stringify(
+        JSON.parse(fs.readFileSync(path.join(REPOSITORY_ROOT, 'package.json'), 'utf8')).workspaces,
+      )})`,
+    );
+
+    expect(discovered[0]).toBe('package.json');
+    expect(discovered).toEqual(expect.arrayContaining([
+      'apps/web/package.json',
+      'apps/research-bridge/package.json',
+    ]));
+
+    // Every entry is real, and a workspace directory carrying no manifest
+    // contributes nothing rather than a phantom path.
+    for (const manifest of discovered) {
+      expect(fs.existsSync(path.join(REPOSITORY_ROOT, manifest))).toBe(true);
+    }
+  });
+
+  it('expands only the trailing-* form npm supports, and refuses to escape the root', () => {
+    const root = makeFixture();
+
+    expect(evaluate<string[]>(`m.discoverWorkspaceManifests(${JSON.stringify(root)}, ['apps/*'])`))
+      .toEqual(expect.arrayContaining(['apps/web/package.json']));
+
+    // An exact path is taken as written.
+    expect(evaluate<string[]>(`m.discoverWorkspaceManifests(${JSON.stringify(root)}, ['apps/web'])`))
+      .toEqual(['package.json', 'apps/web/package.json']);
+
+    // Neither a mid-pattern star nor a traversal contributes anything.
+    for (const pattern of ['apps/*/deep', '../*', 'apps/../../*']) {
+      expect(
+        evaluate<string[]>(
+          `m.discoverWorkspaceManifests(${JSON.stringify(root)}, ${JSON.stringify([pattern])})`,
+        ),
+      ).toEqual(['package.json']);
+    }
+
+    // A non-array is not a crash; the caller reports it as a finding.
+    expect(evaluate<string[]>(`m.discoverWorkspaceManifests(${JSON.stringify(root)}, undefined)`))
+      .toEqual(['package.json']);
   });
 });
 
@@ -657,6 +721,70 @@ describe('mutations of the type surface the guard must catch', () => {
     const { problems } = check(root);
     expect(matching(problems, /ci\.yml:\d+ sets "node-version: 20"/)).toHaveLength(1);
     expect(matching(problems, /@types\/node/)).toHaveLength(0);
+  });
+});
+
+describe('a workspace nobody registered', () => {
+  // THE FAIL-OPEN LEG THIS SLICE CLOSED. Dockerfiles and workflows were always
+  // discovered from disk and fail closed when unregistered; manifests were a
+  // hardcoded list of three paths, so a new workspace on the wrong major was
+  // never looked at. Both cases below passed silently before.
+
+  it('a NEW app workspace on the wrong Node major is caught', () => {
+    const root = makeFixture();
+    write(
+      root,
+      'apps/newthing/package.json',
+      `${JSON.stringify({
+        name: 'newthing',
+        private: true,
+        engines: { node: '18.x' },
+        devDependencies: { '@types/node': '^18' },
+      }, null, 2)}\n`,
+    );
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /apps\/newthing\/package\.json declares engines\.node "18\.x" \(Node 18\)/),
+    ).toHaveLength(1);
+    expect(
+      matching(problems, /apps\/newthing\/package\.json declares @types\/node "\^18"/),
+    ).toHaveLength(1);
+  });
+
+  it('a NEW packages/* workspace is caught too, though that glob matches nothing today', () => {
+    // packages/* is declared in workspaces but contributes no manifest at
+    // present, so this is the case a hardcoded list would never have grown.
+    const root = makeFixture();
+    write(
+      root,
+      'packages/newlib/package.json',
+      `${JSON.stringify({ name: 'newlib', private: true, engines: { node: '20.x' } }, null, 2)}\n`,
+    );
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /packages\/newlib\/package\.json declares engines\.node "20\.x"/),
+    ).toHaveLength(1);
+  });
+
+  it('a new workspace declaring neither field is not invented into a finding', () => {
+    // Fail-closed must not mean noisy: a workspace with no Node opinion of its
+    // own inherits the hoisted types, and today those already match.
+    const root = makeFixture();
+    write(root, 'apps/quiet/package.json', `${JSON.stringify({ name: 'quiet', private: true }, null, 2)}\n`);
+
+    expect(check(root).problems).toEqual([]);
+  });
+
+  it('losing the workspaces array is itself a finding', () => {
+    const root = makeFixture();
+    deleteJson(root, 'package.json', ['workspaces']);
+
+    const { problems } = check(root);
+    expect(
+      matching(problems, /declares no "workspaces" array, so no workspace manifest beyond the root can be discovered/),
+    ).toHaveLength(1);
   });
 });
 
