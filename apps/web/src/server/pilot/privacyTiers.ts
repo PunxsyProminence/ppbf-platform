@@ -122,7 +122,14 @@ export const PRIVACY_TIERS: readonly PrivacyTier[] = [
 export interface FieldTierEntry {
   readonly tier: PrivacyTier;
   /** Where the assignment is enforced today. Checked for existence by privacyTiers.test.ts. */
-  readonly enforcedBy: string;
+  /**
+   * Every module that actually refuses -- a LIST, because a column can have
+   * more than one gate and naming only the first hides the others from
+   * whoever audits this registry. privacyTiers.test.ts resolves each entry
+   * and checks the symbol really exists, so a second enforcer named here is
+   * verified rather than asserted; one named only in `note` would not be.
+   */
+  readonly enforcedBy: readonly string[];
   /** Only where the tier alone under-describes the rule. */
   readonly note?: string;
 }
@@ -142,12 +149,12 @@ export interface FieldTierEntry {
 export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   'athletes.full_name': {
     tier: 'organization',
-    enforcedBy: 'wallDisplay.ts#resolveDisplayVisibility',
+    enforcedBy: ['wallDisplay.ts#resolveDisplayVisibility'],
     note: 'Reaches the public tier ONLY through a dated, guardian-signed consent row; defaults to initials.',
   },
   'athletes.dob': {
     tier: 'athlete_record',
-    enforcedBy: 'entities.ts#getAthletesForCoach',
+    enforcedBy: ['entities.ts#getAthletesForCoach'],
     note:
       'Per-relationship for coaches, and now real rather than aspirational: the roster list still names '
       + 'every athlete, but dob comes back only for the coach of record or the holder of an active '
@@ -160,7 +167,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'athletes.weight_class': {
     tier: 'organization',
-    enforcedBy: 'organizationScope.convention.test.ts',
+    enforcedBy: ['organizationScope.convention.test.ts'],
     note:
       'A record about a person\'s body; the public floor is separately held by the wall denylist '
       + '(wallOfNamesPrivacy.test.ts). Org-wide for staff through athletes/list, and left that way on '
@@ -170,14 +177,14 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'athletes.gym_status': {
     tier: 'organization',
-    enforcedBy: 'organizationScope.convention.test.ts',
+    enforcedBy: ['organizationScope.convention.test.ts'],
     note:
       'Public floor held by the wall denylist; org-wide for staff through athletes/list, kept that way '
       + 'deliberately in the same field split -- who is active is what a coach plans a floor from.',
   },
   'athletes.emergency_contact': {
     tier: 'athlete_record',
-    enforcedBy: 'entities.ts#getAthletesForCoach',
+    enforcedBy: ['entities.ts#getAthletesForCoach'],
     note:
       'A phone number belonging to somebody who never agreed to appear anywhere; forbidden on every '
       + 'public read (wall denylist). Per-relationship for coaches by the same field split as '
@@ -186,7 +193,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'account_profiles.photo_blob_path': {
     tier: 'minor_circle',
-    enforcedBy: 'profileVisibility.ts#decidePortrait',
+    enforcedBy: ['profileVisibility.ts#decidePortrait'],
     note:
       'photo_content_type and photo_review_state travel with it. The circle is applied '
       + 'per-relationship by profileDb.ts, which calls assertActorCanAccessAthlete FIRST and then '
@@ -194,34 +201,34 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'account_profiles.display_nickname': {
     tier: 'minor_circle',
-    enforcedBy: 'profileVisibility.ts#decideRingName',
+    enforcedBy: ['profileVisibility.ts#decideRingName'],
     note: 'The ring name travels with the face, so there is one answer to "who can see my kid\'s stuff".',
   },
   'sessions.rpe': {
     tier: 'athlete_record',
-    enforcedBy: 'access.ts#assertActorCanAccessAthlete',
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
   },
   'sessions.notes': {
     tier: 'athlete_record',
-    enforcedBy: 'access.ts#assertActorCanAccessAthlete',
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
     note: 'Free text a coach typed about a child.',
   },
   'waivers.signed_by_name': {
     tier: 'athlete_record',
-    enforcedBy: 'wallOfNamesPrivacy.test.ts',
+    enforcedBy: ['wallOfNamesPrivacy.test.ts'],
     note: 'The family\'s own paperwork; public gates need only type, status, signer ROLE, and date.',
   },
   'waivers.notes': {
     tier: 'athlete_record',
-    enforcedBy: 'wallOfNamesPrivacy.test.ts',
+    enforcedBy: ['wallOfNamesPrivacy.test.ts'],
   },
   'medical_intake.clearance_status': {
     tier: 'athlete_record',
-    enforcedBy: 'wallOfNamesPrivacy.test.ts',
+    enforcedBy: ['wallOfNamesPrivacy.test.ts'],
   },
   'athlete_development_block_objectives.objective': {
     tier: 'athlete_record',
-    enforcedBy: 'athleteDevelopmentBlockObjectives.ts#getBlockObjective',
+    enforcedBy: ['athleteDevelopmentBlockObjectives.ts#getBlockObjective'],
     note:
       'A coach-authored sentence about one athlete\'s development, including -- since the owner '
       + 'decision of 2026-08-28 that admitted the nutrition_body_composition domain -- body-composition '
@@ -260,7 +267,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'athlete_development_blocks.training_emphasis': {
     tier: 'athlete_record',
-    enforcedBy: 'athleteDevelopmentBlocks.ts#getDevelopmentBlock',
+    enforcedBy: ['athleteDevelopmentBlocks.ts#getDevelopmentBlock'],
     note:
       'The coach\'s own words about what a multi-week block is for, stored verbatim and read back '
       + 'verbatim. Nothing parses, classifies or scores it. Listed separately from the objective field '
@@ -285,7 +292,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'goals.category': {
     tier: 'athlete_record',
-    enforcedBy: 'contracts.ts#GOAL_CATEGORIES',
+    enforcedBy: ['contracts.ts#GOAL_CATEGORIES'],
     note:
       'Weight Loss / Weight Gain were withheld from the vocabulary until 2026-08-28 and are now '
       + 'admitted: the explicit owner decision this note said the registry "makes possible and '
@@ -298,7 +305,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'feedback_submissions.body': {
     tier: 'organization',
-    enforcedBy: 'feedback.ts#PLATFORM_FEEDBACK_SQL',
+    enforcedBy: ['feedback.ts#PLATFORM_FEEDBACK_SQL'],
     note:
       'Diverges from the tier in BOTH directions, and both are deliberate. Stricter: a safeguarding '
       + 'body is org-admin triage only, nulled for the platform owner, never quoted outside the queue '
@@ -308,46 +315,53 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'safety_escalations.source_type': {
     tier: 'athlete_record',
-    enforcedBy: 'escalationLadder.ts#listEscalations',
+    enforcedBy: ['escalationLadder.ts#listEscalations'],
     note:
       'athlete_voice rows are stricter than the tier says: excluded from every coach-scoped read, '
       + 'because their existence alone says a child said something and the coach may be who it is about.',
   },
   'scheduler_attendance.checked_in_by_account_id': {
     tier: 'organization',
-    enforcedBy: 'wallDisplayPrivacy.test.ts',
+    enforcedBy: ['wallDisplayPrivacy.test.ts'],
     note: 'Who checked a child in is staff bookkeeping; it never reaches a public surface.',
   },
   'scheduler_attendance.checked_in_by_role': {
     tier: 'organization',
-    enforcedBy: 'wallDisplayPrivacy.test.ts',
+    enforcedBy: ['wallDisplayPrivacy.test.ts'],
     note: 'Which KIND of staff checked a child in is the same bookkeeping as who; never public.',
   },
   'training_holds.reason_text': {
     tier: 'organization',
-    enforcedBy: '../../../app/api/pilot/training-holds/route.ts#athleteFacing',
+    enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],
     note:
       'Staff-facing detail behind a hold. The athlete and their guardians read the athlete-safe '
       + 'projection (explanation, lift condition, scope) and never this field.',
   },
   'training_holds.athlete_explanation': {
     tier: 'athlete_record',
-    enforcedBy: '../../../app/api/pilot/training-holds/route.ts#athleteFacing',
+    enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],
     note: 'Written FOR the athlete: age-appropriate, non-punitive, required at placement.',
   },
   'training_holds.reason_category': {
     tier: 'organization',
-    enforcedBy: '../../../app/api/pilot/training-holds/route.ts#athleteFacing',
+    enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],
     note: "A 'medical' category is a health signal; it stays off the athlete-safe projection with the rest.",
   },
   'scheduler_attendance.note': {
     tier: 'organization',
-    enforcedBy: 'attendanceReporting.ts#getClassAttendanceRoster',
+    enforcedBy: [
+      'attendanceReporting.ts#getClassAttendanceRoster',
+      '../../../app/api/pilot/scheduler/route.ts#familyAttendance',
+    ],
     note:
       'Free text a coach typed about a child. Honest, not aspirational: reads are bounded to '
-      + 'class-owning coaches and org admins today, which is class scope, not per-athlete scope -- '
-      + 'so the enforced tier is organization. The public floor is separately held by the wall '
-      + 'denylist (bare \'note\' in the forbidden columns).',
+      + 'class-owning coaches and org admins, which is class scope, not per-athlete scope -- so '
+      + 'the enforced tier is organization. The public floor is separately held by the wall '
+      + 'denylist (bare \'note\' in the forbidden columns).\n\n'
+      + 'TWO GATES, NOT ONE. GET /api/pilot/scheduler is a second reader this entry named for a '
+      + 'while and did not: it returned the column to parents and athletes until familyAttendance '
+      + 'was added. That is why enforcedBy is a list -- an auditor reading only the first name '
+      + 'would have checked the gate that was already right and missed the one that was not.',
   },
 };
 
