@@ -1,6 +1,10 @@
 import { query, queryOne } from './db';
-import { ValidationError } from './errors';
-import type { AthleteDevelopmentBlockRow } from './athleteDevelopmentBlocks';
+import {
+  updateDevelopmentBlock,
+  type AthleteDevelopmentBlockRow,
+  type DevelopmentBlockTargetInput,
+  type DevelopmentBlockTargetKind,
+} from './athleteDevelopmentBlocks';
 import type { CompetitionStatus } from './externalCompetition';
 import type { LeagueEventStatus } from './wrestlingLeague';
 
@@ -22,14 +26,10 @@ import type { LeagueEventStatus } from './wrestlingLeague';
  * as skeletal as the owner decision left them.
  */
 
-export type DevelopmentBlockTargetKind = 'competition' | 'wrestling_event';
-
-/** What the caller asks for. 'none' is how a target is cleared -- explicitly,
- *  rather than by omitting a field and hoping the write path reads that as a
- *  clear rather than as "leave it alone". */
-export type DevelopmentBlockTargetInput =
-  | { kind: 'none' }
-  | { kind: DevelopmentBlockTargetKind; id: string };
+/* Both types live on athleteDevelopmentBlocks, with the row and the write
+   that owns them, and are re-exported here so a caller reading about targets
+   finds them where it is looking. One declaration, two names for it. */
+export type { DevelopmentBlockTargetInput, DevelopmentBlockTargetKind };
 
 /**
  * A resolved target, in the shape the order asks a coach to be shown.
@@ -201,11 +201,11 @@ export async function listDevelopmentBlockTargetOptions(
 /**
  * Points a block at one event, or clears its target.
  *
- * Deliberately its own function rather than two more optional fields on the
- * block patch. Clearing a target and leaving it alone are different
- * intentions that a nullable patch field cannot tell apart, and "at most
- * one" is a rule with one enforcement point here rather than one per write
- * path. The database holds the same rule underneath.
+ * Kept as its own function for callers whose whole intention is the target,
+ * but it is a thin call onto updateDevelopmentBlock rather than a second
+ * write: see below. Clearing a target and leaving it alone stay different
+ * intentions -- `{ kind: 'none' }` against an omitted field -- which is why
+ * the input is a value rather than a nullable column.
  *
  * Returns null for a block in another organization, or one that does not
  * exist -- indistinguishable, so this cannot be used to probe for either.
@@ -216,31 +216,15 @@ export async function setDevelopmentBlockTarget(
   blockId: string,
   target: DevelopmentBlockTargetInput,
 ): Promise<AthleteDevelopmentBlockRow | null> {
-  if (target.kind !== 'none' && !target.id?.trim()) {
-    throw new ValidationError(
-      'A development block target needs the id of the competition or event it names.',
-      'DEVELOPMENT_BLOCK_TARGET_INVALID',
-    );
-  }
+  /* Delegates rather than writing its own UPDATE. Two statements that both
+     move this row are two things to keep in step, and the one that mattered
+     was atomicity: a target write separate from the field write left a caller
+     told "that failed" looking at a row whose title and dates had already
+     changed. One write path, one enforcement point.
 
-  const competitionId = target.kind === 'competition' ? target.id.trim() : null;
-  const wrestlingEventId = target.kind === 'wrestling_event' ? target.id.trim() : null;
-
-  /* The composite foreign keys are what prove the named event exists AND
-     belongs to this organization, so there is no pre-check here that could
-     drift out of step with them. A bad id raises a foreign-key violation
-     rather than being silently accepted, and the route turns that into a
-     refusal the coach can read. */
-  return queryOne<AthleteDevelopmentBlockRow>(
-    `update pilot.athlete_development_blocks
-     set target_competition_id = $3,
-         target_wrestling_event_id = $4,
-         updated_at = now()
-     where organization_id = $1 and block_id = $2
-     returning organization_id, block_id, athlete_id, title, training_emphasis,
-               starts_on::text as starts_on, ends_on::text as ends_on, status,
-               target_competition_id, target_wrestling_event_id,
-               created_by_account_id, created_at, updated_at`,
-    [organizationId, blockId, competitionId, wrestlingEventId],
-  );
+     The composite foreign keys are still what prove the named event exists
+     AND belongs to this organization, so there is no pre-check here that
+     could drift out of step with them. A bad id raises a foreign-key
+     violation and the whole statement rolls back, fields included. */
+  return updateDevelopmentBlock(organizationId, blockId, { target });
 }

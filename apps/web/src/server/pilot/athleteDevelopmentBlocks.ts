@@ -279,6 +279,9 @@ export async function setDevelopmentBlockStatus(
  *                    preserved; the way to preserve it is to have no path
  *                    that writes it twice.
  *
+ * It DOES move the competition/event target, because that lives on this row
+ * and a separate statement for it was a second chance to half-succeed.
+ *
  * Every field is optional and an omitted one is left alone, so a caller
  * correcting an end date cannot blank an emphasis by not mentioning it --
  * the failure a whole-row PUT has by construction.
@@ -291,12 +294,37 @@ export async function setDevelopmentBlockStatus(
  * Returns null for a block in another organization -- or one that does not
  * exist -- so this cannot be used to probe for either.
  */
+export type DevelopmentBlockTargetKind = 'competition' | 'wrestling_event';
+
+/**
+ * What a block is preparing for, as a caller states it.
+ *
+ * Declared here rather than beside the resolver so that this module -- which
+ * owns the row and therefore the write -- can accept it without importing
+ * from a module that already imports from this one. `{ kind: 'none' }` is an
+ * explicit clear, which is why it is a value rather than a null: on a patch,
+ * null and absent cannot both be distinguishable.
+ */
+export type DevelopmentBlockTargetInput =
+  | { kind: 'none' }
+  | { kind: DevelopmentBlockTargetKind; id: string };
+
 export interface DevelopmentBlockPatch {
   title?: string;
   trainingEmphasis?: string;
   startsOn?: string;
   endsOn?: string;
   status?: DevelopmentBlockStatus;
+  /**
+   * Omitted leaves the block's target alone; `{ kind: 'none' }` clears it.
+   *
+   * Carried on the patch, and therefore written by the SAME single UPDATE as
+   * the fields, because two statements are two chances to half-succeed. A
+   * caller told "that failed" while the title, dates and updated_at already
+   * moved will retry, and the retry is not idempotent against a plan a coach
+   * wrote. Found by review on #771, where this was two calls.
+   */
+  target?: DevelopmentBlockTargetInput;
 }
 
 export async function updateDevelopmentBlock(
@@ -316,11 +344,35 @@ export async function updateDevelopmentBlock(
   };
 
   // The same rules the create path runs, applied to what the row will BE.
+  // Every refusal happens BEFORE the statement below, so a rejected patch
+  // leaves the stored row untouched rather than half-applied.
   const shapeError = developmentBlockShapeError(merged);
   if (shapeError) {
     throw new ValidationError(shapeError, 'DEVELOPMENT_BLOCK_INVALID');
   }
 
+  if (patch.target && patch.target.kind !== 'none' && !patch.target.id?.trim()) {
+    throw new ValidationError(
+      'A development block target needs the id of the competition or event it names.',
+      'DEVELOPMENT_BLOCK_TARGET_INVALID',
+    );
+  }
+
+  /* An omitted target keeps whatever the row already names; a stated one
+     replaces it. Computed here rather than in the SQL so the two columns are
+     always written as a pair -- the database's single-target check is the
+     backstop, not the mechanism. */
+  const competitionId = patch.target
+    ? (patch.target.kind === 'competition' ? patch.target.id.trim() : null)
+    : existing.target_competition_id;
+  const wrestlingEventId = patch.target
+    ? (patch.target.kind === 'wrestling_event' ? patch.target.id.trim() : null)
+    : existing.target_wrestling_event_id;
+
+  /* ONE statement for the fields and the target together. They used to be two
+     calls in the route, and a target that failed its foreign key left the
+     title, dates, status and updated_at already committed -- a caller told the
+     request failed, looking at a row that had moved. */
   return queryOne<AthleteDevelopmentBlockRow>(
     `update pilot.athlete_development_blocks
      set title = $3,
@@ -328,6 +380,8 @@ export async function updateDevelopmentBlock(
          starts_on = $5::date,
          ends_on = $6::date,
          status = $7,
+         target_competition_id = $8,
+         target_wrestling_event_id = $9,
          updated_at = now()
      where organization_id = $1 and block_id = $2
      returning ${FIELDS}`,
@@ -339,6 +393,8 @@ export async function updateDevelopmentBlock(
       merged.startsOn,
       merged.endsOn,
       merged.status ?? existing.status,
+      competitionId,
+      wrestlingEventId,
     ],
   );
 }

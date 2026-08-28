@@ -402,6 +402,7 @@ describe('editing a block', () => {
     expect(response.status).toBe(403);
     expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-not-mine');
     expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockSetTarget).not.toHaveBeenCalled();
   });
 
   test('an athlete_id in the patch body never reaches the update', async () => {
@@ -554,7 +555,7 @@ describe('naming what a block is preparing for', () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGet.mockResolvedValue(block({ athlete_id: 'ath-1' }));
     mockAssertAccess.mockResolvedValue(undefined);
-    mockSetTarget.mockResolvedValue(block({ target_competition_id: 'comp-1' }));
+    mockUpdate.mockResolvedValue(block({ target_competition_id: 'comp-1' }));
 
     const response = await PATCH(patchRequest({
       block_id: 'blk-1',
@@ -563,7 +564,47 @@ describe('naming what a block is preparing for', () => {
 
     expect(response.status).toBe(200);
     expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-1');
-    expect(mockSetTarget).toHaveBeenCalledWith('org-1', 'blk-1', { kind: 'competition', id: 'comp-1' });
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'competition', id: 'comp-1' } });
+  });
+
+  test('fields and target go in ONE write, so neither can land without the other', async () => {
+    /* They were two calls until review on #771. A target that failed its
+       foreign key left the field changes committed and the caller was told
+       the request failed -- then retried, against a row that had moved. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockUpdate.mockResolvedValue(block({ title: 'Renamed', target_competition_id: 'comp-1' }));
+
+    await PATCH(patchRequest({
+      block_id: 'blk-1',
+      title: 'Renamed',
+      target: { kind: 'competition', id: 'comp-1' },
+    }));
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', {
+      title: 'Renamed',
+      target: { kind: 'competition', id: 'comp-1' },
+    });
+    expect(mockSetTarget).not.toHaveBeenCalled();
+  });
+
+  test('a malformed target is refused BEFORE the field write, not after it', async () => {
+    // The exact reported defect: good fields plus a bad target used to commit
+    // the fields and then 400.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGet.mockResolvedValue(block());
+    mockAssertAccess.mockResolvedValue(undefined);
+
+    const response = await PATCH(patchRequest({
+      block_id: 'blk-1',
+      title: 'Renamed',
+      target: { kind: 'olympics', id: 'x' },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   test('a coach who cannot reach the block\'s athlete cannot retarget it', async () => {
@@ -577,21 +618,21 @@ describe('naming what a block is preparing for', () => {
     }));
 
     expect(response.status).toBe(403);
-    expect(mockSetTarget).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   test('a wrestling event is an equally valid target', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGet.mockResolvedValue(block());
     mockAssertAccess.mockResolvedValue(undefined);
-    mockSetTarget.mockResolvedValue(block({ target_wrestling_event_id: 'evt-1' }));
+    mockUpdate.mockResolvedValue(block({ target_wrestling_event_id: 'evt-1' }));
 
     await PATCH(patchRequest({
       block_id: 'blk-1',
       target: { kind: 'wrestling_event', id: 'evt-1' },
     }));
 
-    expect(mockSetTarget).toHaveBeenCalledWith('org-1', 'blk-1', { kind: 'wrestling_event', id: 'evt-1' });
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'wrestling_event', id: 'evt-1' } });
   });
 
   test('null clears the target, and is not confused with not mentioning it', async () => {
@@ -600,11 +641,11 @@ describe('naming what a block is preparing for', () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGet.mockResolvedValue(block({ target_competition_id: 'comp-1' }));
     mockAssertAccess.mockResolvedValue(undefined);
-    mockSetTarget.mockResolvedValue(block());
+    mockUpdate.mockResolvedValue(block());
 
     await PATCH(patchRequest({ block_id: 'blk-1', target: null }));
 
-    expect(mockSetTarget).toHaveBeenCalledWith('org-1', 'blk-1', { kind: 'none' });
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { target: { kind: 'none' } });
   });
 
   test('a patch that never mentions a target leaves it alone', async () => {
@@ -615,7 +656,8 @@ describe('naming what a block is preparing for', () => {
 
     await PATCH(patchRequest({ block_id: 'blk-1', title: 'Renamed' }));
 
-    expect(mockSetTarget).not.toHaveBeenCalled();
+    // No `target` key on the patch at all -- the block keeps what it names.
+    expect(mockUpdate).toHaveBeenCalledWith('org-1', 'blk-1', { title: 'Renamed' });
   });
 
   test.each([
@@ -634,7 +676,7 @@ describe('naming what a block is preparing for', () => {
     const response = await PATCH(patchRequest({ block_id: 'blk-1', target: value }));
 
     expect(response.status).toBe(400);
-    expect(mockSetTarget).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   test('a resolved target rides back with the block, as a name and a date', async () => {

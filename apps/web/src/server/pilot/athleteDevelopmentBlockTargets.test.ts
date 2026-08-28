@@ -206,51 +206,97 @@ describe('the picker of possible targets', () => {
 });
 
 describe('setting and clearing a target', () => {
-  test('a competition writes one column and nulls the other', async () => {
-    mockQueryOne.mockResolvedValue({ block_id: 'blk-1' });
+  /* setDevelopmentBlockTarget now delegates to updateDevelopmentBlock rather
+     than issuing its own UPDATE, so what is asserted here is the delegation
+     and the ONE-statement property it buys. The two used to be separate
+     writes, and a target that failed its foreign key left the field changes
+     committed while the caller was told the request failed (review, #771). */
+  const blockRow = {
+    organization_id: 'org-1',
+    block_id: 'blk-1',
+    athlete_id: 'ath-1',
+    title: 'Autumn block',
+    training_emphasis: 'Guard recovery.',
+    starts_on: '2026-09-01',
+    ends_on: '2026-11-10',
+    status: 'draft',
+    target_competition_id: null,
+    target_wrestling_event_id: null,
+    created_by_account_id: 'acct-coach',
+    created_at: 'x',
+    updated_at: 'x',
+  };
+
+  /** queryOne is called twice by the real update: the read-back, then the
+   *  write. This returns the row for both. */
+  function stubRow() {
+    mockQueryOne.mockResolvedValue({ ...blockRow });
+  }
+
+  /** The UPDATE, as opposed to the getDevelopmentBlock read before it. */
+  function writeCall() {
+    return mockQueryOne.mock.calls.find((call) => String(call[0]).includes('update pilot.athlete_development_blocks'));
+  }
+
+  test('a competition writes one column and nulls the other, in one statement', async () => {
+    stubRow();
 
     await setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'competition', id: 'comp-1' });
 
-    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'blk-1', 'comp-1', null]);
+    const write = writeCall();
+    expect(write).toBeDefined();
+    expect(write?.[1]).toEqual(expect.arrayContaining(['comp-1']));
+    expect(String(write?.[0])).toMatch(/target_competition_id = \$8/);
+    expect(String(write?.[0])).toMatch(/target_wrestling_event_id = \$9/);
+    // One UPDATE, not two: fields and target move together or not at all.
+    const updates = mockQueryOne.mock.calls.filter((call) =>
+      String(call[0]).includes('update pilot.athlete_development_blocks'));
+    expect(updates).toHaveLength(1);
   });
 
   test('a wrestling event writes the other column', async () => {
-    mockQueryOne.mockResolvedValue({ block_id: 'blk-1' });
+    stubRow();
 
     await setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'wrestling_event', id: 'evt-1' });
 
-    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'blk-1', null, 'evt-1']);
+    const params = writeCall()?.[1] as unknown[];
+    expect(params[7]).toBeNull();
+    expect(params[8]).toBe('evt-1');
   });
 
   test("'none' clears both columns", async () => {
-    mockQueryOne.mockResolvedValue({ block_id: 'blk-1' });
+    stubRow();
 
     await setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'none' });
 
-    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'blk-1', null, null]);
+    const params = writeCall()?.[1] as unknown[];
+    expect(params[7]).toBeNull();
+    expect(params[8]).toBeNull();
   });
 
-  test('a blank id is refused rather than written as an empty target', async () => {
+  test('a blank id is refused, and nothing is written at all', async () => {
+    // Refused before the UPDATE, so the block's own fields do not move either.
+    mockQueryOne.mockResolvedValue({ ...blockRow });
+
     await expect(setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'competition', id: '   ' }))
       .rejects.toBeInstanceOf(ValidationError);
-    expect(mockQueryOne).not.toHaveBeenCalled();
+
+    expect(writeCall()).toBeUndefined();
   });
 
-  test('a block in another organization is not found, and nothing is written elsewhere', async () => {
+  test('a block in another organization is not found, and nothing is written', async () => {
     mockQueryOne.mockResolvedValue(null);
 
     expect(await setDevelopmentBlockTarget('org-mine', 'blk-elsewhere', { kind: 'none' })).toBeNull();
-    expect(mockQueryOne.mock.calls[0][1][0]).toBe('org-mine');
+    expect(writeCall()).toBeUndefined();
   });
 
   test('the write touches neither the athlete nor the creator', async () => {
-    // A block does not change which child it is about, and who authored it is
-    // a fact about the past.
-    mockQueryOne.mockResolvedValue({ block_id: 'blk-1' });
+    stubRow();
 
     await setDevelopmentBlockTarget('org-1', 'blk-1', { kind: 'competition', id: 'comp-1' });
 
-    const sql = String(mockQueryOne.mock.calls[0][0]);
+    const sql = String(writeCall()?.[0]);
     const setClause = sql.slice(sql.indexOf('set'), sql.indexOf('where'));
     expect(setClause).not.toMatch(/athlete_id/);
     expect(setClause).not.toMatch(/created_by/);

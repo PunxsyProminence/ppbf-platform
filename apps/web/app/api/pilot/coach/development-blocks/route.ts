@@ -20,7 +20,6 @@ import type { PilotRole } from '@/src/server/pilot/contracts';
 import {
   listDevelopmentBlockTargetOptions,
   resolveDevelopmentBlockTarget,
-  setDevelopmentBlockTarget,
   type DevelopmentBlockTargetInput,
   type ResolvedDevelopmentBlockTarget,
 } from '@/src/server/pilot/athleteDevelopmentBlockTargets';
@@ -274,6 +273,15 @@ export async function PATCH(request: NextRequest) {
       throw new ValidationError(`Unknown block status '${status}'.`, 'DEVELOPMENT_BLOCK_INVALID');
     }
 
+    /* PARSED BEFORE ANY WRITE. It used to be parsed after the field update
+       had already committed, so a patch carrying good fields and a malformed
+       target returned 400 with the title, dates, status and updated_at
+       already moved -- and the caller, told it failed, would retry. Found by
+       review on #771. */
+    const target = Object.prototype.hasOwnProperty.call(body, 'target')
+      ? parseTargetInput(body.target)
+      : undefined;
+
     const patch: DevelopmentBlockPatch = {
       ...(trimmedString(body.title) !== undefined ? { title: trimmedString(body.title) } : {}),
       ...(trimmedString(body.training_emphasis) !== undefined
@@ -282,31 +290,20 @@ export async function PATCH(request: NextRequest) {
       ...(trimmedString(body.starts_on) !== undefined ? { startsOn: trimmedString(body.starts_on) } : {}),
       ...(trimmedString(body.ends_on) !== undefined ? { endsOn: trimmedString(body.ends_on) } : {}),
       ...(status ? { status: status as DevelopmentBlockStatus } : {}),
+      // Omitted when the caller said nothing about it, so the block keeps the
+      // target it has. Written by the SAME statement as the fields.
+      ...(target ? { target } : {}),
     };
 
-    let block = await updateDevelopmentBlock(principal.organizationId, blockId, patch);
+    /* ONE write for the fields and the target together. These were two calls
+       until review on #771 pointed out what that costs: a target that failed
+       its foreign key left the field changes committed, and the caller was
+       told the request failed. Now either the whole patch lands or none of
+       it does, and the database's own single-target check is the backstop
+       rather than the mechanism. */
+    const block = await updateDevelopmentBlock(principal.organizationId, blockId, patch);
     if (!block) {
       return NextResponse.json({ error: 'Development block not found.' }, { status: 404 });
-    }
-
-    /* The competition/event target, set or cleared only when the caller
-       actually said something about it. An absent `target` key leaves the
-       block's target exactly as it was -- the same omitted-means-unchanged
-       rule the field patch above follows, and the reason target is its own
-       key rather than two nullable columns in the patch: `null` has to be
-       able to mean "clear this", which it cannot when null is also how a
-       field says "I did not mention it". */
-    if (Object.prototype.hasOwnProperty.call(body, 'target')) {
-      const target = parseTargetInput(body.target);
-      const retargeted = await setDevelopmentBlockTarget(
-        principal.organizationId,
-        blockId,
-        target,
-      );
-      if (!retargeted) {
-        return NextResponse.json({ error: 'Development block not found.' }, { status: 404 });
-      }
-      block = retargeted;
     }
 
     return NextResponse.json({
