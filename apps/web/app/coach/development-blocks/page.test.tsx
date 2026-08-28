@@ -79,6 +79,11 @@ interface Stubs {
   objectiveLinks?: Array<Record<string, unknown>>;
   objectiveWriteOk?: boolean;
   objectiveWriteError?: string;
+  reviewReadOk?: boolean;
+  reviews?: Array<Record<string, unknown>>;
+  evidence?: Array<Record<string, unknown>>;
+  reviewWriteOk?: boolean;
+  reviewWriteError?: string;
   /** Delays the write response, so a second click lands while the first is in
       flight. Without this a double-submit test proves nothing. */
   holdWrite?: () => Promise<void>;
@@ -110,6 +115,33 @@ function objectiveRow(overrides: Record<string, unknown> = {}) {
     domain: 'technical',
     objective: 'Stop drifting to the ropes.',
     status: 'active',
+    ...overrides,
+  };
+}
+
+function evidenceRow(overrides: Record<string, unknown> = {}) {
+  return {
+    key: 'training_attempts',
+    label: 'Training attempts recorded',
+    recorded: 0,
+    undated: 0,
+    recent: [],
+    ...overrides,
+  };
+}
+
+function reviewRow(overrides: Record<string, unknown> = {}) {
+  return {
+    review_id: 'rev-1',
+    block_id: 'blk-1',
+    adherence_state: 'under_delivered',
+    deviations: '',
+    reason: '',
+    what_worked: '',
+    what_did_not: '',
+    next_adjustment: '',
+    reviewed_by_account_id: 'acct-coach-a',
+    created_at: '2026-10-14T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -167,6 +199,28 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
         json: async () => (stubs.writeOk === false
           ? { error: stubs.writeError ?? 'refused' }
           : { ok: true, block: blockRow() }),
+      } as Response;
+    }
+    if (url.includes('/api/pilot/coach/block-review')) {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        return {
+          ok: stubs.reviewReadOk ?? true,
+          status: stubs.reviewReadOk === false ? 503 : 200,
+          json: async () => ({
+            ok: true,
+            reviews: stubs.reviews ?? [],
+            evidence: stubs.evidence ?? [],
+          }),
+        } as Response;
+      }
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      return {
+        ok: stubs.reviewWriteOk ?? true,
+        status: stubs.reviewWriteOk === false ? 400 : 201,
+        json: async () => (stubs.reviewWriteOk === false
+          ? { error: stubs.reviewWriteError ?? 'refused' }
+          : { ok: true, review: reviewRow() }),
       } as Response;
     }
     if (url.includes('/api/pilot/coach/session-objective-links')) {
@@ -1170,5 +1224,250 @@ describe('marking the objectives a session addressed', () => {
     // Silence, not a finding. A block with no objectives recorded is not a
     // block whose domains were neglected.
     expect(document.body.textContent ?? '').not.toMatch(/no objectives|missing|gap|neglect/i);
+  });
+});
+
+/*
+ * PLAN VERSUS WHAT WAS ACTUALLY RECORDED.
+ *
+ * The slice the two panels above deliberately stopped short of, and the one
+ * place in this lane where a number could plausibly be assembled: a plan and a
+ * record of activity are on screen together for the first time. Four
+ * properties are worth asserting here and the rest belongs to the route and to
+ * Postgres:
+ *
+ *   1. counts are of RECORDS and never of a plan. "3 recorded" is a fact about
+ *      the database; "3 of 12 delivered" would be a fact about a coach, and
+ *      there is no denominator anywhere that could honestly produce one.
+ *   2. a zero renders as a zero and never as a finding. Nothing recorded means
+ *      nobody wrote anything down.
+ *   3. a failed read renders as a failure. This is the surface where that
+ *      matters most: six silent zeroes are indistinguishable from an athlete
+ *      with nothing logged.
+ *   4. the judgement is the coach's. No state is pre-selected from the counts,
+ *      nothing is drafted for them, and reviews accumulate rather than being
+ *      edited.
+ */
+describe('plan versus what was recorded', () => {
+  test('each source is a count of records, with no figure derived from them', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      evidence: [
+        evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 3 }),
+        evidenceRow({ key: 'training_attempts', recorded: 12 }),
+      ],
+    });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText('Sessions linked to this block: 3 recorded')).toBeTruthy();
+    expect(screen.getByText('Training attempts recorded: 12 recorded')).toBeTruthy();
+
+    const body = document.body.textContent ?? '';
+    /* The two shapes this refuses, and the reason each is refused. "3 of 12"
+       needs a denominator nothing here has; a percentage would be a machine's
+       verdict on a coach's work with a child, believed precisely because it
+       looked measured. */
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/on track|behind schedule|compliance/i);
+    /* And the positive half, which is the one that would silently rot: every
+       number this panel shows carries the word saying what it is a count OF.
+       A bare "3" beside "Sessions linked to this block" reads as three
+       sessions' worth of a plan; "3 recorded" reads as three rows. */
+    for (const count of ['3 recorded', '12 recorded']) {
+      expect(body).toContain(count);
+    }
+    expect(document.querySelectorAll('progress')).toHaveLength(0);
+    expect(document.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+  });
+
+  test('rows no window can place are shown apart from the count, not folded into it', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      evidence: [
+        evidenceRow({ key: 'assessments', label: 'Assessments administered', recorded: 2, undated: 3 }),
+        evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 1, undated: 0 }),
+      ],
+    });
+    await pickAthlete('ath-1');
+
+    /* An assessment scheduled and never administered has no date, so no
+       window contains it. Counting it would claim a test happened; dropping
+       it would hide three records a coach is looking for. Two counts, said
+       separately. */
+    expect(screen.getByText('Assessments administered: 2 recorded')).toBeTruthy();
+    expect(screen.getByText(/3 more on record with no date/i)).toBeTruthy();
+    // And a source with none says nothing, rather than "0 more on record".
+    expect(document.body.textContent ?? '').not.toMatch(/0 more on record/);
+  });
+
+  test('a zero is shown as a zero, with the reading it does NOT support said out loud', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      evidence: [evidenceRow({ key: 'activity_log', label: 'Activity entries recorded', recorded: 0 })],
+    });
+    await pickAthlete('ath-1');
+
+    // The source is still on screen saying zero. Dropping empty sources would
+    // turn "nobody recorded anything" into a source that does not exist.
+    expect(screen.getByText('Activity entries recorded: 0 recorded')).toBeTruthy();
+    /* The zero is stated AND the reading it does not support is stated with
+       it. The denial has to be on screen rather than in a comment: a coach
+       looking at a column of zeroes will draw a conclusion, and the only
+       place to stop the wrong one is next to the zeroes. */
+    expect(screen.getByText(/nobody wrote anything down/i)).toBeTruthy();
+    expect(screen.getByText(/not a statement that the athlete did not train/i)).toBeTruthy();
+    // And no word that would turn the zero into a finding on its own.
+    expect(document.body.textContent ?? '').not.toMatch(/\bgap\b|\bmissing\b|\bneglect/i);
+  });
+
+  test('a failed read is not rendered as an athlete who recorded nothing', async () => {
+    await renderPage({ blocks: [blockRow()], reviewReadOk: false });
+    await pickAthlete('ath-1');
+
+    /* THE HONESTY RULE at the surface where breaking it looks most like
+       insight: six zeroes from a failed read and six zeroes from an empty
+       record are the same picture, and only one of them is true. */
+    expect(screen.getByText(/record for this block could not be read/i)).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toMatch(/0 recorded/);
+  });
+
+  test('the form opens undecided and nothing pre-selects a state from the counts', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      evidence: [evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 0 })],
+    });
+    await pickAthlete('ath-1');
+
+    /* Zero sessions recorded and the state still reads 'unknown'. A page that
+       read the counts and chose 'not_delivered' would be the machine making
+       the judgement the order reserves for a human -- and it would be wrong
+       whenever the real cause was that nobody filled the log in. */
+    const select = screen.getByLabelText('How did it go') as HTMLSelectElement;
+    expect(select.value).toBe('unknown');
+    // And no drafted words anywhere in the fields the coach must write.
+    for (const label of ['What departed from the plan', 'Why', 'What worked', 'What did not', 'What you will adjust']) {
+      expect((screen.getByLabelText(label) as HTMLTextAreaElement).value).toBe('');
+    }
+  });
+
+  test('the coach\'s chosen state and words are what gets sent', async () => {
+    await renderPage({ blocks: [blockRow()] });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('How did it go'), {
+        target: { value: 'delivered_with_deviations' },
+      });
+      fireEvent.change(screen.getByLabelText('What departed from the plan'), {
+        target: { value: 'Two weeks lost to a hall closure.' },
+      });
+      fireEvent.change(screen.getByLabelText('What you will adjust'), {
+        target: { value: 'Move the southpaw work forward.' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+    });
+
+    const write = writes.find((entry) => entry.url.includes('block-review'));
+    expect(write?.body).toMatchObject({
+      block_id: 'blk-1',
+      adherence_state: 'delivered_with_deviations',
+      deviations: 'Two weeks lost to a hall closure.',
+      next_adjustment: 'Move the southpaw work forward.',
+    });
+    expect(screen.getByText('Review recorded.')).toBeTruthy();
+  });
+
+  test('the server\'s own refusal is what the coach reads', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      reviewWriteOk: false,
+      reviewWriteError: 'Recording "delivered with deviations" means saying what the deviations were.',
+    });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('How did it go'), {
+        target: { value: 'delivered_with_deviations' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+    });
+
+    // The reason, not "something went wrong" -- a coach who cannot see which
+    // rule they broke cannot fix it.
+    expect(screen.getByText(/means saying what the deviations were/i)).toBeTruthy();
+  });
+
+  test('every review is shown, not just the latest, and none of them is edited', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      reviews: [
+        reviewRow({
+          review_id: 'rev-2',
+          adherence_state: 'delivered_with_deviations',
+          deviations: 'Two weeks lost to a hall closure.',
+          created_at: '2026-10-14T00:00:00.000Z',
+        }),
+        reviewRow({
+          review_id: 'rev-1',
+          adherence_state: 'under_delivered',
+          reason: 'Hall closed.',
+          created_at: '2026-09-20T00:00:00.000Z',
+        }),
+      ],
+    });
+    await pickAthlete('ath-1');
+
+    /* Both readings, in the coach's chosen words. An earlier review saying the
+       block was off track and a later one saying it recovered are both true,
+       and showing only the second erases the more useful half. */
+    /* getAllByText, because the picker's options carry the same five words --
+       deliberately: the vocabulary a coach chooses from and the vocabulary a
+       recorded review reads back in are ONE vocabulary, and a second spelling
+       for the review card would be a second answer to one question. What this
+       asserts is that each state is also rendered as a recorded review, not
+       only as an option nobody has picked. */
+    const recorded = (label: string) => screen.getAllByText(label)
+      .some((element) => element.tagName === 'P');
+    expect(recorded('Delivered with deviations')).toBe(true);
+    expect(recorded('Under-delivered')).toBe(true);
+    expect(screen.getByText('Deviations: Two weeks lost to a hall closure.')).toBeTruthy();
+    expect(screen.getByText('Reason: Hall closed.')).toBeTruthy();
+
+    // No edit path: a judgement recorded at the time is a fact about that time.
+    expect(screen.queryByRole('button', { name: /edit review/i })).toBeNull();
+    expect(screen.getByText(/Reviews are not edited/i)).toBeTruthy();
+  });
+
+  test('a review carries who made it, because that is the point of the record', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      reviews: [reviewRow({ reviewed_by_account_id: 'acct-coach-b' })],
+    });
+    await pickAthlete('ath-1');
+
+    expect(screen.getByText(/Reviewed by acct-coach-b/)).toBeTruthy();
+  });
+
+  test('nothing on this page consults SHADOW or offers a generated reading', async () => {
+    const fetchMock = await renderPage({
+      blocks: [blockRow()],
+      evidence: [evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 4 })],
+    });
+    await pickAthlete('ath-1');
+
+    /* The order permits a SHADOW summary and does not require one: "SHADOW may
+       summarize evidence, but must not silently become the final evaluator."
+       An automated reading of a child's training record needs its own evidence
+       and safety contract rather than arriving as a side effect of a review
+       panel, so nothing here asks for one. */
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toMatch(/shadow/i);
+    }
+    expect(document.body.textContent ?? '').not.toMatch(/suggest|recommend|SHADOW|AI |generated/i);
   });
 });

@@ -962,4 +962,109 @@ test.describe('Coach journey', () => {
     expect(body).not.toMatch(/coverage|adherence|neglect|gap|missing/);
     expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
   });
+  /* Plan versus what was actually recorded, in a real browser.
+     --------------------------------------------------------
+
+     THE SURFACE THE WHOLE LANE HAS BEEN HOLDING THE DOOR OPEN FOR. Every
+     panel before this one refused to count anything, so that when the
+     plan-versus-actual question finally arrived it would arrive undecided.
+     Here it arrives: a plan and a record of activity are on one screen for
+     the first time, and the fixture is built to tempt the exact figure the
+     build order forbids -- a six-week block, three sessions recorded, twelve
+     training attempts, and one source sitting at zero, which is precisely the
+     shape somebody renders as "3 of 12", a coverage bar, or an 82%.
+
+     What a browser adds over the jsdom suite is the reading. A coach looking
+     at a column of counts will draw a conclusion; the claim under test is
+     that what is on the glass supports only the true one -- these are counts
+     of RECORDS -- and that the judgement control next to them opens
+     undecided. */
+  test('a coach reads what was recorded against a plan, and is handed no percentage', async ({ page }) => {
+    const BLOCK = {
+      block_id: 'blk-1',
+      athlete_id: ROSA.athlete_id,
+      title: 'Late summer block',
+      training_emphasis: 'Round-three work rate.',
+      starts_on: '2026-08-01',
+      ends_on: '2026-09-30',
+      status: 'active',
+      target_competition_id: null,
+      target_wrestling_event_id: null,
+      target: null,
+      created_by_account_id: 'acct-coach-a',
+      created_at: '2026-08-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+    };
+
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': { ok: true, blocks: [BLOCK], options: [] },
+        '/api/pilot/coach/block-review': {
+          ok: true,
+          reviews: [
+            {
+              review_id: 'rev-1',
+              block_id: 'blk-1',
+              adherence_state: 'delivered_with_deviations',
+              deviations: 'Two weeks lost to a hall closure.',
+              reason: 'Venue.',
+              what_worked: 'Round-three output held.',
+              what_did_not: 'Southpaw work never started.',
+              next_adjustment: 'Move southpaw work forward.',
+              reviewed_by_account_id: 'acct-coach-a',
+              created_at: '2026-09-30T00:00:00.000Z',
+            },
+          ],
+          evidence: [
+            { key: 'sessions', label: 'Sessions linked to this block', recorded: 3, undated: 0, recent: [{ when: '2026-09-08', detail: 'Tuesday Technical' }] },
+            { key: 'training_attempts', label: 'Training attempts recorded', recorded: 12, undated: 0, recent: [] },
+            { key: 'activity_log', label: 'Training activity entries recorded', recorded: 0, undated: 0, recent: [] },
+            { key: 'assessments', label: 'Assessments administered', recorded: 2, undated: 3, recent: [] },
+          ],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+
+    await expect(page.getByText('Plan versus what was recorded')).toBeVisible();
+
+    // Counts of RECORDS, each carrying the word that says so.
+    await expect(page.getByText('Sessions linked to this block: 3 recorded')).toBeVisible();
+    await expect(page.getByText('Training attempts recorded: 12 recorded')).toBeVisible();
+    // The zero is on the glass, with the reading it does not support beside it.
+    await expect(page.getByText('Training activity entries recorded: 0 recorded')).toBeVisible();
+    await expect(page.getByText(/nobody wrote anything down/i)).toBeVisible();
+
+    /* Rows no window can place, kept apart from the count. An assessment that
+       was scheduled and never administered has no date: counting it would
+       claim a test happened, and dropping it would hide records a coach is
+       looking for. */
+    await expect(page.getByText('Assessments administered: 2 recorded')).toBeVisible();
+    await expect(page.getByText(/3 more on record with no date/i)).toBeVisible();
+
+    // The human's judgement, in the human's words.
+    await expect(page.getByText('Deviations: Two weeks lost to a hall closure.')).toBeVisible();
+    await expect(page.getByText('Next adjustment: Move southpaw work forward.')).toBeVisible();
+
+    const body = (await page.locator('body').innerText()).toLowerCase();
+
+    /* THE REFUSAL, ON THE RENDERED PAGE. The build order settles it in its own
+       words: "Do not invent an adherence percentage." A figure here would be a
+       machine's verdict on a coach's work with a child, and it would be
+       believed precisely because it looked measured. */
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/coverage|compliance|on track|behind schedule|completion/);
+    expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
+
+    /* AND THE JUDGEMENT IS STILL THE COACH'S TO MAKE. Three sessions, twelve
+       attempts and a zero on screen, and the control still opens on 'unknown'
+       -- nothing read those counts and chose a state. */
+    await expect(page.getByLabel('How did it go')).toHaveValue('unknown');
+  });
 });

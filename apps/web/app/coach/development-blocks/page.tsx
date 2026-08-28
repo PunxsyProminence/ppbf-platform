@@ -74,9 +74,10 @@ interface AuthorizedAthlete {
  * are the coach's own words about that session, already stored on the run;
  * this panel shows them and computes nothing from them. There is no session
  * count, no "sessions delivered against plan", no coverage bar and no
- * adherence figure -- plan-versus-actual is a separate slice, and the moment
- * sessions are counted against a plan the next step is a percentage about a
- * coach's work with a child, assembled out of links nobody validated.
+ * adherence figure. Plan-versus-actual now has its own panel below, and it
+ * did not change that rule: it counts RECORDS ("3 sessions recorded"), never
+ * records against a plan, because there is no denominator anywhere that could
+ * honestly produce one.
  */
 interface LinkedSession {
   run_id: string;
@@ -114,6 +115,44 @@ interface ObjectiveLink {
   run_id: string;
   objective_id: string;
   linked_by_account_id: string;
+}
+
+/**
+ * A coach's dated judgement about how a block went. The whole of it is words
+ * and one chosen state; there is no figure on this type and none may be added.
+ */
+interface BlockReview {
+  review_id: string;
+  block_id: string;
+  adherence_state: string;
+  deviations: string;
+  reason: string;
+  what_worked: string;
+  what_did_not: string;
+  next_adjustment: string;
+  reviewed_by_account_id: string;
+  created_at: string;
+}
+
+/**
+ * One source's contribution to "what was actually recorded".
+ *
+ * `recorded` IS A COUNT OF ROWS AND NOTHING ELSE. It says how many records
+ * exist, never how much of the plan happened -- those are different claims and
+ * only the first one has evidence. A zero means nobody wrote anything down.
+ *
+ * `undated` is rows this athlete has that carry NO event date -- an assessment
+ * scheduled and never administered, an intervention that has not started. No
+ * window can place them, so they are shown apart from the count rather than
+ * folded into it (which would claim work that has not happened) or dropped
+ * (which would hide records that exist).
+ */
+interface EvidenceSource {
+  key: string;
+  label: string;
+  recorded: number;
+  undated: number;
+  recent: { when: string; detail: string }[];
 }
 
 /** A settled session offered by the picker. */
@@ -156,6 +195,32 @@ const EVENT_STATUS_BADGE: Record<BlockTarget['status'], { className: string; lab
 const TARGET_KIND_LABEL: Record<BlockTarget['kind'], string> = {
   competition: 'Competition',
   wrestling_event: 'Wrestling event',
+};
+
+/* The five states the build order named, which are pilot.intervention_executions'
+   own vocabulary rather than a second one invented here. 'unknown' leads the
+   list and is the default because a coach who has not decided has not decided
+   -- and because a default of 'delivered_as_planned' would make the easiest
+   click the most flattering one. */
+const ADHERENCE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'unknown', label: 'Unknown (honest default)' },
+  { value: 'delivered_as_planned', label: 'Delivered as planned' },
+  { value: 'delivered_with_deviations', label: 'Delivered with deviations' },
+  { value: 'under_delivered', label: 'Under-delivered' },
+  { value: 'not_delivered', label: 'Not delivered' },
+];
+
+const ADHERENCE_LABEL: Record<string, string> = Object.fromEntries(
+  ADHERENCE_OPTIONS.map((option) => [option.value, option.label]),
+);
+
+const EMPTY_REVIEW_FORM = {
+  adherence_state: 'unknown',
+  deviations: '',
+  reason: '',
+  what_worked: '',
+  what_did_not: '',
+  next_adjustment: '',
 };
 
 const EMPTY_FORM = {
@@ -222,6 +287,17 @@ export default function CoachDevelopmentBlocksPage() {
   const [objectivesStateByBlock, setObjectivesStateByBlock] =
     useState<Record<string, 'loading' | 'loaded' | 'unavailable'>>({});
   const [objectiveBusyKey, setObjectiveBusyKey] = useState<string | null>(null);
+
+  /* Plan versus what was actually recorded, per block. Two halves kept in two
+     places on purpose: `reviewsByBlock` is what a human said, `evidenceByBlock`
+     is what is on record elsewhere, and nothing on this page joins them into a
+     verdict. */
+  const [reviewsByBlock, setReviewsByBlock] = useState<Record<string, BlockReview[]>>({});
+  const [evidenceByBlock, setEvidenceByBlock] = useState<Record<string, EvidenceSource[]>>({});
+  const [reviewStateByBlock, setReviewStateByBlock] =
+    useState<Record<string, 'loading' | 'loaded' | 'unavailable'>>({});
+  const [reviewForms, setReviewForms] = useState<Record<string, typeof EMPTY_REVIEW_FORM>>({});
+  const [reviewBusyBlockId, setReviewBusyBlockId] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
@@ -353,6 +429,35 @@ export default function CoachDevelopmentBlocksPage() {
     }
   }, []);
 
+  /* One read gives both halves of plan-versus-actual for a block.
+     
+     A FAILURE IS A FAILURE, NOT AN EMPTY RECORD. Every other loader on this
+     page says so; here it is the difference between "nobody logged anything"
+     and "nobody could look", and those two look identical the moment a failed
+     read is allowed to render as zeroes. So the sources are cleared and the
+     panel says it could not read them. */
+  const loadReviewForBlock = useCallback(async (blockId: string) => {
+    setReviewStateByBlock((prior) => ({ ...prior, [blockId]: 'loading' }));
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach/block-review?block_id=${encodeURIComponent(blockId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('review');
+      const payload = (await response.json()) as {
+        reviews?: BlockReview[];
+        evidence?: EvidenceSource[];
+      };
+      setReviewsByBlock((prior) => ({ ...prior, [blockId]: payload.reviews ?? [] }));
+      setEvidenceByBlock((prior) => ({ ...prior, [blockId]: payload.evidence ?? [] }));
+      setReviewStateByBlock((prior) => ({ ...prior, [blockId]: 'loaded' }));
+    } catch {
+      setReviewsByBlock((prior) => ({ ...prior, [blockId]: [] }));
+      setEvidenceByBlock((prior) => ({ ...prior, [blockId]: [] }));
+      setReviewStateByBlock((prior) => ({ ...prior, [blockId]: 'unavailable' }));
+    }
+  }, []);
+
   const loadBlocks = useCallback(async (forAthleteId: string) => {
     if (!forAthleteId) {
       setBlocks([]);
@@ -380,6 +485,7 @@ export default function CoachDevelopmentBlocksPage() {
       for (const item of loaded) {
         void loadSessionsForBlock(item.block_id);
         void loadObjectivesForBlock(item.block_id);
+        void loadReviewForBlock(item.block_id);
       }
     } catch {
       // A failure for an athlete nobody is looking at any more must not blank
@@ -388,7 +494,7 @@ export default function CoachDevelopmentBlocksPage() {
       setBlocks([]);
       setBlocksState('unavailable');
     }
-  }, [loadSessionsForBlock, loadObjectivesForBlock]);
+  }, [loadSessionsForBlock, loadObjectivesForBlock, loadReviewForBlock]);
 
   /* Recording that a session supported this block, and taking it back.
 
@@ -508,6 +614,56 @@ export default function CoachDevelopmentBlocksPage() {
     } finally {
       setObjectiveBusyKey(null);
     }
+  }
+
+  /* Recording the coach's own reading of how the block went.
+
+     THE JUDGEMENT IS THEIRS. Nothing on this page proposes a state, pre-fills
+     one from the evidence counts, or changes the selection when the counts
+     change. The form opens on 'unknown' and stays there until a human picks
+     something else.
+
+     REVIEWS ACCUMULATE. There is no edit path here by design: a judgement
+     someone recorded at the time is a fact about that time, and a coach who
+     changes their mind writes a new dated review beside the old one. */
+  async function submitReview(blockId: string) {
+    if (reviewBusyBlockId) return;
+    const form = reviewForms[blockId] ?? EMPTY_REVIEW_FORM;
+
+    setReviewBusyBlockId(blockId);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/block-review`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ block_id: blockId, ...form }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        // The server's own words. A review refused for claiming deviations
+        // without naming them must say that.
+        setErrorMessage(payload.error ?? 'That review could not be recorded.');
+        return;
+      }
+      setMessage('Review recorded.');
+      setReviewForms((prior) => ({ ...prior, [blockId]: { ...EMPTY_REVIEW_FORM } }));
+      // Read it back rather than pushing the local copy: what is on screen
+      // should be what was stored.
+      await loadReviewForBlock(blockId);
+    } catch {
+      setErrorMessage('That review could not be recorded. Nothing was stored.');
+    } finally {
+      setReviewBusyBlockId(null);
+    }
+  }
+
+  function updateReviewForm(blockId: string, field: keyof typeof EMPTY_REVIEW_FORM, value: string) {
+    setReviewForms((prior) => ({
+      ...prior,
+      [blockId]: { ...(prior[blockId] ?? EMPTY_REVIEW_FORM), [field]: value },
+    }));
   }
 
   function selectAthlete(nextId: string) {
@@ -1100,6 +1256,206 @@ export default function CoachDevelopmentBlocksPage() {
                           </select>
                         </div>
                       )}
+                    </div>
+
+                    {/* PLAN VERSUS WHAT WAS ACTUALLY RECORDED.
+
+                        TWO HALVES, AND THIS PANEL NEVER JOINS THEM. Above is
+                        what is on record elsewhere for this athlete in this
+                        block's window; below is what a coach SAID about how
+                        the block went. Nothing here compares the two, scores
+                        the block, or decides whether the evidence supports the
+                        state a coach chose. The build order settles it in its
+                        own words -- "Do not invent an adherence percentage" --
+                        and this is the surface where one would be assembled if
+                        one ever were.
+
+                        A COUNT IS A FACT ABOUT THE RECORD. "3 training
+                        attempts recorded" is a statement about the database.
+                        "3 of 12 delivered" would be a statement about a coach,
+                        and there is no denominator anywhere that could
+                        honestly produce one.
+
+                        A ZERO IS NOT A FINDING. Nothing recorded means nobody
+                        recorded anything -- not that the athlete did not train
+                        and not that the coach neglected the block. Every count
+                        says "recorded" for that reason.
+
+                        NOTHING IS SUGGESTED. No state is pre-selected from the
+                        counts, no adjustment is drafted, and SHADOW is not
+                        consulted. The judgement is the coach's, and it is
+                        theirs alone to write. */}
+                    <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
+                      <p className="t-label m-0">Plan versus what was recorded</p>
+                      <p className="t-muted m-0">
+                        What is on record for this athlete between{' '}
+                        {formatGymDay(block.starts_on) ?? block.starts_on}
+                        {' and '}
+                        {formatGymDay(block.ends_on) ?? block.ends_on}. These are counts of
+                        records, not of what happened, and nothing here scores the block.
+                      </p>
+
+                      {reviewStateByBlock[block.block_id] === 'loading' && (
+                        <p className="t-muted m-0">Loading the record...</p>
+                      )}
+
+                      {reviewStateByBlock[block.block_id] === 'unavailable' && (
+                        <div className="rounded-[var(--r-sm)] border-2 border-[var(--restricted)] p-[var(--s2)]">
+                          <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                            The record for this block could not be read. This is not a statement
+                            that nothing was recorded — nobody could look.
+                          </p>
+                        </div>
+                      )}
+
+                      {reviewStateByBlock[block.block_id] === 'loaded' && (
+                        <div className="space-y-[var(--s2)]">
+                          {(evidenceByBlock[block.block_id] ?? []).map((item) => (
+                            <div
+                              key={item.key}
+                              className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.16)] p-[var(--s2)]"
+                            >
+                              <p className="t-body m-0">
+                                {item.label}: {item.recorded} recorded
+                              </p>
+                              {/* The rows no window can place, said out loud
+                                  and kept apart from the count. Folding them
+                                  in would claim work that has not happened;
+                                  dropping them would hide records that
+                                  exist. */}
+                              {item.undated > 0 ? (
+                                <p className="t-muted m-0">
+                                  {item.undated} more on record with no date, which this window
+                                  cannot place.
+                                </p>
+                              ) : null}
+                              {/* The entries themselves, so a coach reads
+                                  records rather than a number. */}
+                              {item.recent.map((entry, index) => (
+                                <p key={`${item.key}-${index}`} className="t-muted m-0">
+                                  {formatGymDay(entry.when) ?? entry.when} — {entry.detail}
+                                </p>
+                              ))}
+                            </div>
+                          ))}
+                          <p className="t-muted m-0">
+                            A zero means nobody wrote anything down. It is not a statement that the
+                            athlete did not train, or that this block went unworked.
+                          </p>
+                        </div>
+                      )}
+
+                      {reviewStateByBlock[block.block_id] === 'loaded'
+                        && (reviewsByBlock[block.block_id] ?? []).length === 0 && (
+                        <p className="t-muted m-0">
+                          Nobody has reviewed this block yet.
+                        </p>
+                      )}
+
+                      {/* Every review, newest first, not just the latest. An
+                          earlier reading saying the block was off track and a
+                          later one saying it recovered are both true, and
+                          showing only the second erases the more useful half. */}
+                      {reviewStateByBlock[block.block_id] === 'loaded'
+                        && (reviewsByBlock[block.block_id] ?? []).map((item) => (
+                        <div
+                          key={item.review_id}
+                          className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.16)] p-[var(--s2)] space-y-[var(--s2)]"
+                        >
+                          <p className="t-body m-0 font-semibold">
+                            {ADHERENCE_LABEL[item.adherence_state] ?? item.adherence_state}
+                          </p>
+                          {item.deviations ? (
+                            <p className="t-body m-0 text-[color:var(--bone-300)]">
+                              Deviations: {item.deviations}
+                            </p>
+                          ) : null}
+                          {item.reason ? (
+                            <p className="t-body m-0 text-[color:var(--bone-300)]">
+                              Reason: {item.reason}
+                            </p>
+                          ) : null}
+                          {item.what_worked ? (
+                            <p className="t-body m-0 text-[color:var(--bone-300)]">
+                              What worked: {item.what_worked}
+                            </p>
+                          ) : null}
+                          {item.what_did_not ? (
+                            <p className="t-body m-0 text-[color:var(--bone-300)]">
+                              What did not: {item.what_did_not}
+                            </p>
+                          ) : null}
+                          {item.next_adjustment ? (
+                            <p className="t-body m-0 text-[color:var(--bone-300)]">
+                              Next adjustment: {item.next_adjustment}
+                            </p>
+                          ) : null}
+                          <p className="t-muted m-0">
+                            Reviewed by {item.reviewed_by_account_id}
+                            {' — '}
+                            {formatGymDay(item.created_at) ?? item.created_at}
+                          </p>
+                        </div>
+                      ))}
+
+                      <div className="space-y-[var(--s2)]">
+                        <p className="t-label m-0">Record a review</p>
+                        <div className="field">
+                          <label htmlFor={`adherence-${block.block_id}`} className="t-label">
+                            How did it go
+                          </label>
+                          <select
+                            id={`adherence-${block.block_id}`}
+                            className="select"
+                            value={(reviewForms[block.block_id] ?? EMPTY_REVIEW_FORM).adherence_state}
+                            disabled={reviewBusyBlockId !== null}
+                            onChange={(event) => updateReviewForm(
+                              block.block_id, 'adherence_state', event.target.value,
+                            )}
+                          >
+                            {ADHERENCE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {([
+                          ['deviations', 'What departed from the plan'],
+                          ['reason', 'Why'],
+                          ['what_worked', 'What worked'],
+                          ['what_did_not', 'What did not'],
+                          ['next_adjustment', 'What you will adjust'],
+                        ] as const).map(([field, label]) => (
+                          <div className="field" key={field}>
+                            <label htmlFor={`${field}-${block.block_id}`} className="t-label">
+                              {label}
+                            </label>
+                            <textarea
+                              id={`${field}-${block.block_id}`}
+                              className="textarea"
+                              rows={2}
+                              value={(reviewForms[block.block_id] ?? EMPTY_REVIEW_FORM)[field]}
+                              disabled={reviewBusyBlockId !== null}
+                              onChange={(event) => updateReviewForm(
+                                block.block_id, field, event.target.value,
+                              )}
+                            />
+                          </div>
+                        ))}
+
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={reviewBusyBlockId !== null}
+                          onClick={() => void submitReview(block.block_id)}
+                        >
+                          Record review
+                        </button>
+                        <p className="t-muted m-0">
+                          Reviews are not edited. A later reading is recorded beside this one, and
+                          both stay.
+                        </p>
+                      </div>
                     </div>
 
                     {/* Attribution, plainly. Who wrote this plan is a fact

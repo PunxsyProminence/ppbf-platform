@@ -182,6 +182,12 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     expect(at('session-objective-link'))
       .toBeGreaterThan(at('athlete-development-block-objectives'));
     expect(at('session-objective-link')).toBeGreaterThan(at('session-block-link'));
+    /* block-review's composite FK points at pilot.athlete_development_blocks,
+       so that table has to exist first. Its READS reach further -- training
+       attempts, the activity log, assessments, intervention executions,
+       coach reviews -- but reads are a runtime concern and every one of those
+       is already in `all`; only the foreign key constrains the ORDER. */
+    expect(at('block-review')).toBeGreaterThan(at('athlete-development-blocks'));
     // session-scripts-discipline-fk points pilot.session_scripts at
     // pilot.disciplines. It needs BOTH: multidiscipline creates the registry it
     // references, session-scripts creates the table it constrains. Applied
