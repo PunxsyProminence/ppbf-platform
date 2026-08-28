@@ -311,4 +311,59 @@ describe('what the family actually sees', () => {
       expect(serialized).not.toContain(forbidden);
     }
   });
+
+  test('a family receives exactly these fields, and no stored column beyond them', async () => {
+    /* A forbidden-substring sweep catches the words we thought of. This
+       catches the ones we did not: a new column on either table reaches this
+       response the moment it exists unless someone changes this list, which
+       is the point of pinning the set rather than a denylist. The coach route
+       has held its blocks key set exactly this way since it shipped; the
+       surface that serves MINORS was the one without it. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([block()]);
+    mockListObjectives.mockResolvedValue([objective()]);
+
+    const payload = await (await GET(getRequest())).json();
+
+    expect(Object.keys(payload.blocks[0]).sort()).toEqual([
+      'block_id', 'ends_on', 'objectives', 'starts_on', 'status', 'title',
+      'training_emphasis',
+    ]);
+    expect(Object.keys(payload.blocks[0].objectives[0]).sort()).toEqual([
+      'domain', 'objective', 'objective_id', 'status',
+    ]);
+  });
+
+  test('no staff account id and no tenancy id reach a family', async () => {
+    /* The response used to spread the stored row, so created_by_account_id,
+       organization_id, created_at and updated_at all travelled to an athlete
+       or a parent. Neither screen rendered them -- and a page not rendering a
+       field is not the same as a family not receiving it; the id sat in the
+       JSON one devtools panel away.
+
+       DevelopmentBlockPlanView's header already called this out in so many
+       words: an account id "is not a name, and printing a raw staff
+       identifier to a family is a leak dressed as attribution". This asserts
+       the response agrees with the component that reads it.
+
+       Both fixtures carry acct-coach-a and org-1, so this fails loudly if the
+       projection is ever replaced by a spread again. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([block()]);
+    mockListObjectives.mockResolvedValue([objective()]);
+
+    const serialized = JSON.stringify(await (await GET(getRequest())).json());
+
+    expect(serialized).not.toContain('acct-coach-a');
+    expect(serialized).not.toContain('created_by_account_id');
+    expect(serialized).not.toContain('organization_id');
+    expect(serialized).not.toContain('created_at');
+    expect(serialized).not.toContain('updated_at');
+    // The coach's words themselves are untouched by the projection -- the
+    // owner decision of 2026-08-28 was about these, and they are all here.
+    expect(serialized).toContain('Guard recovery off the jab.');
+    expect(serialized).toContain('Jab off the back foot under pressure');
+  });
 });

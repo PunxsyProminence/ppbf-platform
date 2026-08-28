@@ -64,8 +64,49 @@ export const dynamic = 'force-dynamic';
 /** The two roles this serves. Staff read the coach route; this is the family. */
 const FAMILY_ROLES = ['athlete', 'parent'] as const;
 
-export interface FamilyDevelopmentBlock extends AthleteDevelopmentBlockRow {
-  objectives: BlockObjectiveRow[];
+/**
+ * What a family receives -- ENUMERATED, not the stored row with a field
+ * appended.
+ *
+ * This started as `extends AthleteDevelopmentBlockRow`, which spread every
+ * column of the record into the response: `organization_id`,
+ * `created_by_account_id`, `created_at`, `updated_at`. The two screens render
+ * none of them, and DevelopmentBlockPlanView's own header says why -- "an
+ * account id, not a name, and printing a raw staff identifier to a family is
+ * a leak dressed as attribution". But a page not rendering a field is not the
+ * same as a family not receiving it: the id was in the JSON, one devtools
+ * panel away, on the surface that serves minors.
+ *
+ * So the shape is stated here rather than inherited. `PlanBlock` in
+ * DevelopmentBlockPlanView already declared exactly these fields as what the
+ * view needs; this is the server finally agreeing with it.
+ *
+ * The owner decision of 2026-08-28 is untouched by this. "Everything,
+ * verbatim" was about the coach's WORDS -- the emphasis, the objectives, the
+ * body-composition domain, all of which are here in full and unaltered. Staff
+ * bookkeeping is not the coach's words about the athlete; FIELD_TIERS puts
+ * the closest analogue (scheduler_attendance.checked_in_by_account_id) at
+ * `organization`, which is a tier a family sits outside of.
+ *
+ * ADDING A FIELD HERE IS DELIBERATE, and the route test pins the exact key
+ * set of both a block and an objective so it cannot happen by accident.
+ */
+export interface FamilyDevelopmentBlock {
+  block_id: string;
+  title: string;
+  training_emphasis: string;
+  starts_on: AthleteDevelopmentBlockRow['starts_on'];
+  ends_on: AthleteDevelopmentBlockRow['ends_on'];
+  status: AthleteDevelopmentBlockRow['status'];
+  objectives: FamilyBlockObjective[];
+}
+
+/** The same enumeration one level down, and for the same reason. */
+export interface FamilyBlockObjective {
+  objective_id: string;
+  domain: BlockObjectiveRow['domain'];
+  objective: string;
+  status: BlockObjectiveRow['status'];
 }
 
 /**
@@ -136,9 +177,23 @@ export async function GET(request: NextRequest) {
        buys milliseconds on a page nobody refreshes in a loop. */
     const withObjectives: FamilyDevelopmentBlock[] = [];
     for (const block of blocks) {
+      const objectives = await listObjectivesForBlock(principal, block.block_id);
+      /* Named field by field, never spread. A spread here is what put a staff
+         account id in a minor's API response in the first place, and it would
+         put the next column there too, silently, on the day it is added. */
       withObjectives.push({
-        ...block,
-        objectives: await listObjectivesForBlock(principal, block.block_id),
+        block_id: block.block_id,
+        title: block.title,
+        training_emphasis: block.training_emphasis,
+        starts_on: block.starts_on,
+        ends_on: block.ends_on,
+        status: block.status,
+        objectives: objectives.map((row) => ({
+          objective_id: row.objective_id,
+          domain: row.domain,
+          objective: row.objective,
+          status: row.status,
+        })),
       });
     }
 

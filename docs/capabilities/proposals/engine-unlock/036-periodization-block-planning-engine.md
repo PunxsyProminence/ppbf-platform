@@ -100,7 +100,16 @@ Read every `periodization_blocks` reference below as naming this table.
   and `/parent/development-blocks` over a read-only
   `/api/pilot/athlete/development-blocks`. The boundary was enforced in the
   data layer before either page existed, which is the order this module has
-  kept throughout.
+  kept throughout. The family response is an **enumerated projection**, not
+  the stored row: it carries the block's title, emphasis, window, status and
+  its objectives' domain, sentence and status, and none of
+  `organization_id`, `created_by_account_id`, `created_at` or `updated_at`.
+  It began as a spread of the row, so a staff account id did travel to
+  athletes and guardians in the JSON while neither screen rendered it; the
+  route now names each field and its test pins the exact key set of both a
+  block and an objective. This narrows no part of the owner decision of
+  2026-08-28 — the coach's words are all there, verbatim, body-composition
+  domain included. Staff bookkeeping is not the coach's words.
 - ~~The optional competition/event target (Open Question 2), still open and
   still unbuilt.~~ **Answered (a) and built by #771**, as a name and a date
   only: naming a target derives no taper, no peak, no volume curve and no
