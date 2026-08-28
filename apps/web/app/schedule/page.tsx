@@ -23,7 +23,12 @@ type SchedulerClass = {
   end_at: string;
   location: string;
   capacity: number;
-  coach_account_id: string;
+  // Optional because GET /api/pilot/scheduler withholds every *_account_id
+  // from a parent and an athlete: on this platform an account_id is a staff
+  // member's login email unless an admin typed something else
+  // (staffProvisioning.ts:316), and this list used to print one under
+  // "Coach:" to whoever was signed in.
+  coach_account_id?: string;
   covering_coach_account_id?: string;
   status: 'open' | 'full' | 'cancelled';
   registered_count?: number;
@@ -346,7 +351,8 @@ export default function SchedulerPage() {
                             {formatGymStamp(item.start_at)} - {formatGymTimeOfDay(item.end_at)} | {item.location}
                           </p>
                           <p className="t-data">
-                            Seats: {item.registered_count ?? 0}/{item.capacity} | Coach: {item.coach_account_id}
+                            Seats: {item.registered_count ?? 0}/{item.capacity}
+                            {item.coach_account_id ? ` | Coach: ${item.coach_account_id}` : ''}
                             {item.covering_coach_account_id ? ` | Cover: ${item.covering_coach_account_id}` : ''}
                           </p>
                         </div>
