@@ -206,3 +206,75 @@ describe('the promoted denylists are pinned exactly', () => {
     }
   });
 });
+
+describe('the development-block entries: routes reach these rows only through the gated modules', () => {
+  /*
+   * Both athlete_development_block* entries name a module function as their
+   * enforcer, and the test above proves that function exists. What it cannot
+   * prove is that the module is the ONLY way in. A route that imported the
+   * database handle and wrote its own SELECT would leave both entries reading
+   * exactly as they do now while being false -- the failure mode this whole
+   * file exists to catch, and the one a reader of a registry cannot see.
+   *
+   * So this pins the shape instead of the prose: every route under this
+   * capability imports at least one of the two gate-bearing modules, and none
+   * of them imports pilot/db. Direct SQL from a route is normal elsewhere in
+   * this codebase (admin/export/roster and a dozen others do it), which is
+   * precisely why it needs refusing here rather than assuming.
+   */
+  const API_ROOT = path.resolve(HERE, '../../..', 'app/api/pilot');
+  const GATED_MODULES = ['athleteDevelopmentBlocks', 'athleteDevelopmentBlockObjectives'];
+
+  function developmentBlockRoutes(dir: string): string[] {
+    const found: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const resolved = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        found.push(...developmentBlockRoutes(resolved));
+      } else if (entry.name === 'route.ts' && resolved.includes('development-block')) {
+        found.push(resolved);
+      }
+    }
+    return found;
+  }
+
+  const routes = developmentBlockRoutes(API_ROOT);
+
+  it('finds routes at all -- a vacuous pass would be worse than no test', () => {
+    expect(routes.length).toBeGreaterThan(0);
+  });
+
+  it.each(routes.map((file) => [path.relative(API_ROOT, file), file]))(
+    '%s holds no database handle of its own',
+    (_label, file) => {
+      const source = readFileSync(file, 'utf8');
+      expect(source).not.toMatch(/from '@\/src\/server\/pilot\/db'/);
+    },
+  );
+
+  it.each(routes.map((file) => [path.relative(API_ROOT, file), file]))(
+    '%s reads through a gate-bearing module',
+    (_label, file) => {
+      const source = readFileSync(file, 'utf8');
+      expect(GATED_MODULES.some((module) => source.includes(`/${module}'`))).toBe(true);
+    },
+  );
+
+  it('the family route carries no write verb at all', () => {
+    /* The objective entry's note tells a reader that a family surface is
+       read-only "by construction rather than by convention": there is no
+       write verb for a page to call, so no future button on the athlete or
+       parent screen can become one by accident. That is a claim about a file,
+       and this is the file. A family write path is a decision for the owner,
+       not a diff -- if one is ever wanted, this test is what makes adding it
+       deliberate. */
+    const familyRoute = routes.find((file) => file.includes(`${path.sep}athlete${path.sep}`));
+    expect(familyRoute).toBeDefined();
+    const source = readFileSync(familyRoute as string, 'utf8');
+    expect(source).toMatch(/export async function GET\b/);
+    for (const verb of ['POST', 'PATCH', 'PUT', 'DELETE']) {
+      expect({ verb, declared: new RegExp(`export (async )?function ${verb}\\b`).test(source) })
+        .toEqual({ verb, declared: false });
+    }
+  });
+});

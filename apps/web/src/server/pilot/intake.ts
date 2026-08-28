@@ -1126,6 +1126,93 @@ export function waiverColumnsForReader(role: PilotRole): string[] {
   return [...WAIVER_IDENTITY_COLUMNS];
 }
 
+/**
+ * WHICH COLUMNS OF A MEDICAL INTAKE A READER MAY SEE.
+ *
+ * THE NARROWING HAD REACHED THREE TABLES OF A BODY THAT RETURNS SEVEN.
+ *
+ * The argument is already written twice in this file. For the emergency
+ * contact: "`notes` is staff-only for a reason worth stating plainly: it is
+ * where 'do not call the father' is written. Handing that to the household it
+ * names is worse than handing over a phone number." For the waiver, that same
+ * reasoning was extended "word for word".
+ *
+ * pilot.medical_intake carries an identically-shaped free-text `notes`, in the
+ * same response body, under the same gate -- and it did not get it. A staff
+ * note qualifying a child's medical situation is the same kind of writing as a
+ * staff note qualifying who may collect them.
+ *
+ * AND THE READER HERE MAY BE THE CHILD. This route and getIntakeCaseAggregate
+ * both admit role 'athlete', and access.ts resolves that to a strict self-read
+ * -- so the minor the note is about is one of the people it reached. That is a
+ * different disclosure from a guardian reading it, and nothing in the previous
+ * query distinguished them.
+ *
+ * WHAT IS DELIBERATELY NOT NARROWED, so the absence is a decision and not an
+ * oversight: conditions, medications, allergies, physician_name and
+ * physician_phone stay. Those are the child's own medical facts and their
+ * clinician's contact -- what a guardian needs in order to act, and what a
+ * minor already knows about themselves. Withholding them would be a medical
+ * and product judgement this change has no basis to make. Only the staff
+ * narrative moves.
+ */
+export const MEDICAL_INTAKE_IDENTITY_COLUMNS = [
+  'organization_id',
+  'medical_id',
+  'athlete_id',
+  'conditions',
+  'medications',
+  'allergies',
+  'physician_name',
+  'physician_phone',
+  'clearance_status',
+  'created_at',
+  'updated_at',
+] as const;
+
+export const MEDICAL_INTAKE_STAFF_COLUMNS = ['notes'] as const;
+
+export function medicalIntakeColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...MEDICAL_INTAKE_IDENTITY_COLUMNS, ...MEDICAL_INTAKE_STAFF_COLUMNS];
+  }
+
+  return [...MEDICAL_INTAKE_IDENTITY_COLUMNS];
+}
+
+/**
+ * WHICH COLUMNS OF AN ATTENDANCE ROW A READER MAY SEE.
+ *
+ * The fourth table in the same body with a staff free-text `notes`, and the
+ * last one still on `select *`. privacyTiers.ts already places the equivalent
+ * column on the OTHER attendance table at tier `organization`, with the note
+ * "Free text a coach typed about a child" -- pilot.scheduler_attendance.note.
+ * pilot.attendance.notes is the same writing on a different table and carried
+ * no entry at all.
+ *
+ * Everything a guardian or an athlete needs from an attendance row -- the
+ * date, and whether they were there -- is in the identity set.
+ */
+export const ATTENDANCE_IDENTITY_COLUMNS = [
+  'organization_id',
+  'attendance_id',
+  'athlete_id',
+  'attendance_date',
+  'status',
+  'created_at',
+  'updated_at',
+] as const;
+
+export const ATTENDANCE_STAFF_COLUMNS = ['notes'] as const;
+
+export function attendanceColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...ATTENDANCE_IDENTITY_COLUMNS, ...ATTENDANCE_STAFF_COLUMNS];
+  }
+
+  return [...ATTENDANCE_IDENTITY_COLUMNS];
+}
+
 export async function upsertGuardian(params: {
   organizationId: string;
   parentId: string;
@@ -1203,6 +1290,8 @@ export async function getIntakeCaseAggregate(
   const guardianColumns = guardianColumnsForReader(readerRole);
   const emergencyContactColumns = emergencyContactColumnsForReader(readerRole);
   const waiverColumns = waiverColumnsForReader(readerRole);
+  const medicalIntakeColumns = medicalIntakeColumnsForReader(readerRole);
+  const attendanceColumns = attendanceColumnsForReader(readerRole);
   const readableNoteTypes = coachObservationNoteTypesForReader(readerRole);
 
   const [documents, emergencyContacts, medical, waivers, assessments, attendance, readiness, notes, guardians, shadowTimeline] = await Promise.all([
@@ -1213,7 +1302,8 @@ export async function getIntakeCaseAggregate(
       [organizationId, intakeCase.primary_athlete_id],
     ),
     query(
-      'select * from pilot.medical_intake where organization_id = $1 and athlete_id = $2 order by created_at desc',
+      `select ${medicalIntakeColumns.join(', ')} from pilot.medical_intake
+       where organization_id = $1 and athlete_id = $2 order by created_at desc`,
       [organizationId, intakeCase.primary_athlete_id],
     ),
     query(
@@ -1222,7 +1312,11 @@ export async function getIntakeCaseAggregate(
       [organizationId, intakeCase.primary_athlete_id],
     ),
     query('select * from pilot.assessments where organization_id = $1 and athlete_id = $2 order by created_at desc', [organizationId, intakeCase.primary_athlete_id]),
-    query('select * from pilot.attendance where organization_id = $1 and athlete_id = $2 order by attendance_date desc', [organizationId, intakeCase.primary_athlete_id]),
+    query(
+      `select ${attendanceColumns.join(', ')} from pilot.attendance
+       where organization_id = $1 and athlete_id = $2 order by attendance_date desc`,
+      [organizationId, intakeCase.primary_athlete_id],
+    ),
     query('select * from pilot.readiness where organization_id = $1 and athlete_id = $2 order by measured_at desc', [organizationId, intakeCase.primary_athlete_id]),
     query(
       `select * from pilot.coach_observations
