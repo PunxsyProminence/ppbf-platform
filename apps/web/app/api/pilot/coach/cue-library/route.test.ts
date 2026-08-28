@@ -51,6 +51,40 @@ test('the read is scoped to the caller organization with the filters passed thro
   expect(mockList).toHaveBeenCalledWith('org-1', { focusType: 'external', search: 'floor' });
 });
 
+test('ignores an organization supplied in the query', async () => {
+  // Mirrors the drill-library case of the same name, for the same reason and by
+  // the same construction -- the two routes are one family and their tests
+  // should read as one.
+  //
+  // Every other case in this file passes benign input, so none of them can tell
+  // "never reads an organization out of the request" apart from "was never
+  // asked to". Measured on 2026-08-28 against this branch, before this case
+  // existed: changing the route to
+  //
+  //     listCueLibrary(searchParams.get('org') ?? principal.organizationId, ...)
+  //
+  // -- one query parameter, and a caller reads another gym's cue library --
+  // left this suite at 15 passed, 0 failed, and left every other suite that
+  // names the cue library green too (117 passed across four). drill-library
+  // catches that exact mutation because drill-library has this case. Same
+  // defect class, same content, two routes, one of them covered.
+  //
+  // Three spellings because the route reads its parameters by name, and a
+  // future one could plausibly be called any of them.
+  const hostile = 'org=org-victim&organization_id=org-victim&organizationId=org-victim';
+
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockList.mockResolvedValue([]);
+
+  const response = await GET(getRequest(`focus_type=external&${hostile}`));
+
+  expect(response.status).toBe(200);
+  // The exact filter object rather than a partial match: it pins the read to
+  // the caller's own organization AND pins that no hostile parameter was
+  // smuggled into the filter beside the two the route is supposed to read.
+  expect(mockList).toHaveBeenCalledWith('org-1', { focusType: 'external', search: undefined });
+});
+
 test('an unknown focus_type is a 400, not a query', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
 
