@@ -182,5 +182,25 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['multidiscipline', 'competence-cohorts']) {
       expect(at('cohort-definitions-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }
+    // drill-library-check-drop is the only migration here that REMOVES a
+    // constraint, and its ordering carries more than the usual "the table must
+    // exist first".
+    //
+    // After drill-library-v3, because that is where
+    // pilot_drill_library_discipline_check is created. Placed before it, the
+    // drop would run against a constraint that does not exist yet and v3 would
+    // then install it -- so a whole dispatch would end with the CHECK back in
+    // place and a green result reporting that it had been removed.
+    //
+    // After drill-library-discipline-fk, because that is the authority the drop
+    // hands the column over to. The migration REFUSES to run without it rather
+    // than dropping anyway -- a column governed by neither constraint is free
+    // text, and worse than either state the owner chose between -- so getting
+    // this order wrong is a failed dispatch rather than a silent hole. That is
+    // the intended behaviour, and it is still the wrong place for it to be
+    // discovered.
+    for (const prerequisite of ['drill-library-v3', 'drill-library-discipline-fk']) {
+      expect(at('drill-library-check-drop')).toBeGreaterThan(at(prerequisite));
+    }
   });
 });
