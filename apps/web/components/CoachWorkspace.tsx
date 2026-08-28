@@ -1941,10 +1941,21 @@ export default function CoachWorkspace() {
         {/* ROLE SUMMARY PANEL */}
         <CoachSummaryPanel
           sessionStatus={sessionStatus}
-          activeAthletes={activeAthletes}
-          injuryFlags={injuryFlags}
-          reviewsNeeded={reviewsNeeded}
-          assignmentsDue={assignmentsDue}
+          /* THE ROSTER, not the attendance-derived count. activeAthletes
+             below is athletes whose attendance is not 'Unknown', and
+             loadAthletes hardcodes 'Unknown' for everyone because there is no
+             attendance feed -- so it is always 0, and the panel's empty-floor
+             branch fired for every coach, always. */
+          activeAthletes={athletes.length}
+          /* null where no feed answered, which the panel renders as a
+             disclosure instead of a number. injuryFlag is null for every
+             athlete (no feed), and the two queue counts are derived from
+             coachTasks, which is empty whenever the review queue could not be
+             read -- a 0 there tells a coach their queue is clear when nobody
+             could look. */
+          injuryFlags={injuryTrackingAvailable ? injuryFlags : null}
+          reviewsNeeded={shadowQueueUnavailable ? null : reviewsNeeded}
+          assignmentsDue={shadowQueueUnavailable ? null : assignmentsDue}
         />
 
         {/* MODE TOGGLE */}
@@ -2122,8 +2133,23 @@ export default function CoachWorkspace() {
                 </article>
                 <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
                   <p className="t-eyebrow">Open Reviews</p>
-                  <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
-                  <p className="t-muted">Resolve queue items this session</p>
+                  {/* Its two siblings above both guard this exact case and
+                      both say so out loud ("do not read this as zero flags",
+                      "do not read this as no injuries"). This tile alone
+                      rendered the bare count, and coachTasks is empty whenever
+                      the queue could not be read -- so it printed a confident
+                      0 over an unread queue. */}
+                  {shadowQueueUnavailable ? (
+                    <>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Unavailable</p>
+                      <p className="t-muted">The review queue could not be read -- do not read this as &quot;no reviews&quot;</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
+                      <p className="t-muted">Resolve queue items this session</p>
+                    </>
+                  )}
                 </article>
               </section>
 
