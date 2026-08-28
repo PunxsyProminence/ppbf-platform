@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | **DONE** |
 | Active | false |
-| ManualVerification | PENDING_SIGN_OFF |
+| ManualVerification | SIGNED_OFF |
 | Parent original-25 | (none — equipment purchasing was not in the original 25) |
 
 ## A note on the number, before anything else
@@ -131,3 +131,4 @@ column to the migration fails the readiness check with
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | remote build session | DONE. Slice: `pilot.gear_vendors` + `gear_products.brand` / `.vendor_id`. maps to: `infra/azure/pilot_slice_postgres_gear_vendors_migration.sql`, `apps/web/scripts/pilot-apply-gear-vendors-migration.mjs`, `apps/web/src/server/pilot/gearVendors.ts`, `apps/web/src/server/pilot/gearCatalog.ts`, `app/api/pilot/admin/gear-vendors/route.ts`, `app/admin/gear/vendors/page.tsx`. Migration NOT applied. Row 201 added to the CSV; `expanded-200-index.json` left at `moduleCount: 200` for the owner to resolve. |
+| 2026-08-28 | owner (Jason Neale) | Manual verification signed off. ONE BLANKET SIGN-OFF covering all 47 modules that carried PENDING_SIGN_OFF, given by the owner on this date -- NOT 47 separate inspections, and this line says so on purpose. What it records is the owner's acceptance of the slices as built; it is not a statement that each module was individually re-verified against the running app, and it does not change `Active`, which stays false. At the time of signing, 59 of the 94 modules claiming DONE cited no checkable path into the codebase -- the capability evidence guard in the web test suite measures that and stops it growing -- deliberately named here without a path, because this note would otherwise read as a citation to the very tooling that counts citations, and make 47 modules look evidenced by their own sign-off line. |

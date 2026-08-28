@@ -192,5 +192,12 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['multidiscipline', 'competence-cohorts']) {
       expect(at('cohort-definitions-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }
+    // athlete-check-in-measures adds the six extended-check-in columns to
+    // pilot.athlete_check_ins, which athlete-check-ins creates. The owner's
+    // growth model for this table is one migration per measure decided, so
+    // this is the first of a series that will all sit behind the same
+    // prerequisite -- asserting it once here is what stops the next one being
+    // grouped next to its sibling instead of after its table.
+    expect(at('athlete-check-in-measures')).toBeGreaterThan(at('athlete-check-ins'));
   });
 });
