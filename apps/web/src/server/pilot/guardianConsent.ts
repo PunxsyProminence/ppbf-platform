@@ -1,6 +1,7 @@
-import { query } from './db';
+import { query, withTransaction } from './db';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
-import { upsertWaiver } from './intake';
+import { upsertWaiver, upsertWaiverWithClient, type UpsertWaiverParams } from './intake';
+import { normalizeWaiverStatusText } from './waiverCompliance';
 
 // Structural, not `import type { PoolClient } from 'pg'`: the only thing
 // callers inside a withTransaction() block actually have is something
@@ -123,7 +124,32 @@ export async function checkGuardianMediaConsent(
       signedAt: row?.created_at ?? null,
     };
   });
-  const missingParentIds = perGuardian.filter((g) => g.status !== 'signed').map((g) => g.parentId);
+  /*
+   * NORMALISED, not raw. Owner decision, 2026-08-28.
+   *
+   * pilot.waivers.status is `text not null` with no CHECK constraint, and
+   * /api/pilot/intake/domain-upsert stores `asString(body.payload.status,
+   * 'signed')` -- any string a caller sends. waiverCompliance.ts records a
+   * waiver stored as ' Signed ' as something that ACTUALLY HAPPENED, and its
+   * own gate has trimmed and lowercased since it was written, on the stated
+   * ground that "refusing to take a child to a competition over whitespace
+   * punishes the family for a data-entry artifact".
+   *
+   * This function read the same column and did NOT, so one guardian's
+   * signature was a signature to that gate and not-consent to this one. The
+   * asymmetry is the defect, not either half of it.
+   *
+   * ONLY CASE AND PADDING MOVE. 'active', 'approved', 'pending', a typo or an
+   * empty string still fail this test, exactly as before -- the shared helper
+   * does not map an unrecognised value onto anything. This loosens the gate
+   * for a real signature recorded untidily and for nothing else.
+   *
+   * perGuardian keeps the RAW value: it is what the row says, and the parent
+   * console renders it. Only the comparison normalises.
+   */
+  const missingParentIds = perGuardian
+    .filter((g) => normalizeWaiverStatusText(g.status) !== 'signed')
+    .map((g) => g.parentId);
 
   return { ok: missingParentIds.length === 0, guardianIds, missingParentIds, perGuardian };
 }
@@ -177,10 +203,78 @@ export async function assertGuardianMediaConsentWithClient(
     [organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE],
   );
   const current = new Map(consentResult.rows.map((row) => [row.parent_id, row]));
-  const missingParentIds = guardianIds.filter((id) => current.get(id)?.status !== 'signed');
+  // Normalised for the reason checkGuardianMediaConsent gives above. These
+  // two are the same rule on the same rows and must not answer differently:
+  // the transactional variant exists to re-check inside a transaction, not to
+  // apply a stricter test than the one that let the caller in.
+  const missingParentIds = guardianIds.filter(
+    (id) => normalizeWaiverStatusText(current.get(id)?.status) !== 'signed',
+  );
   if (missingParentIds.length > 0) {
     throw new GuardianConsentMissingError(athleteId, missingParentIds);
   }
+}
+
+/*
+ * THE WRITE SIDE OF THE LOCK. Owner decision D-2, 2026-08-28.
+ *
+ * Every reader of this athlete's consent takes a lock on pilot.guardian_links
+ * before deciding -- FOR SHARE in assertGuardianMediaConsentWithClient, FOR
+ * UPDATE in publication.ts's suppression sweep and in
+ * staffProvisioning.removeGuardianLink. The WRITE took none. It was a bare
+ * pooled insert that committed on its own, so no lock any reader held could
+ * order itself against it: a withdrawal committing between a reader's check
+ * and its action was simply missed, and on the unlink path it was missed
+ * PERMANENTLY -- the withdrawal recorded, the link deleted, and the guardian
+ * who withdrew no longer counted at all.
+ *
+ * Now the write claims the same row the readers claim, and records the waiver
+ * inside that transaction. Whichever side acquires first, the other waits and
+ * then sees the committed result. There is no interleaving left in which a
+ * withdrawal lands unseen.
+ *
+ * THE LOCK IS SCOPED TO ONE ROW -- this guardian, this athlete -- and that is
+ * not tidiness. The sweep locks every guardian of one athlete; removeGuardianLink
+ * locks the single row it deletes. A writer that locked a wider set than the
+ * readers, or a different set, would give two transactions overlapping ranges
+ * acquired in opposite orders, which is a deadlock waiting for load. One row,
+ * matching the narrowest reader, cannot be half of a cycle.
+ *
+ * A MISSING LINK ROW DOES NOT BLOCK THE WRITE. `for update` over zero rows
+ * locks nothing and returns; the waiver is still recorded. That is deliberate:
+ * a guardian whose link is missing or already removed must still be able to
+ * put their decision on file, and refusing to record a WITHDRAWAL because the
+ * link is gone would be the platform losing a "no" for a bookkeeping reason.
+ * The consent readers already treat an athlete with no guardian links as
+ * unverifiable rather than consented, which is the fail-closed direction.
+ *
+ * BOTH WRITERS TAKE IT, not just the withdrawal. A grant that raced a
+ * concurrent read would be lost the same way, and two writers to one table
+ * with two different concurrency rules is how one of them later stops
+ * matching the other.
+ */
+async function writeMediaConsentUnderLock(
+  organizationId: string,
+  athleteId: string,
+  parentId: string,
+  waiver: Omit<UpsertWaiverParams, 'organizationId' | 'athleteId' | 'waiverType' | 'parentId'>,
+): Promise<string> {
+  return withTransaction(async (client) => {
+    await client.query(
+      `select 1 from pilot.guardian_links
+        where organization_id = $1 and parent_id = $2 and athlete_id = $3
+        for update`,
+      [organizationId, parentId, athleteId],
+    );
+
+    return upsertWaiverWithClient(client, {
+      ...waiver,
+      organizationId,
+      athleteId,
+      waiverType: MEDIA_CONSENT_WAIVER_TYPE,
+      parentId,
+    });
+  });
 }
 
 export async function grantMediaConsent(params: {
@@ -191,16 +285,12 @@ export async function grantMediaConsent(params: {
   coversVideo: boolean;
   publicUseAllowed: boolean;
 }): Promise<string> {
-  return upsertWaiver({
-    organizationId: params.organizationId,
-    athleteId: params.athleteId,
-    waiverType: MEDIA_CONSENT_WAIVER_TYPE,
+  return writeMediaConsentUnderLock(params.organizationId, params.athleteId, params.parentId, {
     signedByName: params.signedByName,
     signedByRole: 'parent',
     signedAt: new Date().toISOString(),
     consentVersion: 'v1',
     status: 'signed',
-    parentId: params.parentId,
     coversVideo: params.coversVideo,
     publicUseAllowed: params.publicUseAllowed,
   });
@@ -212,16 +302,12 @@ export async function withdrawMediaConsent(params: {
   parentId: string;
   signedByName: string;
 }): Promise<string> {
-  return upsertWaiver({
-    organizationId: params.organizationId,
-    athleteId: params.athleteId,
-    waiverType: MEDIA_CONSENT_WAIVER_TYPE,
+  return writeMediaConsentUnderLock(params.organizationId, params.athleteId, params.parentId, {
     signedByName: params.signedByName,
     signedByRole: 'parent',
     signedAt: new Date().toISOString(),
     consentVersion: 'v1',
     status: 'withdrawn',
-    parentId: params.parentId,
     coversVideo: false,
     publicUseAllowed: false,
   });

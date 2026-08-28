@@ -169,8 +169,27 @@ export async function getAthleteWaiverStatus(
  *     the value that makes competitionSafetyGates refuse. Unknown input
  *     fails closed.
  */
+/**
+ * The trim-and-lowercase half of the rule above, on its own so the consent
+ * path can hold the same line without a second copy of the expression.
+ *
+ * Exported deliberately rather than duplicated: guardianConsent.ts reads the
+ * SAME COLUMN and used to compare it raw, so ' Signed ' was a signature to
+ * this module's gate and not-consent to that one. Two readings of one value
+ * is the exact defect the docblock above was written about; a shared function
+ * is what stops it recurring by drift.
+ *
+ * It deliberately does NOT map onto WAIVER_STATUSES. That mapping is this
+ * module's promise about its own vocabulary; the consent path has a narrower
+ * one ('signed' or not) and does not want an unrecognised value silently
+ * renamed to 'missing' on the way past.
+ */
+export function normalizeWaiverStatusText(raw: string | null | undefined): string {
+  return (raw ?? '').trim().toLowerCase();
+}
+
 function normalizeWaiverStatus(raw: string | null | undefined): WaiverStatus {
-  const value = (raw ?? '').trim().toLowerCase();
+  const value = normalizeWaiverStatusText(raw);
   return (WAIVER_STATUSES as readonly string[]).includes(value)
     ? (value as WaiverStatus)
     : 'missing';
