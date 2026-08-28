@@ -2685,6 +2685,17 @@ export default function CoachWorkspace() {
                         that you did it, and it confirms nothing — the verified record is the
                         certifications panel beside this one.
                       </p>
+                      {/* SAYING THE LIST IS PARTIAL, because the heading above
+                          presents it as the record. A coach with forty entries
+                          saw five and had nothing on screen telling them so --
+                          the same wrong inference the failed-read copy three
+                          lines up works to prevent. */}
+                      {coachActivities.length > 5 && (
+                        <p className="t-muted m-0">
+                          Showing the 5 most recent of {coachActivities.length}. The full record is
+                          on your development page.
+                        </p>
+                      )}
                       <ul className="space-y-[var(--s3)]">
                         {coachActivities.slice(0, 5).map((item) => (
                           <li
@@ -2771,7 +2782,15 @@ export default function CoachWorkspace() {
                   cannot come back by accident. */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {developmentState === 'loaded' && coachGoals.map(goal => {
-                  const badge = GOAL_STATUS_BADGE[goal.status];
+                  /* Unguarded, this took the whole surface down rather than one row:
+       an unrecognised status yields undefined and the next property
+       read throws during render. The status union here is a private
+       copy of the server's vocabulary, so a fifth state added
+       server-side compiles clean and fails only at runtime. An
+       unknown state is shown as unknown -- which is also the honest
+       rendering of a value this page does not understand. */
+    const badge = GOAL_STATUS_BADGE[goal.status]
+      ?? { className: 'badge--filed', label: goal.status || 'Unknown' };
                   return (
                     <div key={goal.goal_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
                       <div className="flex justify-between items-start gap-[var(--s3)]">
