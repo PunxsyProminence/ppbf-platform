@@ -103,6 +103,14 @@ export function blockExecutionShapeError(input: BlockExecutionInput): string | n
   if (!(BLOCK_ADHERENCE_STATES as readonly string[]).includes(input.adherence)) {
     return `Unknown adherence state '${input.adherence}'.`;
   }
+  /* Claimed deviations must be named. Checked here AND by
+     pilot_adb_executions_deviations_check, both deliberately: the constraint
+     is the thing that cannot be bypassed, and this is the thing that gives a
+     coach a sentence instead of SQLSTATE 23514. Same division of labour as
+     createRecognition and the parent block's own validator. */
+  if (input.adherence === 'delivered_with_deviations' && !input.deviations?.trim()) {
+    return 'Saying a block was delivered with deviations means saying what they were.';
+  }
   return null;
 }
 

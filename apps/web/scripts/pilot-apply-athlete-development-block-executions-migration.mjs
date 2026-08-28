@@ -92,6 +92,12 @@ const READINESS_QUERY = `
     exists (
       select 1 from pg_constraint
       where conrelid = to_regclass('pilot.athlete_development_block_executions')
+        and contype = 'c'
+        and conname = 'pilot_adb_executions_deviations_check'
+    ) as deviations_named_ready,
+    exists (
+      select 1 from pg_constraint
+      where conrelid = to_regclass('pilot.athlete_development_block_executions')
         and contype = 'f'
         and conname = 'pilot_adb_executions_block_fk'
         and confrelid = to_regclass('pilot.athlete_development_blocks')

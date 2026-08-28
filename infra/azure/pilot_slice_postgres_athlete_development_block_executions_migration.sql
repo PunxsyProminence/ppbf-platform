@@ -137,6 +137,28 @@ begin
       'not_delivered',
       'unknown'
     ));
+
+  -- CLAIMED DEVIATIONS MUST BE NAMED.
+  --
+  -- pilot_intervention_executions_deviations_check ships BESIDE the vocabulary
+  -- this table copied, and the first version of this migration took the five
+  -- words without it. That is half a copy: it accepts
+  -- 'delivered_with_deviations' with the deviations field empty, which is the
+  -- one combination the vocabulary exists to rule out -- a coach saying the
+  -- plan bent and not saying how. Found by reading
+  -- pilot.athlete_development_block_reviews (#804), which copied both halves.
+  --
+  -- btrim with an explicit character set rather than btrim/1, which trims
+  -- SPACES ONLY: a lone tab would pass a check that every JavaScript caller's
+  -- .trim() calls empty. Same reasoning and same spelling as the parent block
+  -- and objectives migrations. Stricter than the constraint it copies, on
+  -- purpose.
+  alter table pilot.athlete_development_block_executions
+    drop constraint if exists pilot_adb_executions_deviations_check;
+  alter table pilot.athlete_development_block_executions
+    add constraint pilot_adb_executions_deviations_check
+    check (adherence <> 'delivered_with_deviations'
+           or length(btrim(deviations, E' \t\r\n\f\v')) > 0);
 end
 $pilot_adb_executions_adherence$;
 

@@ -516,13 +516,20 @@ describe('block executions migration', () => {
     try {
       await applyMigrationTransaction(client, migrationSql);
 
-      // Every value the module offers is accepted by the constraint. The two
-      // lists cannot drift apart without this failing.
+      /* Every value the module offers is accepted by the constraint. The two
+         lists cannot drift apart without this failing.
+
+         deviations is supplied for all five rather than only where it is
+         required: 'delivered_with_deviations' is refused without it by
+         pilot_adb_executions_deviations_check, and that pairing has its own
+         case above. This one is about the VOCABULARY, so it holds the other
+         variable still. */
       for (const [index, state] of BLOCK_ADHERENCE_STATES.entries()) {
         await client.query(
           `insert into pilot.athlete_development_block_executions
-             (organization_id, execution_id, block_id, adherence, recorded_by_account_id)
-           values ($1, $2, $3, $4, $5)
+             (organization_id, execution_id, block_id, adherence, deviations,
+              recorded_by_account_id)
+           values ($1, $2, $3, $4, 'Sparring dropped in week 5.', $5)
            on conflict (organization_id, block_id) do update set adherence = excluded.adherence`,
           [ORG_ID, `exe-v-${index}`, BLOCK_ID, state, COACH_ID],
         );
@@ -547,6 +554,56 @@ describe('block executions migration', () => {
          from pilot.athlete_development_block_executions where execution_id = 'exe-default'`,
       );
       expect(rows[0]).toEqual({ adherence: 'unknown', deviations: '', deviation_reason: '' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('claimed deviations must be named -- the other half of the vocabulary', async () => {
+    /* pilot_intervention_executions_deviations_check ships BESIDE the five
+       words this table copied, and the first version of this migration took
+       the words without it. Half a copy accepts "the plan bent" with no
+       statement of how, which is the one combination the vocabulary exists to
+       rule out. Found by reading #804's competing table, which copied both
+       halves.
+
+       The trim set is explicit rather than btrim/1: a lone tab would pass a
+       spaces-only check that every JavaScript caller's .trim() calls empty. */
+    const client = await freshDatabase('adb_exec_deviations');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+
+      await expect(client.query(
+        `insert into pilot.athlete_development_block_executions
+           (organization_id, execution_id, block_id, adherence, recorded_by_account_id)
+         values ($1, 'exe-bare', $2, 'delivered_with_deviations', $3)`,
+        [ORG_ID, BLOCK_ID, COACH_ID],
+      )).rejects.toThrow(/deviations_check/);
+
+      // A tab is not a statement of anything.
+      await expect(client.query(
+        `insert into pilot.athlete_development_block_executions
+           (organization_id, execution_id, block_id, adherence, deviations, recorded_by_account_id)
+         values ($1, 'exe-tab', $2, 'delivered_with_deviations', E'\t\n', $3)`,
+        [ORG_ID, BLOCK_ID, COACH_ID],
+      )).rejects.toThrow(/deviations_check/);
+
+      // Stated, and it goes in.
+      await client.query(
+        `insert into pilot.athlete_development_block_executions
+           (organization_id, execution_id, block_id, adherence, deviations, recorded_by_account_id)
+         values ($1, 'exe-named', $2, 'delivered_with_deviations', 'Sparring dropped in week 5.', $3)`,
+        [ORG_ID, BLOCK_ID, COACH_ID],
+      );
+
+      // And every OTHER state is free to leave deviations empty -- the
+      // constraint is about one claim, not about the field being required.
+      await client.query(
+        `insert into pilot.athlete_development_block_executions
+           (organization_id, execution_id, block_id, adherence, recorded_by_account_id)
+         values ($1, 'exe-other', $2, 'under_delivered', $3)`,
+        [ORG_ID, SECOND_BLOCK_ID, COACH_ID],
+      );
     } finally {
       await client.end();
     }
@@ -677,6 +734,26 @@ describe('the module recording and reading a verdict', () => {
       actor: COACH, blockId: BLOCK_ID,
       adherence: 'mostly_fine' as never,
     })).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  test('the module refuses unnamed deviations with a sentence, not a SQLSTATE', async () => {
+    /* Checked in both places on purpose: the constraint is what cannot be
+       bypassed, this is what gives a coach something to read. A caller that
+       reached the database here would get 23514. */
+    await expect(recordBlockExecution({
+      actor: COACH, blockId: BLOCK_ID, adherence: 'delivered_with_deviations',
+    })).rejects.toBeInstanceOf(ValidationError);
+
+    await expect(recordBlockExecution({
+      actor: COACH, blockId: BLOCK_ID, adherence: 'delivered_with_deviations',
+      deviations: '   ',
+    })).rejects.toBeInstanceOf(ValidationError);
+
+    const written = await recordBlockExecution({
+      actor: COACH, blockId: BLOCK_ID, adherence: 'delivered_with_deviations',
+      deviations: 'Sparring dropped in week 5.',
+    });
+    expect(written?.adherence).toBe('delivered_with_deviations');
   });
 
   test('a coach of this gym who cannot open the block cannot judge it', async () => {
