@@ -382,6 +382,36 @@ committed the owner to a decision he was still forming.
 
 Report the finding. Build when told to build.
 
+### A decision already made is written down
+
+`docs/current/OWNER_DECISIONS.md` carries the decisions the owner has actually
+made -- in his own words, with the evidence each rested on, and with the
+options as they were put to him where the words alone do not carry the choice.
+
+**Read it before writing a test, gate, migration, or policy constant that
+asserts who may do what.** It is the one document outside this file a lane
+should open by default; `CLAUDE.md` otherwise says not to preload, and this is
+the exception. If the policy is recorded there, build to it. If it is not, that
+is **OWNER DECISION REQUIRED** -- say so and stop. Inventing the answer is the
+failure this exists to prevent.
+
+If code you are reading contradicts an entry, that is a finding. Report it. Do
+not assume the entry is stale and build to the code instead.
+
+The cost of not having it is on the record. The drill and cue library read
+policy was ratified on 2026-08-27 and written down nowhere. #754 merged the
+next day as `81e27e72` carrying test expectations that asserted the opposite,
+and `main` shipped code contradicting a ruling that had already been made --
+in good faith, by a lane with no way to know. Establishing when the ruling had
+happened took an hour of forensics across PR bodies and commit timestamps and
+produced only a one-hour bracket, because the sole trace was an undated code
+comment on an unmerged branch.
+
+That file is a record of DECISIONS, not of environment state. For what is
+actually deployed the source is `docs/current/PRODUCTION_STATE.json`, written
+by the session that runs the release; see "Your lane's state is not the
+system's state" below.
+
 ### Brief header — required on every PR and status report
 
 ```
