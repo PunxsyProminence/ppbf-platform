@@ -1,11 +1,15 @@
 // The pure half of the block-objective contract (module 036, slice 2): which
 // domains exist, and what a coach must have written down.
 //
-// The vocabulary assertions here are the forcing function for the withheld
-// tenth domain. athleteDevelopmentBlockObjectives.pg.test.ts proves the
-// database refuses it; this file proves the module refuses it with a reason
-// a person can act on, and pins the list so that widening it is a deliberate
-// edit in the same commit as the migration rather than a drift.
+// The vocabulary assertions pin the list so that changing it is a deliberate
+// edit in the same commit as the migration rather than a drift -- the module
+// accepting a value the database refuses is the failure they exist to stop.
+//
+// The tenth domain, nutrition_body_composition, shipped withheld and was
+// admitted by owner decision 2026-08-28. The tests that guarded the
+// withholding are not deleted; they are turned around to guard what the
+// decision did NOT do, which is the part a later change is most likely to
+// get wrong.
 
 import {
   FULL_SPECTRUM_DOMAINS,
@@ -29,10 +33,10 @@ test('every declared domain is accepted', () => {
   }
 });
 
-test('the vocabulary is exactly the nine domains that ship, in declaration order', () => {
-  // Nine, not ten. If this list changes, the migration's CHECK constraint
-  // must change in the same commit or the two disagree -- the module would
-  // accept a value the database refuses.
+test('the vocabulary is exactly the ten Full Spectrum domains, in declaration order', () => {
+  // If this list changes, the migration's CHECK constraint must change in
+  // the same commit or the two disagree -- the module would accept a value
+  // the database refuses.
   expect([...FULL_SPECTRUM_DOMAINS]).toEqual([
     'technical',
     'physical',
@@ -43,23 +47,22 @@ test('the vocabulary is exactly the nine domains that ship, in declaration order
     'competition_preparation',
     'tactical_film_study',
     'lifestyle_athlete_identity',
+    'nutrition_body_composition',
   ]);
 });
 
-test('nutrition / body composition is refused, and says why rather than just no', () => {
-  // The withheld tenth domain. This is not a typo case: a coach reaching for
-  // it is asking a real question, and the refusal points them somewhere
-  // instead of stopping dead -- the owner principle the goal-category
-  // migration records ("the stop carries the lesson, it is not just a wall").
-  const refusal = blockObjectiveShapeError({
-    ...VALID,
-    domain: 'nutrition_body_composition' as never,
-  });
-  expect(refusal).toMatch(/not an available objective domain/);
-  expect(refusal).toMatch(/pending an owner decision/);
-  expect(refusal).toMatch(/coach and guardian/);
-  // And it does NOT read like an unknown-value error, because it is not one.
-  expect(refusal).not.toMatch(/Unknown development domain/);
+test('nutrition / body composition is admitted (owner decision, 2026-08-28)', () => {
+  expect(blockObjectiveShapeError({ ...VALID, domain: 'nutrition_body_composition' })).toBeNull();
+});
+
+test('admitting the domain did not admit free-form weight vocabulary', () => {
+  // What was decided is one DOMAIN LABEL. These are not domains, they never
+  // were, and a later change that reads the 2026-08-28 decision as "body
+  // composition is open now" would most plausibly go wrong here first.
+  for (const notADomain of ['weight_cut', 'weight_loss', 'weight_gain', 'body_composition', 'nutrition']) {
+    expect(blockObjectiveShapeError({ ...VALID, domain: notADomain as never }))
+      .toMatch(/Unknown development domain/);
+  }
 });
 
 test('an invented domain is refused by name', () => {

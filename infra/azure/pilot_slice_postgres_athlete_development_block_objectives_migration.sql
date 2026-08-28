@@ -31,46 +31,51 @@
 -- organization, so neither can its objectives.
 --
 -- ────────────────────────────────────────────────────────────────────────
--- THE DOMAIN VOCABULARY IS NINE OF TEN, AND THE MISSING ONE IS DELIBERATE
+-- THE DOMAIN VOCABULARY IS ALL TEN (owner decision, 2026-08-28)
 --
--- The Full Spectrum list names ten domains. Nine are admitted below.
--- 'nutrition_body_composition' is NOT, and this is the same refusal
--- pilot_slice_postgres_goal_category_progress_migration.sql already made
--- when it admitted seven goal categories and withheld 'Weight Loss' and
--- 'Weight Gain':
+-- Jason, verbatim: "admit nutrition_body_composition -- module 200 is done."
 --
---   "Admitting these two values here would create a stored, queryable
---    record of a minor's weight-loss intent -- readable by every role the
---    goals list is readable by -- ahead of the tier system whose entire job
---    is to decide who may see exactly that. SHADOW already refuses
---    weight-cutting guidance ... it would be strange for the doctrine layer
---    to refuse the conversation while the goals table quietly filed the
---    goal."
+-- WHAT THIS RESOLVED. This table shipped with nine of the ten Full Spectrum
+-- domains. The tenth was withheld, and the reasoning was not this
+-- migration's: pilot_slice_postgres_goal_category_progress_migration.sql had
+-- already withheld 'Weight Loss' and 'Weight Gain' from
+-- pilot.goals.category because admitting them
 --
--- The same sentence holds with 'coach' in place of 'athlete'. A block
--- objective reading "cut to 132 by the October show" is a stored, queryable
--- body-composition target for a named minor, and shadowAuthority.ts refuses
--- 'weight_cut' in conversation today. A schema that quietly files what the
--- doctrine layer refuses to discuss is the defect, not the solution.
+--   "would create a stored, queryable record of a minor's weight-loss
+--    intent ... ahead of the tier system whose entire job is to decide who
+--    may see exactly that."
 --
--- WHAT HAS CHANGED SINCE THAT MIGRATION, stated because it is the whole
--- reason this is an owner decision and not an indefinite block: the gate it
--- named now exists. The Privacy-Tier System (capability 200,
--- apps/web/src/server/pilot/privacyTiers.ts) is built -- its module doc
--- reads Status DONE, and its own header names "a body-composition tracker"
--- as an anticipated consumer. But its module doc also reads Active false /
--- ManualVerification PENDING_SIGN_OFF, and FIELD_TIERS' own entry for
--- 'goals.category' says the withholding "waits on an explicit owner
--- decision, which this registry makes possible and deliberately does not
--- make."
+-- That was a wait on a named gate, not a permanent refusal, and the gate is
+-- built: module 200 (the Privacy-Tier System,
+-- apps/web/src/server/pilot/privacyTiers.ts) reads Status DONE and ships
+-- FIELD_TIERS, the field-level registry whose own header names "a
+-- body-composition tracker" as an anticipated consumer. The owner has now
+-- made the explicit decision that FIELD_TIERS' goals.category note said the
+-- registry "makes possible and deliberately does not make."
 --
--- So this migration does not make it either. Nine domains ship; the tenth
--- is one line here (and one entry in the data layer's DOMAINS array) the
--- day Jason says so. Nothing is lost by waiting -- a coach with a nutrition
--- objective today writes it under 'physical' or 'lifestyle_athlete_identity'
--- in their own words, or tells the athlete's guardian, which is where a
--- minor's body-composition conversation belongs until the tier decision is
--- signed off.
+-- SO THE FIELD IS REGISTERED, NOT MERELY ADMITTED. Leaning on module 200 as
+-- the ground for this change while not actually using module 200 would be a
+-- hollow justification, so
+-- FIELD_TIERS['athlete_development_block_objectives.objective'] now carries
+-- this field's tier and names where it is enforced. Read that entry before
+-- building anything that displays an objective: it records honestly that
+-- what is enforced TODAY is organization scope, and that narrowing a
+-- body-composition objective about a named minor to athlete_record is the
+-- work item before any read surface ships.
+--
+-- WHAT THIS DECISION DOES NOT COVER, stated so a later reader does not
+-- stretch it:
+--   * pilot.goals.category is UNCHANGED. 'Weight Loss' and 'Weight Gain'
+--     remain withheld there. That is a different surface -- athlete-filed,
+--     athlete-readable -- and it was not what was decided. Deciding the two
+--     together is worth doing; doing it here without being asked is not.
+--   * shadowAuthority.ts still refuses 'weight_cut' in conversation, and
+--     nothing here changes that. A coach may record their own plan; the
+--     model still does not give weight-cutting guidance.
+--   * No prescription, no automation, no computation. This admits a DOMAIN
+--     LABEL on a sentence a coach wrote. It does not add a weight field, a
+--     target, a target date, or anything that could be read as a
+--     platform-issued body-composition instruction to a minor.
 -- ────────────────────────────────────────────────────────────────────────
 --
 -- THE DOMAIN CHECK RECONCILES RATHER THAN GUARDS, for the reason the
@@ -123,9 +128,10 @@ create table if not exists pilot.athlete_development_block_objectives (
 
 do $pilot_adb_objectives_domain$
 begin
-  -- Nine of the ten Full Spectrum domains. See the header for why
-  -- 'nutrition_body_composition' is not among them yet, and for the single
-  -- owner decision that adds it.
+  -- All ten Full Spectrum domains. 'nutrition_body_composition' was withheld
+  -- when this table shipped and was admitted by owner decision 2026-08-28;
+  -- see the header for what that decision rests on and what it does not
+  -- cover.
   alter table pilot.athlete_development_block_objectives
     drop constraint if exists pilot_athlete_development_block_objectives_domain_check;
   alter table pilot.athlete_development_block_objectives
@@ -139,7 +145,8 @@ begin
       'sparring_live_progression',
       'competition_preparation',
       'tactical_film_study',
-      'lifestyle_athlete_identity'
+      'lifestyle_athlete_identity',
+      'nutrition_body_composition'
     ));
 end
 $pilot_adb_objectives_domain$;
@@ -155,7 +162,7 @@ comment on table pilot.athlete_development_block_objectives is
   'What one development block is trying to move, one row per domain per objective, in the coach''s own words. Records intent; computes nothing. No progress percentage, attainment score, domain weighting or block-level roll-up is stored or derived here.';
 
 comment on column pilot.athlete_development_block_objectives.domain is
-  'Which Full Spectrum domain this objective belongs to. Nine of ten admitted; nutrition_body_composition is withheld pending an explicit owner decision on filing a minor''s body-composition target as a queryable row -- see the migration header and FIELD_TIERS'' goals.category entry.';
+  'Which of the ten Full Spectrum domains this objective belongs to. nutrition_body_composition was withheld at first ship and admitted by owner decision 2026-08-28 once the Privacy-Tier System (module 200) was in place; the field''s tier is registered in FIELD_TIERS. pilot.goals.category is a separate surface and is unchanged.';
 
 comment on column pilot.athlete_development_block_objectives.objective is
   'The coach''s own words. Stored verbatim, never parsed into a taxonomy, never scored.';

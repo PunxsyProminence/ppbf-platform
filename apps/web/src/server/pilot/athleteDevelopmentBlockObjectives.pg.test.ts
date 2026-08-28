@@ -9,9 +9,10 @@
 //     no-op -- including the DO block, which DROPS and RE-ADDS the domain
 //     constraint on every run rather than guarding it, so "idempotent" here
 //     is a stronger claim than `if not exists` and has to be shown;
-//   * the domain vocabulary is exactly nine, with
-//     'nutrition_body_composition' refused BY THE DATABASE -- the withheld
-//     tenth, whose absence is a safeguarding decision and not an oversight;
+//   * the domain vocabulary is exactly the ten Full Spectrum domains --
+//     nutrition_body_composition shipped withheld and was admitted by owner
+//     decision 2026-08-28, and the cases that guarded the withholding now
+//     guard what that decision did NOT change;
 //   * an objective cannot hang off a block in another organization, and
 //     cannot outlive its block or its athlete (cascade through two levels);
 //   * tenancy holds on every read this slice adds;
@@ -323,14 +324,18 @@ describe('block objectives migration', () => {
       );
       expect(rows.rows.map((r) => r.objective_id)).toEqual(['obj-keep']);
 
-      await expect(insertObjective(client, 'obj-still-refused', { domain: 'nutrition_body_composition' }))
+      // The constraint still refuses what it refused: re-adding it must not
+      // quietly widen the vocabulary. 'nutrition_body_composition' is no
+      // longer the probe for that (it was admitted 2026-08-28), so this uses
+      // a value that was never a domain and never will be.
+      await expect(insertObjective(client, 'obj-still-refused', { domain: 'weight_cut' }))
         .rejects.toMatchObject({ code: '23514' });
     } finally {
       await client.end();
     }
   });
 
-  test('the domain vocabulary is exactly the nine that ship', async () => {
+  test('the domain vocabulary is exactly the ten that ship', async () => {
     const client = await freshDatabase('adbo_domains');
     try {
       await client.query(migrationSql);
@@ -348,21 +353,59 @@ describe('block objectives migration', () => {
     }
   });
 
-  test('nutrition / body composition is refused BY THE DATABASE, not only by the module', async () => {
-    // The withheld tenth domain. This is a safeguarding decision -- filing a
-    // minor's body-composition target as a queryable row waits on an owner
-    // decision the privacy-tier registry makes possible and deliberately
-    // does not make -- so it is enforced where a route that forgot to
-    // validate still cannot get past it.
-    const client = await freshDatabase('adbo_withheld');
+  test('nutrition / body composition is accepted, and near spellings still are not', async () => {
+    // Admitted by owner decision 2026-08-28, once module 200 (the
+    // Privacy-Tier System) existed to answer what tier the field sits at.
+    // What was admitted is one domain label: the free-form weight vocabulary
+    // below was never a domain and still is not, and this is where a later
+    // change that over-reads that decision would surface first.
+    const client = await freshDatabase('adbo_bodycomp');
     try {
       await client.query(migrationSql);
 
-      await expect(insertObjective(client, 'obj-bodycomp', { domain: 'nutrition_body_composition' }))
-        .rejects.toMatchObject({ code: '23514' });
-      // Near spellings do not sneak it in either.
-      for (const domain of ['nutrition', 'body_composition', 'weight_cut', 'weight_loss']) {
+      await insertObjective(client, 'obj-bodycomp', { domain: 'nutrition_body_composition' });
+      const stored = await client.query(
+        'select domain from pilot.athlete_development_block_objectives where objective_id = $1',
+        ['obj-bodycomp'],
+      );
+      expect(stored.rows).toEqual([{ domain: 'nutrition_body_composition' }]);
+
+      for (const domain of ['nutrition', 'body_composition', 'weight_cut', 'weight_loss', 'weight_gain']) {
         await expect(insertObjective(client, `obj-${domain}`, { domain }))
+          .rejects.toMatchObject({ code: '23514' });
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('admitting the tenth domain left pilot.goals.category alone', async () => {
+    // A separate surface -- athlete-filed, athlete-readable -- whose own
+    // migration withholds 'Weight Loss' and 'Weight Gain'. The 2026-08-28
+    // decision was about coach-authored objectives and did not reverse it.
+    // Asserted here because "we decided body composition is fine" is exactly
+    // the kind of summary that travels further than the decision did.
+    const client = await freshDatabase('adbo_goals_untouched');
+    try {
+      await client.query(migrationSql);
+      await client.query(
+        await fs.readFile(
+          path.join(INFRA_DIR, 'pilot_slice_postgres_goal_category_progress_migration.sql'),
+          'utf8',
+        ),
+      );
+
+      const insertGoal = (goalId: string, category: string) => client.query(
+        `insert into pilot.goals
+           (organization_id, goal_id, athlete_id, title, target_date, metric, status,
+            category, created_at, updated_at)
+         values ($1, $2, $3, 'A goal', '2026-12-01'::date, 'rounds', 'active', $4, now(), now())`,
+        [ORG_ID, goalId, ATHLETE_ID, category],
+      );
+
+      await insertGoal('goal-ok', 'Fitness');
+      for (const category of ['Weight Loss', 'Weight Gain']) {
+        await expect(insertGoal(`goal-${category.replace(' ', '-')}`, category))
           .rejects.toMatchObject({ code: '23514' });
       }
     } finally {
@@ -543,16 +586,17 @@ describe('the module writing and reading objectives', () => {
     }
   });
 
-  test('the withheld domain is refused before the database is touched, with a reason', async () => {
-    const client = await migratedDatabase('adbo_mod_withheld');
+  test('a body-composition objective is accepted, and an unsound one is still refused', async () => {
+    const client = await migratedDatabase('adbo_mod_shape');
     try {
-      await expect(addBlockObjective({
+      const created = await addBlockObjective({
         organizationId: ORG_ID,
         blockId: BLOCK_ID,
-        domain: 'nutrition_body_composition' as never,
-        objective: 'Cut to 132 by the October show.',
+        domain: 'nutrition_body_composition',
+        objective: 'Eat a real breakfast before morning conditioning.',
         createdByAccountId: COACH_ID,
-      })).rejects.toThrow(/pending an owner decision/);
+      });
+      expect(created?.domain).toBe('nutrition_body_composition');
 
       await expect(addBlockObjective({
         organizationId: ORG_ID,
@@ -561,9 +605,18 @@ describe('the module writing and reading objectives', () => {
         objective: '   ',
         createdByAccountId: COACH_ID,
       })).rejects.toBeInstanceOf(ValidationError);
+      await expect(addBlockObjective({
+        organizationId: ORG_ID,
+        blockId: BLOCK_ID,
+        domain: 'weight_cut' as never,
+        objective: 'Cut to 132 by the October show.',
+        createdByAccountId: COACH_ID,
+      })).rejects.toBeInstanceOf(ValidationError);
 
-      expect((await client.query('select objective_id from pilot.athlete_development_block_objectives')).rows)
-        .toEqual([]);
+      const written = await client.query(
+        'select objective_id from pilot.athlete_development_block_objectives',
+      );
+      expect(written.rows).toHaveLength(1);
     } finally {
       await client.end();
     }
@@ -671,12 +724,14 @@ describe('block objectives runner readiness assertion', () => {
     }
   });
 
-  test('the readiness gate does NOT encode the withheld domain', async () => {
-    // A deploy gate that asserted 'nutrition_body_composition' is absent
-    // would refuse every dispatch the day the owner reverses that decision --
-    // turning a one-line vocabulary change into a blocked release. The
-    // policy lives in the migration and in this suite, which change together;
-    // the gate checks structure only.
+  test('the readiness gate does not encode the domain policy, in either direction', async () => {
+    // This one paid for itself. The gate was deliberately written not to
+    // assert 'nutrition_body_composition' was ABSENT, on the grounds that a
+    // deploy gate encoding a policy is a landmine under the decision that
+    // changes it -- and eight hours later the owner changed it. The reversal
+    // was one line in the migration and one in the module, with no runner
+    // edit and no blocked release. It stays policy-free in the other
+    // direction too, for the same reason.
     const runnerSource = await fs.readFile(MIGRATION_RUNNER_PATH, 'utf8');
     const readinessQuery = runnerSource.slice(
       runnerSource.indexOf('const READINESS_QUERY'),

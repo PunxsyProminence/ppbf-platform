@@ -219,6 +219,24 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'athlete_record',
     enforcedBy: 'wallOfNamesPrivacy.test.ts',
   },
+  'athlete_development_block_objectives.objective': {
+    tier: 'organization',
+    enforcedBy: 'athleteDevelopmentBlockObjectives.ts#listObjectivesForBlock',
+    note:
+      'A coach-authored sentence about one athlete\'s development, including -- since the owner '
+      + 'decision of 2026-08-28 that admitted the nutrition_body_composition domain -- body-composition '
+      + 'objectives about a named minor. That decision cited this registry, so this entry states what '
+      + 'is actually enforced rather than what the field deserves: TODAY the only reads are '
+      + 'organization-scoped (every statement in athleteDevelopmentBlockObjectives.ts carries '
+      + 'organization_id, and writes additionally require an active organization_memberships row), and '
+      + 'there is no API route or UI at all. That is genuinely organization, not athlete_record, and '
+      + 'saying otherwise here would be the aspiration this map forbids. THE GAP IS THE WORK ITEM: a '
+      + 'body-composition objective is narrower in kind than athletes.weight_class and belongs at '
+      + 'athlete_record behind assertActorCanAccessAthlete. Narrow it in the slice that builds the '
+      + 'first read surface, before that surface ships -- not after. Note also that pilot.goals.category '
+      + 'is a SEPARATE surface and still withholds Weight Loss / Weight Gain; the 2026-08-28 decision '
+      + 'was about coach-authored objectives and did not reverse that one.',
+  },
   'goals.category': {
     tier: 'athlete_record',
     enforcedBy: 'contracts.ts#GOAL_CATEGORIES',

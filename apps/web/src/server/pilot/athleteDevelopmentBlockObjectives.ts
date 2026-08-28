@@ -22,14 +22,19 @@ import { ForbiddenError, ValidationError } from './errors';
 // exactly one place the answer lives. Every function here is organization-
 // scoped by its first argument, in the WHERE clause of every statement.
 
-// Nine of the ten Full Spectrum domains. 'nutrition_body_composition' is
-// withheld -- see the migration header. The short version: filing a minor's
-// body-composition target as a queryable row is the thing the goal-category
-// migration already refused for athlete-filed goals, shadowAuthority.ts
-// refuses 'weight_cut' in conversation, and FIELD_TIERS' own note says the
-// reversal "waits on an explicit owner decision, which this registry makes
-// possible and deliberately does not make." Adding it here is one line here
-// and one line in the migration, the day that decision is made.
+// All ten Full Spectrum domains. 'nutrition_body_composition' shipped
+// withheld and was admitted by owner decision 2026-08-28, once module 200
+// (the Privacy-Tier System) was in place to answer what tier the field sits
+// at -- see the migration header for the full record.
+//
+// Two things that decision did NOT change, because a later reader will be
+// tempted to assume it did: pilot.goals.category still withholds
+// 'Weight Loss' / 'Weight Gain' (a different, athlete-filed surface), and
+// shadowAuthority.ts still refuses 'weight_cut' in conversation. What is
+// admitted here is a DOMAIN LABEL on a sentence a coach wrote -- there is
+// no weight field, no target, and no platform-issued instruction to a minor.
+// FIELD_TIERS['athlete_development_block_objectives.objective'] records the
+// field's tier and the narrowing still owed before any read surface ships.
 export const FULL_SPECTRUM_DOMAINS = [
   'technical',
   'physical',
@@ -40,6 +45,7 @@ export const FULL_SPECTRUM_DOMAINS = [
   'competition_preparation',
   'tactical_film_study',
   'lifestyle_athlete_identity',
+  'nutrition_body_composition',
 ] as const;
 
 export type FullSpectrumDomain = (typeof FULL_SPECTRUM_DOMAINS)[number];
@@ -79,13 +85,6 @@ export interface BlockObjectiveInput {
  */
 export function blockObjectiveShapeError(input: BlockObjectiveInput): string | null {
   if (!(FULL_SPECTRUM_DOMAINS as readonly string[]).includes(input.domain)) {
-    // Named explicitly, including the withheld one, so a caller reaching for
-    // nutrition_body_composition gets the reason rather than a bare refusal.
-    if (input.domain === ('nutrition_body_composition' as string)) {
-      return 'Nutrition / body composition is not an available objective domain. '
-        + 'Recording a body-composition target for an athlete is pending an owner decision; '
-        + 'raise it with the athlete\'s coach and guardian instead.';
-    }
     return `Unknown development domain '${input.domain}'.`;
   }
   if (!input.objective?.trim()) {

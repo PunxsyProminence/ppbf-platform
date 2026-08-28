@@ -47,11 +47,14 @@ thin organization-scoped data layer
 (`apps/web/src/server/pilot/athleteDevelopmentBlockObjectives.ts`) adds,
 reads and re-states an objective under the same active-membership floor.
 
-**The domain vocabulary ships nine of ten, and the tenth is an owner
-decision — see Open Question 6 below.** `nutrition_body_composition` is
-withheld, for the reason
-`pilot_slice_postgres_goal_category_progress_migration.sql` already gave when
-it withheld `Weight Loss` / `Weight Gain` from the athlete goal categories.
+**The domain vocabulary is all ten.** `nutrition_body_composition` shipped
+withheld — for the reason
+`pilot_slice_postgres_goal_category_progress_migration.sql` gave when it
+withheld `Weight Loss` / `Weight Gain` from the athlete goal categories — and
+was **admitted by owner decision 2026-08-28** on the ground that module 200
+is built. See Open Question 6 below for the full record, including what that
+decision does not cover. The field is registered in `FIELD_TIERS` as
+`athlete_development_block_objectives.objective`.
 
 **The illustrative name in this document is not the shipped name.** Section
 (b) below writes `pilot.periodization_blocks`; the table is
@@ -445,8 +448,13 @@ Whichever is chosen, `athlete`, `parent` and `volunteer` are not write roles
 here, and read access for an athlete or their guardian is a separate
 safeguarding question this slice does not open.
 
-**6. [NEW, raised by slice 2.] May a coach file a nutrition / body-composition
-objective for a named minor?**
+**6. [ANSWERED — (a), 2026-08-28.] May a coach file a nutrition /
+body-composition objective for a named minor?**
+
+**Jason, verbatim: _"admit nutrition_body_composition — module 200 is done."_**
+The domain is admitted; the vocabulary is now all ten. What that decision
+covers, and what it does not, is recorded at the end of this question. The
+question as it was put:
 
 Slice 2 ships nine of the ten Full Spectrum domains.
 `nutrition_body_composition` is withheld, and the reasoning is not this
@@ -481,8 +489,40 @@ which this registry makes possible and deliberately does not make."*
   own tier assignment, on the grounds that a free-text objective field is the
   wrong shape for this subject regardless of who can read it.
 
-Reversing it is one line in the migration's `DO` block and one entry in
-`FULL_SPECTRUM_DOMAINS`. The migration's domain constraint deliberately
-reconciles rather than guards, so the change lands correctly on
-already-migrated environments; the deploy gate deliberately does **not**
-encode the withheld value, so reversing it cannot block a release.
+Reversing it was one line in the migration's `DO` block and one entry in
+`FULL_SPECTRUM_DOMAINS` — which is what it cost when the owner reversed it
+hours later. The migration's domain constraint reconciles rather than guards,
+so the change lands correctly on already-migrated environments; the deploy
+gate deliberately did **not** encode the withheld value, so the reversal
+needed no runner edit and blocked no release. Both choices were made against
+exactly this event and both paid.
+
+**What the decision covers, and what it does not.** Three boundaries, written
+down because "we decided body composition is fine" is the kind of summary
+that travels further than the decision did, and each is asserted by a test:
+
+1. **`pilot.goals.category` is unchanged.** `Weight Loss` and `Weight Gain`
+   remain withheld there. That is a different surface — athlete-filed and
+   athlete-readable — and it was not what was decided.
+   `athleteDevelopmentBlockObjectives.pg.test.ts` asserts the goals
+   constraint still refuses both. **Worth deciding on its own** so the two
+   surfaces do not disagree about the same subject; it is not decided here.
+2. **`shadowAuthority.ts` still refuses `weight_cut` in conversation.** A
+   coach may record their own plan; the model still gives no weight-cutting
+   guidance.
+3. **A domain label is all that was admitted.** No weight field, no target,
+   no target date, no computation — and the free-form weight vocabulary
+   (`weight_cut`, `weight_loss`, `weight_gain`, `body_composition`,
+   `nutrition`) was never a domain and still is not, refused by the database
+   and by the module.
+
+**One thing is now owed rather than done.** The decision cited module 200, so
+the field is registered in `FIELD_TIERS` — honestly, at the tier that is
+actually enforced today, which is `organization`: every read in
+`athleteDevelopmentBlockObjectives.ts` is org-scoped and there is no API
+route or UI at all. A body-composition objective about a named minor is
+narrower in kind than `athletes.weight_class` and belongs at `athlete_record`
+behind `assertActorCanAccessAthlete`. That narrowing belongs in the slice
+that builds the first read surface, **before** that surface ships. The
+registry entry records it as the work item rather than claiming a tier the
+code does not hold.
