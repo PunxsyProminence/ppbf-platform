@@ -91,7 +91,9 @@ describe('GET /api/pilot/drills', () => {
     expect(mockListDrills).not.toHaveBeenCalled();
   });
 
-  // The board sees organization-level aggregates only.
+  // The board sees organization-level aggregates only. Unchanged by the
+  // 2026-08-27 decision, which extended this refusal to the two v3 library
+  // surfaces rather than relaxing it here.
   test('rejects the board', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'board' }));
 
@@ -99,6 +101,32 @@ describe('GET /api/pilot/drills', () => {
 
     expect(res.status).toBe(403);
     expect(mockListDrills).not.toHaveBeenCalled();
+  });
+
+  // CHANGED by the same decision. This route used to refuse the platform owner
+  // on the reasoning that "a gym's drills are the gym's". The read is reached
+  // only through the principal's own organization, so that reasoning is
+  // satisfied rather than overridden -- an Omega read IS one gym's, and the
+  // assertion below is what says so.
+  test('admits the platform owner, and only to its own organization', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'platform_owner' }));
+
+    const res = await GET(getRequest());
+
+    expect(res.status).toBe(200);
+    expect(mockListDrills).toHaveBeenCalledWith('org-1', { includeRetired: false });
+  });
+
+  test('the platform owner does not thereby see retired drills', async () => {
+    // include_retired is gated on the AUTHOR list, which the decision left
+    // alone. Reading the library and reading what the gym has taken out of it
+    // are different questions, and only the first one was answered.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'platform_owner' }));
+
+    const res = await GET(getRequest('?include_retired=true'));
+
+    expect(res.status).toBe(200);
+    expect(mockListDrills).toHaveBeenCalledWith('org-1', { includeRetired: false });
   });
 
   test('an athlete reads their own gym library', async () => {
