@@ -1258,6 +1258,135 @@ export function attendanceColumnsForReader(role: PilotRole): string[] {
   return [...ATTENDANCE_IDENTITY_COLUMNS];
 }
 
+/**
+ * WHICH COLUMNS OF AN ASSESSMENT ROW A READER MAY SEE.
+ *
+ * The fifth table in this body to be narrowed, and the one where the widening
+ * happened AFTER the reads were written. pilot.assessments shipped with seven
+ * columns; the assessment-protocols migration added eleven more, including a
+ * free-text staff note and a second rater's independent score. Both reads of
+ * this table were `select *`, so those eleven reached a guardian and the
+ * athlete themself on the day the migration applied, with nothing in either
+ * read changed or reviewed. That is the failure mode the waiver projection's
+ * header names in as many words: AN ALLOWLIST, NOT A DENYLIST, so a later
+ * migration's column does not reach a family by default. This is that
+ * allowlist arriving one migration late.
+ *
+ * WHAT MOVES TO STAFF, and the stated harm for each -- nothing is moved for
+ * being merely untidy:
+ *
+ *   conditions_note      Free text a staff member typed about the conditions
+ *                        an assessment ran under. Identical in kind to
+ *                        pilot.waivers.notes, pilot.medical_intake.notes and
+ *                        pilot.attendance.notes, all three already staff-only
+ *                        for exactly this reason.
+ *   assessor_account_id  A staff account identifier. The guardian projection
+ *                        above drops pilot.parents.account_id from the family
+ *                        set on the same ground: an account id is a handle on
+ *                        a person, not a fact about the child.
+ *   second_rater_account_id
+ *                        The same, for the second rater.
+ *   second_rater_result  The second rater's independent score. Its migration
+ *                        header states why the column exists: so "the
+ *                        reliability study collects itself from live use" --
+ *                        raw material for weighted kappa and ICC. It is
+ *                        unreconciled internal review state, and paired with
+ *                        the id above it is a record of which staff member
+ *                        disagreed with which about a child. It was never a
+ *                        result issued to anyone.
+ *
+ * WHAT DELIBERATELY STAYS, so the absence is a decision and not an oversight:
+ * result, assessment_type, and the whole protocol block -- protocol_id,
+ * protocol_version, administration_kind, due_on, administered_on,
+ * retest_of_assessment_id, training_hours_at_administration -- plus
+ * assessor_role. Those are the child's own assessment and the bookkeeping
+ * around it. assessor_role says a coach assessed them, which names no person.
+ * Withholding any of it would be a product judgement this change has no basis
+ * to make.
+ */
+export const ASSESSMENT_IDENTITY_COLUMNS = [
+  'organization_id',
+  'assessment_id',
+  'athlete_id',
+  'assessment_type',
+  'result',
+  'created_at',
+  'updated_at',
+  'protocol_id',
+  'protocol_version',
+  'administration_kind',
+  'due_on',
+  'administered_on',
+  'retest_of_assessment_id',
+  'training_hours_at_administration',
+  'assessor_role',
+] as const;
+
+export const ASSESSMENT_STAFF_COLUMNS = [
+  'assessor_account_id',
+  'second_rater_account_id',
+  'second_rater_result',
+  'conditions_note',
+] as const;
+
+export function assessmentColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...ASSESSMENT_IDENTITY_COLUMNS, ...ASSESSMENT_STAFF_COLUMNS];
+  }
+
+  return [...ASSESSMENT_IDENTITY_COLUMNS];
+}
+
+/**
+ * WHICH COLUMNS OF A READINESS ROW A READER MAY SEE.
+ *
+ * The same shape as the assessments case above: five columns to begin with,
+ * five more added by the readiness-provenance migration, and both reads still
+ * `select *`.
+ *
+ * ONLY ONE COLUMN MOVES, and it is the one with a stated harm:
+ * recorded_by_account_id, a staff account identifier, on the same ground as
+ * assessor_account_id and pilot.parents.account_id.
+ *
+ * THE OTHER FOUR STAY, AND THAT IS AN OPEN QUESTION RATHER THAN A SETTLED
+ * ONE. method, reliability_status, validity_status and evidence_class are
+ * PPBF's own honest labels about its instrument -- the stored values are
+ * literally 'UNVALIDATED - PPBF MUST ESTABLISH' and 'INSUFFICIENT EVIDENCE'.
+ * Whether a family should read those raw, uninterpreted, is a product and
+ * communications judgement, and there is no privacy argument for hiding them:
+ * they describe the measurement, not a person. So they are left where they
+ * are and the question is recorded rather than answered here. OWNER DECISION
+ * REQUIRED to move them.
+ *
+ * Note that a narrower family-facing readiness projection already exists on a
+ * different surface: passbook.ts returns readiness_id, score, category and
+ * measured_at and nothing else. That is a summary screen's own shape, not a
+ * ruling about this allowlist, and it is not treated as one.
+ */
+export const READINESS_IDENTITY_COLUMNS = [
+  'organization_id',
+  'readiness_id',
+  'athlete_id',
+  'score',
+  'category',
+  'measured_at',
+  'created_at',
+  'method',
+  'reliability_status',
+  'validity_status',
+  'evidence_class',
+] as const;
+
+export const READINESS_STAFF_COLUMNS = ['recorded_by_account_id'] as const;
+
+export function readinessColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...READINESS_IDENTITY_COLUMNS, ...READINESS_STAFF_COLUMNS];
+  }
+
+  return [...READINESS_IDENTITY_COLUMNS];
+}
+
 export async function upsertGuardian(params: {
   organizationId: string;
   parentId: string;
@@ -1337,6 +1466,8 @@ export async function getIntakeCaseAggregate(
   const waiverColumns = waiverColumnsForReader(readerRole);
   const medicalIntakeColumns = medicalIntakeColumnsForReader(readerRole);
   const attendanceColumns = attendanceColumnsForReader(readerRole);
+  const assessmentColumns = assessmentColumnsForReader(readerRole);
+  const readinessColumns = readinessColumnsForReader(readerRole);
   const readableNoteTypes = coachObservationNoteTypesForReader(readerRole);
 
   const [documents, emergencyContacts, medical, waivers, assessments, attendance, readiness, notes, guardians, shadowTimeline] = await Promise.all([
@@ -1356,13 +1487,21 @@ export async function getIntakeCaseAggregate(
        where organization_id = $1 and athlete_id = $2 order by created_at desc`,
       [organizationId, intakeCase.primary_athlete_id],
     ),
-    query('select * from pilot.assessments where organization_id = $1 and athlete_id = $2 order by created_at desc', [organizationId, intakeCase.primary_athlete_id]),
+    query(
+      `select ${assessmentColumns.join(', ')} from pilot.assessments
+       where organization_id = $1 and athlete_id = $2 order by created_at desc`,
+      [organizationId, intakeCase.primary_athlete_id],
+    ),
     query(
       `select ${attendanceColumns.join(', ')} from pilot.attendance
        where organization_id = $1 and athlete_id = $2 order by attendance_date desc`,
       [organizationId, intakeCase.primary_athlete_id],
     ),
-    query('select * from pilot.readiness where organization_id = $1 and athlete_id = $2 order by measured_at desc', [organizationId, intakeCase.primary_athlete_id]),
+    query(
+      `select ${readinessColumns.join(', ')} from pilot.readiness
+       where organization_id = $1 and athlete_id = $2 order by measured_at desc`,
+      [organizationId, intakeCase.primary_athlete_id],
+    ),
     query(
       `select * from pilot.coach_observations
        where organization_id = $1

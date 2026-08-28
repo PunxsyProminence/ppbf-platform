@@ -105,7 +105,12 @@ describe('getAthletePassbook', () => {
       expect.objectContaining({ status: 'excused', canonical_status: null, stamp_code: null, domain_status: 'unsupported' }),
     ]);
     expect(result?.pages.corner).toEqual({
-      coach: { account_id: 'coach-1' },
+      // Empty, not { account_id: null }. An account_id on this platform is a
+      // staff login email unless an admin typed a different one
+      // (staffProvisioning.ts:316), and the athlete is not the audience for
+      // one. `null` would read as "no coach assigned", which is a different
+      // fact and a false one.
+      coach: {},
       guardians: [expect.objectContaining({ parent_id: 'parent-1' })],
       observations: [expect.objectContaining({ note_id: 'note-1', note_text: 'Keep the lead hand home.' })],
     });
@@ -118,7 +123,6 @@ describe('getAthletePassbook', () => {
       'active_flag',
       'athlete_id',
       'canonical_gym_status',
-      'coach_id',
       'created_at',
       'dob',
       'full_name',
@@ -146,12 +150,15 @@ describe('getAthletePassbook', () => {
       'rpe',
       'session_id',
     ]);
+    // No 'notes'. pilot.attendance.notes is already staff-only on both of
+    // this column's other readers (attendanceColumnsForReader, used by the
+    // domain-get route and getIntakeCaseAggregate); this book was the third
+    // reader and never got the split.
     expect(Object.keys(result?.pages.attendance[0] ?? {}).sort()).toEqual([
       'attendance_date',
       'attendance_id',
       'canonical_status',
       'domain_status',
-      'notes',
       'stamp_code',
       'status',
     ]);
@@ -169,7 +176,6 @@ describe('getAthletePassbook', () => {
       'title',
     ]);
     expect(Object.keys(result?.pages.corner.observations[0] ?? {}).sort()).toEqual([
-      'coach_account_id',
       'created_at',
       'note_id',
       'note_text',
@@ -510,5 +516,159 @@ describe('getCoachPassbookGapQueue', () => {
 
     expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['org-1', null]);
     expect(result.map((item) => item.gap_id)).toEqual(['gap-org-1']);
+  });
+});
+
+/**
+ * THE THIRD READER OF TWO STAFF-ONLY FIELDS.
+ *
+ * The note_type work above answers which ROWS belong in this book. It has
+ * never answered which COLUMNS, and this book is opened by the athlete
+ * themself and by every linked guardian.
+ *
+ * pilot.attendance.notes is already staff-only on both of its other readers
+ * -- the domain-get route and getIntakeCaseAggregate, through
+ * attendanceColumnsForReader. This book was the third and never got it.
+ *
+ * The account identifiers are the sharper half. staffProvisioning.ts:316
+ * resolves an account_id as `existing?.account_id || accountIdHint ||
+ * loginEmail`, and the admin invite route supplies the hint only when an
+ * admin typed one, so on this platform an account_id IS a staff member's
+ * login email unless somebody chose otherwise. This book handed one to a
+ * family three times over: on every observation, on the athlete row, and
+ * again under corner.coach.
+ */
+describe('the passbook withholds staff-only fields from a family reader', () => {
+  const FAMILY_READERS: PilotRole[] = ['athlete', 'parent'];
+  const STAFF_READERS: PilotRole[] = ['coach', 'organization_admin', 'admin'];
+
+  function arrange(): void {
+    mockQueryOne.mockResolvedValueOnce({
+      organization_id: 'org-1',
+      athlete_id: 'ath-1',
+      full_name: 'Avery Boxer',
+      dob: '2010-05-01',
+      weight_class: '125',
+      gym_status: 'active',
+      active_flag: true,
+      coach_id: 'coach@example.com',
+      created_at: '2026-01-01T00:00:00.000Z',
+    });
+    // The mocked query ignores the SQL, which is what makes the in-process
+    // half of each guard observable: every row below carries the staff field
+    // whether or not the real query would have selected it.
+    mockQuery.mockImplementation((sql: string) => {
+      if (sql.includes('from pilot.attendance')) return Promise.resolve([
+        {
+          organization_id: 'org-1',
+          attendance_id: 'attendance-1',
+          attendance_date: '2026-08-01',
+          status: 'present',
+          notes: 'Arrived upset; welfare lead spoke to them.',
+        },
+      ]);
+      if (sql.includes('from pilot.coach_observations')) return Promise.resolve([
+        {
+          organization_id: 'org-1',
+          note_id: 'note-1',
+          coach_account_id: 'coach@example.com',
+          note_type: 'coach_observation',
+          note_text: 'Keep the lead hand home.',
+          created_at: '2026-08-01T12:00:00.000Z',
+        },
+      ]);
+      return Promise.resolve([]);
+    });
+  }
+
+  test('the reader tables are not empty', () => {
+    expect(FAMILY_READERS.length).toBeGreaterThan(0);
+    expect(STAFF_READERS.length).toBeGreaterThan(0);
+  });
+
+  test.each(FAMILY_READERS)('%s receives the attendance row without the staff note', async (role) => {
+    arrange();
+
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+
+    // Still a real attendance row: the date and whether they were there.
+    expect(result?.pages.attendance[0]).toMatchObject({ attendance_date: '2026-08-01', status: 'present' });
+    expect(Object.keys(result?.pages.attendance[0] ?? {})).not.toContain('notes');
+    // Said as a value too, because that is how it actually escapes.
+    expect(JSON.stringify(result?.pages.attendance)).not.toContain('welfare lead');
+  });
+
+  test.each(FAMILY_READERS)('%s receives no staff account identifier anywhere in the book', async (role) => {
+    arrange();
+
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+
+    expect(Object.keys(result?.athlete ?? {})).not.toContain('coach_id');
+    expect(result?.pages.corner.coach).toEqual({});
+    expect(Object.keys(result?.pages.corner.observations[0] ?? {})).not.toContain('coach_account_id');
+    // The whole response body, not three separate key checks: an account_id
+    // is a login email here, and one surviving path is the whole disclosure.
+    expect(JSON.stringify(result)).not.toContain('coach@example.com');
+  });
+
+  test.each(FAMILY_READERS)('%s still receives the observation itself', async (role) => {
+    // The control against over-narrowing. The note is the point of the
+    // corner page; only the author's identifier moves.
+    arrange();
+
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+
+    expect(result?.pages.corner.observations[0]).toMatchObject({
+      note_id: 'note-1',
+      note_text: 'Keep the lead hand home.',
+    });
+  });
+
+  test.each(STAFF_READERS)('%s keeps every one of them', async (role) => {
+    arrange();
+
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+
+    expect(result?.pages.attendance[0].notes).toContain('welfare lead');
+    expect(result?.athlete.coach_id).toBe('coach@example.com');
+    expect(result?.pages.corner.coach).toEqual({ account_id: 'coach@example.com' });
+    expect(result?.pages.corner.observations[0].coach_account_id).toBe('coach@example.com');
+  });
+
+  test.each(FAMILY_READERS)('for %s the columns never leave the database at all', async (role) => {
+    // The in-process guard above is the second gate. This is the first one:
+    // the withheld columns are not in the SELECT list, so they are never on
+    // the wire between the database and this process either.
+    arrange();
+
+    await getAthletePassbook('org-1', 'ath-1', role);
+
+    const attendanceSql = String(
+      mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.attendance'))?.[0] ?? '',
+    );
+    const observationSql = String(
+      mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.coach_observations'))?.[0] ?? '',
+    );
+
+    expect(attendanceSql).toContain('from pilot.attendance');
+    expect(attendanceSql).not.toContain('notes');
+    expect(observationSql).toContain('from pilot.coach_observations');
+    expect(observationSql).not.toContain('coach_account_id');
+  });
+
+  test.each(STAFF_READERS)('for %s the columns are selected', async (role) => {
+    arrange();
+
+    await getAthletePassbook('org-1', 'ath-1', role);
+
+    const attendanceSql = String(
+      mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.attendance'))?.[0] ?? '',
+    );
+    const observationSql = String(
+      mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.coach_observations'))?.[0] ?? '',
+    );
+
+    expect(attendanceSql).toContain('notes');
+    expect(observationSql).toContain('coach_account_id');
   });
 });

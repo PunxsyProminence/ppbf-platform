@@ -607,7 +607,12 @@ function PeopleConsoleContent() {
   /**
    * Detaches a guardian from one athlete. The server refuses to remove the
    * last link an account holds, so this cannot be the step that leaves a
-   * family with an account that signs in and shows them nothing.
+   * family with an account that signs in and shows them nothing. It also
+   * refuses while that guardian's media consent for that athlete stands
+   * withdrawn -- removing the link would drop the withdrawal out of the
+   * consent check rather than reverse it. Both refusals arrive as a 403 with
+   * the server's own wording, which is shown verbatim below; neither is
+   * re-stated here, so the two cannot drift apart.
    */
   async function removeGuardianLink(accountId: string, athleteId: string, athleteName: string) {
     setBusy(true);
