@@ -55,6 +55,225 @@ These follow "Report the check, not the conclusion" in `AGENT_KERNEL.md`.
 
 Newest first.
 
+## A pattern this file exists to shorten
+
+Twice on 2026-08-28, `main` carried a test suite asserting the opposite of a
+ruling the owner had already made, and in both cases an open PR was the
+correction:
+
+| ruling | `main` asserted the opposite in | corrected by | window |
+|---|---|---|---|
+| OD-2026-08-27-001 (board denied) | #754, merged `81e27e72` | #755, merged `61b20e9d` | ~75 minutes |
+| OD-2026-08-28-005 (content class) | #811, merged `948f6d18` | #817 | open at time of writing |
+
+The two are not the same failure and should not be filed as one.
+
+#754 is the one this file was written after. Its expectations were already
+wrong when it merged, and nothing in the repository recorded the ruling that
+made them wrong, so no lane could have known.
+
+#811 is the honest version. It was written BEFORE the ruling, its body said in
+terms that the posture was open and unsettled, and its tests pinned the current
+behaviour precisely so a change could not happen silently. Then the ruling
+came, and the pin did exactly what a pin is for: it made the correction
+explicit and reviewable instead of invisible.
+
+**So a characterization test that merges and is then inverted is not a defect.**
+The defect is a test that asserts a posture while claiming, in a comment, to
+pin a decision it cannot detect a change to -- which is what #811 was itself
+written to fix in two other files.
+
+What this file can shorten is only the first shape: a lane about to assert a
+policy can now check whether one has been ruled. It cannot prevent the second,
+and should not try to.
+
+---
+
+## OD-2026-08-28-008 -- Every route under `app/api` must declare its gate
+
+**Provenance:** PRIMARY. Owner's words: **"go with recommendation"**, against a
+recommendation to build the guard, prefaced by **"i want to build it right even
+if it take a bit more work"**.
+
+**What it governs.** Nothing polices whether a NEW route ships with an access
+gate. `coachingContentAccess.test.ts` derives its subject list from a hardcoded
+three-entry map and never enumerates the directory. That is why this class of
+defect recurs: the tenancy property got a directory-walking convention test and
+the gate-declared property never did.
+
+**What the guard asserts, and what it deliberately does not.** It asserts that
+every exported HTTP handler either reaches a gate or appears in an allowlist
+with a written reason. It does NOT encode which roles may reach which route --
+that is an owner decision, and several remain open.
+
+**Measured at the time of building:** 251 route files, 370 handlers; 354 reach
+a session gate, 319 an authorization gate, 16 neither. Allowlist: 52 entries.
+
+**Implemented in:** PR #816.
+
+---
+
+## OD-2026-08-28-007 -- The calibration creator must be a live account, and the act must be recorded
+
+**Provenance:** PRIMARY. Owner's words: **"go with recommendation"**, against a
+recommendation of *"add liveness, and write an audit event. Not a role gate."*
+
+**What it governs.** `assertCreatorInOrganization` checks organization
+membership only -- it reads neither `active_flag` nor `deleted_at`, while both
+prior operator-identity mechanisms in this repository read at least one, and
+its own docblock cites one of them as its analogue.
+`pilot-approve-library-baseline.mjs` states the reason: "an attestation by an
+account that cannot sign in is not an attestation."
+
+The audit event addresses the other half. `created_by_account_id` is currently
+recorded, transmitted to the browser, and read by nothing -- not the UI, not
+adjudication, gold promotion, blinding, comparison or the QA read model, and no
+audit row is written. Its docblock claims it is "the only record of who chose
+these clips", which is true in the worst way.
+
+**NOT decided, and explicitly excluded:** any role requirement. The owner ruled
+that out of scope and it stays out. Liveness takes no view on role, which is
+why it is inside the ruling.
+
+**Sequencing.** The liveness half needs no migration and is being built now.
+The audit half needs a migration widening the `event_type` CHECK, and is
+sequenced behind PR #788 because every migration PR currently contends with it
+on `apply-migrations.yml` and `apps/web/package.json`.
+
+**Implemented in:** the liveness half, PR to follow. The audit half, deferred.
+
+---
+
+## OD-2026-08-28-006 -- The three discipline foreign keys are to be validated
+
+**Provenance:** PRIMARY. Owner's words: **"go with recommendation"**, against a
+recommendation to validate them.
+
+**What it governs.** `NOT VALID` is a permanent marker in the catalog meaning
+"we never checked these rows". We did check them, twice, on 2026-08-28. The
+marker is now false, and leaving a false statement in the schema because
+correcting it is tedious is the thing the owner's "build it right" instruction
+forbids.
+
+**How, when it is built.** Its own migration, guarded with
+`if exists (... contype = 'f' ...)` so it cannot take an `all` dispatch down on
+an environment lacking the key, sequenced AFTER PR #788, which already contends
+with it on four files. Validation is idempotent (measured: a repeat run is 1 ms
+and takes no lock on the registry), so the `all` chain stays safe.
+
+**This also ratifies the B2 substitution.** B2 said PRECHECK and STOP; what
+merged substituted `NOT VALID`. The substitution was MORE conservative than B2
+asked for -- enforcement began immediately on both sides -- and the precheck B2
+wanted was performed afterwards and came back clean. That is B2 closed out, not
+departed from. No primary record of B2 exists in this repository.
+
+**Implemented in:** deferred behind PR #788.
+
+### What was measured, and on what instrument
+
+All three
+(`drill_library`, `session_scripts`, `cohort_definitions`) are installed
+`NOT VALID`, so they govern new writes and have never scanned existing rows.
+Production carries all three in that state -- read from the census run's own
+job log, which printed `NOT VALID -- installed, enforcing new writes` for
+each.
+
+The mechanics were measured on PostgreSQL 18.4 (the version the repository's
+own `.pg.test.ts` suites run against) rather than reasoned about, because the
+cost is the whole decision:
+
+| property | measured |
+|---|---|
+| blocks reads on either table | NO |
+| blocks writes on either table | NO |
+| blocks | `ANALYZE`, `CREATE INDEX`, `ADD COLUMN`, a second validate -- on the content table only |
+| duration at production size (119 rows) | 1 ms |
+| duration at 5,000,000 rows | 1.48 s |
+| interruptible | yes; cancels clean, `convalidated` stays false |
+| on failure | clean rollback, no partial state, constraint stays enforcing |
+| re-run on an already-validated constraint | 1 ms, no re-scan, no lock on the registry |
+
+That last row is what makes it safe under the `all` chain, which re-runs every
+migration on every dispatch: a repeat validate is a catalog no-op.
+
+**A `NOT VALID` foreign key protects the REFERENCED side too, and this is
+written down nowhere else.** Measured: deleting a registry row that a
+never-scanned child row references is refused 23503; renaming a registry key
+is refused; inserting or updating a child row to an unregistered discipline
+is refused. So no legal SQL can create a violating row from either direction.
+That makes the CLEAN census durable rather than perishable -- the only ways
+past it are disabling triggers (zero occurrences in the tree), a
+`pg_restore --disable-triggers`, or dropping the constraint.
+
+What the safeguarding argument in the three migration headers cares about is
+therefore ALREADY enforced, for everything except rows written before
+2026-08-28 -- of which the census measured zero.
+
+There is no precedent to follow: `validate constraint` appears in no
+executable SQL anywhere in this repository. Whatever is decided sets the
+precedent.
+
+RESOLVED 2026-08-28, and it decides what the CLEAN result is worth.
+`docs/current/PRODUCTION_STATE.json` states under `known_production_gaps`
+that "seed-reference-data has never been run against production" and that
+`pilot.drill_library` and `pilot.disciplines` "both count 0 rows",
+re-observed 2026-08-15. The three migration headers record 119 / 3 / 6 rows
+observed 2026-08-24, from seed-reference-data run 32788628209. Both cannot
+describe one database.
+
+The run's own job log settles it. Its "Record What Ran" step printed
+`PPBF_EXPECTED_POSTGRES_HOSTNAME: ppbf-pg-195892.postgres.database.azure.com`
+and `ORG_SOURCE: app-ppbf-production default org secret`, and
+PRODUCTION_STATE.json names that same hostname as production. The job was
+created 23:16:57Z and started 23:23:56Z -- a seven-minute wait consistent
+with the production environment gate, where staging runs start in seconds.
+
+So seed-reference-data DID run against production, on 2026-08-24, and
+`PRODUCTION_STATE.json`'s gap entry is stale by nine days. The 119 / 3 / 6
+figures are production figures. **The CLEAN census therefore scanned real
+rows rather than empty tables**, which is what makes it evidence rather than
+a tautology.
+
+That stale entry is in a release-lane document a build lane may not edit
+(`AGENT_KERNEL.md`, Lane model). It is reported here rather than corrected.
+
+The B2 ruling that preceded the FKs said PRECHECK and STOP; what merged
+substituted `NOT VALID`. That substitution has not been ratified, and no
+primary record of B2 exists in this repository (searched: `git grep -i` for
+`\bB2\b` and `precheck|pre-check` over all tracked files). Note the
+substitution was MORE conservative than B2 asked for, not less: enforcement
+began immediately on both sides, and the precheck B2 wanted was performed
+afterwards and came back clean.
+
+
+---
+
+## OD-2026-08-28-005 -- The drill and cue read policy governs the content CLASS, not three named routes
+
+**Provenance:** PRIMARY. Owner's words: **"go with recommendation"**, against a
+recommendation that it governs the content class.
+
+**What it governs.** OD-2026-08-27-001 named three surfaces.
+`/api/pilot/session-scripts` and `/api/pilot/workout-templates` serve the same
+content class through different URLs -- session-script blocks carry
+`what_to_say`, `what_to_explain`, `what_to_watch`, `what_to_fix` and
+`drill_id`, which is cue-shaped coaching craft by any reading. Both were
+ungated: authentication alone, reachable by every role including `board`.
+
+The ratified rationale was written about the ROLE, not the URL -- "an oversight
+/ aggregate-governance role, not an operational coaching-content role" -- and
+on its own terms it reaches these surfaces as directly as anything could.
+
+**What changes.** Both now gate on `COACHING_CONTENT_READER_ROLES`. `board`
+loses a direct API read it previously had. It never had a UI door: both coach
+pages already gate to `['coach','admin']`.
+
+**What does not change.** `/api/pilot/session-scripts/runs/**` was already
+gated and carries per-night athlete data -- a different class, already decided.
+Authoring is untouched.
+
+**Implemented in:** PR #817.
+
 ---
 
 ## OD-2026-08-28-004 -- The schema verifier reads the real apply order
@@ -222,79 +441,6 @@ minutes.
 A lane that needs one of these answered must say so and stop. Do not resolve
 them by building.
 
-- **Validating the three discipline foreign keys.** All three
-  (`drill_library`, `session_scripts`, `cohort_definitions`) are installed
-  `NOT VALID`, so they govern new writes and have never scanned existing rows.
-  Production carries all three in that state -- read from the census run's own
-  job log, which printed `NOT VALID -- installed, enforcing new writes` for
-  each.
-
-  The mechanics were measured on PostgreSQL 18.4 (the version the repository's
-  own `.pg.test.ts` suites run against) rather than reasoned about, because the
-  cost is the whole decision:
-
-  | property | measured |
-  |---|---|
-  | blocks reads on either table | NO |
-  | blocks writes on either table | NO |
-  | blocks | `ANALYZE`, `CREATE INDEX`, `ADD COLUMN`, a second validate -- on the content table only |
-  | duration at production size (119 rows) | 1 ms |
-  | duration at 5,000,000 rows | 1.48 s |
-  | interruptible | yes; cancels clean, `convalidated` stays false |
-  | on failure | clean rollback, no partial state, constraint stays enforcing |
-  | re-run on an already-validated constraint | 1 ms, no re-scan, no lock on the registry |
-
-  That last row is what makes it safe under the `all` chain, which re-runs every
-  migration on every dispatch: a repeat validate is a catalog no-op.
-
-  **A `NOT VALID` foreign key protects the REFERENCED side too, and this is
-  written down nowhere else.** Measured: deleting a registry row that a
-  never-scanned child row references is refused 23503; renaming a registry key
-  is refused; inserting or updating a child row to an unregistered discipline
-  is refused. So no legal SQL can create a violating row from either direction.
-  That makes the CLEAN census durable rather than perishable -- the only ways
-  past it are disabling triggers (zero occurrences in the tree), a
-  `pg_restore --disable-triggers`, or dropping the constraint.
-
-  What the safeguarding argument in the three migration headers cares about is
-  therefore ALREADY enforced, for everything except rows written before
-  2026-08-28 -- of which the census measured zero.
-
-  There is no precedent to follow: `validate constraint` appears in no
-  executable SQL anywhere in this repository. Whatever is decided sets the
-  precedent.
-
-  RESOLVED 2026-08-28, and it decides what the CLEAN result is worth.
-  `docs/current/PRODUCTION_STATE.json` states under `known_production_gaps`
-  that "seed-reference-data has never been run against production" and that
-  `pilot.drill_library` and `pilot.disciplines` "both count 0 rows",
-  re-observed 2026-08-15. The three migration headers record 119 / 3 / 6 rows
-  observed 2026-08-24, from seed-reference-data run 32788628209. Both cannot
-  describe one database.
-
-  The run's own job log settles it. Its "Record What Ran" step printed
-  `PPBF_EXPECTED_POSTGRES_HOSTNAME: ppbf-pg-195892.postgres.database.azure.com`
-  and `ORG_SOURCE: app-ppbf-production default org secret`, and
-  PRODUCTION_STATE.json names that same hostname as production. The job was
-  created 23:16:57Z and started 23:23:56Z -- a seven-minute wait consistent
-  with the production environment gate, where staging runs start in seconds.
-
-  So seed-reference-data DID run against production, on 2026-08-24, and
-  `PRODUCTION_STATE.json`'s gap entry is stale by nine days. The 119 / 3 / 6
-  figures are production figures. **The CLEAN census therefore scanned real
-  rows rather than empty tables**, which is what makes it evidence rather than
-  a tautology.
-
-  That stale entry is in a release-lane document a build lane may not edit
-  (`AGENT_KERNEL.md`, Lane model). It is reported here rather than corrected.
-
-  The B2 ruling that preceded the FKs said PRECHECK and STOP; what merged
-  substituted `NOT VALID`. That substitution has not been ratified, and no
-  primary record of B2 exists in this repository (searched: `git grep -i` for
-  `\bB2\b` and `precheck|pre-check` over all tracked files). Note the
-  substitution was MORE conservative than B2 asked for, not less: enforcement
-  began immediately on both sides, and the precheck B2 wanted was performed
-  afterwards and came back clean.
 - **Whether `pilot.disciplines.active` should block writes.** Three of the five
   seeded disciplines ship `active = false` (wrestling, bjj, combatives) --
   including `bjj`, which OD-2026-08-28-002 just made writable.
@@ -324,10 +470,6 @@ them by building.
   ruling with it: what happens to content already written under a discipline
   that is later deactivated. Leaving it is also a defensible answer -- a gym
   may want to prepare material for a lane before switching it on.
-- **Actor provenance on the calibration bootstrap.** `created_by_account_id` is
-  checked for organization membership only; `assertCreatorInOrganization` takes
-  no view on role. The owner ruled role policy explicitly out of scope for
-  PR #760. It remains open.
 - **A real `general` row, should one ever appear.** None exists in production
   or in any seed or fixture today. `general` is refused by the foreign key, so
   one could only arrive by a write that predates the key.
