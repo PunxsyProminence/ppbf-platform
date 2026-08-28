@@ -49,6 +49,7 @@ function mockFetch(options: {
   athletes?: () => Array<Record<string, unknown>>;
   release?: () => Response;
   onRelease?: () => void;
+  openVideo?: () => Response;
   reviewLink?: () => Response;
   role?: string;
   requestFilmStudy?: () => Response;
@@ -96,6 +97,15 @@ function mockFetch(options: {
       return options.reviewLink
         ? options.reviewLink()
         : ({ ok: true, json: async () => ({ url: 'https://example.invalid/sas', title: 'Sparring round 3' }) } as Response);
+    }
+    // GET /api/pilot/video/[videoId] -- the Play path. Matched last of the
+    // video routes on purpose: '/list', '/release' and '/review-link' all sit
+    // under the same prefix and are already handled above, so this one is the
+    // bare-id case and nothing else.
+    if (/\/api\/pilot\/video\/[^/]+$/.test(url) && !url.includes('/list')) {
+      return options.openVideo
+        ? options.openVideo()
+        : ({ ok: true, json: async () => ({ stream_url: 'https://example.invalid/stream', title: 'Sparring round 3' }) } as Response);
     }
     if (url.includes('/api/pilot/athletes/list')) {
       return { ok: true, json: async () => ({ items: options.athletes ? options.athletes() : [] }) } as Response;
@@ -249,6 +259,53 @@ describe('coach video release control', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Release' }));
 
     await screen.findByText('This video has already been released.');
+  });
+
+  test("a consent refusal on Play shows the server's reason, not a generic failure", async () => {
+    // GET /api/pilot/video/[videoId] answers 409 with an authored message for
+    // the guardian-consent conditions -- a photo-only consent, or a standing
+    // withdrawal. 'Could not load video' would read as a fault to retry, when
+    // the only thing that changes the answer is a guardian signing.
+    global.fetch = mockFetch({
+      videos: () => [video({ status: 'ready' })],
+      openVideo: () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: "Blocked: 1 of this athlete's guardians has withdrawn media consent.",
+          code: 'GUARDIAN_CONSENT_WITHDRAWN',
+        }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+
+    await screen.findByText("Blocked: 1 of this athlete's guardians has withdrawn media consent.");
+  });
+
+  test('a 404 on Play still shows the generic failure -- it is not an oracle', async () => {
+    // The route answers the same 404 for "not there" and "there but not
+    // yours", so echoing its body would be harmless but pointless; what
+    // matters is that the page does NOT start echoing every status, which is
+    // what a body-first implementation would do. This is the test that fails
+    // if the 409 condition is dropped.
+    global.fetch = mockFetch({
+      videos: () => [video({ status: 'ready' })],
+      openVideo: () => ({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: 'Not found' }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+
+    await screen.findByText('Could not load video');
+    expect(screen.queryByText('Not found')).toBeNull();
   });
 
   test('Release is unavailable until the footage has been watched, and says so in words', async () => {
