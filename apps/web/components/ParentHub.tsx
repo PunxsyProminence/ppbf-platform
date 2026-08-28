@@ -75,12 +75,45 @@ interface AttendanceEntry {
   status: 'Present' | 'Excused' | 'Absent';
 }
 
+/* `focus` is gone. The scheduler has no such field -- pilot.scheduler_classes
+   carries title, start/end, location, capacity and status, and nothing that
+   says what a session is working on. It was renderable only while this list
+   was hardcoded. `location` and `standing` replace it because both are real
+   columns a guardian can act on: where to drop their kid off, and whether the
+   kid actually has a place or is on the waitlist. */
 interface UpcomingSession {
   id: string;
   date: string;
-  time: string;
   title: string;
-  focus: string;
+  location: string;
+  standing: 'Registered' | 'Waitlisted';
+}
+
+/* The three scheduler shapes this hub reads, narrowed to the fields it
+   renders. Deliberately not the full SchedulerClass/Registration/Attendance
+   interfaces from schedulerDb: a client type listing columns the client never
+   shows invites the next person to show them. */
+interface SchedulerFeedClass {
+  class_id: string;
+  title: string;
+  start_at: string;
+  location: string;
+  status: 'open' | 'full' | 'cancelled';
+}
+
+interface SchedulerFeedRegistration {
+  registration_id: string;
+  class_id: string;
+  athlete_id: string;
+  status: 'registered' | 'waitlisted' | 'cancelled';
+}
+
+interface SchedulerFeedAttendance {
+  attendance_id: string;
+  class_id: string;
+  athlete_id: string;
+  status: 'present' | 'absent' | 'excused';
+  checked_in_at: string;
 }
 
 interface ProgressMilestone {
@@ -203,9 +236,68 @@ export default function ParentHub() {
     })();
   }, []);
 
-  const [attendanceEntries] = useState<AttendanceEntry[]>([]);
+  /* SLICE 8. The scheduler already answers this and the hub was not asking.
+     GET /api/pilot/scheduler's parent branch filters classes, registrations
+     and attendance to the guardian's linked athletes server-side, so ONE read
+     covers every child and the per-child split happens in render below.
 
-  const [upcomingSessions] = useState<UpcomingSession[]>([]);
+     That is also why this effect has no activeChildId dependency: switching
+     children re-filters data already in hand rather than firing a request
+     that could land after the guardian has moved on. The stale-response
+     hazard the child-card effect has to guard against does not arise here,
+     because there is nothing in flight to arrive late.
+
+     NO PERCENTAGE IS COMPUTED HERE, and that is a decision rather than an
+     omission. A rate needs a denominator -- which sessions this child was
+     expected at, over which window -- and nothing in pilot defines one.
+     Attendance rows record what happened when somebody checked in; they do
+     not record what was supposed to happen. A percentage built on them would
+     be arithmetic wearing a number's authority, and a guardian reading "68%
+     attendance" would have no way to know it was invented. Events are facts.
+     A rate would not be. */
+  const [schedulerFeedState, setSchedulerFeedState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const [schedulerFeed, setSchedulerFeed] = useState<{
+    classes: SchedulerFeedClass[];
+    registrations: SchedulerFeedRegistration[];
+    attendance: SchedulerFeedAttendance[];
+  }>({ classes: [], registrations: [], attendance: [] });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/scheduler`, {
+          method: 'GET',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (!response.ok) {
+          setSchedulerFeedState('failed');
+          return;
+        }
+        const payload = (await response.json()) as {
+          classes?: SchedulerFeedClass[];
+          registrations?: SchedulerFeedRegistration[];
+          attendance?: SchedulerFeedAttendance[];
+        };
+        if (controller.signal.aborted) return;
+        setSchedulerFeed({
+          classes: payload.classes ?? [],
+          registrations: payload.registrations ?? [],
+          attendance: payload.attendance ?? [],
+        });
+        setSchedulerFeedState('loaded');
+      } catch (error) {
+        // A cancelled read is not a failure: nothing was observed, so nothing
+        // should be claimed. Only a real fault becomes 'failed', which is what
+        // makes "Unavailable" below mean unavailable and not merely empty.
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
+        setSchedulerFeedState('failed');
+      }
+    })();
+    return () => controller.abort();
+  }, []);
 
   const [progressMilestones] = useState<ProgressMilestone[]>([]);
 
@@ -428,7 +520,47 @@ export default function ParentHub() {
   // the childCard state for why the match happens here.
   const shownCard = childCard.athleteId === activeChildId ? childCard.card : null;
   const hasLiveChildMetrics = activeChild?.attendancePercent !== null && Boolean(activeChild?.currentProgress);
-  const activeAttendanceEntries = attendanceEntries.filter((entry) => entry.childId === activeChildId);
+  /* Per-child views of the one family-scoped read above. The server already
+     refused every athlete this guardian does not hold; this narrows to the
+     child on screen. */
+  const schedulerClassById = new Map(schedulerFeed.classes.map((row) => [row.class_id, row]));
+
+  const activeAttendanceEntries: AttendanceEntry[] = schedulerFeed.attendance
+    .filter((row) => row.athlete_id === activeChildId)
+    // Newest first. checked_in_at is an ISO-8601 timestamptz, so a string
+    // comparison IS a chronological one, and avoids minting Date objects for
+    // a sort that only needs an ordering.
+    .slice()
+    .sort((a, b) => b.checked_in_at.localeCompare(a.checked_in_at))
+    .map((row) => ({
+      id: row.attendance_id,
+      childId: row.athlete_id,
+      date: formatGymDateTimeShort(row.checked_in_at) ?? row.checked_in_at,
+      // A class can be removed while its attendance rows survive. Saying so is
+      // better than rendering a bare id or, worse, dropping the row -- the
+      // child was there, and that fact does not stop being true.
+      session: schedulerClassById.get(row.class_id)?.title ?? 'Session no longer listed',
+      status: row.status === 'present' ? 'Present' : row.status === 'excused' ? 'Excused' : 'Absent',
+    }));
+
+  const nowIso = new Date().toISOString();
+  const activeUpcomingSessions: UpcomingSession[] = schedulerFeed.registrations
+    .filter((row) => row.athlete_id === activeChildId && row.status !== 'cancelled')
+    .map((row) => ({ registration: row, klass: schedulerClassById.get(row.class_id) }))
+    // A cancelled class is not upcoming, and a registration whose class this
+    // guardian cannot see is not something to render half of.
+    .filter((pair) => pair.klass !== undefined && pair.klass.status !== 'cancelled' && pair.klass.start_at > nowIso)
+    .sort((a, b) => (a.klass as SchedulerFeedClass).start_at.localeCompare((b.klass as SchedulerFeedClass).start_at))
+    .map(({ registration, klass }) => ({
+      id: registration.registration_id,
+      date: formatGymDateTimeShort((klass as SchedulerFeedClass).start_at) ?? (klass as SchedulerFeedClass).start_at,
+      title: (klass as SchedulerFeedClass).title,
+      location: (klass as SchedulerFeedClass).location,
+      // Waitlisted is not a place. A guardian who reads "registered" and turns
+      // up to find their kid was never in the class has been misled by this
+      // panel, so the standing is shown rather than flattened away.
+      standing: registration.status === 'waitlisted' ? 'Waitlisted' : 'Registered',
+    }));
   const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
 
   function milestoneStatusTone(status: ProgressMilestone['status']): string {
@@ -1113,18 +1245,41 @@ export default function ParentHub() {
           {activeTab === 'attendance' && (
             <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] panel-settle">
               <h3 className="t-label">Attendance Tracking</h3>
-              <p className="t-body">View attendance history and upcoming sessions.</p>
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for attendance history or upcoming
-                sessions yet, so these lists are always empty.
-              </p>
+              <p className="t-body">Attendance history and upcoming sessions, from the gym schedule.</p>
 
+              {/* THREE STATES, KEPT APART. A failed read is not an empty
+                  record and an empty record is not a zero: a guardian who is
+                  told "no sessions" when the truth is "we could not ask" has
+                  been given a fact that was never observed. Each branch below
+                  says only what it knows. */}
               <div className="space-y-[var(--s3)]">
-                {activeAttendanceEntries.map((entry) => (
+                {schedulerFeedState === 'loading' && <p className="working">Reading the schedule</p>}
+
+                {/* alert--warning, not alert--critical. The safeguarding red is
+                    reserved for the top of the safety ladder -- a person who may
+                    not participate (owner decision 2026-08-19) -- and a schedule
+                    that would not load is not that. Spending the red on a failed
+                    fetch is what makes it stop meaning anything when a real
+                    participation block needs it. src/design/
+                    safeguardingRedReservation.test.ts enforces this and named
+                    the substitution. */}
+                {schedulerFeedState === 'failed' && (
+                  <div className="alert alert--warning alert--tight" role="alert">
+                    Unavailable - the schedule could not be read. This is not an empty attendance record.
+                  </div>
+                )}
+
+                {schedulerFeedState === 'loaded' && activeAttendanceEntries.length === 0 && (
+                  <p className="t-body">No attendance recorded for this athlete yet.</p>
+                )}
+
+                {schedulerFeedState === 'loaded' && activeAttendanceEntries.map((entry) => (
                   <div key={entry.id} className="flex flex-wrap items-center justify-between gap-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
                     <div>
                       <p className="t-body font-semibold">{entry.date} | {entry.session}</p>
                     </div>
+                    {/* The glyph is aria-hidden and the word carries the
+                        meaning, so status is never colour-only. */}
                     <span className={`text-[length:var(--t-sm)] font-semibold uppercase ${attendanceStatusTone(entry.status)}`}>
                       <span aria-hidden="true">{attendanceGlyph(entry.status)}</span> {entry.status}
                     </span>
@@ -1134,12 +1289,28 @@ export default function ParentHub() {
 
               <div className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)] space-y-[var(--s3)]">
                 <h4 className="t-body font-semibold">Upcoming Sessions</h4>
-                {upcomingSessions.map((session) => (
+
+                {schedulerFeedState === 'loading' && <p className="working">Reading the schedule</p>}
+
+                {schedulerFeedState === 'failed' && (
+                  <p className="t-body">Unavailable - the schedule could not be read.</p>
+                )}
+
+                {schedulerFeedState === 'loaded' && activeUpcomingSessions.length === 0 && (
+                  <p className="t-body">No upcoming sessions this athlete is registered for.</p>
+                )}
+
+                {schedulerFeedState === 'loaded' && activeUpcomingSessions.map((session) => (
                   <div key={session.id} className="t-body">
-                    <p><strong>{session.date} {session.time}</strong> - {session.title}</p>
-                    <p>Focus: {session.focus}</p>
+                    <p><strong>{session.date}</strong> - {session.title}</p>
+                    <p>{session.location} | {session.standing}</p>
                   </div>
                 ))}
+
+                <p className="t-body">
+                  <Link href="/schedule">Open the full scheduler</Link> to register, review a registration, or
+                  check an athlete in.
+                </p>
               </div>
             </div>
           )}

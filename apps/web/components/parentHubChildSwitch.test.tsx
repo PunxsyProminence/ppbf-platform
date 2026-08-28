@@ -37,6 +37,12 @@ function installFetch(
   safety: () => Promise<Response> = async () => jsonResponse({ ok: true, items: [] }),
   barrierReport: (init?: RequestInit) => Promise<Response> = async () => jsonResponse({ ok: true, note_id: 'note-1' }),
   messages: () => Promise<Response> = async () => jsonResponse({ ok: true, items: [] }),
+  // The Attendance tab reads the shared scheduler. Answering it here keeps
+  // these tests exercising the hub rather than its error path -- without this
+  // branch the request hits the throw below, and every case in this file runs
+  // with the schedule permanently 'failed'.
+  scheduler: () => Promise<Response> = async () =>
+    jsonResponse({ ok: true, classes: [], registrations: [], attendance: [] }),
 ): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
@@ -63,6 +69,9 @@ function installFetch(
     }
     if (url.includes('/api/pilot/parent/messages')) {
       return messages();
+    }
+    if (url.includes('/api/pilot/scheduler')) {
+      return scheduler();
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
