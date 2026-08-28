@@ -232,11 +232,34 @@ them by building.
   PRECHECK and STOP; what merged substituted `NOT VALID`. That substitution
   has not been ratified.
 - **Whether `pilot.disciplines.active` should block writes.** Three of the five
-  seeded disciplines ship `active = false` (wrestling, bjj, combatives).
-  Nothing anywhere consults that flag on a write path. A Postgres foreign key
-  cannot carry a predicate, so enforcing it means a trigger or a service-layer
-  check, and it drags a second ruling with it: what happens to content already
-  written under a discipline that is later deactivated.
+  seeded disciplines ship `active = false` (wrestling, bjj, combatives) --
+  including `bjj`, which OD-2026-08-28-002 just made writable.
+
+  The question is NOT whether `active` means anything. It already governs the
+  READ, deliberately: `/api/pilot/multidiscipline` defaults `activeOnly: true`,
+  under a comment that says "a retired discipline is one the gym no longer
+  runs, and it should not sit in a browse list beside live ones"
+  (`apps/web/app/api/pilot/multidiscipline/route.ts:50`). The question is
+  whether the WRITE path should agree with the read path it already has. Today
+  it does not: a discipline filtered out of the picker is still writable by a
+  direct API call, because the foreign key checks registration and a Postgres
+  foreign key cannot carry a predicate.
+
+  OD-2026-08-28-002 sharpened this. With the literal CHECK gone, registering a
+  discipline is now SUFFICIENT to write under it, so `active` is the only
+  remaining distinction between "this gym registered it" and "this gym runs
+  it" -- and it applies on one side only.
+
+  Scope of that check, stated so it can be re-run: every non-test reference to
+  `pilot.disciplines` in `apps/web` app code is three files --
+  `multidiscipline.ts:45` (the only SELECT), `disciplineSeeds.ts:143` (the
+  seeder's INSERT), and the read-only census script. No write path for
+  `drill_library`, `session_scripts` or `cohort_definitions` consults it.
+
+  Enforcing it means a trigger or a service-layer check, and it drags a second
+  ruling with it: what happens to content already written under a discipline
+  that is later deactivated. Leaving it is also a defensible answer -- a gym
+  may want to prepare material for a lane before switching it on.
 - **Actor provenance on the calibration bootstrap.** `created_by_account_id` is
   checked for organization membership only; `assertCreatorInOrganization` takes
   no view on role. The owner ruled role policy explicitly out of scope for
