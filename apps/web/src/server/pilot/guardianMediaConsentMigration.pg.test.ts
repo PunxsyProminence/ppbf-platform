@@ -385,6 +385,7 @@ describe('guardianConsent.ts against real Postgres', () => {
         athleteId: ATHLETE_ID,
         parentId: PARENT_ID,
         signedByName: 'Jane Guardian',
+        recordedByAccountId: PARENT_ACCOUNT_ID,
         coversVideo: true,
         publicUseAllowed: false,
       });
@@ -416,6 +417,7 @@ describe('guardianConsent.ts against real Postgres', () => {
         athleteId: ATHLETE_ID,
         parentId: PARENT_ID,
         signedByName: 'Jane Guardian',
+        recordedByAccountId: PARENT_ACCOUNT_ID,
         coversVideo: true,
         publicUseAllowed: false,
       });
@@ -424,6 +426,7 @@ describe('guardianConsent.ts against real Postgres', () => {
         athleteId: ATHLETE_ID,
         parentId: PARENT_ID,
         signedByName: 'Jane Guardian',
+        recordedByAccountId: PARENT_ACCOUNT_ID,
       });
 
       const result = await checkGuardianMediaConsent(ORG_ID, ATHLETE_ID);
@@ -454,6 +457,7 @@ describe('guardianConsent.ts against real Postgres', () => {
         athleteId: ATHLETE_ID,
         parentId: PARENT_ID,
         signedByName: 'Jane Guardian',
+        recordedByAccountId: PARENT_ACCOUNT_ID,
         coversVideo: true,
         publicUseAllowed: false,
       });
@@ -473,8 +477,8 @@ describe('guardianConsent.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_consent_two_guardians_both', { withSecondGuardian: true });
     activeClient = client;
     try {
-      await grantMediaConsent({ organizationId: ORG_ID, athleteId: ATHLETE_ID, parentId: PARENT_ID, signedByName: 'Jane Guardian', coversVideo: true, publicUseAllowed: false });
-      await grantMediaConsent({ organizationId: ORG_ID, athleteId: ATHLETE_ID, parentId: SECOND_PARENT_ID, signedByName: 'John Guardian', coversVideo: false, publicUseAllowed: false });
+      await grantMediaConsent({ organizationId: ORG_ID, athleteId: ATHLETE_ID, parentId: PARENT_ID, signedByName: 'Jane Guardian', recordedByAccountId: PARENT_ACCOUNT_ID, coversVideo: true, publicUseAllowed: false });
+      await grantMediaConsent({ organizationId: ORG_ID, athleteId: ATHLETE_ID, parentId: SECOND_PARENT_ID, signedByName: 'John Guardian', recordedByAccountId: SECOND_PARENT_ACCOUNT_ID, coversVideo: false, publicUseAllowed: false });
 
       const result = await checkGuardianMediaConsent(ORG_ID, ATHLETE_ID);
 
@@ -550,6 +554,7 @@ describe('guardianConsent.ts against real Postgres', () => {
         athleteId: ATHLETE_ID,
         parentId: PARENT_ID,
         signedByName: 'Jane Guardian',
+        recordedByAccountId: PARENT_ACCOUNT_ID,
         coversVideo: true,
         publicUseAllowed: false,
       });

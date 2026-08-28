@@ -534,6 +534,9 @@ export async function POST(request: NextRequest) { // NOSONAR
         consentVersion: promotion.waiver.consent_version,
         status: promotion.waiver.status,
         notes: promotion.waiver.notes,
+        // The reviewer promoting the case, not the guardian who signed the
+        // paper it came from.
+        recordedByAccountId: principal.accountId,
       });
     }
 

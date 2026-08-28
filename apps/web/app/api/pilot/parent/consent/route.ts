@@ -192,6 +192,7 @@ export async function POST(request: NextRequest) {
         athleteId,
         parentId: actingParent.parentId,
         signedByName: actingParent.fullName,
+        recordedByAccountId: principal.accountId,
         coversVideo,
         publicUseAllowed,
       });
@@ -211,6 +212,7 @@ export async function POST(request: NextRequest) {
         athleteId,
         parentId: actingParent.parentId,
         signedByName: actingParent.fullName,
+        recordedByAccountId: principal.accountId,
       });
       await auditConsentEvent({
         event_type: 'consent_withdrawn',
