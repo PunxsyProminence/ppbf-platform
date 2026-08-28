@@ -134,6 +134,7 @@
     "test:migrations:athlete-development-blocks": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDevelopmentBlocks.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-blinding": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationBlinding.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-bootstrap": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationBootstrap.pg.test.ts --testTimeout=180000",
+    "test:migrations:discipline-seeds": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/disciplineSeeds.pg.test.ts --testTimeout=180000",
     "test:migrations:programs": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/programs.pg.test.ts --testTimeout=180000",
     "test:migrations:coach-cards": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachCards.pg.test.ts --testTimeout=180000",
     "test:migrations:external-competition": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/externalCompetition.pg.test.ts --testTimeout=180000",
