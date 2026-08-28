@@ -5,9 +5,11 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  WELLNESS_COLUMNS,
   checkIn,
   getTodayCheckIn,
   listRecentCheckIns,
+  sleepHoursError,
   wellnessValueError,
 } from '@/src/server/pilot/athleteCheckIns';
 
@@ -48,10 +50,18 @@ export async function POST(request: NextRequest) {
     const athleteId = requireOwnAthleteId(principal);
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    for (const field of ['energy', 'soreness', 'focus'] as const) {
+    // Swept from WELLNESS_COLUMNS rather than a literal list. The three
+    // original fields were named here by hand, and the next measure migration
+    // adds a column whose validation would simply have been forgotten -- an
+    // unvalidated field reaches the database check instead, which refuses the
+    // whole insert with a Postgres error rather than the stated reason the
+    // contract promises.
+    for (const field of WELLNESS_COLUMNS) {
       const problem = wellnessValueError(field, body[field]);
       if (problem) throw new ValidationError(problem);
     }
+    const sleepProblem = sleepHoursError(body.sleep_hours);
+    if (sleepProblem) throw new ValidationError(sleepProblem);
 
     const result = await checkIn({
       organizationId: principal.organizationId,
@@ -59,6 +69,12 @@ export async function POST(request: NextRequest) {
       energy: body.energy as number | undefined,
       soreness: body.soreness as number | undefined,
       focus: body.focus as number | undefined,
+      sleepHours: body.sleep_hours as number | undefined,
+      hydration: body.hydration as number | undefined,
+      motivation: body.motivation as number | undefined,
+      mentalClarity: body.mental_clarity as number | undefined,
+      stress: body.stress as number | undefined,
+      nutritionCompliance: body.nutrition_compliance as number | undefined,
       note: typeof body.note === 'string' ? body.note : '',
     });
     if (!result) return hiddenNotFound();

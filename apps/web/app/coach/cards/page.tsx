@@ -97,6 +97,11 @@ export default function CoachCardsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  /* Whether the LIST read failed, kept apart from errorMessage on purpose.
+     errorMessage also carries write-path validation ("Pick an athlete."), and
+     hanging the empty state off it would turn a form slip into "your cards
+     could not be read" -- a false claim in the other direction. */
+  const [cardsUnreadable, setCardsUnreadable] = useState(false);
 
   // signal is optional so the verify/dispute path can refresh the list
   // without owning a controller; the mount effect passes its own.
@@ -106,6 +111,9 @@ export default function CoachCardsPage() {
     const data = (await res.json()) as { items?: IssuanceGroup[] };
     if (signal?.aborted) return;
     setGroups(data.items || []);
+    // A read that succeeded clears the flag, so a recovered page stops
+    // claiming it could not be read.
+    setCardsUnreadable(false);
   }, []);
 
   // Four reads on mount, every one of them abortable. Same shape as
@@ -154,6 +162,7 @@ export default function CoachCardsPage() {
         if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
           return;
         }
+        setCardsUnreadable(true);
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load');
       } finally {
         // The empty state must not be revealed by a load this page abandoned.
@@ -491,6 +500,18 @@ export default function CoachCardsPage() {
           <h2 className="t-command mb-[var(--s4)] text-[length:var(--t-lg)]">My Cards</h2>
           {loading ? (
             <p className="t-body text-[color:var(--bone-300)]">Loading cards…</p>
+          ) : cardsUnreadable ? (
+            /* The comment above this file's abort guard already calls this
+               string "a claim about the gym rather than about the request".
+               It was guarded against aborts and not against failures, so a
+               coach who believed it re-issued cards a child already has. */
+            <div className="mat-leather rounded-[var(--r-lg)] border-2 border-[var(--restricted)]">
+              <div className="empty" style={{ padding: 'var(--s6) var(--s5)' }}>
+                <p className="empty-msg mx-auto text-[var(--restricted-ink)]">
+                  Your cards could not be read — not a statement that none were issued.
+                </p>
+              </div>
+            </div>
           ) : groups.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty" style={{ padding: 'var(--s6) var(--s5)' }}>

@@ -1,9 +1,11 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
+import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getSessionScriptWithDetail, listSessionScripts } from '@/src/server/pilot/sessionScripts';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import type { PilotRole } from '@/src/server/pilot/contracts';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -34,6 +36,18 @@ function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
 function get(url: string) {
   return GET(new NextRequest(url));
 }
+
+/**
+ * The role that sits OUTSIDE COACHING_CONTENT_READER_ROLES, named here so the
+ * `who may browse` cases below say why they picked it rather than looking
+ * like an arbitrary choice of role. The block's comment carries the reasoning;
+ * the assertion that it really is outside the policy sits in the case itself,
+ * so this is a label rather than a claim.
+ *
+ * Same name, same shape as `workout-templates/route.test.ts`: the two routes
+ * hold one posture and their tests are meant to be read together.
+ */
+const COACHING_CONTENT_OUTSIDER: PilotRole = 'board';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -135,5 +149,90 @@ describe('GET /api/pilot/session-scripts', () => {
 
     expect(response.status).toBe(401);
     expect(mockList).not.toHaveBeenCalled();
+  });
+});
+
+describe('who may browse', () => {
+  /**
+   * THE POSTURE THIS ROUTE HOLDS TODAY, pinned rather than endorsed.
+   *
+   * The route calls `requirePrincipal` and NOT `requireRole`: its own comment
+   * says "Any authenticated role can browse: a script is the gym's own
+   * teaching plan and carries no athlete data." So every authenticated role
+   * reaches it, including one that three sibling coaching-content surfaces
+   * refuse.
+   *
+   * Whether that is right is an OPEN OWNER QUESTION and it has not been put
+   * to him. /api/pilot/drills, /api/pilot/drill-library and
+   * /api/pilot/coach/cue-library were gated on COACHING_CONTENT_READER_ROLES
+   * by an owner decision on 2026-08-27; this route and its workout-templates
+   * sibling were not in that decision. Nothing here argues either way. These
+   * cases exist so that whichever way it is eventually answered, the answer
+   * arrives as a deliberate change to this file rather than silently.
+   *
+   * Until now this file asserted nothing at all about which role may browse.
+   * Its only auth case was the unauthenticated one in the describe above, so
+   * "who may read the gym's teaching plans" was recorded nowhere. Measured
+   * against 27ac8538, before this block existed: adding
+   * `requireRole(principal, [...COACHING_CONTENT_READER_ROLES])` immediately
+   * after `requirePrincipal` in route.ts left all 9 cases in this file and
+   * all 11 in `workout-templates/route.test.ts` green -- 20/20, no failures.
+   *
+   * `board` is what supplies the difference. It is the one PilotRole that
+   * COACHING_CONTENT_READER_ROLES excludes -- nine roles in the union in
+   * contracts.ts, eight in the policy -- so a board principal reaching this
+   * route is the single observation that separates "ungated" from "gated like
+   * the siblings". That partition is owned and asserted by
+   * `coachingContentAccess.test.ts` and `drill-library/route.test.ts`, which
+   * read the union out of contracts.ts; what this file checks is narrower and
+   * stated as such below: that board is outside the policy, and that it
+   * reaches this route today.
+   *
+   * `workout-templates/route.test.ts` carries the same block, named the same
+   * way, for the same reason.
+   */
+  it('a coach may browse the catalogue', async () => {
+    // True, and NOT a tripwire on its own: coach is inside
+    // COACHING_CONTENT_READER_ROLES, so this case survives the gate. It is
+    // kept because it is the ordinary reader the route was written for, and
+    // the board case below is what makes the block bite.
+    mockList.mockResolvedValue([{ script_id: 'scr-1', name: 'Friday sparring' }]);
+
+    expect((await get('http://localhost/api/pilot/session-scripts')).status).toBe(200);
+  });
+
+  it('a board principal, the role the coaching-content policy excludes, may browse today', async () => {
+    // The decisive case. It fails the moment anyone gates this route on
+    // COACHING_CONTENT_READER_ROLES, which is exactly the change the block
+    // above says must not happen quietly.
+    expect(COACHING_CONTENT_READER_ROLES).not.toContain(COACHING_CONTENT_OUTSIDER);
+
+    mockRequirePrincipal.mockResolvedValue(principal({ role: COACHING_CONTENT_OUTSIDER }));
+    mockList.mockResolvedValue([{ script_id: 'scr-1', name: 'Friday sparring' }]);
+
+    const response = await get('http://localhost/api/pilot/session-scripts');
+
+    // Status and body both: a gate that returned 200 with an empty list would
+    // be a narrowing this route reported as a catalogue with nothing in it.
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      scripts: [{ script_id: 'scr-1', name: 'Friday sparring' }],
+    });
+    expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+  });
+
+  it('the same holds on the detail branch, which a gate placed there alone would narrow', async () => {
+    // Two reads sit behind one `requirePrincipal` here, and the case above
+    // only observes one of them. Measured: a `requireRole` written inside the
+    // `if (scriptId)` branch instead of after `requirePrincipal` left the
+    // list case above GREEN and only this one red. So the two are not
+    // standing in for each other.
+    mockRequirePrincipal.mockResolvedValue(principal({ role: COACHING_CONTENT_OUTSIDER }));
+    mockDetail.mockResolvedValue({ script_id: 'scr-1', blocks: [], renderings: [] });
+
+    const response = await get('http://localhost/api/pilot/session-scripts?script_id=scr-1');
+
+    expect(response.status).toBe(200);
+    expect(mockDetail).toHaveBeenCalledWith('org-1', 'scr-1');
   });
 });
