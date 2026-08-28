@@ -1,11 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import {
-  assertActorCanAccessAthlete,
-  athleteIdsForCoach,
-  isOrganizationAdminRole,
-  requireRole,
-} from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import {
   createDevelopmentBlock,
   getDevelopmentBlock,
@@ -16,7 +11,6 @@ import {
   type DevelopmentBlockStatus,
   DEVELOPMENT_BLOCK_STATUSES,
 } from '@/src/server/pilot/athleteDevelopmentBlocks';
-import type { PilotRole } from '@/src/server/pilot/contracts';
 import {
   listDevelopmentBlockTargetOptions,
   resolveDevelopmentBlockTarget,
@@ -119,27 +113,6 @@ function parseTargetInput(value: unknown): DevelopmentBlockTargetInput {
 }
 
 /**
- * A coach's blocks across every athlete they may reach, for the landing view.
- *
- * Filtered by the access contract rather than read per-athlete: the ids come
- * from athleteIdsForCoach, and a block whose athlete is not in that set never
- * enters the response. An organization admin reads the organization's blocks,
- * which is what listDevelopmentBlocks already returns.
- */
-async function blocksInScope(
-  organizationId: string,
-  role: PilotRole,
-  accountId: string,
-) {
-  const all = await listDevelopmentBlocks(organizationId);
-  if (isOrganizationAdminRole(role)) {
-    return all;
-  }
-  const reachable = new Set(await athleteIdsForCoach(organizationId, accountId));
-  return all.filter((block) => reachable.has(block.athlete_id));
-}
-
-/**
  * Each block with its target resolved, or `target: null` when it names none.
  *
  * Resolved here rather than by the client so no surface has to know which of
@@ -177,17 +150,30 @@ export async function GET(request: NextRequest) {
     if (athleteId) {
       // The gate, before the read. A caller who may not reach this athlete
       // learns nothing about whether they have blocks -- or exist.
+      /* Kept even though listDevelopmentBlocksForAthlete now makes the same
+         check itself. The two answers differ on purpose: the module returns
+         [] because a data-layer read must not disclose that a block exists
+         for someone else's athlete, while this route owes an authorized
+         coach a 403 rather than an empty list that reads as "this athlete
+         has no plan". Belt and braces, with the braces load-bearing. */
       await assertActorCanAccessAthlete(principal, athleteId);
-      const rows = await listDevelopmentBlocksForAthlete(principal.organizationId, athleteId);
+      const rows = await listDevelopmentBlocksForAthlete(principal, athleteId);
       const blocks = await withTargets(principal.organizationId, rows);
       return NextResponse.json({ ok: true, blocks }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const rows = await blocksInScope(
-      principal.organizationId,
-      principal.role,
-      principal.accountId,
-    );
+    /* The landing view's scope is the data layer's, not a second copy of it.
+       This route used to hand listDevelopmentBlocks an organization id and
+       then re-derive a coach's reach with athleteIdsForCoach, because the
+       module read the whole gym and the filtering had to happen somewhere.
+       listDevelopmentBlocks now takes the actor and filters through
+       accessibleAthleteIds -- assertActorCanAccessAthlete's batched
+       counterpart -- so the re-derivation is gone rather than duplicated.
+
+       The target enrichment stays: which fixture a block names is not an
+       access question, and resolving it here keeps every reader out of the
+       business of knowing which of two competition tables to look in. */
+    const rows = await listDevelopmentBlocks(principal);
     const blocks = await withTargets(principal.organizationId, rows);
     return NextResponse.json({ ok: true, blocks }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
@@ -218,9 +204,8 @@ export async function POST(request: NextRequest) {
     }
 
     const block = await createDevelopmentBlock({
-      organizationId: principal.organizationId,
+      actor: principal,
       athleteId,
-      createdByAccountId: principal.accountId,
       title: trimmedString(body.title) ?? '',
       trainingEmphasis: trimmedString(body.training_emphasis) ?? '',
       startsOn: trimmedString(body.starts_on) ?? '',
@@ -260,7 +245,7 @@ export async function PATCH(request: NextRequest) {
        the caller can reach while writing to a block about one they cannot.
        updateDevelopmentBlock does not accept an athlete_id at all, which is
        the other half of the same guard. */
-    const existing = await getDevelopmentBlock(principal.organizationId, blockId);
+    const existing = await getDevelopmentBlock(principal, blockId);
     if (!existing) {
       // Also the answer for a block in another organization: a caller must
       // not be able to tell those two apart.
@@ -301,7 +286,7 @@ export async function PATCH(request: NextRequest) {
        told the request failed. Now either the whole patch lands or none of
        it does, and the database's own single-target check is the backstop
        rather than the mechanism. */
-    const block = await updateDevelopmentBlock(principal.organizationId, blockId, patch);
+    const block = await updateDevelopmentBlock(principal, blockId, patch);
     if (!block) {
       return NextResponse.json({ error: 'Development block not found.' }, { status: 404 });
     }

@@ -9,33 +9,26 @@ import { getDrillWithDetail, listDrillLibrary } from '@/src/server/pilot/drillLi
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 
-// CHARACTERIZATION, NOT ENDORSEMENT.
+// The question this file used to record is now answered.
 //
-// This route had no test file at all. That is the reason this one exists: a
-// change to who may read the v3 drill library would have failed nothing.
+// It was written as a characterization test because three surfaces serving one
+// class of content held three postures: /api/pilot/drills gated to seven roles
+// excluding board and platform_owner, while this route and the cue library
+// gated to nothing at all -- each with a written rationale, none citing the
+// others. The header here said which posture was right was an OPEN OWNER
+// DECISION, and that when it was decided "the expectations below change with
+// the code, and that is the point."
 //
-// What it pins is what the route DOES today, which is not the same as what it
-// SHOULD do. Two sibling surfaces serving the same class of content disagree,
-// each with a written rationale, and neither cites the other:
-//
-//   /api/pilot/drills          gates to seven roles, excluding board and
-//                              platform_owner -- "the board is excluded because
-//                              its access is organization-level aggregates, and
-//                              the platform owner because a gym's drills are
-//                              the gym's"
-//   /api/pilot/drill-library   no role gate -- "any authenticated role can
-//   (this route)               browse the library; it carries no athlete data"
-//
-// Which posture is right is an OPEN OWNER DECISION. ORGANIZATION_ROLE_MODEL.md
-// constrains athlete-scoped data and is silent on gym-wide non-athlete coaching
-// content, so it does not settle it. Nothing here should be read as settling it
-// either -- when it is decided, the expectations below change with the code,
-// and that is the point. Today a change would be silent; after this it is
-// visible.
+// It was decided on 2026-08-27. The board is DENIED: oversight and aggregate
+// governance, not operational coaching content. The platform owner is ALLOWED,
+// organization-scoped -- reaching this gym's drills through the organization
+// its own principal carries, and no other. The seven organization member roles
+// are preserved exactly. coachingContentAccess.ts holds the decision; these
+// cases are what makes it true of this route.
 //
 // The route reads pilot.drill_library, a different table from
 // /api/pilot/drills' pilot.drills. Two generations of drill library, same
-// content class.
+// content class -- which is why one answer now covers both.
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -70,24 +63,62 @@ const getRequest = (query = '') =>
   new NextRequest(`http://localhost/api/pilot/drill-library${query ? `?${query}` : ''}`);
 
 /**
- * Every role in the vocabulary, listed so a NEW role cannot be added to
- * PilotRole and quietly inherit this route's posture without someone deciding
- * that it should.
+ * The partition. Listed in full rather than derived from
+ * COACHING_CONTENT_READER_ROLES: a test that asks the policy what the policy
+ * says cannot notice the policy changing.
  */
-const ALL_ROLES: PilotRole[] = [
+const ADMITTED_ROLES: PilotRole[] = [
   'platform_owner',
   'organization_admin',
   'admin',
   'coach',
   'athlete',
   'parent',
-  'board',
   'volunteer',
   'staff',
 ];
 
-describe('who may read the v3 drill library today', () => {
-  it.each(ALL_ROLES)('%s is admitted', async (role) => {
+const DENIED_ROLES: PilotRole[] = ['board'];
+
+/**
+ * The vocabulary, READ OUT OF contracts.ts rather than restated here.
+ *
+ * It was restated here, and that made the exhaustiveness case below a
+ * comparison of three literals sitting in one file, which agree with each
+ * other by construction. Measured: adding a tenth member to the PilotRole
+ * union left all 61 cases in the four affected suites green, so the case
+ * proved nothing about the vocabulary it named. Parsing the union is what
+ * makes it fail when the vocabulary grows, and `npx jest` is the command that
+ * enforces it -- jest does not typecheck, so nothing type-level would.
+ */
+function roleVocabulary(): PilotRole[] {
+  const contracts = fs.readFileSync(
+    path.resolve(__dirname, '../../../../src/server/pilot/contracts.ts'),
+    'utf8',
+  );
+  const union = /export type PilotRole =([\s\S]*?);/.exec(contracts);
+  if (!union) {
+    throw new Error('PilotRole union not found in contracts.ts -- this parser needs updating');
+  }
+
+  const roles = Array.from(union[1].matchAll(/'([a-z_]+)'/g), (match) => match[1] as PilotRole);
+  if (roles.length === 0) {
+    throw new Error('PilotRole union parsed to no roles -- this parser needs updating');
+  }
+
+  return roles;
+}
+
+const ALL_ROLES: PilotRole[] = roleVocabulary();
+
+describe('who may read the v3 drill library', () => {
+  it('accounts for every role in the vocabulary, so a new one cannot default in', () => {
+    // ALL_ROLES comes from the PilotRole union itself, so a role added there
+    // lands on neither side of this partition and fails here.
+    expect([...ADMITTED_ROLES, ...DENIED_ROLES].sort()).toEqual([...ALL_ROLES].sort());
+  });
+
+  it.each(ADMITTED_ROLES)('%s is admitted', async (role) => {
     mockRequirePrincipal.mockResolvedValue(principal(role));
     mockList.mockResolvedValue([]);
 
@@ -97,22 +128,68 @@ describe('who may read the v3 drill library today', () => {
     expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
   });
 
-  it('admits board and platform_owner, which the sibling drills route refuses', () => {
-    // Stated as its own case rather than left implicit in the sweep above,
-    // because these two are the entire disagreement. If the owner rules that
-    // this route should match /api/pilot/drills, this is the case that has to
-    // change, and it should be impossible to miss.
-    expect(ALL_ROLES).toContain('board');
-    expect(ALL_ROLES).toContain('platform_owner');
+  it.each(DENIED_ROLES)('%s is refused, and the read never runs', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+    mockList.mockResolvedValue([]);
+
+    const response = await GET(getRequest());
+
+    expect(response.status).toBe(403);
+    // The status alone would pass if the gate ran AFTER the query. A refusal
+    // that has already read the library is not a refusal.
+    expect(mockList).not.toHaveBeenCalled();
   });
 
-  it('the route holds no role gate at all -- admission is by authentication alone', () => {
-    // The mechanism, not just the outcome. A future gate that admitted all nine
-    // roles explicitly would satisfy every case above while being a materially
-    // different thing: a decision, rather than the absence of one.
+  it('refuses the board on the detail path too, not only the list', async () => {
+    // Two reads live behind this one gate and only one of them is a list. A
+    // gate placed inside the list branch would satisfy every case above.
+    mockRequirePrincipal.mockResolvedValue(principal('board'));
+    mockDetail.mockResolvedValue({ drill_id: 'drl-9' });
+
+    const response = await GET(getRequest('drill_id=drl-9'));
+
+    expect(response.status).toBe(403);
+    expect(mockDetail).not.toHaveBeenCalled();
+  });
+
+  it('admits the platform owner, which this route already did, and refuses the board, which it did not', async () => {
+    // Stated as its own case because these two ARE the change. Before the
+    // decision this route admitted both; /api/pilot/drills refused both. The
+    // outcome is neither of those postures, so a reader who assumes it simply
+    // adopted the sibling's list would be wrong.
+    //
+    // It used to assert only that this file's own ADMITTED_ROLES/DENIED_ROLES
+    // literals held those two strings, which is a fact about the test file and
+    // not about the route: measured, it stayed green both when the policy was
+    // mutated to admit board and when it was mutated to drop platform_owner --
+    // the two changes it is named after. It calls the route now.
+    mockRequirePrincipal.mockResolvedValue(principal('platform_owner'));
+    mockList.mockResolvedValue([]);
+    expect((await GET(getRequest())).status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+
+    jest.clearAllMocks();
+
+    mockRequirePrincipal.mockResolvedValue(principal('board'));
+    mockList.mockResolvedValue([]);
+    expect((await GET(getRequest())).status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
+
+    // And the partition above agrees, so the sweeps really do cover both sides.
+    expect(ADMITTED_ROLES).toContain('platform_owner');
+    expect(DENIED_ROLES).toContain('board');
+  });
+
+  it('gates on the shared policy rather than a list of its own', () => {
+    // The mechanism, not just the outcome. A local literal that happened to
+    // hold the same eight roles would satisfy every case above while
+    // reintroducing the exact defect the decision resolved: one question,
+    // answered separately in each file, free to drift.
     const source = fs.readFileSync(path.join(__dirname, 'route.ts'), 'utf8');
-    expect(source).not.toMatch(/requireRole/);
-    expect(source).toMatch(/requirePrincipal/);
+    expect(source).toMatch(/requireRole\(principal, \[\.\.\.COACHING_CONTENT_READER_ROLES\]\)/);
+    expect(source).toMatch(
+      /import \{ COACHING_CONTENT_READER_ROLES \} from '@\/src\/server\/pilot\/coachingContentAccess'/,
+    );
   });
 });
 

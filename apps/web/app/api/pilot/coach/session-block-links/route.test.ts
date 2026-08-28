@@ -1,9 +1,8 @@
 import { NextRequest } from 'next/server';
 
 import { DELETE, GET, POST } from './route';
-import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { accessibleAthleteIds } from '@/src/server/pilot/access';
 import { getDevelopmentBlock } from '@/src/server/pilot/athleteDevelopmentBlocks';
-import { ForbiddenError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   athleteIdsLinkedToRun,
@@ -42,11 +41,7 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
-  return {
-    ...actual,
-    assertActorCanAccessAthlete: jest.fn(),
-    accessibleAthleteIds: jest.fn(),
-  };
+  return { ...actual, accessibleAthleteIds: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/athleteDevelopmentBlocks', () => {
@@ -64,7 +59,6 @@ jest.mock('@/src/server/pilot/sessionBlockLinks', () => ({
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
-const mockAssertAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockAccessibleIds = accessibleAthleteIds as jest.Mock;
 const mockGetBlock = getDevelopmentBlock as jest.Mock;
 const mockLink = linkSessionToBlock as jest.Mock;
@@ -79,7 +73,6 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  mockAssertAccess.mockResolvedValue(undefined);
   mockAccessibleIds.mockResolvedValue(new Set<string>());
   mockSessionsForBlock.mockResolvedValue([]);
   mockBlocksForRun.mockResolvedValue([]);
@@ -134,52 +127,65 @@ function deleteRequest(qs: string) {
 }
 
 describe('block -> sessions: gated on the athlete the STORED block names', () => {
-  test('the access gate is applied, and to the stored athlete', async () => {
-    mockRequirePrincipal.mockResolvedValue(principal());
+  /* #762 moved the athlete gate INSIDE getDevelopmentBlock: it scopes by the
+     actor's organization and returns null unless canActorReachAthlete clears
+     the athlete the stored block names. So what this route must be shown to do
+     is hand the module the ACTOR -- not an organization id, and not an athlete
+     id from the request -- and treat null as the whole answer. */
+  test('the module is handed the caller\'s own actor, unmodified', async () => {
+    const actor = principal();
+    mockRequirePrincipal.mockResolvedValue(actor);
     mockGetBlock.mockResolvedValue(block({ athlete_id: 'ath-stored' }));
 
     const response = await GET(getRequest('?block_id=blk-1&athlete_id=ath-i-can-reach'));
 
     expect(response.status).toBe(200);
-    // The stored athlete, never one the caller put in the query string.
-    expect(mockAssertAccess).toHaveBeenCalledWith(
-      expect.objectContaining({ accountId: 'acct-coach-a' }),
-      'ath-stored',
-    );
+    /* THE SAME OBJECT, not merely one that looks similar. An earlier version
+       of this asserted objectContaining({ accountId, organizationId }), and a
+       mutation that widened the actor's ROLE on the way in -- the one
+       escalation this hand-off invites -- sailed straight through it. The
+       module decides access from the whole actor, so the whole actor is what
+       has to arrive. */
+    expect(mockGetBlock).toHaveBeenCalledWith(actor, 'blk-1');
+    // And no athlete id from the request reaches anything.
     expect(mockSessionsForBlock).toHaveBeenCalledWith('org-1', 'blk-1');
   });
 
-  test('an athlete outside the caller\'s reach is refused, and nothing is read', async () => {
+  test('a block this caller may not reach is a 404 and reads nothing', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
-    mockGetBlock.mockResolvedValue(block());
-    mockAssertAccess.mockRejectedValue(
-      new ForbiddenError('Not this coach\'s athlete.', 'ATHLETE_ACCESS_DENIED'),
-    );
+    // What the module returns for BOTH "no such block" and "not your athlete".
+    mockGetBlock.mockResolvedValue(null);
 
     const response = await GET(getRequest('?block_id=blk-1'));
 
-    expect(response.status).toBe(403);
+    /* 404, not 403, and that is the improvement rather than a weakening: a
+       403 would tell the caller the block exists and is somebody else's,
+       which is the enumeration a hidden not-found refuses. */
+    expect(response.status).toBe(404);
     expect(mockSessionsForBlock).not.toHaveBeenCalled();
   });
 
-  test('a block in another organization is a 404 and never reaches the gate', async () => {
+  test('a block in another organization is the same 404, indistinguishably', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGetBlock.mockResolvedValue(null);
 
     const response = await GET(getRequest('?block_id=blk-elsewhere'));
 
     expect(response.status).toBe(404);
-    expect(mockAssertAccess).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ error: 'Block not found.' });
     expect(mockSessionsForBlock).not.toHaveBeenCalled();
   });
 
   test('the organization is the session, never a value the caller sent', async () => {
-    mockRequirePrincipal.mockResolvedValue(principal());
+    const actor = principal();
+    mockRequirePrincipal.mockResolvedValue(actor);
     mockGetBlock.mockResolvedValue(block());
 
     await GET(getRequest('?block_id=blk-1&organization_id=org-2'));
 
-    expect(mockGetBlock).toHaveBeenCalledWith('org-1', 'blk-1');
+    // org-1 travels inside the principal; org-2 from the query string reaches
+    // nothing.
+    expect(mockGetBlock).toHaveBeenCalledWith(actor, 'blk-1');
     expect(mockSessionsForBlock).toHaveBeenCalledWith('org-1', 'blk-1');
   });
 });
@@ -247,7 +253,6 @@ describe('the picker', () => {
     // A delivered session carries no athlete id, so this branch asks no
     // athlete question -- and asserting that keeps it from quietly growing
     // one later.
-    expect(mockAssertAccess).not.toHaveBeenCalled();
     expect(mockAccessibleIds).not.toHaveBeenCalled();
     expect(mockGetBlock).not.toHaveBeenCalled();
   });
@@ -265,8 +270,9 @@ describe('the picker', () => {
 });
 
 describe('POST: recording that a session supported a block', () => {
-  test('the gate runs before the write, on the stored athlete', async () => {
-    mockRequirePrincipal.mockResolvedValue(principal());
+  test('the gate runs before the write, on the caller\'s own actor', async () => {
+    const actor = principal();
+    mockRequirePrincipal.mockResolvedValue(actor);
     mockGetBlock.mockResolvedValue(block({ athlete_id: 'ath-stored' }));
     mockLink.mockResolvedValue({
       link: { organization_id: 'org-1', run_id: 'run-1', block_id: 'blk-1', linked_by_account_id: 'acct-coach-a', created_at: 'now' },
@@ -284,7 +290,8 @@ describe('POST: recording that a session supported a block', () => {
     }));
 
     expect(response.status).toBe(201);
-    expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-stored');
+    // The caller's own actor, unmodified; nothing from the body reaches it.
+    expect(mockGetBlock).toHaveBeenCalledWith(actor, 'blk-1');
     expect(mockLink).toHaveBeenCalledWith({
       organizationId: 'org-1',
       runId: 'run-1',
@@ -293,16 +300,13 @@ describe('POST: recording that a session supported a block', () => {
     });
   });
 
-  test('a refused athlete writes nothing', async () => {
+  test('a block this caller may not reach writes nothing', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
-    mockGetBlock.mockResolvedValue(block());
-    mockAssertAccess.mockRejectedValue(
-      new ForbiddenError('Not this coach\'s athlete.', 'ATHLETE_ACCESS_DENIED'),
-    );
+    mockGetBlock.mockResolvedValue(null);
 
     const response = await POST(postRequest({ run_id: 'run-1', block_id: 'blk-1' }));
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     expect(mockLink).not.toHaveBeenCalled();
   });
 
@@ -348,27 +352,27 @@ describe('POST: recording that a session supported a block', () => {
 
 describe('DELETE: removing the statement', () => {
   test('unlinking is gated exactly as linking is', async () => {
-    mockRequirePrincipal.mockResolvedValue(principal());
+    const actor = principal();
+    mockRequirePrincipal.mockResolvedValue(actor);
     mockGetBlock.mockResolvedValue(block({ athlete_id: 'ath-stored' }));
     mockUnlink.mockResolvedValue(true);
 
     const response = await DELETE(deleteRequest('?run_id=run-1&block_id=blk-1'));
 
     expect(response.status).toBe(200);
-    expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-stored');
+    // Unlinking is a write about this block, so it goes through the same
+    // module gate the read and the link do.
+    expect(mockGetBlock).toHaveBeenCalledWith(actor, 'blk-1');
     expect(mockUnlink).toHaveBeenCalledWith('org-1', 'run-1', 'blk-1');
   });
 
-  test('a refused athlete removes nothing', async () => {
+  test('a block this caller may not reach removes nothing', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
-    mockGetBlock.mockResolvedValue(block());
-    mockAssertAccess.mockRejectedValue(
-      new ForbiddenError('Not this coach\'s athlete.', 'ATHLETE_ACCESS_DENIED'),
-    );
+    mockGetBlock.mockResolvedValue(null);
 
     const response = await DELETE(deleteRequest('?run_id=run-1&block_id=blk-1'));
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     expect(mockUnlink).not.toHaveBeenCalled();
   });
 

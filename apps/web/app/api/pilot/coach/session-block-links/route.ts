@@ -1,10 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import {
-  accessibleAthleteIds,
-  assertActorCanAccessAthlete,
-  requireRole,
-} from '@/src/server/pilot/access';
+import { accessibleAthleteIds, requireRole } from '@/src/server/pilot/access';
 import { getDevelopmentBlock } from '@/src/server/pilot/athleteDevelopmentBlocks';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -67,22 +63,29 @@ function trimmedParam(request: NextRequest, name: string): string {
 }
 
 /**
- * Clears the caller against the athlete the STORED block names, and returns
- * the block.
+ * The block, or null when this caller may not have it.
  *
- * Never the athlete a caller sent: a body carrying a reachable athlete's id
- * would otherwise authorize against that child while writing about one the
- * caller cannot reach. Same rule #767 established for the block routes, and
- * the same reason.
+ * THE GATE LIVES IN THE DATA LAYER NOW, and this route does not add a second
+ * one. #762 moved the athlete-access check inside getDevelopmentBlock: it
+ * scopes by the actor's organization and then returns null unless
+ * canActorReachAthlete clears the athlete the STORED block names --
+ * assertActorCanAccessAthlete in non-throwing form, the same rule.
+ *
+ * That makes "no such block" and "not your athlete" INDISTINGUISHABLE, which
+ * is better than what this route did first. An earlier version called
+ * assertActorCanAccessAthlete itself and answered 403 for an unreachable
+ * block, which tells a caller the block exists -- exactly the enumeration a
+ * hidden not-found refuses. Layering that check back on top would restore the
+ * leak, so it is gone and the 404 below is the whole answer.
+ *
+ * Still never the athlete a caller sent: the actor and the STORED row decide
+ * it, inside the module, with no athlete id crossing this boundary at all.
  */
 async function authorizeBlock(
   principal: Awaited<ReturnType<typeof requirePrincipal>>,
   blockId: string,
 ) {
-  const block = await getDevelopmentBlock(principal.organizationId, blockId);
-  if (!block) return null;
-  await assertActorCanAccessAthlete(principal, block.athlete_id);
-  return block;
+  return getDevelopmentBlock(principal, blockId);
 }
 
 export async function GET(request: NextRequest) {
