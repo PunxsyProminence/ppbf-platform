@@ -15,7 +15,7 @@ not do.
 
 ---
 
-## Implementation status (added after the foundation slice shipped)
+## Implementation status (added after the foundation slice shipped; updated for slice 2)
 
 This section records what is now true in the repository. Everything below it
 was written before any of it existed and is left standing as the reasoning
@@ -35,6 +35,24 @@ organization-scoped data layer (`apps/web/src/server/pilot/athleteDevelopmentBlo
 creates, reads and re-states a block, and refuses a creator holding no active
 `pilot.organization_memberships` row in the block's organization.
 
+**Built (slice 2, Full Spectrum block objectives):**
+`pilot.athlete_development_block_objectives` — the child rows a block's
+domains live in, one row per objective: `organization_id`, `objective_id`,
+`block_id`, `domain`, `objective`, `status`, `created_by_account_id`,
+`created_at`, `updated_at`. Composite FK into
+`pilot.athlete_development_blocks(organization_id, block_id)` with
+`on delete cascade`, so tenancy and the athlete link both arrive through the
+parent and an objective cannot outlive it. No `athlete_id` is copied down. A
+thin organization-scoped data layer
+(`apps/web/src/server/pilot/athleteDevelopmentBlockObjectives.ts`) adds,
+reads and re-states an objective under the same active-membership floor.
+
+**The domain vocabulary ships nine of ten, and the tenth is an owner
+decision — see Open Question 6 below.** `nutrition_body_composition` is
+withheld, for the reason
+`pilot_slice_postgres_goal_category_progress_migration.sql` already gave when
+it withheld `Weight Loss` / `Weight Gain` from the athlete goal categories.
+
 **The illustrative name in this document is not the shipped name.** Section
 (b) below writes `pilot.periodization_blocks`; the table is
 `pilot.athlete_development_blocks`, which is the owner's own vocabulary for
@@ -46,9 +64,9 @@ Read every `periodization_blocks` reference below as naming this table.
 - Every comparison / plan-vs-actual surface in sections (a)–(d). Nothing
   reads a block yet. No block carries an adherence state, because the
   execution/comparison row that would hold one does not exist.
-- Full Spectrum block objectives (the child structure). The block is
-  deliberately the parent only; there is no per-domain column and there must
-  not be one.
+- Any surface that reads an objective. The rows exist; nothing displays,
+  summarizes or rolls them up, and no count of completed objectives is
+  presented as a judgment about an athlete.
 - Any API route or UI. Which staff roles may author a block is an **open
   owner decision** — see Open Question 5, added below.
 - The optional competition/event target (Open Question 2), still open and
@@ -426,3 +444,45 @@ them may author a coach's training plan.
 Whichever is chosen, `athlete`, `parent` and `volunteer` are not write roles
 here, and read access for an athlete or their guardian is a separate
 safeguarding question this slice does not open.
+
+**6. [NEW, raised by slice 2.] May a coach file a nutrition / body-composition
+objective for a named minor?**
+
+Slice 2 ships nine of the ten Full Spectrum domains.
+`nutrition_body_composition` is withheld, and the reasoning is not this
+slice's — it is quoted from
+`pilot_slice_postgres_goal_category_progress_migration.sql`, which withheld
+`Weight Loss` and `Weight Gain` from `pilot.goals.category` because admitting
+them *"would create a stored, queryable record of a minor's weight-loss
+intent … ahead of the tier system whose entire job is to decide who may see
+exactly that,"* and because *"it would be strange for the doctrine layer to
+refuse the conversation while the goals table quietly filed the goal."*
+`shadowAuthority.ts` still refuses `weight_cut` in conversation today.
+
+The same sentence holds with *coach* in place of *athlete*: a block objective
+reading "cut to 132 by the October show" is a stored, queryable
+body-composition target for a named minor.
+
+**What has changed, and why this is now a live decision rather than a
+block:** the gate that migration was waiting on exists. Module 200, the
+Privacy-Tier System, reads Status **DONE**, `privacyTiers.ts` ships
+`FIELD_TIERS`, and that module's own header names *"a body-composition
+tracker"* as an anticipated consumer. But module 200 also reads Active
+**false** / ManualVerification **PENDING_SIGN_OFF**, and `FIELD_TIERS`' entry
+for `goals.category` says the reversal *"waits on an explicit owner decision,
+which this registry makes possible and deliberately does not make."*
+
+- (a) Admit `nutrition_body_composition` now, on the grounds that objectives
+  are coach-authored, staff-only, and have no athlete or guardian read path.
+- (b) Admit it once module 200 is signed off (Active true), and decide the
+  goals-category reversal at the same time so the two surfaces do not
+  disagree about the same subject.
+- (c) Keep it withheld until a body-composition surface is designed with its
+  own tier assignment, on the grounds that a free-text objective field is the
+  wrong shape for this subject regardless of who can read it.
+
+Reversing it is one line in the migration's `DO` block and one entry in
+`FULL_SPECTRUM_DOMAINS`. The migration's domain constraint deliberately
+reconciles rather than guards, so the change lands correctly on
+already-migrated environments; the deploy gate deliberately does **not**
+encode the withheld value, so reversing it cannot block a release.
