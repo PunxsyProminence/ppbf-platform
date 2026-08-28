@@ -762,7 +762,27 @@ describe('the guardian gate on a client-supplied athlete id', () => {
   // route calls it, with the caller's value, and refuses when it says no.
   const mockAssertAccess = jest.mocked(assertActorCanAccessAthlete);
 
+  /* Two of these three requests get PAST the gate, which is the point of
+     them -- and past the gate is the provider path. afterEach restores the
+     real global.fetch, so without a stub those cases reach out to the
+     configured provider host for real and their runtime becomes a property
+     of the environment's DNS rather than of the code. It resolves instantly
+     in some sandboxes and hangs to Jest's 5s timeout in others, which is a
+     flake that would surface as an authorization test failing for reasons
+     that have nothing to do with authorization. Returning it also lets the
+     refusal case assert the provider was never CALLED, which is what its
+     name claims -- retrieveShadowContext not running is a different fact. */
+  function stubProvider(): jest.Mock {
+    const providerFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Stubbed provider answer.' } }] }),
+    });
+    global.fetch = providerFetch as unknown as typeof fetch;
+    return providerFetch;
+  }
+
   test('a parent naming an athlete they do not hold is refused, and no provider call is made', async () => {
+    const providerFetch = stubProvider();
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'guardian-acct-1', athleteId: null }));
     // The message the real gate throws for exactly this case.
     mockAssertAccess.mockRejectedValueOnce(new Error('Forbidden: parent not linked to athlete'));
@@ -775,11 +795,13 @@ describe('the guardian gate on a client-supplied athlete id', () => {
     expect(response.status).toBe(403);
     // The refusal has to land before the model sees the request, not after.
     expect(mockRetrieveShadowContext).not.toHaveBeenCalled();
+    expect(providerFetch).not.toHaveBeenCalled();
   });
 
   test('the id checked is the one the client sent, not one the server picked', async () => {
     // A gate called with a server-derived id would pass this file's other
     // tests and still authorize nothing about the athlete actually requested.
+    stubProvider();
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'guardian-acct-1', athleteId: null }));
 
     await POST(postRequest({
@@ -797,6 +819,7 @@ describe('the guardian gate on a client-supplied athlete id', () => {
     // The generic parent mode. Nothing to authorize, so an assertion here
     // would be authorizing a blank -- and a gate that ran on undefined would
     // be the kind that quietly passes.
+    stubProvider();
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'guardian-acct-1', athleteId: null }));
 
     await POST(postRequest({ message: 'How do I support a nervous kid before a show?' }));
