@@ -21,6 +21,27 @@ not replace it.
 
 ---
 
+## 2026-08-28 — release lane: when an additive migration is safe to lead with
+
+Not a correction -- #818 and #821 below settle what was applied where, and this
+adds only the rule that decision turned on, because it recurs every release.
+
+`deploy-production.yml`'s header prescribes migrating production BEFORE
+deploying the code that uses the new columns, which sounds backwards until you
+check what makes it safe. It is safe exactly when **every new constraint admits
+the absent value**, because the currently-deployed code writes nothing to the
+new columns and so writes absence into all of them.
+
+Read off the DDL rather than the migration's own comment header -- the header is
+the thing that would be wrong if anything were. For athlete-check-in-measures:
+six columns added `null` with no default, every constraint written
+`check (<col> is null or ...)`, no drops, no destructive alters, no
+`UPDATE`/`DELETE`. A single `not null` column, or one `check` without the
+`is null or` guard, would have inverted the answer and made the code deploy have
+to go first.
+
+— release-control lane.
+
 ## 2026-08-28 — training-content build lane (RETRACTION + production applied)
 
 **RETRACTING a claim in the entry below.** It said the `all` chain on staging
