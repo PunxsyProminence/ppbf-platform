@@ -166,5 +166,10 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['multidiscipline', 'drill-library-v3']) {
       expect(at('drill-library-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }
+    // cohort-definitions-discipline-fk completes the set. competence-cohorts
+    // creates the table it constrains; multidiscipline creates the registry.
+    for (const prerequisite of ['multidiscipline', 'competence-cohorts']) {
+      expect(at('cohort-definitions-discipline-fk')).toBeGreaterThan(at(prerequisite));
+    }
   });
 });
