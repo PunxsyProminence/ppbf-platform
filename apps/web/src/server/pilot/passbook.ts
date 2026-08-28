@@ -262,14 +262,20 @@ interface ProgressionGapRow {
   created_at: string;
 }
 
-export interface PassbookAttendanceEntry extends Omit<AttendanceRow, 'organization_id'> {
+export interface PassbookAttendanceEntry extends Omit<AttendanceRow, 'organization_id' | 'notes'> {
+  // Absent, not null, for a family reader. `notes: null` would say "there is
+  // no note on this session", which is a different fact from "there is one
+  // and it is not yours to read" -- and the first is a lie whenever the
+  // second is true. The key simply does not appear.
+  notes?: string;
   canonical_status: PassbookAttendanceStatus | null;
   stamp_code: PassbookAttendanceStampCode | null;
   domain_status: 'canonical' | 'unsupported';
 }
 
 export interface AthletePassbook {
-  athlete: Omit<AthleteRow, 'organization_id'> & {
+  athlete: Omit<AthleteRow, 'organization_id' | 'coach_id'> & {
+    coach_id?: string;
     canonical_gym_status: PassbookGymStatus | null;
     gym_status_domain: 'canonical' | 'unsupported';
   };
@@ -279,9 +285,11 @@ export interface AthletePassbook {
     readiness: Array<Omit<ReadinessRow, 'organization_id'>>;
     goals: Array<Omit<GoalRow, 'organization_id'>>;
     corner: {
-      coach: { account_id: string };
+      coach: { account_id?: string };
       guardians: Array<Omit<GuardianRow, 'organization_id'>>;
-      observations: Array<Omit<CoachObservationRow, 'organization_id'>>;
+      observations: Array<
+        Omit<CoachObservationRow, 'organization_id' | 'coach_account_id'> & { coach_account_id?: string }
+      >;
     };
     progression_gaps: Array<Omit<ProgressionGapRow, 'organization_id'>>;
   };
@@ -319,13 +327,17 @@ function attendanceStampCode(status: PassbookAttendanceStatus | null): PassbookA
   return status ? status.toUpperCase() as PassbookAttendanceStampCode : null;
 }
 
-function mapAttendance(row: AttendanceRow): PassbookAttendanceEntry {
+function mapAttendance(row: AttendanceRow, staffReader: boolean): PassbookAttendanceEntry {
   const canonicalStatus = normalizeAttendanceStatus(row.status);
   return {
     attendance_id: row.attendance_id,
     attendance_date: row.attendance_date,
     status: row.status,
-    notes: row.notes,
+    // Second gate on a rule the SQL above already applies, in the shape this
+    // module already uses for note_type: the query is what keeps the column
+    // off the wire, this is what keeps the guarantee independent of the query
+    // text staying correct.
+    ...(staffReader ? { notes: row.notes } : {}),
     canonical_status: canonicalStatus,
     stamp_code: attendanceStampCode(canonicalStatus),
     domain_status: canonicalStatus ? 'canonical' : 'unsupported',
@@ -350,6 +362,49 @@ export async function getAthletePassbook(
   const allowedNoteTypes = passbookObservationNoteTypes(viewerRole);
   const allowedNoteTypeSet = new Set(allowedNoteTypes);
 
+  /*
+   * THE THIRD READER OF THESE TABLES, AND THE ONE THAT NEVER GOT THE SPLIT.
+   *
+   * The note_type filter above answers "which ROWS belong in this book". It
+   * has never answered "which COLUMNS", and this book is read by the athlete
+   * themself and by every linked guardian (the route's own gate admits both).
+   * Two staff-only fields were reaching them:
+   *
+   *   pilot.attendance.notes  Already staff-only on both of its other
+   *                           readers -- the domain-get route and
+   *                           getIntakeCaseAggregate, through
+   *                           attendanceColumnsForReader. privacyTiers.ts
+   *                           places the equivalent column on the other
+   *                           attendance table at tier `organization` with
+   *                           the note "Free text a coach typed about a
+   *                           child". Same writing, same table, third reader,
+   *                           no narrowing.
+   *
+   *   account identifiers     coach_account_id on every observation,
+   *                           athlete.coach_id, and corner.coach.account_id.
+   *                           An account_id is not an opaque handle on this
+   *                           platform: staffProvisioning.ts:316 resolves it
+   *                           as `existing?.account_id || accountIdHint ||
+   *                           loginEmail`, and the admin invite route passes
+   *                           the hint only when an admin typed one
+   *                           (`body.account_id?.trim() || undefined`). So an
+   *                           account_id IS a staff member's login email
+   *                           unless somebody chose otherwise, and this book
+   *                           was handing it to families three times over.
+   *                           The guardian projection drops
+   *                           pilot.parents.account_id and the
+   *                           emergency-contact projection drops `email` on
+   *                           exactly this ground.
+   *
+   * NOT A CLAIM THAT THE COACH IS A SECRET. A family knows who coaches their
+   * child; what they should not be handed is a contact detail nobody decided
+   * to give them. A family surface that wants to NAME the coach should render
+   * the coach's full name, which is a join this function does not do -- a new
+   * capability, not a narrowing of this one, in the same sense this module's
+   * header already uses for the barrier read-back.
+   */
+  const staffReader = isOrganizationAdminRole(viewerRole) || viewerRole === 'coach';
+
   const athlete = await queryOne<AthleteRow>(
     `select organization_id, athlete_id, full_name, dob, weight_class, gym_status, active_flag, coach_id, created_at
      from pilot.athletes
@@ -370,7 +425,7 @@ export async function getAthletePassbook(
       [organizationId, athleteId],
     ),
     query<AttendanceRow>(
-      `select organization_id, attendance_id::text, attendance_date, status, notes
+      `select organization_id, attendance_id::text, attendance_date, status${staffReader ? ', notes' : ''}
        from pilot.attendance
        where organization_id = $1 and athlete_id = $2
        order by attendance_date desc, created_at desc`,
@@ -395,7 +450,7 @@ export async function getAthletePassbook(
       // intake.ts's listParentMessages/listBarrierReports scope theirs. An
       // empty allow-list produces `= any('{}')`, which matches no row -- an
       // unrecognized role reads no observation rather than every one.
-      `select organization_id, note_id::text, coach_account_id, note_type, note_text, created_at
+      `select organization_id, note_id::text${staffReader ? ', coach_account_id' : ''}, note_type, note_text, created_at
        from pilot.coach_observations
        where organization_id = $1 and athlete_id = $2
          and note_type = any($3::text[])
@@ -432,7 +487,7 @@ export async function getAthletePassbook(
     }));
   const attendance = attendanceRows
     .filter((row) => belongsToOrganization(row, organizationId))
-    .map(mapAttendance);
+    .map((row) => mapAttendance(row, staffReader));
   const readiness = readinessRows
     .filter((row) => belongsToOrganization(row, organizationId))
     .map((row) => ({
@@ -461,7 +516,7 @@ export async function getAthletePassbook(
     .filter((row) => allowedNoteTypeSet.has(row.note_type))
     .map((row) => ({
       note_id: row.note_id,
-      coach_account_id: row.coach_account_id,
+      ...(staffReader ? { coach_account_id: row.coach_account_id } : {}),
       note_type: row.note_type,
       note_text: row.note_text,
       created_at: row.created_at,
@@ -502,7 +557,7 @@ export async function getAthletePassbook(
       weight_class: athlete.weight_class,
       gym_status: athlete.gym_status,
       active_flag: athlete.active_flag,
-      coach_id: athlete.coach_id,
+      ...(staffReader ? { coach_id: athlete.coach_id } : {}),
       created_at: athlete.created_at,
       canonical_gym_status: canonicalGymStatus,
       gym_status_domain: canonicalGymStatus ? 'canonical' : 'unsupported',
@@ -513,7 +568,7 @@ export async function getAthletePassbook(
       readiness,
       goals,
       corner: {
-        coach: { account_id: athlete.coach_id },
+        coach: staffReader ? { account_id: athlete.coach_id } : {},
         guardians,
         observations,
       },
