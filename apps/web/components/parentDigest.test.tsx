@@ -78,6 +78,31 @@ describe('the parent digest', () => {
     expect(screen.getByText(/Alex.s corner/)).toBeTruthy();
   });
 
+  it('does not claim to show what changed since the parent last looked', async () => {
+    // Neither fetch sends a since/after cursor and no last-seen state exists
+    // anywhere in apps/web or infra, so a heading promising a delta was
+    // promising something the component cannot know. Asserting the absence
+    // rather than only the replacement is the half that stops the phrase
+    // coming back: someone restoring the old wording alongside the new one
+    // would satisfy a positive-only assertion.
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) {
+        return jsonResponse({ ok: true, items: [] });
+      }
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+
+    expect(await screen.findByText(/Alex.s corner, as it stands/)).toBeTruthy();
+    expect(screen.queryByText(/since you last looked/i)).toBeNull();
+    // Nor a recency claim: achievements.ts orders milestones with unreached
+    // ones first, so "newest first" would be the same defect reworded.
+    expect(screen.queryByText(/most recent|newest first|new since/i)).toBeNull();
+  });
+
   it('renders honest day-one copy when both lists are empty', async () => {
     installFetch((url) => {
       if (url.includes('/achievements/recognition')) {

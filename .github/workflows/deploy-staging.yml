@@ -25,6 +25,42 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  # A CONSTANT, deliberately -- the OPPOSITE of the #736 / #739 fix, and for the
+  # opposite reason. Those workflows moved to github.sha because GitHub holds at
+  # most one PENDING run per group, so a third arrival evicts the queued second,
+  # and `cancel-in-progress: false` does not prevent it -- it governs in-flight
+  # runs, not the queue. There the evicted run WAS the required check, and 16 of
+  # 30 pushes to main lost theirs.
+  #
+  # Here concurrency IS the safety property and eviction is the cheap outcome.
+  # One job pushes ppbf-frontend to one ACR, repoints one Container App
+  # (app-ppbf-staging), and -- when enable_shadow_gate is true -- mints an
+  # ephemeral PIN for the single shared fixture account gate_shadow_athlete
+  # (athlete GATE-SHADOW-ATH-1) in the staging database, then clears it from an
+  # always() step. Two concurrent runs interleave all three: run B's provisioner
+  # overwrites run A's PIN hash, so A's gate fails to authenticate against a
+  # credential that was correct when it was minted; and whichever run reaches the
+  # always() teardown first deactivates the account underneath the other. The
+  # dangerous ordering is A tearing down before B's gate finishes, B
+  # re-provisioning, and B's working 6-digit PIN being left live on what this
+  # file's own annotation calls a publicly reachable staging login.
+  #
+  # That annotation cannot catch it: it keys on the deactivation step FAILING,
+  # and in this race both deactivations succeed -- just against the wrong run's
+  # state.
+  #
+  # The contended resources are named by literals, so no per-run key can make
+  # this safe. An evicted PENDING run costs nothing: it never started a step, so
+  # it holds no fixture, minted no PIN, pushed no image, left no residue. This
+  # workflow is dispatch-only, so a human sees the cancellation and dispatches
+  # again.
+  #
+  # cancel-in-progress stays false and is load-bearing: cancelling a RUNNING gate
+  # is the one case the always() teardown may not survive.
+  group: deploy-staging-app-ppbf-staging
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     environment: staging

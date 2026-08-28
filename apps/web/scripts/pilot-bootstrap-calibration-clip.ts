@@ -40,10 +40,18 @@ async function main(): Promise<void> {
   }
   const target = assertDeclaredWriteTargetFromEnv(connectionString);
 
-  const { project, clip } = await bootstrapCalibrationClip(request);
-
+  // PRINTED BEFORE THE WRITE, not after it. The guard above already refuses a
+  // target the operator did not declare, so this is not the check -- it is the
+  // operator seeing which database is about to be written to while that is
+  // still information they can act on. Printed after the mutation it is a
+  // receipt; printed here it is a chance to hit Ctrl-C, and it is the only
+  // point at which an operator who declared the wrong target learns which one
+  // they actually reached.
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
+
+  const { project, clip } = await bootstrapCalibrationClip(request);
+
   console.log(`organization_id: ${project.organization_id}`);
   console.log(`calibration_project_id: ${project.calibration_project_id}`);
   console.log(`project_status: ${project.status}`);

@@ -66,6 +66,73 @@ test.describe('Coach journey', () => {
     await expect(page.getByRole('heading', { name: 'Unable to verify access' })).toHaveCount(0);
   });
 
+  /* The hub's account of what the platform can do, in a real browser.
+     ----------------------------------------------------------------
+
+     The workspace used to tell a coach that live session tracking was not
+     built, that there was no scheduling feed, and that video upload was a
+     front-end placeholder -- while pilot.session_script_runs, the scheduler
+     and /api/pilot/video/* were all serving. The Jest suite pins the copy;
+     these two pin that the copy is driven by what the routes actually answer,
+     through hydration and the session gate, which is the layer that decides
+     whether a coach ever sees it. */
+  test('a session already in progress is on the coach hub, with the way back to it', async ({ page }) => {
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
+        // The route's real shape: { run } for the caller's own live delivery,
+        // with the elapsed count computed on the server.
+        '/api/pilot/session-scripts/runs': {
+          run: {
+            run_id: 'run-1',
+            script_id: 'scr-1',
+            script_version: 2,
+            delivered_by_account_id: 'acct-coach',
+            delivered_on: '2026-08-28',
+            athletes_present: 9,
+            run_state: 'in_progress',
+            started_at: '2026-08-28T22:00:00.000Z',
+            ended_at: null,
+            current_block_id: 'blk-2',
+            paused_at: null,
+            paused_seconds: 0,
+            elapsed_seconds: 1530,
+            is_paused: false,
+          },
+        },
+      },
+    });
+
+    // Twice on purpose, and both are checked: the KPI summary sentence and the
+    // Today's Session panel. A coach who reads either must not be told the
+    // opposite by the other.
+    await expect(page.getByText('Session in progress -- running 25m 30s.')).toBeVisible();
+    // 1530 server-side seconds, rendered as the panel's own elapsed field. Not
+    // a figure this page counted.
+    await expect(page.getByText('25m 30s', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Return to live delivery' }).first())
+      .toHaveAttribute('href', '/coach/session-scripts');
+
+    // The sentence that used to sit here regardless of the answer.
+    await expect(page.getByText(/Live session tracking is not built/i)).toHaveCount(0);
+  });
+
+  test('with nothing running, the hub says so -- and still does not deny the capability', async ({ page }) => {
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
+        // { run: null } is the route's success shape for an idle coach.
+        '/api/pilot/session-scripts/runs': { run: null },
+      },
+    });
+
+    await expect(page.getByText('No session in progress.', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Live session tracking is not built/i)).toHaveCount(0);
+    await expect(page.getByText(/There is no scheduling backend feed/i)).toHaveCount(0);
+  });
+
   test('reaches the decision loop and records a decision on a provisional recommendation', async ({ page }) => {
     const decided: Array<Record<string, unknown>> = [];
 
@@ -346,6 +413,68 @@ test.describe('Coach journey', () => {
 
     await expect(page.getByText('Keystone Open', { exact: true })).toBeVisible();
     await expect(page.getByText(/This event was cancelled/)).toBeVisible();
+  });
+
+  /* A RED FLAG ABOUT A CHILD, ON WHATEVER SCREEN THE COACH IS ALREADY ON.
+     -------------------------------------------------------------------
+
+     /api/pilot/escalations is a pull surface by construction; its own header
+     records that this platform sends no email, ever. So an unacknowledged
+     high or critical escalation waited for a coach to choose to open the
+     escalation inbox. The count now rides the session bar, which is the one
+     component mounted on every route.
+
+     This is asserted in a real browser, on a route that has nothing to do
+     with safety, because that is the entire claim: not that the badge can
+     render, but that a coach cannot get through a session without passing it. */
+  test('an unacknowledged critical escalation follows the coach onto every surface', async ({ page }) => {
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/escalations': {
+          ok: true,
+          escalations: [
+            {
+              escalation_id: 'esc-1',
+              source_type: 'near_miss',
+              athlete_id: ROSA.athlete_id,
+              severity: 'critical',
+              reason: 'Headache reported after contact rounds, twice this week.',
+              status: 'open',
+              escalated_to_role: 'coach',
+              created_at: '2026-08-27T22:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+
+    // The drill library: about as far from a safety surface as a coach gets.
+    await page.goto('/coach/drills');
+
+    const badge = page.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveAttribute('href', '/admin/escalations');
+    await expect(page.getByText('Safety 1 critical')).toBeVisible();
+
+    /* A COUNT, AND NOTHING ABOUT THE CHILD. This bar is on every screen in
+       the building, including whichever one happens to be facing the room. */
+    await expect(page.getByText(ROSA.athlete_id)).toHaveCount(0);
+    await expect(page.getByText('Headache reported after contact rounds')).toHaveCount(0);
+  });
+
+  test('a coach with nothing flagged carries no safety chip at all', async ({ page }) => {
+    // Silence means none. A permanent "0 open" chip on every screen is how a
+    // person stops seeing this row.
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: { '/api/pilot/escalations': { ok: true, escalations: [] } },
+    });
+
+    await page.goto('/coach/drills');
+
+    await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+    await expect(page.getByText(/^Safety/)).toHaveCount(0);
   });
 
   /* THE OPERATIONS HUB IS ADMINISTRATION NOW (owner decision, 2026-08-26).
