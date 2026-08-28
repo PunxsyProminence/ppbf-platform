@@ -390,10 +390,11 @@ options as they were put to him where the words alone do not carry the choice.
 
 **Read it before writing a test, gate, migration, or policy constant that
 asserts who may do what.** It is the one document outside this file a lane
-should open by default; `CLAUDE.md` otherwise says not to preload, and this is
-the exception. If the policy is recorded there, build to it. If it is not, that
-is **OWNER DECISION REQUIRED** -- say so and stop. Inventing the answer is the
-failure this exists to prevent.
+should open by default. That is not an override of `CLAUDE.md`'s instruction
+not to preload: that instruction already defers to this file on what is
+relevant, and this sentence is this file exercising it. If the policy is
+recorded there, build to it. If it is not, that is **OWNER DECISION REQUIRED**
+-- say so and stop. Inventing the answer is the failure this exists to prevent.
 
 If code you are reading contradicts an entry, that is a finding. Report it. Do
 not assume the entry is stale and build to the code instead.
