@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { gymDayIso } from '../../lib/gymTime';
 import { query, queryOne } from './db';
 import { ForbiddenError, ValidationError } from './errors';
 
@@ -170,6 +171,23 @@ export function coachDevelopmentActivityShapeError(input: CoachDevelopmentActivi
   if (!isCalendarDate(input.occurredOn ?? '')) {
     // Required on purpose: an activity with no date is a claim, not a record.
     return 'occurred_on must be a calendar date written as YYYY-MM-DD.';
+  }
+  /* AND IT MUST ALREADY HAVE HAPPENED. These rows render under "What you have
+     done", so a future date does not read as a plan -- it reads as history
+     that has not occurred yet. A coach who types next month's clinic while
+     booking it would have filed attending it.
+  
+     Compared against the day AT THE GYM, not in UTC: a coach filing tonight's
+     work at 9pm ET is on a machine whose UTC date is already tomorrow, and a
+     UTC comparison would either accept a genuinely future date or refuse a
+     genuinely past one depending on which side of midnight the server sat.
+  
+     Planned development is a real thing to want and is deliberately NOT
+     modelled here: a goal carries target_on for that. Turning this table into
+     both a record and a plan is a schema decision, not a validation one. */
+  const today = gymDayIso();
+  if (today && (input.occurredOn ?? '') > today) {
+    return 'occurred_on cannot be in the future -- this records development work that already happened. Use a goal\'s target date to record something planned.';
   }
   const minutes = input.durationMinutes;
   if (minutes != null) {
