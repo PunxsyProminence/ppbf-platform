@@ -103,6 +103,12 @@ const LAPSED_COACH_ID = 'acct-devel-lapsed';
 // pilot.accounts.organization_id gets wrong, and the reason the foreign key
 // points at the membership table.
 const VISITING_COACH_ID = 'acct-devel-visiting';
+/* Home role 'coach' in pilot.accounts, membership role 'parent' HERE. The
+   principal a session builds for this account carries role='coach' (read
+   from accounts) and organization=ORG_ID (read from the session token), so
+   the route's requireRole sees a coach. Only the membership row says what
+   they actually are in this gym. */
+const PARENT_HERE_ID = 'acct-devel-parent-here';
 // Home organization elsewhere, membership only there. No standing here at
 // all -- the database itself must refuse this one.
 const OUTSIDE_COACH_ID = 'acct-devel-outside';
@@ -170,9 +176,11 @@ async function freshDatabase(name: string): Promise<Client> {
             ($2, 'coach', $6, 'microsoft'),
             ($3, 'coach', $6, 'microsoft'),
             ($4, 'coach', $7, 'microsoft'),
-            ($5, 'coach', $7, 'microsoft')
+            ($5, 'coach', $7, 'microsoft'),
+            ($8, 'coach', $7, 'microsoft')
      on conflict do nothing`,
-    [COACH_ID, COLLEAGUE_ID, LAPSED_COACH_ID, VISITING_COACH_ID, OUTSIDE_COACH_ID, ORG_ID, OTHER_ORG_ID],
+    [COACH_ID, COLLEAGUE_ID, LAPSED_COACH_ID, VISITING_COACH_ID, OUTSIDE_COACH_ID, ORG_ID, OTHER_ORG_ID,
+     PARENT_HERE_ID],
   );
 
   await client.query(
@@ -182,9 +190,11 @@ async function freshDatabase(name: string): Promise<Client> {
             ($3, $6, 'coach', false),
             ($4, $6, 'coach', true),
             ($4, $7, 'coach', true),
-            ($5, $7, 'coach', true)
+            ($5, $7, 'coach', true),
+            ($8, $6, 'parent', true)
      on conflict do nothing`,
-    [COACH_ID, COLLEAGUE_ID, LAPSED_COACH_ID, VISITING_COACH_ID, OUTSIDE_COACH_ID, ORG_ID, OTHER_ORG_ID],
+    [COACH_ID, COLLEAGUE_ID, LAPSED_COACH_ID, VISITING_COACH_ID, OUTSIDE_COACH_ID, ORG_ID, OTHER_ORG_ID,
+     PARENT_HERE_ID],
   );
 
   return client;
@@ -1106,6 +1116,67 @@ describe('the module correcting a goal (real database)', () => {
       expect((await updateCoachDevelopmentGoal(ORG_ID, COACH_ID, 'goal-old', {}))?.status)
         .toBe('active');
     } finally {
+      await client.end();
+    }
+  });
+});
+
+/*
+ * THE ROLE ON THE MEMBERSHIP ROW, WHICH IS THE ONLY ONE THAT SAYS WHAT
+ * SOMEBODY IS IN THIS GYM.
+ *
+ * This module shipped with a write floor of "an ACTIVE membership", no role
+ * predicate -- the exact floor athleteDevelopmentBlocks.ts records having
+ * raised, in a comment this file's own header pointed at. The route was no
+ * backstop: a principal's role comes from pilot.accounts (the account's HOME
+ * role) while its organization comes from the session token, so the two are
+ * read from different rows and can disagree.
+ *
+ * Found by a code review after the PR was green. No test here had covered
+ * it, which is why it survived to be found.
+ */
+describe('a membership admits a write only in a role that may write', () => {
+  test('an account whose membership HERE is parent cannot record development here', async () => {
+    const client = await migratedDatabase('cd_membership_role');
+    try {
+      /* pilot.accounts.role for this account is 'coach', so requireRole at
+         the route would admit it. pilot.organization_memberships says
+         'parent' for THIS organization, and that is the row that decides. */
+      await expect(createCoachDevelopmentGoal({
+        organizationId: ORG_ID,
+        coachAccountId: PARENT_HERE_ID,
+        title: 'Corner work',
+        developmentFocus: 'Something a parent should not be filing.',
+      })).rejects.toBeInstanceOf(ForbiddenError);
+
+      await expect(createCoachDevelopmentActivity({
+        organizationId: ORG_ID,
+        coachAccountId: PARENT_HERE_ID,
+        title: 'Youth coaching clinic',
+        occurredOn: '2026-03-12',
+      })).rejects.toBeInstanceOf(ForbiddenError);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a coaching membership in the same gym still writes', async () => {
+    /* The other direction, and it is not decoration: a role predicate that
+       refused everyone would satisfy the test above while breaking the
+       feature. Staff and volunteers hold credentials and do courses too, so
+       the set is the credential-holder set, not the narrower one that
+       authors plans for children. */
+    const client = await migratedDatabase('cd_membership_role_ok');
+    try {
+      await expect(createCoachDevelopmentGoal({
+        organizationId: ORG_ID,
+        coachAccountId: COACH_ID,
+        title: 'Corner work under pressure',
+        developmentFocus: 'Keep the anxious kids in the room.',
+      })).resolves.toMatchObject({ title: 'Corner work under pressure' });
+    } finally {
+      activeClient = null;
       await client.end();
     }
   });
