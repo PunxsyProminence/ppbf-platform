@@ -960,7 +960,26 @@ export default function AthleteWorkspace() {
    * panel.
    */
   const loadCheckIn = useCallback(async () => {
-    if (!backendAthleteId) return;
+    // Identity is still resolving: the spinner is telling the truth, so leave
+    // it alone rather than deciding anything yet.
+    if (athleteIdentityState === 'loading') return;
+
+    if (!backendAthleteId) {
+      /* Identity RESOLVED and this account has no athlete record. An early
+         `return` alone -- which is what the sibling loaders above do -- would
+         leave checkInLoading true forever, and this one is rendered: the
+         Wellness tab would sit on "Loading your check-in..." for the rest of
+         the session, which is a lie about a request that is never going to be
+         made. The route would only answer 400 here, so say so instead.
+
+         This also lifts the floor gate, which is correct: nothing here knows
+         whether this person checked in, and a floor locked on an unknown is
+         the failure mode the gate is written to avoid. */
+      setCheckInLoading(false);
+      setCheckInLoadError('This account is not linked to an athlete record, so there is no check-in to show.');
+      return;
+    }
+
     try {
       setCheckInLoading(true);
       setCheckInLoadError(null);
@@ -981,7 +1000,7 @@ export default function AthleteWorkspace() {
     } finally {
       setCheckInLoading(false);
     }
-  }, [backendAthleteId]);
+  }, [backendAthleteId, athleteIdentityState]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect

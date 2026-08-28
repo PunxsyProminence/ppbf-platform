@@ -1863,6 +1863,29 @@ describe('the wellness check-in', () => {
     expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull();
   });
 
+  test('an account with no athlete record is told so, not left loading forever', async () => {
+    // A DEFECT FOUND BY RE-READING THE DIFF, not by a failing test.
+    //
+    // loadCheckIn returned early when there was no athlete id -- which is what
+    // every sibling loader in this component does -- but this one's loading
+    // flag is RENDERED. The Wellness tab would have sat on "Loading your
+    // check-in..." for the whole session, describing a request that was never
+    // going to be made.
+    //
+    // The floor must also open in this state: nothing here knows whether this
+    // person checked in, and a floor locked on an unknown is exactly what the
+    // gate's fail-open rule exists to prevent.
+    authenticated = false;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(await screen.findByText(/not linked to an athlete record/)).toBeTruthy();
+    expect(screen.queryByText(/Loading your check-in/)).toBeNull();
+
+    openTab('Floor');
+    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+  });
+
   test('a stored null reads as not reported, never as a zero or a middle', async () => {
     // The fixture stores a check-in with every wellness value null, which is
     // the normal state. A component that rendered null as 0 or 3 would show a
