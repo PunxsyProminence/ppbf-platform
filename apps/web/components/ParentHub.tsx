@@ -248,13 +248,32 @@ export default function ParentHub() {
      because there is nothing in flight to arrive late.
 
      NO PERCENTAGE IS COMPUTED HERE, and that is a decision rather than an
-     omission. A rate needs a denominator -- which sessions this child was
-     expected at, over which window -- and nothing in pilot defines one.
-     Attendance rows record what happened when somebody checked in; they do
-     not record what was supposed to happen. A percentage built on them would
-     be arithmetic wearing a number's authority, and a guardian reading "68%
-     attendance" would have no way to know it was invented. Events are facts.
-     A rate would not be. */
+     omission.
+
+     Correcting what an earlier version of this comment claimed: pilot DOES
+     define an attendance rate. attendanceReporting.ts computes
+     present / (present + absent), rounded to three places, with excused marks
+     excluded from both sides and null returned when there is no present or
+     absent mark to divide -- never a fabricated 0%. That is a real metric with
+     a real source authority, and saying otherwise here was wrong.
+
+     What it is not is a rate a GUARDIAN can read without being misled. Its
+     denominator is sessions somebody MARKED, not sessions this child was
+     expected at, because pilot.scheduler_attendance records what happened and
+     nothing records what was supposed to happen. A child marked present once
+     and never marked again reads 100%. A coach who marks a register every week
+     produces a lower number, for the same child, than a coach who marks it
+     when something notable occurs -- so the figure moves with staff habit
+     rather than with the kid. A guardian reading "68% attendance" has no way
+     to see any of that.
+
+     So the events below are shown and no rate is derived from them. If a
+     parent-facing attendance figure is wanted, the decision to make first is
+     which denominator it uses, and that is already flagged as its own
+     scoping decision on the read route that owns this data --
+     /api/pilot/scheduler/attendance-summary forbids parent outright and says
+     why. This comment should not be read as "nobody has defined a rate"; it
+     should be read as "the defined one answers a different question." */
   const [schedulerFeedState, setSchedulerFeedState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const [schedulerFeed, setSchedulerFeed] = useState<{
     classes: SchedulerFeedClass[];
