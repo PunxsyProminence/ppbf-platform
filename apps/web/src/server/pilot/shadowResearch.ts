@@ -118,6 +118,58 @@ const REQUIREMENT_COLUMNS = `research_requirement_id,
  * Organization-scoped like every other read here, so a cross-organization id
  * reads as absent rather than as a row.
  */
+/**
+ * WHICH ATHLETE A REQUIREMENT ROW NAMES.
+ *
+ * Lifted out of app/api/pilot/shadow/research-requirements/route.ts, where it
+ * lived as route-local helpers, because a second route needed the same answer
+ * and could not reach it. That is not a tidiness point: the research-SUBMISSIONS
+ * route read submissions attached to these rows and scoped them on
+ * organization_id alone, so a guardian could name any research_requirement_id
+ * and read the staff notes on a requirement about somebody else's child. The
+ * scoping existed; it was in a file the other route could not import from.
+ *
+ * `subject_id` is the authority -- the dedicated column added by
+ * pilot_slice_postgres_research_requirement_subject_migration.sql precisely so
+ * "which child is this row about" stops being guessed. The two metadata
+ * fallbacks are the same ones the requirements route already trusted, in the
+ * same priority order, so moving this changes no answer.
+ */
+export type SubjectBearingRow = Pick<ShadowResearchRequirementRow, 'subject_id' | 'metadata'>;
+
+/** The metadata keys that name an athlete, in the priority order the subject
+ *  resolution uses. Named once so the read scope, the create gate and the
+ *  resolve gate cannot end up disagreeing about which keys count. */
+export const SUBJECT_NAMING_METADATA_KEYS = ['subject_id', 'athlete_id'] as const;
+
+export function namedAthleteId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+/**
+ * Every athlete id a row NAMES, in priority order, deduplicated.
+ *
+ * subjectAthleteIdOf answers "who is this row about" and takes the first of
+ * these. This answers the different question the WRITE paths need: "which
+ * athletes does this row touch at all". They differ when the fields disagree
+ * -- subject_id says one child and metadata.athlete_id another -- and on a
+ * write every one of them has to be authorized, because whichever the reader
+ * later believes, the row will have been filed against a child.
+ */
+export function namedAthleteIdsOf(row: SubjectBearingRow): string[] {
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  const candidates = [
+    namedAthleteId(row.subject_id),
+    ...SUBJECT_NAMING_METADATA_KEYS.map((key) => namedAthleteId(metadata[key])),
+  ].filter((athleteId): athleteId is string => athleteId !== null);
+  return Array.from(new Set(candidates));
+}
+
+/** The athlete a requirement row is ABOUT, or null when it is about no one. */
+export function subjectAthleteIdOf(row: SubjectBearingRow): string | null {
+  return namedAthleteIdsOf(row)[0] ?? null;
+}
+
 export async function getShadowResearchRequirementById(
   organizationId: string,
   researchRequirementId: number,

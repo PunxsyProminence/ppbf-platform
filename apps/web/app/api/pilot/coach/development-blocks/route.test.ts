@@ -14,6 +14,7 @@ import {
   resolveDevelopmentBlockTarget,
   setDevelopmentBlockTarget,
 } from '@/src/server/pilot/athleteDevelopmentBlockTargets';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -66,6 +67,15 @@ jest.mock('@/src/server/pilot/access', () => {
   };
 });
 
+/* The author-name resolver reaches pilot.accounts through the real db, which
+   this suite does not connect. Mocked like the target resolver beside it: what
+   the NAME derivation does is achievements.ts's own concern and is tested
+   there; what matters here is that the route asks for it once per distinct
+   author and puts the answer on the row. */
+jest.mock('@/src/server/pilot/achievements', () => ({
+  getCoachDisplayName: jest.fn(async (_org: string, accountId: string) => `Coach ${accountId}`),
+}));
+
 jest.mock('@/src/server/pilot/athleteDevelopmentBlockTargets', () => ({
   resolveDevelopmentBlockTarget: jest.fn(async () => null),
   listDevelopmentBlockTargetOptions: jest.fn(async () => []),
@@ -95,6 +105,7 @@ const mockUpdate = updateDevelopmentBlock as jest.Mock;
 const mockResolveTarget = resolveDevelopmentBlockTarget as jest.Mock;
 const mockTargetOptions = listDevelopmentBlockTargetOptions as jest.Mock;
 const mockSetTarget = setDevelopmentBlockTarget as jest.Mock;
+const mockCoachName = getCoachDisplayName as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -568,13 +579,22 @@ describe('nothing computed reaches the caller', () => {
        resolved `target` joined this list when the competition target shipped:
        a stored id and a name/date/status read back off a skeletal fixture
        table are not derived training science, and adding them here is a
-       deliberate widening rather than a hole. Anything ELSE appearing --
-       a load, a percentage, a taper, an adherence figure -- still reds. */
+       deliberate widening rather than a hole. `created_by_name` joined it for
+       the same kind of reason -- it is a person's name resolved from the
+       account that authored the row, which is attribution rather than a claim
+       about the athlete. Anything ELSE appearing -- a load, a percentage, a
+       taper, an adherence figure -- still reds. */
     expect(Object.keys(payload.blocks[0]).sort()).toEqual([
-      'athlete_id', 'block_id', 'created_at', 'created_by_account_id', 'ends_on',
-      'organization_id', 'starts_on', 'status', 'target', 'target_competition_id',
-      'target_wrestling_event_id', 'title', 'training_emphasis', 'updated_at',
+      'athlete_id', 'block_id', 'created_at', 'created_by_account_id',
+      'created_by_name', 'ends_on', 'organization_id', 'starts_on', 'status',
+      'target', 'target_competition_id', 'target_wrestling_event_id', 'title',
+      'training_emphasis', 'updated_at',
     ]);
+
+    /* The id is still there beside the name. The name is derived; the id is
+       the fact, and a caller needing to know WHICH ACCOUNT authored a block
+       must not have to reverse a display string to get it. */
+    expect(payload.blocks[0].created_by_account_id).toBe('acct-coach-a');
   });
 });
 
@@ -823,4 +843,63 @@ describe('the target picker', () => {
       expect(mockTargetOptions).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('who wrote the block, as a person rather than an account id', () => {
+  test('each block carries a resolved author name', async () => {
+    /* The line this replaces rendered `Written by acct-coach-a` to a coach,
+       which is not attribution -- it is the absence of it, shown to someone
+       who then cannot tell which colleague planned the block. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListForAthlete.mockResolvedValue([block({ created_by_account_id: 'acct-coach-b' })]);
+
+    const payload = await (await GET(getRequest('?athlete_id=ath-1'))).json();
+
+    expect(payload.blocks[0].created_by_name).toBe('Coach acct-coach-b');
+  });
+
+  test('the name is resolved once per distinct author, not once per block', async () => {
+    /* A coach reading their own athlete's history is reading blocks they
+       mostly wrote themselves. The naive per-row lookup issues the same query
+       a dozen times for one answer. */
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListForAthlete.mockResolvedValue([
+      block({ block_id: 'blk-1', created_by_account_id: 'acct-coach-a' }),
+      block({ block_id: 'blk-2', created_by_account_id: 'acct-coach-a' }),
+      block({ block_id: 'blk-3', created_by_account_id: 'acct-coach-a' }),
+      block({ block_id: 'blk-4', created_by_account_id: 'acct-coach-b' }),
+    ]);
+
+    await GET(getRequest('?athlete_id=ath-1'));
+
+    // Two authors, two lookups -- not four.
+    expect(mockCoachName).toHaveBeenCalledTimes(2);
+    expect(mockCoachName.mock.calls.map((call) => call[1]).sort())
+      .toEqual(['acct-coach-a', 'acct-coach-b']);
+  });
+
+  test('the name is resolved in the principal\'s organization, never a supplied one', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-mine' }));
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListForAthlete.mockResolvedValue([block()]);
+
+    await GET(getRequest('?athlete_id=ath-1&organization_id=org-theirs'));
+
+    expect(mockCoachName).toHaveBeenCalledWith('org-mine', 'acct-coach-a');
+    expect(JSON.stringify(mockCoachName.mock.calls)).not.toContain('org-theirs');
+  });
+
+  test('the landing list carries names too, not only the per-athlete read', async () => {
+    // Two read paths, and a fix applied to one of them is the shape of a bug
+    // nobody notices until a coach opens the other.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockListAll.mockResolvedValue([block()]);
+    mockCoachIds.mockResolvedValue(['ath-1']);
+
+    const payload = await (await GET(getRequest())).json();
+
+    expect(payload.blocks[0].created_by_name).toBe('Coach acct-coach-a');
+  });
 });

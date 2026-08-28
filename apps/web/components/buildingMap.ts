@@ -431,6 +431,18 @@ export const BUILDING: readonly Door[] = [
     roles: ['board'], keywords: 'compliance register hand-filed monitoring governance' },
   { href: '/board/escalation-monitoring', label: 'Escalation Ladder', room: 'board',
     roles: ['board'], keywords: 'escalation ladder safety open severity counts' },
+  /* Board for the same reason as the two above: aggregate counts, a cohort
+     floor, no name and no record, headed "Board Workspace". `roles` is
+     'board' alone and NOT BOARD_GATE, which is narrower than the room's other
+     doors on purpose -- the three routes behind this page gate on ['board']
+     only, and volunteer-summary/route.test.ts pins that a platform_owner is
+     refused. Advertising it to the platform owner would be a door onto a page
+     whose every figure is a 403, which is the exact defect the header note
+     warns this list can create. */
+  { href: '/board/aggregates', label: 'Program Aggregates', room: 'board',
+    roles: ['board'],
+    keywords: 'volunteers external competition wrestling league seasons entries counts aggregate',
+    hint: 'Volunteer, external competition and wrestling league counts.' },
 
   // ------------------------------------------------------------------ file --
   /* Stage 4 of the knowledge pipeline, so it stands where the other stages

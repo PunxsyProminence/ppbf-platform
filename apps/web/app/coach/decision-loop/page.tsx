@@ -125,6 +125,10 @@ export default function DecisionLoopReviewPage() {
   const [athletes, setAthletes] = useState<AthleteListItem[]>([]);
   const [athleteId, setAthleteId] = useState('');
   const [loading, setLoading] = useState(false);
+  /* Did the last load fail? Distinct from `loading` and from an empty list:
+     it is the difference between "the platform looked and there is nothing"
+     and "nobody could look". */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const [medicalStatus, setMedicalStatus] = useState<MedicalStatusRow | null>(null);
@@ -207,7 +211,17 @@ export default function DecisionLoopReviewPage() {
       setDecisions(decisionsPayload.decisions ?? []);
       setNearMisses(nearMissesPayload.nearMisses ?? []);
       setOutcomesByDecision({});
+      setLoadFailed(false);
     } catch (error) {
+      /* ALL FOUR SECTIONS BELOW ARE NOW UNREADABLE, NOT EMPTY. This one load
+         feeds the medical status, the recommendations, the decisions and the
+         near-misses; on failure none of the four setters ran, so all four
+         still hold their initial empties and each would assert a fact --
+         "No medical administrative status recorded yet" most of all, which is
+         what a coach reads before putting a child into contact work. The
+         error line alone was not enough: it renders in the picker header
+         while four sections below independently say "clear". */
+      setLoadFailed(true);
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision loop data.');
     } finally {
       setLoading(false);
@@ -536,6 +550,11 @@ export default function DecisionLoopReviewPage() {
                       <p className="t-data text-[color:var(--bone-400)]">Reference: {medicalStatus.source_reference}</p>
                     )}
                   </div>
+                ) : loadFailed ? (
+                  <p className="t-body mt-[var(--s3)] text-[var(--restricted-ink)]">
+                    This athlete&apos;s medical administrative status could not be read. UNKNOWN —
+                    not &quot;no restriction on record&quot;.
+                  </p>
                 ) : (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No medical administrative status recorded yet.</p>
                 )}
@@ -578,7 +597,9 @@ export default function DecisionLoopReviewPage() {
                   Always created provisional. Only a human decision below can move one to accepted or rejected.
                 </p>
                 <div className="mt-[var(--s3)] max-h-[360px] space-y-[var(--s3)] overflow-y-auto">
-                  {recommendations.length === 0 && <p className="t-body text-[color:var(--bone-300)]">No recommendations yet.</p>}
+                  {recommendations.length === 0 && (loadFailed
+                    ? <p className="t-body text-[var(--restricted-ink)]">Recommendations could not be read — not a statement that there are none.</p>
+                    : <p className="t-body text-[color:var(--bone-300)]">No recommendations yet.</p>)}
                   {recommendations.map((rec) => (
                     <article key={rec.recommendation_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-sm)]">
                       <p className="font-semibold text-[color:var(--bone-100)]">{rec.recommendation_text}</p>
@@ -617,7 +638,9 @@ export default function DecisionLoopReviewPage() {
                   A decision always requires a human. It may reference a still-live recommendation, or be logged directly.
                 </p>
                 <div className="mt-[var(--s3)] max-h-[280px] space-y-[var(--s3)] overflow-y-auto">
-                  {decisions.length === 0 && <p className="t-body text-[color:var(--bone-300)]">No decisions recorded yet.</p>}
+                  {decisions.length === 0 && (loadFailed
+                    ? <p className="t-body text-[var(--restricted-ink)]">Decisions could not be read — not a statement that none were recorded.</p>
+                    : <p className="t-body text-[color:var(--bone-300)]">No decisions recorded yet.</p>)}
                   {decisions.map((decision) => (
                     <article key={decision.decision_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-sm)]">
                       <p className="font-semibold text-[color:var(--bone-100)]">{decision.decision_text}</p>
@@ -706,7 +729,9 @@ export default function DecisionLoopReviewPage() {
                   Human-flagged only. Use this when something almost went wrong that a Decision didn&apos;t already cover.
                 </p>
                 <div className="mt-[var(--s3)] max-h-[220px] space-y-[var(--s3)] overflow-y-auto">
-                  {nearMisses.length === 0 && <p className="t-body text-[color:var(--bone-300)]">No near-misses flagged yet.</p>}
+                  {nearMisses.length === 0 && (loadFailed
+                    ? <p className="t-body text-[var(--restricted-ink)]">Near-misses could not be read — not a statement that none were flagged.</p>
+                    : <p className="t-body text-[color:var(--bone-300)]">No near-misses flagged yet.</p>)}
                   {nearMisses.map((nearMiss) => (
                     <article key={nearMiss.near_miss_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-sm)]">
                       <p className="text-[color:var(--bone-100)]">{nearMiss.description}</p>
