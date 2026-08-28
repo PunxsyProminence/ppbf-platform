@@ -683,4 +683,80 @@ test.describe('Coach journey', () => {
     await picker.selectOption(ROSA.athlete_id);
     await expect(page.getByRole('button', { name: 'Log This Session' })).toBeEnabled();
   });
+
+  /* A coach's own development, in a real browser.
+     -------------------------------------------
+
+     The jsdom suites pin the wiring and the route tests pin the
+     authorization. What neither can catch is what the coach actually reads on
+     the page -- and the specific thing that must not be there is a progress
+     figure. The Coach Goals tab shipped with hardcoded goals carrying bars
+     that read "68%" for every coach who logged in; the goals were deleted and
+     the BAR was left behind as dead code over an empty list. This slice
+     points a real feed at that tab, so a browser check that no percentage,
+     bar or score reaches the screen is worth its cost.
+
+     The fixture is deliberately the tempting case: a goal whose target date
+     is long past and three activities whose durations sum to a round number.
+     A build that decided the goal was overdue, or totalled the minutes into
+     "development hours", would have both on screen here. */
+  test("a coach's own development record shows their words and no score", async ({ page }) => {
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/development': {
+          ok: true,
+          goals: [{
+            goal_id: 'goal-1',
+            title: 'Corner work under pressure',
+            development_focus: 'Keep the anxious kids in the room during hard rounds.',
+            // Years past, and still exactly what the coach left it as.
+            target_on: '2020-01-01',
+            status: 'active',
+            created_at: '2026-08-01T00:00:00.000Z',
+            updated_at: '2026-08-01T00:00:00.000Z',
+          }],
+          activities: [
+            { activity_id: 'a1', goal_id: null, title: 'Youth coaching clinic', provider: 'USA Boxing', occurred_on: '2026-03-12', duration_minutes: 60, notes: '', created_at: '2026-03-12T00:00:00.000Z' },
+            { activity_id: 'a2', goal_id: null, title: 'Ringside seminar', provider: '', occurred_on: '2026-02-02', duration_minutes: 120, notes: '', created_at: '2026-02-02T00:00:00.000Z' },
+            { activity_id: 'a3', goal_id: null, title: 'Adaptive Coaching', provider: '', occurred_on: '2026-01-05', duration_minutes: 30, notes: '', created_at: '2026-01-05T00:00:00.000Z' },
+          ],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/coach/development');
+
+    // The coach's own words, read back as written.
+    await expect(page.getByRole('heading', { name: 'Corner work under pressure' })).toBeVisible();
+    await expect(
+      page.getByText('Keep the anxious kids in the room during hard rounds.'),
+    ).toBeVisible();
+
+    // Each activity carries its own duration...
+    await expect(page.getByText('2026-03-12 · USA Boxing · 1h 00m')).toBeVisible();
+    // ...and one with no provider recorded renders a clean line, not a
+    // dangling separator or the word null.
+    await expect(page.getByText('2026-02-02 · 2h 00m')).toBeVisible();
+
+    const body = (await page.locator('body').innerText()).toLowerCase();
+
+    // The sum -- 210 minutes, 3h 30m -- is nowhere. A total built from
+    // self-entered rows sitting beside a certification band reads as proof of
+    // hours, and it would not be.
+    expect(body).not.toContain('3h 30m');
+    expect(body).not.toContain('210');
+
+    // No percentage, no bar, no score, and nothing calling the elapsed target
+    // date a failure.
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/overdue|expired|missed deadline|behind schedule/);
+    expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
+
+    // Nothing here claims a clearance, and the page says where the real
+    // record is instead of leaving a coach to work it out.
+    expect(body).toContain('self-entered');
+    await expect(page.getByRole('link', { name: 'Your credentials' })).toBeVisible();
+  });
 });

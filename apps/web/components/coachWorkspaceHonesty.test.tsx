@@ -24,6 +24,7 @@ interface RouteResponses {
   liveRun?: () => Promise<Response> | Response;
   scheduler?: () => Promise<Response> | Response;
   credentials?: () => Promise<Response> | Response;
+  development?: () => Promise<Response> | Response;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -72,6 +73,15 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/coach/credentials')) {
       return routes.credentials ? routes.credentials() : jsonResponse({ ok: true, items: [] });
+    }
+    // Default: a HEALTHY read of a coach who has written nothing down yet.
+    // That matters for the same reason the live-run default does -- it makes
+    // an 'unavailable' rendering in these tests a real signal rather than an
+    // unstubbed-fetch artefact.
+    if (url.includes('/api/pilot/coach/development')) {
+      return routes.development
+        ? routes.development()
+        : jsonResponse({ ok: true, goals: [], activities: [] });
     }
     if (url.includes('/api/pilot/coach/readiness-board')) {
       // Default: a healthy feed with no fresh check-ins -- everyone UNKNOWN.
@@ -255,6 +265,15 @@ function classToday(overrides: Record<string, unknown> = {}): Record<string, unk
  *   "Video Upload: FRONT-END PLACEHOLDER"       /api/pilot/video/* +
  *                                               /coach/video-analysis
  *
+ * Two more were added to that list when coach self-development shipped, and
+ * they are the same defect one more time:
+ *
+ *   "There is no backend feed for coach         pilot.coach_development_goals +
+ *    goals yet, so this section is always       /api/pilot/coach/development
+ *    empty."
+ *   "There is no backend store for              pilot.coach_development_activities
+ *    completion yet"                            + the same route
+ *
  * A denial is the same defect as a fabrication, pointed the other way. The
  * coach acts on the sentence either way: told the platform cannot hold a
  * SafeSport certificate, they do not upload one -- on a safeguarding record
@@ -421,7 +440,10 @@ describe("the Development tab shows the coach's real credential record", () => {
     await renderWorkspace({ credentials: () => jsonResponse({}, { ok: false, status: 503 }) });
     openTab('Development');
 
-    expect(screen.queryByText(/could not be read/i)).not.toBeNull();
+    // Named specifically. The development panel beside this one has its own
+    // "could not be read" box, and a bare /could not be read/ match would go
+    // green whichever of the two failed -- including when this one did not.
+    expect(screen.queryByText(/credential record could not be read/i)).not.toBeNull();
     expect(screen.queryByText(/no active clearance types/i)).toBeNull();
   });
 
@@ -439,11 +461,16 @@ describe("the Development tab shows the coach's real credential record", () => {
     expect(documentLinks).toHaveLength(0);
   });
 
-  test('Development topics are a reference list, not controls that save nothing', async () => {
+  test('Development topics are a reference list, not a checklist', async () => {
     await renderWorkspace();
     openTab('Development');
 
-    expect(screen.queryByText('Injury Prevention Basics')).not.toBeNull();
+    // Still named, and still nothing to tick. Ticking one off would need this
+    // platform to decide what "completed Adaptive Coaching" means, which is
+    // coaching curriculum it does not possess -- so a topic a coach worked
+    // through is recorded as work they did, in their own words.
+    expect(screen.queryByText(/Injury Prevention Basics/)).not.toBeNull();
+    expect(screen.queryByText(/reference list, not a syllabus and not a checklist/i)).not.toBeNull();
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
   });
 });
@@ -1619,5 +1646,185 @@ describe('the review picker does not invent an RPE for a session nobody rated', 
 
   test('an ordinary reading is unaffected', async () => {
     expect(await sessionOptionLabel(sessionRow('session_1', { rpe: 6 }))).toContain('RPE 6');
+  });
+});
+
+/*
+ * COACH SELF-DEVELOPMENT: the hub's last two "not built" claims.
+ *
+ * The Goals tab said "There is no backend feed for coach goals yet, so this
+ * section is always empty", and the Development tab said "There is no backend
+ * store for completion yet". Both were true when written. Both stopped being
+ * true when /api/pilot/coach/development shipped, and a coach reading either
+ * one keeps their development in a notebook.
+ *
+ * The other half of this is a fabrication rather than a denial, and it is the
+ * more dangerous of the two: the Goals tab shipped with three hardcoded goals
+ * carrying progress bars -- "68%", "45%" -- rendered identically for every
+ * coach who logged in. The goals were deleted; the BAR AND THE PERCENTAGE
+ * STAYED, dead code over an always-empty list, waiting for somebody to point a
+ * real feed at them. That is exactly what this slice does, so the shape is
+ * asserted gone rather than assumed gone.
+ */
+function developmentGoalRow(overrides: Record<string, unknown> = {}) {
+  return {
+    goal_id: 'goal-1',
+    title: 'Corner work under pressure',
+    development_focus: 'Keep the anxious kids in the room during hard rounds.',
+    target_on: '2026-12-01',
+    status: 'draft',
+    ...overrides,
+  };
+}
+
+function developmentActivityRow(overrides: Record<string, unknown> = {}) {
+  return {
+    activity_id: 'act-1',
+    title: 'Youth coaching clinic',
+    provider: 'USA Boxing',
+    occurred_on: '2026-03-12',
+    duration_minutes: 180,
+    ...overrides,
+  };
+}
+
+describe("the hub reads the coach's own development record", () => {
+  test('the Goals tab no longer denies that a coach-goal backend exists', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({ ok: true, goals: [developmentGoalRow()], activities: [] }),
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText(/no backend feed for coach goals/i)).toBeNull();
+    expect(screen.queryByText(/Planned — Not Yet Implemented/)).toBeNull();
+    expect(screen.queryByText('Corner work under pressure')).not.toBeNull();
+    expect(screen.queryByText(/Keep the anxious kids in the room/)).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Write or change a goal' }).getAttribute('href'))
+      .toBe('/coach/development');
+  });
+
+  test('the Development tab no longer denies that recorded work can be stored', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [], activities: [developmentActivityRow()],
+      }),
+    });
+    openTab('Development');
+
+    expect(screen.queryByText(/no backend store for completion/i)).toBeNull();
+    expect(screen.queryByText('Youth coaching clinic')).not.toBeNull();
+    expect(screen.queryByText('2026-03-12 · USA Boxing')).not.toBeNull();
+  });
+
+  test('the hub actually reads the development route rather than assuming an answer', async () => {
+    const fetchMock = await renderWorkspace();
+    const called = fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/pilot/coach/development'));
+    expect(called).toBe(true);
+  });
+
+  test('NO PROGRESS BAR AND NO PERCENTAGE survives against a real goal', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true,
+        goals: [
+          developmentGoalRow(),
+          developmentGoalRow({ goal_id: 'goal-2', title: 'Read the room', status: 'active' }),
+        ],
+        activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    /* The dead bar this slice removed rendered `{goal.progress}%` inside the
+       goal's own card, above a div whose width was set from it. Both shapes
+       are asserted absent -- the word, and the element that would draw one
+       without it.
+
+       Scoped to the card, because an unscoped /Progress/i match hits the
+       dashboard's "No session in progress" line, which renders whatever tab is
+       open and has nothing to do with this.
+
+       `.mat-leather`, not `div`: the first version of this said
+       `.closest('div')`, which lands on the flex row holding the title and the
+       badge -- NOT the card. A mutation adding a progress bar below that row
+       survived it. The card is the mat-leather panel, and that is what has to
+       be free of one. */
+    const card = screen.getByText('Corner work under pressure').closest('.mat-leather') as HTMLElement;
+    expect(card.textContent ?? '').not.toMatch(/progress/i);
+    expect(card.textContent ?? '').not.toMatch(/\d+\s*%/);
+    expect(card.querySelectorAll('[style*="width"]')).toHaveLength(0);
+    expect(document.querySelectorAll('progress')).toHaveLength(0);
+    expect(document.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+
+    // Guards the guard: both goals really did render.
+    expect(screen.queryByText('Read the room')).not.toBeNull();
+  });
+
+  test('a goal with no target date shows no date line rather than an empty "Due:"', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [developmentGoalRow({ target_on: null })], activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText('Corner work under pressure')).not.toBeNull();
+    expect(screen.queryByText(/Target date/)).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('Due:');
+    expect(document.body.textContent ?? '').not.toContain('null');
+  });
+
+  test('a failed development read is UNAVAILABLE, not "you have written nothing down"', async () => {
+    await renderWorkspace({ development: () => jsonResponse({}, { ok: false, status: 503 }) });
+    openTab('Goals');
+
+    expect(screen.queryByText(/goals could not be read/i)).not.toBeNull();
+    // The claim this must never collapse into. A coach who reads it writes
+    // down a goal they already had.
+    expect(screen.queryByText(/have not written down a development goal/i)).toBeNull();
+  });
+
+  test('a failed development read does not blank the credential panel beside it', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({}, { ok: false, status: 503 }),
+      credentials: () => jsonResponse({ ok: true, items: [credentialRow()] }),
+    });
+    openTab('Development');
+
+    // Two records of very different standing on one tab. One read failing
+    // must not take the other down with it -- the credential panel is the
+    // verified one, and it answered.
+    expect(screen.queryByText('SafeSport Training')).not.toBeNull();
+    expect(screen.queryByText('Current')).not.toBeNull();
+    expect(screen.queryByText(/development record could not be read/i)).not.toBeNull();
+  });
+
+  test('recorded work is never presented as a verified credential', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true,
+        goals: [],
+        activities: [developmentActivityRow({
+          title: 'SafeSport refresher', provider: 'US Center for SafeSport',
+        })],
+      }),
+    });
+    openTab('Development');
+
+    // A coach may well log this. What must never appear with it is a band, an
+    // expiry or the word verified -- that record lives in
+    // pilot.person_clearances and an administrator confirms it.
+    expect(screen.queryByText('SafeSport refresher')).not.toBeNull();
+    // The panel says plainly which record is the verified one, rather than
+    // leaving a coach to work out that this list is not it.
+    expect(screen.queryByText(/Self-entered/i)).not.toBeNull();
+    /* Scoped to the ROW, not the panel: the panel's own sentence contains the
+       word "verified" on purpose, and asserting over the whole panel would
+       force that sentence to be deleted to make a test pass. What must carry
+       no verification language is the entry itself. */
+    const row = screen.getByText('SafeSport refresher').closest('li') as HTMLElement;
+    expect(row.textContent ?? '').not.toMatch(/verified|expires|awaiting review|current/i);
+    expect(row.querySelectorAll('.badge')).toHaveLength(0);
   });
 });

@@ -158,6 +158,16 @@ describe('every migration is dispatchable and in the rebuild path', () => {
       .toBeGreaterThan(at('external-competition'));
     expect(at('athlete-development-block-competition-target'))
       .toBeGreaterThan(at('wrestling-league'));
+    /* coach-development hangs both of its tables off
+       pilot.organization_memberships with a composite FK, and multiorg is the
+       migration that creates that table. Applied before it, a rebuild dies on
+       the foreign key -- and this ordering is easy to get wrong precisely
+       because the base schema ALSO declares organization_memberships, so a
+       reader checking pilot_slice_postgres.sql would conclude no dependency
+       exists. The `all` loop is applied to environments that already have the
+       base schema, and multiorg is where that table's current shape comes
+       from. */
+    expect(at('coach-development')).toBeGreaterThan(at('multiorg'));
     // session-scripts-discipline-fk points pilot.session_scripts at
     // pilot.disciplines. It needs BOTH: multidiscipline creates the registry it
     // references, session-scripts creates the table it constrains. Applied
