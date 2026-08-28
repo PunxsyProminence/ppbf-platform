@@ -1,11 +1,11 @@
 // Real PostgreSQL-backed test for the discipline registry a new gym starts with.
 //
 // WHAT CANNOT BE PROVEN BY READING CODE, and is the whole reason this file
-// exists: pilot.session_scripts and pilot.drill_library each carry a composite
-// foreign key to pilot.disciplines AND default their discipline column to
-// 'boxing'. So a gym whose registry is empty cannot hold a session script or a
-// drill at all -- including rows that never name a discipline, because the
-// default is itself an unregistered reference.
+// exists: pilot.drill_library, pilot.session_scripts and pilot.cohort_definitions
+// each carry a composite foreign key to pilot.disciplines AND default their
+// discipline column to 'boxing'. So a gym whose registry is empty cannot hold a
+// drill, a session script or a cohort at all -- including rows that never name a
+// discipline, because the default is itself an unregistered reference.
 //
 // createOrganization is the path that creates a gym after an operator has run
 // the seed loaders, and the loaders only ever seed one organization per run.
@@ -56,8 +56,10 @@ const MIGRATIONS = [
   'pilot_slice_postgres_drill_library_v3_migration.sql',
   'pilot_slice_postgres_multidiscipline_migration.sql',
   'pilot_slice_postgres_session_scripts_migration.sql',
+  'pilot_slice_postgres_competence_cohorts_migration.sql',
   'pilot_slice_postgres_drill_library_discipline_fk_migration.sql',
   'pilot_slice_postgres_session_scripts_discipline_fk_migration.sql',
+  'pilot_slice_postgres_cohort_definitions_discipline_fk_migration.sql',
 ];
 
 const FOREIGN_KEY_VIOLATION = '23503';
@@ -242,6 +244,24 @@ describe('a gym created after the operator seed run', () => {
            )
            values ($1, 'scr-default', 'scr-default', 'Default script', $2)`,
           [SEEDED_ORG, CREATOR],
+        ),
+      ).resolves.toBeDefined();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('can hold a cohort definition, which is the one that gates contact', async () => {
+    // Third table, same default, and the one with a safety consequence: a
+    // cohort is what decides whether an athlete may take contact. A gym that
+    // cannot write one has no contact gating at all.
+    const client = await freshClient();
+    try {
+      await expect(
+        client.query(
+          `insert into pilot.cohort_definitions (organization_id, cohort_id, cohort_name)
+           values ($1, 'coh-default', 'Beginners')`,
+          [SEEDED_ORG],
         ),
       ).resolves.toBeDefined();
     } finally {
