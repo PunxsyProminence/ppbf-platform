@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
       organizationId: principal.organizationId,
       athleteId: body.athleteId,
       coachAccountId: principal.accountId,
+      authorRole: principal.role,
       noteType: NOTE_TYPE_BY_BARRIER[body.barrierType],
       noteText: body.description,
     });

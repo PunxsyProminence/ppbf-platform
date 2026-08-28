@@ -16,6 +16,14 @@ import type { PilotRole } from './contracts';
 // So the cases here are not only "the list has the right roles in it". Two of
 // them are about the ways a correct list stops being one: by a sibling policy
 // changing underneath it, and by a route quietly keeping a copy.
+//
+// Five routes, not three, since the owner ruled on 2026-08-28 that the policy
+// governs the content class rather than the routes the original decision
+// happened to name. /api/pilot/session-scripts and
+// /api/pilot/workout-templates were the two surfaces serving that class from
+// outside it; every case below now polices them too, which is the whole
+// mechanism by which "the content class" is a thing the tree enforces rather
+// than a sentence in a header.
 
 const ROUTES_DIR = path.resolve(__dirname, '../../../app/api/pilot');
 
@@ -32,11 +40,24 @@ const READER_POLICY = 'COACHING_CONTENT_READER_ROLES';
  * rather than this policy's, so DRILL_AUTHOR_ROLES is permitted there and
  * nowhere else. Anything not named here is a private role list, which is the
  * defect this module was created to remove.
+ *
+ * THIS MAP IS THE SUBJECT LIST for every case below, so adding a route here is
+ * how a surface joins the policy and is the only edit that makes the sweeps
+ * cover it. session-scripts and workout-templates were added on 2026-08-28
+ * when the owner ruled the policy governs the content class; neither writes,
+ * so neither gets an author list.
+ *
+ * NOT here, deliberately: session-scripts/runs/**. It carries per-night
+ * athlete data behind a narrower gate of its own, and listing it would assert
+ * that the coaching-content policy is the right answer for it. Sharing a path
+ * prefix is not sharing a content class.
  */
 const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
   'drills/route.ts': [READER_POLICY, 'DRILL_AUTHOR_ROLES'],
   'drill-library/route.ts': [READER_POLICY],
   'coach/cue-library/route.ts': [READER_POLICY],
+  'session-scripts/route.ts': [READER_POLICY],
+  'workout-templates/route.ts': [READER_POLICY],
 };
 
 const GATED_READ_ROUTES = Object.keys(PERMITTED_GATE_CONSTANTS);
@@ -138,13 +159,18 @@ describe('every surface serving this content reaches the one policy', () => {
     }
   });
 
-  it('all three use the aliasing requireRole, so admin and organization_admin cannot diverge by route', () => {
+  it('all five use the aliasing requireRole, so admin and organization_admin cannot diverge by route', () => {
     // There are two requireRole implementations. access.ts treats 'admin' and
     // 'organization_admin' as aliases of each other; http.ts does not. Both
     // strings are in the policy list, so the choice does not change today's
     // outcome -- and it would if either name were ever removed from the list,
-    // which is the point at which three routes importing two different gates
+    // which is the point at which five routes importing two different gates
     // would start disagreeing again.
+    //
+    // It bites for a second reason on the two routes added in 2026-08-28:
+    // both already imported `requirePrincipal` from http.ts, so `requireRole`
+    // from the same module is the import an editor offers first and the one a
+    // careless hand takes.
     for (const relative of GATED_READ_ROUTES) {
       expect(routeSource(relative)).toMatch(
         /import \{ requireRole \} from '@\/src\/server\/pilot\/access'/,
