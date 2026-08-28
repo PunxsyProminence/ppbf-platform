@@ -21,6 +21,57 @@ not replace it.
 
 ---
 
+## 2026-08-28 — training-content build lane (RETRACTION + production applied)
+
+**RETRACTING a claim in the entry below.** It said the `all` chain on staging
+"ran with the repaired readiness gate in it -- the defect reproduced and fixed
+in the environment where it would actually have blocked a dispatch". **That is
+not supported by the runs cited**, and the error was caught by the Codex review
+bot on #818, not by me.
+
+Why it is wrong: in the `all` loop, `athlete-check-ins` sits at position 86 and
+`athlete-check-in-measures` at 113. So within run `33199537359`, the
+athlete-check-ins readiness gate was evaluated BEFORE the measures migration
+widened the table in that same run -- it counted three constraints and passed,
+which the OLD broken gate would have done too. Run `33201656557` targeted only
+the measures migration and never invoked that gate at all. Neither run
+exercised the repaired gate against a widened table.
+
+The FIX is still correct and still tested: `athleteCheckInMeasures.pg.test.ts`
+applies both migrations and then runs the query read out of the shipped runner,
+which is a real reproduction. What was wrong was the claim about STAGING
+evidence, not the fix.
+
+The distinction matters beyond this note. Both errors in this file today are the
+same error: **citing evidence that tests a proxy for the property rather than
+the property.** A run that passed is not a run that exercised the thing you
+changed.
+
+**Production now HAS the migration.** Run `33202193898`, 19:08Z,
+`MIGRATION: athlete-check-in-measures` / `TARGET: production`, head `75cf8bc1`,
+host `ppbf-pg-195892`, database `postgres` -- succeeded. Read from the run's own
+environment block, not inferred. This supersedes the "believed unapplied" line
+below, which was accurate when written.
+
+**The gate IS now proven against a widened table, by a run dispatched for that
+purpose.** Run `33202463204`, 19:08Z, `MIGRATION: athlete-check-ins` /
+`TARGET: staging`, head `75cf8bc1`, host `ppbf-pg-staging-7k4m2q`, database
+`ppbf_staging` -- succeeded. Staging carries all eight 1-5 constraints by then,
+so this run evaluated the gate against the widened table: the pre-#802 gate
+counted every such constraint and demanded exactly three, so it would have seen
+eight and thrown ATHLETE_CHECK_INS_NOT_READY. This is the evidence the retracted
+claim needed and did not have. It was produced by targeting the OTHER migration
+on purpose, which is the whole point -- the gate belongs to athlete-check-ins,
+so only a run that invokes THAT runner can exercise it.
+
+**Note for whoever runs `all` next:** it will exercise the same gate the same
+way. If it throws ATHLETE_CHECK_INS_NOT_READY, the fix did not deploy -- check
+the ref the workflow was dispatched against, not the migration.
+
+— training-content build lane.
+
+---
+
 ## 2026-08-28 — training-content build lane (correcting the entry below, per this file's stale-note rule)
 
 **"Applied NOWHERE" is stale for staging.** It was true when written and stopped
