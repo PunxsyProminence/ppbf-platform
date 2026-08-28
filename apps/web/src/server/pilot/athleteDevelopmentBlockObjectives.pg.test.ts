@@ -478,12 +478,26 @@ describe('block objectives migration', () => {
     }
   });
 
-  test('admitting the tenth domain left pilot.goals.category alone', async () => {
-    // A separate surface -- athlete-filed, athlete-readable -- whose own
-    // migration withholds 'Weight Loss' and 'Weight Gain'. The 2026-08-28
-    // decision was about coach-authored objectives and did not reverse it.
-    // Asserted here because "we decided body composition is fine" is exactly
-    // the kind of summary that travels further than the decision did.
+  test('the goals surface followed, by its own decision -- and only as far', async () => {
+    /* A SEPARATE SURFACE, DECIDED SEPARATELY. pilot.goals is athlete-filed
+       and athlete-readable; these objectives are coach-authored. When this
+       case was first written it asserted the goals constraint still REFUSED
+       'Weight Loss' / 'Weight Gain', because admitting the tenth domain here
+       had not been a decision about there, and "we decided body composition
+       is fine" is exactly the kind of summary that travels further than the
+       decision did.
+
+       The owner then made the second decision too (#769, merged 2026-08-28):
+       goals.category admits both, so the two surfaces stop disagreeing about
+       the same subject. The assertion is flipped rather than deleted -- what
+       it guards is that the two surfaces move by decision and not by drift,
+       and that is worth asserting in whichever direction is current.
+
+       WHAT STILL DID NOT MOVE, which is why the near-misses stay: two values
+       were admitted, not a field opened. Near spellings are still refused by
+       the CHECK, so "weight goals are allowed now" cannot become free text.
+       shadowAuthority.ts still refuses 'weight_cut' in conversation, and
+       goals.category is still athlete_record -- readers did not widen. */
     const client = await freshDatabase('adbo_goals_untouched', { preMigration: true });
     try {
       await client.query(migrationSql);
@@ -500,8 +514,14 @@ describe('block objectives migration', () => {
       );
 
       await insertGoal('goal-ok', 'Fitness');
+      // Admitted, by the owner decision of 2026-08-28 on that surface.
       for (const category of ['Weight Loss', 'Weight Gain']) {
-        await expect(insertGoal(`goal-${category.replace(' ', '-')}`, category))
+        await insertGoal(`goal-${category.replace(' ', '-')}`, category);
+      }
+
+      // And no further. A widened vocabulary is two values, not a text field.
+      for (const category of ['weight loss', 'Weight', 'Weight Cut', 'Cutting']) {
+        await expect(insertGoal(`goal-bad-${category.replace(/ /g, '-')}`, category))
           .rejects.toMatchObject({ code: '23514' });
       }
     } finally {
