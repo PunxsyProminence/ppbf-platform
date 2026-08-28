@@ -209,6 +209,68 @@ test.describe('Coach journey', () => {
     await expect(report.getByText(/Skipped/)).toBeVisible();
   });
 
+  /* A RED FLAG ABOUT A CHILD, ON WHATEVER SCREEN THE COACH IS ALREADY ON.
+     -------------------------------------------------------------------
+
+     /api/pilot/escalations is a pull surface by construction; its own header
+     records that this platform sends no email, ever. So an unacknowledged
+     high or critical escalation waited for a coach to choose to open the
+     escalation inbox. The count now rides the session bar, which is the one
+     component mounted on every route.
+
+     This is asserted in a real browser, on a route that has nothing to do
+     with safety, because that is the entire claim: not that the badge can
+     render, but that a coach cannot get through a session without passing it. */
+  test('an unacknowledged critical escalation follows the coach onto every surface', async ({ page }) => {
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/escalations': {
+          ok: true,
+          escalations: [
+            {
+              escalation_id: 'esc-1',
+              source_type: 'near_miss',
+              athlete_id: ROSA.athlete_id,
+              severity: 'critical',
+              reason: 'Headache reported after contact rounds, twice this week.',
+              status: 'open',
+              escalated_to_role: 'coach',
+              created_at: '2026-08-27T22:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+
+    // The drill library: about as far from a safety surface as a coach gets.
+    await page.goto('/coach/drills');
+
+    const badge = page.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveAttribute('href', '/admin/escalations');
+    await expect(page.getByText('Safety 1 critical')).toBeVisible();
+
+    /* A COUNT, AND NOTHING ABOUT THE CHILD. This bar is on every screen in
+       the building, including whichever one happens to be facing the room. */
+    await expect(page.getByText(ROSA.athlete_id)).toHaveCount(0);
+    await expect(page.getByText('Headache reported after contact rounds')).toHaveCount(0);
+  });
+
+  test('a coach with nothing flagged carries no safety chip at all', async ({ page }) => {
+    // Silence means none. A permanent "0 open" chip on every screen is how a
+    // person stops seeing this row.
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: { '/api/pilot/escalations': { ok: true, escalations: [] } },
+    });
+
+    await page.goto('/coach/drills');
+
+    await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+    await expect(page.getByText(/^Safety/)).toHaveCount(0);
+  });
+
   /* THE OPERATIONS HUB IS ADMINISTRATION NOW (owner decision, 2026-08-26).
 
      Both halves have to be one test. Narrowing the hub's gate and accidentally
