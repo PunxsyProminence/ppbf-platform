@@ -541,3 +541,117 @@ describe('GET /api/pilot/video/[videoId] guardian consent scope', () => {
     expect(res.status).toBe(409);
   });
 });
+
+/**
+ * pilot.waivers.status IS FREEFORM TEXT.
+ *
+ * No CHECK constraint on the column, and /api/pilot/intake/domain-upsert
+ * stores `asString(body.payload.status, 'signed')` -- any string a caller
+ * sends. waiverCompliance.ts records a waiver stored as ' Signed ' as
+ * something that actually happened and says so in as many words: "this is
+ * reachable rather than theoretical".
+ *
+ * The two refusals in this route were positive matches on the raw string, so
+ * ' Withdrawn ' matched neither, both filters came back empty, and the SAS was
+ * minted. A safeguarding gate failing OPEN on a leading space -- sitting
+ * beside checkGuardianMediaConsent's own `status !== 'signed'`, which fails
+ * closed on the same data.
+ */
+describe('a status this gate cannot read never means yes', () => {
+  const play = async (status: string | null, coversVideo: boolean | null = false) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', status, coversVideo)]));
+    return call();
+  };
+
+  test.each([' withdrawn', 'withdrawn ', ' Withdrawn ', 'WITHDRAWN', 'Withdrawn'])(
+    'a withdrawal recorded as %p still refuses',
+    async (status) => {
+      const res = await play(status);
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).code).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+    },
+  );
+
+  test.each([' signed ', 'SIGNED', 'Signed'])(
+    'a photo-only consent recorded as %p still refuses video',
+    async (status) => {
+      const res = await play(status, false);
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).code).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    },
+  );
+
+  test.each([' Signed ', 'SIGNED'])('a video consent recorded as %p still plays', async (status) => {
+    // The other direction, and the one that keeps normalisation from being a
+    // one-way ratchet: a family must not be punished for a data-entry
+    // artifact either. Same argument waiverCompliance.ts makes for its gate.
+    const res = await play(status, true);
+
+    expect(res.status).toBe(200);
+  });
+
+  test.each(['active', 'revoked', 'pending', 'declined', 'approved', 'yes', 'signd'])(
+    'a status of %p is refused rather than guessed at',
+    async (status) => {
+      /* wallDisplay.ts draws this line on the same column, as an allow-list
+         and not a deny-list -- "an unrecognised status is a refusal" -- for
+         the same reason: you cannot conclude a guardian consented to video
+         from a word you do not understand.
+
+         'declined' and 'approved' are in the list on purpose. Both are real
+         vocabulary elsewhere in this codebase (admin/consent offers
+         'declined'; wallDisplay treats 'approved' as affirmative) and NEITHER
+         has a defined meaning for THIS gate, so both are refused rather than
+         mapped onto one this file invented. */
+      const res = await play(status, true);
+
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.code).toBe('GUARDIAN_CONSENT_UNREADABLE');
+      expect(body.stream_url).toBeUndefined();
+    },
+  );
+
+  test('an empty-string status is refused, not read as absence', async () => {
+    // '' normalises to '' which is in neither set. Absence is `null` -- no row
+    // at all -- and that is a different fact with a different answer.
+    const res = await play('', true);
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('GUARDIAN_CONSENT_UNREADABLE');
+  });
+
+  test('a guardian with NO row is still not refused -- absence is untouched', async () => {
+    // The blast-radius decision this route was built around, re-asserted
+    // beside the new refusal so the two cannot be confused. `null` status
+    // means no current photo_media row for that guardian, which is the
+    // default state of a roster-imported athlete.
+    const res = await play(null, null);
+
+    expect(res.status).toBe(200);
+  });
+
+  test('the unreadable refusal is reported only when nothing stronger applies', async () => {
+    // Ordering: a real withdrawal beside an unreadable row must still report
+    // the withdrawal, which is the actionable fact.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([
+      guardian('par-1', 'withdrawn', false),
+      guardian('par-2', 'active', true),
+    ]));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+  });
+});

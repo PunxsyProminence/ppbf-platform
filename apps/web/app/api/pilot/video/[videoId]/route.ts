@@ -149,6 +149,26 @@ interface VideoSessionRow {
  * GuardianConsentMissingError's existing mapping in http.ts: a precondition on
  * a different resource than the one addressed.
  */
+/**
+ * pilot.waivers.status is freeform text -- no CHECK constraint, and
+ * /api/pilot/intake/domain-upsert stores `asString(body.payload.status,
+ * 'signed')`, which accepts any string a caller sends. waiverCompliance.ts
+ * records a waiver stored as ' Signed ' as something that ACTUALLY HAPPENED,
+ * not a hypothetical, and wallDisplay.ts normalises this same column with
+ * exactly this expression before testing it.
+ *
+ * Without this, the two comparisons below are positive matches on a raw
+ * string: ' Withdrawn ' or 'WITHDRAWN' matches neither filter, both come back
+ * empty, and the route mints the SAS. A safeguarding gate that fails OPEN on
+ * a leading space, sitting beside checkGuardianMediaConsent's own
+ * `status !== 'signed'`, which fails closed on the same data.
+ */
+function normalizeStatus(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+const CONSENT_STATUSES_THIS_GATE_UNDERSTANDS = new Set(['signed', 'withdrawn']);
+
 async function assertConsentCoversVideo(organizationId: string, athleteId: string): Promise<void> {
   const consent = await checkGuardianMediaConsent(organizationId, athleteId);
 
@@ -166,7 +186,9 @@ async function assertConsentCoversVideo(organizationId: string, athleteId: strin
   // case; the status==='signed' test below keeps the two populations disjoint
   // regardless, and the ordering decides which message a MIXED set of
   // guardians produces. Withdrawal wins because it is the stronger statement.
-  const withdrawn = consent.perGuardian.filter((guardian) => guardian.status === 'withdrawn');
+  const withdrawn = consent.perGuardian.filter(
+    (guardian) => normalizeStatus(guardian.status) === 'withdrawn',
+  );
 
   if (withdrawn.length > 0) {
     throw new ConflictError(
@@ -179,7 +201,7 @@ async function assertConsentCoversVideo(organizationId: string, athleteId: strin
   }
 
   const videoExcluded = consent.perGuardian.filter(
-    (guardian) => guardian.status === 'signed' && guardian.coversVideo === false,
+    (guardian) => normalizeStatus(guardian.status) === 'signed' && guardian.coversVideo === false,
   );
 
   if (videoExcluded.length > 0) {
@@ -188,6 +210,43 @@ async function assertConsentCoversVideo(organizationId: string, athleteId: strin
       + 'that does not cover video. Video of this athlete cannot be played back until that guardian '
       + 'consents to video.',
       'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
+    );
+  }
+
+  /*
+   * A ROW THAT EXISTS AND SAYS SOMETHING THIS GATE CANNOT READ.
+   *
+   * Absence still plays -- that is the blast-radius decision argued at length
+   * above and it is unchanged. This is the different case: a guardian HAS a
+   * current photo_media row and its status is a word this gate has no
+   * reading of. wallDisplay.ts draws the same line on the same column, as an
+   * allow-list and not a deny-list, "an unrecognised status is a refusal",
+   * and for the same reason: you cannot conclude a guardian consented to
+   * video from a word you do not understand, and guessing is the one
+   * direction a consent read must never fail in.
+   *
+   * A NO-OP AGAINST EVERY CURRENT WRITER, and that is checkable rather than
+   * hopeful: currentConsentByGuardian filters `parent_id is not null`, and
+   * the only writers that set parent_id are grantMediaConsent ('signed') and
+   * withdrawMediaConsent ('withdrawn'), both literals. The two intake writers
+   * accept arbitrary strings but pass no parentId, so their rows are
+   * invisible here. This refusal therefore changes nothing today and becomes
+   * load-bearing the moment an admin-side writer that passes parentId is
+   * added -- which is precisely the revisit trigger the header above already
+   * names. It is written now because the alternative is that such a writer
+   * lands and this gate silently starts serving.
+   */
+  const unreadable = consent.perGuardian.filter(
+    (guardian) =>
+      guardian.status !== null && !CONSENT_STATUSES_THIS_GATE_UNDERSTANDS.has(normalizeStatus(guardian.status)),
+  );
+
+  if (unreadable.length > 0) {
+    throw new ConflictError(
+      `Blocked: ${unreadable.length} of this athlete's guardians has a media consent recorded with a `
+      + 'status this platform cannot read, so whether they consented to video cannot be determined. '
+      + 'Video of this athlete cannot be played back until that record is corrected.',
+      'GUARDIAN_CONSENT_UNREADABLE',
     );
   }
 }
