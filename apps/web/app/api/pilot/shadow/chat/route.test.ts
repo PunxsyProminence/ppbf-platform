@@ -27,6 +27,7 @@ import {
   clearPlatformRollupCache,
   platformGymEvidenceId,
 } from '@/src/server/pilot/omegaPlatformContext';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { ShadowRuntimeUnavailableError } from '@/src/server/pilot/shadowRuntimeError';
 
@@ -747,6 +748,60 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(payload.success).toBe(false);
     expect(payload.state).toBe('filtered');
     expect(global.fetch).toBe(originalFetch);
+  });
+});
+
+describe('the guardian gate on a client-supplied athlete id', () => {
+  // ParentHub tells a guardian the chat is "scoped to your family". route.ts:608
+  // is what makes that true for an athlete id the CLIENT sends -- and until
+  // this block existed nothing measured it. assertActorCanAccessAthlete is
+  // mocked for this whole file (a bare jest.fn() that resolves), so every other
+  // test here runs with that gate stubbed open. What the real function does for
+  // a parent is covered against real Postgres by guardianAccess.test.ts and
+  // softDeletedAthleteAccess.pg.test.ts; what was never covered is whether this
+  // route calls it, with the caller's value, and refuses when it says no.
+  const mockAssertAccess = jest.mocked(assertActorCanAccessAthlete);
+
+  test('a parent naming an athlete they do not hold is refused, and no provider call is made', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'guardian-acct-1', athleteId: null }));
+    // The message the real gate throws for exactly this case.
+    mockAssertAccess.mockRejectedValueOnce(new Error('Forbidden: parent not linked to athlete'));
+
+    const response = await POST(postRequest({
+      message: 'How is this athlete doing?',
+      athleteId: 'athlete-someone-elses-child',
+    }));
+
+    expect(response.status).toBe(403);
+    // The refusal has to land before the model sees the request, not after.
+    expect(mockRetrieveShadowContext).not.toHaveBeenCalled();
+  });
+
+  test('the id checked is the one the client sent, not one the server picked', async () => {
+    // A gate called with a server-derived id would pass this file's other
+    // tests and still authorize nothing about the athlete actually requested.
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'guardian-acct-1', athleteId: null }));
+
+    await POST(postRequest({
+      message: 'How is my child doing?',
+      athleteId: 'athlete-linked-1',
+    }));
+
+    expect(mockAssertAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'guardian-acct-1', role: 'parent' }),
+      'athlete-linked-1',
+    );
+  });
+
+  test('a request naming no athlete does not invoke the gate at all', async () => {
+    // The generic parent mode. Nothing to authorize, so an assertion here
+    // would be authorizing a blank -- and a gate that ran on undefined would
+    // be the kind that quietly passes.
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'guardian-acct-1', athleteId: null }));
+
+    await POST(postRequest({ message: 'How do I support a nervous kid before a show?' }));
+
+    expect(mockAssertAccess).not.toHaveBeenCalled();
   });
 });
 
