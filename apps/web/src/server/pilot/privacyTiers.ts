@@ -219,6 +219,38 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'athlete_record',
     enforcedBy: 'wallOfNamesPrivacy.test.ts',
   },
+  'athlete_development_block_objectives.objective': {
+    tier: 'athlete_record',
+    enforcedBy: 'athleteDevelopmentBlockObjectives.ts#getBlockObjective',
+    note:
+      'A coach-authored sentence about one athlete\'s development, including -- since the owner '
+      + 'decision of 2026-08-28 that admitted the nutrition_body_composition domain -- body-composition '
+      + 'objectives about a named minor. This entry read `organization` for exactly as long as that was '
+      + 'true: the reads were organization-scoped and nothing narrower was enforced, and the gap was '
+      + 'recorded here as the work item. The second owner decision of 2026-08-28 -- reads are for '
+      + '"Admin, Coach, Athlete, Guardian" -- closed it BEFORE any read surface shipped, which is the '
+      + 'order this registry exists to insist on. Every read now resolves its parent block through '
+      + 'getDevelopmentBlock, which calls assertActorCanAccessAthlete, so an org admin reaches their '
+      + 'gym, a coach reaches their own and actively covered athletes, an athlete reaches themselves, a '
+      + 'guardian reaches their linked child, and platform_owner and board reach none of it. There is '
+      + 'still no API route or UI: this is the data layer\'s claim, and the route that ships first must '
+      + 'pass a real ActorIdentity rather than reconstruct one. Note also that pilot.goals.category is a '
+      + 'SEPARATE surface and still withholds Weight Loss / Weight Gain; the domain decision was about '
+      + 'coach-authored objectives and did not reverse that one.',
+  },
+  'athlete_development_blocks.training_emphasis': {
+    tier: 'athlete_record',
+    enforcedBy: 'athleteDevelopmentBlocks.ts#getDevelopmentBlock',
+    note:
+      'The coach\'s own words about what a multi-week block is for, stored verbatim and read back '
+      + 'verbatim. Nothing parses, classifies or scores it. Listed separately from the objective field '
+      + 'because it is the parent record and the one that carries athlete_id: every athlete-scoped read '
+      + 'in this slice resolves through it, so if this entry\'s claim is wrong the objectives entry is '
+      + 'wrong too. Reads go through assertActorCanAccessAthlete (owner decision 2026-08-28, "Admin, '
+      + 'Coach, Athlete, Guardian"); writes additionally require an active organization_memberships row '
+      + 'in a DEVELOPMENT_BLOCK_WRITE_ROLES role ("Admin and coaches", same day). No API route or UI '
+      + 'exists yet.',
+  },
   'goals.category': {
     tier: 'athlete_record',
     enforcedBy: 'contracts.ts#GOAL_CATEGORIES',

@@ -15,7 +15,7 @@ not do.
 
 ---
 
-## Implementation status (added after the foundation slice shipped)
+## Implementation status (added after the foundation slice shipped; updated for slice 2)
 
 This section records what is now true in the repository. Everything below it
 was written before any of it existed and is left standing as the reasoning
@@ -35,6 +35,31 @@ organization-scoped data layer (`apps/web/src/server/pilot/athleteDevelopmentBlo
 creates, reads and re-states a block, and refuses a creator holding no active
 `pilot.organization_memberships` row in the block's organization.
 
+**Built (slice 2, Full Spectrum block objectives):**
+`pilot.athlete_development_block_objectives` — the child rows a block's
+domains live in, one row per objective: `organization_id`, `objective_id`,
+`block_id`, `domain`, `objective`, `status`, `created_by_account_id`,
+`created_at`, `updated_at`. Composite FK into
+`pilot.athlete_development_blocks(organization_id, block_id)` with
+`on delete cascade`, so tenancy and the athlete link both arrive through the
+parent and an objective cannot outlive it. No `athlete_id` is copied down. A
+thin data layer
+(`apps/web/src/server/pilot/athleteDevelopmentBlockObjectives.ts`) adds,
+reads and re-states an objective. Access is not decided there: every read
+resolves its parent through `getDevelopmentBlock`, so an objective is
+reachable by exactly the people who can reach the block's athlete (Open
+Question 7), and every write stands on the same
+`DEVELOPMENT_BLOCK_WRITE_ROLES` gate the parent uses (Open Question 5).
+
+**The domain vocabulary is all ten.** `nutrition_body_composition` shipped
+withheld — for the reason
+`pilot_slice_postgres_goal_category_progress_migration.sql` gave when it
+withheld `Weight Loss` / `Weight Gain` from the athlete goal categories — and
+was **admitted by owner decision 2026-08-28** on the ground that module 200
+is built. See Open Question 6 below for the full record, including what that
+decision does not cover. The field is registered in `FIELD_TIERS` as
+`athlete_development_block_objectives.objective`.
+
 **The illustrative name in this document is not the shipped name.** Section
 (b) below writes `pilot.periodization_blocks`; the table is
 `pilot.athlete_development_blocks`, which is the owner's own vocabulary for
@@ -46,11 +71,24 @@ Read every `periodization_blocks` reference below as naming this table.
 - Every comparison / plan-vs-actual surface in sections (a)–(d). Nothing
   reads a block yet. No block carries an adherence state, because the
   execution/comparison row that would hold one does not exist.
-- Full Spectrum block objectives (the child structure). The block is
-  deliberately the parent only; there is no per-domain column and there must
-  not be one.
-- Any API route or UI. Which staff roles may author a block is an **open
-  owner decision** — see Open Question 5, added below.
+- Any surface that reads an objective. The rows exist; nothing displays,
+  summarizes or rolls them up, and no count of completed objectives is
+  presented as a judgment about an athlete.
+- ~~Any API route or UI.~~ **#767 shipped both** while this slice was in
+  flight: `/api/pilot/coach/development-blocks` and
+  `/coach/development-blocks`, plus `updateDevelopmentBlock`. That route had
+  already reached the same answer this slice's Open Question 7 reaches — it
+  gates every entry point on `assertActorCanAccessAthlete` and serves
+  `['coach','organization_admin','admin']`, the same set as
+  `DEVELOPMENT_BLOCK_WRITE_ROLES` — so the two agree rather than collide. What
+  changed on merge is where the rule lives: the route used to re-derive a
+  coach's reach with `athleteIdsForCoach` and filter the module's gym-wide
+  output; it now hands the principal down and returns what the data layer
+  answered. `updateDevelopmentBlock` gained the write gate the other two
+  mutators carry.
+- Any read surface for an **athlete or a guardian**. The data layer serves
+  them; the only route that exists serves staff. That is the right order —
+  the boundary is enforced before anything is built on it.
 - The optional competition/event target (Open Question 2), still open and
   still unbuilt.
 
@@ -422,8 +460,23 @@ phase names?**
   must not be invented"), included here only so the owner can see it named
   and declined, not silently omitted.
 
-**5. [NEW, raised by the foundation slice.] Which staff roles may create and
-modify an athlete development block?**
+**5. [ANSWERED — (a), 2026-08-28.] Which staff roles may create and modify an
+athlete development block?**
+
+**Jason: _"Admin and coaches."_** Enforced as
+`DEVELOPMENT_BLOCK_WRITE_ROLES = ['coach', 'organization_admin', 'admin']` in
+`athleteDevelopmentBlocks.ts`, imported by the objectives module so one
+decision lives in one place. `platform_owner` is deliberately absent, matching
+`COMPETITION_WRITE_ROLES` and `LEAGUE_WRITE_ROLES`. `athlete`, `parent` and
+`volunteer` are not write roles here — a development block is a coach's plan
+*for* an athlete, and `pilot.goals` is where an athlete's own goals live.
+
+This closed a real gap rather than only unblocking the future API. The floor
+these modules shipped with accepted an ACTIVE membership of **any** role, and
+`pilot.organization_memberships.role` admits `athlete`, `parent` and
+`volunteer`. Nothing could reach it — there are still no routes — but a data
+layer that would let an athlete file their own development block is not a
+floor worth shipping. The question as it was put:
 
 The foundation slice does not answer this and does not need to: it ships no
 API route and no UI, so no role gate had to be invented to land the schema.
@@ -447,4 +500,176 @@ them may author a coach's training plan.
 
 Whichever is chosen, `athlete`, `parent` and `volunteer` are not write roles
 here, and read access for an athlete or their guardian is a separate
-safeguarding question this slice does not open.
+safeguarding question this slice does not open. **That read question is still
+open** — the decision above governs writing only.
+
+**6. [ANSWERED — (a), 2026-08-28.] May a coach file a nutrition /
+body-composition objective for a named minor?**
+
+**Jason, verbatim: _"admit nutrition_body_composition — module 200 is done."_**
+The domain is admitted; the vocabulary is now all ten. What that decision
+covers, and what it does not, is recorded at the end of this question. The
+question as it was put:
+
+Slice 2 ships nine of the ten Full Spectrum domains.
+`nutrition_body_composition` is withheld, and the reasoning is not this
+slice's — it is quoted from
+`pilot_slice_postgres_goal_category_progress_migration.sql`, which withheld
+`Weight Loss` and `Weight Gain` from `pilot.goals.category` because admitting
+them *"would create a stored, queryable record of a minor's weight-loss
+intent … ahead of the tier system whose entire job is to decide who may see
+exactly that,"* and because *"it would be strange for the doctrine layer to
+refuse the conversation while the goals table quietly filed the goal."*
+`shadowAuthority.ts` still refuses `weight_cut` in conversation today.
+
+The same sentence holds with *coach* in place of *athlete*: a block objective
+reading "cut to 132 by the October show" is a stored, queryable
+body-composition target for a named minor.
+
+**What has changed, and why this is now a live decision rather than a
+block:** the gate that migration was waiting on exists. Module 200, the
+Privacy-Tier System, reads Status **DONE**, `privacyTiers.ts` ships
+`FIELD_TIERS`, and that module's own header names *"a body-composition
+tracker"* as an anticipated consumer. But module 200 also reads Active
+**false** / ManualVerification **PENDING_SIGN_OFF**, and `FIELD_TIERS`' entry
+for `goals.category` says the reversal *"waits on an explicit owner decision,
+which this registry makes possible and deliberately does not make."*
+
+- (a) Admit `nutrition_body_composition` now, on the grounds that objectives
+  are coach-authored, staff-only, and have no athlete or guardian read path.
+- (b) Admit it once module 200 is signed off (Active true), and decide the
+  goals-category reversal at the same time so the two surfaces do not
+  disagree about the same subject.
+- (c) Keep it withheld until a body-composition surface is designed with its
+  own tier assignment, on the grounds that a free-text objective field is the
+  wrong shape for this subject regardless of who can read it.
+
+Reversing it was one line in the migration's `DO` block and one entry in
+`FULL_SPECTRUM_DOMAINS` — which is what it cost when the owner reversed it
+hours later. The migration's domain constraint reconciles rather than guards,
+so the change lands correctly on already-migrated environments; the deploy
+gate deliberately did **not** encode the withheld value, so the reversal
+needed no runner edit and blocked no release. Both choices were made against
+exactly this event and both paid.
+
+**What the decision covers, and what it does not.** Three boundaries, written
+down because "we decided body composition is fine" is the kind of summary
+that travels further than the decision did, and each is asserted by a test:
+
+1. **`pilot.goals.category` is unchanged.** `Weight Loss` and `Weight Gain`
+   remain withheld there. That is a different surface — athlete-filed and
+   athlete-readable — and it was not what was decided.
+   `athleteDevelopmentBlockObjectives.pg.test.ts` asserts the goals
+   constraint still refuses both. **Worth deciding on its own** so the two
+   surfaces do not disagree about the same subject; it is not decided here.
+2. **`shadowAuthority.ts` still refuses `weight_cut` in conversation.** A
+   coach may record their own plan; the model still gives no weight-cutting
+   guidance.
+3. **A domain label is all that was admitted.** No weight field, no target,
+   no target date, no computation — and the free-form weight vocabulary
+   (`weight_cut`, `weight_loss`, `weight_gain`, `body_composition`,
+   `nutrition`) was never a domain and still is not, refused by the database
+   and by the module.
+
+**One thing was owed, and has since been paid.** The decision cited module
+200, so the field was registered in `FIELD_TIERS` at the tier actually
+enforced that morning — `organization` — with the narrowing to
+`athlete_record` recorded as the work item, to be done *in the slice that
+builds the first read surface, before that surface ships*.
+
+Open Question 7, answered the same day, did it: every read in both modules
+now resolves through `assertActorCanAccessAthlete`, and the `FIELD_TIERS`
+entries for `athlete_development_block_objectives.objective` and
+`athlete_development_blocks.training_emphasis` both read `athlete_record`
+with a real `enforcedBy`. The order held — the narrowing landed before any
+route existed, not after. The gap is closed; the registry entry now records
+what the code holds.
+
+**7. [ANSWERED — 2026-08-28.] Who may READ an athlete development block and
+its objectives?**
+
+Open Question 5 governed writing only, and said so: *"read access for an
+athlete or their guardian is a separate safeguarding question this slice does
+not open."* Admitting `nutrition_body_composition` (Question 6) is what made
+it urgent — an objective can now hold a body-composition sentence naming a
+minor, and org-wide staff reads were broader than that minor's own date of
+birth already is.
+
+**Jason: _"it should be Admin, Coach, Athlete, Guardian."_**
+
+Implemented by **reusing `assertActorCanAccessAthlete`**, not by writing a
+role list. That function is the platform's chokepoint — 92 non-test files
+call it — and it already implements exactly those four, each with the
+per-subject relationship that makes the role meaningful:
+
+| Role | Reaches | Through |
+| --- | --- | --- |
+| `organization_admin` / `admin` | every live athlete in their gym | `assertAthleteBelongsToOrganization` |
+| `coach` | their own athletes, plus anyone under a live coverage grant | `pilot.athletes.coach_id`, then `pilot.coach_coverage` |
+| `athlete` | themselves only | `ActorIdentity.athleteId` |
+| `parent` | their linked children | `pilot.guardian_links` → `pilot.parents`, org-scoped on both |
+| `platform_owner`, `board` | nothing here | refused unconditionally |
+
+Every read function in both modules — and, since the #767 merge,
+`updateDevelopmentBlock` too — now takes an `ActorIdentity` instead of an
+`organizationId` string. Organization scoping did not go away — it is
+still in the `where` clause of every statement, and the composite FK still
+makes a cross-gym row unrepresentable — the athlete check sits on top of it.
+The list reads use `accessibleAthleteIds`, the batched counterpart, so a
+listing is the union of what the caller could have asked for one at a time
+rather than a gym-wide read wearing a filter.
+
+**Three consequences, none of them separately decided, all reversible:**
+
+1. **Authoring now requires reaching the athlete.** A coach with an active
+   membership can no longer file a block for an athlete they are neither
+   assigned to nor covering. This is not an extra rule bolted onto the
+   write — it is what keeps the write coherent, because
+   `createDevelopmentBlock` returns `getDevelopmentBlock`'s result, and an
+   author who could not read would have written a row and been handed `null`
+   for it. Reversing it is one line (`canActorReachAthlete` back to
+   `assertAthleteBelongsToOrganization`) if the owner wants any gym coach to
+   be able to author for any athlete.
+2. **Moving or correcting a block or an objective is authoring it.** The
+   status setters were organization-scoped and ungated, which was survivable
+   only because nothing could call them; `updateDevelopmentBlock`, which
+   arrived from #767 in the same state, was survivable only because its one
+   caller was a staff-only route. Now that an athlete and a guardian can read their
+   own blocks, an ungated status mutator would let an athlete mark their own
+   block `completed` — precisely the coach judgment this table refuses to
+   compute. Both setters carry the Question 5 gate.
+3. **Reading is not writing.** An athlete and a guardian read; neither may
+   author, re-state, or move anything. Asserted in both suites with the read
+   proven on the line above the refusal, so a failure cannot be misread as
+   "they never had access".
+
+**8. [OPEN — raised 2026-08-28, not decided.] Does a withdrawn athlete keep
+reading their own record?**
+
+Found while proving Question 7, and it belongs to `access.ts` rather than to
+this module. Three of `assertActorCanAccessAthlete`'s four arms ask the
+database and therefore inherit the `deleted_at is null` filter added by #706:
+delete an athlete and the org admin, the assigned coach and the linked
+guardian all stop reaching them. **The athlete arm never asks the database**
+— it compares `ActorIdentity.athleteId` to the requested id in memory and
+returns — so a withdrawn athlete keeps reading their own record, everywhere
+in the platform. `softDeletedAthleteAccess.pg.test.ts` covers the admin,
+coach and guardian arms and not this one, which is why nothing had noticed.
+
+Not fixed in this slice, deliberately. It is a one-predicate change to the
+chokepoint every athlete-facing surface calls, which does not belong inside a
+PR about development blocks, and the answer is a policy question with a real
+argument on each side: retention says a withdrawn record should go dark;
+data portability says a person does not lose sight of their own record
+because a gym marked them withdrawn. Both block suites assert the behavior as
+it actually is — the three arms refuse, the self arm still reaches — so the
+gap is stated rather than implied, and whichever way it is decided, the test
+that changes will name the decision.
+
+- (a) Add `deleted_at is null` to the athlete arm: a withdrawn athlete reads
+  nothing, consistent with every other arm.
+- (b) Leave it: a withdrawn athlete keeps reading their own record, and the
+  exemption is documented at the chokepoint rather than left as an accident.
+- (c) Something in between — e.g. read-only self access for a bounded
+  retention window — which is more machinery than either of the above and
+  should be justified before it is built.
