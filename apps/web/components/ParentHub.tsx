@@ -1255,8 +1255,16 @@ export default function ParentHub() {
               <div className="space-y-[var(--s3)]">
                 {schedulerFeedState === 'loading' && <p className="working">Reading the schedule</p>}
 
+                {/* alert--warning, not alert--critical. The safeguarding red is
+                    reserved for the top of the safety ladder -- a person who may
+                    not participate (owner decision 2026-08-19) -- and a schedule
+                    that would not load is not that. Spending the red on a failed
+                    fetch is what makes it stop meaning anything when a real
+                    participation block needs it. src/design/
+                    safeguardingRedReservation.test.ts enforces this and named
+                    the substitution. */}
                 {schedulerFeedState === 'failed' && (
-                  <div className="alert alert--critical alert--tight" role="alert">
+                  <div className="alert alert--warning alert--tight" role="alert">
                     Unavailable - the schedule could not be read. This is not an empty attendance record.
                   </div>
                 )}
