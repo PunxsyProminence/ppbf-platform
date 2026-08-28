@@ -260,3 +260,91 @@ test('a retracted publication says why it is gone and offers no actions', async 
   expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Submit for review' })).toBeNull();
 });
+
+/*
+ * A FAILED READ IS NOT AN EMPTY SHELF.
+ *
+ * This list previously swallowed a non-ok response -- `if (pubRes.ok)` with no
+ * else -- and then cleared the error state unconditionally, so a 403 or a 500
+ * left the coach looking at "Publications (0)" and "No publications yet." with
+ * nothing on screen to say otherwise. The natural response to that sentence is
+ * to publish a minor's footage that may already be published.
+ */
+describe('a publications read that failed says so', () => {
+  function failingCreateFetch() {
+    return jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return {
+          ok: true,
+          json: async () => ({ authenticated: true, role: 'coach', account_id: 'coach-1', organization_id: 'org-1' }),
+        } as Response;
+      }
+      if (url.includes('/publications/create')) {
+        return { ok: false, status: 403, json: async () => ({ error: 'forbidden' }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+  }
+
+  test('a refused read is reported, and never as "you have published none"', async () => {
+    global.fetch = failingCreateFetch() as unknown as typeof fetch;
+
+    render(<CoachVideoPublicationsPage />);
+
+    await screen.findByText(/Your publications could not be read/);
+    // The half that is the actual defect: the asserting sentence must be gone.
+    expect(screen.queryByText('No publications yet.')).toBeNull();
+    // And a count of a list that failed to load is not a count.
+    expect(screen.queryByText('Publications (0)')).toBeNull();
+    expect(screen.getByText('Publications (unavailable)')).toBeTruthy();
+  });
+
+  test('a reload that fails after a write is reported too, not left showing stale success', async () => {
+    /* The RELOAD path, which is a second read and was a second silent
+       swallow. It runs right after a coach submits, which is the worst moment
+       to go quiet: the page has just told them the write worked, so an empty
+       list reads as confirmation rather than as a read nobody could make. */
+    let submitted = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return {
+          ok: true,
+          json: async () => ({ authenticated: true, role: 'coach', account_id: 'coach-1', organization_id: 'org-1' }),
+        } as Response;
+      }
+      if (url.includes('/publications/submit')) {
+        submitted = true;
+        return { ok: true, json: async () => ({ ok: true, status: 'pending_review' }) } as Response;
+      }
+      if (url.includes('/publications/create')) {
+        // Mount succeeds; the reload that follows the submit does not.
+        return submitted
+          ? ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) } as Response)
+          : ({ ok: true, json: async () => ({ items: [publication({ status: 'draft', compliance_check_status: 'pending' })] }) } as Response);
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoPublicationsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit for review' }));
+
+    await screen.findByText(/Your publications could not be read/);
+    expect(screen.queryByText('No publications yet.')).toBeNull();
+  });
+
+  test('a coach who really has published nothing still reads that plainly', async () => {
+    /* The other direction, and without it the test above would pass for a
+       page that claimed failure permanently. An empty shelf is a real and
+       ordinary state, and it must keep its own plain words. */
+    global.fetch = mockFetch([]) as unknown as typeof fetch;
+
+    render(<CoachVideoPublicationsPage />);
+
+    await screen.findByText('No publications yet.');
+    expect(screen.queryByText(/could not be read/)).toBeNull();
+    expect(screen.getByText('Publications (0)')).toBeTruthy();
+  });
+});
