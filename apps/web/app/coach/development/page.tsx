@@ -112,6 +112,12 @@ export default function CoachDevelopmentPage() {
   const [goalBusy, setGoalBusy] = useState(false);
   const [activityBusy, setActivityBusy] = useState(false);
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
+  /* One goal open for correction at a time, and the draft it holds. Kept
+     apart from the create form so an abandoned correction cannot leak into a
+     new goal, and cleared on save so the next open reads the stored values
+     rather than the last edit. */
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+  const [goalEdit, setGoalEdit] = useState({ title: '', development_focus: '', target_on: '' });
 
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -229,6 +235,74 @@ export default function CoachDevelopmentPage() {
       setErrorMessage('That activity could not be saved. Nothing was stored.');
     } finally {
       setActivityBusy(false);
+    }
+  }
+
+  /* Correcting a goal's own words, which the route has always supported and
+     the page never offered.
+
+     WHY THIS IS NOT THE AMENDMENT THIS LANE REFUSES ELSEWHERE. A block review
+     is dated testimony -- what a coach concluded at a moment -- so a changed
+     mind there is a new row and the old one stays. A GOAL is a live
+     intention: it already moves through draft, active, completed and
+     cancelled by design, and its target date moving is an ordinary thing that
+     happens to a plan. Correcting the words is the same kind of act as those
+     transitions, not a rewrite of the past.
+
+     It is also self-scoped -- a coach's own note about themselves, carrying
+     nothing about a child -- which is why an in-place correction with
+     updated_at is proportionate here and would not be on a record about an
+     athlete.
+
+     Without it a coach who typed a title wrong could only leave it or file a
+     second goal beside it, and the duplicate is worse than the typo: it makes
+     the list a record of mistakes rather than of intentions. */
+  function startEditingGoal(item: DevelopmentGoal) {
+    setEditingGoalId(item.goal_id);
+    setGoalEdit({
+      title: item.title,
+      development_focus: item.development_focus,
+      target_on: item.target_on ?? '',
+    });
+    setMessage('');
+    setErrorMessage('');
+  }
+
+  async function saveGoalEdit(goalId: string) {
+    if (statusBusyId) return;
+
+    setStatusBusyId(goalId);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/development`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal_id: goalId,
+          title: goalEdit.title,
+          development_focus: goalEdit.development_focus,
+          /* Empty string, not omitted: the route reads '' as "clear this
+             date", and omitting it would mean "leave it alone". A coach
+             removing a deadline has to be able to say so, and those are two
+             different intentions that must not collapse into one. */
+          target_on: goalEdit.target_on,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        // The server's own words -- a goal refused for an empty title says so.
+        setErrorMessage(payload.error ?? 'That correction could not be saved.');
+        return;
+      }
+      setMessage('Goal updated.');
+      setEditingGoalId(null);
+      await load();
+    } catch {
+      setErrorMessage('That correction could not be saved. Nothing was stored.');
+    } finally {
+      setStatusBusyId(null);
     }
   }
 
@@ -426,7 +500,76 @@ export default function CoachDevelopmentPage() {
                       {STATUS_BADGE[status].label}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    disabled={statusBusyId !== null}
+                    aria-expanded={editingGoalId === item.goal_id}
+                    onClick={() => (editingGoalId === item.goal_id
+                      ? setEditingGoalId(null)
+                      : startEditingGoal(item))}
+                  >
+                    {editingGoalId === item.goal_id ? 'Cancel correction' : 'Correct wording'}
+                  </button>
                 </div>
+
+                {editingGoalId === item.goal_id && (
+                  <div className="space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
+                    <div className="field">
+                      <label htmlFor={`edit-title-${item.goal_id}`} className="t-label">Corrected title</label>
+                      <input
+                        id={`edit-title-${item.goal_id}`}
+                        className="input"
+                        value={goalEdit.title}
+                        disabled={statusBusyId !== null}
+                        onChange={(event) => setGoalEdit({ ...goalEdit, title: event.target.value })}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`edit-focus-${item.goal_id}`} className="t-label">
+                        Corrected focus
+                      </label>
+                      <textarea
+                        id={`edit-focus-${item.goal_id}`}
+                        className="textarea"
+                        rows={2}
+                        value={goalEdit.development_focus}
+                        disabled={statusBusyId !== null}
+                        onChange={(event) => setGoalEdit({
+                          ...goalEdit, development_focus: event.target.value,
+                        })}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`edit-target-${item.goal_id}`} className="t-label">
+                        Corrected target date
+                      </label>
+                      <input
+                        id={`edit-target-${item.goal_id}`}
+                        type="date"
+                        className="input"
+                        value={goalEdit.target_on}
+                        disabled={statusBusyId !== null}
+                        onChange={(event) => setGoalEdit({
+                          ...goalEdit, target_on: event.target.value,
+                        })}
+                      />
+                      {/* Emptying the field REMOVES the deadline rather than
+                          leaving the old one standing. A goal without one is
+                          an ordinary goal, and a coach who set a date they no
+                          longer mean has to be able to take it back. */}
+                      <p className="t-muted">Clear the date to remove the deadline.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={statusBusyId !== null}
+                      onClick={() => void saveGoalEdit(item.goal_id)}
+                    >
+                      Save correction
+                    </button>
+                  </div>
+                )}
               </article>
             );
           })}

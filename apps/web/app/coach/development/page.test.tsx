@@ -460,3 +460,109 @@ describe('the role gate matches the route it fronts', () => {
     }
   });
 });
+
+/*
+ * CORRECTING A GOAL'S OWN WORDS.
+ *
+ * The PATCH route has always accepted title, development_focus and target_on;
+ * the page offered only status buttons. A coach who typed a title wrong could
+ * leave it or file a second goal beside it, and the duplicate is worse than
+ * the typo -- it turns the list into a record of mistakes rather than of
+ * intentions. Found by a review bot on the pull request stack.
+ *
+ * This is deliberately NOT the amendment this lane refuses elsewhere. A block
+ * review is dated testimony and a changed mind there is a new row; a goal is
+ * a live intention that already moves through four statuses by design, and it
+ * is the coach's own note about themselves, carrying nothing about a child.
+ */
+describe('a coach can correct a goal instead of duplicating it', () => {
+  const goal = () => goalRow({
+    goal_id: 'goal-1',
+    title: 'Corner work under presure',
+    development_focus: 'Keep the anxious kids in the room.',
+    target_on: '2026-12-01',
+  });
+
+  test('the correction form opens holding what is stored, not an empty draft', async () => {
+    await renderPage({ goals: [goal()] });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Correct wording' }));
+    });
+
+    /* Pre-filled on purpose: a coach fixing one letter of a title must not
+       have to retype the sentence, and an empty form would invite them to
+       save a blank over a goal they meant to keep. */
+    expect((screen.getByLabelText('Corrected title') as HTMLInputElement).value)
+      .toBe('Corner work under presure');
+    expect((screen.getByLabelText('Corrected focus') as HTMLTextAreaElement).value)
+      .toBe('Keep the anxious kids in the room.');
+    expect((screen.getByLabelText('Corrected target date') as HTMLInputElement).value).toBe('2026-12-01');
+  });
+
+  test('saving sends the corrected words, and the goal id, on a PATCH', async () => {
+    await renderPage({ goals: [goal()] });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Correct wording' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Corrected title'), {
+        target: { value: 'Corner work under pressure' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+    });
+
+    const patch = writes.find((entry) => entry.method === 'PATCH');
+    expect(patch?.body).toMatchObject({
+      goal_id: 'goal-1',
+      title: 'Corner work under pressure',
+      development_focus: 'Keep the anxious kids in the room.',
+      target_on: '2026-12-01',
+    });
+  });
+
+  test('clearing the date removes the deadline rather than leaving it standing', async () => {
+    /* '' and "omitted" are two different intentions at the route: one clears
+       the date, the other leaves it alone. A coach taking back a deadline
+       they no longer mean has to be able to say the first. */
+    await renderPage({ goals: [goal()] });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Correct wording' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Corrected target date'), { target: { value: '' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+    });
+
+    const patch = writes.find((entry) => entry.method === 'PATCH');
+    expect(patch?.body.target_on).toBe('');
+  });
+
+  test('a refused correction shows the server\'s own reason and keeps the form open', async () => {
+    await renderPage({
+      goals: [goal()],
+      writeOk: false,
+      writeError: 'A development goal needs a title -- what you are working on.',
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Correct wording' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Corrected title'), { target: { value: '  ' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+    });
+
+    expect(screen.getByText(/needs a title/i)).toBeTruthy();
+    // Still open, so the coach can fix it rather than retype from scratch.
+    expect(screen.getByRole('button', { name: 'Save correction' })).toBeTruthy();
+  });
+});
