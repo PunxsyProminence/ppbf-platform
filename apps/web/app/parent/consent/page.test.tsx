@@ -176,3 +176,52 @@ test('a missing name falls back to the athlete id rather than a blank card', asy
 
   await screen.findByText('ath-1');
 });
+
+/**
+ * Owner decision, 2026-08-28: the server now treats a consent recorded as
+ * ' Signed ' as a signature (guardianConsent.ts normalises before comparing,
+ * matching what waiverCompliance.ts's gate has always done with this column).
+ *
+ * The route hands this screen the RAW stored string, so without the matching
+ * normalisation here a guardian whose consent the server accepts would be told
+ * on their own screen that they had not signed -- and offered the button to
+ * sign again. The two readings have to agree.
+ */
+test('a consent stored with stray whitespace reads as signed on the guardian’s own screen', async () => {
+  const UNTIDY = [
+    {
+      athlete_id: 'ath-1',
+      consent_ok: true,
+      guardian_count: 1,
+      missing_guardian_count: 0,
+      per_guardian: [{ parent_id: 'p1', you: true, status: ' Signed ', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' }],
+    },
+  ];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: UNTIDY })) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+
+  // The signed branch renders Withdraw; the unsigned branch renders Grant.
+  expect(await screen.findByRole('button', { name: /withdraw/i })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /grant consent/i })).toBeNull();
+});
+
+test('a status this platform does not recognise still reads as NOT signed', async () => {
+  // The blast radius. Only case and padding move; 'active' is a value
+  // wallDisplay.ts treats as affirmative and this screen must not, or the
+  // decision would have quietly settled a divergence it did not settle.
+  const UNKNOWN = [
+    {
+      athlete_id: 'ath-1',
+      consent_ok: false,
+      guardian_count: 1,
+      missing_guardian_count: 1,
+      per_guardian: [{ parent_id: 'p1', you: true, status: 'active', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' }],
+    },
+  ];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: UNKNOWN })) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+
+  expect(await screen.findByRole('button', { name: /grant consent/i })).toBeTruthy();
+});

@@ -617,7 +617,33 @@ export async function upsertMedicalIntake(params: {
   return medicalId;
 }
 
-export async function upsertWaiver(params: {
+/**
+ * The columns and values every waiver insert uses, shared so the pooled and
+ * the transactional writer cannot drift into inserting different shapes.
+ */
+const WAIVER_INSERT_SQL = `insert into pilot.waivers
+     (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role, signed_at, consent_version, status, notes, parent_id, covers_video, public_use_allowed)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`;
+
+function waiverInsertValues(waiverId: string, params: UpsertWaiverParams): unknown[] {
+  return [
+    params.organizationId,
+    waiverId,
+    params.athleteId,
+    params.waiverType,
+    params.signedByName,
+    params.signedByRole,
+    params.signedAt,
+    params.consentVersion,
+    params.status,
+    params.notes ?? '',
+    params.parentId ?? null,
+    params.coversVideo ?? true,
+    params.publicUseAllowed ?? false,
+  ];
+}
+
+export interface UpsertWaiverParams {
   organizationId: string;
   athleteId: string;
   waiverType: string;
@@ -633,30 +659,34 @@ export async function upsertWaiver(params: {
   parentId?: string | null;
   coversVideo?: boolean;
   publicUseAllowed?: boolean;
-}): Promise<string> {
+}
+
+export async function upsertWaiver(params: UpsertWaiverParams): Promise<string> {
   const waiverId = randomUUID();
+  await query(WAIVER_INSERT_SQL, waiverInsertValues(waiverId, params));
+  return waiverId;
+}
 
-  await query(
-    `insert into pilot.waivers
-     (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role, signed_at, consent_version, status, notes, parent_id, covers_video, public_use_allowed)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-    [
-      params.organizationId,
-      waiverId,
-      params.athleteId,
-      params.waiverType,
-      params.signedByName,
-      params.signedByRole,
-      params.signedAt,
-      params.consentVersion,
-      params.status,
-      params.notes ?? '',
-      params.parentId ?? null,
-      params.coversVideo ?? true,
-      params.publicUseAllowed ?? false,
-    ],
-  );
-
+/**
+ * The same insert, on a caller's transaction.
+ *
+ * Exists so the media-consent writers can take a lock and record the waiver
+ * as ONE unit (guardianConsent.ts, owner decision D-2). Without it those
+ * writers had no way to be inside a transaction at all: upsertWaiver goes
+ * through the module-level pooled query, which commits on its own the moment
+ * it returns, so a lock taken around it would have been released before the
+ * row existed.
+ *
+ * Structurally typed rather than importing PoolClient, matching the
+ * QueryExecutor shape guardianConsent.ts and publication.ts already use for
+ * the same reason.
+ */
+export async function upsertWaiverWithClient(
+  client: { query(text: string, values?: unknown[]): Promise<unknown> },
+  params: UpsertWaiverParams,
+): Promise<string> {
+  const waiverId = randomUUID();
+  await client.query(WAIVER_INSERT_SQL, waiverInsertValues(waiverId, params));
   return waiverId;
 }
 
