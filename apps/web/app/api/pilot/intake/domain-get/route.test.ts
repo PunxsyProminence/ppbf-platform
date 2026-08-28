@@ -348,3 +348,177 @@ describe('the emergency-contact projection is an explicit column list, never *',
     },
   );
 });
+
+/**
+ * THE TWO TABLES THE MIGRATIONS OUTGREW.
+ *
+ * pilot.assessments and pilot.readiness are the last two reads in this body
+ * that were still `select *`, and they are the clearest case for why an
+ * allowlist and not a denylist: both were written when the tables were small
+ * and correct at the time. The assessment-protocols migration then added
+ * eleven columns to one and the readiness-provenance migration five to the
+ * other, and every one of them reached a guardian and the athlete themself
+ * the day it applied, with neither read reviewed or changed.
+ *
+ * A wildcard is not a projection that happens to be wide. It is a standing
+ * promise to disclose whatever anyone adds later.
+ */
+function selectListFor(table: string): string[] {
+  const call = mockQuery.mock.calls.find(([sql]) => String(sql).includes(table));
+  if (!call) {
+    throw new Error(`the route never read ${table}`);
+  }
+  const match = /select\s+([\s\S]*?)\s+from\s/i.exec(String(call[0]));
+  if (!match) {
+    throw new Error(`the ${table} read has no parsable select list: ${String(call[0])}`);
+  }
+  return match[1].split(',').map((column) => column.trim().replace(/\s+/g, ' ')).filter(Boolean);
+}
+
+describe('the assessment projection is an explicit column list, never *', () => {
+  test.each([...NON_STAFF_READERS, ...STAFF_READERS])(
+    'for %s the assessment read names its columns',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      expect(selectListFor('from pilot.assessments')).not.toContain('*');
+    },
+  );
+
+  test.each(NON_STAFF_READERS)(
+    'THE DEFECT: %s no longer receives the staff note, the rater ids, or the second rater score',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      // Equality, for the reason the guardian list gives: "*" contains no
+      // substring named "conditions_note", so a containment check passes over
+      // exactly the defect this test is named for.
+      expect(selectListFor('from pilot.assessments')).toEqual([
+        'organization_id',
+        'assessment_id',
+        'athlete_id',
+        'assessment_type',
+        'result',
+        'created_at',
+        'updated_at',
+        'protocol_id',
+        'protocol_version',
+        'administration_kind',
+        'due_on',
+        'administered_on',
+        'retest_of_assessment_id',
+        'training_hours_at_administration',
+        'assessor_role',
+      ]);
+    },
+  );
+
+  test.each(STAFF_READERS)(
+    '%s keeps all four -- an unreconciled second rating is what staff review is for',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      const columns = selectListFor('from pilot.assessments');
+      for (const column of [
+        'assessor_account_id',
+        'second_rater_account_id',
+        'second_rater_result',
+        'conditions_note',
+      ]) {
+        expect(columns).toContain(column);
+      }
+      // Narrowing for families must not blank the staff view of the rest.
+      for (const column of ['result', 'assessment_type', 'protocol_id', 'administered_on']) {
+        expect(columns).toContain(column);
+      }
+    },
+  );
+
+  test.each(NON_STAFF_READERS)(
+    '%s still receives the assessment itself -- this narrows the raters, not the results',
+    async (_label, overrides) => {
+      // The control that keeps this from being over-narrowing. A guardian
+      // reading their own child's assessment is the point of the record; only
+      // the staff-internal half moves.
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      const columns = selectListFor('from pilot.assessments');
+      for (const column of ['result', 'assessment_type', 'due_on', 'administered_on', 'assessor_role']) {
+        expect(columns).toContain(column);
+      }
+    },
+  );
+});
+
+describe('the readiness projection is an explicit column list, never *', () => {
+  test.each([...NON_STAFF_READERS, ...STAFF_READERS])(
+    'for %s the readiness read names its columns',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      expect(selectListFor('from pilot.readiness')).not.toContain('*');
+    },
+  );
+
+  test.each(NON_STAFF_READERS)(
+    '%s no longer receives the staff account that entered the score',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      expect(selectListFor('from pilot.readiness')).toEqual([
+        'organization_id',
+        'readiness_id',
+        'athlete_id',
+        'score',
+        'category',
+        'measured_at',
+        'created_at',
+        'method',
+        'reliability_status',
+        'validity_status',
+        'evidence_class',
+      ]);
+    },
+  );
+
+  test.each(STAFF_READERS)('%s keeps recorded_by_account_id', async (_label, overrides) => {
+    mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+    await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+    expect(selectListFor('from pilot.readiness')).toContain('recorded_by_account_id');
+  });
+
+  test.each(NON_STAFF_READERS)(
+    'the four provenance labels are STILL VISIBLE to %s, and that is the open question',
+    async (_label, overrides) => {
+      /* Not an endorsement -- a marker. method, reliability_status,
+         validity_status and evidence_class describe the measurement, not a
+         person, so there is no privacy argument for moving them and this
+         change does not invent one. Whether a family should read
+         'UNVALIDATED - PPBF MUST ESTABLISH' raw is a product judgement and an
+         OWNER DECISION. If it is ever taken, this is the test that says so
+         out loud, and the one to change. */
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      const columns = selectListFor('from pilot.readiness');
+      for (const column of ['method', 'reliability_status', 'validity_status', 'evidence_class']) {
+        expect(columns).toContain(column);
+      }
+    },
+  );
+});

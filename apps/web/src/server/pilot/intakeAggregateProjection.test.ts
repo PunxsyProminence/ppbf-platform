@@ -219,3 +219,94 @@ describe('the aggregate coach-observation filter', () => {
     expect(paramsFor('from pilot.coach_observations')[2]).toEqual(['coach_observation']);
   });
 });
+
+/**
+ * THE AGGREGATE HALF OF THE ASSESSMENT AND READINESS NARROWING.
+ *
+ * Same argument as the guardian block at the top of this file, one table
+ * further on: the route's projection is pinned by
+ * app/api/pilot/intake/domain-get/route.test.ts, and this function -- reached
+ * by the same athlete and the same guardians through
+ * /api/pilot/intake/cases/get -- has its own copy of the read. Its only
+ * caller mocks it out wholesale, so reverting THIS half to `select *` would
+ * turn nothing else in the repository red.
+ */
+describe('the aggregate assessment projection', () => {
+  test.each(FAMILY_READERS)('%s receives no staff note, no rater id, no second rating', async (role) => {
+    await run(role);
+
+    expect(selectListFor('from pilot.assessments')).toEqual([
+      'organization_id',
+      'assessment_id',
+      'athlete_id',
+      'assessment_type',
+      'result',
+      'created_at',
+      'updated_at',
+      'protocol_id',
+      'protocol_version',
+      'administration_kind',
+      'due_on',
+      'administered_on',
+      'retest_of_assessment_id',
+      'training_hours_at_administration',
+      'assessor_role',
+    ]);
+  });
+
+  test.each(STAFF_READERS)('%s keeps the staff columns', async (role) => {
+    await run(role);
+
+    const columns = selectListFor('from pilot.assessments');
+    for (const column of [
+      'assessor_account_id',
+      'second_rater_account_id',
+      'second_rater_result',
+      'conditions_note',
+    ]) {
+      expect(columns).toContain(column);
+    }
+  });
+
+  test('a call with no reader named falls to identity only, not to the staff note', async () => {
+    // The closed side of the default, asserted for this table too. A caller
+    // that forgets the context argument must not be the one path that hands a
+    // family the reliability study's raw material.
+    await run();
+
+    expect(selectListFor('from pilot.assessments')).not.toContain('conditions_note');
+    expect(selectListFor('from pilot.assessments')).not.toContain('second_rater_result');
+  });
+});
+
+describe('the aggregate readiness projection', () => {
+  test.each(FAMILY_READERS)('%s receives no staff account id', async (role) => {
+    await run(role);
+
+    expect(selectListFor('from pilot.readiness')).toEqual([
+      'organization_id',
+      'readiness_id',
+      'athlete_id',
+      'score',
+      'category',
+      'measured_at',
+      'created_at',
+      'method',
+      'reliability_status',
+      'validity_status',
+      'evidence_class',
+    ]);
+  });
+
+  test.each(STAFF_READERS)('%s keeps recorded_by_account_id', async (role) => {
+    await run(role);
+
+    expect(selectListFor('from pilot.readiness')).toContain('recorded_by_account_id');
+  });
+
+  test('a call with no reader named falls to identity only', async () => {
+    await run();
+
+    expect(selectListFor('from pilot.readiness')).not.toContain('recorded_by_account_id');
+  });
+});
