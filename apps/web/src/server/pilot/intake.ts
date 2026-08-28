@@ -1069,6 +1069,63 @@ export function emergencyContactColumnsForReader(role: PilotRole): string[] {
   return [...EMERGENCY_CONTACT_IDENTITY_COLUMNS];
 }
 
+/**
+ * WHICH COLUMNS OF A WAIVER A READER MAY SEE.
+ *
+ * THE NARROWING ABOVE STOPPED AT TWO TABLES OF A BODY THAT RETURNS SEVEN.
+ *
+ * `pilot.waivers` has the same shape as the emergency-contact case and was
+ * left with `select *`. It carries `signed_by_name` -- byte-identical to the
+ * pilot.parents row -- and, since the guardian-media-consent migration, a
+ * `parent_id` that names the guardian outright. Beside them sits a free-text
+ * `notes`.
+ *
+ * So a note written on the other parent's waiver reached this household
+ * already keyed to the guardian it concerns, with no join required. The
+ * reasoning recorded for the emergency-contact note applies word for word:
+ * it is where "do not call the father" is written, and handing that to the
+ * household it names is worse than handing over a phone number. A waiver is
+ * if anything the likelier place for it, because a waiver is where a custody
+ * or safeguarding qualification on who may consent gets recorded.
+ *
+ * What the guardian and the athlete keep is everything a waiver IS: its type,
+ * status, version, when it was signed and by whom, and the media-consent flags
+ * a parent checks their child's permissions against. Only the staff note goes.
+ *
+ * AN ALLOWLIST, NOT A DENYLIST, and deliberately so. A column added to
+ * pilot.waivers by a later migration does not reach a guardian until somebody
+ * adds it here. That fails closed: the cost is a missing field somebody
+ * notices, rather than a disclosure nobody does. waiverColumnsForReader is
+ * pinned against the live table by guardianContactProjection.pg.test.ts, so a
+ * new column fails that test rather than vanishing quietly.
+ */
+export const WAIVER_IDENTITY_COLUMNS = [
+  'organization_id',
+  'waiver_id',
+  'athlete_id',
+  'waiver_type',
+  'signed_by_name',
+  'signed_by_role',
+  'signed_at',
+  'consent_version',
+  'status',
+  'parent_id',
+  'covers_video',
+  'public_use_allowed',
+  'created_at',
+  'updated_at',
+] as const;
+
+export const WAIVER_STAFF_COLUMNS = ['notes'] as const;
+
+export function waiverColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...WAIVER_IDENTITY_COLUMNS, ...WAIVER_STAFF_COLUMNS];
+  }
+
+  return [...WAIVER_IDENTITY_COLUMNS];
+}
+
 export async function upsertGuardian(params: {
   organizationId: string;
   parentId: string;
@@ -1145,6 +1202,7 @@ export async function getIntakeCaseAggregate(
   const readerRole = context?.actorRole ?? 'athlete';
   const guardianColumns = guardianColumnsForReader(readerRole);
   const emergencyContactColumns = emergencyContactColumnsForReader(readerRole);
+  const waiverColumns = waiverColumnsForReader(readerRole);
   const readableNoteTypes = coachObservationNoteTypesForReader(readerRole);
 
   const [documents, emergencyContacts, medical, waivers, assessments, attendance, readiness, notes, guardians, shadowTimeline] = await Promise.all([
@@ -1158,7 +1216,11 @@ export async function getIntakeCaseAggregate(
       'select * from pilot.medical_intake where organization_id = $1 and athlete_id = $2 order by created_at desc',
       [organizationId, intakeCase.primary_athlete_id],
     ),
-    query('select * from pilot.waivers where organization_id = $1 and athlete_id = $2 order by created_at desc', [organizationId, intakeCase.primary_athlete_id]),
+    query(
+      `select ${waiverColumns.join(', ')} from pilot.waivers
+       where organization_id = $1 and athlete_id = $2 order by created_at desc`,
+      [organizationId, intakeCase.primary_athlete_id],
+    ),
     query('select * from pilot.assessments where organization_id = $1 and athlete_id = $2 order by created_at desc', [organizationId, intakeCase.primary_athlete_id]),
     query('select * from pilot.attendance where organization_id = $1 and athlete_id = $2 order by attendance_date desc', [organizationId, intakeCase.primary_athlete_id]),
     query('select * from pilot.readiness where organization_id = $1 and athlete_id = $2 order by measured_at desc', [organizationId, intakeCase.primary_athlete_id]),
