@@ -260,29 +260,34 @@ There is no precedent to follow: `validate constraint` appears in no
 executable SQL anywhere in this repository. Whatever is decided sets the
 precedent.
 
-RESOLVED 2026-08-28, and it decides what the CLEAN result is worth.
-`docs/current/PRODUCTION_STATE.json` states under `known_production_gaps`
-that "seed-reference-data has never been run against production" and that
-`pilot.drill_library` and `pilot.disciplines` "both count 0 rows",
-re-observed 2026-08-15. The three migration headers record 119 / 3 / 6 rows
-observed 2026-08-24, from seed-reference-data run 32788628209. Both cannot
-describe one database.
+RESOLVED 2026-08-28 -- and the resolution was already written down, which is
+the more useful half of this entry.
 
-The run's own job log settles it. Its "Record What Ran" step printed
-`PPBF_EXPECTED_POSTGRES_HOSTNAME: ppbf-pg-195892.postgres.database.azure.com`
-and `ORG_SOURCE: app-ppbf-production default org secret`, and
-PRODUCTION_STATE.json names that same hostname as production. The job was
-created 23:16:57Z and started 23:23:56Z -- a seven-minute wait consistent
-with the production environment gate, where staging runs start in seconds.
+`docs/current/PRODUCTION_STATE.json` carries a top-level key
+`production_reference_data_2026-08-24` reading "SEEDED. seed-reference-data run
+32788628209 (target=production ...) completed success 2026-08-24T23:25:48Z
+against ppbf-pg-195892 ... drill_library 119, disciplines 5,
+cohort_definitions 6, session_scripts 3 ... every one reporting '0 already
+present', i.e. a genuine first fill of an empty production catalog set". So the
+119 / 3 / 6 figures are production figures, and the CLEAN census scanned real
+rows rather than empty tables -- which is what makes it evidence rather than a
+tautology.
 
-So seed-reference-data DID run against production, on 2026-08-24, and
-`PRODUCTION_STATE.json`'s gap entry is stale by nine days. The 119 / 3 / 6
-figures are production figures. **The CLEAN census therefore scanned real
-rows rather than empty tables**, which is what makes it evidence rather than
-a tautology.
+A CORRECTION TO THIS ENTRY'S EARLIER TEXT, kept rather than quietly
+overwritten. It previously said the same file's `known_production_gaps` entry
+-- "seed-reference-data has never been run against production", drill_library
+and disciplines "both count 0 rows", 2026-08-15 -- was stale by nine days and
+was a release-lane defect to correct. **That framing was wrong.** The gaps
+carry a sibling `known_production_gaps_note` stating they "have not been
+re-checked ... and are carried as history, not as a current statement". The
+file labels them as history AND records the correction elsewhere in itself.
+There is no uncorrected defect, and nothing here for the release lane to fix.
 
-That stale entry is in a release-lane document a build lane may not edit
-(`AGENT_KERNEL.md`, Lane model). It is reported here rather than corrected.
+How the error was made, since the shape recurs: the file was grepped rather
+than read; the contradiction was then resolved the long way, from a workflow
+run's job log; and the conclusion was stated wider than the search behind it.
+The run-log evidence was accurate -- it was simply redundant, and the framing
+built on top of it was not.
 
 The B2 ruling that preceded the FKs said PRECHECK and STOP; what merged
 substituted `NOT VALID`. That substitution has not been ratified, and no
