@@ -328,6 +328,11 @@ export default function CoachDevelopmentBlocksPage() {
      up. Here the block id IS the key, so a late answer lands in its own slot
      and is simply not the one being rendered. */
   const [openObjectivesId, setOpenObjectivesId] = useState<string | null>(null);
+  /* One open block per panel, exactly as openObjectivesId does it. Not a set:
+     these read a child's training record, and leaving several expanded across
+     a roster is how the page drifts back to reading everything for everyone. */
+  const [openSessionsId, setOpenSessionsId] = useState<string | null>(null);
+  const [openReviewId, setOpenReviewId] = useState<string | null>(null);
   // objectivesByBlock is declared above, with the link state it is read
   // beside. Identical declaration, duplicated by the same silent merge.
   const [objectivesState, setObjectivesState] = useState<
@@ -542,14 +547,21 @@ export default function CoachDevelopmentBlocksPage() {
       const loaded = payload.blocks ?? [];
       setBlocks(loaded);
       setBlocksState('loaded');
-      // The sessions each of these blocks was worked in. Started after the
-      // staleness check, so a read for an athlete nobody is looking at any
-      // more does not fire a second wave of requests behind it.
-      for (const item of loaded) {
-        void loadSessionsForBlock(item.block_id);
-        void loadObjectivesForBlock(item.block_id);
-        void loadReviewForBlock(item.block_id);
-      }
+      /* NOTHING PER-BLOCK IS READ HERE ANY MORE. These three reads used to
+         fire for every block on every roster load -- a dozen blocks meant
+         thirty-six requests, each a separate authorization decision at its
+         route, for panels a coach had not asked to see.
+
+         The objectives panel on this same page already solved that by
+         loading when a coach opens it, and its test says why in the page's
+         own words: "A dozen blocks on screen must not mean a dozen extra
+         reads". The other three panels now follow it, so the page has one
+         interaction model instead of two.
+
+         The cost is a click per panel per block, and it is worth naming
+         rather than hiding: a coach who wants the sessions for one block
+         asks for them. The alternative was reading everything for everyone
+         on the chance they might look. */
     } catch {
       // A failure for an athlete nobody is looking at any more must not blank
       // the panel belonging to the one they are.
@@ -557,7 +569,9 @@ export default function CoachDevelopmentBlocksPage() {
       setBlocks([]);
       setBlocksState('unavailable');
     }
-  }, [loadSessionsForBlock, loadObjectivesForBlock, loadReviewForBlock]);
+  // No per-block loader in the deps any more: loadBlocks no longer calls one.
+  // They are invoked from the panel toggles instead.
+  }, []);
 
   /* Recording that a session supported this block, and taking it back.
 
@@ -642,6 +656,35 @@ export default function CoachDevelopmentBlocksPage() {
       setObjectivesState((prev) => ({ ...prev, [blockId]: 'unavailable' }));
     }
   }, []);
+
+  /* Both mirror toggleObjectives: re-read on every open rather than trusting a
+     cached list, because another coach may have linked a session or written a
+     review since, and these panels are where a coach decides what is still
+     missing. */
+  function toggleSessions(blockId: string) {
+    if (openSessionsId === blockId) {
+      setOpenSessionsId(null);
+      return;
+    }
+    setOpenSessionsId(blockId);
+    setMessage('');
+    setErrorMessage('');
+    void loadSessionsForBlock(blockId);
+    // The objective marks live inside each session card, so they are part of
+    // the same question and are read with it rather than on their own toggle.
+    void loadObjectivesForBlock(blockId);
+  }
+
+  function toggleReview(blockId: string) {
+    if (openReviewId === blockId) {
+      setOpenReviewId(null);
+      return;
+    }
+    setOpenReviewId(blockId);
+    setMessage('');
+    setErrorMessage('');
+    void loadReviewForBlock(blockId);
+  }
 
   function toggleObjectives(blockId: string) {
     if (openObjectivesId === blockId) {
@@ -1252,6 +1295,16 @@ export default function CoachDevelopmentBlocksPage() {
                         because a coach said it belonged, never because its
                         date fell inside the window or because the athlete was
                         present. */}
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      aria-expanded={openSessionsId === block.block_id}
+                      onClick={() => toggleSessions(block.block_id)}
+                    >
+                      {openSessionsId === block.block_id ? 'Hide sessions' : 'Sessions'}
+                    </button>
+
+                    {openSessionsId === block.block_id && (
                     <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
                       <p className="t-label m-0">Sessions that worked this block</p>
 
@@ -1418,6 +1471,7 @@ export default function CoachDevelopmentBlocksPage() {
                         </div>
                       )}
                     </div>
+                    )}
 
                     {/* PLAN VERSUS WHAT WAS ACTUALLY RECORDED.
 
@@ -1446,6 +1500,16 @@ export default function CoachDevelopmentBlocksPage() {
                         counts, no adjustment is drafted, and SHADOW is not
                         consulted. The judgement is the coach's, and it is
                         theirs alone to write. */}
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      aria-expanded={openReviewId === block.block_id}
+                      onClick={() => toggleReview(block.block_id)}
+                    >
+                      {openReviewId === block.block_id ? 'Hide plan vs actual' : 'Plan vs actual'}
+                    </button>
+
+                    {openReviewId === block.block_id && (
                     <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
                       <p className="t-label m-0">Plan versus what was recorded</p>
                       <p className="t-muted m-0">
@@ -1618,6 +1682,7 @@ export default function CoachDevelopmentBlocksPage() {
                         </p>
                       </div>
                     </div>
+                    )}
 
                     {/* Attribution, plainly. Who wrote this plan is a fact
                         about the past and no edit path can rewrite it.

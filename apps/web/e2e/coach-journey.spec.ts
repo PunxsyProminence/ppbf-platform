@@ -952,6 +952,8 @@ test.describe('Coach journey', () => {
 
     await page.goto('/coach/development-blocks');
     await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+    // The panels load when a coach opens them; opening is what a coach does.
+    await page.getByRole('button', { name: 'Sessions' }).first().click();
 
     await expect(page.getByText('Sessions that worked this block')).toBeVisible();
     // The run's own words about itself, carried through rather than summarised.
@@ -1027,6 +1029,8 @@ test.describe('Coach journey', () => {
 
     await page.goto('/coach/development-blocks');
     await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+    // The panels load when a coach opens them; opening is what a coach does.
+    await page.getByRole('button', { name: 'Sessions' }).first().click();
 
     await expect(page.getByText('Objectives this session addressed')).toBeVisible();
     // The marked one, and the unmarked ones -- a coach has to see what the
@@ -1112,6 +1116,7 @@ test.describe('Coach journey', () => {
 
     await page.goto('/coach/development-blocks');
     await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+    await page.getByRole('button', { name: 'Plan vs actual' }).first().click();
 
     await expect(page.getByText('Plan versus what was recorded')).toBeVisible();
 
