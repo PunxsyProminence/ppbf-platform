@@ -21,10 +21,32 @@ not replace it.
 
 ---
 
-## 2026-08-28 — athlete-dev-block-foundation lane (COLLISION: plan-vs-actual built twice)
+## 2026-08-28 — athlete-dev-block-foundation lane (plan-vs-actual: RESOLVED)
 
-**Two open PRs build the same capability as two different tables. Do not
-build on either until the owner picks one.**
+**RESOLVED by the owner, same day. `pilot.athlete_development_block_reviews`
+(#804) is the table that ships. #829's `..._executions` does NOT** — #829 is
+marked draft and its migration must not be applied anywhere.
+
+Also decided, and both change #804's scope slightly:
+- **mid-block entries are allowed.** #829 had added a write refusal on an open
+  window; that is reversed. 036a §4's DISPLAY rule survives — a surface must
+  still say the window has not closed.
+- **counts show BOTH training days and minutes by domain**, side by side and
+  labelled. Days from `pilot.attendance_reconciled` (cannot be inflated by two
+  sessions in a day) is the participation figure; minutes from the raw boxing
+  rows are detail beside it, never a second participation number. Neither PR
+  does both today.
+
+Recorded in full in `036a-plan-vs-actual-execution-design.md` §5.
+
+**What #829 still has that is worth porting onto #804's table:** the window
+counts and the six UNKNOWN states (`getBlockPlanVsActual`), and the paired
+*claimed deviations must be named* constraint. See the correction below on
+what porting the read actually costs.
+
+*Original entry, left standing as the reasoning that produced the decision:*
+
+**Two open PRs built the same capability as two different tables.**
 
 - #829 (`athlete-dev-block-foundation` lane) — `pilot.athlete_development_block_executions`
 - #804 (`coach-user-build-repair` lane) — `pilot.athlete_development_block_reviews`
