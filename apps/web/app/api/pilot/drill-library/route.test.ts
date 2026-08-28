@@ -97,13 +97,64 @@ describe('who may read the v3 drill library today', () => {
     expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
   });
 
-  it('admits board and platform_owner, which the sibling drills route refuses', () => {
+  it('admits board and platform_owner, which the sibling drills route refuses', async () => {
     // Stated as its own case rather than left implicit in the sweep above,
     // because these two are the entire disagreement. If the owner rules that
     // this route should match /api/pilot/drills, this is the case that has to
     // change, and it should be impossible to miss.
-    expect(ALL_ROLES).toContain('board');
-    expect(ALL_ROLES).toContain('platform_owner');
+    //
+    // WHAT THIS CASE USED TO BE, recorded because it is exactly the defect the
+    // rest of this file exists to catch on the route:
+    //
+    //     expect(ALL_ROLES).toContain('board');
+    //     expect(ALL_ROLES).toContain('platform_owner');
+    //
+    // That is a fact about this file's own array. It stays true no matter what
+    // the route does, so it could not fail against the defect it named.
+    // Measured on 2026-08-28: with a gate added to route.ts excluding both
+    // roles, the sweep above went red on two cases, the source-mechanism case
+    // below went red, and THIS ONE STILL REPORTED GREEN -- 3 failed, 13
+    // passed, and the one case naming board and platform_owner was in the
+    // passing column.
+    //
+    // Both halves of the sentence are asserted now: this route admits them,
+    // and the sibling's reader list does not hold them.
+    for (const role of ['board', 'platform_owner'] as PilotRole[]) {
+      jest.clearAllMocks();
+      mockRequirePrincipal.mockResolvedValue(principal(role));
+      mockList.mockResolvedValue([{ drill_id: 'drl-1' }]);
+
+      const response = await GET(getRequest());
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ drills: [{ drill_id: 'drl-1' }] });
+      expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+    }
+
+    // The sibling half. DRILL_READER_ROLES is module-local in ../drills/route.ts
+    // so there is nothing to import, and this file cannot call that route's GET
+    // without a second, conflicting set of module mocks -- so its list is read.
+    // drills/route.test.ts pins the `board` half of the divergence at 403
+    // through the route itself; the `platform_owner` half is pinned nowhere,
+    // which is why this is read rather than trusted to a comment.
+    const siblingSource = fs.readFileSync(path.resolve(__dirname, '../drills/route.ts'), 'utf8');
+    const siblingDeclaration = /const DRILL_READER_ROLES = \[([^\]]*)\]/.exec(siblingSource);
+    if (!siblingDeclaration) {
+      throw new Error(
+        'DRILL_READER_ROLES no longer parses out of ../drills/route.ts. The divergence this ' +
+          'case records is between two role lists, so re-point this at the new one rather ' +
+          'than dropping the assertion.',
+      );
+    }
+    const siblingReaderRoles = (siblingDeclaration[1].match(/'[^']+'/g) ?? []).map((quoted) =>
+      quoted.slice(1, -1),
+    );
+
+    // Canary before the negatives: a `not.toContain` over a list that failed to
+    // parse would pass for entirely the wrong reason.
+    expect(siblingReaderRoles).toContain('coach');
+    expect(siblingReaderRoles).not.toContain('board');
+    expect(siblingReaderRoles).not.toContain('platform_owner');
   });
 
   it('the route holds no role gate at all -- admission is by authentication alone', () => {
