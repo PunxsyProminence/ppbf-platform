@@ -107,12 +107,31 @@ export const EVIDENCE_LEVELS = [
  */
 export const ENVIRONMENT_LEVELS = ['LOCAL_RUNTIME', 'STAGING', 'PRODUCTION'];
 
-/** Words that count as naming an environment in SUBJECT. */
+/**
+ * Words that count as naming an environment in SUBJECT.
+ *
+ * `ci`, `runner` and `actions` are here because a GitHub Actions run IS a
+ * runtime environment, and in this repository it is the main one: a migration
+ * runner, a readiness gate, the path classifier and every deploy produce their
+ * evidence from a workflow run rather than from anyone's laptop. The list was
+ * written without them and rejected this pull request's own record for a
+ * workflow run whose SUBJECT said "GitHub Actions ubuntu runner" -- which names
+ * the environment perfectly well. The rule was right and the vocabulary was
+ * short.
+ *
+ * These are loose enough that a SUBJECT merely mentioning `ci.yml` satisfies
+ * the rule without saying where anything ran. That is the safe direction to be
+ * loose in: this check requires the field to say something, it does not decide
+ * whether what it says is true, and a reviewer still reads the line.
+ */
 export const ENVIRONMENT_WORDS = [
   'local',
   'localhost',
   'container',
   'sandbox',
+  'ci',
+  'runner',
+  'actions',
   'staging',
   'production',
   'prod',
