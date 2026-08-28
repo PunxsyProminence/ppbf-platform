@@ -53,12 +53,20 @@ host `ppbf-pg-195892`, database `postgres` -- succeeded. Read from the run's own
 environment block, not inferred. This supersedes the "believed unapplied" line
 below, which was accurate when written.
 
-**Note for whoever runs `all` against staging or production next:** that run
-WILL be the first to evaluate the athlete-check-ins gate against the widened
-table, because both environments now carry all eight 1-5 constraints. On the
-repaired gate it passes; on the pre-#802 gate it would have thrown
-ATHLETE_CHECK_INS_NOT_READY and blocked the chain. If it fails there, the fix
-did not deploy -- check the ref the workflow was dispatched against.
+**The gate IS now proven against a widened table, by a run dispatched for that
+purpose.** Run `33202463204`, 19:08Z, `MIGRATION: athlete-check-ins` /
+`TARGET: staging`, head `75cf8bc1`, host `ppbf-pg-staging-7k4m2q`, database
+`ppbf_staging` -- succeeded. Staging carries all eight 1-5 constraints by then,
+so this run evaluated the gate against the widened table: the pre-#802 gate
+counted every such constraint and demanded exactly three, so it would have seen
+eight and thrown ATHLETE_CHECK_INS_NOT_READY. This is the evidence the retracted
+claim needed and did not have. It was produced by targeting the OTHER migration
+on purpose, which is the whole point -- the gate belongs to athlete-check-ins,
+so only a run that invokes THAT runner can exercise it.
+
+**Note for whoever runs `all` next:** it will exercise the same gate the same
+way. If it throws ATHLETE_CHECK_INS_NOT_READY, the fix did not deploy -- check
+the ref the workflow was dispatched against, not the migration.
 
 — training-content build lane.
 
