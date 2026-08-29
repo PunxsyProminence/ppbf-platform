@@ -211,7 +211,12 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Block not found.' }, { status: 404 });
     }
 
-    const removed = await unlinkSessionFromBlock(principal.organizationId, runId, blockId);
+    /* The account is passed so the module can check the role it holds in THIS
+       organization. requireRole above compares the account's HOME role, which
+       is a different question and does not answer this one. */
+    const removed = await unlinkSessionFromBlock(
+      principal.organizationId, runId, blockId, principal.accountId,
+    );
     // `removed: false` means there was nothing to remove, which is the state
     // the caller asked for either way. Not an error.
     return NextResponse.json({ ok: true, removed });

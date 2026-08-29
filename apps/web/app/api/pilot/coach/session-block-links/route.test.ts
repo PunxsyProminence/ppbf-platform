@@ -363,7 +363,11 @@ describe('DELETE: removing the statement', () => {
     // Unlinking is a write about this block, so it goes through the same
     // module gate the read and the link do.
     expect(mockGetBlock).toHaveBeenCalledWith(actor, 'blk-1');
-    expect(mockUnlink).toHaveBeenCalledWith('org-1', 'run-1', 'blk-1');
+    /* The account goes through too, and it is not decoration. requireRole
+       above compares the account's HOME role (pilot.accounts.role); the role
+       that governs a write is the one on the membership row for THIS
+       organization, and only the module can ask for it. */
+    expect(mockUnlink).toHaveBeenCalledWith('org-1', 'run-1', 'blk-1', actor.accountId);
   });
 
   test('a block this caller may not reach removes nothing', async () => {
