@@ -199,6 +199,15 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/shadow-reviews', label: 'SHADOW Human Review', room: 'office', roles: ADMIN_GATE,
     keywords: 'shadow chat safety boundary escalation critical chest pain fainting review queue safeguarding',
     hint: 'Chats the safety boundary refused to answer. Critical tickets first.' },
+  /* roles is ['admin'] and NOT ADMIN_GATE, deliberately. ADMIN_GATE carries
+     platform_owner, and the route behind this door refuses platform_owner by
+     name -- blinding.ts's position is that a platform-wide role is not a party
+     to one organization settling a disagreement between its own two
+     annotators. Advertising it to a role the API will refuse is what the
+     header above warns this list not to do. */
+  { href: '/admin/calibration/review', label: 'Calibration Review', room: 'office', roles: ['admin'],
+    keywords: 'calibration comparison disagreement annotation coaches agreement study adjudication clip review blinding',
+    hint: 'Where two coaches disagreed on a study clip, side by side. Read-only, and no score.' },
   { href: '/admin/platform', label: 'Platform', room: 'office', roles: OPEN,
     keywords: 'system settings internals' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
