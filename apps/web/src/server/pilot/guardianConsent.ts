@@ -284,8 +284,14 @@ export async function grantMediaConsent(params: {
   signedByName: string;
   coversVideo: boolean;
   publicUseAllowed: boolean;
+  /* The guardian's own signed-in account. On this path the entrant and the
+     signer really are the same person -- unlike intake, where a staff member
+     enters what a guardian signed on paper -- but the column still records
+     only the former, because that is the one thing it can mean everywhere. */
+  recordedByAccountId: string;
 }): Promise<string> {
   return writeMediaConsentUnderLock(params.organizationId, params.athleteId, params.parentId, {
+    recordedByAccountId: params.recordedByAccountId,
     signedByName: params.signedByName,
     signedByRole: 'parent',
     signedAt: new Date().toISOString(),
@@ -301,8 +307,10 @@ export async function withdrawMediaConsent(params: {
   athleteId: string;
   parentId: string;
   signedByName: string;
+  recordedByAccountId: string;
 }): Promise<string> {
   return writeMediaConsentUnderLock(params.organizationId, params.athleteId, params.parentId, {
+    recordedByAccountId: params.recordedByAccountId,
     signedByName: params.signedByName,
     signedByRole: 'parent',
     signedAt: new Date().toISOString(),

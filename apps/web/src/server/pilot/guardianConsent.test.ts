@@ -160,6 +160,7 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
       athleteId: 'ath-1',
       parentId: 'p1',
       signedByName: 'Jane Guardian',
+      recordedByAccountId: 'acct-entrant',
       coversVideo: true,
       publicUseAllowed: false,
     });
@@ -186,6 +187,7 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
       athleteId: 'ath-1',
       parentId: 'p1',
       signedByName: 'Jane Guardian',
+      recordedByAccountId: 'acct-entrant',
     });
 
     expect(mockUpsertWaiverWithClient).toHaveBeenCalledWith(
@@ -207,8 +209,8 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
    */
   describe('the write takes the same lock the readers take', () => {
     test.each([
-      ['withdrawal', () => withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian' })],
-      ['grant', () => grantMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', coversVideo: true, publicUseAllowed: false })],
+      ['withdrawal', () => withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', recordedByAccountId: 'acct-entrant' })],
+      ['grant', () => grantMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', coversVideo: true, publicUseAllowed: false, recordedByAccountId: 'acct-entrant' })],
     ] as Array<[string, () => Promise<string>]>)('a %s locks the guardian link row first', async (_label, write) => {
       await write();
 
@@ -222,8 +224,8 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
     });
 
     test.each([
-      ['withdrawal', () => withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian' })],
-      ['grant', () => grantMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', coversVideo: true, publicUseAllowed: false })],
+      ['withdrawal', () => withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', recordedByAccountId: 'acct-entrant' })],
+      ['grant', () => grantMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', coversVideo: true, publicUseAllowed: false, recordedByAccountId: 'acct-entrant' })],
     ] as Array<[string, () => Promise<string>]>)('the %s is recorded AFTER the lock, on the same transaction', async (_label, write) => {
       // Ordering is the whole point: a lock taken after the insert serializes
       // nothing, and an insert on a different connection is not covered by it
@@ -248,7 +250,7 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
       // upsertWaiver commits the moment it returns, so a lock taken around it
       // would be released before the row existed. Using it here would look
       // correct and serialize nothing.
-      await withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian' });
+      await withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', recordedByAccountId: 'acct-entrant' });
 
       expect(mockUpsertWaiver).not.toHaveBeenCalled();
     });
@@ -264,7 +266,7 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
       mockUpsertWaiverWithClient.mockResolvedValueOnce('waiver-3');
 
       await expect(
-        withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian' }),
+        withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', recordedByAccountId: 'acct-entrant' }),
       ).resolves.toBe('waiver-3');
     });
   });
