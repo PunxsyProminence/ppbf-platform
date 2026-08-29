@@ -524,6 +524,7 @@ describe('an unlink cannot quietly clear a withdrawal', () => {
       athleteId: CONSENT_ATH,
       parentId: coGuardianParentId,
       signedByName: 'Consenting Guardian',
+      recordedByAccountId: CO_GUARDIAN,
       coversVideo: true,
       publicUseAllowed: false,
     });
@@ -532,6 +533,7 @@ describe('an unlink cannot quietly clear a withdrawal', () => {
       athleteId: CONSENT_ATH,
       parentId: withdrawerParentId,
       signedByName: 'Withdrawing Guardian',
+      recordedByAccountId: WITHDRAWER,
     });
   });
 
@@ -638,6 +640,7 @@ describe('an unlink cannot quietly clear a withdrawal', () => {
       athleteId: CONSENT_ATH,
       parentId: withdrawerParentId,
       signedByName: 'Withdrawing Guardian',
+      recordedByAccountId: WITHDRAWER,
       coversVideo: true,
       publicUseAllowed: false,
     });

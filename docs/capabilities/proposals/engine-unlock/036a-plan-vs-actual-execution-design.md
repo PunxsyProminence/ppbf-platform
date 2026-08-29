@@ -177,6 +177,50 @@ read as a verdict-in-progress.
 
 ## 5. Decisions needed before this can be built
 
+> ## ANSWERED — owner, 2026-08-28. The forks below are left standing as the
+> reasoning that produced the answers; where they disagree with this block,
+> this block is current.
+>
+> **THE TABLE THAT SHIPS IS `pilot.athlete_development_block_reviews` (#804),
+> not the `..._executions` proposed in §3 of this document.** #829 built §3 as
+> written; comparing the two showed `executions` to be a strict column subset
+> of `reviews`, so the only real difference was cardinality — and the owner
+> chose many-appended over one-upserted. #829's table does not ship.
+>
+> - **D1 → the block, but MANY ENTRIES, not one.** This SUPERSEDES the earlier
+>   D1(a) answer of the same day. That answer was chosen from the three options
+>   below, and "append-only, many per block" was not among them — the option
+>   set was incomplete, not the decision wrong. Nothing a coach wrote is ever
+>   overwritten; a correction is a new entry, and the earlier judgment about a
+>   child survives it.
+> - **D2 → (a) `DEVELOPMENT_BLOCK_WRITE_ROLES`** — coach, organization_admin,
+>   admin. The same list that authors the block.
+> - **D3 → (a) the family reads the verdict verbatim, deviation text
+>   included.** The reasoning that gave them the plan verbatim applies
+>   unchanged: a judgment about a child that the child cannot see is one they
+>   cannot question.
+> - **D4 → (a) no evidence links in the first slice.**
+> - **D5 → stands as written**, and is now a test rather than a promise.
+>
+> ### Two answers this document did not ask for, and one correction to §4
+>
+> **MID-BLOCK ENTRIES ARE ALLOWED.** §4's last row says an adherence judgment
+> on an open window is "a prediction, not a record" and #829 turned that into a
+> write refusal. **The refusal is reversed.** A coach who sees a problem in
+> week 3 must have somewhere to put it, because a review delivered only at the
+> end arrives too late to change anything for that athlete. §4's DISPLAY rule
+> survives intact: a surface must still say the window has not closed, so a
+> mid-block entry can never be mistaken for the final word.
+>
+> **COUNTS SHOW BOTH TRAINING DAYS AND MINUTES BY DOMAIN, side by side, each
+> labelled for what it is.** Neither existing read does both:
+> `pilot.attendance_reconciled` is the athlete-day system of record and cannot
+> be inflated by an athlete training twice in a day, but exposes no duration
+> and no domain; the raw `activity_log` boxing rows carry duration and domain
+> but must not be counted as days. Both are wanted, and the day count is the
+> participation figure — the minutes are detail beside it, never a second
+> participation number.
+
 Each is a real fork. None can be settled from the code.
 
 ### D1 — Does the adherence judgment sit on the block, or on each objective?

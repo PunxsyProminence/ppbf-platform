@@ -36,6 +36,31 @@ export const runtime = 'nodejs';
  * 'block' takes the bytes with it. A blocked photograph that stays in the
  * container is a photograph somebody with the storage key can still see, and
  * the whole point of blocking it was that it should not exist here.
+ *
+ * WHO ACTUALLY REACHES THIS, AND WHY THE COACH BRANCH HAS NO SCREEN.
+ *
+ * The gate below admits organization admins, an athlete's own coaches, and the
+ * account itself. Only the first of those has a surface: /admin/portrait-review
+ * lists who is waiting and decides on them, and it calls the SIBLING route
+ * (api/pilot/admin/portrait-review), not this one. T-004 built that console and
+ * "narrows the actor to organization admin only, per the ticket", while
+ * deliberately leaving this route's broader gate alone.
+ *
+ * Owner decision, 2026-08-29: portrait review STAYS ADMIN-ONLY. The
+ * coach_of_subject and self branches keep no screen, on purpose. This is
+ * recorded here because a reachability sweep flagged this route as a
+ * safeguarding control with no door, which read the situation backwards --
+ * nothing is stuck, and the missing surface is a decision rather than a gap.
+ * docs/PLATFORM_AUDIT_2026-08-28_ROUTE_REACHABILITY.md carries the same note
+ * so the next sweep does not re-raise it.
+ *
+ * THE GATE IS NOT NARROWED TO MATCH, and that is also deliberate. A coach who
+ * knows an athlete's account_id can still call this route directly; requireRole
+ * admits coach and resolveRelationship answers coach_of_subject for their own
+ * athlete. Closing that is a behaviour change to a safeguarding route that
+ * T-004 explicitly declined to make, so it is not made here either. If the
+ * decision is that a coach may not review at all, narrowing this gate is its
+ * own change with its own tests -- not a side effect of not building a screen.
  */
 export async function POST(request: NextRequest) {
   try {

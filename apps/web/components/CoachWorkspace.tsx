@@ -12,12 +12,29 @@ import {
   READINESS_UNVALIDATED_CAVEAT,
   isReadinessMethodValidated,
 } from '@/src/server/pilot/readinessProvenance';
+// The lock the takedown applies, imported rather than typed as 72 here. A
+// coach is told how long the field stays shut before they confirm, so the
+// sentence they read and the lock the server applies have to be the same
+// number -- a second copy on this screen is a promise that can go stale
+// without anything failing. profileIdentity.ts is a pure module with no
+// imports of its own; SignInPanel already reads DEFAULT_PIN_LENGTH the same
+// way.
+import { NICKNAME_LOCK_HOURS } from '@/src/server/pilot/profileIdentity';
 import {
   formatGymDateNumeric,
   formatGymDateTimeShort,
+  formatGymDay,
   formatGymStamp,
   formatGymTimeOfDay,
 } from '@/src/lib/gymTime';
+import {
+  COACH_DEVELOPMENT_GOAL_STATUS_LABEL,
+  COACH_DEVELOPMENT_TOPIC_PROMPTS,
+  coachDevelopmentGoalStatusLabel,
+  type CoachDevelopmentActivityRow,
+  type CoachDevelopmentGoalRow,
+  type CoachDevelopmentGoalStatus,
+} from '@/src/shared/coachDevelopment';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -106,6 +123,17 @@ interface Athlete {
   initials?: string;
   ringName?: string | null;
   photoAvailable?: boolean;
+  /* Whether this coach is the coach OF RECORD for this athlete, straight from
+     the roster route's `is_mine`. Not a display field: it is the one bit that
+     separates the two ways a coach can be looking at a child. A covering coach
+     under an active pilot.coach_coverage grant reaches the athlete -- rosters,
+     sessions, reviews -- but resolveRelationship still answers
+     'organization_staff' for them, and the ring-name takedown admits only
+     'coach_of_subject'. Without this the takedown control would be offered to
+     a covering coach on an adult athlete (a minor's ring name is already
+     withheld from anyone outside MINOR_CIRCLE) and could only ever produce a
+     404. */
+  isMine?: boolean;
 }
 
 // A block template only. There is no live-session backend, so a block has no
@@ -132,13 +160,50 @@ interface CoachTask {
   relatedAthlete?: string;
 }
 
-interface CoachGoal {
-  id: string;
-  title: string;
-  category: string;
-  progress: number;
-  dueDate: string;
-}
+/**
+ * One of this coach's own development goals, as GET /api/pilot/coach/development
+ * returns it. Mirrors CoachDevelopmentGoalRow in src/server/pilot/coachDevelopment.ts.
+ *
+ * WHAT THIS TYPE NO LONGER HAS IS THE POINT. It used to carry `progress:
+ * number`, `category` and `dueDate`, and the tab rendered a bar and a "68%"
+ * from them -- for three hardcoded goals shown identically to every coach who
+ * logged in. There is no progress column in the table this now reads, so
+ * there is nothing to render a bar from: the fake figure was removed at the
+ * schema, not just at the surface.
+ */
+type CoachDevelopmentGoal = Pick<
+  CoachDevelopmentGoalRow,
+  'goal_id' | 'title' | 'development_focus' | 'target_on' | 'status'
+>;
+
+/**
+ * Development work this coach recorded doing. SELF-ENTERED AND UNVERIFIED --
+ * it is not a credential, and the panel that shows it says so. The verified
+ * record is pilot.person_clearances, which the Current Certifications panel
+ * above reads.
+ */
+type CoachDevelopmentActivity = Pick<
+  CoachDevelopmentActivityRow,
+  'activity_id' | 'title' | 'provider' | 'occurred_on' | 'duration_minutes'
+>;
+
+/** The TONE for each development-goal state. A personal planning state, never
+ *  a safety one: nothing here wears a saturated safety rung. The words come
+ *  from the shared vocabulary so this hub and /coach/development call each
+ *  state the same thing. */
+const GOAL_STATUS_TONE: Record<CoachDevelopmentGoalStatus, BadgeTone> = {
+  draft: 'neutral',
+  active: 'cleared',
+  completed: 'monitor',
+  cancelled: 'neutral',
+};
+
+const GOAL_STATUS_BADGE: Record<CoachDevelopmentGoalStatus, { readonly tone: BadgeTone; readonly label: string }> = {
+  draft: { tone: GOAL_STATUS_TONE.draft, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.draft },
+  active: { tone: GOAL_STATUS_TONE.active, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.active },
+  completed: { tone: GOAL_STATUS_TONE.completed, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.completed },
+  cancelled: { tone: GOAL_STATUS_TONE.cancelled, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.cancelled },
+};
 
 /**
  * The coach's own session in progress, as GET /api/pilot/session-scripts/runs
@@ -609,6 +674,44 @@ export default function CoachWorkspace() {
   >([]);
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
+  /* Whether the coach PICKED this athlete, as opposed to the roster having
+     seeded the first row when it loaded (see loadAthletes). Every other panel
+     is happy with the seeded selection -- it is what stops the detail column
+     rendering empty on arrival -- but the ring-name takedown below is gated on
+     a deliberate act, and a selection nobody made is not one. Without this,
+     exactly one child per gym, the alphabetically first with a ring name,
+     would carry a live takedown control on every coach's dashboard from first
+     paint, for no reason a coach could be told. */
+  const [athleteChosenByCoach, setAthleteChosenByCoach] = useState(false);
+
+  /* THE RING-NAME TAKEDOWN, coach side.
+     POST /api/pilot/profile/nickname/clear has existed since ring names
+     shipped, and until now nothing on any screen called it. A safeguarding
+     control with no door is a control this gym does not have: the route's own
+     header calls a takedown "an instant undo" for the adults who know the
+     child, and the instant part was missing.
+
+     Three pieces of state, all keyed by athlete rather than global, because a
+     roster is a list and a coach may be part-way through one row while another
+     row is still showing why its attempt failed.
+
+     `nicknameClearArmedId` is the confirm step. A clear is immediate, has no
+     undo, and locks the field for NICKNAME_LOCK_HOURS -- a single click on a
+     scrolling list of children, on a tablet, in a gym, is the wrong shape for
+     that. It is deliberately NOT window.confirm: the sentence a coach needs to
+     read names the child and says what the lock does, and a browser dialog
+     cannot say either. */
+  const [nicknameClearArmedId, setNicknameClearArmedId] = useState<string | null>(null);
+  const [nicknameClearBusyId, setNicknameClearBusyId] = useState<string | null>(null);
+  const [nicknameClearErrors, setNicknameClearErrors] = useState<Record<string, string>>({});
+  /* What the coach is told AFTER it happened, and where the number comes from.
+     The row's ring name disappears on success, and a name quietly vanishing is
+     not an acknowledgement -- a coach who looked away has no way to tell a
+     completed takedown from a row that never had one. This holds the lock the
+     SERVER reported (`locked_for_hours` off the response), not the constant
+     above: the pre-confirm warning is a prediction and this is a record, and
+     the two are allowed to be sourced differently for that reason. */
+  const [nicknameClearedHours, setNicknameClearedHours] = useState<Record<string, number | null>>({});
 
   const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
     if (sessionMode === 'One-on-One') {
@@ -732,11 +835,22 @@ export default function CoachWorkspace() {
     ];
   }, [sessionMode]);
 
-  // There is no backend feed for coach development goals yet. This used to
-  // be 3 hardcoded goals with fake progress percentages shown identically to
-  // every coach regardless of who was logged in -- removed rather than left
-  // as fake personal data.
-  const [coachGoals] = useState<CoachGoal[]>([]);
+  /* This coach's own development record: what they said they are working on,
+     and what they did about it.
+
+     This used to be `useState<CoachGoal[]>([])` with a comment reading "there
+     is no backend feed for coach development goals yet" -- true when it was
+     written, and it stopped being true when /api/pilot/coach/development
+     shipped. Before that it was three hardcoded goals with invented progress
+     percentages, identical for every coach. The list is now the coach's own
+     rows and the percentages have nowhere to come from.
+
+     Self-scoped like the credential read beside it: the route takes no
+     account id and answers for the caller, so nothing here can widen to a
+     colleague's goals. */
+  const [coachGoals, setCoachGoals] = useState<CoachDevelopmentGoal[]>([]);
+  const [coachActivities, setCoachActivities] = useState<CoachDevelopmentActivity[]>([]);
+  const [developmentState, setDevelopmentState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
 
   /* One sentence under the KPI row saying whether a session is running.
      Said as a sentence rather than as a tile because a tile is the shape of a
@@ -775,8 +889,16 @@ export default function CoachWorkspace() {
      delivery, so the roster-derived count has no reader left. It is not
      re-added as an unused aggregate: the roster's attendance column is still
      'Unknown' for everyone (see loadAthletes), and a second count over it
-     would only be another way to render nothing. */
-  const activeAthletes = athletes.filter(a => a.attendance !== 'Absent' && a.attendance !== 'Unknown').length;
+     would only be another way to render nothing.
+
+     activeAthletes followed it, for the same reason and one step later. It
+     counted the roster minus Absent and Unknown -- but attendance is 'Unknown'
+     for everyone until a register is wired up, so it counted nobody and the
+     panel read "no athletes are assigned to you" to a coach with a full
+     roster. The panel now takes athletes.length, which is a number this
+     component actually knows. Deleted rather than left for a future reader:
+     lint caught it the moment its last caller moved, and an unused aggregate
+     over data we do not have is what produced the wrong sentence. */
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
   const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
@@ -983,6 +1105,34 @@ export default function CoachWorkspace() {
     }
   }, []);
 
+  /* This coach's own development goals and recorded work. Self-scoped in the
+     same way as the credential read above -- the route takes no account id. */
+  const loadDevelopment = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/development`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('development');
+      }
+      const payload = (await response.json()) as {
+        goals?: CoachDevelopmentGoal[];
+        activities?: CoachDevelopmentActivity[];
+      };
+      setCoachGoals(payload.goals ?? []);
+      setCoachActivities(payload.activities ?? []);
+      setDevelopmentState('loaded');
+    } catch {
+      // "You have written nothing down" is a claim about the coach; this is a
+      // failure to read. A coach who believed the first would re-write a goal
+      // they already had.
+      setCoachGoals([]);
+      setCoachActivities([]);
+      setDevelopmentState('unavailable');
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPainReports();
@@ -990,7 +1140,8 @@ export default function CoachWorkspace() {
     void loadLiveRun();
     void loadTodayClasses();
     void loadCredentials();
-  }, [loadPainReports, loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials]);
+    void loadDevelopment();
+  }, [loadPainReports, loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials, loadDevelopment]);
 
   useEffect(() => {
     void (async () => {
@@ -1052,6 +1203,7 @@ export default function CoachWorkspace() {
               initials: string;
               ring_name: string | null;
               photo_available: boolean;
+              is_mine?: boolean;
             }>;
           };
           const byAthlete = new Map((faces.items ?? []).map((face) => [face.athlete_id, face]));
@@ -1062,6 +1214,7 @@ export default function CoachWorkspace() {
             athlete.initials = face.initials;
             athlete.ringName = face.ring_name;
             athlete.photoAvailable = face.photo_available;
+            athlete.isMine = face.is_mine;
           }
         }
       } catch {
@@ -1341,6 +1494,82 @@ export default function CoachWorkspace() {
     }
   }
 
+  /**
+   * Clear an athlete's ring name.
+   *
+   * The server decides whether this coach may: POST
+   * /api/pilot/profile/nickname/clear runs assertViewerMayReachSubject and
+   * then requires organization admin, coach_of_subject or guardian_of_subject,
+   * and answers a refusal as a hidden 404. Nothing is re-decided here. What
+   * this screen contributes is that the control is only OFFERED where it can
+   * work -- the faces read that supplies `ringName` is the coach's own roster,
+   * and decideRingName only returns a name to someone the ring name is already
+   * visible to -- so a coach is not handed a button whose only outcome is a
+   * refusal about a child they cannot see.
+   *
+   * On success the row's ring name is dropped locally rather than the roster
+   * being refetched. The refetch would be honest too, but it is a four-request
+   * reload of a list the coach is standing in the middle of, and the one fact
+   * that changed is known exactly.
+   */
+  async function clearRingName(athleteId: string, accountId: string) {
+    if (nicknameClearBusyId) return;
+
+    setNicknameClearBusyId(athleteId);
+    setNicknameClearErrors((prev) => ({ ...prev, [athleteId]: '' }));
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/profile/nickname/clear`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        locked_for_hours?: number;
+      };
+
+      if (!response.ok || !payload.ok) {
+        /* A 404 here is the route's hidden-not-found, which is what it answers
+           BOTH for "no such athlete" and for "you are not allowed to". It is
+           deliberately not decoded into either -- guessing would either accuse
+           a coach of overreach or tell them a child does not exist, and only
+           one of those is true. */
+        setNicknameClearErrors((prev) => ({
+          ...prev,
+          [athleteId]: payload.error || 'The ring name was not cleared. Ask an organization admin.',
+        }));
+        return;
+      }
+
+      setAthletes((prev) => prev.map((athlete) => (
+        athlete.id === athleteId ? { ...athlete, ringName: null } : athlete
+      )));
+      /* Number.isFinite, not `?? NICKNAME_LOCK_HOURS`. A response that did not
+         carry the lock is a response that did not say how long -- substituting
+         the client's own constant would put a duration in front of a coach
+         that no server ever stated, which is the whole failure mode this
+         platform keeps writing comments about. Absent stays absent, and the
+         rendering below says "cleared" without a number. */
+      const lockedHours = payload.locked_for_hours;
+      setNicknameClearedHours((prev) => ({
+        ...prev,
+        [athleteId]: typeof lockedHours === 'number' && Number.isFinite(lockedHours) ? lockedHours : null,
+      }));
+      setNicknameClearArmedId(null);
+    } catch {
+      setNicknameClearErrors((prev) => ({
+        ...prev,
+        [athleteId]: 'Network error -- the ring name was NOT cleared. Please try again.',
+      }));
+    } finally {
+      setNicknameClearBusyId(null);
+    }
+  }
+
   // The review picker's session read. GET /api/pilot/sessions/list is the
   // existing per-athlete session read; its own requireRole +
   // assertActorCanAccessAthlete decide, server-side, whether this coach may
@@ -1358,18 +1587,31 @@ export default function CoachWorkspace() {
         `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`,
         { method: 'GET', credentials: 'include' },
       );
+      /* THE CHECK IS REPEATED AFTER EVERY await, NOT ONLY AFTER THE FETCH.
+         Reading the body is a second suspension point, and a coach who
+         changes athlete during it used to get the previous athlete's session
+         list rendered under the new athlete's name -- one athlete's training
+         record attributed to another, which is the failure this guard exists
+         to prevent and the one it did not cover. Every state-setting branch
+         below is now downstream of a check that no await follows. */
       if (reviewAthleteRef.current !== athleteId) {
         return;
       }
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (reviewAthleteRef.current !== athleteId) {
+          return;
+        }
         setReviewSessionsError(payload.error || 'Sessions could not be loaded.');
         setReviewSessionsState('unavailable');
         return;
       }
 
       const payload = (await response.json()) as { items?: unknown[] };
+      if (reviewAthleteRef.current !== athleteId) {
+        return;
+      }
       // The list route orders by date alone, which cannot separate two
       // sessions on the same day; the athlete workspace re-orders the same
       // read on created_at for the same reason.
@@ -1408,6 +1650,11 @@ export default function CoachWorkspace() {
         return;
       }
       const payload = (await response.json()) as { items?: unknown[] };
+      // Same second suspension point, same re-check: reviews written about
+      // one session must not appear under another.
+      if (reviewSessionRef.current !== sessionId) {
+        return;
+      }
       setSessionReviews(
         (payload.items ?? [])
           .map(normalizeSessionReview)
@@ -1867,10 +2114,21 @@ export default function CoachWorkspace() {
         {/* ROLE SUMMARY PANEL */}
         <CoachSummaryPanel
           sessionStatus={sessionStatus}
-          activeAthletes={activeAthletes}
-          injuryFlags={injuryFlags}
-          reviewsNeeded={reviewsNeeded}
-          assignmentsDue={assignmentsDue}
+          /* THE ROSTER, not the attendance-derived count. activeAthletes
+             below is athletes whose attendance is not 'Unknown', and
+             loadAthletes hardcodes 'Unknown' for everyone because there is no
+             attendance feed -- so it is always 0, and the panel's empty-floor
+             branch fired for every coach, always. */
+          activeAthletes={athletes.length}
+          /* null where no feed answered, which the panel renders as a
+             disclosure instead of a number. injuryFlag is null for every
+             athlete (no feed), and the two queue counts are derived from
+             coachTasks, which is empty whenever the review queue could not be
+             read -- a 0 there tells a coach their queue is clear when nobody
+             could look. */
+          injuryFlags={injuryTrackingAvailable ? injuryFlags : null}
+          reviewsNeeded={shadowQueueUnavailable ? null : reviewsNeeded}
+          assignmentsDue={shadowQueueUnavailable ? null : assignmentsDue}
         />
 
         {/* MODE TOGGLE */}
@@ -2048,8 +2306,23 @@ export default function CoachWorkspace() {
                 </article>
                 <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
                   <p className="t-eyebrow">Open Reviews</p>
-                  <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
-                  <p className="t-muted">Resolve queue items this session</p>
+                  {/* Its two siblings above both guard this exact case and
+                      both say so out loud ("do not read this as zero flags",
+                      "do not read this as no injuries"). This tile alone
+                      rendered the bare count, and coachTasks is empty whenever
+                      the queue could not be read -- so it printed a confident
+                      0 over an unread queue. */}
+                  {shadowQueueUnavailable ? (
+                    <>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Unavailable</p>
+                      <p className="t-muted">The review queue could not be read -- do not read this as &quot;no reviews&quot;</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
+                      <p className="t-muted">Resolve queue items this session</p>
+                    </>
+                  )}
                 </article>
               </section>
 
@@ -2242,10 +2515,20 @@ export default function CoachWorkspace() {
                       still stops short of eating the panel. */}
                   <div className="space-y-2 max-h-[55vh] lg:max-h-[61.8vh] overflow-y-auto">
                     {athletes.map(athlete => (
+                      /* The row and its takedown are SIBLINGS, not nested. The
+                         row is itself a button -- the whole card selects the
+                         athlete -- and a button inside a button is invalid HTML
+                         that browsers resolve by dropping one of them, so the
+                         only way to put a second control on this card is beside
+                         it. The wrapper carries the key for that reason and
+                         does nothing else. */
+                      <div key={athlete.id}>
                       <button
                         type="button"
-                        key={athlete.id}
-                        onClick={() => setSelectedAthleteId(athlete.id)}
+                        onClick={() => {
+                          setSelectedAthleteId(athlete.id);
+                          setAthleteChosenByCoach(true);
+                        }}
                         className={`w-full p-[var(--s3)] border rounded-[var(--r-md)] cursor-pointer transition text-left ${
                           selectedAthleteId === athlete.id
                             ? 'bg-[rgb(var(--brass-400-rgb)_/_.10)] border-[color:var(--brass-500)]'
@@ -2297,6 +2580,109 @@ export default function CoachWorkspace() {
                           <p className="mt-[var(--s2)]"><StatusBadge tone="locked" label="Injury flag active" /></p>
                         )}
                       </button>
+
+                      {/* THE TAKEDOWN, shown only on the athlete the coach
+                          deliberately selected.
+
+                          Not on every row: twenty children with a "remove"
+                          control each, an inch from a readiness dot, on a
+                          tablet held in a gym, is a mis-tap waiting to happen
+                          on a change that has no undo. Selecting the athlete
+                          is the first of the two deliberate acts; arming the
+                          confirm is the second.
+                          `athleteChosenByCoach` is what makes the first act
+                          real: the roster seeds a selection when it loads, and
+                          a selection nobody made is not a deliberate act.
+
+                          Not offered at all where there is nothing to remove
+                          (`ringName`), nothing to address it to (`accountId`),
+                          or no standing to remove it (`isMine`). The first two
+                          travel together -- the roster route only produces a
+                          ring name from a profile it found by account id --
+                          but the control asserts both rather than inferring
+                          one from the other. The third is the one that is NOT
+                          implied: a covering coach sees an adult athlete's
+                          ring name and is still 'organization_staff' to
+                          resolveRelationship, so offering them this button
+                          would offer a 404. */}
+                      {athleteChosenByCoach && selectedAthleteId === athlete.id
+                        && athlete.ringName && athlete.accountId && athlete.isMine && (
+                        <div className="mt-[var(--s2)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                          {nicknameClearArmedId === athlete.id ? (
+                            <>
+                              <p>
+                                Removing &ldquo;{athlete.ringName}&rdquo; takes it off every screen
+                                now. {athlete.name} cannot set a new ring name for{' '}
+                                {NICKNAME_LOCK_HOURS} hours. This cannot be undone.
+                              </p>
+                              <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
+                                <button
+                                  type="button"
+                                  disabled={nicknameClearBusyId === athlete.id}
+                                  onClick={() => void clearRingName(athlete.id, athlete.accountId as string)}
+                                  className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {nicknameClearBusyId === athlete.id ? 'Removing…' : 'Remove it'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={nicknameClearBusyId === athlete.id}
+                                  onClick={() => setNicknameClearArmedId(null)}
+                                  className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Keep it
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              /* The visible label is short because the row it
+                                 sits under already says whose it is; the
+                                 accessible name is not, because a screen reader
+                                 user arriving by button list gets no such row.
+                                 Both name the same action. */
+                              aria-label={`Remove ring name “${athlete.ringName}” from ${athlete.name}`}
+                              onClick={() => {
+                                setNicknameClearArmedId(athlete.id);
+                                setNicknameClearErrors((prev) => ({ ...prev, [athlete.id]: '' }));
+                              }}
+                              className="btn btn--ghost"
+                            >
+                              Remove ring name
+                            </button>
+                          )}
+                          {nicknameClearErrors[athlete.id] && (
+                            /* --restricted-ink, not --locked-ink. The
+                               safeguarding red is reserved for the top of the
+                               safety ladder -- a person who may not
+                               participate. A refused or failed takedown is a
+                               request that did not land, and painting it in
+                               the participation-block red teaches a coach to
+                               read that colour as "something went wrong".
+                               src/design/safeguardingRedReservation.test.ts
+                               caught this exact substitution here. */
+                            <p className="mt-[var(--s2)] text-[color:var(--restricted-ink)]">
+                              {nicknameClearErrors[athlete.id]}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* The receipt. Outlives the control above -- once the
+                          ring name is gone the block that offered to remove it
+                          is gone too, and a coach who looked away would
+                          otherwise see a row that simply never had one. It says
+                          the lock the SERVER reported, and says nothing about a
+                          duration when the server did not state one. */}
+                      {athlete.id in nicknameClearedHours && (
+                        <p className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                          {typeof nicknameClearedHours[athlete.id] === 'number'
+                            ? `Ring name removed. ${athlete.name} cannot set a new one for ${nicknameClearedHours[athlete.id]} hours.`
+                            : `Ring name removed. ${athlete.name} cannot set a new one until the gym's lock expires.`}
+                        </p>
+                      )}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -2536,26 +2922,102 @@ export default function CoachWorkspace() {
                   </Link>
                 </div>
 
+                {/* WHAT THIS PANEL USED TO SAY. "There is no backend store for
+                    completion yet, so progress through these topics cannot be
+                    recorded here." That was true when it was written and is no
+                    longer: /api/pilot/coach/development stores what a coach
+                    did, and this shows it back.
+
+                    SELF-ENTERED, AND SAID SO. What a coach records about their
+                    own learning is not verified by anyone, and it sits on the
+                    same tab as the credential list, which IS verified by an
+                    administrator. Two records of very different standing, one
+                    screen: the difference is stated rather than left to be
+                    inferred.
+
+                    NO COMPLETION MARKS ON THE TOPIC LIST. The five topics are
+                    a reference list and stay one. Ticking them off would need
+                    this platform to decide what "completed Adaptive Coaching"
+                    means, which is coaching curriculum it does not possess --
+                    so a topic a coach worked through is recorded as work they
+                    did, in their own words, and shows up in the list below
+                    like any other. */}
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                  <h3 className="t-eyebrow">Development Topics</h3>
-                  <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-                  <p className="t-body text-[color:var(--bone-400)]">
-                    Reference list of the coach development curriculum. There is no backend store for
-                    completion yet, so progress through these topics cannot be recorded here.
+                  <h3 className="t-eyebrow">Your Development Work</h3>
+
+                  {developmentState === 'loading' && (
+                    <p className="t-muted">Loading your development record...</p>
+                  )}
+
+                  {developmentState === 'unavailable' && (
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                        Your development record could not be read. This does not mean nothing is
+                        recorded — nobody could look. Open your development page to check.
+                      </p>
+                    </div>
+                  )}
+
+                  {developmentState === 'loaded' && coachActivities.length === 0 && (
+                    <p className="t-body text-[color:var(--bone-400)]">
+                      You have not recorded any development work yet.
+                    </p>
+                  )}
+
+                  {developmentState === 'loaded' && coachActivities.length > 0 && (
+                    <>
+                      <p className="t-body text-[color:var(--bone-400)]">
+                        What you recorded doing, most recent first. Self-entered: this is your own note
+                        that you did it, and it confirms nothing — the verified record is the
+                        certifications panel beside this one.
+                      </p>
+                      {/* SAYING THE LIST IS PARTIAL, because the heading above
+                          presents it as the record. A coach with forty entries
+                          saw five and had nothing on screen telling them so --
+                          the same wrong inference the failed-read copy three
+                          lines up works to prevent. */}
+                      {coachActivities.length > 5 && (
+                        <p className="t-muted m-0">
+                          Showing the 5 most recent of {coachActivities.length}. The full record is
+                          on your development page.
+                        </p>
+                      )}
+                      <ul className="space-y-[var(--s3)]">
+                        {coachActivities.slice(0, 5).map((item) => (
+                          <li
+                            key={item.activity_id}
+                            className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]"
+                          >
+                            <p className="t-body font-semibold">{item.title}</p>
+                            {/* Every optional part appears only when it was
+                                recorded, so a row with no provider renders one
+                                clean line rather than a dangling separator. */}
+                            <p className="t-muted">
+                              {[
+                                formatGymDay(item.occurred_on) ?? item.occurred_on,
+                                item.provider || null,
+                              ].filter(Boolean).join(' · ')}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {/* Read from the shared list rather than recited. The same
+                      five topics were hand-typed here as prose, so the
+                      development page could gain or lose one and this hub
+                      would go on naming the old set -- two copies of a list
+                      that is explicitly "not a syllabus" is how one of them
+                      quietly becomes the authoritative one. */}
+                  <p className="t-muted">
+                    Topics some coaches work through: {COACH_DEVELOPMENT_TOPIC_PROMPTS.join(', ')}.
+                    A reference list, not a syllabus and not a checklist.
                   </p>
-                  <ul className="space-y-[var(--s3)]">
-                    {[
-                      'Boxing Technique Instruction',
-                      'Youth Development Psychology',
-                      'Injury Prevention Basics',
-                      'Class Management Skills',
-                      'Adaptive Coaching'
-                    ].map((topic) => (
-                      <li key={topic} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-sm)]">
-                        {topic}
-                      </li>
-                    ))}
-                  </ul>
+
+                  <Link href="/coach/development" className="btn">
+                    Your development
+                  </Link>
                 </div>
               </div>
             </div>
@@ -2564,49 +3026,92 @@ export default function CoachWorkspace() {
           {/* GOALS */}
           {activeTab === 'goals' && (
             <div className="space-y-6 animate-fadeIn">
+              {/* THE HELP PANEL CHANGED WITH THE FEATURE. It used to promise
+                  "SMART framework", "specific, measurable goals" and "track
+                  progress monthly" -- guidance for a surface that measured
+                  things. Nothing here measures anything, so guidance telling a
+                  coach to make their goals measurable would be describing a
+                  product that does not exist. */}
               <HelpPanel
                 title="Coach Goals"
-                description="Set and track your coaching development goals using SMART framework."
+                description="What you are trying to get better at, in your own words. The platform stores it and reads it back; it does not score it or move it along."
                 usage={[
-                  'Create specific, measurable goals',
-                  'Link to certification or skill development',
-                  'Track progress monthly',
-                  'Reflect on achievements'
+                  'Write down what you are working on',
+                  'Say what it is for, in your own words',
+                  'Move a goal along yourself when you decide it has moved',
+                  'Record the courses, clinics and topics you worked through'
                 ]}
                 mistakes={[
-                  'Vague goals without metrics',
-                  'Unrealistic timeframes',
-                  'Not reviewing progress regularly'
+                  'Neglecting your own development',
+                  'Waiting until renewal deadlines',
+                  'Treating a recorded course as a certification -- it is not, and only an administrator verifies those'
                 ]}
               />
 
-              <p>
-                <span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span>
-              </p>
-              <p className="t-muted">
-                There is no backend feed for coach goals yet, so this section is always empty.
-              </p>
+              {developmentState === 'loading' && (
+                <p className="t-muted">Loading your development record...</p>
+              )}
 
+              {developmentState === 'unavailable' && (
+                <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                  <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                    Your goals could not be read. This is not a statement that you have none — nobody
+                    could look. Reload before writing anything down twice.
+                  </p>
+                </div>
+              )}
+
+              {developmentState === 'loaded' && coachGoals.length === 0 && (
+                <p className="t-body text-[color:var(--bone-400)]">
+                  You have not written down a development goal yet.
+                </p>
+              )}
+
+              {/* NO PROGRESS BAR AND NO PERCENTAGE, and their absence is the
+                  reason this block was rewritten rather than pointed at a new
+                  feed. What stood here rendered `{goal.progress}%` and a bar
+                  sized by it, over three hardcoded goals that showed every
+                  coach the same figures. There is no progress column in
+                  pilot.coach_development_goals for it to read, so the shape
+                  cannot come back by accident. */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {coachGoals.map(goal => (
-                  <div key={goal.id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
-                    <div className="flex justify-between items-start gap-[var(--s3)]">
-                      <h4 className="font-semibold">{goal.title}</h4>
-                      <span className="plaque">{goal.category}</span>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[length:var(--t-xs)] mb-[var(--s2)]">
-                        <span className="text-[color:var(--bone-400)]">Progress</span>
-                        <span className="t-data">{goal.progress}%</span>
+                {developmentState === 'loaded' && coachGoals.map(goal => {
+                  /* Unguarded, this took the whole surface down rather than one
+                     row: an unrecognised status yields undefined and the next
+                     property read throws during render. An unknown state is
+                     shown as the word it arrived as, which is the honest
+                     rendering of a value this build does not understand.
+
+                     THE FALLBACK USED TO BE THE WRONG SHAPE -- it supplied a
+                     `className`, and this render reads `badge.tone`. Nothing
+                     caught it: `Record<K, V>` indexing is typed non-nullable,
+                     so `?? fallback` narrows to the left operand and the
+                     fallback's shape is checked against nothing. Indexing
+                     through a Partial is what makes the `??` real to the type
+                     checker, and therefore what makes the fallback's shape
+                     checked at all. */
+    const badge = (GOAL_STATUS_BADGE as Partial<Record<string, { readonly tone: BadgeTone; readonly label: string }>>)[goal.status]
+      ?? { tone: 'neutral' as BadgeTone, label: coachDevelopmentGoalStatusLabel(goal.status) };
+                  return (
+                    <div key={goal.goal_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                      <div className="flex justify-between items-start gap-[var(--s3)]">
+                        <h4 className="font-semibold">{goal.title}</h4>
+                        <StatusBadge tone={badge.tone} label={badge.label} />
                       </div>
-                      <div className="w-full rounded-[var(--r-sm)] bg-[rgba(0,0,0,.4)] h-2">
-                        <div className="rounded-[var(--r-sm)] bg-[var(--brass-500)] h-2" style={{width: `${goal.progress}%`}}></div>
-                      </div>
+                      <p className="t-body text-[color:var(--bone-300)]">{goal.development_focus}</p>
+                      {/* Only when there is one. A goal with no deadline shows
+                          no date line, rather than an empty "Due:" label. */}
+                      {goal.target_on ? (
+                        <p className="t-muted">Target date {formatGymDay(goal.target_on) ?? goal.target_on}</p>
+                      ) : null}
                     </div>
-                    <p className="t-muted">Due: {goal.dueDate}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
+              <Link href="/coach/development" className="btn">
+                Write or change a goal
+              </Link>
             </div>
           )}
 

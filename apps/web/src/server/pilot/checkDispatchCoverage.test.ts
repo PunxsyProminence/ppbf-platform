@@ -64,6 +64,23 @@ const caseArms = [
   ...workflow.matchAll(/^\s+([a-z0-9-]+)\)\s+run_one\s+([a-z0-9-]+)\s+pilot:check-([a-z0-9-]+)\s+;;$/gm),
 ].map((match) => ({ arm: match[1], label: match[2], script: match[3] }));
 
+/**
+ * Checks that answer a question the database does not hold.
+ *
+ * The read-only-transaction assertion at the bottom is an assertion about SQL,
+ * and a check that issues none cannot satisfy it. video-readiness reads three
+ * named variables off the deployed Container App's environment -- whether a
+ * quarantined video can promote at all is a fact about the deploy, not about
+ * any table -- so it holds no connection string and opens no transaction.
+ *
+ * An exemption from that assertion is not an exemption from being read-only,
+ * so it comes with a stricter one in its place: an exempt script must not carry
+ * a database client or a connection string at all. Absence of the write is then
+ * a property of the file rather than of Postgres, which is the only form of the
+ * guarantee available to a script that never connects.
+ */
+const NON_DATABASE_CHECKS = new Set(['video-readiness']);
+
 /** Every `- foo` under an `options:` block, flattened across both inputs. */
 const dropdownOptions = [...workflow.matchAll(/^\s+- ([a-z0-9-]+)$/gm)].map((match) => match[1]);
 
@@ -99,7 +116,18 @@ describe('every read-only check is dispatchable', () => {
   test('every dropdown option runs a real check', () => {
     // The reverse direction: an option with nothing behind it gives an operator
     // a green run and no answer, which reads as "checked and clean".
-    const notChecks = new Set(['all', 'list-check', 'staging', 'production']);
+    //
+    // `list-check` and `contested-overlap` are exempt because neither is a
+    // `pilot-check-*` database script: each has its own job in the workflow,
+    // reading the checkout or the GitHub API rather than Postgres. The
+    // exemption does NOT mean they go unchecked -- it means the check moved.
+    // contestedOverlapContract.test.ts asserts that its option is in the
+    // dropdown, that the job really invokes `node
+    // scripts/check-contested-overlap.mjs`, and that the job carries no
+    // `environment:` gate. Anything added here without that coverage
+    // somewhere is an option with nothing behind it, which is what this test
+    // exists to catch.
+    const notChecks = new Set(['all', 'list-check', 'contested-overlap', 'staging', 'production']);
     const orphaned = dropdownOptions.filter(
       (option) => !notChecks.has(option) && !scriptSlugs.includes(option),
     );
@@ -138,7 +166,23 @@ describe('every read-only check is dispatchable', () => {
     // scripts: Postgres refuses the write, rather than a reviewer noticing.
     for (const slug of checkSlugs) {
       const source = fs.readFileSync(path.join(scriptsDir, `pilot-check-${slug}.mjs`), 'utf8');
+      if (NON_DATABASE_CHECKS.has(slug)) {
+        // The substitute guarantee. A script listed here must not be able to
+        // reach a database at all -- so adding a query to one later, without
+        // also taking it off the list, fails here rather than shipping an
+        // unwrapped statement against production.
+        expect(source).not.toContain("from 'pg'");
+        expect(source).not.toContain('AZURE_POSTGRES_CONNECTION_STRING');
+        continue;
+      }
       expect(source).toContain('BEGIN TRANSACTION READ ONLY');
     }
+  });
+
+  test('the non-database exemption names only checks that exist', () => {
+    // A stale entry here silently disarms the assertion above for a check that
+    // was renamed, and a typo'd one disarms it for nothing while looking like
+    // it covers something. Neither is visible in the test that uses the set.
+    expect([...NON_DATABASE_CHECKS].filter((slug) => !checkSlugs.includes(slug))).toEqual([]);
   });
 });

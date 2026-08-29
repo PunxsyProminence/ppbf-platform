@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import ShadowDataDeletionQueue from '@/components/ShadowDataDeletionQueue';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
@@ -375,6 +376,15 @@ export default function AdminComplianceCenterPage() {
             Showing {dataAuthoritative ? filteredViolations.length : '--'} of {dataAuthoritative ? violations.length : '--'} loaded
           </div>
         </section>
+
+        {/* The data-subject request queue.
+            POST /api/pilot/shadow/data has filed deletion requests since the
+            SHADOW runtime slice and nothing anywhere read them, so its
+            promised "manual review" had nowhere to happen. It happens here:
+            this room is already where the platform puts rows a human owes an
+            answer to, and a deletion request parked on a SHADOW admin page
+            would be reachable and still never looked at. */}
+        <ShadowDataDeletionQueue />
 
         {/* Violations List */}
         <section>

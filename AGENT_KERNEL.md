@@ -19,6 +19,7 @@ Read additional documents only when the task actually touches their domain:
 - database/schema/migrations -> database rules in `docs/AI_CONTRIBUTOR_GUARDRAILS.md` and the existing migration/runner pattern
 - visual design -> `design-system/README.md` and `design-system/ppbf.css`
 - audit/provenance/history -> `docs/current/WORK_QUEUE.md`
+- writing an evidence claim in a PR body, status report or handoff -> `docs/current/EVIDENCE_APPLICABILITY.md`
 
 Do not preload archived audits, the historical queue, superseded plans, old build plans, or unrelated domain rules.
 
@@ -301,6 +302,45 @@ browser tool could not load the staging URL. Duty 5 therefore rests entirely
 on the owner opening the page. No lane should imply deployed behaviour is
 being independently watched while that holds.
 
+## Evidence is applicable, or it is not evidence (2026-08-28)
+
+**A green result is evidence only for the property and the execution path it
+actually exercised.**
+
+The two sections above cover a claim stated wider than its check, and who does
+the checking. This is the third failure and neither of them catches it: the
+check ran, the claim is exactly as wide as the check, and the check still could
+not have detected the defect.
+
+- `6a17e2ea` retracts a staging `all` run cited as proof that a repaired
+  `athlete-check-ins` readiness gate worked against a widened table. In that
+  loop the gate runs at position 86 and the widening at 113, so the gate was
+  evaluated before the table changed and the OLD broken gate would have passed
+  the same run.
+- PR #755 found three cases whose titles were claims about a route and whose
+  assertions compared literals in the test file. Adding a tenth role to the
+  `PilotRole` union left 4 suites and 61 tests green.
+- PR #785: the consent gate and the withdrawal sweep were each covered, the
+  interleaving they jointly guarantee was not, and the missed failure is a
+  video of a minor staying published after consent was withdrawn.
+- PR #814 asserted the word `Unavailable` appeared on the coach screen. It
+  already appeared elsewhere, so the case was green while the target tiles
+  still rendered `0`.
+
+So for a material claim -- authorization, safety, privacy, safeguarding, data
+integrity, a race, a deployment -- say which **execution path** the instrument
+ran and what the evidence does **not** establish. Where the claim is about
+something being prevented, a test nobody has watched go red is a hypothesis.
+Where the claim is about a deployed environment, the run has to have been
+against the state that makes the change observable.
+
+`docs/current/EVIDENCE_APPLICABILITY.md` carries the record format, the
+evidence ladder, which instrument fits which claim, and the cases above in
+full. `apps/web/scripts/check-evidence-applicability.mjs` grades the record's
+FORM in CI and says so in as many words: a structurally complete record is not
+a verified claim. Whether the instrument measures the claim is a judgement, and
+there is no score for it.
+
 ## Authority doctrine (owner decision, 2026-08-20)
 
 This system is implementation and decision support. It is not the final
@@ -366,10 +406,21 @@ It is the only lane that merges or deploys.
 A build lane MAY: create branches, write code and tests, open pull requests,
 investigate and report findings.
 
-A build lane MAY NOT: merge to `main`; dispatch `apply-migrations`,
-`deploy-staging` or `deploy-production`; decide product scope; remove or
+A build lane MAY ALSO, per OD-2026-08-29-006: merge its OWN pull requests to
+`main` once CI is green and they are mergeable, and dispatch `deploy-staging`
+and staging migrations. This replaced an earlier prohibition after the owner
+closed the other workflows -- on 2026-08-29 five green pull requests sat
+unmergeable for about three and a half hours with no build work possible
+behind them.
+
+A build lane MAY NOT: merge ANOTHER lane's pull request; dispatch
+`deploy-production` or production migrations; decide product scope; remove or
 disable a feature because it looks out of scope; fix unrelated defects inside
 its PR; or act on a scoping question as though it were a decision.
+
+Production is where the split is, and for a reason: an applied migration is not
+undone by re-running a workflow. Green CI remains a precondition, never an
+authorization to merge over a review.
 
 ### A question is not an instruction
 

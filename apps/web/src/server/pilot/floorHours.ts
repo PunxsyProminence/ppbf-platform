@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { BOARD_MINIMUM_COHORT_SIZE } from './boardSummary';
 import { query, queryOne } from './db';
 
 // pilot.activity_log_adjustments, pilot.v_activity_effective_minutes,
@@ -97,6 +98,9 @@ export async function listActivityAdjustments(
 
 export type FloorHoursPeriodKind = 'all_time' | 'year' | 'quarter';
 
+/** Whether a public row's participant count cleared the k-anonymity floor. */
+export type FloorHoursParticipantStatus = 'available' | 'insufficient_data';
+
 export interface FloorHoursPublicRow {
   organization_id: string;
   activity_domain: string;
@@ -105,7 +109,11 @@ export interface FloorHoursPublicRow {
   period_quarter: number | null;
   hours: string;
   sessions_recorded: string;
-  distinct_participants: string;
+  /** Null whenever participant_status is 'insufficient_data'. Never 0 for a
+   * suppressed cohort -- a withheld figure and a measured zero are different
+   * facts and stay distinguishable all the way to the caller. */
+  distinct_participants: string | null;
+  participant_status: FloorHoursParticipantStatus;
   first_recorded: string | null;
   last_recorded: string | null;
 }
@@ -118,7 +126,7 @@ export async function getFloorHoursPublic(
   organizationId: string,
   filter: { activityDomain?: string; periodKind?: FloorHoursPeriodKind } = {},
 ): Promise<FloorHoursPublicRow[]> {
-  return query<FloorHoursPublicRow>(
+  const rows = await query<Omit<FloorHoursPublicRow, 'participant_status'>>(
     `select organization_id, activity_domain, period_kind, period_year, period_quarter, hours,
             sessions_recorded, distinct_participants, first_recorded, last_recorded
      from pilot.v_floor_hours_public
@@ -128,6 +136,45 @@ export async function getFloorHoursPublic(
      order by activity_domain, period_kind, period_year desc nulls last, period_quarter desc nulls last`,
     [organizationId, filter.activityDomain ?? null, filter.periodKind ?? null],
   );
+
+  /* K-ANONYMITY ON THE UNAUTHENTICATED SURFACE.
+   *
+   * This is the only floor-hours reader with no session behind it, and until
+   * now it was the LEAST protected: pilot.v_floor_hours_public exposed
+   * distinct_participants with no floor at all, while board members -- who are
+   * authenticated, hold a governance role, and see the same class of figure --
+   * get everything below BOARD_MINIMUM_COHORT_SIZE withheld by
+   * boardSummary.ts. A public page being more revealing than the governance
+   * one is backwards, so the same floor applies here.
+   *
+   * "1 participant, 2.5 hours, first and last recorded on these dates" is a
+   * re-identification vector in a gym this size. The participant COUNT is the
+   * part that carries it, so the count is what is withheld.
+   *
+   * HOURS AND SESSIONS ARE DELIBERATELY NOT SUPPRESSED. They are organization
+   * totals over activity rows, not over people, and they are the entire point
+   * of a public floor-hours page. Withholding them would cost the surface its
+   * purpose without closing the vector the count opens.
+   *
+   * RESIDUAL, STATED HONESTLY RATHER THAN PAPERED OVER: a very small hours
+   * figure still narrows the cohort by inference, and the first/last dates
+   * still bound when activity happened. This closes the direct disclosure, not
+   * every inference from it. Tightening further is a product decision about
+   * what a public page is for, not something to smuggle in here.
+   *
+   * The floor is IMPORTED rather than restated. boardSummary.ts exports it
+   * with the note that other aggregates should hold "this same floor rather
+   * than inventing a second, weaker one" -- a public surface inventing its own
+   * number is exactly that failure. */
+  return rows.map((row) => {
+    const participants = Number(row.distinct_participants);
+    const cleared = Number.isFinite(participants) && participants >= BOARD_MINIMUM_COHORT_SIZE;
+    return {
+      ...row,
+      distinct_participants: cleared ? row.distinct_participants : null,
+      participant_status: cleared ? 'available' : 'insufficient_data',
+    } satisfies FloorHoursPublicRow;
+  });
 }
 
 export interface FloorHoursAdminRow {
@@ -143,6 +190,92 @@ export interface FloorHoursAdminRow {
   sessions_recorded: string;
   first_recorded: string;
   last_recorded: string;
+}
+
+export interface ActivityLedgerRow {
+  organization_id: string;
+  activity_id: string;
+  person_account_id: string;
+  athlete_id: string | null;
+  activity_domain: string;
+  activity_type: string;
+  occurred_on: string;
+  recorded_minutes: number;
+  adjustment_minutes: number;
+  effective_minutes: number;
+}
+
+/** How many activity rows one read returns. */
+export const ACTIVITY_LEDGER_LIMIT = 200;
+
+/**
+ * The rows behind a person's total, each with the activity_id a correction
+ * needs.
+ *
+ * THE REASON THIS EXISTS. recordActivityAdjustment above takes an
+ * `activity_id`. Every read this module offered returned AGGREGATES --
+ * per-person-per-domain-per-quarter totals with no activity identifier
+ * anywhere in them. So the correction path could not be driven from
+ * anything: an operator looking at "340 hours, boxing, Q3" had no way to
+ * discover which row was wrong or what to name in the adjustment. The
+ * append-only ledger was reachable in principle and unusable in practice.
+ *
+ * pilot.v_activity_effective_minutes is the view the migration already built
+ * for exactly this, and it is what both aggregate views are computed from --
+ * so this reads the same numbers the public clock does, one row at a time,
+ * rather than a second definition of them.
+ *
+ * PER-PERSON, and the parameter is REQUIRED for that reason. This module's
+ * header warns against adding a per-person query a public page could
+ * accidentally call. Making the account id mandatory means there is no
+ * call shape that returns the whole gym's ledger -- a caller must already
+ * know whose detail it is asking for, and the route above it is admin-gated
+ * exactly as getFloorHoursAdmin's is.
+ *
+ * Bounded, and the caller is told when the bound bit: a correction console
+ * that silently showed the newest 200 of somebody's 400 sessions would hide
+ * the older half, which is where a stale mistake is most likely to be
+ * sitting.
+ */
+export async function listPersonActivities(
+  organizationId: string,
+  personAccountId: string,
+  filter: { activityDomain?: string } = {},
+): Promise<{ rows: ActivityLedgerRow[]; total: number; limit: number }> {
+  if (!personAccountId.trim()) {
+    throw new Error('Missing person_account_id');
+  }
+
+  const rows = await query<ActivityLedgerRow>(
+    `select organization_id, activity_id, person_account_id, athlete_id, activity_domain,
+            activity_type, occurred_on, recorded_minutes, adjustment_minutes, effective_minutes
+     from pilot.v_activity_effective_minutes
+     where organization_id = $1
+       and person_account_id = $2
+       and ($3::text is null or activity_domain = $3)
+     order by occurred_on desc, activity_id
+     limit $4`,
+    [organizationId, personAccountId, filter.activityDomain ?? null, ACTIVITY_LEDGER_LIMIT],
+  );
+
+  /* Counted, not inferred from rows.length === limit. That comparison
+     reports a truncation for somebody with exactly 200 sessions and nothing
+     missing -- the same proxy-for-the-property mistake the SHADOW export
+     carried until it was made to count. */
+  const counted = await queryOne<{ total: number }>(
+    `select count(*)::int as total
+     from pilot.v_activity_effective_minutes
+     where organization_id = $1
+       and person_account_id = $2
+       and ($3::text is null or activity_domain = $3)`,
+    [organizationId, personAccountId, filter.activityDomain ?? null],
+  );
+
+  return {
+    rows,
+    total: counted?.total ?? rows.length,
+    limit: ACTIVITY_LEDGER_LIMIT,
+  };
 }
 
 /**

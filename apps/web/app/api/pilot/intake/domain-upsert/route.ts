@@ -138,6 +138,10 @@ export async function POST(request: NextRequest) { // NOSONAR
         consentVersion: asString(body.payload.consent_version, 'v1'),
         status: asString(body.payload.status, 'signed'),
         notes: typeof body.payload.notes === 'string' ? body.payload.notes : undefined,
+        // signed_by_name is whatever the caller typed off the paper form. This
+        // is the account that typed it -- the only party to this row the
+        // platform can actually identify.
+        recordedByAccountId: principal.accountId,
       });
     } else if (entityType === 'assessment') {
       entityId = await createAssessment({

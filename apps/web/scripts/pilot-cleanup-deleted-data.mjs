@@ -98,6 +98,120 @@ if (requestedMaxRows > MAX_ROWS_CEILING) {
 
 const pool = new Pool({ connectionString });
 
+/**
+ * The constraint that refused a delete, or the SQLSTATE if Postgres named none.
+ *
+ * A constraint name is a schema identifier, not personal data, so it is safe in
+ * a log this job writes unattended about a database of minors' records. Nothing
+ * else from the error is emitted -- `detail` carries the offending key value.
+ */
+function blockedBy(error) {
+  if (error && typeof error === 'object') {
+    if (typeof error.constraint === 'string' && error.constraint) return error.constraint;
+    if (typeof error.code === 'string' && error.code) return error.code;
+  }
+  return 'UNKNOWN';
+}
+
+/**
+ * Does the deleting, and is run in BOTH modes -- the dry run rolls it back.
+ *
+ * WHY THE DRY RUN DELETES. It did not, and that is how the defect below went
+ * unseen: the nightly run issued `select count(*)` and reported a healthy
+ * number every night, while the delete those rows were counted for could not
+ * execute at all. A count is not a rehearsal. This attempts the real
+ * statements and rolls them back, so the number the job reports is a number it
+ * has actually earned.
+ *
+ * EACH ACCOUNT IS ITS OWN SAVEPOINT. Before this, one account Postgres refused
+ * aborted the whole transaction -- taking the athlete purge and the audit row
+ * with it -- so a single blocked guardian meant the sweep deleted NOTHING and
+ * said only `{"event":"retention.cleanup.failed","code":"23503"}`. Retention is
+ * per-family; one family the platform cannot yet purge must not stop the
+ * others, and the constraint that blocked it has to reach the log by name or
+ * nobody can act on it.
+ */
+async function attemptPurge(client, athletes, accountIds) {
+  const blocked = {};
+  const record = (error) => {
+    const name = blockedBy(error);
+    blocked[name] = (blocked[name] ?? 0) + 1;
+  };
+
+  /* ONE ATHLETE AT A TIME, for the same reason as the accounts below. Almost
+     everything hanging off pilot.athletes cascades -- 60 of the 61 foreign
+     keys pointing at it -- but pilot.one_percent_nominations restricts, and
+     onePercentClub.ts writes those by athlete_id. As a single statement, one
+     nominated athlete would take every OTHER athlete's purge down with it. */
+  let athletesDeleted = 0;
+  for (const athlete of athletes) {
+    await client.query('savepoint purge_athlete');
+    try {
+      await client.query(
+        'delete from pilot.athletes where organization_id = $1 and athlete_id = $2',
+        [athlete.organization_id, athlete.athlete_id],
+      );
+      await client.query('release savepoint purge_athlete');
+      athletesDeleted += 1;
+    } catch (error) {
+      await client.query('rollback to savepoint purge_athlete');
+      record(error);
+    }
+  }
+
+  let accountsDeleted = 0;
+  for (const accountId of accountIds) {
+    await client.query('savepoint purge_account');
+    try {
+      /* THE GUARDIAN'S OWN RECORD GOES WITH THE ACCOUNT. Owner decision,
+         2026-08-28 (D-8): "delete the parents row too". pilot.parents holds
+         their name, phone and email -- the personal data this policy promises
+         to remove -- and its foreign key onto pilot.accounts restricts, so
+         until this statement existed no guardian who had ever been recorded as
+         a parent could be purged at all.
+
+         What follows it is deliberate and load-bearing: guardian_links is ON
+         DELETE CASCADE from pilot.parents, so the child-to-guardian links go
+         too; pilot.waivers.parent_id is ON DELETE SET NULL, so the waivers
+         themselves SURVIVE with their signed_by_name, type, status and dates
+         intact. Purging a withdrawn family must never destroy the documents
+         that authorised a minor's participation. */
+      /* THE POINTER IS CLEARED BY HAND, and it has to be. pilot.waivers has a
+         COMPOSITE foreign key onto pilot.parents -- (organization_id,
+         parent_id) -- declared ON DELETE SET NULL. Postgres applies SET NULL to
+         EVERY column in the key, so deleting the guardian record tries to null
+         waivers.organization_id too, and that column is NOT NULL: the delete
+         fails with 23502 and no constraint name. Nulling only parent_id first
+         means no waiver row still matches the key, so the referential action
+         never fires.
+
+         Found by running it, not by reading the schema: it surfaced as a bare
+         `{"23502": 1}` in this job's own blocked_by report. The foreign key's
+         shape is the real defect and is left alone here -- it is a schema
+         change to a different migration, and retention is the only path that
+         deletes a pilot.parents row today. */
+      await client.query(
+        `update pilot.waivers w
+            set parent_id = null
+           from pilot.parents p
+          where p.account_id = $1
+            and w.organization_id = p.organization_id
+            and w.parent_id = p.parent_id`,
+        [accountId],
+      );
+      await client.query('delete from pilot.parents where account_id = $1', [accountId]);
+      await client.query('delete from pilot.accounts where account_id = $1', [accountId]);
+      await client.query('release savepoint purge_account');
+      accountsDeleted += 1;
+    } catch (error) {
+      await client.query('rollback to savepoint purge_account');
+      record(error);
+    }
+  }
+
+  return { athletesDeleted, accountsDeleted, blocked };
+}
+
 async function main() {
   const client = await pool.connect();
 
@@ -106,15 +220,17 @@ async function main() {
     // so the rows counted are the rows removed.
     await client.query('begin');
 
-    const counts = await client.query(
-      `select
-         (select count(*)::int from pilot.athletes
-           where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})) as athletes,
-         (select count(*)::int from pilot.accounts
-           where deleted_at is not null and deleted_at < (now() - ${ACCOUNT_RETENTION})
-             and role = 'parent') as accounts`,
+    const expiredAccounts = await client.query(
+      `select account_id from pilot.accounts
+        where deleted_at is not null and deleted_at < (now() - ${ACCOUNT_RETENTION})
+          and role = 'parent'`,
     );
-    const { athletes, accounts } = counts.rows[0];
+    const expiredAthletes = await client.query(
+      `select organization_id, athlete_id from pilot.athletes
+        where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})`,
+    );
+    const athletes = expiredAthletes.rows.length;
+    const accounts = expiredAccounts.rows.length;
     const total = athletes + accounts;
 
     if (total > maxRows) {
@@ -131,6 +247,12 @@ async function main() {
       return;
     }
 
+    const accountIds = expiredAccounts.rows.map((row) => row.account_id);
+    const outcome = total === 0
+      ? { athletesDeleted: 0, accountsDeleted: 0, blocked: {} }
+      : await attemptPurge(client, expiredAthletes.rows, accountIds);
+    const blockedCount = Object.values(outcome.blocked).reduce((sum, n) => sum + n, 0);
+
     if (!apply) {
       await client.query('rollback');
       console.log(JSON.stringify({
@@ -138,8 +260,16 @@ async function main() {
         athletes,
         accounts,
         total,
+        would_delete_athletes: outcome.athletesDeleted,
+        would_delete_accounts: outcome.accountsDeleted,
+        blocked: blockedCount,
+        blocked_by: outcome.blocked,
         note: 'set PPBF_RETENTION_APPLY=true to delete',
       }));
+      // A dry run that found rows it CANNOT delete is a failing monitor, not a
+      // report. Exiting non-zero is the whole point: retention is not
+      // happening, and the schedule is the only thing watching.
+      if (blockedCount > 0) process.exitCode = 1;
       return;
     }
 
@@ -149,27 +279,17 @@ async function main() {
       return;
     }
 
-    const athleteDelete = await client.query(
-      `delete from pilot.athletes
-        where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})
-        returning athlete_id`,
-    );
-    const accountDelete = await client.query(
-      `delete from pilot.accounts
-        where deleted_at is not null and deleted_at < (now() - ${ACCOUNT_RETENTION})
-          and role = 'parent'
-        returning account_id`,
-    );
-
     await client.query(
       `insert into pilot.audit_events (event_type, organization_id, entity_type, entity_id, details)
        values ($1, null, 'retention_cleanup', 'system', $2)`,
       [
         'data_purged',
         JSON.stringify({
-          athletes_deleted: athleteDelete.rows.length,
-          accounts_deleted: accountDelete.rows.length,
-          total_rows_deleted: athleteDelete.rows.length + accountDelete.rows.length,
+          athletes_deleted: outcome.athletesDeleted,
+          accounts_deleted: outcome.accountsDeleted,
+          total_rows_deleted: outcome.athletesDeleted + outcome.accountsDeleted,
+          blocked: blockedCount,
+          blocked_by: outcome.blocked,
         }),
       ],
     );
@@ -177,11 +297,17 @@ async function main() {
     await client.query('commit');
 
     console.log(JSON.stringify({
-      event: 'retention.cleanup.completed',
-      athletes: athleteDelete.rows.length,
-      accounts: accountDelete.rows.length,
-      total: athleteDelete.rows.length + accountDelete.rows.length,
+      event: blockedCount > 0 ? 'retention.cleanup.incomplete' : 'retention.cleanup.completed',
+      athletes: outcome.athletesDeleted,
+      accounts: outcome.accountsDeleted,
+      total: outcome.athletesDeleted + outcome.accountsDeleted,
+      blocked: blockedCount,
+      blocked_by: outcome.blocked,
     }));
+    // Rows WERE deleted and the audit row records exactly what, so this commits
+    // rather than throwing away good work -- but retention did not fully happen
+    // and the run must not read as green.
+    if (blockedCount > 0) process.exitCode = 1;
   } catch (error) {
     await client.query('rollback').catch(() => {});
     // Identifier only. This job runs against a database of minors' records and
