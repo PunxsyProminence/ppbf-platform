@@ -277,16 +277,24 @@ jobs:
           for (const missed of [
             ['apps/web/components/SomeNewSurface.tsx'],
             ['.github/workflows/backup.yml'],
-            // WAS coach-reviews/route.ts, and that turned `main` red. #868
-            // added 'apps/web/app/api/pilot/coach-reviews/' to the coach-E2E
+            // FICTIONAL, deliberately, like SomeNewSurface.tsx above.
+            //
+            // This slot held apps/web/app/api/pilot/coach-reviews/route.ts and
+            // that turned `main` red. #868 added
+            // 'apps/web/app/api/pilot/coach-reviews/' to the coach-E2E
             // predicate -- which was the whole point of #868 -- and #867 landed
             // four minutes later still asserting no predicate recognised it.
             // Each was green alone; nothing ever ran the pair, because #867 was
-            // behind main and never re-ran against it. Picking an example from
-            // a surface a journey may later claim makes this loop a hostage to
-            // the next predicate widening, so this one is a route in the parked
-            // payments slot instead.
-            ['apps/web/app/api/pilot/payments/webhook/route.ts'],
+            // behind main and never re-ran against it.
+            //
+            // What this loop pins is an invariant of the classifier: when
+            // unknownCode fires, unclassifiedPaths is never empty. That is a
+            // property of the code, not the coverage status of any route. A
+            // REAL path here couples the fixture to coverage, which is supposed
+            // to improve -- so every widening this step exists to ask for
+            // becomes a red main. Keep this path one no suite can ever
+            // legitimately claim.
+            ['apps/web/app/api/pilot/some-new-surface/route.ts'],
             ['docs/capabilities/modules/example.md', 'apps/web/src/docs/capabilityEvidence.test.ts'],
           ]) {
             const missedResult = classifyPaths(missed);
