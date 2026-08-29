@@ -274,26 +274,17 @@ jobs:
           // nothing to name. It holds by construction -- unknownCode requires
           // !docsOnly, and docsOnly is false exactly when some file is not
           // documentation -- and is pinned because a step downstream assumes it.
+          // These paths must be recognised by NO predicate, so they are
+          // deliberately synthetic where the tree could grow one. A real path
+          // here is a trap: #868 added 'apps/web/app/api/pilot/coach-reviews/'
+          // to isCoachE2ePath -- closing a genuine gap -- and that turned this
+          // fixture's coach-reviews/route.ts entry from unrecognised to
+          // recognised, reddening every PR built against main. Each PR was
+          // green alone. If you replace one of these with a real path to make
+          // the fixture "honest", you are re-arming that.
           for (const missed of [
             ['apps/web/components/SomeNewSurface.tsx'],
             ['.github/workflows/backup.yml'],
-            // FICTIONAL, deliberately, like SomeNewSurface.tsx above.
-            //
-            // This slot held apps/web/app/api/pilot/coach-reviews/route.ts and
-            // that turned `main` red. #868 added
-            // 'apps/web/app/api/pilot/coach-reviews/' to the coach-E2E
-            // predicate -- which was the whole point of #868 -- and #867 landed
-            // four minutes later still asserting no predicate recognised it.
-            // Each was green alone; nothing ever ran the pair, because #867 was
-            // behind main and never re-ran against it.
-            //
-            // What this loop pins is an invariant of the classifier: when
-            // unknownCode fires, unclassifiedPaths is never empty. That is a
-            // property of the code, not the coverage status of any route. A
-            // REAL path here couples the fixture to coverage, which is supposed
-            // to improve -- so every widening this step exists to ask for
-            // becomes a red main. Keep this path one no suite can ever
-            // legitimately claim.
             ['apps/web/app/api/pilot/some-new-surface/route.ts'],
             ['docs/capabilities/modules/example.md', 'apps/web/src/docs/capabilityEvidence.test.ts'],
           ]) {
