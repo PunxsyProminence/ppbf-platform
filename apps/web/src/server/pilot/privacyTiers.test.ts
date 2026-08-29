@@ -93,7 +93,7 @@ describe('each tier still holds the invariant it claims', () => {
 describe('every enforcedBy names real code', () => {
   const references = [
     ...Object.values(PRIVACY_TIER_DOCTRINE).flatMap((doctrine) => doctrine.enforcedBy),
-    ...Object.values(FIELD_TIERS).map((entry) => entry.enforcedBy),
+    ...Object.values(FIELD_TIERS).flatMap((entry) => entry.enforcedBy),
   ];
 
   it.each([...new Set(references)])('%s exists and contains its symbol', (reference) => {
