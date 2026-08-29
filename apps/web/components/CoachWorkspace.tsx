@@ -910,21 +910,15 @@ export default function CoachWorkspace() {
      many of your athletes are in today" -- and one whose denominator invites
      the percentage this lane keeps refusing. The per-athlete mark on each
      roster row is the feature; a gym-wide tally is a decision somebody should
-     make deliberately, not a side effect of wiring a feed. */
-     live run, which is a number a coach actually entered when they started the
-     delivery, so the roster-derived count has no reader left. It is not
-     re-added as an unused aggregate: the roster's attendance column is still
-     'Unknown' for everyone (see loadAthletes), and a second count over it
-     would only be another way to render nothing.
+     make deliberately, not a side effect of wiring a feed.
 
-     activeAthletes followed it, for the same reason and one step later. It
-     counted the roster minus Absent and Unknown -- but attendance is 'Unknown'
-     for everyone until a register is wired up, so it counted nobody and the
-     panel read "no athletes are assigned to you" to a coach with a full
-     roster. The panel now takes athletes.length, which is a number this
-     component actually knows. Deleted rather than left for a future reader:
-     lint caught it the moment its last caller moved, and an unused aggregate
-     over data we do not have is what produced the wrong sentence. */
+     activeAthletes went the same way and one step earlier, which #898
+     recorded: it counted the roster minus Absent and Unknown, over a column
+     that was 'Unknown' for everyone, so it counted nobody and told a coach
+     with a full roster that none were assigned to them. The panel takes
+     athletes.length instead. That reasoning survives this PR; the sentence
+     explaining it does not, because it turned on the column having no feed
+     and this is the change that gives it one. */
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
   const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
@@ -2207,11 +2201,6 @@ export default function CoachWorkspace() {
              feed exists now -- but the roster is still the right source for
              "is anybody assigned to you", because an empty floor and a floor
              nobody has marked in yet are different questions. */
-          /* THE ROSTER, not the attendance-derived count. activeAthletes
-             below is athletes whose attendance is not 'Unknown', and
-             loadAthletes hardcodes 'Unknown' for everyone because there is no
-             attendance feed -- so it is always 0, and the panel's empty-floor
-             branch fired for every coach, always. */
           activeAthletes={athletes.length}
           /* null where no feed answered, which the panel renders as a
              disclosure instead of a number. injuryFlag is null for every
