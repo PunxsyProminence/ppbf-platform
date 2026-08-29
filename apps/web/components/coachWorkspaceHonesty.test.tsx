@@ -4,6 +4,8 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { GYM_TIME_ZONE, formatGymDateNumeric } from '@/src/lib/gymTime';
+
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
 
@@ -225,7 +227,34 @@ function liveRunRow(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 /**
- * A scheduled class starting `hour`:00 on TODAY at the gym, as
+ * Midday at the gym, on whatever day it is there right now.
+ *
+ * `now + 1 hour` -- what this fixture used -- is the gym's TOMORROW for the
+ * last hour of every gym day. The dashboard filters classes to the gym's own
+ * calendar day, so between 11pm and midnight Eastern the "class scheduled
+ * today" was scheduled for tomorrow and the two tests below failed. Not a
+ * flake and not a race: a one-hour window, every day, in which the suite is
+ * red for a reason that has nothing to do with the code under test.
+ *
+ * Anchoring to midday keeps the fixture RELATIVE -- which is the reason it
+ * was built from the clock in the first place, and still right, since a
+ * frozen literal would drift out of "today" tomorrow -- while putting it
+ * twelve hours from either boundary. The shift is computed in the gym's zone
+ * from the same constant gymDayIso() uses, so the fixture and the filter
+ * cannot disagree about which day it is.
+ */
+function gymMiddayToday(): Date {
+  const now = new Date();
+  const gymHour = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: GYM_TIME_ZONE,
+    hour: 'numeric',
+    hour12: false,
+  }).format(now));
+  return new Date(now.getTime() + (12 - gymHour) * 60 * 60 * 1000);
+}
+
+/**
+ * A scheduled class starting around midday TODAY at the gym, as
  * GET /api/pilot/scheduler returns it in `classes`.
  *
  * Built from the current instant rather than a frozen literal because the
@@ -234,7 +263,7 @@ function liveRunRow(overrides: Record<string, unknown> = {}): Record<string, unk
  */
 function classToday(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const now = new Date();
-  const start = new Date(now.getTime() + 60 * 60 * 1000);
+  const start = gymMiddayToday();
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
     class_id: 'cls_1',
@@ -340,6 +369,41 @@ describe('the hub does not deny a capability the platform has', () => {
 
     expect(screen.queryByText('No session in progress.')).not.toBeNull();
     expect(screen.queryAllByText(/could not be checked/i)).toHaveLength(0);
+  });
+});
+
+/*
+ * THE FIXTURE ITSELF, TESTED, because it is the thing that was wrong.
+ *
+ * The two tests below assert that a class scheduled today is drawn under
+ * today's heading. They can only do that if the fixture really does schedule
+ * one for today -- and for the last hour of every gym day, `now + 1 hour`
+ * did not. The suite went red at 11pm Eastern and green again at midnight,
+ * for a reason with nothing to do with the code under test.
+ *
+ * So the fixture is checked at the boundary hours rather than at whatever
+ * hour the suite happens to run. `formatGymDateNumeric` is the component's
+ * own filter (CoachWorkspace's loadTodayClasses compares exactly these two
+ * values), so this asserts against the real comparison and not a restatement
+ * of it.
+ */
+describe('the "class scheduled today" fixture is scheduled today, at every hour', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test.each([
+    ['the last hour of the gym\'s day', '2026-08-29T03:30:00Z'],
+    ['the first hour of the next one', '2026-08-29T04:30:00Z'],
+    ['the middle of the gym\'s afternoon', '2026-08-29T18:00:00Z'],
+    ['the small hours', '2026-08-29T07:00:00Z'],
+    ['a winter instant, when the offset is an hour different', '2026-01-15T04:30:00Z'],
+  ])('holds at %s', (_label, instant) => {
+    jest.useFakeTimers().setSystemTime(new Date(instant));
+
+    const scheduled = classToday().start_at as string;
+    expect([instant, formatGymDateNumeric(scheduled)])
+      .toEqual([instant, formatGymDateNumeric(new Date())]);
   });
 });
 
