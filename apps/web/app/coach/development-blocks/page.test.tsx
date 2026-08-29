@@ -980,6 +980,19 @@ describe('a block list never lands under the wrong athlete', () => {
 });
 
 describe('objectives: what a block is trying to move', () => {
+
+/* The sessions panel renders inline here and behind a toggle once #843 makes
+   the block panels lazy. Both are correct; a test that reaches the session
+   card has to work either way, so it opens the panel when there is one to
+   open and does nothing when the card is already on screen. */
+async function openSessionsPanel() {
+  const toggle = screen.queryByRole('button', { name: 'Sessions' });
+  if (!toggle) return;
+  await act(async () => {
+    fireEvent.click(toggle);
+  });
+}
+
   async function openObjectives(stubs: Stubs = {}) {
     const fetchMock = await renderPage({ blocks: [blockRow()], ...stubs });
     await pickAthlete('ath-1');
@@ -1090,6 +1103,9 @@ describe('objectives: what a block is trying to move', () => {
     // Step 1 landed: the panel has the plan.
     expect(document.body.textContent ?? '').toContain('Settle after a clean shot.');
 
+    // The session card carries the marking controls. Its read succeeds here.
+    await openSessionsPanel();
+
     // From here the read-back fails. The write itself still succeeds.
     stubs.sessionObjectivesOk = false;
     await act(async () => {
@@ -1116,6 +1132,7 @@ describe('objectives: what a block is trying to move', () => {
       sessionObjectivesOk: false,
     });
     await pickAthlete('ath-1');
+    await openSessionsPanel();
 
     /* The other half of the same rule. Keeping the data is only honest while
        the surface whose read failed still reports that nobody could look --
