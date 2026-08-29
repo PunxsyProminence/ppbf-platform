@@ -192,6 +192,7 @@ export async function DELETE(request: NextRequest) {
       runId,
       objectiveId,
       blockId,
+      principal.accountId,
     );
     // `removed: false` means there was nothing to remove, which is the state
     // the caller asked for either way. Not an error.

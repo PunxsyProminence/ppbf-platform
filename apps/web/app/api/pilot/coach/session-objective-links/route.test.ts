@@ -385,7 +385,7 @@ describe('unlinking', () => {
        because linkSessionToObjective re-derives the block in SQL and would
        reject a mismatch -- the delete has no such derivation, so the block it
        was cleared for has to be carried into the statement. */
-    expect(mockUnlink).toHaveBeenCalledWith('org-1', 'run-1', 'obj-a', 'blk-a');
+    expect(mockUnlink).toHaveBeenCalledWith('org-1', 'run-1', 'obj-a', 'blk-a', actor.accountId);
   });
 
   /* The delete path names the block; the link path deliberately does not.

@@ -1,4 +1,6 @@
+import { hasBlockWriteMembership } from './athleteDevelopmentBlocks';
 import { query, queryOne } from './db';
+import { ForbiddenError } from './errors';
 
 // Which Full Spectrum objectives a coach says a delivered session addressed.
 //
@@ -29,6 +31,20 @@ import { query, queryOne } from './db';
 // module therefore takes ids that the CALLER has already cleared through that
 // contract, and its own writes re-check the relationship in SQL rather than
 // trusting the caller to have checked the right thing.
+//
+// THE WRITE FLOOR IS A SECOND, SEPARATE QUESTION, and it is enforced here.
+// "May this actor reach this child" is the access contract's and stays with
+// the caller. "Does this account hold a role in THIS gym that may write at
+// all" is a floor, and the routes' requireRole did not answer it: requireRole
+// compares principal.role, which resolvePrincipal reads from
+// pilot.accounts.role -- the account's HOME role, not the role on the
+// membership row for the organization the session is operating in. An account
+// homed as 'coach' whose membership here was demoted passed it, and passed the
+// athlete check too while it was still named as athletes.coach_id.
+//
+// hasBlockWriteMembership is called rather than copied: athleteDevelopmentBlocks.ts
+// exports it "for the objectives module, so one decision is enforced in one
+// place for both tables", and this is that module.
 
 export interface SessionObjectiveLinkRow {
   organization_id: string;
@@ -88,6 +104,15 @@ export async function linkSessionToObjective(input: {
   objectiveId: string;
   linkedByAccountId: string;
 }): Promise<{ link: SessionObjectiveLinkRow; created: boolean } | null> {
+  /* Checked FIRST, before any existence read, so a caller with no standing in
+     this gym learns nothing about which run, block or objective ids are real. */
+  if (!(await hasBlockWriteMembership(input.linkedByAccountId, input.organizationId))) {
+    throw new ForbiddenError(
+      'This account holds no active membership in this organization that may write here.',
+      'SESSION_OBJECTIVE_LINK_NOT_A_WRITER',
+    );
+  }
+
   /* One statement for the whole precondition: the objective exists in this
      organization AND the session is already linked to that objective's block.
      Asking in one place means the block_id written below is the objective's
@@ -167,7 +192,17 @@ export async function unlinkSessionFromObjective(
   runId: string,
   objectiveId: string,
   blockId: string,
+  accountId: string,
 ): Promise<boolean> {
+  // Same floor as linking. Removing a coach's statement about what a class
+  // worked on is a write, and a demoted account may not make it either.
+  if (!(await hasBlockWriteMembership(accountId, organizationId))) {
+    throw new ForbiddenError(
+      'This account holds no active membership in this organization that may write here.',
+      'SESSION_OBJECTIVE_LINK_NOT_A_WRITER',
+    );
+  }
+
   const removed = await queryOne<{ run_id: string }>(
     `delete from pilot.session_run_block_objective_links
      where organization_id = $1 and run_id = $2 and objective_id = $3
