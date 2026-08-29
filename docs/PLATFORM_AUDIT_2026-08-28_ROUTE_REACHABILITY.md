@@ -110,7 +110,7 @@ These **should** have no in-app caller. Do not "fix" them.
 it in this repository. An external scheduler could be calling it. Not
 classified either way; check the deployment before treating it as orphaned.
 
-## Addressed since this sweep (4)
+## Addressed since this sweep (5)
 
 | Route | Where |
 | --- | --- |
@@ -118,6 +118,7 @@ classified either way; check the deployment before treating it as orphaned.
 | `shadow/data` (GET, then POST) | download control, then the request queue |
 | `coach-reviews/update` | removed — no caller, and a second copy of an authorization sequence that had been repaired twice |
 | `admin/floor-hours` | `/admin/floor-hours` console — the per-person ledger read and the correction path |
+| `coach/athlete-intelligence` | `/coach/athlete-intelligence` — the first reader the formula engine has ever had |
 
 ---
 
@@ -153,7 +154,7 @@ here narrows that, because T-004 explicitly declined to touch this route's
 gate and reversing that is as much a deliberate act as widening it would be.
 If it should be narrowed, that is its own change.
 
-## Capabilities with no door (25)
+## Capabilities with no door (24)
 
 Methods and gates as they stand. **Presence here is not a defect claim** — some
 of these may be deliberately dormant, some may be reachable through a surface
@@ -168,7 +169,6 @@ read before anything is built or removed.
 | `admin/retraction-checks` | GET/PATCH | REVIEW_ROLES |
 | `auth/logout-all` | POST | self-service |
 | `board/chat` | POST | organization_admin, admin |
-| `coach/athlete-intelligence` | GET | ATHLETE_INTELLIGENCE_ROLES |
 | `coach/chat` | POST | organization_admin, admin, coach |
 | `data-collection-requests` | GET/POST/PATCH/DELETE | QUEUE_ROLES |
 | `drills/lineage` | GET | DRILL_PROPOSER_ROLES |
@@ -190,44 +190,47 @@ read before anything is built or removed.
 
 ### Worth reading first, and why
 
-**`shadow/formulas/results` and `coach/athlete-intelligence`** — one chain, and
-the only place on this list where **live application code is producing records
-that nothing can read back**.
+**`shadow/formulas/results`** — half of a chain that was the lead finding here,
+and is now half closed.
 
 `pilot.shadow_formula_results` has a reachable writer. An athlete submits the
 Deep-Track sparring form, `shadow/formulas/observations` stores the
 observations, and `detectAndRunCompletedFormulas` runs every formula whose
 input set that submission completed. Results are written on every complete
-submission today.
-
-Every path back out is on this list:
+submission. Until 2026-08-29 every path back out was on this list, so the
+engine computed and no screen showed it.
 
 | Reader | Reached from | Door |
 | --- | --- | --- |
+| `listLatestFormulaResultsPerOutput` → `getAthleteIntelligence` | `coach/athlete-intelligence` GET | **`/coach/athlete-intelligence`** |
 | `listActiveFormulaResults` | `shadow/formulas/results` GET | none |
-| `listLatestFormulaResultsPerOutput` → `getAthleteIntelligence` | `coach/athlete-intelligence` GET | none |
 | `findFormulaResultsUsingObservation` | `runner.ts` supersession | not a surface |
 
-So the engine computes and no screen shows it. The product already says so, in
-the sparring page's own copy, which refuses to promise the athlete a coach sees
-what they submitted:
+WHAT CLOSED. `/coach/athlete-intelligence` renders the latest value of every
+formula output for one athlete with what qualifies it. It reads the per-output
+query rather than `listActiveFormulaResults`, which orders by `computed_at` and
+takes the newest N ROWS — so a formula that recomputes often buries one that
+does not, and the reader cannot tell that from the buried formula having no
+value at all (`repository.ts` states it, `athleteIntelligence.pg.test.ts`
+measures it).
+
+WHAT DID NOT, AND SHOULD NOT BE "FIXED" BY REFLEX. `shadow/formulas/results`
+GET stays on this list and is a weaker read of the same table; nothing should
+be wired to it to shorten the list, and the console deliberately did not. Its
+POST is not a missing door either: `autoCalculation.ts` was built precisely
+because "nothing in the product does that", and its header records the owner
+decision that the two actor lists deliberately differ.
+
+ONE THING A READER SHOULD STILL KNOW. The sparring page's copy still refuses to
+promise the athlete that a coach sees what they submitted:
 
 > The ordinary-path copy may not claim a coach sees this. Nothing reads
-> ordinary sparring observations back out: `/shadow/formulas/results` has no
-> client caller, and no coach surface or SHADOW context queries
-> `shadow_formula_observations`.
+> ordinary sparring observations back out.
 
-That comment is accurate and it is the reason to read this first. The
-server side is not the gap: `athleteIntelligence.ts` assembles a whole read
-model — latest value per formula output, the attempts ledger, the
-controlled-versus-live transfer readout, accepted Film Study — behind a route
-with two gates in the right order. What is missing is a screen.
-
-The POST on `shadow/formulas/results` is a different matter and is **not** a
-missing door. `autoCalculation.ts` was built precisely because "nothing in the
-product does that", and its header records the owner decision that the two
-actor lists deliberately differ. Do not wire a caller to it to make this list
-shorter.
+A coach-facing screen now reads the values DERIVED from those observations, so
+that sentence is closer to false than it was. Changing it is a decision about
+what to tell a child about their own data, it belongs to the owner, and it was
+deliberately left alone by the change that built the screen.
 
 **`board/chat`, `coach/chat`, `individual/chat`.** Three per-role SHADOW chat
 routes with no caller, while `athlete/chat` is wired into `AthleteWorkspace`
