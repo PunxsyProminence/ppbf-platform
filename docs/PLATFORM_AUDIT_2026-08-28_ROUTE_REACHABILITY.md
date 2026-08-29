@@ -91,7 +91,39 @@ classified either way; check the deployment before treating it as orphaned.
 
 ---
 
-## Capabilities with no door (26)
+## Settled: unreachable on purpose (1)
+
+**`profile/photo/review`** was listed here as a capability with no door, and
+that was read wrong. Portraits are **not** stuck: `/admin/portrait-review` is a
+built console with a door in the building map, and it calls a different route,
+`/api/pilot/admin/portrait-review`, which lists pending portraits and releases
+or blocks them. The feature works today.
+
+What `profile/photo/review` carries that the console does not is a **broader
+gate** — `coach_of_subject` and `self` alongside organization admin. That
+breadth is deliberate and its surface was deliberately not built. The admin
+route's own header records why:
+
+> T-004: THE ORG-WIDE DOOR INTO THE EXIT profile/photo/review ALREADY BUILT.
+> … This route adds the list and **narrows the actor to organization admin
+> only, per the ticket**; it does not touch or loosen the sibling route's own
+> (broader, deliberate) gate.
+
+Owner decision, 2026-08-29: **portrait review stays admin-only.** No
+coach-facing surface is to be built, and this route is not to be re-raised by a
+future sweep as a missing door.
+
+TWO THINGS A READER SHOULD STILL KNOW. A coach-facing surface would need a
+coach-scoped pending list that does not exist — `listPendingReviewPortraits`
+takes an organization and returns the whole gym. And the broader gate is not
+merely dormant: a coach who knows an athlete's `account_id` can still reach
+this route by calling it directly, because `requireRole` admits `coach` and
+`resolveRelationship` answers `coach_of_subject` for their own athlete. Nothing
+here narrows that, because T-004 explicitly declined to touch this route's
+gate and reversing that is as much a deliberate act as widening it would be.
+If it should be narrowed, that is its own change.
+
+## Capabilities with no door (25)
 
 Methods and gates as they stand. **Presence here is not a defect claim** — some
 of these may be deliberately dormant, some may be reachable through a surface
@@ -119,7 +151,6 @@ read before anything is built or removed.
 | `parent-tasks` | POST | `canSetParentTask` — coach, organization_admin |
 | `platform/organizations/memberships` | POST | platform_owner |
 | `platform/users/create` | POST | organization_admin |
-| `profile/photo/review` | POST | organization_admin, admin, coach |
 | `progression/gap-justification` | GET | coach, admin, organization_admin, athlete, parent |
 | `publications/library` | GET | coach, admin, organization_admin, athlete |
 | `shadow/library/search` | POST | SHADOW_PROJECTION_READ_ROLES |
@@ -141,11 +172,6 @@ append-only by design: `recordActivityAdjustment` inserts into
 `MIN_REASON_LENGTH`, the adjuster and their role, and never edits or deletes a
 recorded activity row. An operator who spots wrong hours on the public board
 today has no way to file that correction.
-
-**`profile/photo/review`.** Portrait release on a children's platform. The
-visibility machinery around it (`decidePortrait`, `photoReviewState`,
-`MINOR_CIRCLE`) is extensive and enforced on every read path; the control that
-moves a photo to `released` has no door. Same shape as the ring-name takedown.
 
 **`board/chat`, `coach/chat`, `individual/chat`.** Three per-role SHADOW chat
 routes with no caller, while `athlete/chat` is wired into `AthleteWorkspace`
