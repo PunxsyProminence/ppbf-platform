@@ -606,7 +606,7 @@ describe('cross-organization isolation', () => {
   test("an admin cannot adjudicate another organization's clip", async () => {
     await expect(
       blinding.listAnnotationSetsForAdjudication(
-        { organizationId: ORG_ID, actorRole: 'organization_admin' },
+        { organizationId: ORG_ID, actorRole: 'organization_admin', actorAccountId: ORG_ADMIN },
         FOREIGN_CLIP_ID,
       ),
     ).rejects.toThrow(/Not found/);
@@ -621,7 +621,7 @@ describe('the adjudication surface', () => {
 
     for (const role of ['coach', 'athlete', 'parent', 'staff', 'volunteer', 'platform_owner'] as const) {
       await expect(
-        blinding.listAnnotationSetsForAdjudication({ organizationId: ORG_ID, actorRole: role }, clipId),
+        blinding.listAnnotationSetsForAdjudication({ organizationId: ORG_ID, actorRole: role, actorAccountId: ORG_ADMIN }, clipId),
       ).rejects.toThrow(/Forbidden: adjudication is limited to organization administrators/);
     }
   });
@@ -635,14 +635,14 @@ describe('the adjudication surface', () => {
     // annotator surface refuses, routed through a third person.
     await expect(
       blinding.listAnnotationSetsForAdjudication(
-        { organizationId: ORG_ID, actorRole: 'organization_admin' },
+        { organizationId: ORG_ID, actorRole: 'organization_admin', actorAccountId: ORG_ADMIN },
         clipId,
       ),
     ).rejects.toThrow(/not ready for adjudication/);
 
     await expect(
       blinding.listAnnotationEventsForAdjudication(
-        { organizationId: ORG_ID, actorRole: 'organization_admin' },
+        { organizationId: ORG_ID, actorRole: 'organization_admin', actorAccountId: ORG_ADMIN },
         clipId,
         aSetId,
       ),
@@ -655,7 +655,7 @@ describe('the adjudication surface', () => {
     await annotations.submitAnnotationSet(ORG_ID, bSetId);
 
     for (const role of ['organization_admin', 'admin'] as const) {
-      const context = { organizationId: ORG_ID, actorRole: role };
+      const context = { organizationId: ORG_ID, actorRole: role, actorAccountId: ORG_ADMIN };
       const sets = await blinding.listAnnotationSetsForAdjudication(context, clipId);
       expect(sets.map((set) => set.annotation_set_id).sort()).toEqual([aSetId, bSetId].sort());
 
@@ -668,7 +668,7 @@ describe('the adjudication surface', () => {
     const clipId = await newClip('C-ADJ-EMPTY');
     await expect(
       blinding.listAnnotationSetsForAdjudication(
-        { organizationId: ORG_ID, actorRole: 'organization_admin' },
+        { organizationId: ORG_ID, actorRole: 'organization_admin', actorAccountId: ORG_ADMIN },
         clipId,
       ),
     ).rejects.toThrow(/Not found: no annotation sets on this clip/);
@@ -685,7 +685,7 @@ describe('the adjudication surface', () => {
     // ready clip's id must not smuggle it through.
     expect(
       await blinding.listAnnotationEventsForAdjudication(
-        { organizationId: ORG_ID, actorRole: 'organization_admin' },
+        { organizationId: ORG_ID, actorRole: 'organization_admin', actorAccountId: ORG_ADMIN },
         ready.clipId,
         busy.aSetId,
       ),
@@ -700,14 +700,14 @@ describe('the adjudication surface', () => {
     // a discriminated result and the error carries the reason forward.
     await expect(
       blinding.listAnnotationSetsForAdjudication(
-        { organizationId: ORG_ID, actorRole: 'coach' },
+        { organizationId: ORG_ID, actorRole: 'coach', actorAccountId: ORG_ADMIN },
         clipId,
       ),
     ).rejects.toMatchObject({ reason: 'role_not_permitted' });
 
     await expect(
       blinding.listAnnotationSetsForAdjudication(
-        { organizationId: ORG_ID, actorRole: 'admin' },
+        { organizationId: ORG_ID, actorRole: 'admin', actorAccountId: ORG_ADMIN },
         clipId,
       ),
     ).rejects.toMatchObject({ reason: 'annotation_in_progress' });

@@ -56,11 +56,75 @@ Owner decisions 2026-08-16 (asked as a batch, answered individually):
 6. **Stripe slot instructions** — `/admin/payments` shows the owner the exact one-time platform-account walkthrough (Stripe account → Connect client id → secret key → webhook signing secret → the three Container App secret names) whenever the platform is unregistered. The slot documents itself; no code work remains on the platform side of onboarding.
 7. **Engines unlock as data gathers** (direction, physical training engines and similar): build the remaining "engine" modules so each states explicit DATA PREREQUISITES and stays visibly locked until the org's/athlete's own records satisfy them — an unlock is an honesty gate, not a gamification score. Athlete-facing "rank up" means unlocking richer views of their OWN record (never cross-athlete comparison); org-level unlocks mean an organization earns engine activation by accumulating real data. Design to be proposed per-engine as slices come up.
 
+### Video calibration lab — state at 2026-08-29, and the order the rest goes in
+
+The study surfaces (`apps/web/src/server/pilot/calibration/`). "Caller" means a
+non-test importer: a module with none is written and unreachable.
+
+| module | caller | what it does |
+|---|---|---|
+| `annotations`, `projects`, `ontology`, `bootstrap` | yes | the collection half, shipped earlier |
+| `blinding` | **yes**, since #894/#900 | who may see both raw readings, and when |
+| `comparison` | **yes**, since #894 | where two coaches disagreed |
+| `adjudication` | **yes**, since #900 | recording how a disagreement was settled |
+| `qaReadModel` | **no** | the QA read-out. Not built. |
+| `gold` | **no** | gold-standard nomination. Not built. |
+
+**Build order, and why it is not arbitrary.** Each surface reads what the one
+before it writes: comparison needs two submitted readings, adjudication needs a
+comparison, the QA read-out needs adjudications to report on, and gold
+nomination needs the QA read-out to nominate from. Building out of order gives a
+screen with nothing to show.
+
+Remaining, in order:
+
+1. **OD-2026-08-29-003, the pages.** The API accepts a pair selection
+   (`resolveComparisonPair` in `comparison.ts`, wired to both routes); **neither
+   page offers the choice**. A ratified decision no screen exposes.
+2. **OD-2026-08-29-005, the superseding migration.** A revision integer per
+   pair, a unique constraint on (pair, revision), and the route **translating**
+   the 23505 collision. The translation is part of the ruling and owes its own
+   test -- untranslated it is the duplicate-key dump the choice was made to
+   avoid.
+3. **`qaReadModel`** -- read the module before designing to it.
+4. **`gold`.**
+
+Done, per the owner 2026-08-29: all five modules have callers and OD-002/003/005
+are built.
+
+**Four traps this thread paid for. Do not rediscover them.**
+
+- **A check can be green because it never ran.** `ci.yml` triggers on
+  `pull_request: branches: [main]` with default types. A PR targeting another
+  branch gets NO `validate` and NO `verify` -- only `declaration`, from
+  `migration-declaration.yml`, which has no branch filter. **Retargeting a PR
+  to `main` does not fix this**: a base change is `pull_request.edited`, which
+  ci.yml does not listen for. Push a real commit to trigger it. Both happened
+  here, on #900 and again on #905, and both times the PR read as passing.
+- **Two green PRs can break `main` between them.** Git merges adjacent
+  insertions with no conflict. Four instances on 2026-08-28/29: twice in
+  `coachWorkspaceHonesty.test.tsx`, and twice in `apply-migrations.yml`, where
+  three parallel `for m in ...; do` lines above one `done` made the apply step a
+  bash **syntax error** -- no migration was dispatchable by any path, and
+  `migrationDispatchCoverage` passed 124/124 over it because every assertion
+  read `workflow.match(...)`, which returns the first match and stops. Both
+  guards now exist (`every run step in the workflow is parseable shell`, and
+  the declaration count).
+- **No Postgres in the agent container.** Only the `psql` client. No
+  `.pg.test.ts` and no `npm run test:migrations` can be executed by a build
+  lane; `pre-release-migrations.yml` is that gate. Claiming pg coverage from
+  here is claiming something that did not run.
+- **A git worktree has no `node_modules`.** The install is hoisted, and several
+  scripts resolve `REPO_ROOT` and need `node_modules/.bin/tsx` beneath it. Run
+  `npm ci` at the worktree root first or they fail in a way that reads as a
+  code defect.
+
 ## BLOCKED
 
 | Item | Blocked on | Unblocks |
 |---|---|---|
 | Stripe onboarding round-trip test + checkout slice (item 8, remaining half) | The connect flow is BUILT (owner instruction 2026-08-15: build ahead so onboarding can be tested "as if I'm a new gym") — `connect/start`/`connect/callback`, the deauthorization webhook, and `/admin/payments`. What blocks is the owner registering PPBF's Stripe **platform** account and Connect OAuth client (`PAYMENT_CONNECT_CLIENT_ID` + `PAYMENT_PLATFORM_SECRET_KEY` + `PAYMENT_PLATFORM_WEBHOOK_SECRET` as Container App secrets); the Giving account's 501(c)(3) verification should start in parallel (it is the slow step). | The live end-to-end onboarding test on staging, then the checkout/receipt/mirror-writing slice — staging-first behind `PPBF_PAYMENTS_ENABLED`, with CAP-012 flipping only after the slot's step-5 evidence and the owner's compliance sign-off. |
+| Calibration study surfaces (comparison, adjudication) actually working | The calibration migrations have **never been applied in any environment**. `pilot.calibration_adjudications` and its sibling are declared, registered and dispatchable, and no lane here has ever reached a database, so the first `POST` to `/api/pilot/calibration/adjudication` returns a 500 until they run. Under OD-2026-08-29-006 the first production apply is the owner's call; staging is a build lane's. | The QA read-out and gold nomination, which read what adjudication writes. |
 
 ## PARKED
 
@@ -70,6 +134,8 @@ Owner decisions 2026-08-16 (asked as a batch, answered individually):
 | `BACKLOG-triage-keyboard` | A one-key approval path is not meaningful until the queue exposes a review-complete/eligible action. | The review queue has a deterministic eligibility signal. |
 | `BACKLOG-offline-write-queue` | Persisting minors' check-ins on a shared tablet creates identity, attribution, and data-at-rest problems. | A concrete identity-scoped encrypted/offline storage design is selected. |
 | `BACKLOG-grant-packet` | The rendering foundation exists; the unresolved question is what aggregate minor-related data may be disclosed externally. | A real grant/export request defines the disclosure set and privacy threshold. |
+| `BACKLOG-coach-development-visibility` | Every route over a coach's development record is self-scoped: `/api/pilot/coach/development` takes no account id on any method and answers for the caller, matching `/api/pilot/coach/credentials`. Whether a head coach or an organization admin may READ their staff's development goals is a real question, and building the cross-coach read first and gating it afterwards is how such a question gets answered by accident. | The owner states who may see another coach's development record, and for what purpose. The data layer already scopes by account, so the change is an added, gated read path -- not a loosening of the existing one. |
+| `BACKLOG-coach-mentorship-pairing` | Coach self-development shipped goals and recorded work (`pilot.coach_development_goals` / `pilot.coach_development_activities`, `/coach/development`), and deliberately stopped short of a coach-to-coach mentorship RELATIONSHIP. A row saying "Coach B mentors Coach A" names a second member of staff, and who may assert it, whether B consents, and who may see it are product and consent decisions nobody has made. `pilot.mentorships` is not it: both its FKs point at `pilot.athletes` and a CHECK forbids self-pairing, so it cannot express a coach at all. A coach can already record a mentorship SESSION THEY ATTENDED as an activity in their own words, which claims nothing about anybody else's role. | The owner decides who may assert a staff mentorship, whether the named mentor must agree, and who may read it. Until then the activity record covers the coach's own half. |
 | `BACKLOG-open-route-gates` | Route visibility and authorization are not the same thing; changing `buildingMap.ts` alone protects nothing. | A route is shown to expose a real unintended surface, then fix that route's own guard directly. |
 | `BACKLOG-video-skill-scoring` | Owner decision 2026-08-15: per-skill AI video scoring (punch detection, footwork, etc.) is parked for Phase 2+. Human Film Study IS the analysis pathway; shipping machine scores about minors' athletic ability without proven accuracy is the risk being refused. | Phase 1 is complete AND a scoring approach with explicit evidence standards has been selected by the owner. |
 | `BACKLOG-publication-automation` | Queue item 9, assessed 2026-08-15 under the owner's standing approval for recommendations: the internal publication machinery that exists (video compliance console + consent gating, research evidence review, retraction surveillance) is human-gated on purpose — there is no automatable step left that does not cross a gate deliberately. What automation would add is outward publication to a "destination registry", and no destination, content set, or disclosure rules exist. Automating external disclosure of content about or derived from minors ahead of those decisions is the same risk `BACKLOG-grant-packet` refuses. | The owner names a real destination and content type (e.g. "approved research summaries to the public site") with an explicit disclosure set. Automation then means moving already-approved items — never approving them. |

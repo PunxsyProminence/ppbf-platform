@@ -13,7 +13,7 @@ jest.mock('@/components/RoleSessionGate', () => ({
 
 const STAFF = [
   {
-    account_id: 'coach-1', display_name: 'Jane Okafor', role: 'coach',
+    staff_key: 'a1b2c3d4e5f6', display_name: 'Jane Okafor', role: 'coach',
     credentials: [
       { clearance_type_id: 'ct-safesport', clearance_name: 'SafeSport Training', band: 'current', expires_on: '2027-01-01' },
       { clearance_type_id: 'ct-cpr', clearance_name: 'CPR/First Aid', band: 'missing', expires_on: null },

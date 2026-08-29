@@ -25,7 +25,10 @@ interface CredentialBadge {
 }
 
 interface StaffRow {
-  account_id: string;
+  // Opaque and stable, not an account id: the route hashes the account id
+  // because this platform's provisioning makes that the staff member's work
+  // email. This page only ever needed a row key, which is all this is.
+  staff_key: string;
   display_name: string;
   role: string;
   credentials: CredentialBadge[];
@@ -122,7 +125,7 @@ function StaffCredentialsBoard() {
               </thead>
               <tbody>
                 {staff.map((person) => (
-                  <tr key={person.account_id}>
+                  <tr key={person.staff_key}>
                     <td className="font-bold">{person.display_name}</td>
                     <td>{ROLE_LABEL[person.role] ?? person.role}</td>
                     <td>

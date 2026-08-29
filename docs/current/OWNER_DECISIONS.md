@@ -89,6 +89,305 @@ and should not try to.
 
 ---
 
+## OD-2026-08-29-006 -- The build lane merges its own green work and drives staging; production stays the owner's
+
+**Provenance:** PRIMARY. Owner, 2026-08-29: **"its all on you to get to
+production with me, i closed the other work flows"**, then, asked how far that
+runs without asking, he chose the option reading:
+
+> **Merge + staging freely; production needs your word** -- "I merge my own
+> green PRs and dispatch staging deploys and staging migrations on my own.
+> Production deploys and production migrations I prepare, verify, and then ask."
+
+Declined: **"Everything, including production"** and **"Merge only; deploys stay
+with you"**.
+
+**What was asked.** `AGENT_KERNEL.md` assigned `main`, migrations, staging and
+production to a release-control lane, and forbade the build lane from merging or
+dispatching any of them. The owner has since closed the other workflows, so that
+lane is not staffed; on 2026-08-29 five green pull requests sat unmergeable for
+roughly three and a half hours with no build work possible behind them.
+
+**The decision.** A build lane MAY merge its own pull requests to `main` once CI
+is green and they are mergeable, and MAY dispatch `deploy-staging` and staging
+migrations. `deploy-production` and production migrations stay with the owner:
+prepared and verified by the lane, dispatched only on his word.
+
+**Why the split is where it is.** An applied migration is not undone by
+re-running a workflow. The calibration tables this thread built against have
+never been applied in any environment -- no lane here has ever reached a
+database -- so the first production apply is genuinely unproven, and its
+recovery would be manual database work rather than a redeploy. Staging is where
+that gets found out.
+
+`AGENT_KERNEL.md` is amended in the same commit. Recording the ruling without
+amending it would leave the kernel stating a boundary that no longer describes
+practice, which is the drift this file exists to stop.
+
+**What this does NOT settle.**
+
+- **Whether a lane may merge ANOTHER lane's pull request.** This says "its own".
+  Not asked, not answered.
+- **What happens when CI is green but the change is contested.** Green CI is
+  still a precondition, not an authorization to override a review.
+- **Who applies the calibration migrations first.** They remain unapplied
+  everywhere, and the first apply is a production question this entry routes to
+  the owner rather than answers.
+
+**Evidence this rests on.** `AGENT_KERNEL.md` lines 408-411 at `31ea99c1`; the
+2026-08-29 queue, where #890, #894, #897, #900 and #901 were green and
+unmergeable from roughly 06:00 to 12:29 UTC.
+
+---
+
+## OD-2026-08-29-005 -- A superseded adjudication is marked by a revision integer, and a collision is explained rather than dumped
+
+**Provenance:** PRIMARY. Owner, 2026-08-29, choosing among three shapes put to
+him after he asked whether the error could explain itself. The option he
+selected read:
+
+> **Revision + unique constraint + translated error** -- "Same column, no lock;
+> a unique index on (pair, revision) catches the collision, and the route
+> translates Postgres 23505 into a sentence like *'someone corrected this while
+> you were deciding -- reload and look at their answer before replacing it.'*
+> GOOD: no locking, and arguably the RIGHT message: the second person genuinely
+> should see the first correction before overwriting it. BAD: it is an error
+> path, so it only reads well if I write and test that translation --
+> untranslated it surfaces as a raw duplicate-key dump."
+
+Declined: **"Revision + row lock, so there is no error"** (prevents the
+collision with `SELECT ... FOR UPDATE`, but a forgotten lock in a future code
+path silently reopens the hole) and **"is_current boolean + partial unique
+index"** (the database refuses two current answers, but a reader who forgets to
+filter silently sees history as current -- a quiet wrong answer rather than a
+loud one).
+
+**This supersedes the open question in OD-2026-08-29-004**, which ruled that a
+second adjudication of the same pair is a correction and left the schema shape
+undecided. It does not change that ruling; it answers what -004 deferred.
+
+**The decision.** `pilot.calibration_adjudications` gains a revision integer
+scoped to the pair. The highest revision is the current answer. A unique
+constraint on the pair plus revision catches two writers computing the same next
+value, and the route translates that collision into a sentence naming what
+happened and what to do about it.
+
+**The translated error is part of the decision, not a nicety.** The owner asked
+for it specifically. Untranslated, a 23505 reaches an administrator as a
+duplicate-key dump naming a constraint. The message he accepted says a person
+corrected this while you were deciding and tells them to read that correction
+before replacing it -- which is the right instruction, because the second
+adjudicator genuinely should see the first answer before overwriting it. **A
+lane implementing this owes the translation a test**; without one the failure
+mode is exactly the raw dump the choice was made to avoid.
+
+**What this does NOT settle.**
+
+- **Who may supersede.** Whether only the original adjudicator may correct their
+  own decision, or any organization admin may, is still open.
+- **What the surfaces show.** Whether an adjudicator sees only the current
+  revision or the whole chain is a surface question, unasked.
+- **Retention.** Nothing rules on whether superseded revisions are ever removed.
+
+**Evidence this rests on.** `infra/azure/pilot_slice_postgres_calibration_
+adjudication_migration.sql` at `31ea99c1` -- no superseding column of any kind,
+primary key `(organization_id, adjudication_id)`, so a second row for one pair
+already inserts cleanly and is already indistinguishable from the first.
+`adjudication.ts`, which exposes `recordAdjudication` and `getAdjudication` and
+no update path.
+
+---
+
+## OD-2026-08-29-004 -- A second adjudication of the same pair is a correction, and supersedes
+
+**Provenance:** PRIMARY. Owner chose, 2026-08-29, from options put to him as a
+question about calibration adjudication. The option he selected read:
+
+> **A correction, superseding** -- "The newer adjudication supersedes the older;
+> both are retained as history. GOOD: matches how people actually behave -- the
+> second one is nearly always fixing a mistake -- and gives one unambiguous
+> current answer while keeping the audit trail. BAD: needs a superseding column
+> and a migration, so it is not a code-only change."
+
+The two options declined were **"Refuse the second"** (first answer final; no
+schema change, but a genuine mistake becomes permanent) and **"Two independent
+answers"** (the current behaviour; loses nothing, but nothing says which is
+current).
+
+**What was asked.** An adjudication already exists for a clip's pair of
+annotation sets, and someone adjudicates that same pair again. Nothing in the
+schema or the code takes a position on what the second row means.
+
+**The decision.** The newer adjudication supersedes the older. Both rows are
+retained; exactly one is current.
+
+**What this requires, stated plainly because it is not a code-only change.**
+`pilot.calibration_adjudications` has no superseding column today -- no
+`supersedes`, no `is_current`, no revision marker -- and its primary key is
+`(organization_id, adjudication_id)`, so a second adjudication of the same pair
+is *already* insertable and already indistinguishable from the first. Making
+one of them current needs a migration, and that migration needs its own
+decision about how the current row is identified.
+
+**This does NOT contradict the migration's "the originals are never touched."**
+That guarantee is about *annotations*: `pilot_slice_postgres_calibration_
+adjudication_migration.sql` says an adjudication "is a NEW row that REFERENCES
+the two source events; nothing here updates, supersedes, or soft-deletes an
+annotation," because the two readings are the measurement the study exists to
+collect. Superseding an *adjudication* -- a record of a reviewer's conclusion --
+touches no annotation and leaves that guarantee intact. The distinction is
+worth stating because the words "supersede" appear in both places meaning
+different things.
+
+**What this does NOT settle.**
+
+- **How the current row is identified.** A nullable `superseded_by` pointing at
+  the newer row, an `is_current` boolean with a partial unique index, or a
+  revision integer are all consistent with this ruling and have different
+  failure modes under concurrent writes. Not asked, not answered.
+- **Who may supersede.** Whether only the original adjudicator may correct their
+  own decision, or any organization admin may, is a separate question this
+  entry does not reach.
+- **Whether anything downstream must re-read.** Gold-standard nomination is not
+  built yet. When it is, it has to know which adjudication is current, and that
+  is a dependency this ruling creates rather than resolves.
+
+**Evidence this rests on.** `infra/azure/pilot_slice_postgres_calibration_
+adjudication_migration.sql` at `d06cb930` -- the table definition (no
+superseding column; `primary key (organization_id, adjudication_id)` at line
+127) and its header comment. `apps/web/src/server/pilot/calibration/
+adjudication.ts`, which exposes `recordAdjudication` and `getAdjudication` and
+no update path. PR #900, which flagged the question and deliberately did not
+answer it.
+
+---
+
+## OD-2026-08-29-003 -- With three or more submitted sets, the adjudicator picks the pair
+
+**Provenance:** PRIMARY. Owner chose, 2026-08-29, from options put to him. The
+option he selected read:
+
+> **Adjudicator picks the pair** -- "The surface lists the submitted sets and the
+> adjudicator chooses which two to compare. GOOD: the only option that does not
+> silently decide what a three-rater clip means for the study -- the choice is
+> made by a person and recorded. BAD: the most work of the four, and it puts a
+> decision in front of the adjudicator that they may not feel qualified to make."
+
+Declined: **"Keep refusing"** (current behaviour, invents no policy but leaves a
+real clip stuck), **"Compare the two earliest submitted"** (deterministic, but
+lets submission order decide which readings count), and **"Compare all pairs"**
+(standard for inter-rater reliability, but needs a schema change since the model
+records one settlement per clip).
+
+**What was asked.** Nothing caps annotators per clip, and
+`compareAnnotationSets` takes exactly two sets. Which pair a three-rater clip
+means was unanswered anywhere in the codebase.
+
+**The decision.** The surface lists the submitted sets and the adjudicator
+chooses which two to compare. The choice is a person's, and it is recorded.
+
+**What changes.** Both calibration surfaces currently refuse this case outright.
+The comparison route refuses on `sets.length !== 2` with a message naming the
+count and saying the question is open; the adjudication surface does the same.
+Those refusals were correct as a way of not inventing a policy, and they are now
+superseded by one. `resolveAdjudicationEligibility` already admits three or more
+as eligible, so the gate does not need widening -- the selection is a surface
+concern, not an authorization one.
+
+**What this does NOT settle.**
+
+- **Whether the chosen pair is recorded as part of the adjudication.** The
+  ruling says the choice is "made by a person and recorded"; the table already
+  stores `annotation_set_id_a` and `annotation_set_id_b`, so the pair is
+  captured by construction. Whether the *unchosen* sets should also be
+  referenced -- so a later reader knows a third reading existed -- is not
+  answered here.
+- **Whether the adjudicator needs guidance on which pair to choose.** The option
+  he accepted names this as its own downside. No rule, ordering, or
+  recommendation is ratified by this entry.
+- **What happens to the third reading.** It is neither discarded nor compared.
+  Whether a clip with an unadjudicated third set is "done" is open.
+
+**Evidence this rests on.** `apps/web/src/server/pilot/calibration/
+comparison.ts` (`compareAnnotationSets` takes exactly two);
+`resolveAdjudicationEligibility` in `blinding.ts`, which returns
+`{ eligible, submittedSetCount: n }` for n >= 2; PRs #894 and #900, both of
+which refuse the case explicitly and both of which flagged it as an owner
+decision rather than answering it.
+
+---
+
+## OD-2026-08-29-002 -- An annotator may not adjudicate a clip they annotated
+
+**Provenance:** PRIMARY. Owner chose, 2026-08-29, from options put to him. The
+option he selected read:
+
+> **Refuse it** -- "A person who produced one of the two readings cannot settle
+> the disagreement between them. GOOD: protects the study's validity -- the whole
+> point of two blind readings is that a third party resolves them, and a party to
+> the disagreement grading their own work makes the calibration data unusable as
+> evidence. BAD: a small gym where the only admin is also a coach who annotates
+> would have nobody able to adjudicate, so those clips stall until a second admin
+> exists."
+
+Declined: **"Permit, but record it"** (allowed, with the overlap recorded so the
+bias is visible) and **"Permit silently"** (the current behaviour, which leaves
+no trace).
+
+**The stall is a ratified consequence, not an oversight.** The option's stated
+downside is that a one-admin gym whose admin also annotates will have clips that
+nobody can adjudicate. That cost was on the page when the decision was made. A
+lane meeting a stalled clip should not read it as a bug to route around.
+
+**What was asked.** `ANNOTATOR_ROLES` admits `organization_admin`, so the same
+person can hold both roles on one clip, and `blinding.ts` takes no view.
+
+**The decision.** A person who produced one of the two readings may not settle
+the disagreement between them.
+
+**What changes, and where it belongs.** `AdjudicationEligibilityInput` currently
+carries `actorRole` and `sets` and no actor identity, so the primitive cannot
+express this rule as written. Implementing it in the primitive -- adding the
+actor's account id and comparing it against each set's `annotator_account_id` --
+covers the read surface (#894's comparison) and the write surface (#900's
+adjudication) in one place. Implementing it only in the write route would leave
+an annotator able to read the diff of their own clip while being refused the
+settlement, which is a narrower fix than the ruling.
+
+**#900 currently pins the opposite, and that is the honest shape, not a defect.**
+PR #900 permits self-adjudication and has a test labelled as pinning an
+unsettled posture, precisely so a change could not arrive silently. This entry
+is that change arriving. Per this file's own note on #811: a characterization
+test that merges and is then inverted is not the failure mode -- the failure mode
+is a test that claims to pin a decision it cannot detect a change to. The
+correction is now due, and it is due *visibly*.
+
+**What this does NOT settle.**
+
+- **What a one-admin gym does.** The stall is accepted, not solved. Whether such
+  an organization should be able to nominate an external adjudicator, or whether
+  the platform owner may act, is a separate decision -- and note that
+  `platform_owner` is deliberately refused on this surface today
+  (`resolveAdjudicationEligibility`'s docblock), so it is not an available answer
+  without its own ruling.
+- **Whether the refusal is visible before the work is done.** An annotator who
+  reaches the surface after annotating learns they cannot adjudicate. Whether the
+  door should be hidden from them earlier is a surface question, unasked.
+- **Retroactivity.** Nothing says what happens to a self-adjudication already
+  recorded. No such row is known to exist -- `adjudication.ts` has no non-test
+  caller on `main` at `d06cb930`, so the write path has never run in production
+  -- but this entry does not rule on the case.
+
+**Evidence this rests on.** `AdjudicationEligibilityInput` and
+`resolveAdjudicationEligibility` in `apps/web/src/server/pilot/calibration/
+blinding.ts` at `d06cb930` (role-only, no actor identity); `ANNOTATOR_ROLES`
+admitting `organization_admin`; PR #900, which reported the overlap and pinned
+the permissive behaviour rather than deciding it; and the measurement that
+`adjudication.ts` has zero non-test importers on `main`, so nothing has been
+written through this path yet.
+
+---
+
 ## OD-2026-08-29-001 -- `Admin@punxsyprominence.org` is the primary owner email
 
 **Provenance:** PRIMARY. Owner's words, 2026-08-29:

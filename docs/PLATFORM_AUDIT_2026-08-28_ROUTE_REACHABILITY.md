@@ -1,6 +1,9 @@
 # Route reachability triage — 2026-08-28
 
-Which of the 251 API routes under `app/api/pilot` no application code calls.
+Which of the API routes under `app/api/pilot` no application code calls.
+Counts move as other lanes add routes and as doors get built, so every count
+here is stamped with the pass that produced it; the list below is pass 4
+(2026-08-29), over 252 routes.
 
 This is a **reachability** audit, not an authorization one. Every route named
 below is gated correctly as far as this pass could tell (see *Gates are not the
@@ -39,10 +42,36 @@ the corpus; a dynamic route counted as reached when the static prefix before
 its first `[segment]` appears. Reproduce it with the script in *Reproducing
 this*.
 
-**Known limits.** A caller that assembles a path from fragments
-(`` `${base}/api/pilot/${section}/list` ``) would still be missed, and this
-pass makes no attempt to find one. So the list can still overcount. It cannot
-undercount for static routes.
+**Pass 4 — the comment hole (2026-08-29).** The sentence that used to close
+this section read: *"So the list can still overcount. It cannot undercount for
+static routes."* That was false, and the PR that added the last door to this
+list is what falsified it.
+
+Passes 1 and 3 excluded test files and the probe manifest on the principle that
+**naming a path is not the same as opening one**. The corpus was still matched
+as raw text, so a path named in a **comment** counted as a caller — the exact
+error, one line lower.
+
+It cost two routes:
+
+* `floor-hours/public` left the list the day `/admin/floor-hours` shipped, and
+  not because it gained a door. The new page's header comment mentions the
+  public endpoint in prose, and that mention alone was the whole of its
+  "caller".
+* `shadow/formulas/results` **was never on this list at all**, masked since the
+  first pass by two header comments in `formulas/autoCalculation.ts` that name
+  the route while explaining that nothing in the product posts to it.
+
+The fix is one predicate, in *Reproducing this*: a route is reached when at
+least one line naming it is **not** a comment. Under it the sweep finds 252
+routes and 30 with no caller.
+
+**Known limits, restated.** A caller that assembles a path from fragments
+(`` `${base}/api/pilot/${section}/list` ``) is still missed, and this pass makes
+no attempt to find one — so the list can still overcount. It can also
+undercount wherever a path reaches code through something this text match
+cannot follow. The claim that it is sound in one direction is exactly the claim
+that turned out to be wrong, and it is not being made again.
 
 ---
 
@@ -81,17 +110,51 @@ These **should** have no in-app caller. Do not "fix" them.
 it in this repository. An external scheduler could be calling it. Not
 classified either way; check the deployment before treating it as orphaned.
 
-## Addressed since this sweep (3)
+## Addressed since this sweep (5)
 
 | Route | Where |
 | --- | --- |
 | `profile/nickname/clear` | door added on the coach roster |
 | `shadow/data` (GET, then POST) | download control, then the request queue |
 | `coach-reviews/update` | removed — no caller, and a second copy of an authorization sequence that had been repaired twice |
+| `admin/floor-hours` | `/admin/floor-hours` console — the per-person ledger read and the correction path |
+| `coach/athlete-intelligence` | `/coach/athlete-intelligence` — the first reader the formula engine has ever had |
 
 ---
 
-## Capabilities with no door (26)
+## Settled: unreachable on purpose (1)
+
+**`profile/photo/review`** was listed here as a capability with no door, and
+that was read wrong. Portraits are **not** stuck: `/admin/portrait-review` is a
+built console with a door in the building map, and it calls a different route,
+`/api/pilot/admin/portrait-review`, which lists pending portraits and releases
+or blocks them. The feature works today.
+
+What `profile/photo/review` carries that the console does not is a **broader
+gate** — `coach_of_subject` and `self` alongside organization admin. That
+breadth is deliberate and its surface was deliberately not built. The admin
+route's own header records why:
+
+> T-004: THE ORG-WIDE DOOR INTO THE EXIT profile/photo/review ALREADY BUILT.
+> … This route adds the list and **narrows the actor to organization admin
+> only, per the ticket**; it does not touch or loosen the sibling route's own
+> (broader, deliberate) gate.
+
+Owner decision, 2026-08-29: **portrait review stays admin-only.** No
+coach-facing surface is to be built, and this route is not to be re-raised by a
+future sweep as a missing door.
+
+TWO THINGS A READER SHOULD STILL KNOW. A coach-facing surface would need a
+coach-scoped pending list that does not exist — `listPendingReviewPortraits`
+takes an organization and returns the whole gym. And the broader gate is not
+merely dormant: a coach who knows an athlete's `account_id` can still reach
+this route by calling it directly, because `requireRole` admits `coach` and
+`resolveRelationship` answers `coach_of_subject` for their own athlete. Nothing
+here narrows that, because T-004 explicitly declined to touch this route's
+gate and reversing that is as much a deliberate act as widening it would be.
+If it should be narrowed, that is its own change.
+
+## Capabilities with no door (24)
 
 Methods and gates as they stand. **Presence here is not a defect claim** — some
 of these may be deliberately dormant, some may be reachable through a surface
@@ -102,12 +165,10 @@ read before anything is built or removed.
 | --- | --- | --- |
 | `admin/accounts/repair-auth-provider` | POST | organization_admin, platform_owner |
 | `admin/citation-checks` | GET | REVIEW_ROLES |
-| `admin/floor-hours` | GET/POST | ADMIN_ROLES |
 | `admin/local-findings` | GET/PATCH/POST | RAISE_ROLES |
 | `admin/retraction-checks` | GET/PATCH | REVIEW_ROLES |
 | `auth/logout-all` | POST | self-service |
 | `board/chat` | POST | organization_admin, admin |
-| `coach/athlete-intelligence` | GET | ATHLETE_INTELLIGENCE_ROLES |
 | `coach/chat` | POST | organization_admin, admin, coach |
 | `data-collection-requests` | GET/POST/PATCH/DELETE | QUEUE_ROLES |
 | `drills/lineage` | GET | DRILL_PROPOSER_ROLES |
@@ -119,33 +180,57 @@ read before anything is built or removed.
 | `parent-tasks` | POST | `canSetParentTask` — coach, organization_admin |
 | `platform/organizations/memberships` | POST | platform_owner |
 | `platform/users/create` | POST | organization_admin |
-| `profile/photo/review` | POST | organization_admin, admin, coach |
 | `progression/gap-justification` | GET | coach, admin, organization_admin, athlete, parent |
 | `publications/library` | GET | coach, admin, organization_admin, athlete |
+| `shadow/formulas/results` | GET/POST | GET: athlete, parent, coach, org admin, admin. POST refuses athlete |
 | `shadow/library/search` | POST | SHADOW_PROJECTION_READ_ROLES |
 | `shadow/memory` | POST | `requireTenantOwner`, board refused |
 | `shadow/research-bridge/export` | GET | `requireResearchBridgeAccess` |
 | `shadow/research-bridge/session-export` | GET | organization admin (inline) |
 
-### The three worth reading first, and why
+### Worth reading first, and why
 
-**`admin/floor-hours`.** The only one where data is already being *published*
-with no way to correct it. Hours accumulate from live application code —
-`activityLog.ts`, `communityService.ts`, `attendancePrecedence.ts` and others
-write `pilot.activity_log` — and `floor-hours/public` exposes the aggregate on
-an unauthenticated endpoint that the runtime probes hit, which is consistent
-with external consumption rather than an in-app page. `admin/floor-hours` is
-the operator's per-person read plus the correction path, and it is
-append-only by design: `recordActivityAdjustment` inserts into
-`pilot.activity_log_adjustments` with a nonzero delta, a reason of at least
-`MIN_REASON_LENGTH`, the adjuster and their role, and never edits or deletes a
-recorded activity row. An operator who spots wrong hours on the public board
-today has no way to file that correction.
+**`shadow/formulas/results`** — half of a chain that was the lead finding here,
+and is now half closed.
 
-**`profile/photo/review`.** Portrait release on a children's platform. The
-visibility machinery around it (`decidePortrait`, `photoReviewState`,
-`MINOR_CIRCLE`) is extensive and enforced on every read path; the control that
-moves a photo to `released` has no door. Same shape as the ring-name takedown.
+`pilot.shadow_formula_results` has a reachable writer. An athlete submits the
+Deep-Track sparring form, `shadow/formulas/observations` stores the
+observations, and `detectAndRunCompletedFormulas` runs every formula whose
+input set that submission completed. Results are written on every complete
+submission. Until 2026-08-29 every path back out was on this list, so the
+engine computed and no screen showed it.
+
+| Reader | Reached from | Door |
+| --- | --- | --- |
+| `listLatestFormulaResultsPerOutput` → `getAthleteIntelligence` | `coach/athlete-intelligence` GET | **`/coach/athlete-intelligence`** |
+| `listActiveFormulaResults` | `shadow/formulas/results` GET | none |
+| `findFormulaResultsUsingObservation` | `runner.ts` supersession | not a surface |
+
+WHAT CLOSED. `/coach/athlete-intelligence` renders the latest value of every
+formula output for one athlete with what qualifies it. It reads the per-output
+query rather than `listActiveFormulaResults`, which orders by `computed_at` and
+takes the newest N ROWS — so a formula that recomputes often buries one that
+does not, and the reader cannot tell that from the buried formula having no
+value at all (`repository.ts` states it, `athleteIntelligence.pg.test.ts`
+measures it).
+
+WHAT DID NOT, AND SHOULD NOT BE "FIXED" BY REFLEX. `shadow/formulas/results`
+GET stays on this list and is a weaker read of the same table; nothing should
+be wired to it to shorten the list, and the console deliberately did not. Its
+POST is not a missing door either: `autoCalculation.ts` was built precisely
+because "nothing in the product does that", and its header records the owner
+decision that the two actor lists deliberately differ.
+
+ONE THING A READER SHOULD STILL KNOW. The sparring page's copy still refuses to
+promise the athlete that a coach sees what they submitted:
+
+> The ordinary-path copy may not claim a coach sees this. Nothing reads
+> ordinary sparring observations back out.
+
+A coach-facing screen now reads the values DERIVED from those observations, so
+that sentence is closer to false than it was. Changing it is a decision about
+what to tell a child about their own data, it belongs to the owner, and it was
+deliberately left alone by the change that built the screen.
 
 **`board/chat`, `coach/chat`, `individual/chat`.** Three per-role SHADOW chat
 routes with no caller, while `athlete/chat` is wired into `AthleteWorkspace`
@@ -164,20 +249,28 @@ API = 'app/api/pilot'
 routes = ['/' + os.path.relpath(r, 'app').replace(os.sep, '/')
           for r, _, files in os.walk(API) if 'route.ts' in files]
 
-corpus = []
+lines = []                        # keep lines, not one blob: a match must be judged
 for root, _, files in os.walk('.'):
     if any(x in root for x in ('node_modules', '.next', '.git')): continue
     if root.startswith('./app/api'): continue          # a route is not its own caller
     for f in files:
         if not f.endswith(('.ts', '.tsx', '.mjs', '.js')): continue
         if '.test.' in f or f.endswith('.manifest.mjs'): continue   # neither is a door
-        corpus.append(open(os.path.join(root, f), encoding='utf8', errors='ignore').read())
-blob = '\n'.join(corpus)
+        p = os.path.join(root, f)
+        lines += open(p, encoding='utf8', errors='ignore').read().splitlines()
+
+def is_comment(line):
+    s = line.strip()
+    return s.startswith('//') or s.startswith('*') or s.startswith('/*')
 
 def reached(p):
     # a dynamic route is built in a template literal, so only the static
     # prefix before the first [segment] ever appears as a literal
-    return p in blob or ('[' in p and p.split('/[')[0] in blob)
+    needle = p.split('/[')[0] if '[' in p else p
+    # and a path named in a COMMENT is not a door, for the same reason a path
+    # named in a test is not one. This is the pass-4 fix; without it two
+    # routes were reported reached by prose alone.
+    return any(needle in l and not is_comment(l) for l in lines)
 
 for p in sorted(routes):
     if not reached(p): print(p)
