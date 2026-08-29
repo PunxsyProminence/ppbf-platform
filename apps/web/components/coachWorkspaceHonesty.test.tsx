@@ -281,7 +281,6 @@ function classToday(overrides: Record<string, unknown> = {}): Record<string, unk
   // day override start_at outright, the way "a class on another day" does.
   const now = new Date();
   const start = gymMiddayToday();
-  const start = now;
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
     class_id: 'cls_1',
