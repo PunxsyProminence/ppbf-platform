@@ -19,6 +19,9 @@ import {
   buildShadowChatRequest,
   deleteOwnedShadowSession,
   fetchOwnShadowDataExport,
+  fetchOwnShadowDeletionRequest,
+  requestOwnShadowDeletion,
+  type OwnShadowDeletionRequest,
   listOwnedShadowSessions,
   loadOwnedShadowSessionMessages,
   mapStoredShadowMessage,
@@ -356,6 +359,21 @@ function ShadowChatPageContent() {
      to run a query. One flag, not a busy id: there is one export and it is
      the whole account's. */
   const [exportBusy, setExportBusy] = useState(false);
+
+  /* The deletion request, and where it stands.
+     POST /api/pilot/shadow/data has filed these since the SHADOW runtime
+     slice and answered `fulfillment: 'manual_review_required'` while nothing
+     anywhere surfaced one to a reviewer. It reaches the compliance center's
+     queue now, which is what makes the control below honest rather than a
+     promise the platform could not keep.
+
+     Three states, not two: a request that could not be READ must never render
+     as "you have not asked". A person told that files a second one, and the
+     server's idempotency check absorbs the duplicate but not the confusion. */
+  const [deletionRequest, setDeletionRequest] = useState<OwnShadowDeletionRequest | null>(null);
+  const [deletionState, setDeletionState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [deletionBusy, setDeletionBusy] = useState(false);
+  const [deletionArmed, setDeletionArmed] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [restoringSessionId, setRestoringSessionId] = useState<string>();
   const [sessionNotice, setSessionNotice] = useState<string>();
@@ -538,6 +556,19 @@ function ShadowChatPageContent() {
   useEffect(() => {
     if (!capabilitiesLoaded || !chatRoleAllowed) return;
     const controller = new AbortController();
+
+    void fetchOwnShadowDeletionRequest(apiBase(), controller.signal)
+      .then((item) => {
+        if (controller.signal.aborted) return;
+        setDeletionRequest(item);
+        setDeletionState('loaded');
+      })
+      .catch(() => {
+        // Deliberately NOT 'loaded'. A failed check is not "you have no
+        // request", and it is not worth its own banner either -- the control
+        // below simply declines to claim anything either way.
+        if (!controller.signal.aborted) setDeletionState('unavailable');
+      });
 
     void listOwnedShadowSessions(apiBase(), controller.signal)
       .then((sessions) => {
@@ -838,6 +869,51 @@ function ShadowChatPageContent() {
       );
     } finally {
       setExportBusy(false);
+    }
+  }
+
+  /**
+   * File a request to have SHADOW conversation history cleared.
+   *
+   * This is a REQUEST and the wording never softens that. An organization
+   * admin works it from the compliance center; the platform does not delete on
+   * this click, and a control that implied otherwise would be the same defect
+   * as the dead letter it replaces, wearing a friendlier face.
+   *
+   * Per-conversation deletion is immediate and sits beside each saved session
+   * above -- somebody who wants one chat gone does not need this at all, and
+   * the copy says so rather than routing them through a review queue.
+   */
+  async function handleRequestDeletion() {
+    if (deletionBusy) return;
+    setDeletionBusy(true);
+    setSessionNotice(undefined);
+    try {
+      await requestOwnShadowDeletion(apiBase());
+      const item = await fetchOwnShadowDeletionRequest(apiBase());
+      setDeletionRequest(item);
+      setDeletionState('loaded');
+      setDeletionArmed(false);
+      setSessionNotice(
+        'Request filed. A gym admin reviews it and clears your SHADOW conversation history -- '
+        + 'nothing is deleted yet, and your account, sessions and records are not affected.',
+      );
+    } catch (error) {
+      if (
+        error instanceof ShadowSessionsRequestError
+        && isSessionDeathStatus(error.status)
+      ) {
+        clearRoleSession();
+        router.replace('/login');
+        return;
+      }
+      setSessionNotice(
+        error instanceof ShadowSessionsRequestError
+          ? error.message
+          : 'SHADOW could not file your request. Nothing was sent.',
+      );
+    } finally {
+      setDeletionBusy(false);
     }
   }
 
@@ -1292,6 +1368,81 @@ function ShadowChatPageContent() {
           {sessionNotice ? (
             <p role="status" className="t-body mt-[var(--s3)]">{sessionNotice}</p>
           ) : null}
+
+          {/* THE DELETION REQUEST.
+              Below the download and below the notice, because it is the
+              heavier of the two and should not be the first control a hand
+              lands on.
+
+              It renders NOTHING while the check is loading or unavailable. A
+              control that appeared before the platform knew whether a request
+              was already pending would invite a second one, and "you have not
+              asked" is not a claim this screen may make on a failed read. */}
+          {deletionState === 'loaded' && (
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] p-[var(--s3)]">
+              {deletionRequest && (deletionRequest.status === 'pending' || deletionRequest.status === 'approved') ? (
+                <p className="t-muted">
+                  You have asked for your SHADOW conversation history to be cleared. A gym admin
+                  reviews it. Nothing has been deleted yet, and asking again would not make it
+                  sooner.
+                </p>
+              ) : deletionRequest?.status === 'completed' ? (
+                <p className="t-muted">
+                  Your SHADOW conversation history was cleared. Anything you have said since is
+                  still here, and you can ask again.
+                </p>
+              ) : (
+                <>
+                  {deletionRequest?.status === 'denied' && (
+                    /* Said plainly rather than hidden. A person whose request
+                       was refused is entitled to know it was refused, not to
+                       find a fresh button and wonder whether the last one
+                       worked. */
+                    <p className="t-muted mb-[var(--s2)]">
+                      Your last request was reviewed and declined. Ask your coach or a gym admin
+                      why before asking again.
+                    </p>
+                  )}
+                  {deletionArmed ? (
+                    <>
+                      <p className="t-body">
+                        This asks a gym admin to clear every SHADOW conversation on this account.
+                        It is a request, not a deletion — nothing goes until an admin works it.
+                        Your account, your sessions and your training records are not affected. To
+                        remove one chat now, use Delete beside it above.
+                      </p>
+                      <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
+                        <button
+                          type="button"
+                          disabled={deletionBusy}
+                          onClick={() => void handleRequestDeletion()}
+                          className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletionBusy ? 'Sending…' : 'Send the request'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deletionBusy}
+                          onClick={() => setDeletionArmed(false)}
+                          className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setDeletionArmed(true)}
+                      className="btn btn--ghost"
+                    >
+                      Ask for my history to be cleared
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {sessionsLoading ? (
             <p className="t-muted mt-[var(--s3)]">Loading saved sessions...</p>

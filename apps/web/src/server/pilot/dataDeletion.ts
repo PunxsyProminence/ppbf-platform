@@ -296,7 +296,16 @@ export async function deleteAthleteRecord(
 
 /**
  * Hard-deletes data that has been soft-deleted and reached its retention window.
- * Runs as a background process. Returns count of rows deleted.
+ * Returns count of rows deleted.
+ *
+ * NOT THE JOB THAT RUNS. retention-cleanup.yml dispatches
+ * scripts/pilot-cleanup-deleted-data.mjs, which issues the same statements
+ * behind the target, dry-run and blast-radius guards; this function has no
+ * caller in the application. The two are kept in step deliberately -- one
+ * destructive policy written twice is how the two stop agreeing -- but the
+ * script is the one with the per-account isolation, so a guardian it cannot
+ * purge does not stop the others. Here a blocked account still aborts the
+ * transaction. Consolidating them is a separate change.
  */
 export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }> {
   // One transaction. These are the only irreversible deletes in the platform,
@@ -315,6 +324,48 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
        returning athlete_id`,
     );
     totalDeleted += athleteDelete.rows.length;
+
+    /* The guardian's own record goes first, and the account cannot be deleted
+       without it. Owner decision, 2026-08-28 (D-8): "delete the parents row
+       too". pilot.parents holds their name, phone and email -- the personal
+       data this policy promises to remove -- and pilot.parents.account_id is a
+       RESTRICTING foreign key onto pilot.accounts, so the delete below raised
+       23503 for every guardian who had ever been recorded as a parent, which
+       is all of them.
+
+       guardian_links is ON DELETE CASCADE from pilot.parents, so the
+       child-to-guardian links go too. pilot.waivers.parent_id is ON DELETE SET
+       NULL, so the waivers SURVIVE -- purging a withdrawn family must never
+       destroy the documents that authorised a minor's participation. */
+    /* Cleared by hand before the delete: pilot.waivers' foreign key onto
+       pilot.parents is COMPOSITE (organization_id, parent_id) and ON DELETE
+       SET NULL, and Postgres nulls every column in the key -- including
+       organization_id, which is NOT NULL. Deleting the guardian record without
+       this fails with 23502. Same reasoning, and the same two statements, as
+       scripts/pilot-cleanup-deleted-data.mjs. */
+    await client.query(
+      `update pilot.waivers w
+          set parent_id = null
+         from pilot.parents p
+        where p.account_id in (
+                select account_id from pilot.accounts
+                 where deleted_at is not null
+                   and deleted_at < (now() - interval '1 year')
+                   and role = 'parent'
+              )
+          and w.organization_id = p.organization_id
+          and w.parent_id = p.parent_id`,
+    );
+
+    await client.query(
+      `delete from pilot.parents
+        where account_id in (
+          select account_id from pilot.accounts
+           where deleted_at is not null
+             and deleted_at < (now() - interval '1 year')
+             and role = 'parent'
+        )`,
+    );
 
     // Delete accounts (parents) soft-deleted more than 1 year ago
     const accountDelete = await client.query(
