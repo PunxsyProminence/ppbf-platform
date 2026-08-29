@@ -490,10 +490,23 @@ export default function CoachDevelopmentBlocksPage() {
       setObjectiveLinksByBlock((prior) => ({ ...prior, [blockId]: payload.links ?? [] }));
       setObjectivesStateByBlock((prior) => ({ ...prior, [blockId]: 'loaded' }));
     } catch {
-      // Not "this block has no objectives" -- that is a statement about the
-      // plan which this failed read did not establish.
-      setObjectivesByBlock((prior) => ({ ...prior, [blockId]: [] }));
-      setObjectiveLinksByBlock((prior) => ({ ...prior, [blockId]: [] }));
+      /* ONLY THE STATE MOVES. This used to clear objectivesByBlock and
+         objectiveLinksByBlock too, on the reasoning that a failed read must
+         not leave "this block has no objectives" standing -- which is the
+         right instinct applied to the wrong map.
+
+         objectivesByBlock IS SHARED WITH THE PRE-EXISTING loadObjectives,
+         which tracks its own status in objectivesState. Clearing it here
+         therefore reached into a read that had SUCCEEDED: the block's own
+         objectives panel still saw objectivesState === 'loaded', now over an
+         empty list, and rendered "Nothing recorded yet" for a block with
+         three objectives. A 503 on this loader was being reported as a fact
+         about the plan, on a surface this loader does not own.
+
+         The state map is what stops a stale list reading as a fresh one --
+         the section below requires 'loaded', and 'unavailable' says out loud
+         that nobody could look. Nothing has to be deleted to achieve that,
+         and deleting it is what caused the lie. */
       setObjectivesStateByBlock((prior) => ({ ...prior, [blockId]: 'unavailable' }));
     }
   }, []);
