@@ -15,9 +15,18 @@ import {
 import {
   formatGymDateNumeric,
   formatGymDateTimeShort,
+  formatGymDay,
   formatGymStamp,
   formatGymTimeOfDay,
 } from '@/src/lib/gymTime';
+import {
+  COACH_DEVELOPMENT_GOAL_STATUS_LABEL,
+  COACH_DEVELOPMENT_TOPIC_PROMPTS,
+  coachDevelopmentGoalStatusLabel,
+  type CoachDevelopmentActivityRow,
+  type CoachDevelopmentGoalRow,
+  type CoachDevelopmentGoalStatus,
+} from '@/src/shared/coachDevelopment';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -158,13 +167,10 @@ interface CoachTask {
  * there is nothing to render a bar from: the fake figure was removed at the
  * schema, not just at the surface.
  */
-interface CoachDevelopmentGoal {
-  goal_id: string;
-  title: string;
-  development_focus: string;
-  target_on: string | null;
-  status: 'draft' | 'active' | 'completed' | 'cancelled';
-}
+type CoachDevelopmentGoal = Pick<
+  CoachDevelopmentGoalRow,
+  'goal_id' | 'title' | 'development_focus' | 'target_on' | 'status'
+>;
 
 /**
  * Development work this coach recorded doing. SELF-ENTERED AND UNVERIFIED --
@@ -172,21 +178,27 @@ interface CoachDevelopmentGoal {
  * record is pilot.person_clearances, which the Current Certifications panel
  * above reads.
  */
-interface CoachDevelopmentActivity {
-  activity_id: string;
-  title: string;
-  provider: string;
-  occurred_on: string;
-  duration_minutes: number | null;
-}
+type CoachDevelopmentActivity = Pick<
+  CoachDevelopmentActivityRow,
+  'activity_id' | 'title' | 'provider' | 'occurred_on' | 'duration_minutes'
+>;
 
-/** The wording for each development-goal state. A personal planning state,
- *  never a safety one: nothing here wears a saturated safety rung. */
-const GOAL_STATUS_BADGE: Record<CoachDevelopmentGoal['status'], { readonly tone: BadgeTone; readonly label: string }> = {
-  draft: { tone: 'neutral', label: 'Draft' },
-  active: { tone: 'cleared', label: 'Working on it' },
-  completed: { tone: 'monitor', label: 'Completed' },
-  cancelled: { tone: 'neutral', label: 'Cancelled' },
+/** The TONE for each development-goal state. A personal planning state, never
+ *  a safety one: nothing here wears a saturated safety rung. The words come
+ *  from the shared vocabulary so this hub and /coach/development call each
+ *  state the same thing. */
+const GOAL_STATUS_TONE: Record<CoachDevelopmentGoalStatus, BadgeTone> = {
+  draft: 'neutral',
+  active: 'cleared',
+  completed: 'monitor',
+  cancelled: 'neutral',
+};
+
+const GOAL_STATUS_BADGE: Record<CoachDevelopmentGoalStatus, { readonly tone: BadgeTone; readonly label: string }> = {
+  draft: { tone: GOAL_STATUS_TONE.draft, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.draft },
+  active: { tone: GOAL_STATUS_TONE.active, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.active },
+  completed: { tone: GOAL_STATUS_TONE.completed, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.completed },
+  cancelled: { tone: GOAL_STATUS_TONE.cancelled, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.cancelled },
 };
 
 /**
@@ -1513,18 +1525,31 @@ export default function CoachWorkspace() {
         `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`,
         { method: 'GET', credentials: 'include' },
       );
+      /* THE CHECK IS REPEATED AFTER EVERY await, NOT ONLY AFTER THE FETCH.
+         Reading the body is a second suspension point, and a coach who
+         changes athlete during it used to get the previous athlete's session
+         list rendered under the new athlete's name -- one athlete's training
+         record attributed to another, which is the failure this guard exists
+         to prevent and the one it did not cover. Every state-setting branch
+         below is now downstream of a check that no await follows. */
       if (reviewAthleteRef.current !== athleteId) {
         return;
       }
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (reviewAthleteRef.current !== athleteId) {
+          return;
+        }
         setReviewSessionsError(payload.error || 'Sessions could not be loaded.');
         setReviewSessionsState('unavailable');
         return;
       }
 
       const payload = (await response.json()) as { items?: unknown[] };
+      if (reviewAthleteRef.current !== athleteId) {
+        return;
+      }
       // The list route orders by date alone, which cannot separate two
       // sessions on the same day; the athlete workspace re-orders the same
       // read on created_at for the same reason.
@@ -1563,6 +1588,11 @@ export default function CoachWorkspace() {
         return;
       }
       const payload = (await response.json()) as { items?: unknown[] };
+      // Same second suspension point, same re-check: reviews written about
+      // one session must not appear under another.
+      if (reviewSessionRef.current !== sessionId) {
+        return;
+      }
       setSessionReviews(
         (payload.items ?? [])
           .map(normalizeSessionReview)
@@ -2819,7 +2849,10 @@ export default function CoachWorkspace() {
                                 recorded, so a row with no provider renders one
                                 clean line rather than a dangling separator. */}
                             <p className="t-muted">
-                              {[item.occurred_on, item.provider || null].filter(Boolean).join(' · ')}
+                              {[
+                                formatGymDay(item.occurred_on) ?? item.occurred_on,
+                                item.provider || null,
+                              ].filter(Boolean).join(' · ')}
                             </p>
                           </li>
                         ))}
@@ -2827,9 +2860,14 @@ export default function CoachWorkspace() {
                     </>
                   )}
 
+                  {/* Read from the shared list rather than recited. The same
+                      five topics were hand-typed here as prose, so the
+                      development page could gain or lose one and this hub
+                      would go on naming the old set -- two copies of a list
+                      that is explicitly "not a syllabus" is how one of them
+                      quietly becomes the authoritative one. */}
                   <p className="t-muted">
-                    Topics some coaches work through: Boxing Technique Instruction, Youth Development
-                    Psychology, Injury Prevention Basics, Class Management Skills, Adaptive Coaching.
+                    Topics some coaches work through: {COACH_DEVELOPMENT_TOPIC_PROMPTS.join(', ')}.
                     A reference list, not a syllabus and not a checklist.
                   </p>
 
@@ -2894,15 +2932,22 @@ export default function CoachWorkspace() {
                   cannot come back by accident. */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {developmentState === 'loaded' && coachGoals.map(goal => {
-                  /* Unguarded, this took the whole surface down rather than one row:
-       an unrecognised status yields undefined and the next property
-       read throws during render. The status union here is a private
-       copy of the server's vocabulary, so a fifth state added
-       server-side compiles clean and fails only at runtime. An
-       unknown state is shown as unknown -- which is also the honest
-       rendering of a value this page does not understand. */
-    const badge = GOAL_STATUS_BADGE[goal.status]
-      ?? { className: 'badge--filed', label: goal.status || 'Unknown' };
+                  /* Unguarded, this took the whole surface down rather than one
+                     row: an unrecognised status yields undefined and the next
+                     property read throws during render. An unknown state is
+                     shown as the word it arrived as, which is the honest
+                     rendering of a value this build does not understand.
+
+                     THE FALLBACK USED TO BE THE WRONG SHAPE -- it supplied a
+                     `className`, and this render reads `badge.tone`. Nothing
+                     caught it: `Record<K, V>` indexing is typed non-nullable,
+                     so `?? fallback` narrows to the left operand and the
+                     fallback's shape is checked against nothing. Indexing
+                     through a Partial is what makes the `??` real to the type
+                     checker, and therefore what makes the fallback's shape
+                     checked at all. */
+    const badge = (GOAL_STATUS_BADGE as Partial<Record<string, { readonly tone: BadgeTone; readonly label: string }>>)[goal.status]
+      ?? { tone: 'neutral' as BadgeTone, label: coachDevelopmentGoalStatusLabel(goal.status) };
                   return (
                     <div key={goal.goal_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
                       <div className="flex justify-between items-start gap-[var(--s3)]">
@@ -2913,7 +2958,7 @@ export default function CoachWorkspace() {
                       {/* Only when there is one. A goal with no deadline shows
                           no date line, rather than an empty "Due:" label. */}
                       {goal.target_on ? (
-                        <p className="t-muted">Target date {goal.target_on}</p>
+                        <p className="t-muted">Target date {formatGymDay(goal.target_on) ?? goal.target_on}</p>
                       ) : null}
                     </div>
                   );
