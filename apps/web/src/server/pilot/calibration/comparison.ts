@@ -204,6 +204,18 @@ export function resolveComparisonPair<T extends { readonly annotation_set_id: st
   requestedA: string | null,
   requestedB: string | null,
 ): PairResolution<T> {
+  /* A CHOICE ONLY EXISTS WHERE THERE IS ONE TO MAKE.
+   *
+   * At two readings there is exactly one pair, and it comes from the gate's
+   * own list either way, so a requested pair is ignored rather than
+   * validated. That keeps the contract the adjudication route was built and
+   * tested on -- a body claiming which readings were weighed changes
+   * nothing -- and confines OD-2026-08-29-003 to the case it actually
+   * ruled on. Widening the refusal to two-reading clips would be a second,
+   * unratified change riding along with this one.
+   */
+  if (sets.length === 2) return { outcome: 'pair', a: sets[0], b: sets[1] };
+
   const wanted = [requestedA, requestedB].filter((id): id is string => Boolean(id && id.trim()));
 
   if (wanted.length === 1) {

@@ -7,7 +7,7 @@ import {
 } from '@/src/server/pilot/calibration/blinding';
 import {
   compareAnnotationSets,
-  countDisagreementsByCategory,
+  countDisagreementsByCategory,  resolveComparisonPair,
 } from '@/src/server/pilot/calibration/comparison';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -133,16 +133,31 @@ export async function GET(request: NextRequest) {
      * asking about their own organization's clip, and the call above has
      * already established that every set on it is submitted.
      */
-    if (sets.length !== 2) {
-      throw new Error(
-        `Forbidden: this clip has ${sets.length} submitted annotation `
-        + `${sets.length === 1 ? 'set' : 'sets'}, and comparison is pairwise -- it reads `
-        + 'exactly two independent readings of one clip. Which pair of three or more a study '
-        + 'means is not a question this build answers.',
-      );
+    /* OD-2026-08-29-003. Three or more readings is a question, not a refusal.
+     *
+     * The caller may name WHICH two; resolveComparisonPair validates them
+     * against what the gate returned and refuses anything else, so a set from
+     * another clip or organization cannot be fetched on a caller's say-so.
+     * Two readings still pair themselves. */
+    const chosen = resolveComparisonPair(
+      sets,
+      searchParams.get('set_a'),
+      searchParams.get('set_b'),
+    );
+
+    if (chosen.outcome === 'selection_required') {
+      /* Deliberately NOT the readings. Until a pair is chosen there is no
+       * comparison to make, and shipping all three readings' events "so the
+       * page has them" would disclose more than the question needs. The page
+       * asks, then reads. */
+      return NextResponse.json({
+        clip,
+        pair_selection_required: true,
+        candidate_sets: chosen.candidates,
+      }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } });
     }
 
-    const [setA, setB] = sets;
+    const { a: setA, b: setB } = chosen;
 
     const eventsA = await listAnnotationEventsForAdjudication(
       context,

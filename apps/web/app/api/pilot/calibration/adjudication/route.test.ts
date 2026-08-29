@@ -421,12 +421,12 @@ describe('nothing is settled before both readings are finished', () => {
     expect(mockRecord).not.toHaveBeenCalled();
   });
 
-  test('THREE submitted readings are refused, which states the open question rather than answering it', async () => {
-    /* Nothing caps annotators per clip and compareAnnotationSets takes exactly
-     * two. Which pair of three -- or every pair -- a study means is unanswered
-     * anywhere in this codebase, so the route refuses rather than settling a
-     * disagreement between whichever two rows a query happened to return
-     * first. OWNER DECISION, flagged in the pull request body. */
+  test('THREE submitted readings: a write without a named pair is refused', async () => {
+    /* OD-2026-08-29-003 replaced the blanket refusal that used to be here.
+     * A WRITE still cannot proceed on an unanswered question -- the GET hands
+     * the surface its candidates, and arriving here without a pair means the
+     * choice was never made. Picking one on the caller's behalf is the
+     * row-order default the ruling replaced with a person. */
     mockPrincipal.mockResolvedValue(ADMIN);
     bothSubmitted([
       SET_A,
@@ -438,10 +438,49 @@ describe('nothing is settled before both readings are finished', () => {
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body.error).toMatch(/3 submitted annotation sets/);
-    expect(body.error).toMatch(/pairwise/);
-    expect(body.error).toMatch(/not a question this build answers/);
-    expect(mockListEvents).not.toHaveBeenCalled();
+    expect(body.error).toMatch(/3 submitted readings and no pair was named/);
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  test('THREE submitted readings: a named pair is settled, and it is the named one', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted([
+      SET_A,
+      SET_B,
+      setOf({ annotation_set_id: 'set-c', annotator_account_id: 'coach-c' }),
+    ]);
+
+    const response = await POST(post({
+      ...DECISION,
+      annotation_set_id_a: 'set-a',
+      annotation_set_id_b: 'set-c',
+    }));
+
+    expect(response.status).toBe(200);
+    const input = mockRecord.mock.calls[0][0];
+    expect(input.annotationSetIdA).toBe('set-a');
+    expect(input.annotationSetIdB).toBe('set-c');
+  });
+
+  test('a named reading that is not on the clip is refused, and nothing is written', async () => {
+    // The caller says WHICH, never WHAT: the pair is validated against what
+    // the gate returned, so a reading from another clip cannot be pulled in.
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted([
+      SET_A,
+      SET_B,
+      setOf({ annotation_set_id: 'set-c', annotator_account_id: 'coach-c' }),
+    ]);
+
+    const response = await POST(post({
+      ...DECISION,
+      annotation_set_id_a: 'set-a',
+      annotation_set_id_b: 'set-from-another-clip',
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toMatch(/not among this clip's submitted readings/);
     expect(mockRecord).not.toHaveBeenCalled();
   });
 
