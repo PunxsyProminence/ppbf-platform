@@ -958,10 +958,18 @@ Evidence:
 
 6. coach review CRUD: PARTIAL
 Evidence:
-- create: apps/web/app/api/pilot/coach-reviews/route.ts
+- create AND update: apps/web/app/api/pilot/coach-reviews/route.ts (one upsert
+  route; it takes the update branch when the review_id already exists, and
+  audits `update` rather than `create` for it)
 - read: apps/web/app/api/pilot/coach-reviews/get/route.ts
-- update: apps/web/app/api/pilot/coach-reviews/update/route.ts
 - delete path not present.
+Notes: a separate `coach-reviews/update` route existed until 2026-08-28 and was
+removed. It had no caller anywhere in the repository, and for an existing review
+it produced the same authorization sequence, the same compare-and-set and the
+same audit row as the route above. What it did NOT share was that it refused to
+create -- a missing review_id was an error rather than a new record. No caller
+wanted that guarantee, and two copies of a security-sensitive sequence is how
+the second one gets left behind when the first is fixed.
 
 7. SHADOW intake: PARTIAL
 Evidence:

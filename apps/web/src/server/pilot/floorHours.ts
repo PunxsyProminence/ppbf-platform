@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { BOARD_MINIMUM_COHORT_SIZE } from './boardSummary';
 import { query, queryOne } from './db';
 
 // pilot.activity_log_adjustments, pilot.v_activity_effective_minutes,
@@ -97,6 +98,9 @@ export async function listActivityAdjustments(
 
 export type FloorHoursPeriodKind = 'all_time' | 'year' | 'quarter';
 
+/** Whether a public row's participant count cleared the k-anonymity floor. */
+export type FloorHoursParticipantStatus = 'available' | 'insufficient_data';
+
 export interface FloorHoursPublicRow {
   organization_id: string;
   activity_domain: string;
@@ -105,7 +109,11 @@ export interface FloorHoursPublicRow {
   period_quarter: number | null;
   hours: string;
   sessions_recorded: string;
-  distinct_participants: string;
+  /** Null whenever participant_status is 'insufficient_data'. Never 0 for a
+   * suppressed cohort -- a withheld figure and a measured zero are different
+   * facts and stay distinguishable all the way to the caller. */
+  distinct_participants: string | null;
+  participant_status: FloorHoursParticipantStatus;
   first_recorded: string | null;
   last_recorded: string | null;
 }
@@ -118,7 +126,7 @@ export async function getFloorHoursPublic(
   organizationId: string,
   filter: { activityDomain?: string; periodKind?: FloorHoursPeriodKind } = {},
 ): Promise<FloorHoursPublicRow[]> {
-  return query<FloorHoursPublicRow>(
+  const rows = await query<Omit<FloorHoursPublicRow, 'participant_status'>>(
     `select organization_id, activity_domain, period_kind, period_year, period_quarter, hours,
             sessions_recorded, distinct_participants, first_recorded, last_recorded
      from pilot.v_floor_hours_public
@@ -128,6 +136,45 @@ export async function getFloorHoursPublic(
      order by activity_domain, period_kind, period_year desc nulls last, period_quarter desc nulls last`,
     [organizationId, filter.activityDomain ?? null, filter.periodKind ?? null],
   );
+
+  /* K-ANONYMITY ON THE UNAUTHENTICATED SURFACE.
+   *
+   * This is the only floor-hours reader with no session behind it, and until
+   * now it was the LEAST protected: pilot.v_floor_hours_public exposed
+   * distinct_participants with no floor at all, while board members -- who are
+   * authenticated, hold a governance role, and see the same class of figure --
+   * get everything below BOARD_MINIMUM_COHORT_SIZE withheld by
+   * boardSummary.ts. A public page being more revealing than the governance
+   * one is backwards, so the same floor applies here.
+   *
+   * "1 participant, 2.5 hours, first and last recorded on these dates" is a
+   * re-identification vector in a gym this size. The participant COUNT is the
+   * part that carries it, so the count is what is withheld.
+   *
+   * HOURS AND SESSIONS ARE DELIBERATELY NOT SUPPRESSED. They are organization
+   * totals over activity rows, not over people, and they are the entire point
+   * of a public floor-hours page. Withholding them would cost the surface its
+   * purpose without closing the vector the count opens.
+   *
+   * RESIDUAL, STATED HONESTLY RATHER THAN PAPERED OVER: a very small hours
+   * figure still narrows the cohort by inference, and the first/last dates
+   * still bound when activity happened. This closes the direct disclosure, not
+   * every inference from it. Tightening further is a product decision about
+   * what a public page is for, not something to smuggle in here.
+   *
+   * The floor is IMPORTED rather than restated. boardSummary.ts exports it
+   * with the note that other aggregates should hold "this same floor rather
+   * than inventing a second, weaker one" -- a public surface inventing its own
+   * number is exactly that failure. */
+  return rows.map((row) => {
+    const participants = Number(row.distinct_participants);
+    const cleared = Number.isFinite(participants) && participants >= BOARD_MINIMUM_COHORT_SIZE;
+    return {
+      ...row,
+      distinct_participants: cleared ? row.distinct_participants : null,
+      participant_status: cleared ? 'available' : 'insufficient_data',
+    } satisfies FloorHoursPublicRow;
+  });
 }
 
 export interface FloorHoursAdminRow {

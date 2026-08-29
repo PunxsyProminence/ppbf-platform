@@ -245,6 +245,19 @@ function PeopleConsoleContent() {
   // Which guardian link the admin has asked to remove, held so the removal
   // needs a second, explicit confirmation on the row itself.
   const [pendingUnlink, setPendingUnlink] = useState<{ accountId: string; athleteId: string } | null>(null);
+  /* THE LIGHT ONE.
+     POST /api/pilot/admin/accounts/revoke has existed since sessions did and
+     nothing on any screen called it. Its sibling in the same directory,
+     accounts/pin-reset, has had a control on this page all along -- so an
+     admin who needed to end a live session could only reach the heavy action,
+     which nulls the pin_hash, clears active_flag AND revokes, leaving the
+     person locked out until somebody redeems a new activation code.
+
+     A coach who left the gym tablet signed in, or a guardian whose phone was
+     taken, needs the session ended and nothing else. Armed per row because it
+     interrupts somebody mid-use, and that should not be a stray tap on a
+     roster. */
+  const [revokeArmedId, setRevokeArmedId] = useState<string | null>(null);
 
   // Add athlete form. account_id and athlete_id are shared by both modes; the
   // rest of the roster fields are only sent when creating a new record.
@@ -785,6 +798,42 @@ function PeopleConsoleContent() {
   }
 
   /**
+   * End every live session for one account, and change nothing else.
+   *
+   * Deliberately NOT the same act as "Issue New Activation Code" below, and
+   * the copy on the control says so: this leaves the credential working, so
+   * the person signs straight back in on their own device. Conflating the two
+   * is how an admin locks a coach out of the gym for the evening when all
+   * they meant to do was clear a tablet.
+   */
+  async function handleRevokeSessions(accountId: string) {
+    setBusy(true);
+    setNotice('');
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/accounts/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ account_id: accountId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not sign that account out');
+      }
+      setRevokeArmedId(null);
+      setNotice(
+        `${accountId} is signed out on every device. Their sign-in still works — `
+        + 'they can sign back in. To stop that too, issue a new activation code.',
+      );
+    } catch (revokeError) {
+      setError(revokeError instanceof Error ? revokeError.message : 'Could not sign that account out');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
    * Revoke the old credential and sessions, then issue a fresh one-time code.
    */
   async function handleResetToStartingPin(accountId: string) {
@@ -1150,18 +1199,63 @@ function PeopleConsoleContent() {
                         </td>
 
                         <td>
-                          {isPinAthlete ? (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => void handleResetToStartingPin(member.account_id)}
-                              className="btn--lever whitespace-nowrap disabled:opacity-50"
-                            >
-                              Issue New Activation Code
-                            </button>
-                          ) : (
-                            <span aria-hidden="true">—</span>
-                          )}
+                          <div className="flex flex-col items-start gap-[var(--s2)]">
+                            {isPinAthlete && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void handleResetToStartingPin(member.account_id)}
+                                className="btn--lever whitespace-nowrap disabled:opacity-50"
+                              >
+                                Issue New Activation Code
+                              </button>
+                            )}
+
+                            {/* Offered on EVERY row, not just the PIN athletes.
+                                Until now a staff row had no action at all --
+                                an em-dash -- so ending a coach's session was
+                                something this console could not do at any
+                                weight. The route admits any active member of
+                                this organization who is not a platform owner,
+                                and that is the set of rows here. */}
+                            {revokeArmedId === member.account_id ? (
+                              <>
+                                <p className="max-w-[34ch]">
+                                  Signs {member.account_id} out on every device now. Their sign-in
+                                  still works and they can sign back in — this ends the session,
+                                  it does not lock the account.
+                                </p>
+                                <div className="flex flex-wrap gap-[var(--s2)]">
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => void handleRevokeSessions(member.account_id)}
+                                    className="btn--lever whitespace-nowrap disabled:opacity-50"
+                                  >
+                                    Sign Them Out
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => setRevokeArmedId(null)}
+                                    className="btn btn--ghost whitespace-nowrap disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                aria-label={`Sign ${member.account_id} out on every device`}
+                                onClick={() => setRevokeArmedId(member.account_id)}
+                                className="btn btn--ghost whitespace-nowrap disabled:opacity-50"
+                              >
+                                Sign Out Everywhere
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

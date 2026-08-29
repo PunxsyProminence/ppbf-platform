@@ -87,6 +87,33 @@ async function withDurableClient<T>(work: (client: PoolClient) => Promise<T>): P
 // instead of locking every athlete out, which is the same degradation the
 // durable store already has for a database blip.
 
+// How many rightmost X-Forwarded-For entries were written by our own
+// infrastructure rather than by the caller.
+//
+// THE DEFAULT OF 1 IS THE PLATFORM CONTRACT, NOT A GUESS. Azure Container Apps
+// documents exactly what it does to this header: "If specified in initial
+// request, it is appended to. Only the rightmost IP is provided by Azure
+// Container Apps. Any other values must be validated by the user to prevent IP
+// spoofing."
+// https://learn.microsoft.com/azure/container-apps/ingress-overview#http-headers
+//
+// So the ingress appends exactly one entry, and the count does not vary with
+// how long the header is. A caller can send an arbitrarily long fabricated
+// chain; the platform still appends one address, and one trusted hop still
+// lands on it. Both PPBF environments run on Container Apps ingress, so 1 is
+// correct in both.
+//
+// RAISING THIS IS THE HAZARD, and it is not hypothetical -- getClientIp's own
+// comment below records the incident: reading one position further left
+// returned attacker-controlled chain data and let a caller mint a fresh
+// rate-limit bucket per request by rotating a forged header. Every entry left
+// of the rightmost is, by the contract above, caller-written. There is no
+// topology in this deployment that justifies a higher number, which is why no
+// workflow sets this variable and .env.example does not carry it.
+//
+// A value only makes sense if PPBF ever sits behind an additional proxy that
+// appends before Container Apps does (Front Door, a WAF, a CDN). Confirm the
+// real hop count against a live request first; do not infer it from a diagram.
 function trustedProxyCount(): number {
   const raw = process.env.PPBF_TRUSTED_PROXY_COUNT;
   const parsed = Number.parseInt(raw ?? '1', 10);
