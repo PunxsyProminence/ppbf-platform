@@ -827,4 +827,335 @@ test.describe('Coach journey', () => {
 
     await expect(page.getByText('Written by acct-coach')).toBeVisible();
   });
+
+  /* A coach's own development, in a real browser.
+     -------------------------------------------
+
+     The jsdom suites pin the wiring and the route tests pin the
+     authorization. What neither can catch is what the coach actually reads on
+     the page -- and the specific thing that must not be there is a progress
+     figure. The Coach Goals tab shipped with hardcoded goals carrying bars
+     that read "68%" for every coach who logged in; the goals were deleted and
+     the BAR was left behind as dead code over an empty list. This slice
+     points a real feed at that tab, so a browser check that no percentage,
+     bar or score reaches the screen is worth its cost.
+
+     The fixture is deliberately the tempting case: a goal whose target date
+     is long past and three activities whose durations sum to a round number.
+     A build that decided the goal was overdue, or totalled the minutes into
+     "development hours", would have both on screen here. */
+  test("a coach's own development record shows their words and no score", async ({ page }) => {
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/development': {
+          ok: true,
+          goals: [{
+            goal_id: 'goal-1',
+            title: 'Corner work under pressure',
+            development_focus: 'Keep the anxious kids in the room during hard rounds.',
+            // Years past, and still exactly what the coach left it as.
+            target_on: '2020-01-01',
+            status: 'active',
+            created_at: '2026-08-01T00:00:00.000Z',
+            updated_at: '2026-08-01T00:00:00.000Z',
+          }],
+          activities: [
+            { activity_id: 'a1', goal_id: null, title: 'Youth coaching clinic', provider: 'USA Boxing', occurred_on: '2026-03-12', duration_minutes: 60, notes: '', created_at: '2026-03-12T00:00:00.000Z' },
+            { activity_id: 'a2', goal_id: null, title: 'Ringside seminar', provider: '', occurred_on: '2026-02-02', duration_minutes: 120, notes: '', created_at: '2026-02-02T00:00:00.000Z' },
+            { activity_id: 'a3', goal_id: null, title: 'Adaptive Coaching', provider: '', occurred_on: '2026-01-05', duration_minutes: 30, notes: '', created_at: '2026-01-05T00:00:00.000Z' },
+          ],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/coach/development');
+
+    // The coach's own words, read back as written.
+    await expect(page.getByRole('heading', { name: 'Corner work under pressure' })).toBeVisible();
+    await expect(
+      page.getByText('Keep the anxious kids in the room during hard rounds.'),
+    ).toBeVisible();
+
+    // Each activity carries its own duration...
+    await expect(page.getByText('March 12, 2026 · USA Boxing · 1h 00m')).toBeVisible();
+    // ...and one with no provider recorded renders a clean line, not a
+    // dangling separator or the word null.
+    await expect(page.getByText('February 2, 2026 · 2h 00m')).toBeVisible();
+
+    const body = (await page.locator('body').innerText()).toLowerCase();
+
+    // The sum -- 210 minutes, 3h 30m -- is nowhere. A total built from
+    // self-entered rows sitting beside a certification band reads as proof of
+    // hours, and it would not be.
+    expect(body).not.toContain('3h 30m');
+    expect(body).not.toContain('210');
+
+    // No percentage, no bar, no score, and nothing calling the elapsed target
+    // date a failure.
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/overdue|expired|missed deadline|behind schedule/);
+    expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
+
+    // Nothing here claims a clearance, and the page says where the real
+    // record is instead of leaving a coach to work it out.
+    expect(body).toContain('self-entered');
+    await expect(page.getByRole('link', { name: 'Your credentials' })).toBeVisible();
+  });
+
+  /* Plan -> session, in a real browser.
+     ---------------------------------
+
+     The jsdom suite pins the wiring and the route tests pin the two different
+     authorization questions. What a browser adds is what the coach actually
+     reads next to a plan -- and the thing that must NOT be there is a count.
+     The fixture is deliberately the tempting one: two linked sessions against
+     a six-week block, which is exactly the shape somebody would render as
+     "2 of 12 delivered" or a coverage bar. */
+  test('a coach sees which sessions worked a block, and no count of them', async ({ page }) => {
+    const BLOCK = {
+      block_id: 'blk-1',
+      athlete_id: ROSA.athlete_id,
+      title: 'Late summer block',
+      training_emphasis: 'Round-three work rate.',
+      starts_on: '2026-08-01',
+      ends_on: '2026-09-30',
+      status: 'active',
+      target_competition_id: null,
+      target_wrestling_event_id: null,
+      target: null,
+      created_by_account_id: 'acct-coach-a',
+      created_at: '2026-08-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+    };
+
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': { ok: true, blocks: [BLOCK], options: [] },
+        '/api/pilot/coach/session-block-links': {
+          ok: true,
+          runs: [
+            { run_id: 'run-1', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-08', run_state: 'completed' },
+            { run_id: 'run-2', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-15', run_state: 'completed' },
+          ],
+          sessions: [
+            { run_id: 'run-1', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-08', delivered_by_account_id: 'acct-coach-a', run_state: 'completed', athletes_present: 9, blocks_completed: 4, deviation_note: '', what_worked: 'Guard held up in round three.', what_did_not: '', linked_by_account_id: 'acct-coach-a', linked_at: '2026-09-08T20:00:00.000Z' },
+            { run_id: 'run-2', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-15', delivered_by_account_id: 'acct-coach-a', run_state: 'completed', athletes_present: 11, blocks_completed: 5, deviation_note: 'Cut the last round short.', what_worked: '', what_did_not: '', linked_by_account_id: 'acct-coach-a', linked_at: '2026-09-15T20:00:00.000Z' },
+          ],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+    // The panels load when a coach opens them; opening is what a coach does.
+    await page.getByRole('button', { name: 'Sessions' }).first().click();
+
+    await expect(page.getByText('Sessions that worked this block')).toBeVisible();
+    // The run's own words about itself, carried through rather than summarised.
+    await expect(page.getByText('What worked: Guard held up in round three.')).toBeVisible();
+    await expect(page.getByText('Cut the last round short.')).toBeVisible();
+    // A blank field renders no heading at all, rather than a label over nothing.
+    await expect(page.getByText('What did not:')).toHaveCount(0);
+
+    const body = (await page.locator('body').innerText()).toLowerCase();
+
+    // NO COUNT AND NO COVERAGE. Plan-versus-actual is the next slice; a
+    // figure here would be a judgement about a coach's work with a child
+    // assembled out of links nobody validated.
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/coverage|adherence|compliance|on track|behind schedule/);
+    expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
+
+    // And a coach can attach another one.
+    await expect(page.getByLabel('Link a session')).toBeVisible();
+  });
+
+  /* Objectives marked against a session, in a real browser.
+     -----------------------------------------------------
+
+     The last bullet of PR F, and the surface where a count would do the most
+     damage: objectives carry a DOMAIN, so a tally is one step from a
+     per-domain coverage chart about a child's training. The fixture is built
+     to tempt exactly that -- three objectives across three domains, one
+     marked, and one of the unmarked ones in the nutrition domain, which is
+     the reading a coach would most wrongly treat as a finding. */
+  test('a coach marks what a session worked on, and sees no tally of it', async ({ page }) => {
+    const BLOCK = {
+      block_id: 'blk-1',
+      athlete_id: ROSA.athlete_id,
+      title: 'Late summer block',
+      training_emphasis: 'Round-three work rate.',
+      starts_on: '2026-08-01',
+      ends_on: '2026-09-30',
+      status: 'active',
+      target_competition_id: null,
+      target_wrestling_event_id: null,
+      target: null,
+      created_by_account_id: 'acct-coach-a',
+      created_at: '2026-08-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+    };
+
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': { ok: true, blocks: [BLOCK], options: [] },
+        '/api/pilot/coach/session-block-links': {
+          ok: true,
+          runs: [],
+          sessions: [
+            { run_id: 'run-1', script_id: 'scr-1', script_name: 'Tuesday Technical', delivered_on: '2026-09-08', delivered_by_account_id: 'acct-coach-a', run_state: 'completed', athletes_present: 9, blocks_completed: 4, deviation_note: '', what_worked: '', what_did_not: '', linked_by_account_id: 'acct-coach-a', linked_at: '2026-09-08T20:00:00.000Z' },
+          ],
+        },
+        '/api/pilot/coach/session-objective-links': {
+          ok: true,
+          objectives: [
+            { objective_id: 'obj-a', block_id: 'blk-1', domain: 'technical', objective: 'Stop drifting to the ropes.', status: 'active' },
+            { objective_id: 'obj-b', block_id: 'blk-1', domain: 'mental', objective: 'Settle after a clean shot.', status: 'active' },
+            { objective_id: 'obj-c', block_id: 'blk-1', domain: 'nutrition_body_composition', objective: 'Eat before the session.', status: 'active' },
+          ],
+          links: [{ run_id: 'run-1', objective_id: 'obj-a', linked_by_account_id: 'acct-coach-a' }],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+    // The panels load when a coach opens them; opening is what a coach does.
+    await page.getByRole('button', { name: 'Sessions' }).first().click();
+
+    await expect(page.getByText('Objectives this session addressed')).toBeVisible();
+    // The marked one, and the unmarked ones -- a coach has to see what the
+    // class did not touch in order to mark it.
+    await expect(page.getByRole('button', { name: 'Addressed: Stop drifting to the ropes.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Not marked: Settle after a clean shot.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Not marked: Eat before the session.' })).toBeVisible();
+
+    const body = (await page.locator('body').innerText()).toLowerCase();
+
+    // NO TALLY. "1 of 3" is the shape, and a nutrition domain reading zero is
+    // the reading -- neither of which this platform has earned.
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/coverage|adherence|neglect|gap|missing/);
+    expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
+  });
+  /* Plan versus what was actually recorded, in a real browser.
+     --------------------------------------------------------
+
+     THE SURFACE THE WHOLE LANE HAS BEEN HOLDING THE DOOR OPEN FOR. Every
+     panel before this one refused to count anything, so that when the
+     plan-versus-actual question finally arrived it would arrive undecided.
+     Here it arrives: a plan and a record of activity are on one screen for
+     the first time, and the fixture is built to tempt the exact figure the
+     build order forbids -- a six-week block, three sessions recorded, twelve
+     training attempts, and one source sitting at zero, which is precisely the
+     shape somebody renders as "3 of 12", a coverage bar, or an 82%.
+
+     What a browser adds over the jsdom suite is the reading. A coach looking
+     at a column of counts will draw a conclusion; the claim under test is
+     that what is on the glass supports only the true one -- these are counts
+     of RECORDS -- and that the judgement control next to them opens
+     undecided. */
+  test('a coach reads what was recorded against a plan, and is handed no percentage', async ({ page }) => {
+    const BLOCK = {
+      block_id: 'blk-1',
+      athlete_id: ROSA.athlete_id,
+      title: 'Late summer block',
+      training_emphasis: 'Round-three work rate.',
+      starts_on: '2026-08-01',
+      ends_on: '2026-09-30',
+      status: 'active',
+      target_competition_id: null,
+      target_wrestling_event_id: null,
+      target: null,
+      created_by_account_id: 'acct-coach-a',
+      created_at: '2026-08-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+    };
+
+    await signInAtTheBell(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/coach/athletes': { ok: true, items: [ROSA] },
+        '/api/pilot/coach/development-blocks': { ok: true, blocks: [BLOCK], options: [] },
+        '/api/pilot/coach/block-review': {
+          ok: true,
+          reviews: [
+            {
+              review_id: 'rev-1',
+              block_id: 'blk-1',
+              adherence_state: 'delivered_with_deviations',
+              deviations: 'Two weeks lost to a hall closure.',
+              reason: 'Venue.',
+              what_worked: 'Round-three output held.',
+              what_did_not: 'Southpaw work never started.',
+              next_adjustment: 'Move southpaw work forward.',
+              reviewed_by_account_id: 'acct-coach-a',
+              created_at: '2026-09-30T00:00:00.000Z',
+            },
+          ],
+          evidence: [
+            { key: 'sessions', label: 'Sessions linked to this block', recorded: 3, openInWindow: 0, recent: [{ when: '2026-09-08', detail: 'Tuesday Technical' }] },
+            { key: 'training_attempts', label: 'Training attempts recorded', recorded: 12, openInWindow: 0, recent: [] },
+            { key: 'activity_log', label: 'Training activity entries recorded', recorded: 0, openInWindow: 0, recent: [] },
+            { key: 'assessments', label: 'Assessments administered', recorded: 2, openInWindow: 3, recent: [] },
+          ],
+        },
+      },
+      landOn: '/coach/environment/intake-router',
+    });
+
+    await page.goto('/coach/development-blocks');
+    await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
+    await page.getByRole('button', { name: 'Plan vs actual' }).first().click();
+
+    await expect(page.getByText('Plan versus what was recorded')).toBeVisible();
+
+    // Counts of RECORDS, each carrying the word that says so.
+    await expect(page.getByText('Sessions linked to this block: 3 recorded')).toBeVisible();
+    await expect(page.getByText('Training attempts recorded: 12 recorded')).toBeVisible();
+    // The zero is on the glass, with the reading it does not support beside it.
+    await expect(page.getByText('Training activity entries recorded: 0 recorded')).toBeVisible();
+    await expect(page.getByText(/nobody wrote anything down/i)).toBeVisible();
+
+    /* Rows no window can place, kept apart from the count. An assessment that
+       was scheduled and never administered has no date: counting it would
+       claim a test happened, and dropping it would hide records a coach is
+       looking for. */
+    await expect(page.getByText('Assessments administered: 2 recorded')).toBeVisible();
+    // Rows due or planned inside this window that nothing was recorded
+    // against. It used to read "3 more on record with no date, which this
+    // window cannot place" -- and these rows do carry a due_on, which the
+    // window now places them by.
+    await expect(page.getByText(/3 due or planned in this window/i)).toBeVisible();
+
+    // The human's judgement, in the human's words.
+    await expect(page.getByText('Deviations: Two weeks lost to a hall closure.')).toBeVisible();
+    await expect(page.getByText('Next adjustment: Move southpaw work forward.')).toBeVisible();
+
+    const body = (await page.locator('body').innerText()).toLowerCase();
+
+    /* THE REFUSAL, ON THE RENDERED PAGE. The build order settles it in its own
+       words: "Do not invent an adherence percentage." A figure here would be a
+       machine's verdict on a coach's work with a child, and it would be
+       believed precisely because it looked measured. */
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/coverage|compliance|on track|behind schedule|completion/);
+    expect(await page.locator('progress, [role="progressbar"]').count()).toBe(0);
+
+    /* AND THE JUDGEMENT IS STILL THE COACH'S TO MAKE. Three sessions, twelve
+       attempts and a zero on screen, and the control still opens on 'unknown'
+       -- nothing read those counts and chose a state. */
+    await expect(page.getByLabel('How did it go')).toHaveValue('unknown');
+  });
 });

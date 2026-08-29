@@ -83,6 +83,20 @@ const LEGACY_READERS = new Set<string>([
   // `select 1 from pilot.activity_log` -- an existence check that a cited
   // activity really happened, not a participation count.
   'src/server/pilot/interventionEvidence.ts',
+  /* Reads one athlete's own boxing_training rows inside one development
+     block's window, as one of six independent evidence sources, and reports
+     how many entries are ON RECORD. Single source, never joined or unioned to
+     scheduler_attendance or attendance, and no rate is derived: there is no
+     denominator anywhere in that module, which is the property its own header
+     and its tests exist to hold. It reads the raw table rather than the view
+     because the question is not participation -- attendance_reconciled
+     collapses to one row per athlete-day and carries neither
+     what_was_worked_on nor activity_type, and the coach's own words about
+     what a session worked on are the point of the read. Filtered to
+     activity_domain = 'boxing_training' for the same reason the view's rank-1
+     branch is: schoolwork and community-service hours are real, and they are
+     not evidence about a training plan. */
+  'src/server/pilot/blockReview.ts',
 ]);
 
 const SCANNED_DIRECTORIES = ['app', 'components', 'src'];
