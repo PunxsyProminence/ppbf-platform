@@ -93,6 +93,63 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     expect(allowList.length).toBeGreaterThan(20);
   });
 
+  test('the workflow declares exactly one `all` list and one allowlist', () => {
+    // Three pull requests each appended their own slugs to these two lines.
+    // Git merged them as adjacent insertions with no conflict, leaving THREE
+    // `for m in ...; do` lines above a single run_one/done and THREE
+    // `case ... in` above a single esac. The three held different subsets --
+    // 116, 117 and 115 slugs of a 120-slug union -- so no single line was
+    // complete, and none of the three authors could have seen the others.
+    //
+    // Every assertion in this file reads `workflow.match(...)`, which returns
+    // the FIRST match and stops. A second copy is therefore invisible to all of
+    // them: filling in the first list turns this whole suite green while the
+    // workflow stays broken. That is not hypothetical -- it is exactly what the
+    // fix in flight at the time did. Counting the declarations is what makes a
+    // duplicate visible at all.
+    expect([...workflow.matchAll(/^\s*for m in [a-z0-9 -]+; do$/gm)]).toHaveLength(1);
+    expect([...workflow.matchAll(/^\s*case " [a-z0-9 -]+ " in$/gm)]).toHaveLength(1);
+  });
+
+  test('the Apply Migration step is syntactically valid shell', () => {
+    // The check above catches one collision shape. This catches the class.
+    //
+    // bash parses a script in full before executing any of it, so an unbalanced
+    // do/done anywhere in this step disables every target it offers -- `all`,
+    // `list-check`, and single-migration dispatch alike. The triplication above
+    // did precisely that: for a period, no migration could be applied to any
+    // environment through this workflow, and nothing in the repository noticed,
+    // because every guard here reasons about the text of the lists rather than
+    // whether the script containing them can run.
+    //
+    // `bash -n` parses without executing, so this reads no secret, contacts no
+    // database and applies nothing. It is the one assertion in this file that
+    // is not purely structural.
+    const start = workflow.indexOf('- name: Apply Migration');
+    expect(start).toBeGreaterThan(-1);
+    const rest = workflow.slice(start + 1);
+    const end = rest.indexOf('\n      - name: ');
+    const step = end === -1 ? rest : rest.slice(0, end);
+
+    const runAt = step.indexOf('run: |');
+    expect(runAt).toBeGreaterThan(-1);
+
+    const body = step.slice(runAt + 'run: |'.length).split('\n');
+    // Strip the block's own indentation rather than a hard-coded width, so
+    // re-indenting the YAML cannot silently turn this into a no-op.
+    const indent = Math.min(
+      ...body.filter((line) => line.trim() !== '').map((line) => line.match(/^ */)![0].length),
+    );
+    const script = body.map((line) => line.slice(indent)).join('\n');
+
+    // Sanity-check the extraction before trusting its verdict: an empty or
+    // truncated script would pass `bash -n` and prove nothing.
+    expect(script).toContain('for m in ');
+    expect(script).toContain('run_one');
+
+    expect(() => execFileSync('bash', ['-n'], { input: script })).not.toThrow();
+  });
+
   test.each(migrationFiles)('%s has a runner, a script, and is in `all`', (fileName) => {
     const slug = slugFor(fileName);
 
