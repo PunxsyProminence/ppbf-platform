@@ -1713,7 +1713,7 @@ describe("the hub reads the coach's own development record", () => {
 
     expect(screen.queryByText(/no backend store for completion/i)).toBeNull();
     expect(screen.queryByText('Youth coaching clinic')).not.toBeNull();
-    expect(screen.queryByText('2026-03-12 · USA Boxing')).not.toBeNull();
+    expect(screen.queryByText('March 12, 2026 · USA Boxing')).not.toBeNull();
   });
 
   test('the hub actually reads the development route rather than assuming an answer', async () => {
@@ -1826,5 +1826,167 @@ describe("the hub reads the coach's own development record", () => {
     const row = screen.getByText('SafeSport refresher').closest('li') as HTMLElement;
     expect(row.textContent ?? '').not.toMatch(/verified|expires|awaiting review|current/i);
     expect(row.querySelectorAll('.badge')).toHaveLength(0);
+  });
+});
+
+/*
+ * A GOAL STATE THIS BUILD DOES NOT KNOW.
+ *
+ * The status union was written down three times -- server, hub, standalone
+ * page -- so a fifth state added server-side compiled clean everywhere and
+ * failed only once a coach had one. The union now has one home
+ * (src/shared/coachDevelopment.ts) and both surfaces read it, but a client is
+ * always some deploys behind a server, so an unknown state still has to
+ * render, and it has to render honestly.
+ */
+describe('a goal state the hub does not recognise', () => {
+  const unknownStatusGoal = () => jsonResponse({
+    ok: true,
+    goals: [developmentGoalRow({ status: 'paused' })],
+    activities: [],
+  });
+
+  test('the card survives, rather than taking the tab down with it', async () => {
+    await renderWorkspace({ development: unknownStatusGoal });
+    openTab('Goals');
+
+    expect(screen.queryByText('Corner work under pressure')).not.toBeNull();
+    expect(screen.queryByText(/goals could not be read/i)).toBeNull();
+  });
+
+  test('the state is shown as the word it arrived as, never as a state we do know', async () => {
+    await renderWorkspace({ development: unknownStatusGoal });
+    openTab('Goals');
+
+    const card = screen.getByText('Corner work under pressure').closest('.mat-leather') as HTMLElement;
+    expect(card.textContent ?? '').toContain('paused');
+    for (const known of ['Draft', 'Working on it', 'Completed', 'Cancelled']) {
+      expect([known, (card.textContent ?? '').includes(known)]).toEqual([known, false]);
+    }
+  });
+
+  /* THE FALLBACK'S SHAPE, which nothing checked. It supplied a `className`
+     while this render reads `badge.tone`, so an unknown status produced
+     `class="badge badge--undefined"` and no glyph -- a badge that renders as
+     an unstyled word. TypeScript could not see it: Record<K, V> indexing is
+     typed non-nullable, so `?? fallback` narrows to the left operand and the
+     fallback is checked against nothing at all. */
+  test('the badge is a real neutral badge, not an undefined one', async () => {
+    await renderWorkspace({ development: unknownStatusGoal });
+    openTab('Goals');
+
+    const card = screen.getByText('Corner work under pressure').closest('.mat-leather') as HTMLElement;
+    const badge = card.querySelector('.badge') as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.className).toContain('badge--filed');
+    expect(badge.className).not.toContain('undefined');
+    expect(document.querySelectorAll('[class*="badge--undefined"]')).toHaveLength(0);
+    // 'neutral' renders the open circle. No glyph at all is what the broken
+    // shape produced.
+    expect(badge.textContent ?? '').toContain('◌');
+  });
+
+  test('a known state is unaffected and still reads in the shared wording', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [developmentGoalRow({ status: 'active' })], activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    const card = screen.getByText('Corner work under pressure').closest('.mat-leather') as HTMLElement;
+    expect(card.textContent ?? '').toContain('Working on it');
+  });
+});
+
+/*
+ * DATES READ AS DAYS, NOT AS COLUMNS. These are calendar days a coach typed,
+ * and 'YYYY-MM-DD' is the storage spelling, not a rendering. formatGymDay
+ * formats a date-only value in UTC deliberately -- it was parsed as UTC
+ * midnight, so any other zone can only move it backwards a day.
+ */
+describe("the hub's development dates are days", () => {
+  test('a goal target date is written out', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [developmentGoalRow({ target_on: '2026-12-01' })], activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText('Target date December 1, 2026')).not.toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('2026-12-01');
+  });
+
+  test('a date on the first of a month does not slip to the last of the one before', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [developmentGoalRow({ target_on: '2026-01-01' })], activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText('Target date January 1, 2026')).not.toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('December 31, 2025');
+  });
+});
+
+/*
+ * ONE ATHLETE'S SESSIONS UNDER ANOTHER ATHLETE'S NAME.
+ *
+ * loadReviewSessions checked `reviewAthleteRef.current !== athleteId` once,
+ * straight after `await fetch`. Reading the body is a SECOND suspension
+ * point, and a coach who changed athlete during it landed the previous
+ * athlete's session list under the new athlete's name -- one athlete's
+ * training record attributed to another, with nothing on screen saying so.
+ *
+ * The existing "switching athletes clears the panel" test above cannot see
+ * this: it switches between two loads that have already finished.
+ */
+describe('a slow session read that lands after the coach moved on', () => {
+  function deferredBody(body: unknown): { response: Response; release: () => void } {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const response = {
+      ok: true,
+      status: 200,
+      json: async () => { await gate; return body; },
+    } as unknown as Response;
+    return { response, release };
+  }
+
+  test("the stale athlete's sessions never replace the athlete the coach is on", async () => {
+    const stale = deferredBody({ items: [sessionRow('session_stale', { date: '2026-01-01' })] });
+
+    await renderWorkspace({
+      athletesList: () =>
+        jsonResponse({
+          items: [
+            { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+            { athlete_id: 'ath_2', full_name: 'Sam R.' },
+          ],
+        }),
+      sessionsList: (athleteId: string) =>
+        athleteId === 'ath_1'
+          ? stale.response
+          : jsonResponse({ items: [sessionRow('session_fresh', { date: '2026-08-10' })] }),
+    });
+
+    openTab('Athlete Reviews');
+    // Parks inside `await response.json()` -- the fetch has resolved and the
+    // first guard has already passed.
+    await pickReviewAthlete('ath_1');
+    // The coach moves on. This load completes.
+    await pickReviewAthlete('ath_2');
+
+    const optionValues = () =>
+      screen.queryAllByRole('option').map((element) => (element as HTMLOptionElement).value);
+    expect(optionValues()).toContain('session_fresh');
+
+    // Now the abandoned read finishes.
+    await act(async () => { stale.release(); });
+
+    expect(optionValues()).toContain('session_fresh');
+    expect(optionValues()).not.toContain('session_stale');
   });
 });
