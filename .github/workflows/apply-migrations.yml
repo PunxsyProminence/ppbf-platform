@@ -168,6 +168,10 @@ on:
           - session-scripts-discipline-fk
           - drill-library-check-drop
           - membership-account-fk
+          - block-review
+          - coach-development
+          - session-block-link
+          - session-objective-link
           - waiver-parent-fk
           - programs
           - coach-cards
@@ -175,11 +179,7 @@ on:
           - athlete-development-blocks
           - athlete-development-block-competition-target
           - athlete-development-block-objectives
-          - coach-development
           - observation-author-role
-          - session-block-link
-          - session-objective-link
-          - block-review
           - waiver-recorded-by
 
 permissions:
