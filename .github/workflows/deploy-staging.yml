@@ -221,8 +221,13 @@ jobs:
       # (instrumentation.ts): scout reports, board summaries, and opt-in
       # background Heavy Bag. Default OFF in code; enabled HERE FIRST so the
       # E2E gate and manual staging use exercise the drain loop before
-      # production ever runs it. Production states it explicitly false until
-      # staging has proven a full enqueue -> drain -> render cycle.
+      # production ever runs it.
+      #
+      # That staging-first condition has since been MET: run 30567888858
+      # (2026-07-30) drove a full enqueue -> drain -> render cycle, and
+      # production carries the flag with that evidence written beside it. For
+      # what production runs today, read deploy-production.yml -- it is the
+      # authority for its own values, and this file no longer keeps a copy.
       #
       # AZURE_AI_EMBEDDING_DEPLOYMENT_NAME names the embedding deployment for
       # semantic Library search (#102). Staging first, like every flag. The
@@ -230,26 +235,39 @@ jobs:
       # *_NAME literals), and the owner creates the deployment with exactly
       # this name; until it exists, embedText fails closed and search stays
       # on the keyword path by design, so this line is safe to ship ahead of
-      # the deployment. Production stays unset (= disabled) until staging has
-      # proven semantic results through real use.
+      # the deployment.
+      #
+      # Production now sets this too. Unlike the worker, the content gate and
+      # intake promotion, NEITHER workflow records evidence that the stated
+      # condition -- "staging has proven semantic results through real use" --
+      # was met before it was promoted. That is a gap in the record, not a
+      # claim that the promotion was wrong, and it is left as a finding rather
+      # than filled in with a reason nobody wrote down.
       #
       # PPBF_INTAKE_PROMOTION_ENABLED lets an approved intake case be promoted
       # to real athlete/guardian/domain records (review-action 'promote').
       # Default OFF in code. Enabled HERE FIRST, same rollout as the worker:
       # with the document security review built, the gate now drives
       # review -> approve -> promote end to end and needs the promotion arm
-      # live in staging. Production does not set it, which is the same
-      # disabled state -- it gains an explicit false (and eventually true)
-      # only through its own workflow change once staging has proven the
-      # promotion path through this gate.
+      # live in staging.
+      #
+      # That condition has since been MET and production carries the flag:
+      # staging run 30820241108 (2026-08-03) walked the whole intake path
+      # green, and it was turned on at the owner's explicit instruction the
+      # same day. deploy-production.yml records that evidence and the
+      # authorization limits promotion still enforces; read it there.
       #
       # AZURE_AI_VISION_DEPLOYMENT_NAME names the vision deployment for Film
       # Study (#103); owner-verified to exist on the shadow-ai resource
-      # 2026-07-30. Staging-only while the feature is pre-executor: setting it
-      # here powers the measurement diagnostic below, and film_study jobs
-      # remain SHADOW_JOB_TYPE_UNAVAILABLE until the executor ships on
-      # measured numbers. A deployment NAME, not a secret, like the embedding
-      # line above.
+      # 2026-07-30. Setting it here powers the measurement diagnostic below,
+      # and film_study jobs remain SHADOW_JOB_TYPE_UNAVAILABLE until the
+      # executor ships on measured numbers. A deployment NAME, not a secret,
+      # like the embedding line above.
+      #
+      # It is no longer staging-only: production sets it as well, because the
+      # video content gate cannot run without a vision deployment. Those two
+      # lines move together -- deploy-production.yml states that dependency
+      # explicitly and is the authority for production's values.
       #
       # PPBF_FILM_STUDY_DIAGNOSTIC_ENABLED exposes the admin-only measurement
       # probe (synthesize test clip -> extract frames -> one timed vision
@@ -262,9 +280,14 @@ jobs:
       # (#49) -- the thing that can finally move an upload off 'quarantined'.
       # Until this exists, uploaded videos are stranded: every reader requires
       # status 'ready' and nothing in the platform ever wrote it. Staging
-      # first, like every flag; production leaves it unset (= no gate, no
-      # promotion, videos stay quarantined) until staging has promoted a real
-      # upload and a human has looked at the result.
+      # first, like every flag.
+      #
+      # That condition has since been MET and production carries the gate:
+      # staging promoted a real 17.3MB upload off 'quarantined' after deploy
+      # run 30679936999, and it was enabled at the owner's explicit
+      # instruction (2026-08-01) on the stated basis that no athlete footage
+      # existed in production yet. deploy-production.yml holds that reasoning
+      # and is the authority for what production runs.
       #
       # PPBF_VIDEO_MALWARE_SCAN is deliberately NOT set, here or in
       # production. It reads a verdict Microsoft Defender for Storage writes

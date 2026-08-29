@@ -303,6 +303,69 @@ export async function renameOwnedShadowSession(
   return normalizedTitle;
 }
 
+/**
+ * One person's own SHADOW history, as GET /api/pilot/shadow/data returns it.
+ *
+ * The three counts are the reason this has a type rather than being handed
+ * around as `unknown`. An export that quietly carried the most recent hundred
+ * of somebody's hundred and fifty conversations would be a partial answer
+ * wearing the label of a complete one, and the person who asked for their data
+ * is precisely the person who cannot check.
+ *
+ * `completeAccountExport` is the server's own flag and it is false by design:
+ * this is SHADOW conversation history and memory corrections, not everything
+ * the platform holds about somebody. The screen that offers this must say so.
+ */
+export interface OwnShadowDataExport {
+  readonly exportedAt: string;
+  readonly exportScope: string;
+  readonly completeAccountExport: boolean;
+  readonly conversationLimit: number;
+  readonly conversationsStored: number;
+  readonly conversationsIncluded: number;
+  /** The raw payload, passed through unread, for writing to the file. */
+  readonly payload: Record<string, unknown>;
+}
+
+function requiredCount(value: unknown, label: string): number {
+  // A missing or non-numeric count is a malformed export, not a zero. Reading
+  // it as zero would render "0 of 0 conversations" over a file full of them.
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ShadowSessionsRequestError(502, `SHADOW returned an export with no ${label}.`);
+  }
+  return value;
+}
+
+export async function fetchOwnShadowDataExport(
+  apiBaseUrl: string,
+  signal?: AbortSignal,
+  fetchImpl: ShadowSessionsFetch = fetch,
+): Promise<OwnShadowDataExport> {
+  const response = await fetchImpl(
+    `${normalizedBaseUrl(apiBaseUrl)}/api/pilot/shadow/data`,
+    { method: 'GET', credentials: 'include', signal },
+  );
+  const payload = await parseJsonResponse(
+    response,
+    'SHADOW could not put your history together.',
+  );
+  if (payload.success !== true || !isRecord(payload.data)) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW returned a malformed export.');
+  }
+  const data = payload.data;
+  return {
+    exportedAt: typeof data.exportedAt === 'string' ? data.exportedAt : new Date().toISOString(),
+    exportScope: typeof data.exportScope === 'string' ? data.exportScope : 'unknown',
+    // Absent is treated as NOT complete. The safe reading of a server that did
+    // not say whether this is everything is "assume it is not".
+    completeAccountExport: data.completeAccountExport === true,
+    conversationLimit: requiredCount(data.conversationLimit, 'conversation limit'),
+    conversationsStored: requiredCount(data.conversationsStored, 'stored conversation count'),
+    conversationsIncluded: requiredCount(data.conversationsIncluded, 'included conversation count'),
+    payload: data,
+  };
+}
+
 export async function deleteOwnedShadowSession(
   apiBaseUrl: string,
   conversationId: string,

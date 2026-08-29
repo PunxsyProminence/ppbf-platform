@@ -10,6 +10,7 @@ The platform serves youth athletes. Preserve the hard boundaries below, but do n
 - Code reading is not runtime proof. Mark unexecuted behavioral claims `UNVERIFIED` and name the confirming check.
 - Use the smallest relevant test while iterating. Let the change-aware CI workflow run the required final repository gates.
 - New user-facing SHADOW behavior should extend the applicable staging gate or explicitly state why a deterministic gate is not possible.
+- Evidence must be **applicable** to the claim, not merely present and green. A run is evidence for the property and execution path it actually exercised and for nothing else. For a material claim, name the execution path the instrument ran and what the evidence does not establish: `docs/current/EVIDENCE_APPLICABILITY.md`.
 
 ## 2. Current source, bounded scope, and collisions
 

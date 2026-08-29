@@ -74,7 +74,15 @@ function routeFiles(dir: string): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) out.push(...routeFiles(full));
-    else if (entry.name.endsWith('.ts')) out.push(full);
+    // Routes only. A .test.ts sitting beside a route is not one, and the
+    // sweeps below read it as one in two ways that both mislead: the audit
+    // check demands a `details: {` literal that a test written with
+    // toEqual does not have, and the label it reports is derived from the
+    // DIRECTORY -- so a failure in clear/route.test.ts is printed as
+    // "clear/route.ts", pointing at a file that is fine. This has been
+    // latent since roster/route.test.ts landed; that file passed only
+    // because it happens not to mention writePilotAuditEvent.
+    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) out.push(full);
   }
   return out;
 }
