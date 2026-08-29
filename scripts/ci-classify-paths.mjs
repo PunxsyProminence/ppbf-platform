@@ -201,6 +201,7 @@ const isCoachE2ePath = (file) => {
     startsWithAny(file, [
       'apps/web/app/coach/',
       'apps/web/app/api/pilot/coach/',
+      'apps/web/app/api/pilot/coach-reviews/',
       'apps/web/app/api/pilot/shadow/',
       'apps/web/app/api/pilot/athletes/',
       'apps/web/e2e/coach-journey',
@@ -236,6 +237,7 @@ const isGuardianE2ePath = (file) => {
       'apps/web/app/parent/',
       'apps/web/app/guardian/',
       'apps/web/app/api/pilot/parent/',
+      'apps/web/app/api/pilot/parent-tasks/',
       'apps/web/app/api/pilot/profile/',
       'apps/web/e2e/guardian-journey',
     ]) ||
