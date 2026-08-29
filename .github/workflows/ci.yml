@@ -277,7 +277,15 @@ jobs:
           for (const missed of [
             ['apps/web/components/SomeNewSurface.tsx'],
             ['.github/workflows/backup.yml'],
-            ['apps/web/app/api/pilot/coach-reviews/route.ts'],
+            // SYNTHETIC, like the two above it, and that is the whole point.
+            // This entry named a REAL route -- app/api/pilot/coach-reviews --
+            // until #868 added that very prefix to the classifier's predicate
+            // list. The fixture then asserted "no predicate recognises this"
+            // about a path a predicate had started recognising, and every PR
+            // on main failed this step until it was changed. A path that does
+            // not exist cannot be claimed by a journey, so adding a predicate
+            // can never contradict this list again.
+            ['apps/web/app/api/pilot/some-new-endpoint/route.ts'],
             ['docs/capabilities/modules/example.md', 'apps/web/src/docs/capabilityEvidence.test.ts'],
           ]) {
             const missedResult = classifyPaths(missed);
