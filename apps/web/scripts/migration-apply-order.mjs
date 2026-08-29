@@ -103,8 +103,8 @@ export function slugFor(sqlFileName) {
  * migrations" is the vacuous gate described above.
  */
 export function parseAllList(workflowText) {
-  const match = /for m in ([a-z0-9 -]+); do/.exec(String(workflowText ?? ''));
-  if (!match) {
+  const matches = [...String(workflowText ?? '').matchAll(/for m in ([a-z0-9 -]+); do/g)];
+  if (matches.length === 0) {
     throw new Error(
       'migration-apply-order: could not find the `all` list in apply-migrations.yml. '
       + 'Expected a line of the form `for m in <slug> <slug> ...; do` in the `all` arm of '
@@ -112,7 +112,30 @@ export function parseAllList(workflowText) {
     );
   }
 
-  const list = match[1].split(' ').filter(Boolean);
+  /*
+   * More than one is not "pick the first". Three landed at once on 2026-08-28:
+   * three lanes each appended their migration to this line, and the merge kept
+   * all three lines instead of merging them. Every reader here -- this parser
+   * and migrationDispatchCoverage.test.ts -- took the FIRST match, so each
+   * reported the other lanes' migrations as simply unregistered, which is a
+   * true statement about a file that had a much worse problem: three
+   * consecutive `for ... ; do` with one `done` is a bash SYNTAX ERROR, so the
+   * apply step could not run at all and NO migration was dispatchable by any
+   * path, `all` included. First-match is how a guard describes the wrong
+   * defect with total confidence.
+   */
+  if (matches.length > 1) {
+    throw new Error(
+      `migration-apply-order: found ${matches.length} \`all\` lists in apply-migrations.yml, `
+      + 'and there is exactly one apply order. This is the shape a merge leaves behind when two '
+      + 'lanes both append a migration to that line: the lists are siblings, not a sequence, so '
+      + 'the surviving shell is `for ...; do` repeated with a single `done` -- a syntax error '
+      + 'that stops every migration from running. Merge them into one line rather than deleting '
+      + `either. Tails: ${matches.map((m) => m[1].trim().split(' ').slice(-3).join(' ')).join(' | ')}`,
+    );
+  }
+
+  const list = matches[0][1].split(' ').filter(Boolean);
   if (list.length === 0) {
     throw new Error(
       'migration-apply-order: the `all` list in apply-migrations.yml parsed as empty. '
