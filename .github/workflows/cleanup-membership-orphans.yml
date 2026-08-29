@@ -1,0 +1,166 @@
+# ─────────────────────────────────────────────────────────────────────
+# One-off dispatch for pilot-cleanup-membership-orphans.mjs.
+#
+# Owner decision, 2026-08-29: the pilot.organization_memberships rows
+# pilot-check-membership-orphans.mjs finds (account_id matches no row in
+# pilot.accounts) are confirmed not real -- a bulk-seed artifact, not
+# retention-purge fallout -- and are approved for deletion. This is the
+# governed path that carries that decision out: workflow_dispatch only,
+# gated by the target environment's own approval requirement (the same
+# gate apply-migrations.yml and deploy-production.yml use), dry-run by
+# default, and a blast-radius cap the script itself enforces regardless
+# of what this workflow is asked to pass through.
+#
+# Unlike retention-cleanup.yml this declares `environment:`, on purpose:
+# that workflow is also a nightly schedule with no inputs and an
+# environment gate would block the schedule itself. This workflow has no
+# schedule -- every run is a deliberate human dispatch -- so gating it is
+# free.
+# ─────────────────────────────────────────────────────────────────────
+
+name: cleanup-membership-orphans
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which environment's database to clean up
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly ("staging" or "production") to confirm
+        required: true
+        type: string
+      apply:
+        description: Type APPLY to actually delete. Anything else is a dry run.
+        required: true
+        default: DRY_RUN
+        type: string
+      max_rows:
+        description: Refuse the run if it would delete more rows than this (hard ceiling of 50, enforced by the script itself).
+        required: false
+        default: '25'
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: cleanup-membership-orphans-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET: ${{ inputs.target }}
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+
+    steps:
+      - name: Confirm The Operator Named The Intended Target
+        env:
+          CONFIRM: ${{ inputs.confirm_target }}
+        run: |
+          if [ "$TARGET" != "$CONFIRM" ]; then
+            echo "::error::confirm_target ('$CONFIRM') does not match target ('$TARGET'). Refusing to run."
+            exit 1
+          fi
+
+      - name: Resolve Target Resource Group
+        env:
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Database Connection
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$HOST"
+          test -n "$DB"
+
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      - name: Clean Up Orphaned Membership Rows
+        env:
+          PPBF_MEMBERSHIP_ORPHAN_CLEANUP_APPLY: ${{ inputs.apply == 'APPLY' }}
+          PPBF_MEMBERSHIP_ORPHAN_CLEANUP_MAX_ROWS: ${{ inputs.max_rows || '25' }}
+        # `shell: bash` for the pipefail it brings -- without it GitHub runs
+        # `bash -e {0}` (errexit, not pipefail), so `tee` would discard a
+        # failed run's exit code and the step would report success.
+        shell: bash
+        run: |
+          npm --prefix apps/web run pilot:cleanup-membership-orphans | tee cleanup-result.json
+
+      - name: Record What Ran
+        if: always()
+        env:
+          APPLY: ${{ inputs.apply }}
+        run: |
+          {
+            echo "### Membership orphan cleanup -- \`$TARGET\`"
+            echo ''
+            if [ "$APPLY" = "APPLY" ]; then
+              echo '- mode: **APPLY** (rows were deleted)'
+            else
+              echo '- mode: dry run (nothing deleted)'
+            fi
+            echo "- outcome: \`${{ job.status }}\`"
+            echo ''
+            echo '```json'
+            [ -s cleanup-result.json ] && cat cleanup-result.json || echo '{"event":"membership_orphan_cleanup.no-output"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

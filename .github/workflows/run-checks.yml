@@ -35,10 +35,24 @@
 # TWO KINDS OF CHECK, AND WHAT A RED RUN MEANS
 #   Most of these are GATES: they exit non-zero when a human still has to
 #   decide something, so a red run is a finding rather than a broken workflow.
-#   Two are REPORTS -- seed-identity and runtime-claims print an inventory and
-#   exit zero whenever they managed to run at all, so their answer is in the
-#   log and a green run says only "it connected". Do not read a green
-#   `all` as "seed identity is correct"; read the group.
+#   Three are REPORTS -- seed-identity, runtime-claims and video-readiness
+#   print their answer and exit zero whenever they managed to run at all, so
+#   the answer is in the log and a green run says only "it connected". Do not
+#   read a green `all` as "seed identity is correct"; read the group.
+#
+# THE ONE CHECK THAT DOES NOT ASK THE DATABASE
+#   video-readiness answers "can a quarantined video promote here at all", and
+#   that answer is not in Postgres -- it is in the deployed Container App's
+#   environment. It is registered here like the others and runs in the same
+#   job, but it is fed by the step below rather than by the connection string,
+#   and its script opens no transaction because it issues no SQL.
+#
+#   It reads three NAMED variables off the target-named Container App with
+#   `az containerapp show`, which is the ARM resource GET. Secret VALUES come
+#   from the separate listSecrets operation that `az containerapp secret show`
+#   calls a few steps down; this path never calls it, and never asks for a
+#   variable outside those three. A variable bound with `secretref:` therefore
+#   yields a binding KIND and no value, and is reported as UNREADABLE.
 #
 # THE GAP THIS WORKFLOW HAD, AND THE list-check OPTION
 #   These lists are hand-maintained, so a `pilot:check-*` script is silently
@@ -82,6 +96,7 @@ on:
           - contested-overlap
           - orphan-chat-audit
           - multiorg-orphans
+          - membership-orphans
           - stranded-guardians
           - duplicate-guardians
           - activation-pin-exposure
@@ -93,6 +108,8 @@ on:
           - medical-clearance-coverage
           - deletion-preflight
           - discipline-values
+          - waiver-statuses
+          - video-readiness
 
 permissions:
   id-token: write
@@ -325,9 +342,84 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
           echo "Checking host ${OVERRIDE_HOST:-$HOST} / db ${OVERRIDE_DB:-$DB}."
 
+      # video-readiness is the one check whose question is not in the database,
+      # so it is fed here instead of by the connection string above. This reads
+      # THREE NAMED variables off the same target-NAMED Container App the
+      # connection string came from, with the same OIDC login and no additional
+      # Azure permission: deploy-production.yml already reads
+      # `env[?name=='PPBF_RELEASE_SHA'].value` off app-ppbf-production under
+      # this identity, and deploy-staging.yml reads
+      # `env[?name=='AZURE_AI_KEY'].secretRef` off app-ppbf-staging under it.
+      # Both are the resource GET, which is implied by the listSecrets right
+      # this workflow already exercises.
+      #
+      # NOTHING READ HERE IS PRINTED. The values land in $GITHUB_ENV by
+      # redirection, never on stdout; the `run:` body GitHub echoes into the log
+      # is this script text, which contains no value; there is no `set -x`, no
+      # `env` dump, and the one error path below names a variable rather than
+      # interpolating its content. A `secretref:` binding is reduced to the word
+      # "secretref" without the referenced NAME leaving this step, so the check
+      # cannot report a secret's name either.
+      #
+      # WHY IT IS SAFE FOR THIS STEP TO BE CONDITIONAL. GitHub skips a step
+      # whose `if` is false, and a skipped step and a step that failed early
+      # look alike (this repository has been bitten by exactly that in
+      # deploy-staging's gate chain). Here it cannot mislead: the script refuses
+      # to report unless PPBF_CHECK_APP_ENV_READ says this step ran to the end.
+      # A skipped or half-finished collection produces a refusal, never a
+      # confident answer about the runner's own environment.
+      - name: Read The Target Container App's Video Configuration
+        if: ${{ inputs.check == 'all' || inputs.check == 'video-readiness' }}
+        run: |
+          set -euo pipefail
+
+          ENTRIES="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].env[?name=='PPBF_VIDEO_MALWARE_SCAN' || name=='PPBF_VIDEO_CONTENT_SCAN' || name=='PPBF_SHADOW_WORKER_ENABLED']" \
+            -o json)"
+          if [ -z "$ENTRIES" ]; then
+            echo "::error::Could not read the environment of ${CONTAINER_APP_NAME}. video-readiness will refuse to report rather than describe this runner."
+            exit 1
+          fi
+
+          # Writes to $GITHUB_ENV on stdout, which is redirected to the file.
+          # An absent variable is recorded as absent rather than as empty, so
+          # "the app does not set this" and "the app sets this to nothing" stay
+          # different answers. The heredoc form is used for values because a
+          # value may legally contain anything, including a newline.
+          ENTRIES="$ENTRIES" node -e '
+            const crypto = require("node:crypto");
+            const wanted = ["PPBF_VIDEO_MALWARE_SCAN", "PPBF_VIDEO_CONTENT_SCAN", "PPBF_SHADOW_WORKER_ENABLED"];
+            // Parsed inside a try so a malformed response cannot put a
+            // fragment of the fetched JSON into a SyntaxError message, which
+            // newer Node versions include verbatim.
+            let entries;
+            try { entries = JSON.parse(process.env.ENTRIES); }
+            catch { throw new Error("Container App env query did not return parseable JSON."); }
+            if (!Array.isArray(entries)) { throw new Error("Container App env query did not return a list."); }
+            const out = [];
+            for (const name of wanted) {
+              const entry = entries.find((candidate) => candidate && candidate.name === name);
+              const binding = !entry ? "absent" : entry.secretRef ? "secretref" : "value";
+              out.push("PPBF_CHECK_APP_BINDING_" + name + "=" + binding);
+              if (binding === "value") {
+                const delimiter = "PPBF_CHECK_APP_EOF_" + crypto.randomUUID();
+                out.push("PPBF_CHECK_APP_VALUE_" + name + "<<" + delimiter, String(entry.value ?? ""), delimiter);
+              }
+            }
+            process.stdout.write(out.join("\n") + "\n");
+          ' >> "$GITHUB_ENV"
+
+          # Last, and only on success: the marker the script requires before it
+          # will report anything at all.
+          echo "PPBF_CHECK_APP_TARGET=$CONTAINER_APP_NAME" >> "$GITHUB_ENV"
+          echo "PPBF_CHECK_APP_ENV_READ=1" >> "$GITHUB_ENV"
+          echo "Read the video scan configuration of $CONTAINER_APP_NAME."
+
       # A gate script exits non-zero only when a human still has to decide
       # something, so a red run here is a finding, not a broken workflow. The
-      # two report scripts exit zero whenever they ran -- see the header. With
+      # three report scripts exit zero whenever they ran -- see the header. With
       # `all`, every check runs even if an earlier one reports -- one finding
       # must not hide the next -- and the job fails at the end if any did.
       - name: Run Check
@@ -353,10 +445,13 @@ jobs:
 
           case "$CHECK" in
             all)
-              # Gates first, then the two inventory reports, so a finding is not
-              # buried under several screens of inventory in the log.
+              # Gates first, then the reports, so a finding is not buried under
+              # several screens of inventory in the log. video-readiness is last
+              # because it is the only one that answers a question about the
+              # deployed app rather than about the database.
               run_one orphan-chat-audit   pilot:check-orphan-chat-audit
               run_one multiorg-orphans    pilot:check-multiorg-orphans
+              run_one membership-orphans  pilot:check-membership-orphans
               run_one stranded-guardians  pilot:check-stranded-guardians
               run_one duplicate-guardians pilot:check-duplicate-guardians
               run_one activation-pin-exposure pilot:check-activation-pin-exposure
@@ -368,9 +463,12 @@ jobs:
               run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
               run_one deletion-preflight  pilot:check-deletion-preflight
               run_one discipline-values   pilot:check-discipline-values
+              run_one waiver-statuses     pilot:check-waiver-statuses
+              run_one video-readiness     pilot:check-video-readiness
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
+            membership-orphans) run_one membership-orphans  pilot:check-membership-orphans ;;
             stranded-guardians) run_one stranded-guardians  pilot:check-stranded-guardians ;;
             duplicate-guardians) run_one duplicate-guardians pilot:check-duplicate-guardians ;;
             activation-pin-exposure) run_one activation-pin-exposure pilot:check-activation-pin-exposure ;;
@@ -382,6 +480,8 @@ jobs:
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
             discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
+            waiver-statuses)    run_one waiver-statuses     pilot:check-waiver-statuses ;;
+            video-readiness)    run_one video-readiness     pilot:check-video-readiness ;;
             *)
               echo "::error::Unknown check '$CHECK'."
               exit 1

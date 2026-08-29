@@ -216,7 +216,39 @@ export type AdjudicationRefusalReason =
    *  otherwise report an empty clip as ready for review. */
   | 'no_sets_on_clip'
   /** At least one set on the clip is unfinished. */
-  | 'annotation_in_progress';
+  | 'annotation_in_progress'
+  /** Exactly one set on the clip, and it is submitted.
+   *
+   *  The zero case above is guarded because "every set is submitted" is
+   *  vacuously true of an empty list. One set is the same mistake one step
+   *  along: the predicate genuinely holds, but the premise this function
+   *  exists to establish -- that there are TWO independent readings to put
+   *  side by side -- does not. Reporting that as eligible promises a caller
+   *  a pair and hands it a single reading.
+   *
+   *  Kept distinct from the two refusals above rather than folded into
+   *  either, because both would be false statements about this clip. It is
+   *  not empty, and nothing on it is unfinished. */
+  | 'insufficient_sets_for_comparison'
+  /** The actor produced one of the readings on this clip.
+   *
+   *  OD-2026-08-29-002. A person who produced one of the two readings cannot
+   *  settle the disagreement between them: the whole point of two blind
+   *  readings is that a third party resolves them, and a party to the
+   *  disagreement grading their own work makes the calibration data unusable
+   *  as evidence.
+   *
+   *  Checked before any state condition, for the reason the role check is
+   *  first: an annotator refused here learns nothing about how far the OTHER
+   *  annotator has got. Refusing them only once the clip was ready would leak
+   *  the other reading's progress by the timing of the refusal.
+   *
+   *  The ratified cost: an organization whose only administrator also
+   *  annotates has clips nobody can adjudicate. That was on the page when the
+   *  decision was made -- it is a consequence, not an oversight, and not a
+   *  thing to route around. `platform_owner` is refused on this surface
+   *  deliberately, so it is not the escape hatch either. */
+  | 'adjudicator_annotated_this_clip';
 
 export type AdjudicationEligibility =
   | { readonly outcome: 'eligible'; readonly submittedSetCount: number }
@@ -224,6 +256,8 @@ export type AdjudicationEligibility =
 
 export interface AdjudicationEligibilityInput {
   readonly actorRole: PilotRole;
+  /** The person asking. Compared against every annotator on the clip. */
+  readonly actorAccountId: string;
   /** Every set on the clip, already organization-scoped by the caller. */
   readonly sets: readonly BlindingSubjectSet[];
 }
@@ -248,10 +282,14 @@ export interface AdjudicationEligibilityInput {
  * adding it here would be this file inventing a reach into tenant research
  * data that nobody ratified.
  *
- * STATE. Every set on the clip submitted. Partial eligibility is not a
+ * STATE. Two sets on the clip, both submitted. Partial eligibility is not a
  * concept: an adjudicator who could read A while B is still working is a
  * channel from A into B by way of a conversation, which is the same leak the
  * annotator surface refuses, just routed through a third person.
+ *
+ * The count is part of the state condition, not a caller's problem. Zero
+ * sets and one set both satisfy "every set is submitted" without there
+ * being a pair to read, and this function promises its caller a pair.
  */
 export function resolveAdjudicationEligibility(
   input: AdjudicationEligibilityInput,
@@ -260,12 +298,26 @@ export function resolveAdjudicationEligibility(
     return { outcome: 'refused', reason: 'role_not_permitted' };
   }
 
+  // Identity before state, per the reason above. `sets` is already
+  // organization-scoped by the caller, so an id matching here is a reading on
+  // THIS clip in THIS organization and not a coincidence of account ids.
+  if (input.sets.some((set) => set.annotator_account_id === input.actorAccountId)) {
+    return { outcome: 'refused', reason: 'adjudicator_annotated_this_clip' };
+  }
+
   if (input.sets.length === 0) {
     return { outcome: 'refused', reason: 'no_sets_on_clip' };
   }
 
   if (!input.sets.every(isSubmitted)) {
     return { outcome: 'refused', reason: 'annotation_in_progress' };
+  }
+
+  // Submission is checked before the count so that a lone UNSUBMITTED set is
+  // reported as work in progress, which is both true and the more useful
+  // thing to tell an adjudicator: a second reading may yet arrive.
+  if (input.sets.length < 2) {
+    return { outcome: 'refused', reason: 'insufficient_sets_for_comparison' };
   }
 
   return { outcome: 'eligible', submittedSetCount: input.sets.length };
@@ -288,7 +340,13 @@ export class AdjudicationNotPermittedError extends Error {
         ? 'Forbidden: adjudication is limited to organization administrators'
         : reason === 'no_sets_on_clip'
           ? 'Not found: no annotation sets on this clip'
-          : 'Forbidden: this clip is not ready for adjudication -- an annotation set on it has not been submitted',
+          : reason === 'annotation_in_progress'
+            ? 'Forbidden: this clip is not ready for adjudication -- an annotation set on it has not been submitted'
+            : reason === 'insufficient_sets_for_comparison'
+              ? 'Forbidden: this clip has 1 submitted annotation set, and adjudication is '
+                + 'pairwise -- it puts exactly two independent readings side by side'
+              : 'Forbidden: you annotated this clip, and adjudication is settled by someone '
+                + 'who did not produce either reading',
     );
     this.name = 'AdjudicationNotPermittedError';
     this.reason = reason;
@@ -396,6 +454,8 @@ export async function listAnnotationEventsForAnnotator(
 export interface AdjudicationReadContext {
   readonly organizationId: string;
   readonly actorRole: PilotRole;
+  /** The person asking, so the gate can refuse an annotator of this clip. */
+  readonly actorAccountId: string;
 }
 
 /**
@@ -426,6 +486,7 @@ export async function listAnnotationSetsForAdjudication(
 
   const eligibility = resolveAdjudicationEligibility({
     actorRole: context.actorRole,
+    actorAccountId: context.actorAccountId,
     sets,
   });
 

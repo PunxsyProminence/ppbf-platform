@@ -49,9 +49,94 @@ function samplePayload(marker: string) {
   };
 }
 
+const ORIGINAL_ENV = process.env;
+
+// The environment this route is PERMITTED to run in, which is the same fence
+// its Azure-AD sibling at ../export holds: the export switched on, the
+// deployment declaring itself staging, and the request arriving on the
+// declared host. Every test below that exercises the export itself starts
+// from a permitting environment, and the fenced tests take one condition away
+// at a time -- so a test that passes because the fence let it through cannot
+// be confused with one that passes because there is no fence.
+function permitTheExport() {
+  process.env.RESEARCH_BRIDGE_EXPORT_ENABLED = 'true';
+  process.env.RESEARCH_BRIDGE_EXPORT_ENVIRONMENT = 'staging';
+  process.env.RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST = 'localhost';
+}
+
 beforeEach(() => {
   jest.resetAllMocks();
+  process.env = { ...ORIGINAL_ENV };
+  permitTheExport();
   mockBuild.mockImplementation(async (organizationId: string) => samplePayload(`evidence-${organizationId}`));
+});
+
+afterAll(() => {
+  process.env = ORIGINAL_ENV;
+});
+
+// ---------------------------------------------------------------------------
+// The environment fence
+//
+// This route serves the SAME payload as the Azure-AD service-account export at
+// ../export -- classification 'sanitized-staging-only' -- and until now held
+// none of that route's three environment conditions, so a production
+// deployment served it to any session that satisfied the role branches below.
+// ---------------------------------------------------------------------------
+
+describe('the environment fence', () => {
+  test.each([
+    ['the export is not switched on', () => { delete process.env.RESEARCH_BRIDGE_EXPORT_ENABLED; }],
+    ['the export is switched off explicitly', () => { process.env.RESEARCH_BRIDGE_EXPORT_ENABLED = 'false'; }],
+    ['the deployment is not staging', () => { process.env.RESEARCH_BRIDGE_EXPORT_ENVIRONMENT = 'production'; }],
+    ['no allowed host is declared', () => { delete process.env.RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST; }],
+    ['the request arrived on some other host', () => { process.env.RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST = 'app-ppbf.example.test'; }],
+  ])('returns 404 and reaches nothing when %s', async (_condition, breakTheFence) => {
+    breakTheFence();
+    mockRequirePrincipal.mockResolvedValue(
+      principal({ role: 'organization_admin', organizationId: 'org-1', hasMasterShadowAccess: true }),
+    );
+
+    const response = await GET(request());
+    const json = await response.json();
+
+    // 404, not 403: the same answer ../export gives, and the same answer a
+    // route that does not exist gives.
+    expect(response.status).toBe(404);
+    expect(json).toEqual({ ok: false, error: 'Research bridge export is unavailable' });
+    // Fenced BEFORE the session is resolved, so a fenced deployment does no
+    // authentication work and reads no organization row on this path at all --
+    // and a caller who does hold the cross-organization flag gets exactly what
+    // a stranger gets.
+    expect(mockRequirePrincipal).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockBuild).not.toHaveBeenCalled();
+  });
+
+  test('a permitting environment lets a legitimate caller through', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', organizationId: 'org-1' }));
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(mockBuild).toHaveBeenCalledWith('org-1');
+  });
+
+  test('an x-forwarded-host that is not the declared host is fenced out', async () => {
+    // Behind a proxy the declared host arrives in x-forwarded-host, and
+    // resolveResearchBridgeRequestHost reads it. Asserted so the fence cannot
+    // be satisfied by the internal origin the request happens to land on.
+    process.env.RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST = 'app-ppbf-staging.example.test';
+    const proxied = new NextRequest(
+      'http://internal.localhost/api/pilot/shadow/research-bridge/session-export',
+      { headers: { 'x-forwarded-host': 'attacker.example.test' } },
+    );
+
+    const response = await GET(proxied);
+
+    expect(response.status).toBe(404);
+    expect(mockRequirePrincipal).not.toHaveBeenCalled();
+  });
 });
 
 test('an organization_admin without the cross-org flag reaches only their own organization', async () => {
