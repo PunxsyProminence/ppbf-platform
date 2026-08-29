@@ -12,6 +12,14 @@ import {
   READINESS_UNVALIDATED_CAVEAT,
   isReadinessMethodValidated,
 } from '@/src/server/pilot/readinessProvenance';
+// The lock the takedown applies, imported rather than typed as 72 here. A
+// coach is told how long the field stays shut before they confirm, so the
+// sentence they read and the lock the server applies have to be the same
+// number -- a second copy on this screen is a promise that can go stale
+// without anything failing. profileIdentity.ts is a pure module with no
+// imports of its own; SignInPanel already reads DEFAULT_PIN_LENGTH the same
+// way.
+import { NICKNAME_LOCK_HOURS } from '@/src/server/pilot/profileIdentity';
 import {
   formatGymDateNumeric,
   formatGymDateTimeShort,
@@ -115,6 +123,17 @@ interface Athlete {
   initials?: string;
   ringName?: string | null;
   photoAvailable?: boolean;
+  /* Whether this coach is the coach OF RECORD for this athlete, straight from
+     the roster route's `is_mine`. Not a display field: it is the one bit that
+     separates the two ways a coach can be looking at a child. A covering coach
+     under an active pilot.coach_coverage grant reaches the athlete -- rosters,
+     sessions, reviews -- but resolveRelationship still answers
+     'organization_staff' for them, and the ring-name takedown admits only
+     'coach_of_subject'. Without this the takedown control would be offered to
+     a covering coach on an adult athlete (a minor's ring name is already
+     withheld from anyone outside MINOR_CIRCLE) and could only ever produce a
+     404. */
+  isMine?: boolean;
 }
 
 // A block template only. There is no live-session backend, so a block has no
@@ -655,6 +674,44 @@ export default function CoachWorkspace() {
   >([]);
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
+  /* Whether the coach PICKED this athlete, as opposed to the roster having
+     seeded the first row when it loaded (see loadAthletes). Every other panel
+     is happy with the seeded selection -- it is what stops the detail column
+     rendering empty on arrival -- but the ring-name takedown below is gated on
+     a deliberate act, and a selection nobody made is not one. Without this,
+     exactly one child per gym, the alphabetically first with a ring name,
+     would carry a live takedown control on every coach's dashboard from first
+     paint, for no reason a coach could be told. */
+  const [athleteChosenByCoach, setAthleteChosenByCoach] = useState(false);
+
+  /* THE RING-NAME TAKEDOWN, coach side.
+     POST /api/pilot/profile/nickname/clear has existed since ring names
+     shipped, and until now nothing on any screen called it. A safeguarding
+     control with no door is a control this gym does not have: the route's own
+     header calls a takedown "an instant undo" for the adults who know the
+     child, and the instant part was missing.
+
+     Three pieces of state, all keyed by athlete rather than global, because a
+     roster is a list and a coach may be part-way through one row while another
+     row is still showing why its attempt failed.
+
+     `nicknameClearArmedId` is the confirm step. A clear is immediate, has no
+     undo, and locks the field for NICKNAME_LOCK_HOURS -- a single click on a
+     scrolling list of children, on a tablet, in a gym, is the wrong shape for
+     that. It is deliberately NOT window.confirm: the sentence a coach needs to
+     read names the child and says what the lock does, and a browser dialog
+     cannot say either. */
+  const [nicknameClearArmedId, setNicknameClearArmedId] = useState<string | null>(null);
+  const [nicknameClearBusyId, setNicknameClearBusyId] = useState<string | null>(null);
+  const [nicknameClearErrors, setNicknameClearErrors] = useState<Record<string, string>>({});
+  /* What the coach is told AFTER it happened, and where the number comes from.
+     The row's ring name disappears on success, and a name quietly vanishing is
+     not an acknowledgement -- a coach who looked away has no way to tell a
+     completed takedown from a row that never had one. This holds the lock the
+     SERVER reported (`locked_for_hours` off the response), not the constant
+     above: the pre-confirm warning is a prediction and this is a record, and
+     the two are allowed to be sourced differently for that reason. */
+  const [nicknameClearedHours, setNicknameClearedHours] = useState<Record<string, number | null>>({});
 
   const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
     if (sessionMode === 'One-on-One') {
@@ -1138,6 +1195,7 @@ export default function CoachWorkspace() {
               initials: string;
               ring_name: string | null;
               photo_available: boolean;
+              is_mine?: boolean;
             }>;
           };
           const byAthlete = new Map((faces.items ?? []).map((face) => [face.athlete_id, face]));
@@ -1148,6 +1206,7 @@ export default function CoachWorkspace() {
             athlete.initials = face.initials;
             athlete.ringName = face.ring_name;
             athlete.photoAvailable = face.photo_available;
+            athlete.isMine = face.is_mine;
           }
         }
       } catch {
@@ -1424,6 +1483,82 @@ export default function CoachWorkspace() {
       setIntakeActionErrors((prev) => ({ ...prev, [intakeCaseId]: 'Network error -- action was not applied. Please try again.' }));
     } finally {
       setIntakeActionBusyId(null);
+    }
+  }
+
+  /**
+   * Clear an athlete's ring name.
+   *
+   * The server decides whether this coach may: POST
+   * /api/pilot/profile/nickname/clear runs assertViewerMayReachSubject and
+   * then requires organization admin, coach_of_subject or guardian_of_subject,
+   * and answers a refusal as a hidden 404. Nothing is re-decided here. What
+   * this screen contributes is that the control is only OFFERED where it can
+   * work -- the faces read that supplies `ringName` is the coach's own roster,
+   * and decideRingName only returns a name to someone the ring name is already
+   * visible to -- so a coach is not handed a button whose only outcome is a
+   * refusal about a child they cannot see.
+   *
+   * On success the row's ring name is dropped locally rather than the roster
+   * being refetched. The refetch would be honest too, but it is a four-request
+   * reload of a list the coach is standing in the middle of, and the one fact
+   * that changed is known exactly.
+   */
+  async function clearRingName(athleteId: string, accountId: string) {
+    if (nicknameClearBusyId) return;
+
+    setNicknameClearBusyId(athleteId);
+    setNicknameClearErrors((prev) => ({ ...prev, [athleteId]: '' }));
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/profile/nickname/clear`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        locked_for_hours?: number;
+      };
+
+      if (!response.ok || !payload.ok) {
+        /* A 404 here is the route's hidden-not-found, which is what it answers
+           BOTH for "no such athlete" and for "you are not allowed to". It is
+           deliberately not decoded into either -- guessing would either accuse
+           a coach of overreach or tell them a child does not exist, and only
+           one of those is true. */
+        setNicknameClearErrors((prev) => ({
+          ...prev,
+          [athleteId]: payload.error || 'The ring name was not cleared. Ask an organization admin.',
+        }));
+        return;
+      }
+
+      setAthletes((prev) => prev.map((athlete) => (
+        athlete.id === athleteId ? { ...athlete, ringName: null } : athlete
+      )));
+      /* Number.isFinite, not `?? NICKNAME_LOCK_HOURS`. A response that did not
+         carry the lock is a response that did not say how long -- substituting
+         the client's own constant would put a duration in front of a coach
+         that no server ever stated, which is the whole failure mode this
+         platform keeps writing comments about. Absent stays absent, and the
+         rendering below says "cleared" without a number. */
+      const lockedHours = payload.locked_for_hours;
+      setNicknameClearedHours((prev) => ({
+        ...prev,
+        [athleteId]: typeof lockedHours === 'number' && Number.isFinite(lockedHours) ? lockedHours : null,
+      }));
+      setNicknameClearArmedId(null);
+    } catch {
+      setNicknameClearErrors((prev) => ({
+        ...prev,
+        [athleteId]: 'Network error -- the ring name was NOT cleared. Please try again.',
+      }));
+    } finally {
+      setNicknameClearBusyId(null);
     }
   }
 
@@ -2346,10 +2481,20 @@ export default function CoachWorkspace() {
                       still stops short of eating the panel. */}
                   <div className="space-y-2 max-h-[55vh] lg:max-h-[61.8vh] overflow-y-auto">
                     {athletes.map(athlete => (
+                      /* The row and its takedown are SIBLINGS, not nested. The
+                         row is itself a button -- the whole card selects the
+                         athlete -- and a button inside a button is invalid HTML
+                         that browsers resolve by dropping one of them, so the
+                         only way to put a second control on this card is beside
+                         it. The wrapper carries the key for that reason and
+                         does nothing else. */
+                      <div key={athlete.id}>
                       <button
                         type="button"
-                        key={athlete.id}
-                        onClick={() => setSelectedAthleteId(athlete.id)}
+                        onClick={() => {
+                          setSelectedAthleteId(athlete.id);
+                          setAthleteChosenByCoach(true);
+                        }}
                         className={`w-full p-[var(--s3)] border rounded-[var(--r-md)] cursor-pointer transition text-left ${
                           selectedAthleteId === athlete.id
                             ? 'bg-[rgb(var(--brass-400-rgb)_/_.10)] border-[color:var(--brass-500)]'
@@ -2401,6 +2546,109 @@ export default function CoachWorkspace() {
                           <p className="mt-[var(--s2)]"><StatusBadge tone="locked" label="Injury flag active" /></p>
                         )}
                       </button>
+
+                      {/* THE TAKEDOWN, shown only on the athlete the coach
+                          deliberately selected.
+
+                          Not on every row: twenty children with a "remove"
+                          control each, an inch from a readiness dot, on a
+                          tablet held in a gym, is a mis-tap waiting to happen
+                          on a change that has no undo. Selecting the athlete
+                          is the first of the two deliberate acts; arming the
+                          confirm is the second.
+                          `athleteChosenByCoach` is what makes the first act
+                          real: the roster seeds a selection when it loads, and
+                          a selection nobody made is not a deliberate act.
+
+                          Not offered at all where there is nothing to remove
+                          (`ringName`), nothing to address it to (`accountId`),
+                          or no standing to remove it (`isMine`). The first two
+                          travel together -- the roster route only produces a
+                          ring name from a profile it found by account id --
+                          but the control asserts both rather than inferring
+                          one from the other. The third is the one that is NOT
+                          implied: a covering coach sees an adult athlete's
+                          ring name and is still 'organization_staff' to
+                          resolveRelationship, so offering them this button
+                          would offer a 404. */}
+                      {athleteChosenByCoach && selectedAthleteId === athlete.id
+                        && athlete.ringName && athlete.accountId && athlete.isMine && (
+                        <div className="mt-[var(--s2)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                          {nicknameClearArmedId === athlete.id ? (
+                            <>
+                              <p>
+                                Removing &ldquo;{athlete.ringName}&rdquo; takes it off every screen
+                                now. {athlete.name} cannot set a new ring name for{' '}
+                                {NICKNAME_LOCK_HOURS} hours. This cannot be undone.
+                              </p>
+                              <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
+                                <button
+                                  type="button"
+                                  disabled={nicknameClearBusyId === athlete.id}
+                                  onClick={() => void clearRingName(athlete.id, athlete.accountId as string)}
+                                  className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {nicknameClearBusyId === athlete.id ? 'Removing…' : 'Remove it'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={nicknameClearBusyId === athlete.id}
+                                  onClick={() => setNicknameClearArmedId(null)}
+                                  className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Keep it
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              /* The visible label is short because the row it
+                                 sits under already says whose it is; the
+                                 accessible name is not, because a screen reader
+                                 user arriving by button list gets no such row.
+                                 Both name the same action. */
+                              aria-label={`Remove ring name “${athlete.ringName}” from ${athlete.name}`}
+                              onClick={() => {
+                                setNicknameClearArmedId(athlete.id);
+                                setNicknameClearErrors((prev) => ({ ...prev, [athlete.id]: '' }));
+                              }}
+                              className="btn btn--ghost"
+                            >
+                              Remove ring name
+                            </button>
+                          )}
+                          {nicknameClearErrors[athlete.id] && (
+                            /* --restricted-ink, not --locked-ink. The
+                               safeguarding red is reserved for the top of the
+                               safety ladder -- a person who may not
+                               participate. A refused or failed takedown is a
+                               request that did not land, and painting it in
+                               the participation-block red teaches a coach to
+                               read that colour as "something went wrong".
+                               src/design/safeguardingRedReservation.test.ts
+                               caught this exact substitution here. */
+                            <p className="mt-[var(--s2)] text-[color:var(--restricted-ink)]">
+                              {nicknameClearErrors[athlete.id]}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* The receipt. Outlives the control above -- once the
+                          ring name is gone the block that offered to remove it
+                          is gone too, and a coach who looked away would
+                          otherwise see a row that simply never had one. It says
+                          the lock the SERVER reported, and says nothing about a
+                          duration when the server did not state one. */}
+                      {athlete.id in nicknameClearedHours && (
+                        <p className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                          {typeof nicknameClearedHours[athlete.id] === 'number'
+                            ? `Ring name removed. ${athlete.name} cannot set a new one for ${nicknameClearedHours[athlete.id]} hours.`
+                            : `Ring name removed. ${athlete.name} cannot set a new one until the gym's lock expires.`}
+                        </p>
+                      )}
+                      </div>
                     ))}
                   </div>
                 </div>
