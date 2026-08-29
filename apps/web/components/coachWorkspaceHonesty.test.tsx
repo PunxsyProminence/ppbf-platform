@@ -6,6 +6,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
+// The same date formatter CoachWorkspace filters "today's classes" with, so
+// the fixture below cannot drift out of agreement with the code under test.
+import { formatGymDateNumeric } from '../src/lib/gymTime';
 
 interface RouteResponses {
   floorPlans?: () => Promise<Response>;
@@ -221,10 +224,30 @@ function liveRunRow(overrides: Record<string, unknown> = {}): Record<string, unk
  * Built from the current instant rather than a frozen literal because the
  * dashboard filters to the gym's own calendar day; a fixed date would make
  * this suite pass on one day and fail on the next.
+ *
+ * AND THE OFFSET STEPS BACKWARDS NEAR MIDNIGHT, which the comment above used
+ * to miss. A flat `now + 1h` is not "today" for the last hour of the gym's
+ * day: CoachWorkspace keeps a class only when
+ * formatGymDateNumeric(start_at) === formatGymDateNumeric(new Date()), so
+ * between 23:00 and midnight at the gym the fixture built a class dated
+ * TOMORROW, the dashboard correctly dropped it, and both assertions here
+ * failed. Nothing was wrong with the component or with this suite's subject
+ * -- main simply went red for one hour every night and healed itself, which
+ * is the worst shape a failure can have, because the window closes before
+ * anyone finishes reading it. Observed on 2026-08-29 at 23:09 America/New_York,
+ * on commits whose CI had passed hours earlier.
+ *
+ * The offset now asks the SAME function the component asks, so the fixture
+ * and the filter cannot disagree. If +1h would land on the next gym day, step
+ * back an hour instead: `now` is then in the day's final hour, so -1h is
+ * comfortably inside it, and the two cases cannot both apply.
  */
 function classToday(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const now = new Date();
-  const start = new Date(now.getTime() + 60 * 60 * 1000);
+  const ahead = new Date(now.getTime() + 60 * 60 * 1000);
+  const start = formatGymDateNumeric(ahead) === formatGymDateNumeric(now)
+    ? ahead
+    : new Date(now.getTime() - 60 * 60 * 1000);
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
     class_id: 'cls_1',
