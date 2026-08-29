@@ -4,7 +4,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { GYM_TIME_ZONE, formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
@@ -227,33 +227,6 @@ function liveRunRow(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 /**
- * Midday at the gym, on whatever day it is there right now.
- *
- * `now + 1 hour` -- what this fixture used -- is the gym's TOMORROW for the
- * last hour of every gym day. The dashboard filters classes to the gym's own
- * calendar day, so between 11pm and midnight Eastern the "class scheduled
- * today" was scheduled for tomorrow and the two tests below failed. Not a
- * flake and not a race: a one-hour window, every day, in which the suite is
- * red for a reason that has nothing to do with the code under test.
- *
- * Anchoring to midday keeps the fixture RELATIVE -- which is the reason it
- * was built from the clock in the first place, and still right, since a
- * frozen literal would drift out of "today" tomorrow -- while putting it
- * twelve hours from either boundary. The shift is computed in the gym's zone
- * from the same constant gymDayIso() uses, so the fixture and the filter
- * cannot disagree about which day it is.
- */
-function gymMiddayToday(): Date {
-  const now = new Date();
-  const gymHour = Number(new Intl.DateTimeFormat('en-US', {
-    timeZone: GYM_TIME_ZONE,
-    hour: 'numeric',
-    hour12: false,
-  }).format(now));
-  return new Date(now.getTime() + (12 - gymHour) * 60 * 60 * 1000);
-}
-
-/**
  * A scheduled class starting around midday TODAY at the gym, as
  * GET /api/pilot/scheduler returns it in `classes`.
  *
@@ -280,7 +253,6 @@ function classToday(overrides: Record<string, unknown> = {}): Record<string, unk
   // crosses at 23:59, any negative one at 00:01. Cases that need a different
   // day override start_at outright, the way "a class on another day" does.
   const now = new Date();
-  const start = gymMiddayToday();
   const start = now;
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
