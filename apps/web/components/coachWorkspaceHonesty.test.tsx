@@ -4,6 +4,8 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
+
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
 
@@ -215,16 +217,44 @@ function liveRunRow(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 /**
- * A scheduled class starting `hour`:00 on TODAY at the gym, as
+ * An instant that is inside the GYM'S calendar day containing `now`.
+ *
+ * CoachWorkspace filters today's classes with
+ * `formatGymDateNumeric(item.start_at) === today` (CoachWorkspace.tsx), and
+ * GYM_TIME_ZONE is America/New_York -- so "today" is the gym's day, not the
+ * runner's and not UTC's.
+ *
+ * An hour ahead is inside that day for twenty-three hours out of twenty-four.
+ * In the LAST HOUR of the gym's day it is tomorrow, the dashboard correctly
+ * drops it, and the two tests below failed -- deterministically, every night,
+ * for one hour. That is what this suite did between 23:00 and midnight gym
+ * time from #764 until now.
+ *
+ * So the direction is chosen rather than assumed, using the same function the
+ * component filters with: an hour ahead when that is still today, an hour back
+ * when it is not. `now` is never within an hour of BOTH ends of its own day,
+ * so one of the two always lands inside it.
+ */
+function withinTodaysGymDay(now: Date): Date {
+  const today = formatGymDateNumeric(now);
+  const ahead = new Date(now.getTime() + 60 * 60 * 1000);
+  return formatGymDateNumeric(ahead) === today
+    ? ahead
+    : new Date(now.getTime() - 60 * 60 * 1000);
+}
+
+/**
+ * A scheduled class starting within TODAY at the gym, as
  * GET /api/pilot/scheduler returns it in `classes`.
  *
  * Built from the current instant rather than a frozen literal because the
  * dashboard filters to the gym's own calendar day; a fixed date would make
- * this suite pass on one day and fail on the next.
+ * this suite pass on one day and fail on the next. `withinTodaysGymDay` above
+ * is what makes "the current instant" actually land in that day.
  */
 function classToday(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const now = new Date();
-  const start = new Date(now.getTime() + 60 * 60 * 1000);
+  const start = withinTodaysGymDay(now);
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
     class_id: 'cls_1',
@@ -341,6 +371,33 @@ describe("today's schedule comes from the scheduler, and a failed read is not an
 
     expect(screen.queryByText('Foundations Boxing')).not.toBeNull();
     expect(screen.queryByText('Cancelled')).not.toBeNull();
+  });
+
+  /**
+   * The fixture's own correctness, swept rather than trusted.
+   *
+   * The two tests above passed for months and failed for one hour a night,
+   * because `now + 1h` leaves the gym's day in that day's final hour. A suite
+   * that only ever samples the instant it happens to run at cannot see that.
+   * This sweeps whole days at fifteen-minute steps, including both 2026
+   * daylight-saving transitions, where date arithmetic in a named zone is
+   * least intuitive.
+   */
+  test('the today fixture lands inside the gym day, at every hour of it', () => {
+    const days = [
+      Date.UTC(2026, 7, 28),  // an ordinary EDT day
+      Date.UTC(2026, 2, 8),   // spring forward
+      Date.UTC(2026, 10, 1),  // fall back
+    ];
+
+    for (const day of days) {
+      for (let step = 0; step < 24 * 4; step++) {
+        const now = new Date(day + step * 15 * 60 * 1000);
+        const start = withinTodaysGymDay(now);
+        expect({ now: now.toISOString(), gymDay: formatGymDateNumeric(start) })
+          .toEqual({ now: now.toISOString(), gymDay: formatGymDateNumeric(now) });
+      }
+    }
   });
 
   test("a class on another day is not drawn under today's heading", async () => {
