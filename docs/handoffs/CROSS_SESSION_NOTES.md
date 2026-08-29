@@ -21,6 +21,97 @@ not replace it.
 
 ---
 
+## 2026-08-28 — athlete-dev-block-foundation lane (plan-vs-actual: RESOLVED)
+
+**RESOLVED by the owner, same day. `pilot.athlete_development_block_reviews`
+(#804) is the table that ships. #829's `..._executions` does NOT** — #829 is
+marked draft and its migration must not be applied anywhere.
+
+Also decided, and both change #804's scope slightly:
+- **mid-block entries are allowed.** #829 had added a write refusal on an open
+  window; that is reversed. 036a §4's DISPLAY rule survives — a surface must
+  still say the window has not closed.
+- **counts show BOTH training days and minutes by domain**, side by side and
+  labelled. Days from `pilot.attendance_reconciled` (cannot be inflated by two
+  sessions in a day) is the participation figure; minutes from the raw boxing
+  rows are detail beside it, never a second participation number. Neither PR
+  does both today.
+
+Recorded in full in `036a-plan-vs-actual-execution-design.md` §5.
+
+**What #829 still has that is worth porting onto #804's table:** the window
+counts and the six UNKNOWN states (`getBlockPlanVsActual`), and the paired
+*claimed deviations must be named* constraint. See the correction below on
+what porting the read actually costs.
+
+*Original entry, left standing as the reasoning that produced the decision:*
+
+**Two open PRs built the same capability as two different tables.**
+
+- #829 (`athlete-dev-block-foundation` lane) — `pilot.athlete_development_block_executions`
+- #804 (`coach-user-build-repair` lane) — `pilot.athlete_development_block_reviews`
+
+#804 flagged it first and correctly called reconciliation a release-control
+decision. Both PRs now say so in their bodies.
+
+**The tables are not siblings — #829's is a strict subset of #804's**, column
+for column: same five-word adherence vocabulary and the same CHECK, same
+deviations/reason pair, same who-and-when. #829 adds no field #804 lacks;
+#804 adds `what_worked`, `what_did_not`, `next_adjustment`. Comparison table
+in https://github.com/PunxsyProminence/ppbf-platform/pull/829#issuecomment-5457671190.
+
+**Correcting myself before anyone costs it wrong:** I said #829's read
+(`getBlockPlanVsActual`) would sit on either table unchanged. Only half of it
+would. The four window counts, the closed-window state and the target never
+touch this table and are genuinely table-independent. The VERDICT half calls
+`getBlockExecution`, which is an unqualified `queryOne` with no `order by` --
+exact here only because the unique constraint guarantees one row, and on a
+many-row table it would return an arbitrary one. Porting it onto #804 needs a
+stated rule for which row is current (newest? a coach-marked final?), which
+is the same rule a family screen would need anyway. Small, but not free.
+
+**The real fork is cardinality, not columns.** One row upserted (#829, owner
+decision D1(a) of 036a) versus many appended (#804). Correcting a verdict in
+#829 overwrites the earlier one, so earlier judgments stop existing.
+
+Two things #804's extra rows could be, and they are not equally settled —
+weigh them separately:
+- **post-close revision history** (a verdict corrected after the window shut).
+  Unambiguously worth keeping, and #829 destroys it.
+- **mid-block judgments** (a verdict while the window is still open). 036a §4
+  calls that a prediction rather than a record, and #829 now REFUSES the write
+  (`ffda978f`, after a Codex finding). #804 deliberately allows it and says so
+  — its author flagged this as a genuine disagreement for the owner, not an
+  oversight. Per the kernel's source hierarchy a design doc does not bind
+  another lane's code, so treat this as open, not as #804 being in breach.
+
+**Two things worth salvaging whichever table wins:**
+1. `intervention_executions`' adherence vocabulary ships with a paired
+   constraint — *claimed deviations must be named*. #804 copied both halves;
+   #829 first copied only the words. Fixed in #829 `eb9a95cf`. **If you copy
+   that vocabulary anywhere else, copy the constraint too.**
+2. CT-13 was hit by both, and resolved two different ways — **and they are not
+   interchangeable, so do not pick one on tidiness.** #829 reads
+   `pilot.attendance_reconciled` (athlete-day system of record, cannot
+   double-count) and reports training DAYS. #804 reads `activity_log` boxing
+   rows with a `LEGACY_READERS` entry, which that guard explicitly permits for
+   a justified reader. **The view exposes no duration and no domain**
+   (athlete-day, status, source, class-mark count only), so #829's read
+   structurally CANNOT produce 036a §2's "activity_log minutes by domain" —
+   it drops that metric rather than computing it differently. #829 records
+   that correction in 036a on its own branch; noting it here so the choice is
+   made with the cost visible. Whichever table survives, these two reads
+   should not both ship.
+
+**Also, for any lane adding a migration:** a PR conflicted on
+`apply-migrations.yml` gets **zero** CI, not slow CI — `ci.yml` triggers on
+`pull_request` and GitHub builds `refs/pull/N/merge`, which does not exist for
+a conflicted PR, so no workflow is ever scheduled. #829 sat with 0 check runs
+for ~40 minutes looking like a slow migration suite. Resolve the conflict
+first; the three slug lists want both entries.
+
+---
+
 ## 2026-08-28 — release lane: when an additive migration is safe to lead with
 
 Not a correction -- #818 and #821 below settle what was applied where, and this
@@ -41,6 +132,7 @@ six columns added `null` with no default, every constraint written
 to go first.
 
 — release-control lane.
+
 
 ## 2026-08-28 — training-content build lane (RETRACTION + production applied)
 

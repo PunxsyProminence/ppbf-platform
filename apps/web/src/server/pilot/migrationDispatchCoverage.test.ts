@@ -184,17 +184,23 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // references, session-scripts creates the table it constrains. Applied
     // before either, a rebuild dies on ALTER against a missing table -- and
     // this is the ordering a fresh environment depends on, because
-    // multidiscipline sits at 62 while the table it constrains was created at
-    // 63 and the drill library it does NOT constrain at 49.
+    // multidiscipline sits LATER in the list than the drill library it does
+    // not constrain, and adjacent to the table it does.
+    //
+    // Deliberately no absolute indices here. This comment carried three
+    // (62 / 63 / 49) and every one of them was wrong within days: each is
+    // pushed down by any migration inserted ahead of it, and this list gains
+    // entries continually. The assertion below is the durable statement; a
+    // number in a comment is a claim nothing re-checks.
     for (const prerequisite of ['multidiscipline', 'session-scripts']) {
       expect(at('session-scripts-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }
     // drill-library-discipline-fk is the same shape and the ordering is LESS
     // obvious, which is exactly why it is asserted: drill-library-v3 creates
-    // the table at 49, and the registry it must now reference is not created
-    // until 62. Anyone grouping this migration next to the table it constrains
-    // would place it thirteen entries too early, and a rebuild would die on
-    // ALTER against a pilot.disciplines that does not exist yet.
+    // the table well before multidiscipline creates the registry it must now
+    // reference. Anyone grouping this migration next to the table it
+    // constrains would place it many entries too early, and a rebuild would
+    // die on ALTER against a pilot.disciplines that does not exist yet.
     for (const prerequisite of ['multidiscipline', 'drill-library-v3']) {
       expect(at('drill-library-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }

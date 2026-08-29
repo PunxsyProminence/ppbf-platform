@@ -83,6 +83,7 @@ jobs:
             goldenEraE2e: false,
             activationE2e: false,
             unknownCode: false,
+            unclassifiedPaths: [],
           });
 
           assert.equal(classifyPaths(['README.md']).docsOnly, true);
@@ -107,6 +108,7 @@ jobs:
             // never consulted during it.
             activationE2e: false,
             unknownCode: false,
+            unclassifiedPaths: [],
           });
 
           // The three journey surfaces added with the coach/athlete/guardian
@@ -230,6 +232,59 @@ jobs:
             true
           );
 
+          // THE UNKNOWN-CODE SIGNAL MUST NAME ITS FILES. The boolean above has
+          // been emitted since this classifier was written and, until the
+          // reporting step below, nothing read it. A boolean on its own cannot
+          // be acted on either: widening a predicate requires the path that
+          // missed it, so the annotation needs the list, not the flag.
+          assert.deepEqual(
+            classifyPaths(['apps/web/components/SomeNewSurface.tsx']).unclassifiedPaths,
+            ['apps/web/components/SomeNewSurface.tsx']
+          );
+
+          // Documentation carried alongside unrecognised code is not itself
+          // unrecognised code. Commit 814a5263 is exactly this shape -- 47
+          // files under docs/capabilities/modules/ and one .test.ts -- and an
+          // annotation naming all 48 is an annotation nobody reads.
+          assert.deepEqual(
+            classifyPaths([
+              'docs/capabilities/modules/example.md',
+              'apps/web/src/docs/capabilityEvidence.test.ts',
+            ]).unclassifiedPaths,
+            ['apps/web/src/docs/capabilityEvidence.test.ts']
+          );
+
+          // The other direction, and the one that keeps the channel worth
+          // reading: a diff some predicate DID recognise names nothing. A list
+          // that fills up when a suite already covers the change is noise, and
+          // noise trains people to ignore the annotation.
+          for (const covered of [
+            ['apps/web/components/roleSession.ts'],
+            ['apps/web/app/board/page.tsx'],
+            ['apps/web/src/server/pilot/entities.ts'],
+            ['docs/README.md'],
+            [],
+          ]) {
+            assert.equal(classifyPaths(covered).unknownCode, false, covered.join());
+            assert.deepEqual(classifyPaths(covered).unclassifiedPaths, [], covered.join());
+          }
+
+          // The invariant the reporting step stands on: when the boolean fires
+          // the list is never empty, so the warning can never be raised with
+          // nothing to name. It holds by construction -- unknownCode requires
+          // !docsOnly, and docsOnly is false exactly when some file is not
+          // documentation -- and is pinned because a step downstream assumes it.
+          for (const missed of [
+            ['apps/web/components/SomeNewSurface.tsx'],
+            ['.github/workflows/backup.yml'],
+            ['apps/web/app/api/pilot/coach-reviews/route.ts'],
+            ['docs/capabilities/modules/example.md', 'apps/web/src/docs/capabilityEvidence.test.ts'],
+          ]) {
+            const missedResult = classifyPaths(missed);
+            assert.equal(missedResult.unknownCode, true, missed.join());
+            assert.ok(missedResult.unclassifiedPaths.length > 0, missed.join());
+          }
+
           assert.equal(classifyPaths([]).docsOnly, false);
           NODE
 
@@ -249,12 +304,101 @@ jobs:
             base="$(git rev-parse "${head}^" 2>/dev/null || git rev-list --max-parents=0 "$head")"
           fi
 
+          # Diff from the MERGE BASE, not from the base tip.
+          #
+          # `git diff A B` reports every file that differs between two commits.
+          # For a pull request branch that is behind its base, that includes
+          # every file the BASE gained since the branch forked -- other lanes'
+          # merged work, reported as this branch's changes. The classifier then
+          # runs suites for surfaces the diff never touches, and they go green,
+          # so a reviewer sees browser coverage attributed to a pull request
+          # that cannot have affected it. The mirror case is worse and quieter:
+          # a suite whose surface the branch DOES touch can be missed when the
+          # base moved the other way.
+          #
+          # Measured on #842: two-dot classified 26 files where the branch
+          # changed 8, turned guardian_e2e on off a route the branch never
+          # touched, and the extra suites pushed the job past timeout-minutes,
+          # so the required check came back `cancelled` -- which reads as never
+          # validated rather than as a failure.
+          #
+          # On a push to main the two spellings agree, because `before` is an
+          # ancestor of `sha` and is therefore its own merge base. This is a
+          # correction to the pull-request path and a no-op on the push path.
+          #
+          # The merge base is computed explicitly rather than with `A...B` so
+          # that an unrelated-history pair (no merge base, which `...` fails on)
+          # falls back to the tip rather than failing the whole run.
+          if merge_base="$(git merge-base "$base" "$head" 2>/dev/null)"; then
+            base="$merge_base"
+          fi
+
+          echo "Diffing from $base to $head"
           git diff --name-only "$base" "$head" > /tmp/changed-files.txt
 
           echo "Changed files:"
           cat /tmp/changed-files.txt
 
           node scripts/ci-classify-paths.mjs /tmp/changed-files.txt
+
+      # SURFACING, NOT GATING -- and that distinction is the whole design.
+      #
+      # `unknown_code` is this classifier's only signal for "the diff touched
+      # code that matched no predicate at all". It has been emitted to
+      # $GITHUB_OUTPUT since the classifier was written and, until this step,
+      # nothing read it: a repository-wide grep for `unknown_code` returned
+      # exactly one hit, the emitter. The one signal that would have announced
+      # a predicate miss at the time was computed and thrown away, while the
+      # classifier's own comments accumulated a history of predicates found too
+      # narrow only after a miss.
+      #
+      # MEASURED BEFORE WIRING, because an annotation that fires on most
+      # commits is noise, and noise is worse than silence -- it teaches people
+      # to skip the channel. Replaying classifyPaths over each commit's own
+      # diff for the last 100 commits of `main` (3b8a1bfe back to eb5f3dba;
+      # linear, zero merge commits, so every diff is unambiguous) fires on 9.
+      # At nine per cent a reader can still believe it, and the median firing
+      # names two files.
+      #
+      # WHY IT MUST NOT FAIL THE BUILD. `unknown_code` is true for
+      # legitimately unclassified code -- server modules, repository scripts,
+      # other workflows -- as well as for a genuine miss, and nothing here can
+      # tell those apart. Of the nine firings measured, six were the first kind
+      # and two touched apps/web/app/api/pilot/coach-reviews/, which is coach
+      # surface that isCoachE2ePath does not match. This repository's precedent
+      # for a newly added guard is to make a miss VISIBLE first rather than
+      # block on it, and blocking would turn the classifier's own conservatism
+      # into a merge gate, which nobody decided.
+      - name: Report unrecognised code surface
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.unknown_code == 'true'
+        shell: bash
+        env:
+          # Through env, never interpolated into the script body: these are
+          # paths taken from the diff, so an inline expression would let a
+          # crafted filename on a pull request branch reach the shell as code.
+          UNCLASSIFIED_PATHS: ${{ steps.changes.outputs.unclassified_paths }}
+        run: |
+          {
+            echo "### Unrecognised code surface"
+            echo
+            echo "No E2E predicate in \`scripts/ci-classify-paths.mjs\` matched these changed files, so **no browser suite exercised them** in this run:"
+            echo
+            while IFS= read -r changed; do
+              if [ -n "$changed" ]; then
+                echo "- \`$changed\`"
+              fi
+            done <<< "$UNCLASSIFIED_PATHS"
+            echo
+            echo "This is a report, not a failure. Much of what appears here is legitimately unclassified: server modules, repository scripts, other workflows. But if any file above IS covered by a journey suite, the predicate that should have matched it is too narrow -- widen it in \`scripts/ci-classify-paths.mjs\`, whose header records how each predicate was chosen and which misses shaped it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # GitHub decodes %XX inside an annotation message, so % is escaped
+          # first and the newlines that make the list readable are escaped
+          # after. A literal newline would truncate the annotation at line one.
+          encoded="${UNCLASSIFIED_PATHS//\%/%25}"
+          encoded="${encoded//$'\r'/%0D}"
+          encoded="${encoded//$'\n'/%0A}"
+          echo "::warning title=Unrecognised code surface::This diff touched code that no E2E predicate recognises, so no browser suite exercised it:%0A${encoded}%0A%0AIf that is wrong, the predicate in scripts/ci-classify-paths.mjs should be widened -- the file's header explains how. This is a report, not a gate."
 
       - name: Documentation-only fast path
         if: steps.changes.outputs.docs_only == 'true'
