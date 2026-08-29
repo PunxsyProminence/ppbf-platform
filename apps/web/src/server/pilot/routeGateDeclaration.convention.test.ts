@@ -570,7 +570,11 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'holding master SHADOW access exports across organizations; an '
       + 'organization admin exports their own; everyone else falls through to a '
       + 'Forbidden. Structured as allow-branches with the refusal last, which '
-      + 'is why no single if-statement reads as the gate.',
+      + 'is why no single if-statement reads as the gate. Ahead of all of it '
+      + 'sits assertResearchBridgeExportEnvironment (researchBridgeAuth.ts), '
+      + 'the same environment fence the Azure-AD sibling at ../export holds -- '
+      + 'not an authorization gate and no opinion about the caller, but it is '
+      + 'what stops this payload existing outside staging at all.',
   ],
   [
     'app/api/pilot/shadow/video-analysis/route.ts#GET',
@@ -586,11 +590,17 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
     'OPEN BY DESIGN, at the product owner\'s explicit request: '
       + '"parents/athletes should be able to see the staff are well-trained and '
       + 'certified." Safe because of what the payload IS rather than who is '
-      + 'asking -- a name, a role, and a status band per clearance type. '
-      + 'listStaffCredentialStatus does not select document_ref, '
-      + 'verified_by_account_id or verification_note at all, so there is no '
-      + 'field here to forget to drop. The DOCUMENT itself is a different '
-      + 'route, and it is not open.',
+      + 'asking -- a name, a role, and a status band per clearance type, under '
+      + 'a hashed row key. listStaffCredentialStatus does not select '
+      + 'document_ref, verified_by_account_id or verification_note at all. It '
+      + 'DOES select account_id, and that one had to be dropped rather than '
+      + 'assumed harmless: createOrUpdateMicrosoftStaffAccount falls back to '
+      + 'the login email for an account_id and the admin console\'s invite form '
+      + 'sends no hint, so an account_id is a work email and emitting it here '
+      + 'gave an athlete on a PIN login every staff member\'s address beside '
+      + 'their background-check band. The route emits a sha256 staff_key '
+      + 'instead, following wallDisplay.ts\'s wallKey(). The DOCUMENT itself is '
+      + 'a different route, and it is not open.',
   ],
   [
     'app/api/pilot/wall-of-names/route.ts#GET',

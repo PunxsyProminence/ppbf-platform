@@ -12,6 +12,7 @@ import {
   PILOT_MATCHING_POLICY_V0_UNCALIBRATED,
   compareAnnotationSets,
   countDisagreementsByCategory,
+  resolveComparisonPair,
   type AnnotationSetComparison,
   type DisagreementCategory,
 } from './comparison';
@@ -468,5 +469,76 @@ describe('determinism', () => {
       (pairing) => pairing.eventA?.start_ms ?? pairing.eventB?.start_ms,
     );
     expect(starts).toEqual([...starts].sort((left, right) => (left ?? 0) - (right ?? 0)));
+  });
+});
+
+describe('choosing which two readings a clip means', () => {
+  const SET_C = makeSet({ annotation_set_id: 'set-c', annotator_account_id: 'acct-c' });
+  const three = [SET_A, SET_B, SET_C];
+
+  test('two readings still pair themselves -- there is only one pair to make', () => {
+    // Unchanged behaviour, asserted so the new path cannot quietly start
+    // demanding a choice on the clips that never needed one.
+    expect(resolveComparisonPair([SET_A, SET_B], null, null))
+      .toEqual({ outcome: 'pair', a: SET_A, b: SET_B });
+  });
+
+  test('three readings and no choice is a question, not a refusal', () => {
+    // OD-2026-08-29-003. Both surfaces used to refuse this clip outright.
+    expect(resolveComparisonPair(three, null, null))
+      .toEqual({ outcome: 'selection_required', candidates: three });
+  });
+
+  test('three readings never auto-pair, not even by the order they arrived', () => {
+    // The tempting default. Submission order is incidental to the study, and
+    // letting it decide which readings count writes that accident into a
+    // table a gold dataset is built from.
+    const resolved = resolveComparisonPair(three, null, null);
+    expect(resolved.outcome).not.toBe('pair');
+  });
+
+  test('a chosen pair is returned, and the other reading is not in it', () => {
+    expect(resolveComparisonPair(three, 'set-a', 'set-c'))
+      .toEqual({ outcome: 'pair', a: SET_A, b: SET_C });
+  });
+
+  test('the order asked for does not decide which reading is A', () => {
+    // Canonical order, so two adjudicators picking the same two readings
+    // produce the same a/b assignment rather than a difference a later
+    // reader would treat as meaningful.
+    const asked = resolveComparisonPair(three, 'set-c', 'set-a');
+    const reversed = resolveComparisonPair(three, 'set-a', 'set-c');
+    expect(asked).toEqual(reversed);
+    expect(asked).toEqual({ outcome: 'pair', a: SET_A, b: SET_C });
+  });
+
+  test('naming one reading is refused rather than half-honoured', () => {
+    expect(() => resolveComparisonPair(three, 'set-a', null))
+      .toThrow(/two annotation set ids and one was given/);
+  });
+
+  test('a reading cannot be compared with itself', () => {
+    expect(() => resolveComparisonPair(three, 'set-a', 'set-a'))
+      .toThrow(/the same reading/);
+  });
+
+  test('a set that is not on this clip is refused, not fetched', () => {
+    // The selection is validated against what the gate returned. Without
+    // this, a caller could name a set from another clip or another
+    // organization and have it loaded on their behalf.
+    expect(() => resolveComparisonPair(three, 'set-a', 'set-from-elsewhere'))
+      .toThrow(/not among this clip's submitted readings/);
+  });
+
+  test('both ids being foreign is refused, and both are named', () => {
+    expect(() => resolveComparisonPair(three, 'set-x', 'set-y'))
+      .toThrow(/set-x and set-y/);
+  });
+
+  test('fewer than two readings and no choice is refused defensively', () => {
+    // The gate refuses zero and one before a caller gets here. This exists so
+    // the route does not depend on a refusal one module away.
+    expect(() => resolveComparisonPair([SET_A], null, null))
+      .toThrow(/1 submitted annotation reading, and a comparison needs two/);
   });
 });

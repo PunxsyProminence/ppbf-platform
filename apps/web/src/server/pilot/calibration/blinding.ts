@@ -229,7 +229,26 @@ export type AdjudicationRefusalReason =
    *  Kept distinct from the two refusals above rather than folded into
    *  either, because both would be false statements about this clip. It is
    *  not empty, and nothing on it is unfinished. */
-  | 'insufficient_sets_for_comparison';
+  | 'insufficient_sets_for_comparison'
+  /** The actor produced one of the readings on this clip.
+   *
+   *  OD-2026-08-29-002. A person who produced one of the two readings cannot
+   *  settle the disagreement between them: the whole point of two blind
+   *  readings is that a third party resolves them, and a party to the
+   *  disagreement grading their own work makes the calibration data unusable
+   *  as evidence.
+   *
+   *  Checked before any state condition, for the reason the role check is
+   *  first: an annotator refused here learns nothing about how far the OTHER
+   *  annotator has got. Refusing them only once the clip was ready would leak
+   *  the other reading's progress by the timing of the refusal.
+   *
+   *  The ratified cost: an organization whose only administrator also
+   *  annotates has clips nobody can adjudicate. That was on the page when the
+   *  decision was made -- it is a consequence, not an oversight, and not a
+   *  thing to route around. `platform_owner` is refused on this surface
+   *  deliberately, so it is not the escape hatch either. */
+  | 'adjudicator_annotated_this_clip';
 
 export type AdjudicationEligibility =
   | { readonly outcome: 'eligible'; readonly submittedSetCount: number }
@@ -237,6 +256,8 @@ export type AdjudicationEligibility =
 
 export interface AdjudicationEligibilityInput {
   readonly actorRole: PilotRole;
+  /** The person asking. Compared against every annotator on the clip. */
+  readonly actorAccountId: string;
   /** Every set on the clip, already organization-scoped by the caller. */
   readonly sets: readonly BlindingSubjectSet[];
 }
@@ -277,6 +298,13 @@ export function resolveAdjudicationEligibility(
     return { outcome: 'refused', reason: 'role_not_permitted' };
   }
 
+  // Identity before state, per the reason above. `sets` is already
+  // organization-scoped by the caller, so an id matching here is a reading on
+  // THIS clip in THIS organization and not a coincidence of account ids.
+  if (input.sets.some((set) => set.annotator_account_id === input.actorAccountId)) {
+    return { outcome: 'refused', reason: 'adjudicator_annotated_this_clip' };
+  }
+
   if (input.sets.length === 0) {
     return { outcome: 'refused', reason: 'no_sets_on_clip' };
   }
@@ -314,8 +342,11 @@ export class AdjudicationNotPermittedError extends Error {
           ? 'Not found: no annotation sets on this clip'
           : reason === 'annotation_in_progress'
             ? 'Forbidden: this clip is not ready for adjudication -- an annotation set on it has not been submitted'
-            : 'Forbidden: this clip has 1 submitted annotation set, and adjudication is '
-              + 'pairwise -- it puts exactly two independent readings side by side',
+            : reason === 'insufficient_sets_for_comparison'
+              ? 'Forbidden: this clip has 1 submitted annotation set, and adjudication is '
+                + 'pairwise -- it puts exactly two independent readings side by side'
+              : 'Forbidden: you annotated this clip, and adjudication is settled by someone '
+                + 'who did not produce either reading',
     );
     this.name = 'AdjudicationNotPermittedError';
     this.reason = reason;
@@ -423,6 +454,8 @@ export async function listAnnotationEventsForAnnotator(
 export interface AdjudicationReadContext {
   readonly organizationId: string;
   readonly actorRole: PilotRole;
+  /** The person asking, so the gate can refuse an annotator of this clip. */
+  readonly actorAccountId: string;
 }
 
 /**
@@ -453,6 +486,7 @@ export async function listAnnotationSetsForAdjudication(
 
   const eligibility = resolveAdjudicationEligibility({
     actorRole: context.actorRole,
+    actorAccountId: context.actorAccountId,
     sets,
   });
 

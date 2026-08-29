@@ -89,6 +89,213 @@ and should not try to.
 
 ---
 
+## OD-2026-08-29-007 -- A nomination is deleted with the athlete it names
+
+**Provenance: PRIMARY.** The decision was put to the owner as a choice between
+two options, and he selected one by label. The label is recorded verbatim
+because the words alone are what he chose:
+
+> Delete it with the athlete (Recommended)
+
+The alternative offered was to keep the nomination and detach it from the
+athlete, matching OD-2026-08-29-005's treatment of a barrier report.
+
+**What was asked.** `pilot_one_percent_nominations_athlete_fk` does not
+cascade from `pilot.athletes`. The retention purge hard-deletes an athlete two
+years after withdrawal, and a restricting foreign key aborts that delete. The
+question was what should happen to a One Percent Club nomination naming a
+child whose family has fully withdrawn.
+
+**What is true today, measured.** The retention purge was proved
+non-functional and then repaired in #862 (`apps/web/scripts/pilot-cleanup-deleted-data.mjs`),
+which now isolates each athlete behind a savepoint and REPORTS what blocked it
+rather than failing the whole sweep. `one_percent_nominations` is named in
+that report as a blocker. So this is not a hypothetical: the purge already
+tells an operator this row is in the way.
+
+**The decision.** The nomination row is deleted with the athlete. A nomination
+is a claim about a child who trains here; once the family has withdrawn and
+the two-year retention window has closed, there is no child for it to be about.
+
+**What a lane must NOT infer.** This says nothing about the retention
+treatment of any other One Percent Club table, and nothing about nominations
+whose athlete is still enrolled.
+
+**IMPLEMENTATION IS NOT THIS LANE'S.** `pilot.one_percent_nominations` is a
+coach-facing One Percent Club table. The parent/guardian lane established the
+defect while repairing the purge, put the question to the owner, and recorded
+the answer here -- it did not build the migration, and deliberately did not,
+because a build lane fixing an unrelated table inside its own PR is the drive-by
+`AGENT_KERNEL.md` forbids. **The One Percent Club lane owns the change.** As of
+this entry no migration implements it, and the purge still reports the block.
+
+---
+
+## OD-2026-08-29-008 -- `pilot.waivers.status` is measured before it is constrained
+
+**Provenance: PRIMARY.** Put to the owner as a choice of options; he selected
+one by label, recorded verbatim:
+
+> Measure production first (Recommended)
+
+The alternatives offered were to add a CHECK constraint over the reader
+vocabulary now, and to leave the column unconstrained and close the question.
+
+**What was asked.** Whether `pilot.waivers.status` should get a CHECK
+constraint.
+
+**What is true today, measured against the code, not the database.**
+
+- The column is `status text not null` with **no CHECK constraint** -- checked
+  across every `.sql` file in `infra/azure`, which is the whole of this
+  repository's schema.
+- Two of its four writers store a literal: `grantMediaConsent` writes
+  `'signed'`, `withdrawMediaConsent` writes `'withdrawn'`
+  (`apps/web/src/server/pilot/guardianConsent.ts`).
+- The other two do not. `POST /api/pilot/intake/domain-upsert` stores
+  `asString(body.payload.status, 'signed')` -- any string a caller sends --
+  and `POST /api/pilot/intake/review-action` stores whatever the promoted
+  intake case payload carried.
+- Every reader already fails CLOSED on a value it does not understand:
+  `normalizeWaiverStatus` maps an unrecognised value to `'missing'`;
+  `guardianConsent` tests `=== 'signed'`; `GET /api/pilot/video/[videoId]`
+  refuses with 409 on a guardian-scoped row outside `{signed, withdrawn}`.
+
+**So what is in production is a fact about production, and nothing in this
+repository records it.** That is why the question could not be answered here.
+
+**The decision.** Measure first. No CHECK constraint is proposed until the
+values production actually holds have been counted.
+
+**What the measurement is.** `apps/web/scripts/pilot-check-waiver-statuses.mjs`
+(`npm run pilot:check-waiver-statuses`). Strictly read-only -- every statement
+is a SELECT inside an explicit `BEGIN TRANSACTION READ ONLY`, and a test drives
+it through a recording client to prove there is no write path. It reports the
+number that decides this: **the rows a byte-exact CHECK over the reader
+vocabulary would refuse.** The interesting population is `' Signed '` -- a row
+every reader ACCEPTS and a byte-exact constraint REFUSES. **It has not been run
+against production. Until it is, the count is UNVERIFIED.**
+
+**What a lane must NOT infer.** Not that the column is safe to constrain, and
+not that it is unsafe. Not that any odd value is a live incident -- every
+reader fails closed on one today, which is a different harm (a family's signed
+paperwork reported as missing) and not a leak. And not what should be done
+with a non-exact row once counted: normalising rows, widening the vocabulary,
+admitting case and padding inside the constraint, or leaving the column
+unconstrained are four different answers and **all four remain OWNER DECISION
+REQUIRED.**
+
+---
+
+## OD-2026-08-29-006 -- The build lane merges its own green work and drives staging; production stays the owner's
+
+**Provenance:** PRIMARY. Owner, 2026-08-29: **"its all on you to get to
+production with me, i closed the other work flows"**, then, asked how far that
+runs without asking, he chose the option reading:
+
+> **Merge + staging freely; production needs your word** -- "I merge my own
+> green PRs and dispatch staging deploys and staging migrations on my own.
+> Production deploys and production migrations I prepare, verify, and then ask."
+
+Declined: **"Everything, including production"** and **"Merge only; deploys stay
+with you"**.
+
+**What was asked.** `AGENT_KERNEL.md` assigned `main`, migrations, staging and
+production to a release-control lane, and forbade the build lane from merging or
+dispatching any of them. The owner has since closed the other workflows, so that
+lane is not staffed; on 2026-08-29 five green pull requests sat unmergeable for
+roughly three and a half hours with no build work possible behind them.
+
+**The decision.** A build lane MAY merge its own pull requests to `main` once CI
+is green and they are mergeable, and MAY dispatch `deploy-staging` and staging
+migrations. `deploy-production` and production migrations stay with the owner:
+prepared and verified by the lane, dispatched only on his word.
+
+**Why the split is where it is.** An applied migration is not undone by
+re-running a workflow. The calibration tables this thread built against have
+never been applied in any environment -- no lane here has ever reached a
+database -- so the first production apply is genuinely unproven, and its
+recovery would be manual database work rather than a redeploy. Staging is where
+that gets found out.
+
+`AGENT_KERNEL.md` is amended in the same commit. Recording the ruling without
+amending it would leave the kernel stating a boundary that no longer describes
+practice, which is the drift this file exists to stop.
+
+**What this does NOT settle.**
+
+- **Whether a lane may merge ANOTHER lane's pull request.** This says "its own".
+  Not asked, not answered.
+- **What happens when CI is green but the change is contested.** Green CI is
+  still a precondition, not an authorization to override a review.
+- **Who applies the calibration migrations first.** They remain unapplied
+  everywhere, and the first apply is a production question this entry routes to
+  the owner rather than answers.
+
+**Evidence this rests on.** `AGENT_KERNEL.md` lines 408-411 at `31ea99c1`; the
+2026-08-29 queue, where #890, #894, #897, #900 and #901 were green and
+unmergeable from roughly 06:00 to 12:29 UTC.
+
+---
+
+## OD-2026-08-29-005 -- A superseded adjudication is marked by a revision integer, and a collision is explained rather than dumped
+
+**Provenance:** PRIMARY. Owner, 2026-08-29, choosing among three shapes put to
+him after he asked whether the error could explain itself. The option he
+selected read:
+
+> **Revision + unique constraint + translated error** -- "Same column, no lock;
+> a unique index on (pair, revision) catches the collision, and the route
+> translates Postgres 23505 into a sentence like *'someone corrected this while
+> you were deciding -- reload and look at their answer before replacing it.'*
+> GOOD: no locking, and arguably the RIGHT message: the second person genuinely
+> should see the first correction before overwriting it. BAD: it is an error
+> path, so it only reads well if I write and test that translation --
+> untranslated it surfaces as a raw duplicate-key dump."
+
+Declined: **"Revision + row lock, so there is no error"** (prevents the
+collision with `SELECT ... FOR UPDATE`, but a forgotten lock in a future code
+path silently reopens the hole) and **"is_current boolean + partial unique
+index"** (the database refuses two current answers, but a reader who forgets to
+filter silently sees history as current -- a quiet wrong answer rather than a
+loud one).
+
+**This supersedes the open question in OD-2026-08-29-004**, which ruled that a
+second adjudication of the same pair is a correction and left the schema shape
+undecided. It does not change that ruling; it answers what -004 deferred.
+
+**The decision.** `pilot.calibration_adjudications` gains a revision integer
+scoped to the pair. The highest revision is the current answer. A unique
+constraint on the pair plus revision catches two writers computing the same next
+value, and the route translates that collision into a sentence naming what
+happened and what to do about it.
+
+**The translated error is part of the decision, not a nicety.** The owner asked
+for it specifically. Untranslated, a 23505 reaches an administrator as a
+duplicate-key dump naming a constraint. The message he accepted says a person
+corrected this while you were deciding and tells them to read that correction
+before replacing it -- which is the right instruction, because the second
+adjudicator genuinely should see the first answer before overwriting it. **A
+lane implementing this owes the translation a test**; without one the failure
+mode is exactly the raw dump the choice was made to avoid.
+
+**What this does NOT settle.**
+
+- **Who may supersede.** Whether only the original adjudicator may correct their
+  own decision, or any organization admin may, is still open.
+- **What the surfaces show.** Whether an adjudicator sees only the current
+  revision or the whole chain is a surface question, unasked.
+- **Retention.** Nothing rules on whether superseded revisions are ever removed.
+
+**Evidence this rests on.** `infra/azure/pilot_slice_postgres_calibration_
+adjudication_migration.sql` at `31ea99c1` -- no superseding column of any kind,
+primary key `(organization_id, adjudication_id)`, so a second row for one pair
+already inserts cleanly and is already indistinguishable from the first.
+`adjudication.ts`, which exposes `recordAdjudication` and `getAdjudication` and
+no update path.
+
+---
+
 ## OD-2026-08-29-004 -- A second adjudication of the same pair is a correction, and supersedes
 
 **Provenance:** PRIMARY. Owner chose, 2026-08-29, from options put to him as a

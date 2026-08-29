@@ -4,6 +4,10 @@ import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { excludePlatformLibraryOrganizationSql } from '@/src/server/pilot/platformLibraryScope';
+import {
+  assertResearchBridgeExportEnvironment,
+  ResearchBridgeAccessError,
+} from '@/src/server/pilot/researchBridgeAuth';
 import { buildResearchBridgeExport } from '@/src/server/pilot/researchBridgeExport';
 
 export const runtime = 'nodejs';
@@ -57,9 +61,48 @@ const NO_STORE_HEADERS = {
  * there is no way for a request to ask for a broader scope than the caller's
  * own principal carries -- scope is derived entirely server-side from the
  * session, never from a request parameter.
+ *
+ * AND, since this route reuses that export, it now holds the same ENVIRONMENT
+ * FENCE the sibling holds. It had none. "Reusing buildResearchBridgeExport,
+ * so the de-identification guarantee is unchanged" was true about the payload
+ * and silently untrue about where the payload may exist: /export refuses
+ * outright unless RESEARCH_BRIDGE_EXPORT_ENABLED is 'true',
+ * RESEARCH_BRIDGE_EXPORT_ENVIRONMENT is 'staging' and the request arrived on
+ * the declared host, while this route produced the identical
+ * 'sanitized-staging-only' payload from any deployment -- production included
+ * -- and, for a caller holding master SHADOW access, across EVERY organization
+ * on record rather than the single configured one. The narrower route was
+ * fenced and the wider one was not.
+ *
+ * The same helper, not a second copy, so the two cannot drift into disagreeing
+ * about where this payload may exist.
  */
 export async function GET(request: NextRequest) {
   try {
+    // FIRST, before the session is resolved and before any query runs.
+    //
+    // 404, matching the sibling: a fenced deployment is indistinguishable from
+    // one where this route was never deployed, and a caller holding the
+    // cross-organization flag learns exactly what a stranger learns. A 403
+    // would instead confirm the route exists and that only credentials are
+    // missing, which is the one fact worth having when the payload behind it
+    // spans every organization.
+    //
+    // Ordered ahead of requirePrincipal on purpose. The fence is a property of
+    // the DEPLOYMENT, not of the caller, so no session can satisfy it and
+    // nothing is gained by finding out who is asking first; a production
+    // deployment now does no authentication work and reads no organization row
+    // on this path at all. It leaks nothing either: on a production host the
+    // host condition fails by construction, so 404 is the constant answer there
+    // whoever asks.
+    //
+    // Safe to fence rather than degrade because nothing consumes this route --
+    // no client, no page, no script, no workflow. Its only references in the
+    // repository are its own test, the route-gate convention allowlist, and one
+    // audit document; the external research-bridge service
+    // (apps/research-bridge/src/ppbfClient.ts) calls /export, not this.
+    assertResearchBridgeExportEnvironment(request);
+
     const principal = await requirePrincipal(request);
 
     if (principal.hasMasterShadowAccess === true) {
@@ -91,6 +134,13 @@ export async function GET(request: NextRequest) {
 
     throw new Error('Forbidden: organization_admin role or cross-organization access required');
   } catch (error) {
+    // The fence's own refusal is rendered exactly as /export renders it, so
+    // the two routes answer a fenced-out request identically. Everything else
+    // still goes through jsonError, which is what turns the Forbidden above
+    // into a 403.
+    if (error instanceof ResearchBridgeAccessError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+    }
     return jsonError(error);
   }
 }
