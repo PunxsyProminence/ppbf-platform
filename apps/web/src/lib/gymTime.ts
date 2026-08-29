@@ -167,10 +167,15 @@ export function formatGymDateNumeric(value: GymTimeInput): string | null {
  *
  * WHY THIS IS NOT `new Date().toISOString().slice(0, 10)`. That is the day in
  * UTC, and the gym is four or five hours behind it. Every evening session
- * after 8pm ET falls on the following UTC day, so "today" computed that way
- * is tomorrow for the whole back half of a training night -- which would let
- * a coach file tonight's work as future-dated, or block them from filing it
- * at all.
+ * after 8pm ET falls on the following UTC day, so a "today" computed that way
+ * is tomorrow for the whole back half of every training night. Two callers
+ * depend on this in opposite directions: the register would ask the database
+ * about tomorrow, and the development log would either refuse the work a coach
+ * has just finished or accept a date that has not arrived.
+ *
+ * It is the same drift pilot.attendance_reconciled avoids by converting
+ * scheduler timestamps in America/New_York, and the one gymTimeDrift.test.ts
+ * pins on the front end.
  *
  * Assembled from formatToParts rather than a locale string: 'en-CA' happens
  * to render ISO order today, and a date this load-bearing should not rest on
