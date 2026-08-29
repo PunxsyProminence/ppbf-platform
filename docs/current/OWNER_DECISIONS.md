@@ -493,6 +493,33 @@ minutes.
 A lane that needs one of these answered must say so and stop. Do not resolve
 them by building.
 
-- **A real `general` row, should one ever appear.** None exists in production
-  or in any seed or fixture today. `general` is refused by the foreign key, so
-  one could only arrive by a write that predates the key.
+- **A real `general` row, should one ever appear.** DORMANT: nothing to decide
+  until one exists, and no lane should build against it. Recorded here with the
+  facts that make it dormant, so the next reader can confirm that in seconds
+  rather than re-deriving it.
+
+  None exists. The production census (run 33175617223, 2026-08-28T14:17Z)
+  reported 0 rows naming an unregistered discipline across all three tables;
+  staging the same. No seed and no fixture writes it -- `seed_drill_library.csv`
+  is 94 boxing and 25 conditioning, both registered -- and `general` appears in
+  `drill_library` only as a deliberately planted legacy row inside two pg
+  suites.
+
+  It cannot be created by any legal write. `general` is in no registry, so the
+  foreign key refuses it (23503, measured), and OD-2026-08-28-002 confirmed
+  that dropping the literal CHECK changed nothing about it: the CHECK admitted
+  it and never refused it, the key always did. The referenced side is guarded
+  too -- deleting or renaming a registry row an existing row references is
+  refused -- so no legal SQL can produce one from either direction.
+
+  A `general` row could therefore only arrive by bypassing the constraint
+  outright: a restore with triggers disabled, `session_replication_role =
+  'replica'` (zero occurrences anywhere in the tree), or an operator dropping
+  the key. If one ever does, `pilot:check-discipline-values` is the instrument
+  that names it -- it enumerates every unresolved value rather than stopping at
+  the first, which is exactly what `validate constraint` will not do.
+
+  **So the question to bring back is not "what should `general` mean" but "how
+  did this row get here", and the answer to the second will usually decide the
+  first.** No lane should pre-empt that by mapping `general` to anything;
+  the original ruling forbidding that mapping stands.
