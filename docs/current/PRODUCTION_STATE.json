@@ -2,20 +2,27 @@
   "_readme": "Audit snapshot, not a controller and not bot-owned. Live Azure state and current GitHub workflow evidence outrank this file (docs/AI_DELIVERY_PIPELINE.md, Production-state records). Any authorized release verifier may propose an update only after directly observing the relevant environment -- workflow-run logs and live HTTPS probes count as observation of what they actually show, and nothing more. Use null / 'not_verified' rather than guessing; a wrong value here is worse than an honest gap.",
   "environments": {
     "staging": {
-      "deployed_sha": "cc07529c444d4e95a7b364310f6eb7939c5e0246",
-      "deployed_image_digest": "sha256:d5fd810e283635fc6abc2beb196faad31023fc786510595ff4b0369bdb5480b6",
-      "deployment_timestamp": "2026-08-28T16:20:47Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/33188706505",
+      "deployed_sha": "459aab1d865d36a5ccd0ad5b010513f2c2c96e00",
+      "deployed_image_digest": "sha256:0e7641ff5963f6e06235149304a5db9624175a1fbb28b9ab7a042ce3078ce5a3",
+      "deployment_timestamp": "2026-08-29T19:02:02Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/33269813384",
       "container_app": "app-ppbf-staging",
       "revision": null,
-      "last_verified_by": "release session 2026-08-28 (Claude Code, release-control lane) -- the session that dispatched this deploy. Instruments: the GitHub Actions job-step listing for run 33188706505 job 98908337234, read step by step, plus the job log tail carrying the 'release digest' marker line.",
-      "last_verified_at": "2026-08-28T16:20:47Z",
-      "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG: deploy-staging run 33188706505, head cc07529c, job 98908337234 conclusion=success, all steps success except step 27 which is 'skipped' -- its PASSING outcome, since it fires only when the gate-athlete teardown FAILED and a working PIN was left live. Step 3 'Verify Exact Tested SHA And Schema Gate' and step 7 'Verify Staging Schema Matches This Commit' both passed, so the SHA and the schema were checked by the workflow rather than asserted by the operator. Step 23 'Run SHADOW E2E Gate' and step 24 'Guardian Contact Runtime Probe' both success; step 26 'Deactivate Gate Athlete Fixture' success. The digest above is the value step 28 printed under '--- release digest (for deploy-production release_digest) ---'. NOT verified by this session: any live HTTPS probe of staging beyond what the gate itself performed.",
+      "last_verified_by": "build lane session 2026-08-29 (Claude Code) -- the session that dispatched this deploy under OD-2026-08-29-006. Instruments: the GitHub Actions job-step listing for run 33269813384 job 99146167353, read step by step, plus the job log tail carrying the 'release digest' marker line.",
+      "last_verified_at": "2026-08-29T19:10:03Z",
+      "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG: apply-migrations run 33269702024 (target=staging, migration=all) conclusion=success ahead of this deploy. deploy-staging run 33269813384, head 459aab1d, job 99146167353 conclusion=success, every step success except step 27 which is 'skipped' -- its PASSING outcome, since it fires only when the gate-athlete teardown FAILED and a working PIN was left live. Step 3 'Verify Exact Tested SHA And Schema Gate' and step 7 'Verify Staging Schema Matches This Commit' both passed. Step 23 'Run SHADOW E2E Gate' reported tally: PASS=72, sessions minted 3 / revoked 3; step 24 'Guardian Contact Runtime Probe' and step 26 'Deactivate Gate Athlete Fixture' both success (log: 'Deactivated gate fixture athlete... PIN cleared, sessions revoked, 0 outstanding activation code(s) superseded'). The digest above is the value step 28 printed under '--- release digest (for deploy-production release_digest) ---'. This release carries #886 (research-bridge subject-filter fix + session-export environment fence), #853 (the three discipline foreign keys validated, NOT VALID -> valid), and #906 (read-only pilot.waivers.status census, MIGRATIONS: NONE for that PR itself). NOT verified by this session: any live HTTPS probe of staging beyond what the gate itself performed; the 16 items the gate's own output names as still needing a human-authored acceptance probe.",
       "known_staging_gaps": [
         "Outbound mail RESOLVED 2026-08-08T18:07Z. It was never a permissions gap and never a code gap: a token probe inside the container showed roles=[\"Mail.Send\"], and the refusal carried graph_error_code=ErrorAccessDenied, which is Exchange's application access policy rather than Entra. The policy was created 07:13Z and began enforcing between 07:54Z (last refusal) and 18:07Z (first success). Test-ApplicationAccessPolicy reported Granted the whole time because it evaluates configured state, not enforced state -- worth remembering before trusting it again.",
         "SHADOW gate Quick Round (athlete tier) flakiness history, preserved from the 57bc8a5 deploy record: gate step 12 filtered once and passed on retry during run 31513782551 (2026-08-11) -- the third sighting on that tier (2026-08-01, twice 2026-08-11). Under the gate's two-consecutive threshold, so no run failed. The 2026-08-15 gate run (31854517806) passed; its per-step retry behaviour was not re-inspected, so this history is carried, not extended.",
         "Session-script reference seed remains blocked: two of its 65 blocks violate pilot_ssb_content (block_kind='instruction' with no what_to_* content), the load is atomic so 0 of 65 apply, and the loader is deliberately excluded from seed-reference-data.yml. Reproduced by dry-run against staging 2026-08-15. Staging's only session scripts are the zzprobe fixtures; fix belongs to the seed DATA, not this file."
       ],
+      "superseded_record_2026-08-29T1910": {
+        "note": "Carried, not deleted. Correct from 2026-08-28T16:20:47Z until the 2026-08-29T19:02:02Z deploy above.",
+        "deployed_sha": "cc07529c444d4e95a7b364310f6eb7939c5e0246",
+        "deployed_image_digest": "sha256:d5fd810e283635fc6abc2beb196faad31023fc786510595ff4b0369bdb5480b6",
+        "deployment_timestamp": "2026-08-28T16:20:47Z",
+        "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/33188706505"
+      },
       "superseded_record_2026-08-16": {
         "note": "Carried, not deleted. These were this file's values until 2026-08-22 and they were correct when written; they had simply stopped being current, and reading them stale caused an audit to size the pending release at 25 migrations and 62 commits when the real delta from a11ea7c1 is 2 migrations and 22 commits.",
         "deployed_sha": "1da832e9b97a08a01d2fd3126ba3b7634aa8a1c6",
