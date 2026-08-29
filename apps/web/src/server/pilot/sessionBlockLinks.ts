@@ -1,4 +1,6 @@
+import { hasBlockWriteMembership } from './athleteDevelopmentBlocks';
 import { query, queryOne } from './db';
+import { ForbiddenError } from './errors';
 
 // Which delivered session supported which athlete development block.
 //
@@ -29,6 +31,24 @@ import { query, queryOne } from './db';
 // be constructed on purpose and cannot be reached by forgetting an argument.
 // Whole-gym roster visibility is not athlete-record authorization, and this
 // is exactly the surface where the two are easiest to confuse.
+//
+// THE WRITE FLOOR IS ENFORCED HERE; THE ATHLETE CHECK IS STILL THE CALLER'S.
+// Those are two different questions and only one of them belongs in a data
+// module. "May this actor reach this child" is the access contract's, and
+// asking it here would be a second copy of it. "Does this account hold a role
+// in THIS gym that may write at all" is a floor, and it is enforced beside
+// the write for the same reason athleteDevelopmentBlocks.ts and
+// coachDevelopment.ts enforce theirs there.
+//
+// It was missing, and the routes' requireRole did not cover it: requireRole
+// compares principal.role, which resolvePrincipal reads from
+// pilot.accounts.role -- the account's HOME role. The organization a session
+// operates in is a different column, and the role that governs a write is the
+// one on the membership row for that organization. An account homed as
+// 'coach' whose membership here was demoted still passed, and if it was still
+// named as athletes.coach_id it passed the athlete check too, which is the
+// ordinary state after a demotion nobody unwound by hand. It could then
+// create and delete links on a minor's development record.
 
 export interface SessionBlockLinkRow {
   organization_id: string;
@@ -106,6 +126,15 @@ export async function linkSessionToBlock(input: {
   blockId: string;
   linkedByAccountId: string;
 }): Promise<{ link: SessionBlockLinkRow; created: boolean } | null> {
+  /* Checked FIRST, before either existence read, so a caller with no standing
+     in this gym learns nothing about which run ids or block ids are real. */
+  if (!(await hasBlockWriteMembership(input.linkedByAccountId, input.organizationId))) {
+    throw new ForbiddenError(
+      'This account holds no active membership in this organization that may write here.',
+      'SESSION_BLOCK_LINK_NOT_A_WRITER',
+    );
+  }
+
   const run = await queryOne<{ run_id: string }>(
     `select run_id from pilot.session_script_runs
      where organization_id = $1 and run_id = $2`,
@@ -155,7 +184,17 @@ export async function unlinkSessionFromBlock(
   organizationId: string,
   runId: string,
   blockId: string,
+  accountId: string,
 ): Promise<boolean> {
+  // Same floor as linking. Removing a coach's statement about a child's plan
+  // is a write, and a demoted account may not make it either.
+  if (!(await hasBlockWriteMembership(accountId, organizationId))) {
+    throw new ForbiddenError(
+      'This account holds no active membership in this organization that may write here.',
+      'SESSION_BLOCK_LINK_NOT_A_WRITER',
+    );
+  }
+
   const removed = await queryOne<{ run_id: string }>(
     `delete from pilot.session_run_development_block_links
      where organization_id = $1 and run_id = $2 and block_id = $3

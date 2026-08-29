@@ -1,4 +1,6 @@
+import { hasBlockWriteMembership } from './athleteDevelopmentBlocks';
 import { query, queryOne } from './db';
+import { ForbiddenError } from './errors';
 
 // Which Full Spectrum objectives a coach says a delivered session addressed.
 //
@@ -29,6 +31,20 @@ import { query, queryOne } from './db';
 // module therefore takes ids that the CALLER has already cleared through that
 // contract, and its own writes re-check the relationship in SQL rather than
 // trusting the caller to have checked the right thing.
+//
+// THE WRITE FLOOR IS A SECOND, SEPARATE QUESTION, and it is enforced here.
+// "May this actor reach this child" is the access contract's and stays with
+// the caller. "Does this account hold a role in THIS gym that may write at
+// all" is a floor, and the routes' requireRole did not answer it: requireRole
+// compares principal.role, which resolvePrincipal reads from
+// pilot.accounts.role -- the account's HOME role, not the role on the
+// membership row for the organization the session is operating in. An account
+// homed as 'coach' whose membership here was demoted passed it, and passed the
+// athlete check too while it was still named as athletes.coach_id.
+//
+// hasBlockWriteMembership is called rather than copied: athleteDevelopmentBlocks.ts
+// exports it "for the objectives module, so one decision is enforced in one
+// place for both tables", and this is that module.
 
 export interface SessionObjectiveLinkRow {
   organization_id: string;
@@ -88,6 +104,15 @@ export async function linkSessionToObjective(input: {
   objectiveId: string;
   linkedByAccountId: string;
 }): Promise<{ link: SessionObjectiveLinkRow; created: boolean } | null> {
+  /* Checked FIRST, before any existence read, so a caller with no standing in
+     this gym learns nothing about which run, block or objective ids are real. */
+  if (!(await hasBlockWriteMembership(input.linkedByAccountId, input.organizationId))) {
+    throw new ForbiddenError(
+      'This account holds no active membership in this organization that may write here.',
+      'SESSION_OBJECTIVE_LINK_NOT_A_WRITER',
+    );
+  }
+
   /* One statement for the whole precondition: the objective exists in this
      organization AND the session is already linked to that objective's block.
      Asking in one place means the block_id written below is the objective's
@@ -136,23 +161,54 @@ export async function linkSessionToObjective(input: {
 
 /**
  * Removes a link. True when a row went, false when there was nothing to
- * remove -- which is also what a link in another organization returns.
+ * remove -- which is also what a link in another organization, or a link
+ * belonging to a different block, returns.
  *
  * Removing the statement leaves the session, the block link and the objective
  * exactly as they were. A coach who marked the wrong objective is correcting
  * a claim about what a class worked on, and none of the three records of what
  * happened changes.
+ *
+ * `blockId` IS REQUIRED, AND IT IS NOT REDUNDANT WITH THE PRIMARY KEY. It is
+ * the block the CALLER cleared through getDevelopmentBlock, re-checked here
+ * in SQL -- the discipline this module's header states and the one place that
+ * did not keep it.
+ *
+ * Without it the delete was scoped to (organization_id, run_id, objective_id)
+ * alone: authorization was proved about one block and then spent on whatever
+ * block the objective actually belonged to. A coach cleared for their own
+ * athlete's block could unlink an objective on a block for a child they
+ * cannot reach -- run ids are obtainable from the deliberately un-gated
+ * `?runs=options` picker, and the whole-gym roster is not athlete-record
+ * authorization. It stayed inside one organization, and that is the only
+ * thing that bounded it.
+ *
+ * The predicate cannot delete a row the old statement would not have: the
+ * primary key is (organization_id, run_id, objective_id), so at most one row
+ * matches either way. It can only REFUSE one -- which is the point.
  */
 export async function unlinkSessionFromObjective(
   organizationId: string,
   runId: string,
   objectiveId: string,
+  blockId: string,
+  accountId: string,
 ): Promise<boolean> {
+  // Same floor as linking. Removing a coach's statement about what a class
+  // worked on is a write, and a demoted account may not make it either.
+  if (!(await hasBlockWriteMembership(accountId, organizationId))) {
+    throw new ForbiddenError(
+      'This account holds no active membership in this organization that may write here.',
+      'SESSION_OBJECTIVE_LINK_NOT_A_WRITER',
+    );
+  }
+
   const removed = await queryOne<{ run_id: string }>(
     `delete from pilot.session_run_block_objective_links
      where organization_id = $1 and run_id = $2 and objective_id = $3
+       and block_id = $4
      returning run_id`,
-    [organizationId, runId, objectiveId],
+    [organizationId, runId, objectiveId, blockId],
   );
   return removed !== null;
 }
