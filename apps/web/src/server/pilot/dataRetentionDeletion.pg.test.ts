@@ -1044,6 +1044,13 @@ describe('a guardian who was actually recorded as one', () => {
         path.join(INFRA_DIR, 'pilot_slice_postgres_guardian_media_consent_migration.sql'), 'utf8',
       ),
     );
+    // pilot.one_percent_nominations is the one restricting foreign key onto
+    // pilot.athletes, and the athlete-isolation test below needs it to exist.
+    await guardianClient.query(
+      await fs.readFile(
+        path.join(INFRA_DIR, 'pilot_slice_postgres_one_percent_club_migration.sql'), 'utf8',
+      ),
+    );
     guardianEnv.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(GUARDIAN_DB);
 
     await guardianClient.query(
@@ -1214,5 +1221,46 @@ describe('a guardian who was actually recorded as one', () => {
     expect(audited.rows[0].details.accounts_deleted).toBe(1);
     expect(audited.rows[0].details.blocked).toBe(1);
     expect(audited.rows[0].details.blocked_by).toEqual({ coach_observations_coach_account_id_fkey: 1 });
+  });
+
+  test('one athlete the platform cannot purge does not take the others with it', async () => {
+    /* pilot.athletes is the healthy half -- 60 of the 61 foreign keys pointing
+       at it cascade -- but pilot.one_percent_nominations RESTRICTS, and
+       onePercentClub.ts writes those by athlete_id. As one statement the
+       athlete delete was all-or-nothing, so a single nominated athlete would
+       have blocked every other athlete's purge in the same sweep. Same
+       savepoint treatment as the accounts. */
+    const NOMINATED = 'ATH-GUARDIAN-NOMINATED';
+    const PURGEABLE_ATHLETE = 'ATH-GUARDIAN-PURGEABLE';
+    for (const athleteId of [NOMINATED, PURGEABLE_ATHLETE]) {
+      await guardianClient.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Purge Subject', '2013-07-08', 'fly', 'active', 'contact', true, $3, now(), now())`,
+        [G_ORG, athleteId, G_COACH],
+      );
+    }
+    await guardianClient.query(
+      `insert into pilot.one_percent_nominations
+         (organization_id, nomination_id, athlete_id, source, nominated_by_account_id,
+          nominated_by_role, expires_at)
+       values ($1, 'NOM-1', $2, 'coach_nomination', $3, 'coach', now() + interval '30 days')`,
+      [G_ORG, NOMINATED, G_COACH],
+    );
+    await guardianClient.query(
+      `update pilot.athletes set deleted_at = now() - interval '3 years'
+        where organization_id = $1 and athlete_id = any($2::text[])`,
+      [G_ORG, [NOMINATED, PURGEABLE_ATHLETE]],
+    );
+
+    const { event } = await runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
+    expect(event.athletes).toBe(1);
+
+    const gone = await guardianClient.query(
+      `select athlete_id from pilot.athletes
+        where organization_id = $1 and athlete_id = any($2::text[])`,
+      [G_ORG, [NOMINATED, PURGEABLE_ATHLETE]],
+    );
+    expect(gone.rows.map((r: { athlete_id: string }) => r.athlete_id)).toEqual([NOMINATED]);
+    expect(event.blocked_by).toMatchObject({ pilot_one_percent_nominations_athlete_fk: 1 });
   });
 });

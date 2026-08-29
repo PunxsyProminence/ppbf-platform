@@ -131,26 +131,32 @@ function blockedBy(error) {
  * others, and the constraint that blocked it has to reach the log by name or
  * nobody can act on it.
  */
-async function attemptPurge(client, accountIds) {
-  let athletesDeleted = 0;
+async function attemptPurge(client, athletes, accountIds) {
   const blocked = {};
   const record = (error) => {
     const name = blockedBy(error);
     blocked[name] = (blocked[name] ?? 0) + 1;
   };
 
-  await client.query('savepoint purge_athletes');
-  try {
-    const athleteDelete = await client.query(
-      `delete from pilot.athletes
-        where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})
-        returning athlete_id`,
-    );
-    athletesDeleted = athleteDelete.rows.length;
-    await client.query('release savepoint purge_athletes');
-  } catch (error) {
-    await client.query('rollback to savepoint purge_athletes');
-    record(error);
+  /* ONE ATHLETE AT A TIME, for the same reason as the accounts below. Almost
+     everything hanging off pilot.athletes cascades -- 60 of the 61 foreign
+     keys pointing at it -- but pilot.one_percent_nominations restricts, and
+     onePercentClub.ts writes those by athlete_id. As a single statement, one
+     nominated athlete would take every OTHER athlete's purge down with it. */
+  let athletesDeleted = 0;
+  for (const athlete of athletes) {
+    await client.query('savepoint purge_athlete');
+    try {
+      await client.query(
+        'delete from pilot.athletes where organization_id = $1 and athlete_id = $2',
+        [athlete.organization_id, athlete.athlete_id],
+      );
+      await client.query('release savepoint purge_athlete');
+      athletesDeleted += 1;
+    } catch (error) {
+      await client.query('rollback to savepoint purge_athlete');
+      record(error);
+    }
   }
 
   let accountsDeleted = 0;
@@ -219,12 +225,11 @@ async function main() {
         where deleted_at is not null and deleted_at < (now() - ${ACCOUNT_RETENTION})
           and role = 'parent'`,
     );
-    const counts = await client.query(
-      `select
-         (select count(*)::int from pilot.athletes
-           where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})) as athletes`,
+    const expiredAthletes = await client.query(
+      `select organization_id, athlete_id from pilot.athletes
+        where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})`,
     );
-    const athletes = counts.rows[0].athletes;
+    const athletes = expiredAthletes.rows.length;
     const accounts = expiredAccounts.rows.length;
     const total = athletes + accounts;
 
@@ -245,7 +250,7 @@ async function main() {
     const accountIds = expiredAccounts.rows.map((row) => row.account_id);
     const outcome = total === 0
       ? { athletesDeleted: 0, accountsDeleted: 0, blocked: {} }
-      : await attemptPurge(client, accountIds);
+      : await attemptPurge(client, expiredAthletes.rows, accountIds);
     const blockedCount = Object.values(outcome.blocked).reduce((sum, n) => sum + n, 0);
 
     if (!apply) {
