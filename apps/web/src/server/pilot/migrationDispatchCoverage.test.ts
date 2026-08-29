@@ -81,10 +81,85 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
   scripts: Record<string, string>;
 };
 
-const allList = workflow.match(/for m in ([a-z0-9 -]+); do/)?.[1].split(' ').filter(Boolean) ?? [];
-const allowList = workflow.match(/case " ([a-z0-9 -]+) " in/)?.[1].split(' ').filter(Boolean) ?? [];
+const allMatches = [...workflow.matchAll(/for m in ([a-z0-9 -]+); do/g)];
+const allowMatches = [...workflow.matchAll(/case " ([a-z0-9 -]+) " in/g)];
+const allList = allMatches[0]?.[1].split(' ').filter(Boolean) ?? [];
+const allowList = allowMatches[0]?.[1].split(' ').filter(Boolean) ?? [];
+
+/**
+ * Every `run: |` block in the workflow, dedented, ready for `bash -n`.
+ *
+ * Parsed by indentation rather than with a YAML library on purpose: this has to
+ * hand the shell exactly the text a runner would run, and a YAML round-trip is
+ * one more thing standing between the file and that claim.
+ */
+function shellSteps(): { line: number; script: string }[] {
+  const lines = workflow.split('\n');
+  const steps: { line: number; script: string }[] = [];
+  lines.forEach((line, index) => {
+    if (!/\brun: \|\s*$/.test(line)) return;
+    const openIndent = line.length - line.trimStart().length;
+    const body: string[] = [];
+    for (const candidate of lines.slice(index + 1)) {
+      if (candidate.trim() === '') {
+        body.push('');
+        continue;
+      }
+      if (candidate.length - candidate.trimStart().length <= openIndent) break;
+      body.push(candidate);
+    }
+    const bodyIndent = Math.min(
+      ...body.filter((l) => l.trim() !== '').map((l) => l.length - l.trimStart().length),
+    );
+    steps.push({
+      line: index + 1,
+      script: body.map((l) => (l.trim() === '' ? '' : l.slice(bodyIndent))).join('\n'),
+    });
+  });
+  return steps;
+}
 
 describe('every migration is dispatchable and in the rebuild path', () => {
+  test('the workflow declares exactly one apply order and one allowlist', () => {
+    /*
+     * Three of each landed on main at once. Three lanes each appended their
+     * migration to these two lines, and the merge kept all three copies of both
+     * instead of merging them. Every reader -- the two `match()` calls above and
+     * scripts/migration-apply-order.mjs -- took the FIRST match, so the whole
+     * guard family reported the other lanes' migrations as merely unregistered.
+     *
+     * The file was in a far worse state than that. Three consecutive
+     * `for m in ...; do` share one `done`, and three `case ... in` share one
+     * `esac`, so the apply step was a bash SYNTAX ERROR: no migration was
+     * dispatchable by any path, `all` and single-slug dispatch alike, including
+     * the two waiver migrations already waiting on a production run.
+     *
+     * A first-match parser cannot see a second list, so it names the wrong
+     * defect with complete confidence. This counts them.
+     */
+    expect(allMatches).toHaveLength(1);
+    expect(allowMatches).toHaveLength(1);
+  });
+
+  test('every run step in the workflow is parseable shell', () => {
+    // The check that would have caught the above in one line, and catches the
+    // general form of it: a workflow can be valid YAML, pass every content
+    // assertion in this file, and still be a step no shell can parse.
+    const steps = shellSteps();
+    expect(steps.length).toBeGreaterThan(0);
+    for (const { line, script } of steps) {
+      let error = '';
+      try {
+        execFileSync('bash', ['-n'], { input: script, stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (cause) {
+        error = String((cause as { stderr?: Buffer }).stderr ?? cause);
+      }
+      expect(`apply-migrations.yml run block at line ${line}: ${error}`).toBe(
+        `apply-migrations.yml run block at line ${line}: `,
+      );
+    }
+  });
+
   test('the migration set is non-empty and the workflow lists parsed', () => {
     // Guards the guard: a regex that silently stopped matching would make every
     // assertion below vacuous.

@@ -1,6 +1,9 @@
 # Route reachability triage — 2026-08-28
 
-Which of the 251 API routes under `app/api/pilot` no application code calls.
+Which of the API routes under `app/api/pilot` no application code calls.
+Counts move as other lanes add routes and as doors get built, so every count
+here is stamped with the pass that produced it; the list below is pass 4
+(2026-08-29), over 252 routes.
 
 This is a **reachability** audit, not an authorization one. Every route named
 below is gated correctly as far as this pass could tell (see *Gates are not the
@@ -39,10 +42,36 @@ the corpus; a dynamic route counted as reached when the static prefix before
 its first `[segment]` appears. Reproduce it with the script in *Reproducing
 this*.
 
-**Known limits.** A caller that assembles a path from fragments
-(`` `${base}/api/pilot/${section}/list` ``) would still be missed, and this
-pass makes no attempt to find one. So the list can still overcount. It cannot
-undercount for static routes.
+**Pass 4 — the comment hole (2026-08-29).** The sentence that used to close
+this section read: *"So the list can still overcount. It cannot undercount for
+static routes."* That was false, and the PR that added the last door to this
+list is what falsified it.
+
+Passes 1 and 3 excluded test files and the probe manifest on the principle that
+**naming a path is not the same as opening one**. The corpus was still matched
+as raw text, so a path named in a **comment** counted as a caller — the exact
+error, one line lower.
+
+It cost two routes:
+
+* `floor-hours/public` left the list the day `/admin/floor-hours` shipped, and
+  not because it gained a door. The new page's header comment mentions the
+  public endpoint in prose, and that mention alone was the whole of its
+  "caller".
+* `shadow/formulas/results` **was never on this list at all**, masked since the
+  first pass by two header comments in `formulas/autoCalculation.ts` that name
+  the route while explaining that nothing in the product posts to it.
+
+The fix is one predicate, in *Reproducing this*: a route is reached when at
+least one line naming it is **not** a comment. Under it the sweep finds 252
+routes and 30 with no caller.
+
+**Known limits, restated.** A caller that assembles a path from fragments
+(`` `${base}/api/pilot/${section}/list` ``) is still missed, and this pass makes
+no attempt to find one — so the list can still overcount. It can also
+undercount wherever a path reaches code through something this text match
+cannot follow. The claim that it is sound in one direction is exactly the claim
+that turned out to be wrong, and it is not being made again.
 
 ---
 
@@ -81,13 +110,14 @@ These **should** have no in-app caller. Do not "fix" them.
 it in this repository. An external scheduler could be calling it. Not
 classified either way; check the deployment before treating it as orphaned.
 
-## Addressed since this sweep (3)
+## Addressed since this sweep (4)
 
 | Route | Where |
 | --- | --- |
 | `profile/nickname/clear` | door added on the coach roster |
 | `shadow/data` (GET, then POST) | download control, then the request queue |
 | `coach-reviews/update` | removed — no caller, and a second copy of an authorization sequence that had been repaired twice |
+| `admin/floor-hours` | `/admin/floor-hours` console — the per-person ledger read and the correction path |
 
 ---
 
@@ -134,7 +164,6 @@ read before anything is built or removed.
 | --- | --- | --- |
 | `admin/accounts/repair-auth-provider` | POST | organization_admin, platform_owner |
 | `admin/citation-checks` | GET | REVIEW_ROLES |
-| `admin/floor-hours` | GET/POST | ADMIN_ROLES |
 | `admin/local-findings` | GET/PATCH/POST | RAISE_ROLES |
 | `admin/retraction-checks` | GET/PATCH | REVIEW_ROLES |
 | `auth/logout-all` | POST | self-service |
@@ -153,25 +182,52 @@ read before anything is built or removed.
 | `platform/users/create` | POST | organization_admin |
 | `progression/gap-justification` | GET | coach, admin, organization_admin, athlete, parent |
 | `publications/library` | GET | coach, admin, organization_admin, athlete |
+| `shadow/formulas/results` | GET/POST | GET: athlete, parent, coach, org admin, admin. POST refuses athlete |
 | `shadow/library/search` | POST | SHADOW_PROJECTION_READ_ROLES |
 | `shadow/memory` | POST | `requireTenantOwner`, board refused |
 | `shadow/research-bridge/export` | GET | `requireResearchBridgeAccess` |
 | `shadow/research-bridge/session-export` | GET | organization admin (inline) |
 
-### The three worth reading first, and why
+### Worth reading first, and why
 
-**`admin/floor-hours`.** The only one where data is already being *published*
-with no way to correct it. Hours accumulate from live application code —
-`activityLog.ts`, `communityService.ts`, `attendancePrecedence.ts` and others
-write `pilot.activity_log` — and `floor-hours/public` exposes the aggregate on
-an unauthenticated endpoint that the runtime probes hit, which is consistent
-with external consumption rather than an in-app page. `admin/floor-hours` is
-the operator's per-person read plus the correction path, and it is
-append-only by design: `recordActivityAdjustment` inserts into
-`pilot.activity_log_adjustments` with a nonzero delta, a reason of at least
-`MIN_REASON_LENGTH`, the adjuster and their role, and never edits or deletes a
-recorded activity row. An operator who spots wrong hours on the public board
-today has no way to file that correction.
+**`shadow/formulas/results` and `coach/athlete-intelligence`** — one chain, and
+the only place on this list where **live application code is producing records
+that nothing can read back**.
+
+`pilot.shadow_formula_results` has a reachable writer. An athlete submits the
+Deep-Track sparring form, `shadow/formulas/observations` stores the
+observations, and `detectAndRunCompletedFormulas` runs every formula whose
+input set that submission completed. Results are written on every complete
+submission today.
+
+Every path back out is on this list:
+
+| Reader | Reached from | Door |
+| --- | --- | --- |
+| `listActiveFormulaResults` | `shadow/formulas/results` GET | none |
+| `listLatestFormulaResultsPerOutput` → `getAthleteIntelligence` | `coach/athlete-intelligence` GET | none |
+| `findFormulaResultsUsingObservation` | `runner.ts` supersession | not a surface |
+
+So the engine computes and no screen shows it. The product already says so, in
+the sparring page's own copy, which refuses to promise the athlete a coach sees
+what they submitted:
+
+> The ordinary-path copy may not claim a coach sees this. Nothing reads
+> ordinary sparring observations back out: `/shadow/formulas/results` has no
+> client caller, and no coach surface or SHADOW context queries
+> `shadow_formula_observations`.
+
+That comment is accurate and it is the reason to read this first. The
+server side is not the gap: `athleteIntelligence.ts` assembles a whole read
+model — latest value per formula output, the attempts ledger, the
+controlled-versus-live transfer readout, accepted Film Study — behind a route
+with two gates in the right order. What is missing is a screen.
+
+The POST on `shadow/formulas/results` is a different matter and is **not** a
+missing door. `autoCalculation.ts` was built precisely because "nothing in the
+product does that", and its header records the owner decision that the two
+actor lists deliberately differ. Do not wire a caller to it to make this list
+shorter.
 
 **`board/chat`, `coach/chat`, `individual/chat`.** Three per-role SHADOW chat
 routes with no caller, while `athlete/chat` is wired into `AthleteWorkspace`
@@ -190,20 +246,28 @@ API = 'app/api/pilot'
 routes = ['/' + os.path.relpath(r, 'app').replace(os.sep, '/')
           for r, _, files in os.walk(API) if 'route.ts' in files]
 
-corpus = []
+lines = []                        # keep lines, not one blob: a match must be judged
 for root, _, files in os.walk('.'):
     if any(x in root for x in ('node_modules', '.next', '.git')): continue
     if root.startswith('./app/api'): continue          # a route is not its own caller
     for f in files:
         if not f.endswith(('.ts', '.tsx', '.mjs', '.js')): continue
         if '.test.' in f or f.endswith('.manifest.mjs'): continue   # neither is a door
-        corpus.append(open(os.path.join(root, f), encoding='utf8', errors='ignore').read())
-blob = '\n'.join(corpus)
+        p = os.path.join(root, f)
+        lines += open(p, encoding='utf8', errors='ignore').read().splitlines()
+
+def is_comment(line):
+    s = line.strip()
+    return s.startswith('//') or s.startswith('*') or s.startswith('/*')
 
 def reached(p):
     # a dynamic route is built in a template literal, so only the static
     # prefix before the first [segment] ever appears as a literal
-    return p in blob or ('[' in p and p.split('/[')[0] in blob)
+    needle = p.split('/[')[0] if '[' in p else p
+    # and a path named in a COMMENT is not a door, for the same reason a path
+    # named in a test is not one. This is the pass-4 fix; without it two
+    # routes were reported reached by prose alone.
+    return any(needle in l and not is_comment(l) for l in lines)
 
 for p in sorted(routes):
     if not reached(p): print(p)
