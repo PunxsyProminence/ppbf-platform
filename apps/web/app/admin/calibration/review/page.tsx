@@ -106,6 +106,31 @@ interface ComparisonResponse {
   clip?: CalibrationClip;
   comparison?: Comparison;
   disagreement_counts?: Record<string, number>;
+  /** OD-2026-08-29-003. Present instead of a comparison when the clip carries
+   *  three or more submitted readings and nobody has said which two. Not an
+   *  error: the question is the answer until a person picks. */
+  pair_selection_required?: boolean;
+  candidate_sets?: CandidateSet[];
+}
+
+interface CandidateSet {
+  annotation_set_id: string;
+  annotator_account_id: string;
+}
+
+/** Every unordered pair of the candidates, in the order they were returned.
+ *
+ *  Links rather than a form, because this page reads its whole state from the
+ *  URL: a chosen pair is then shareable and back-navigable, and picking one is
+ *  the same kind of act as opening the clip. Every pair is offered rather than
+ *  a "first two" shortcut -- offering a default is how row order quietly
+ *  becomes the study's answer, which is what the ruling replaced. */
+function candidatePairs(sets: CandidateSet[]): Array<[CandidateSet, CandidateSet]> {
+  const pairs: Array<[CandidateSet, CandidateSet]> = [];
+  for (let i = 0; i < sets.length; i += 1) {
+    for (let j = i + 1; j < sets.length; j += 1) pairs.push([sets[i], sets[j]]);
+  }
+  return pairs;
 }
 
 /** What each pairing outcome MEANS, in the words the module's own docblock
@@ -142,6 +167,9 @@ function CalibrationReviewTable() {
   const searchParams = useSearchParams();
   const clipId = searchParams.get('calibration_clip_id')?.trim() ?? '';
 
+  const selectedA = searchParams.get('set_a')?.trim() ?? '';
+  const selectedB = searchParams.get('set_b')?.trim() ?? '';
+
   const [payload, setPayload] = useState<ComparisonResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(clipId !== '');
@@ -153,7 +181,10 @@ function CalibrationReviewTable() {
     void (async () => {
       try {
         const response = await fetch(
-          `${apiBase()}/api/pilot/calibration/comparison?calibration_clip_id=${encodeURIComponent(clipId)}`,
+          `${apiBase()}/api/pilot/calibration/comparison?calibration_clip_id=${encodeURIComponent(clipId)}`
+          + (selectedA && selectedB
+            ? `&set_a=${encodeURIComponent(selectedA)}&set_b=${encodeURIComponent(selectedB)}`
+            : ''),
           { credentials: 'include', signal: controller.signal },
         );
         const body = (await response.json()) as ComparisonResponse;
@@ -182,8 +213,10 @@ function CalibrationReviewTable() {
     })();
 
     return () => controller.abort();
-  }, [clipId]);
+  }, [clipId, selectedA, selectedB]);
 
+  const pairSelectionRequired = payload?.pair_selection_required === true;
+  const candidates = payload?.candidate_sets ?? [];
   const comparison = payload?.comparison;
   const clip = payload?.clip;
   const counts = payload?.disagreement_counts;
@@ -242,6 +275,37 @@ function CalibrationReviewTable() {
           <div className="flex justify-center py-[var(--s7)]">
             <span className="working">Loading both readings…</span>
           </div>
+        )}
+
+        {pairSelectionRequired && (
+          <section
+            data-testid="pair-selection"
+            className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]"
+          >
+            {/* NOT the safeguarding red. A clip waiting on a choice is not a
+                person who may not participate, and spending that reservation
+                here blunts the one signal that has to keep meaning what it
+                says (safeguardingRedReservation.test.ts). */}
+            <p className="alert alert--warning mb-[var(--s3)]">
+              <span aria-hidden="true">▲</span>{' '}
+              This clip has {candidates.length} submitted readings. A comparison reads exactly
+              two, and which two is yours to choose — nothing here picks for you.
+            </p>
+            <ul className="flex flex-col gap-[var(--s2)]">
+              {candidatePairs(candidates).map(([a, b]) => (
+                <li key={`${a.annotation_set_id}:${b.annotation_set_id}`}>
+                  <a
+                    className="underline"
+                    href={`/admin/calibration/review?calibration_clip_id=${encodeURIComponent(clipId)}`
+                      + `&set_a=${encodeURIComponent(a.annotation_set_id)}`
+                      + `&set_b=${encodeURIComponent(b.annotation_set_id)}`}
+                  >
+                    {a.annotator_account_id} and {b.annotator_account_id}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         {comparison && clip && (
