@@ -5,6 +5,16 @@ import Link from 'next/link';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDay } from '@/src/lib/gymTime';
+import {
+  COACH_DEVELOPMENT_GOAL_STATUSES,
+  COACH_DEVELOPMENT_GOAL_STATUS_LABEL,
+  COACH_DEVELOPMENT_TOPIC_PROMPTS,
+  coachDevelopmentGoalStatusLabel,
+  type CoachDevelopmentActivityRow,
+  type CoachDevelopmentGoalRow,
+  type CoachDevelopmentGoalStatus,
+} from '@/src/shared/coachDevelopment';
 
 /*
  * A coach's own development: what they are trying to get better at, and the
@@ -35,56 +45,48 @@ import { apiBase } from '@/lib/apiBase';
  * question that nobody has answered, and it is not answered here by accident.
  */
 
-interface DevelopmentGoal {
-  goal_id: string;
-  title: string;
-  development_focus: string;
-  target_on: string | null;
-  status: 'draft' | 'active' | 'completed' | 'cancelled';
-  created_at: string;
-  updated_at: string;
-}
+/* What this page shows of each row, as a projection of the shared shape
+   rather than a re-typing of it: a column renamed in the table now breaks the
+   build here instead of rendering as undefined. Both types deliberately
+   exclude organization_id and coach_account_id -- the route answers only
+   about the caller, so the page has no use for either. */
+type DevelopmentGoal = Pick<
+  CoachDevelopmentGoalRow,
+  'goal_id' | 'title' | 'development_focus' | 'target_on' | 'status' | 'created_at' | 'updated_at'
+>;
 
-interface DevelopmentActivity {
-  activity_id: string;
-  goal_id: string | null;
-  title: string;
-  provider: string;
-  occurred_on: string;
-  duration_minutes: number | null;
-  notes: string;
-  created_at: string;
-}
+type DevelopmentActivity = Pick<
+  CoachDevelopmentActivityRow,
+  'activity_id' | 'goal_id' | 'title' | 'provider' | 'occurred_on' | 'duration_minutes' | 'notes' | 'created_at'
+>;
 
-const STATUSES = ['draft', 'active', 'completed', 'cancelled'] as const;
-type GoalStatus = (typeof STATUSES)[number];
+const STATUSES = COACH_DEVELOPMENT_GOAL_STATUSES;
+type GoalStatus = CoachDevelopmentGoalStatus;
 
 /* The design system's four-rung ladder. A development goal's status is a
    personal planning state, not a safety state, so none of these wears a
    saturated safety rung: 'cancelled' is filed, not restricted -- a coach who
    stopped pursuing a goal is not a person who may not participate, and
    painting it like one is exactly the confusion the safeguarding red is
-   reserved against. */
-const STATUS_BADGE: Record<GoalStatus, { className: string; label: string }> = {
-  draft: { className: 'badge--filed', label: 'Draft' },
-  active: { className: 'badge--cleared', label: 'Working on it' },
-  completed: { className: 'badge--monitor', label: 'Completed' },
-  cancelled: { className: 'badge--filed', label: 'Cancelled' },
+   reserved against.
+
+   Only the CLASS is decided here. The words come from the shared vocabulary,
+   so this page and the coach hub call each state the same thing. */
+const STATUS_CLASS: Record<GoalStatus, string> = {
+  draft: 'badge--filed',
+  active: 'badge--cleared',
+  completed: 'badge--monitor',
+  cancelled: 'badge--filed',
 };
 
-/* The reference list the Coach Development tab has carried since it was
-   built. It is a PROMPT, not a curriculum and not a vocabulary: clicking one
-   fills the title box in, and a coach can type anything else instead. Making
-   these a database vocabulary would make this platform the author of a
-   coaching syllabus it does not possess -- the same refusal the athlete
-   development block makes about periodization taxonomies. */
-const TOPIC_PROMPTS = [
-  'Boxing Technique Instruction',
-  'Youth Development Psychology',
-  'Injury Prevention Basics',
-  'Class Management Skills',
-  'Adaptive Coaching',
-] as const;
+const STATUS_BADGE: Record<GoalStatus, { className: string; label: string }> = {
+  draft: { className: STATUS_CLASS.draft, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.draft },
+  active: { className: STATUS_CLASS.active, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.active },
+  completed: { className: STATUS_CLASS.completed, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.completed },
+  cancelled: { className: STATUS_CLASS.cancelled, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.cancelled },
+};
+
+const TOPIC_PROMPTS = COACH_DEVELOPMENT_TOPIC_PROMPTS;
 
 const EMPTY_GOAL_FORM = { title: '', development_focus: '', target_on: '', status: 'draft' as GoalStatus };
 const EMPTY_ACTIVITY_FORM = {
@@ -271,13 +273,31 @@ export default function CoachDevelopmentPage() {
          no account id and answers about the caller -- so there is no reason
          for anyone with staff standing to be shut out of their own.
 
-         'organization_admin' is absent because ClubRole, the client-side role
-         vocabulary, has no such member -- the same reason /coach/credentials
-         lists these exact four. An org admin can still reach the API. Closing
-         that last gap means widening ClubRole, which is a change to a shared
-         type this slice has no business making on the way past. */
+         'organization_admin' IS ADMITTED, and is absent from this list only
+         because it has already been spent by the time the list is read.
+         mapPilotRoleToClubRole (components/roleSession.ts) collapses
+         organization_admin onto 'admin' before any page gate sees a role, so
+         'admin' here is the client-side spelling of both -- the same
+         collapsing buildingMap.ts relies on for MEMBER_GATE, and the same
+         reason /coach/credentials lists these exact four.
+
+         This comment previously claimed the opposite: that an org admin could
+         reach the API and not the UI, and that closing the gap meant widening
+         ClubRole. There is no gap and ClubRole needs no widening. It is
+         corrected rather than deleted because a note asserting a hole that
+         does not exist is worse than no note -- it invites somebody to widen
+         a shared role type to fix nothing. */
       allowedRoles={['coach', 'admin', 'staff', 'volunteer']}
-      room="office"
+      /* THE GYM FLOOR, NOT THE FRONT OFFICE, and it was the office by
+         oversight rather than by decision. Every other /coach/* door is filed
+         under floor, /coach/credentials included -- and credentials is the
+         page this one's own door text sends a coach to next ("Not your
+         certifications -- those live on your credentials page"). Two pages
+         that point at each other and hold the same kind of record were being
+         offered from two different rooms. The room decides chrome and where
+         the corridor lists a door; it decides no access, and this changes
+         none. */
+      room="floor"
       showShellHeader={false}
     >
       <div className="space-y-[var(--s5)]">
@@ -401,8 +421,18 @@ export default function CoachDevelopmentPage() {
        server-side compiles clean and fails only at runtime. An
        unknown state is shown as unknown -- which is also the honest
        rendering of a value this page does not understand. */
-    const badge = STATUS_BADGE[item.status]
-      ?? { className: 'badge--filed', label: item.status || 'Unknown' };
+    /* Unguarded, this took the whole surface down rather than one row: an
+       unrecognised status yields undefined and the next property read throws
+       during render. The fallback is 'filed' rather than a safety rung, and
+       the LABEL is the status itself -- a state this build does not know is
+       shown as the word it was given, never as 'Draft' and never as nothing.
+
+       The lookup is written `as` a partial on purpose: Record<Status, T>
+       indexing is typed non-nullable, so `?? fallback` compiles away to the
+       left operand and TypeScript checks the fallback's SHAPE against
+       nothing at all. */
+    const badge = (STATUS_BADGE as Partial<Record<string, { className: string; label: string }>>)[item.status]
+      ?? { className: 'badge--filed', label: coachDevelopmentGoalStatusLabel(item.status) };
             return (
               <article
                 key={item.goal_id}
@@ -419,7 +449,7 @@ export default function CoachDevelopmentPage() {
                     no date line at all, rather than an empty field or a
                     stand-in date nobody chose. */}
                 {item.target_on ? (
-                  <p className="t-muted">Target date {item.target_on}</p>
+                  <p className="t-muted">Target date {formatGymDay(item.target_on) ?? item.target_on}</p>
                 ) : null}
 
                 <div className="flex flex-wrap gap-[var(--s2)]">
@@ -576,7 +606,7 @@ export default function CoachDevelopmentPage() {
                with no provider and no duration renders one clean line, never
                "Provider: " with nothing after it and never the word null. */
             const detail = [
-              item.occurred_on,
+              formatGymDay(item.occurred_on) ?? item.occurred_on,
               item.provider || null,
               duration,
               goalTitle ? `Toward: ${goalTitle}` : null,
