@@ -546,6 +546,17 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'immediate delete.',
   ],
   [
+    'app/api/pilot/shadow/data/deletion-request/route.ts#GET',
+    'SELF-SCOPED, with no parameter to be wrong about. '
+      + 'getOwnShadowDataDeletionRequest(principal) takes no account id at all: '
+      + 'it reads pilot.shadow_data_deletion_requests where organization_id and '
+      + 'account_id are both the caller\'s own, and a body carrying an account '
+      + 'id is ignored because none is read (shadowConversations.ts). It also '
+      + 'withholds processed_by from the response -- which member of staff '
+      + 'handled a child\'s deletion request is not the child\'s to be told, '
+      + 'while the status that a person handled it is.',
+  ],
+  [
     'app/api/pilot/shadow/memory/route.ts#POST',
     'ACTOR-SCOPED. submitMemoryCorrection takes the principal as `actor` and '
       + 'refuses the board role outright -- board is restricted to '
