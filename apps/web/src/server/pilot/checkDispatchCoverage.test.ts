@@ -99,7 +99,18 @@ describe('every read-only check is dispatchable', () => {
   test('every dropdown option runs a real check', () => {
     // The reverse direction: an option with nothing behind it gives an operator
     // a green run and no answer, which reads as "checked and clean".
-    const notChecks = new Set(['all', 'list-check', 'staging', 'production']);
+    //
+    // `list-check` and `contested-overlap` are exempt because neither is a
+    // `pilot-check-*` database script: each has its own job in the workflow,
+    // reading the checkout or the GitHub API rather than Postgres. The
+    // exemption does NOT mean they go unchecked -- it means the check moved.
+    // contestedOverlapContract.test.ts asserts that its option is in the
+    // dropdown, that the job really invokes `node
+    // scripts/check-contested-overlap.mjs`, and that the job carries no
+    // `environment:` gate. Anything added here without that coverage
+    // somewhere is an option with nothing behind it, which is what this test
+    // exists to catch.
+    const notChecks = new Set(['all', 'list-check', 'contested-overlap', 'staging', 'production']);
     const orphaned = dropdownOptions.filter(
       (option) => !notChecks.has(option) && !scriptSlugs.includes(option),
     );
