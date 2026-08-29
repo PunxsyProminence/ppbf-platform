@@ -96,6 +96,7 @@ on:
           - contested-overlap
           - orphan-chat-audit
           - multiorg-orphans
+          - membership-orphans
           - stranded-guardians
           - duplicate-guardians
           - activation-pin-exposure
@@ -449,6 +450,7 @@ jobs:
               # deployed app rather than about the database.
               run_one orphan-chat-audit   pilot:check-orphan-chat-audit
               run_one multiorg-orphans    pilot:check-multiorg-orphans
+              run_one membership-orphans  pilot:check-membership-orphans
               run_one stranded-guardians  pilot:check-stranded-guardians
               run_one duplicate-guardians pilot:check-duplicate-guardians
               run_one activation-pin-exposure pilot:check-activation-pin-exposure
@@ -464,6 +466,7 @@ jobs:
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
+            membership-orphans) run_one membership-orphans  pilot:check-membership-orphans ;;
             stranded-guardians) run_one stranded-guardians  pilot:check-stranded-guardians ;;
             duplicate-guardians) run_one duplicate-guardians pilot:check-duplicate-guardians ;;
             activation-pin-exposure) run_one activation-pin-exposure pilot:check-activation-pin-exposure ;;
