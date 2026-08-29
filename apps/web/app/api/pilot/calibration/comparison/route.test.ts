@@ -351,11 +351,11 @@ describe('a clip with anything other than two submitted sets', () => {
     expect(body.comparison).toBeUndefined();
   });
 
-  test('THREE submitted sets refuse too, which states the open question instead of answering it', async () => {
-    // Nothing caps annotators per clip and compareAnnotationSets takes exactly
-    // two. Which pair, or every pair, is unanswered anywhere in this codebase,
-    // so the route refuses rather than silently comparing the first two rows a
-    // query happened to return. Owner decision, flagged in the PR body.
+  test('THREE submitted sets are asked about, not refused', async () => {
+    // OD-2026-08-29-003 replaced the refusal that used to be here. The surface
+    // is handed what it may choose from and asks; it is NOT handed the
+    // readings, because until a pair exists there is no comparison to make and
+    // shipping all three would disclose more than the question needs.
     mockPrincipal.mockResolvedValue(ADMIN);
     bothSubmitted([
       SET_A,
@@ -366,11 +366,45 @@ describe('a clip with anything other than two submitted sets', () => {
     const response = await GET(get());
     const body = await response.json();
 
+    expect(response.status).toBe(200);
+    expect(body.pair_selection_required).toBe(true);
+    expect(body.candidate_sets.map((s: { annotation_set_id: string }) => s.annotation_set_id))
+      .toEqual(['set-a', 'set-b', 'set-c']);
+    expect(body.comparison).toBeUndefined();
+    expect(mockListEvents).not.toHaveBeenCalled();
+  });
+
+  test('and once a pair is named, that pair is what gets compared', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted([
+      SET_A,
+      SET_B,
+      setOf({ annotation_set_id: 'set-c', annotator_account_id: 'coach-c' }),
+    ]);
+
+    const response = await GET(get('calibration_clip_id=clip-1&set_a=set-a&set_b=set-c'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.pair_selection_required).toBeUndefined();
+    expect(mockListEvents).toHaveBeenCalled();
+  });
+
+  test('a named set that is not on the clip is refused, not fetched', async () => {
+    // The selection says WHICH, never WHAT. Without this a caller could name a
+    // reading from another clip or organization and have it loaded for them.
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted([
+      SET_A,
+      SET_B,
+      setOf({ annotation_set_id: 'set-c', annotator_account_id: 'coach-c' }),
+    ]);
+
+    const response = await GET(get('calibration_clip_id=clip-1&set_a=set-a&set_b=set-from-another-clip'));
+    const body = await response.json();
+
     expect(response.status).toBe(403);
-    expect(body.error).toMatch(/3 submitted annotation sets/);
-    expect(body.error).toMatch(/pairwise/);
-    // And it says the open question is open rather than implying a bug.
-    expect(body.error).toMatch(/not a question this build answers/);
+    expect(body.error).toMatch(/not among this clip's submitted readings/);
     expect(mockListEvents).not.toHaveBeenCalled();
   });
 });

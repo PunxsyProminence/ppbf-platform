@@ -128,6 +128,27 @@ interface DeskResponse {
   events?: { a: AnnotationEvent[]; b: AnnotationEvent[] };
   adjudications?: Adjudication[];
   vocabularies?: Vocabularies;
+  /** OD-2026-08-29-003. Present instead of the readings when the clip carries
+   *  three or more and nobody has said which two. The desk asks; it does not
+   *  choose, and it is handed no reading until a pair exists. */
+  pair_selection_required?: boolean;
+  candidate_sets?: CandidateSet[];
+}
+
+interface CandidateSet {
+  annotation_set_id: string;
+  annotator_account_id: string;
+}
+
+/** Every unordered pair, in the order returned. No default is offered:
+ *  a "first two" shortcut is how row order quietly becomes the study's
+ *  answer, which is the thing the ruling replaced with a person. */
+function candidatePairs(sets: CandidateSet[]): Array<[CandidateSet, CandidateSet]> {
+  const pairs: Array<[CandidateSet, CandidateSet]> = [];
+  for (let i = 0; i < sets.length; i += 1) {
+    for (let j = i + 1; j < sets.length; j += 1) pairs.push([sets[i], sets[j]]);
+  }
+  return pairs;
 }
 
 /** One field decision as the form holds it, before it is posted. */
@@ -185,6 +206,8 @@ function ReadingTable({
 function AdjudicationDesk() {
   const searchParams = useSearchParams();
   const clipId = searchParams.get('calibration_clip_id')?.trim() ?? '';
+  const selectedA = searchParams.get('set_a')?.trim() ?? '';
+  const selectedB = searchParams.get('set_b')?.trim() ?? '';
 
   const [payload, setPayload] = useState<DeskResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -203,7 +226,10 @@ function AdjudicationDesk() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(
-      `${apiBase()}/api/pilot/calibration/adjudication?calibration_clip_id=${encodeURIComponent(clipId)}`,
+      `${apiBase()}/api/pilot/calibration/adjudication?calibration_clip_id=${encodeURIComponent(clipId)}`
+      + (selectedA && selectedB
+        ? `&set_a=${encodeURIComponent(selectedA)}&set_b=${encodeURIComponent(selectedB)}`
+        : ''),
       { credentials: 'include', signal },
     );
     const body = (await response.json()) as DeskResponse;
@@ -244,6 +270,8 @@ function AdjudicationDesk() {
   }, [clipId, load]);
 
   const vocabularies = payload?.vocabularies;
+  const pairSelectionRequired = payload?.pair_selection_required === true;
+  const candidates = payload?.candidate_sets ?? [];
   const sets = payload?.sets;
   const events = payload?.events;
   const clip = payload?.clip;
@@ -286,6 +314,14 @@ function AdjudicationDesk() {
            weighed or file a decision under another person's name. */
         body: JSON.stringify({
           calibration_clip_id: clipId,
+          /* The pair this desk was opened on. Still a claim about WHICH of the
+             clip's readings, never WHAT: the route validates both against the
+             blinding gate's own list and refuses anything else. Omitted on a
+             two-reading clip, where there is one pair and the route ignores a
+             request anyway. */
+          ...(selectedA && selectedB
+            ? { annotation_set_id_a: selectedA, annotation_set_id_b: selectedB }
+            : {}),
           source_event_id_a: sourceEventIdA,
           source_event_id_b: sourceEventIdB,
           resolution_type: resolutionType,
@@ -374,6 +410,41 @@ function AdjudicationDesk() {
           <div className="flex justify-center py-[var(--s7)]">
             <span className="working">Loading both readings…</span>
           </div>
+        )}
+
+        {pairSelectionRequired && (
+          <section
+            data-testid="pair-selection"
+            className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]"
+          >
+            {/* alert--warning, not the safeguarding red: a clip waiting on a
+                choice is not a person who may not participate. */}
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
+              <div className="alert-body">
+                <p className="alert-title">Which two readings?</p>
+                <p className="alert-msg">
+                  {candidates.length} coaches submitted readings of this clip. A decision settles
+                  a disagreement between exactly two, and which two is yours to choose — nothing
+                  here picks for you.
+                </p>
+              </div>
+            </div>
+            <ul className="mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
+              {candidatePairs(candidates).map(([a, b]) => (
+                <li key={`${a.annotation_set_id}:${b.annotation_set_id}`}>
+                  <a
+                    className="underline"
+                    href={`/admin/calibration/adjudicate?calibration_clip_id=${encodeURIComponent(clipId)}`
+                      + `&set_a=${encodeURIComponent(a.annotation_set_id)}`
+                      + `&set_b=${encodeURIComponent(b.annotation_set_id)}`}
+                  >
+                    {a.annotator_account_id} and {b.annotator_account_id}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         {clip && sets && events && vocabularies && (

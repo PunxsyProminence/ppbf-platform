@@ -299,3 +299,65 @@ test('with no clip named it says so and asks the server nothing', async () => {
 
   searchParams.set('calibration_clip_id', 'clip-1');
 });
+
+test('three readings: the screen asks which two, and shows no comparison', async () => {
+  /* OD-2026-08-29-003. This clip used to be refused outright. The screen now
+   * offers every pair and picks none -- offering a default is how row order
+   * quietly becomes the study's answer, which is what the ruling replaced. */
+  global.fetch = jest.fn().mockResolvedValue(respond({
+    ok: true,
+    clip: COMPARISON.clip,
+    pair_selection_required: true,
+    candidate_sets: [
+      { annotation_set_id: 'set-a', annotator_account_id: 'coach-a' },
+      { annotation_set_id: 'set-b', annotator_account_id: 'coach-b' },
+      { annotation_set_id: 'set-c', annotator_account_id: 'coach-c' },
+    ],
+  })) as unknown as typeof fetch;
+
+  render(<CalibrationReviewPage />);
+
+  const panel = await screen.findByTestId('pair-selection');
+  const links = within(panel).getAllByRole('link');
+  expect(links).toHaveLength(3);
+
+  // Every link names both readings it would compare, so a choice is legible
+  // before it is made rather than after.
+  const hrefs = links.map((a) => a.getAttribute('href') ?? '');
+  expect(hrefs.some((h) => h.includes('set_a=set-a') && h.includes('set_b=set-b'))).toBe(true);
+  expect(hrefs.some((h) => h.includes('set_a=set-a') && h.includes('set_b=set-c'))).toBe(true);
+  expect(hrefs.some((h) => h.includes('set_a=set-b') && h.includes('set_b=set-c'))).toBe(true);
+  hrefs.forEach((h) => expect(h).toContain('calibration_clip_id=clip-1'));
+
+  // No comparison is shown, because none was made.
+  expect(screen.queryByText('Paired')).not.toBeInTheDocument();
+});
+
+test('the asking panel does not spend the safeguarding red', async () => {
+  // A clip waiting on a choice is not a person who may not participate.
+  global.fetch = jest.fn().mockResolvedValue(respond({
+    ok: true,
+    clip: COMPARISON.clip,
+    pair_selection_required: true,
+    candidate_sets: [
+      { annotation_set_id: 'set-a', annotator_account_id: 'coach-a' },
+      { annotation_set_id: 'set-b', annotator_account_id: 'coach-b' },
+      { annotation_set_id: 'set-c', annotator_account_id: 'coach-c' },
+    ],
+  })) as unknown as typeof fetch;
+
+  render(<CalibrationReviewPage />);
+
+  const panel = await screen.findByTestId('pair-selection');
+  expect(panel.querySelector('.alert--warning')).not.toBeNull();
+  expect(panel.querySelector('.alert--critical')).toBeNull();
+});
+
+test('two readings: no chooser, because there is nothing to choose', async () => {
+  global.fetch = jest.fn().mockResolvedValue(respond(COMPARISON)) as unknown as typeof fetch;
+
+  render(<CalibrationReviewPage />);
+
+  await screen.findByText('Paired');
+  expect(screen.queryByTestId('pair-selection')).not.toBeInTheDocument();
+});
